@@ -5,23 +5,25 @@
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
   
-  --color-background: #050505;
-  --color-surface-dim: #111111;
-  --color-surface: #18181A;
-  --color-surface-bright: #27272A;
+  --color-background: #0B1121;
+  --color-surface-dim: #111827;
+  --color-surface: #151E2E;
+  --color-surface-bright: #1E293B;
   
-  --color-border: #27272A;
-  --color-border-hover: #3F3F46;
+  --color-border: #1E293B;
+  --color-border-hover: #334155;
   
-  --color-primary: #F27D26; /* Warm Orange for contrast */
-  --color-primary-hover: #D96919;
+  --color-primary: #F97316; /* Orange */
+  --color-primary-hover: #EA580C;
   
   --color-success: #22C55E;
   --color-warning: #EAB308;
   --color-danger: #EF4444;
+  --color-info: #3B82F6;
+  --color-purple: #A855F7;
   
-  --color-text-main: #FAFAFA;
-  --color-text-muted: #A1A1AA;
+  --color-text-main: #F8FAFC;
+  --color-text-muted: #94A3B8;
 }
 
 @layer base {
@@ -31,6 +33,22 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+}
+
+/* Scrollbar styles to match the premium look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
 }
 
 /* Leaflet dark theme override */
@@ -46,6 +64,10 @@
 }
 .leaflet-popup-tip {
   background: var(--color-surface) !important;
+}
+.leaflet-bar {
+  border: none !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
 }
 .leaflet-bar a {
   background-color: var(--color-surface) !important;

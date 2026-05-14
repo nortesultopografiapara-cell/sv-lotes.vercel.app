@@ -7,20 +7,20 @@ import {
   Map as MapIcon, 
   FolderOpen, 
   Users, 
-  Banknote, 
-  Settings, 
-  LogOut,
+  Wallet,
   Menu,
-  X
+  Bell,
+  User,
+  ChevronDown
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const MENU_ITEMS = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Mapa GIS', href: '/map', icon: MapIcon },
-  { name: 'Projetos', href: '/projects', icon: FolderOpen },
-  { name: 'CRM', href: '/crm', icon: Users },
-  { name: 'Financeiro', href: '/finance', icon: Banknote },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+  { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+  { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
+  { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+  { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
 ];
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
@@ -34,14 +34,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Basic mock authentication check
     const checkAuth = () => {
-      // Because we mock it, if pathname is not login, we simulate authed.
-      // In a real scenario with Supabase:
-      // const { data: { session } } = await supabase.auth.getSession()
-      // setIsAuthenticated(!!session)
-      
       const isAuthPath = pathname === '/login';
-      
-      // For this demo, let's assume we store a simple flag in localStorage
       const loggedIn = localStorage.getItem('sv_lotes_auth') === 'true';
       
       if (!loggedIn && !isAuthPath) {
@@ -79,80 +72,136 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
-        <div className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-[300] flex items-center px-4 justify-between">
-          <div className="flex items-center gap-2">
-            <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-            <span className="font-sans font-bold text-lg tracking-wide text-white">SV_LOTES</span>
+        <div className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-[300] flex items-center px-4 justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <button onClick={toggleSidebar} className="text-white p-1">
+              <Menu className="w-6 h-6" />
+            </button>
+            <div className="flex items-center gap-2">
+              <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
+              <span className="font-sans font-bold text-lg tracking-wide text-white">SV_LOTES</span>
+            </div>
           </div>
-          <button onClick={toggleSidebar} className="p-2 text-white">
-            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          <div className="flex items-center gap-4">
+            <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
+              <Bell className="w-6 h-6" />
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-surface)] text-[8px] font-bold text-white flex items-center justify-center">3</span>
+            </button>
+            <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white border-2 border-[var(--color-surface)]">
+              <User className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Sidebar */}
-      <aside 
-        className={`fixed md:relative top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[200] transition-transform duration-300 ease-in-out flex flex-col ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        } ${isMobile ? 'pt-16' : ''}`}
-      >
-        {!isMobile && (
+      {/* Desktop Sidebar */}
+      {!isMobile && (
+        <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
+          <div className="h-20 flex items-center px-6 gap-3">
+            <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
+            <span className="font-sans font-bold text-xl tracking-wider text-white">SV_LOTES</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-2">
+            {MENU_ITEMS.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link 
+                  key={item.href} 
+                  href={item.href}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                    isActive 
+                      ? 'bg-[var(--color-surface)] text-white border border-[var(--color-border)]' 
+                      : 'text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)]/50 border border-transparent'
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 ${item.color}`} />
+                  <span className="text-[15px]">{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </aside>
+      )}
+
+      {/* Mobile Drawer (optional sidebar on mobile) */}
+      {isMobile && (
+        <aside 
+          className={`fixed top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[400] transition-transform duration-300 ease-in-out flex flex-col ${
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
           <div className="h-16 flex items-center px-6 border-b border-[var(--color-border)] gap-2">
             <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
             <span className="font-sans font-bold text-xl tracking-wide text-white">SV_LOTES</span>
           </div>
+          <div className="p-4 flex-1">
+             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] border border-transparent">
+               <span className="text-[15px]">Sair do Sistema</span>
+             </button>
+          </div>
+        </aside>
+      )}
+
+      {/* Main Content Area */}
+      <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${isMobile ? 'pt-16 pb-20' : ''}`}>
+        
+        {/* Desktop Top Header inside Main Content */}
+        {!isMobile && (
+          <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">
+            <div>
+              <h1 className="text-xl font-medium text-white flex items-center gap-1">
+                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>Severino José</strong>
+              </h1>
+              <p className="text-sm text-[var(--color-text-muted)]">Super Admin</p>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
+                <Bell className="w-6 h-6" />
+                <span className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-background)] text-[10px] font-bold text-white flex items-center justify-center">3</span>
+              </button>
+              
+              <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogout} title="Clique para sair">
+                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                  <User className="w-5 h-5" />
+                </div>
+                <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
+              </div>
+            </div>
+          </header>
         )}
 
-        <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
-          <div className="text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-2 px-3">
-            Principal
-          </div>
+        {/* Page Content */}
+        {children}
+
+      </main>
+
+      {/* Mobile Bottom Navigation Menu */}
+      {isMobile && (
+        <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe">
           {MENU_ITEMS.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link 
                 key={item.href} 
                 href={item.href}
-                onClick={() => isMobile && setIsOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
-                  isActive 
-                    ? 'bg-[var(--color-surface-bright)] text-[var(--color-primary)] border border-[var(--color-primary)]/20' 
-                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-white border border-transparent'
-                }`}
+                className="flex flex-col items-center justify-center gap-1 w-full h-full"
               >
-                <item.icon className={`w-5 h-5 ${isActive ? 'text-[var(--color-primary)]' : ''}`} />
-                <span className="font-sans font-medium text-sm">{item.name}</span>
+                <item.icon className={`w-6 h-6 ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`} />
+                <span className={`text-[10px] font-medium leading-none ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`}>
+                  {item.name}
+                </span>
               </Link>
             );
           })}
-        </div>
-
-        <div className="p-4 border-t border-[var(--color-border)]">
-          <div className="flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)]">
-            <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-sm">
-              S
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-white line-clamp-1">Severino</span>
-              <span className="text-[10px] font-mono uppercase text-[var(--color-primary)]">Super Admin</span>
-            </div>
-          </div>
-          <button onClick={handleLogout} className="w-full mt-2 flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors rounded-md hover:bg-[var(--color-danger)]/10">
-            <LogOut className="w-5 h-5" />
-            <span className="text-sm font-medium">Sair</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${isMobile ? 'pt-16' : ''}`}>
-        {children}
-      </main>
+        </nav>
+      )}
 
       {/* Mobile overlay */}
       {isMobile && isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-[150] backdrop-blur-sm"
+          className="fixed inset-0 bg-black/50 z-[250] backdrop-blur-sm"
           onClick={() => setIsOpen(false)}
         />
       )}
