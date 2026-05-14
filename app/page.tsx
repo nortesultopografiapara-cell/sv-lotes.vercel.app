@@ -19,8 +19,21 @@ import {
   UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
 export default function DashboardPage() {
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const authStr = localStorage.getItem('sv_lotes_auth');
+    if (authStr) {
+      try {
+        const parsed = JSON.parse(authStr);
+        setTimeout(() => setUser(parsed), 0);
+      } catch(e) {}
+    }
+  }, []);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
 
@@ -28,9 +41,9 @@ export default function DashboardPage() {
       <div className="md:hidden flex justify-between items-start mb-6 pt-2">
          <div>
             <h1 className="text-lg font-medium text-white flex items-center gap-1">
-              <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>Severino José</strong>
+              <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
             </h1>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Super Admin</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
           </div>
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)] py-1.5 px-3 rounded-lg border border-[var(--color-border)]">
              <Calendar className="w-3.5 h-3.5 text-white" />

@@ -16,7 +16,18 @@ export default function LoginPage() {
     // MOCK LOGIN FOR NOW ALTHOUGH IT REQUIRED FULL AUTH.
     // If Supabase is connected we would call supabase.auth.signInWithPassword
     setTimeout(() => {
-      localStorage.setItem('sv_lotes_auth', 'true');
+      // Mocked Auth Response with Role
+      const role = email === 'severino@nortesultopografia.com.br' ? 'SUPER_ADMIN' : 'ADMIN';
+      
+      const authData = {
+        email,
+        role,
+        tenantId: role === 'SUPER_ADMIN' ? null : 'tenant-demo-id',
+        name: role === 'SUPER_ADMIN' ? 'Severino José' : 'Admin Empresa'
+      };
+      
+      localStorage.setItem('sv_lotes_auth', JSON.stringify(authData));
+      
       setLoading(false);
       router.push('/');
     }, 1000);

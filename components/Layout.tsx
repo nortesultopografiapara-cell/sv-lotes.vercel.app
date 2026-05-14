@@ -11,31 +11,57 @@ import {
   Menu,
   Bell,
   User,
-  ChevronDown
+  ChevronDown,
+  Building2
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-const MENU_ITEMS = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-  { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-  { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
-  { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
-  { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-];
+const getMenuItems = (role: string) => {
+  const baseItems = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+    { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+    { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
+    { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+    { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+  ];
+
+  if (role === 'SUPER_ADMIN') {
+    // Insert after dashboard
+    baseItems.splice(1, 0, { 
+      name: 'Empresas', 
+      href: '/companies', 
+      icon: Building2, 
+      color: 'text-[#06b6d4]' // Cyan/Blue premium
+    });
+  }
+
+  return baseItems;
+};
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     // Basic mock authentication check
     const checkAuth = () => {
       const isAuthPath = pathname === '/login';
-      const loggedIn = localStorage.getItem('sv_lotes_auth') === 'true';
+      const authStr = localStorage.getItem('sv_lotes_auth');
+      let userData = null;
+
+      if (authStr) {
+        try {
+          userData = JSON.parse(authStr);
+        } catch(e) {
+          userData = null;
+        }
+      }
+      
+      const loggedIn = !!userData;
       
       if (!loggedIn && !isAuthPath) {
         router.push('/login');
@@ -43,7 +69,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         router.push('/');
       }
       
-      setIsAuthenticated(loggedIn);
+      setUser(userData);
       setIsCheckingAuth(false);
     };
     
@@ -67,6 +93,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   }
 
   if (pathname === '/login') return <>{children}</>;
+
+  const menuItems = getMenuItems(user?.role || '');
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[var(--color-background)]">
@@ -103,7 +131,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-2">
-            {MENU_ITEMS.map((item) => {
+            {menuItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link 
@@ -135,6 +163,27 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
             <span className="font-sans font-bold text-xl tracking-wide text-white">SV_LOTES</span>
           </div>
+          <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
+            {menuItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link 
+                  key={item.href} 
+                  href={item.href}
+                  onClick={() => isMobile && setIsOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+                    isActive 
+                      ? 'bg-[var(--color-surface-bright)] text-[var(--color-primary)] border border-[var(--color-primary)]/20' 
+                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-white border border-transparent'
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 ${item.color}`} />
+                  <span className="font-sans font-medium text-sm">{item.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+
           <div className="p-4 flex-1">
              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] border border-transparent">
                <span className="text-[15px]">Sair do Sistema</span>
@@ -151,20 +200,25 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">
             <div>
               <h1 className="text-xl font-medium text-white flex items-center gap-1">
-                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>Severino José</strong>
+                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)]">Super Admin</p>
+              <p className="text-sm text-[var(--color-text-muted)]">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
             </div>
 
             <div className="flex items-center gap-6">
+              {user?.role === 'SUPER_ADMIN' && (
+                <div className="px-3 py-1.5 rounded-full bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-bold border border-[#06b6d4]/20 tracking-wider">
+                  MODO DEUS
+                </div>
+              )}
               <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
                 <Bell className="w-6 h-6" />
                 <span className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-background)] text-[10px] font-bold text-white flex items-center justify-center">3</span>
               </button>
               
               <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogout} title="Clique para sair">
-                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                  <User className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg uppercase">
+                  {user?.name?.charAt(0) || 'U'}
                 </div>
                 <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
               </div>
@@ -180,7 +234,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Mobile Bottom Navigation Menu */}
       {isMobile && (
         <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe">
-          {MENU_ITEMS.map((item) => {
+          {menuItems.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link 
