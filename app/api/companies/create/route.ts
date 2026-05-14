@@ -1,44 +1,41 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-
-// Usamos a SUPABASE_SERVICE_ROLE_KEY para ignorar o RLS e poder criar usuários no auth.users
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
-
-// Função auxiliar para gerar senha aleatória
-function generateTempPassword(length = 8) {
-  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-  let retVal = "";
-  for (let i = 0, n = charset.length; i < length; ++i) {
-    retVal += charset.charAt(Math.floor(Math.random() * n));
-  }
-  return retVal;
-}
+import { Resend } from 'resend';
 
 export async function POST(req: Request) {
+  console.log('[PROVISIONAMENTO MULTI-TENANT] Iniciando criação de empresa...');
+  
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('[ERRO FATAL] SUPABASE_SERVICE_ROLE_KEY não configurada no backend.');
+    return NextResponse.json({ error: 'Erro de infraestrutura: SUPABASE_SERVICE_ROLE_KEY ausente.' }, { status: 500 });
+  }
+
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
+  );
+
+  let newCompanyId: string | null = null;
+  let authUserId: string | null = null;
+
   try {
     const body = await req.json();
     const { name, cnpj, phone, email, plan, adminName, adminEmail, adminPhone, sendEmail } = body;
 
-    // TODO: Verify if the user making the request is a SUPER_ADMIN
-    // For now we trust the caller, but in production we should extract the JWT from headers
-    // and verify their role.
+    console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
+    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
     
-    // 1. Create the tenant in public.companies
-    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     const { data: newCompany, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert({
         name,
-        slug: slug + '-' + Math.floor(Math.random() * 1000),
+        slug,
         cnpj,
         phone,
         email,
@@ -49,34 +46,41 @@ export async function POST(req: Request) {
       .single();
 
     if (companyError) {
-      return NextResponse.json({ error: companyError.message }, { status: 400 });
+      console.error('[ERRO] Falha ao criar empresa:', companyError.message);
+      return NextResponse.json({ error: `Erro ao criar empresa: ${companyError.message}` }, { status: 400 });
     }
 
-    // 2. Create the admin user in Supabase Auth
-    const temporaryPassword = generateTempPassword();
+    newCompanyId = newCompany.id;
+    console.log(`[SUCESSO] Empresa criada! ID: ${newCompanyId}`);
+
+    console.log(`[ETAPA 2] Criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+    const temporaryPassword = generateTempPassword(8);
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: adminEmail,
       password: temporaryPassword,
-      email_confirm: true, // Auto confirm
+      email_confirm: true,
       user_metadata: {
         full_name: adminName,
-        role: 'ADMIN' // We set role in metadata for convenience, but the truth is in public.users
+        role: 'ADMIN',
+        tenant_id: newCompanyId
       }
     });
 
     if (authError) {
-      // Rollback company creation if auth fails
-      await supabaseAdmin.from('companies').delete().eq('id', newCompany.id);
-      return NextResponse.json({ error: authError.message }, { status: 400 });
+      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError.message);
+      throw new Error(`Erro ao criar conta de usuário: ${authError.message}`);
     }
 
-    // 3. Insert the user into public.users with force_password_change = true
+    authUserId = authUser.user.id;
+    console.log(`[SUCESSO] Usuário criado na auth.users! ID: ${authUserId}`);
+
+    console.log(`[ETAPA 3] Cadastrando perfil em public.users...`);
     const { error: userError } = await supabaseAdmin
       .from('users')
       .insert({
-        id: authUser.user.id,
-        tenant_id: newCompany.id,
+        id: authUserId,
+        tenant_id: newCompanyId,
         full_name: adminName,
         email: adminEmail,
         role: 'ADMIN',
@@ -86,34 +90,87 @@ export async function POST(req: Request) {
       });
 
     if (userError) {
-      // Important to keep data consistent, if we can't create public.user, we might want to delete the auth user
-      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
-      await supabaseAdmin.from('companies').delete().eq('id', newCompany.id);
-      return NextResponse.json({ error: userError.message }, { status: 400 });
+      console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message);
+      throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);
     }
 
-    // 4. Send email (Mock for now, in production use Resend, Sendgrid, etc)
+    console.log(`[SUCESSO] Perfil criado em public.users!`);
+
+    console.log(`[ETAPA 4] Envio de e-mail com credenciais...`);
     if (sendEmail) {
-      console.log('--------------------------------------------------');
-      console.log(`[MOCK EMAIL] Sending welcome email to ${adminEmail}...`);
-      console.log(`Subject: Bem-vindo ao sistema - Acesso Administrativo`);
-      console.log(`Body:`);
-      console.log(`Olá, ${adminName}.`);
-      console.log(`A empresa ${name} foi cadastrada com sucesso no sistema.`);
-      console.log(`Seu login é: ${adminEmail}`);
-      console.log(`Sua senha provisória é: ${temporaryPassword}`);
-      console.log(`Acesse o sistema e redefina sua senha no primeiro login.`);
-      console.log('--------------------------------------------------');
+      if (!process.env.RESEND_API_KEY) {
+        console.warn('[AVISO] RESEND_API_KEY não configurada. E-mail de credenciais não foi enviado.');
+      } else {
+        try {
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          
+          await resend.emails.send({
+            from: 'SV LOTES <onboarding@seusistema.com.br>', // Altere para seu domínio verificado
+            to: [adminEmail],
+            subject: 'Bem-vindo ao sistema SV LOTES - Acesso Administrativo',
+            html: `
+              <div style="font-family: sans-serif; max-w: 600px; margin: 0 auto;">
+                <h2>Olá, ${adminName}.</h2>
+                <p>A empresa <strong>${name}</strong> foi cadastrada com sucesso.</p>
+                <p>Você é o administrador do sistema. Seguem seus dados de acesso:</p>
+                <div style="background: #f4f4f5; padding: 16px; border-radius: 8px; margin: 24px 0;">
+                  <p style="margin: 0;"><strong>Link de Acesso:</strong> <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://svlotes.com.br'}">${process.env.NEXT_PUBLIC_SITE_URL || 'https://svlotes.com.br'}</a></p>
+                  <p style="margin: 8px 0 0 0;"><strong>E-mail:</strong> ${adminEmail}</p>
+                  <p style="margin: 8px 0 0 0;"><strong>Senha Provisória:</strong> <code style="color: #06b6d4; font-size: 16px;">${temporaryPassword}</code></p>
+                </div>
+                <p style="color: #ef4444; font-size: 14px;">Importante: Por questões de segurança, sua senha deverá ser alterada no primeiro acesso obrigatório.</p>
+              </div>
+            `
+          });
+          console.log(`[SUCESSO] Email enviado via Resend para ${adminEmail}.`);
+        } catch (emailErr: any) {
+          console.error('[ERRO EMAIL] O envio de email falhou, mas a criação de empresa prosseguiu:', emailErr.message);
+          // Não fazemos rollback por causa de erro no email
+        }
+      }
+    } else {
+      console.log(`[INFO] Envio de e-mail não foi solicitado.`);
     }
 
+    console.log('[PROVISIONAMENTO CONCLUÍDO COM SUCESSO]');
+    
     return NextResponse.json({ 
       success: true, 
-      companyId: newCompany.id,
+      companyId: newCompanyId,
       temporaryPassword 
     });
 
   } catch (error: any) {
-    console.error('API Error:', error);
+    console.error('[ROLLBACK INICIADO] Ocorreu um erro no processo de criação:', error.message);
+    
+    // Executando rollbacks
+    try {
+      if (authUserId) {
+        console.log(`[ROLLBACK] Removendo auth.user ID: ${authUserId}`);
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+      }
+    } catch (rbAuthErr: any) {
+      console.error('[ROLLBACK ERRO] Falha ao remover auth.user:', rbAuthErr.message);
+    }
+    
+    try {
+      if (newCompanyId) {
+        console.log(`[ROLLBACK] Removendo company ID: ${newCompanyId}`);
+        await supabaseAdmin.from('companies').delete().eq('id', newCompanyId);
+      }
+    } catch (rbCompErr: any) {
+      console.error('[ROLLBACK ERRO] Falha ao remover company:', rbCompErr.message);
+    }
+
     return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });
   }
+}
+
+function generateTempPassword(length = 8) {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let retVal = "";
+  for (let i = 0, n = charset.length; i < length; ++i) {
+    retVal += charset.charAt(Math.floor(Math.random() * n));
+  }
+  return retVal;
 }

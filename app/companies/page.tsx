@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, MoreHorizontal, CheckCircle2, 
@@ -19,20 +19,7 @@ export default function CompaniesPage() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
-  // Verification if user is SUPER_ADMIN
-  useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        router.push('/login');
-      } else if (user.role !== 'SUPER_ADMIN') {
-        router.push('/');
-      } else {
-        loadCompanies();
-      }
-    }
-  }, [authLoading, user, router]);
-
-  const loadCompanies = async () => {
+  const loadCompanies = useCallback(async () => {
     setDataLoading(true);
     try {
       const { data, error } = await supabase
@@ -47,7 +34,21 @@ export default function CompaniesPage() {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, []);
+
+  // Verification if user is SUPER_ADMIN
+  useEffect(() => {
+    if (!authLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'SUPER_ADMIN') {
+        router.push('/');
+      } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadCompanies();
+      }
+    }
+  }, [authLoading, user, router, loadCompanies]);
 
   if (authLoading || (dataLoading && companies.length === 0)) {
      return (

@@ -59,6 +59,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
       });
 
       if (onSuccess) onSuccess();
+      window.location.reload(); // Simple refresh to show new company
     } catch (err: any) {
       console.error('Error creating company:', err);
       setError(err.message || 'Erro ao criar empresa');
