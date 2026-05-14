@@ -62,7 +62,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     if (!isCheckingAuth) {
       if (!user && pathname !== '/login') {
         router.push('/login');
-      } else if (user && pathname === '/login') {
+      } else if (user && user.force_password_change && pathname !== '/onboarding') {
+        router.push('/onboarding');
+      } else if (user && !user.force_password_change && pathname === '/login') {
         router.push('/');
       }
     }
@@ -88,7 +90,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     return <div className="h-screen w-full bg-[var(--color-background)] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-t-transparent border-[var(--color-primary)] rounded-full"></div></div>;
   }
 
-  if (pathname === '/login') return <>{children}</>;
+  if (pathname === '/login' || pathname === '/onboarding') return <>{children}</>;
 
   const menuItems = getMenuItems(user?.role || '');
 

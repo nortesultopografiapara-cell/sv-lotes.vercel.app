@@ -8,6 +8,7 @@ export interface UserProfile {
   role: string;
   email: string;
   name: string;
+  force_password_change: boolean;
 }
 
 export function useAuth() {
@@ -47,7 +48,8 @@ export function useAuth() {
               tenant_id: userData.tenant_id,
               role: userData.role,
               email: session.user.email || '',
-              name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário'
+              name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
+              force_password_change: userData.force_password_change || false
             });
             setLoading(false);
           }
