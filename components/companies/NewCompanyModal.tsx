@@ -18,8 +18,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
 
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
-    phone: '',
+    cnpj: '',
     plan: 'BASIC'
   });
 
@@ -41,10 +40,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
         .insert({
           name: formData.name,
           slug: slug + '-' + Math.floor(Math.random() * 1000),
-          email: formData.email,
-          phone: formData.phone,
+          cnpj: formData.cnpj,
           plan: formData.plan,
-          status: 'ACTIVE'
+          active: true
         })
         .select()
         .single();
@@ -137,36 +135,21 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
                   </div>
                </div>
 
-               <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Email (Para Contato Geral)</label>
+               <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">CNPJ (Opcional)</label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                    <Building2 className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
                     <input 
-                      type="email" 
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="contato@empresa.com.br"
+                      type="text" 
+                      value={formData.cnpj}
+                      onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                      placeholder="00.000.000/0001-00"
                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
                     />
                   </div>
                </div>
 
-               <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Telefone</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
-                    <input 
-                      type="tel" 
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="(00) 00000-0000"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                    />
-                  </div>
-               </div>
-
-               <div className="space-y-1.5">
+               <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Plano</label>
                   <select 
                     value={formData.plan}

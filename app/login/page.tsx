@@ -52,7 +52,8 @@ export default function LoginPage() {
           .single();
           
         if (userError || !userData) {
-           setError('Usuário não possui perfil no sistema ou ocorreu um erro.');
+           console.error("Login user fetch error:", userError);
+           setError(`Erro ao buscar perfil: ${userError?.message || 'Usuário não encontrado na tabela public.users.'}`);
            setLoading(false);
            // Sign out since they don't have a valid profile
            await supabase.auth.signOut();

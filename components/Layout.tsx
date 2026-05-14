@@ -20,25 +20,34 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
 const getMenuItems = (role: string) => {
-  const baseItems = [
+  if (role === 'SUPER_ADMIN') {
+    return [
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-[#06b6d4]' },
+      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
+      { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+    ];
+  }
+  
+  if (role === 'ADMIN') {
+    return [
+      { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
+      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Corretores & CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+    ];
+  }
+
+  // DEFAULT (CORRETOR)
+  return [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     { name: 'Projetos', href: '/projects', icon: FolderOpen, color: 'text-[var(--color-info)]' },
-    { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
-    { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+    { name: 'Clientes & Reservas', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
   ];
-
-  if (role === 'SUPER_ADMIN') {
-    // Insert after dashboard
-    baseItems.splice(1, 0, { 
-      name: 'Empresas', 
-      href: '/companies', 
-      icon: Building2, 
-      color: 'text-[#06b6d4]' // Cyan/Blue premium
-    });
-  }
-
-  return baseItems;
 };
 
 export function Sidebar({ children }: { children: React.ReactNode }) {

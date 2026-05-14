@@ -6,11 +6,9 @@ create table public.companies (
   id uuid default uuid_generate_v4() primary key, -- acts as tenant_id
   name text not null,
   slug text unique not null,
-  email text,
-  phone text,
-  logo_url text,
+  cnpj text,
   plan text default 'BASIC',
-  status text check (status in ('ACTIVE', 'INACTIVE', 'SUSPENDED')) default 'ACTIVE',
+  active boolean default true,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -18,11 +16,11 @@ create table public.companies (
 create table public.users (
   id uuid references auth.users not null primary key,
   tenant_id uuid references public.companies(id) on delete cascade, -- null for SUPER_ADMIN
-  email text unique not null,
   full_name text,
-  role text check (role in ('SUPER_ADMIN', 'ADMIN', 'CORRETOR', 'CLIENTE')) default 'CORRETOR',
+  email text unique not null,
+  role text check (role in ('SUPER_ADMIN', 'ADMIN', 'CORRETOR')) default 'CORRETOR',
   status text default 'ACTIVE',
-  force_password_change boolean default false,
+  phone text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -139,7 +137,7 @@ alter table public.logs enable row level security;
 -- CREATE RLS POLICIES FOR MULTI-TENANCY
 
 -- Helper function to check if user is SUPER_ADMIN
-create or function public.is_super_admin() returns boolean as $$
+create or replace function public.is_super_admin() returns boolean as $$
   select exists (
     select 1 from public.users
     where id = auth.uid() and role = 'SUPER_ADMIN'
@@ -147,7 +145,7 @@ create or function public.is_super_admin() returns boolean as $$
 $$ language sql security definer;
 
 -- Helper function to get current user tenant
-create or function public.current_tenant_id() returns uuid as $$
+create or replace function public.current_tenant_id() returns uuid as $$
   select tenant_id from public.users where id = auth.uid();
 $$ language sql security definer;
 

@@ -57,7 +57,7 @@ export default function CompaniesPage() {
      );
   }
 
-  const activeCompanies = companies.filter(c => c.status === 'ACTIVE').length;
+  const activeCompanies = companies.filter(c => c.active === true).length;
   const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
   const totalProjects = companies.reduce((acc, c) => acc + (c.projects?.[0]?.count || 0), 0);
 
@@ -129,9 +129,8 @@ export default function CompaniesPage() {
                   key={c.id}
                   name={c.name}
                   slug={c.slug}
-                  email={c.email || ''}
-                  phone={c.phone || ''}
-                  status={c.status}
+                  cnpj={c.cnpj || ''}
+                  active={c.active}
                   projects={c.projects?.[0]?.count || 0}
                   users={c.users?.[0]?.count || 0}
                   isMain={idx === 0} // just for highlight
@@ -174,12 +173,12 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ name, slug, email, phone, status, projects, users, isMain }: any) {
-  const getStatusBadge = (s: string) => {
-    switch(s) {
-      case 'ACTIVE': return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
-      case 'INACTIVE': return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20">Inativa</span>;
-      case 'SUSPENDED': return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/20"><XOctagon className="w-3 h-3 mr-1"/> Suspensa</span>;
+function CompanyRow({ name, slug, cnpj, active, projects, users, isMain }: any) {
+  const getStatusBadge = (isActive: boolean) => {
+    if (isActive) {
+      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
+    } else {
+      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20">Inativa</span>;
     }
   };
 
@@ -200,11 +199,10 @@ function CompanyRow({ name, slug, email, phone, status, projects, users, isMain 
         </div>
       </td>
       <td className="p-4 hidden md:table-cell">
-        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{email}</div>
-        <div className="text-[11px] font-mono text-[var(--color-text-muted)]">{phone}</div>
+        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{cnpj ? `CNPJ: ${cnpj}` : '—'}</div>
       </td>
       <td className="p-4 text-center">
-        {getStatusBadge(status)}
+        {getStatusBadge(active)}
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
