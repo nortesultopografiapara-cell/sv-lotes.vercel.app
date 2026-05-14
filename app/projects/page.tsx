@@ -1,10 +1,43 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function ProjectsPage() {
+  const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadProjects() {
+      if (!user) return;
+      try {
+        let query = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        setProjects(data || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    if (!authLoading) {
+      loadProjects();
+    }
+  }, [user, authLoading]);
+
+  const filteredProjects = projects.filter(p => 
+     p.name.toLowerCase().includes(search.toLowerCase()) || 
+     (p.location && p.location.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full">
@@ -54,28 +87,36 @@ export default function ProjectsPage() {
               </tr>
             </thead>
             <tbody>
-              {/* Dummy Data for demonstration */}
-              <ProjectRow 
-                name="Reserva do Bosque"
-                location="Castanhal, PA"
-                sold={140}
-                total={200}
-                hasGis={true}
-              />
-              <ProjectRow 
-                name="Jardim das Águas"
-                location="Marituba, PA"
-                sold={210}
-                total={350}
-                hasGis={true}
-              />
-              <ProjectRow 
-                name="Vila Nova Ext."
-                location="Belém, PA"
-                sold={0}
-                total={123}
-                hasGis={false}
-              />
+              {loading ? (
+                 <tr>
+                    <td colSpan={5} className="text-center p-8">
+                       <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin mx-auto" />
+                    </td>
+                 </tr>
+              ) : filteredProjects.length > 0 ? (
+                 filteredProjects.map(p => {
+                    const total = p.lots?.length || 0;
+                    const sold = p.lots?.filter((l: any) => l.status === 'SOLD').length || 0;
+                    const hasGis = p.lots?.some((l: any) => l.geom != null) || false;
+                    
+                    return (
+                       <ProjectRow 
+                          key={p.id}
+                          name={p.name}
+                          location={p.location || 'Não especificada'}
+                          sold={sold}
+                          total={total}
+                          hasGis={hasGis}
+                       />
+                    );
+                 })
+              ) : (
+                 <tr>
+                    <td colSpan={5} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
+                       Nenhum projeto encontrado.
+                    </td>
+                 </tr>
+              )}
             </tbody>
           </table>
         </div>

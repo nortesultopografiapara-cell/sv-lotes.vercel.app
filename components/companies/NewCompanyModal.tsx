@@ -2,25 +2,74 @@
 
 import { useState } from 'react';
 import { X, Building2, Mail, Phone, Lock, Upload, Image as ImageIcon } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProps) {
+export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompanyModalProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    plan: 'BASIC'
+  });
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
+    
     setLoading(true);
-    // Simulate API Call to create tenant
-    setTimeout(() => {
-      setLoading(false);
+    setError('');
+
+    try {
+      // 1. Create the company (tenant)
+      const slug = formData.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      
+      const { data: newCompany, error: companyError } = await supabase
+        .from('companies')
+        .insert({
+          name: formData.name,
+          slug: slug + '-' + Math.floor(Math.random() * 1000),
+          email: formData.email,
+          phone: formData.phone,
+          plan: formData.plan,
+          status: 'ACTIVE'
+        })
+        .select()
+        .single();
+        
+      if (companyError) throw companyError;
+
+      // 2. Log activity
+      await supabase.from('logs').insert({
+        tenant_id: newCompany.id,
+        user_id: user.id,
+        action: 'COMPANY_CREATED',
+        details: {
+          title: `Empresa ${formData.name} criada`,
+          subtitle: `Por ${user.name}`
+        }
+      });
+
+      if (onSuccess) onSuccess();
       onClose();
-    }, 1500);
+    } catch (err: any) {
+      console.error('Error creating company:', err);
+      setError(err.message || 'Erro ao criar empresa');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -51,6 +100,12 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
         <div className="p-6 overflow-y-auto flex-1">
           <form id="new-company-form" onSubmit={handleSubmit} className="space-y-6">
             
+            {error && (
+               <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-500 text-sm">
+                  {error}
+               </div>
+            )}
+            
             {/* Logo Upload Mockup */}
             <div className="flex items-start gap-6">
               <div className="w-24 h-24 rounded-2xl bg-[var(--color-background)] border-2 border-dashed border-[var(--color-border)] flex flex-col items-center justify-center text-[var(--color-text-muted)] cursor-pointer group">
@@ -74,6 +129,8 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
                     <input 
                       type="text" 
                       required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Ex: Lotes Prime Empreendimentos LTDA"
                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
                     />
@@ -81,13 +138,15 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
                </div>
 
                <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Email (Admin)</label>
+                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Email (Para Contato Geral)</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
                     <input 
                       type="email" 
                       required
-                      placeholder="admin@empresa.com.br"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="contato@empresa.com.br"
                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
                     />
                   </div>
@@ -99,6 +158,8 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
                     <Phone className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
                     <input 
                       type="tel" 
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="(00) 00000-0000"
                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
                     />
@@ -106,21 +167,12 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
                </div>
 
                <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Senha Provisória</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
-                    <input 
-                      type="text" 
-                      required
-                      defaultValue="Mudar123!"
-                      className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                    />
-                  </div>
-               </div>
-
-               <div className="space-y-1.5">
                   <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Plano</label>
-                  <select className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-[11px] px-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] appearance-none">
+                  <select 
+                    value={formData.plan}
+                    onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-[11px] px-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] appearance-none"
+                  >
                     <option value="BASIC">Plano Básico</option>
                     <option value="PRO">Plano Profissional</option>
                     <option value="ENTERPRISE">Enterprise</option>
@@ -131,7 +183,7 @@ export default function NewCompanyModal({ isOpen, onClose }: NewCompanyModalProp
             <div className="p-4 rounded-xl bg-[#06b6d4]/10 border border-[#06b6d4]/20 text-sm">
                <strong className="text-[#06b6d4] block mb-1">Criação de Tenant:</strong>
                <p className="text-white/80 text-xs leading-relaxed">
-                 O sistema irá instanciar o <strong>tenant_id</strong> para esta empresa isolando seus dados. A empresa não terá acesso a lotes, clientes ou financeiro de outros tenants.
+                 O sistema instanciará o <strong>tenant_id</strong> isolando seus dados. Devido à segurança, o usuário Master da respectiva empresa deverá ser criado através do Console do Supabase (Aba Auth).
                </p>
             </div>
 

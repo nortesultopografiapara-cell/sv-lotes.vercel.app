@@ -12,9 +12,12 @@ import {
   Bell,
   User,
   ChevronDown,
-  Building2
+  Building2,
+  LogOut
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 
 const getMenuItems = (role: string) => {
   const baseItems = [
@@ -43,49 +46,33 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
+  
+  const { user, loading: isCheckingAuth } = useAuth();
+  
   useEffect(() => {
-    // Basic mock authentication check
-    const checkAuth = () => {
-      const isAuthPath = pathname === '/login';
-      const authStr = localStorage.getItem('sv_lotes_auth');
-      let userData = null;
-
-      if (authStr) {
-        try {
-          userData = JSON.parse(authStr);
-        } catch(e) {
-          userData = null;
-        }
-      }
-      
-      const loggedIn = !!userData;
-      
-      if (!loggedIn && !isAuthPath) {
+    if (!isCheckingAuth) {
+      if (!user && pathname !== '/login') {
         router.push('/login');
-      } else if (loggedIn && isAuthPath) {
+      } else if (user && pathname === '/login') {
         router.push('/');
       }
-      
-      setUser(userData);
-      setIsCheckingAuth(false);
-    };
-    
-    checkAuth();
+    }
+  }, [user, isCheckingAuth, pathname, router]);
 
+  useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, [pathname, router]);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 
-  const handleLogout = () => {
-    localStorage.removeItem('sv_lotes_auth');
-    router.push('/login');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   if (isCheckingAuth) {

@@ -1,36 +1,71 @@
 'use client';
 
-import { useState } from 'react';
-import { Map as MapIcon, Mail, Lock, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Map as MapIcon, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('severino@nortesultopografia.com.br');
-  const [password, setPassword] = useState('superadmin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.push('/');
+      }
+    });
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSupabaseConfigured) {
+      setError('Variáveis de ambiente do Supabase não configuradas no .env');
+      return;
+    }
+    
     setLoading(true);
-    // MOCK LOGIN FOR NOW ALTHOUGH IT REQUIRED FULL AUTH.
-    // If Supabase is connected we would call supabase.auth.signInWithPassword
-    setTimeout(() => {
-      // Mocked Auth Response with Role
-      const role = email === 'severino@nortesultopografia.com.br' ? 'SUPER_ADMIN' : 'ADMIN';
-      
-      const authData = {
+    setError(null);
+    
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
-        role,
-        tenantId: role === 'SUPER_ADMIN' ? null : 'tenant-demo-id',
-        name: role === 'SUPER_ADMIN' ? 'Severino José' : 'Admin Empresa'
-      };
-      
-      localStorage.setItem('sv_lotes_auth', JSON.stringify(authData));
-      
+        password,
+      });
+
+      if (authError) {
+        setError(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      // Check user role from our public.users table
+      if (data.user) {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+          
+        if (userError || !userData) {
+           setError('Usuário não possui perfil no sistema ou ocorreu um erro.');
+           setLoading(false);
+           // Sign out since they don't have a valid profile
+           await supabase.auth.signOut();
+           return;
+        }
+        
+        // Success
+        router.push('/');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro no login.');
       setLoading(false);
-      router.push('/');
-    }, 1000);
+    }
   };
 
   return (
@@ -41,7 +76,7 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md bg-[var(--color-surface)]/80 backdrop-blur-xl rounded-2xl border border-[var(--color-border)] shadow-2xl p-8 transform transition-all relative z-10">
         
-        <div className="flex flex-col items-center justify-center mb-10">
+        <div className="flex flex-col items-center justify-center mb-8">
           <div className="w-16 h-16 bg-[var(--color-primary)]/10 rounded-2xl flex items-center justify-center mb-4 text-[var(--color-primary)] border border-[var(--color-primary)]/20 shadow-[0_0_15px_rgba(242,125,38,0.2)]">
             <MapIcon className="w-8 h-8" />
           </div>
@@ -50,6 +85,20 @@ export default function LoginPage() {
             Gestão & GIS
           </p>
         </div>
+
+        {error && (
+          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-500 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {!isSupabaseConfigured && (
+          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-500 text-xs">
+            <p className="font-bold mb-1">Aviso de Configuração (AI Studio):</p>
+            <p>O NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY não estão definidos.</p>
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
@@ -88,7 +137,7 @@ export default function LoginPage() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)]"
+            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
           </button>

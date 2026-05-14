@@ -4,18 +4,9 @@ import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Polygon, Popup, useMap, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Layers, Map as MapIcon } from 'lucide-react';
-
-// FAKE GEOJSON DATA FOR THE SAKE OF PREVIEW
-// In a real scenario, this would come from Supabase.
-const MOCK_LOTS = [
-  { id: '1', block: 'A', number: '01', status: 'AVAILABLE', area: 250, price: 150000, bounds: [[-1.4550, -48.4900], [-1.4550, -48.4895], [-1.4545, -48.4895], [-1.4545, -48.4900]] as [number, number][] },
-  { id: '2', block: 'A', number: '02', status: 'RESERVED', area: 250, price: 150000, bounds: [[-1.4550, -48.4895], [-1.4550, -48.4890], [-1.4545, -48.4890], [-1.4545, -48.4895]] as [number, number][] },
-  { id: '3', block: 'A', number: '03', status: 'SOLD', area: 300, price: 180000, bounds: [[-1.4550, -48.4890], [-1.4550, -48.4885], [-1.4545, -48.4885], [-1.4545, -48.4890]] as [number, number][] },
-  { id: '4', block: 'B', number: '01', status: 'AVAILABLE', area: 200, price: 120000, bounds: [[-1.4556, -48.4900], [-1.4556, -48.4896], [-1.4552, -48.4896], [-1.4552, -48.4900]] as [number, number][] },
-  { id: '5', block: 'B', number: '02', status: 'AVAILABLE', area: 200, price: 120000, bounds: [[-1.4556, -48.4896], [-1.4556, -48.4892], [-1.4552, -48.4892], [-1.4552, -48.4896]] as [number, number][] },
-  { id: '6', block: 'B', number: '03', status: 'SOLD', area: 200, price: 120000, bounds: [[-1.4556, -48.4892], [-1.4556, -48.4888], [-1.4552, -48.4888], [-1.4552, -48.4892]] as [number, number][] }
-];
+import { Layers, Map as MapIcon, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 
 const getStatusColor = (status: string) => {
   switch(status) {
@@ -35,23 +26,128 @@ const getStatusLabel = (status: string) => {
   }
 };
 
-function MapController() {
+function MapController({ lots }: { lots: any[] }) {
   const map = useMap();
   useEffect(() => {
-    // Optionally fit bounds based on lots
-    if (MOCK_LOTS.length > 0) {
-      const bounds = L.latLngBounds(MOCK_LOTS[0].bounds);
-      MOCK_LOTS.forEach(lot => bounds.extend(L.latLngBounds(lot.bounds)));
+    if (lots.length > 0) {
+      const bounds = L.latLngBounds(lots[0].bounds);
+      lots.forEach(lot => {
+         if (lot.bounds && lot.bounds.length > 0) {
+            bounds.extend(L.latLngBounds(lot.bounds));
+         }
+      });
       map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [map]);
+  }, [map, lots]);
   return null;
 }
 
 export default function GISMap() {
-  // Center roughly in Belém/Castanhal area for the mock
+  const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
   const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'>('satellite');
+  const [lots, setLots] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadLots() {
+      if (!user) return;
+      try {
+        let query = supabase.from('lots').select('*, blocks(name, projects(name))');
+        
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          query = query.eq('tenant_id', user.tenant_id);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        if (data) {
+          const parsedLots = data.map(lot => {
+            let bounds: [number, number][] = [];
+            
+            // Parse GeoJSON Polygon to Leaflet [lat, lng] array
+            if (lot.geom && lot.geom.type === 'Polygon' && lot.geom.coordinates) {
+              const coords = lot.geom.coordinates[0]; // exterior ring
+              bounds = coords.map((c: number[]) => [c[1], c[0]]); // [lng, lat] -> [lat, lng]
+            }
+
+            return {
+              id: lot.id,
+              block: lot.blocks?.name || '?',
+              projectName: lot.blocks?.projects?.name || '?',
+              number: lot.number,
+              status: lot.status,
+              area: Number(lot.area),
+              price: Number(lot.price),
+              bounds
+            };
+          });
+          
+          setLots(parsedLots);
+        }
+      } catch (e) {
+        console.error("Error loading map lots:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    loadLots();
+
+    const channel = supabase.channel('realtime:lots')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lots' }, () => {
+         loadLots();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  const handleLotAction = async (lot: any, action: 'RESERVE' | 'SELL') => {
+    if (!user) return;
+    setActionLoading(lot.id);
+    const newStatus = action === 'RESERVE' ? 'RESERVED' : 'SOLD';
+    
+    try {
+      const { error: updateError } = await supabase.from('lots')
+        .update({ status: newStatus })
+        .eq('id', lot.id);
+        
+      if (updateError) throw updateError;
+      
+      const title = action === 'RESERVE' 
+        ? `Lote Quadra ${lot.block} Lote ${lot.number} reservado`
+        : `Lote Quadra ${lot.block} Lote ${lot.number} vendido`;
+
+      await supabase.from('logs').insert({
+        tenant_id: user.tenant_id || lot.tenant_id,
+        user_id: user.id,
+        action: newStatus,
+        details: {
+          title,
+          subtitle: `Ação no mapa por ${user.name}`
+        }
+      });
+      
+    } catch(e) {
+      console.error("Action error:", e);
+      alert("Erro ao realizar ação");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  if (loading) {
+     return (
+        <div className="w-full h-full flex items-center justify-center bg-[var(--color-background)]">
+           <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
+        </div>
+     );
+  }
 
   return (
     <div className="w-full h-full relative">
@@ -74,9 +170,9 @@ export default function GISMap() {
         )}
 
         <ZoomControl position="bottomright" />
-        <MapController />
+        <MapController lots={lots} />
 
-        {MOCK_LOTS.map((lot) => {
+        {lots.filter(lot => lot.bounds.length > 0).map((lot) => {
           const color = getStatusColor(lot.status);
           return (
             <Polygon 
@@ -113,6 +209,7 @@ export default function GISMap() {
                       Quadra {lot.block}
                     </span>
                   </div>
+                  <div className="text-[11px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">{lot.projectName}</div>
                   
                   <div className="space-y-2 mb-4">
                     <div className="flex justify-between text-sm">
@@ -132,13 +229,21 @@ export default function GISMap() {
                   </div>
 
                   {lot.status === 'AVAILABLE' && (
-                    <button className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-bold py-2 rounded transition-colors">
-                      Reservar Lote
+                    <button 
+                      onClick={() => handleLotAction(lot, 'RESERVE')}
+                      disabled={actionLoading === lot.id}
+                      className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Reservar Lote'}
                     </button>
                   )}
                   {lot.status === 'RESERVED' && (
-                    <button className="w-full bg-[var(--color-success)] hover:bg-[#16a34a] text-white text-sm font-bold py-2 rounded transition-colors">
-                      Efetivar Venda
+                    <button 
+                      onClick={() => handleLotAction(lot, 'SELL')}
+                      disabled={actionLoading === lot.id}
+                      className="w-full bg-[var(--color-success)] hover:bg-[#16a34a] text-white text-sm font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Efetivar Venda'}
                     </button>
                   )}
                   {lot.status === 'SOLD' && (

@@ -1,10 +1,46 @@
 'use client';
 
-import { Users, Search, Plus, Filter, Phone, Mail, MoreHorizontal } from 'lucide-react';
-import { useState } from 'react';
+import { Users, Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function CRMPage() {
+  const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadClients() {
+      if (!user) return;
+      try {
+        let query = supabase.from('clients').select(`*, reservations(id), sales(id)`).order('created_at', { ascending: false });
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        setClients(data || []);
+      } catch(err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (!authLoading) {
+      loadClients();
+    }
+  }, [user, authLoading]);
+
+  const filteredClients = clients.filter(c => 
+     c.full_name?.toLowerCase().includes(search.toLowerCase()) || 
+     c.email?.toLowerCase().includes(search.toLowerCase()) ||
+     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full">
@@ -50,38 +86,37 @@ export default function CRMPage() {
               </tr>
             </thead>
             <tbody>
-              <ClientRow 
-                name="João Batista Souza"
-                cpf="123.456.789-00"
-                email="joao.batista@exemplo.com"
-                phone="(91) 98888-1111"
-                status="COMPROU"
-                lastActive="Ontem"
-              />
-              <ClientRow 
-                name="Maria Fernandes"
-                cpf="098.765.432-11"
-                email="maria.f@exemplo.com"
-                phone="(91) 97777-2222"
-                status="MUITO QUENTE"
-                lastActive="Hoje, 10h"
-              />
-              <ClientRow 
-                name="Carlos Eduardo Silva"
-                cpf=""
-                email="carlos.ed@exemplo.com"
-                phone="(91) 96666-3333"
-                status="NOVO LEAD"
-                lastActive="Há 2h"
-              />
-              <ClientRow 
-                name="Ana Clara"
-                cpf="555.444.333-22"
-                email="ana.clara@exemplo.com"
-                phone="(91) 95555-4444"
-                status="RESERVOU"
-                lastActive="Há 3 dias"
-              />
+              {loading ? (
+                <tr>
+                   <td colSpan={5} className="text-center p-8">
+                      <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin mx-auto" />
+                   </td>
+                </tr>
+              ) : filteredClients.length > 0 ? (
+                filteredClients.map(c => {
+                  let status = 'NOVO LEAD';
+                  if (c.reservations?.length > 0) status = 'RESERVOU';
+                  if (c.sales?.length > 0) status = 'COMPROU';
+
+                  return (
+                    <ClientRow 
+                      key={c.id}
+                      name={c.full_name}
+                      cpf={c.cpf_cnpj}
+                      email={c.email || '—'}
+                      phone={c.phone || '—'}
+                      status={status}
+                      lastActive={new Date(c.created_at).toLocaleDateString()}
+                    />
+                  );
+                })
+              ) : (
+                <tr>
+                   <td colSpan={5} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
+                      Nenhum cliente cadastrado.
+                   </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

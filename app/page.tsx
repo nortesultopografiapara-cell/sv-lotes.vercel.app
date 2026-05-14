@@ -16,23 +16,100 @@ import {
   Crosshair,
   FileText,
   Wallet,
-  UserPlus
+  UserPlus,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null);
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    available: 0,
+    reserved: 0,
+    sold: 0,
+    vgv: 0
+  });
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const authStr = localStorage.getItem('sv_lotes_auth');
-    if (authStr) {
+    async function loadDashboardStats() {
+      if (!user) return;
+      
       try {
-        const parsed = JSON.parse(authStr);
-        setTimeout(() => setUser(parsed), 0);
-      } catch(e) {}
+        let query = supabase.from('lots').select('status, price', { count: 'exact' });
+        
+        // Se não for super admin, limita por tenant
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          query = query.eq('tenant_id', user.tenant_id);
+        }
+
+        const { data, error } = await query;
+        
+        if (error) throw error;
+
+        let available = 0;
+        let reserved = 0;
+        let sold = 0;
+        let vgv = 0;
+
+        if (data) {
+          data.forEach(lot => {
+            if (lot.status === 'AVAILABLE') available++;
+            if (lot.status === 'RESERVED') reserved++;
+            if (lot.status === 'SOLD') {
+              sold++;
+              vgv += Number(lot.price || 0); // Accumulate actual sales value or lot price.
+            }
+          });
+        }
+
+        // Load Activities / Logs
+        let logsQuery = supabase.from('logs').select('*, users(full_name)').order('created_at', { ascending: false }).limit(5);
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          logsQuery = logsQuery.eq('tenant_id', user.tenant_id);
+        }
+        
+        const { data: logsData } = await logsQuery;
+        setActivities(logsData || []);
+        
+        setStats({ available, reserved, sold, vgv });
+      } catch (err) {
+        console.error("Dashboard stats error:", err);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, []);
+
+    loadDashboardStats();
+  }, [user]);
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  };
+
+
+  const formatTimeAgo = (dateStr: string) => {
+    const diff = new Date().getTime() - new Date(dateStr).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 60) return `Há ${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Há ${hours} h`;
+    return `Há ${Math.floor(hours / 24)} dias`;
+  };
+
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case 'RESERVED': return { icon: Calendar, color: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]' };
+      case 'SOLD': return { icon: Tag, color: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' };
+      case 'NEW_CLIENT': return { icon: UserPlus, color: 'bg-[var(--color-purple)]/10 text-[var(--color-purple)]' };
+      case 'PAYMENT': return { icon: Wallet, color: 'bg-[var(--color-success)]/10 text-[var(--color-success)]' };
+      default: return { icon: FileText, color: 'bg-[var(--color-info)]/10 text-[var(--color-info)]' };
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8">
@@ -55,39 +132,39 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard 
           title="Lotes Disponíveis" 
-          value="2.145" 
+          value={loading ? '-' : stats.available} 
           icon={MapIcon} 
-          trend="55% do total"
+          trend=""
           iconColor="bg-[var(--color-success)] text-white"
           trendColor="text-[var(--color-success)]"
-          hasChart={true}
+          hasChart={false}
         />
         <StatCard 
           title="Lotes Reservados" 
-          value="382" 
+          value={loading ? '-' : stats.reserved} 
           icon={Calendar} 
-          trend="10% do total"
+          trend=""
           iconColor="bg-[var(--color-warning)] text-white"
           trendColor="text-[var(--color-warning)]"
-          hasChart={true}
+          hasChart={false}
         />
         <StatCard 
           title="Lotes Vendidos" 
-          value="1.315" 
+          value={loading ? '-' : stats.sold} 
           icon={Tag} 
-          trend="34% do total"
+          trend=""
           iconColor="bg-[var(--color-danger)] text-white"
           trendColor="text-[var(--color-danger)]"
-          hasChart={true}
+          hasChart={false}
         />
         <StatCard 
           title="VGV Total" 
-          value="R$ 42.5M" 
+          value={loading ? '-' : formatCurrency(stats.vgv)} 
           icon={DollarSign} 
-          trend="+12.4% este mês"
+          trend=""
           iconColor="bg-[var(--color-info)] text-white"
           trendColor="text-[var(--color-info)]"
-          hasChart={true}
+          hasChart={false}
         />
       </div>
 
@@ -128,15 +205,15 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-8 text-[13px]">
                   <div className="flex items-center gap-3 text-white"><div className="w-3.5 h-3.5 rounded-[4px] bg-[var(--color-success)]" /> Disponível</div>
-                  <span className="font-mono text-white text-right">2.145</span>
+                  <span className="font-mono text-white text-right">{loading ? '-' : stats.available}</span>
                 </div>
                 <div className="flex items-center justify-between gap-8 text-[13px]">
                   <div className="flex items-center gap-3 text-white"><div className="w-3.5 h-3.5 rounded-[4px] bg-[var(--color-warning)]" /> Reservado</div>
-                  <span className="font-mono text-white text-right">382</span>
+                  <span className="font-mono text-white text-right">{loading ? '-' : stats.reserved}</span>
                 </div>
                 <div className="flex items-center justify-between gap-8 text-[13px]">
                   <div className="flex items-center gap-3 text-white"><div className="w-3.5 h-3.5 rounded-[4px] bg-[var(--color-danger)]" /> Vendido</div>
-                  <span className="font-mono text-white text-right">1.315</span>
+                  <span className="font-mono text-white text-right">{loading ? '-' : stats.sold}</span>
                 </div>
               </div>
             </div>
@@ -160,41 +237,34 @@ export default function DashboardPage() {
           </div>
           
           <div className="space-y-6 flex-1 overflow-y-auto pr-2 pb-2">
-            <FeedItem 
-              time="Há 10 min"
-              title="Lote Q05 LT 12 reservado"
-              subtitle="Por Maria Silva"
-              icon={Calendar}
-              iconColor="bg-[var(--color-success)]/10 text-[var(--color-success)]"
-            />
-            <FeedItem 
-              time="Há 25 min"
-              title="Lote Q02 LT 08 vendido"
-              subtitle="Para João Santos"
-              icon={Tag}
-              iconColor="bg-[var(--color-danger)]/10 text-[var(--color-danger)]"
-            />
-            <FeedItem 
-              time="Há 1 hora"
-              title="Contrato #1234 emitido"
-              subtitle="Lote Q01 LT 03"
-              icon={FileText}
-              iconColor="bg-[var(--color-info)]/10 text-[var(--color-info)]"
-            />
-            <FeedItem 
-              time="Há 2 horas"
-              title="Pagamento recebido"
-              subtitle="Parcela 3/120 - R$ 850,00"
-              icon={Wallet}
-              iconColor="bg-[var(--color-warning)]/10 text-[var(--color-warning)]"
-            />
-            <FeedItem 
-              time="Há 3 horas"
-              title="Novo cliente cadastrado"
-              subtitle="Carlos Alberto"
-              icon={UserPlus}
-              iconColor="bg-[var(--color-purple)]/10 text-[var(--color-purple)]"
-            />
+            {loading ? (
+              <div className="flex flex-col gap-4 text-[var(--color-text-muted)] text-sm items-center justify-center h-full">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Carregando...
+              </div>
+            ) : activities.length > 0 ? (
+              activities.map((activity) => {
+                const { icon, color } = getActionIcon(activity.action);
+                const title = activity.details?.title || activity.action;
+                const subtitle = activity.details?.subtitle || `Por ${activity.users?.full_name || 'Usuário'}`;
+                
+                return (
+                  <FeedItem 
+                    key={activity.id}
+                    time={formatTimeAgo(activity.created_at)}
+                    title={title}
+                    subtitle={subtitle}
+                    icon={icon}
+                    iconColor={color}
+                  />
+                );
+              })
+            ) : (
+              <div className="flex flex-col gap-2 text-[var(--color-text-muted)] text-sm items-center justify-center h-full">
+                <FileText className="w-8 h-8 opacity-20" />
+                Nenhuma atividade recente.
+              </div>
+            )}
           </div>
         </div>
 
@@ -210,7 +280,7 @@ export default function DashboardPage() {
                </div>
                <div>
                  <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">Total de Lotes</p>
-                 <h4 className="text-xl font-medium text-white tracking-wide">3.842</h4>
+                 <h4 className="text-xl font-medium text-white tracking-wide">{loading ? '-' : (stats.available + stats.reserved + stats.sold)}</h4>
                </div>
             </div>
             <div className="flex items-center gap-4">
@@ -219,7 +289,7 @@ export default function DashboardPage() {
                </div>
                <div>
                  <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">Reservas Ativas</p>
-                 <h4 className="text-xl font-medium text-white tracking-wide">128</h4>
+                 <h4 className="text-xl font-medium text-white tracking-wide">{loading ? '-' : stats.reserved}</h4>
                </div>
             </div>
             <div className="flex items-center gap-4">
@@ -227,8 +297,8 @@ export default function DashboardPage() {
                   <Tag className="w-6 h-6" />
                </div>
                <div>
-                 <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">Vendas do Mês</p>
-                 <h4 className="text-xl font-medium text-white tracking-wide">56</h4>
+                 <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">Lotes Vendidos</p>
+                 <h4 className="text-xl font-medium text-white tracking-wide">{loading ? '-' : stats.sold}</h4>
                </div>
             </div>
             <div className="flex items-center gap-4">
@@ -236,8 +306,8 @@ export default function DashboardPage() {
                   <DollarSign className="w-6 h-6" />
                </div>
                <div>
-                 <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">Recebimentos</p>
-                 <h4 className="text-xl font-medium text-white tracking-wide">R$ 285.740,00</h4>
+                 <p className="text-[13px] text-[var(--color-text-muted)] mb-0.5">VGV Total</p>
+                 <h4 className="text-xl font-medium text-white tracking-wide">{loading ? '-' : formatCurrency(stats.vgv)}</h4>
                </div>
             </div>
          </div>

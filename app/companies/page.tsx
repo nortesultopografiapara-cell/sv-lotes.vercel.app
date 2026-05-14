@@ -4,36 +4,67 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, MoreHorizontal, CheckCircle2, 
-  XOctagon, Power, Users, Map as MapIcon, Database, Eye
+  XOctagon, Power, Users, Map as MapIcon, Database, Eye, Loader2
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function CompaniesPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
   // Verification if user is SUPER_ADMIN
   useEffect(() => {
-    const authStr = localStorage.getItem('sv_lotes_auth');
-    if (authStr) {
-      try {
-        const user = JSON.parse(authStr);
-        if (user.role !== 'SUPER_ADMIN') {
-          router.push('/'); // Redirect away if not authorized
-        } else {
-          setTimeout(() => setLoading(false), 0);
-        }
-      } catch {
+    if (!authLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'SUPER_ADMIN') {
         router.push('/');
+      } else {
+        loadCompanies();
       }
-    } else {
-      router.push('/login');
     }
-  }, [router]);
+  }, [authLoading, user, router]);
 
-  if (loading) return null; // Avoid flicker
+  const loadCompanies = async () => {
+    setDataLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*, projects(count), users(count)')
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      setCompanies(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  if (authLoading || (dataLoading && companies.length === 0)) {
+     return (
+       <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
+          <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
+       </div>
+     );
+  }
+
+  const activeCompanies = companies.filter(c => c.status === 'ACTIVE').length;
+  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
+  const totalProjects = companies.reduce((acc, c) => acc + (c.projects?.[0]?.count || 0), 0);
+
+  const filteredCompanies = companies.filter(c => 
+     c.name.toLowerCase().includes(search.toLowerCase()) || 
+     c.slug.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
@@ -58,10 +89,10 @@ export default function CompaniesPage() {
 
       {/* Multi-Tenant Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total de Empresas" value="12" icon={Database} iconColor="text-[#06b6d4]" bg="bg-[#06b6d4]/10" border="border-[#06b6d4]/20" />
-        <StatCard title="Empresas Ativas" value="10" icon={CheckCircle2} iconColor="text-[var(--color-success)]" bg="bg-[var(--color-success)]/10" border="border-[var(--color-success)]/20" />
-        <StatCard title="Empresas Online" value="4" icon={Power} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
-        <StatCard title="Total de Usuários" value="84" icon={Users} iconColor="text-[var(--color-purple)]" bg="bg-[var(--color-purple)]/10" border="border-[var(--color-purple)]/20" />
+        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[#06b6d4]" bg="bg-[#06b6d4]/10" border="border-[#06b6d4]/20" />
+        <StatCard title="Empresas Ativas" value={activeCompanies} icon={CheckCircle2} iconColor="text-[var(--color-success)]" bg="bg-[var(--color-success)]/10" border="border-[var(--color-success)]/20" />
+        <StatCard title="Total de Loteamentos" value={totalProjects} icon={MapIcon} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
+        <StatCard title="Total de Usuários" value={totalUsers} icon={Users} iconColor="text-[var(--color-purple)]" bg="bg-[var(--color-purple)]/10" border="border-[var(--color-purple)]/20" />
       </div>
 
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl flex-1 flex flex-col overflow-hidden shadow-lg">
@@ -77,11 +108,6 @@ export default function CompaniesPage() {
               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
             />
           </div>
-          <select className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg px-4 py-2 text-sm text-[var(--color-text-muted)] focus:outline-none focus:border-[#06b6d4]">
-            <option>Todas as Empresas</option>
-            <option>Apenas Ativas</option>
-            <option>Suspensas</option>
-          </select>
         </div>
 
         {/* List of Companies */}
@@ -98,59 +124,36 @@ export default function CompaniesPage() {
               </tr>
             </thead>
             <tbody>
-              {/* Mock Data */}
-              <CompanyRow 
-                name="Norte Sul Topografia"
-                slug="nortesul"
-                email="contato@nortesultopografia.com.br"
-                phone="(91) 99999-0000"
-                status="ACTIVE"
-                projects={5}
-                users={12}
-                isMain
-              />
-              <CompanyRow 
-                name="Lotes Prime Empreendimentos"
-                slug="lotesprime"
-                email="admin@lotesprime.com.br"
-                phone="(11) 98888-1111"
-                status="ACTIVE"
-                projects={2}
-                users={8}
-              />
-              <CompanyRow 
-                name="Imobiliária Horizonte"
-                slug="horizonte"
-                email="gerencia@horizonte.com.br"
-                phone="(21) 97777-2222"
-                status="ACTIVE"
-                projects={8}
-                users={25}
-              />
-              <CompanyRow 
-                name="Global Urbanismo"
-                slug="globalurb"
-                email="contato@globalurb.com.br"
-                phone="(41) 96666-3333"
-                status="INACTIVE"
-                projects={0}
-                users={1}
-              />
-              <CompanyRow 
-                name="Invest Lotes"
-                slug="investlotes"
-                email="suporte@investlotes.com"
-                phone="(31) 95555-4444"
-                status="SUSPENDED"
-                projects={1}
-                users={3}
-              />
+              {filteredCompanies.map((c, idx) => (
+                <CompanyRow 
+                  key={c.id}
+                  name={c.name}
+                  slug={c.slug}
+                  email={c.email || ''}
+                  phone={c.phone || ''}
+                  status={c.status}
+                  projects={c.projects?.[0]?.count || 0}
+                  users={c.users?.[0]?.count || 0}
+                  isMain={idx === 0} // just for highlight
+                />
+              ))}
+              {filteredCompanies.length === 0 && (
+                 <tr>
+                    <td colSpan={6} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
+                       Nenhuma empresa encontrada.
+                    </td>
+                 </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      <NewCompanyModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <NewCompanyModal 
+         isOpen={isModalOpen} 
+         onClose={() => setIsModalOpen(false)} 
+         onSuccess={loadCompanies}
+      />
     </div>
   );
 }

@@ -1,11 +1,80 @@
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function FinancePage() {
+  const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Stats
+  const [stats, setStats] = useState({
+     received: 0,
+     pending: 0,
+     overdue: 0,
+     overdueCount: 0
+  });
+
+  useEffect(() => {
+    async function loadFinance() {
+      if (!user) return;
+      try {
+        let query = supabase
+           .from('payments')
+           .select('*, sales(*, lots(number, blocks(name, projects(name))), clients(full_name))')
+           .order('due_date', { ascending: true });
+           
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+         let received = 0;
+         let pending = 0;
+         let overdue = 0;
+         let overdueCount = 0;
+
+         if (data) {
+           data.forEach(p => {
+              if (p.status === 'PAID') received += Number(p.amount);
+              if (p.status === 'PENDING') pending += Number(p.amount);
+              if (p.status === 'OVERDUE') {
+                 overdue += Number(p.amount);
+                 overdueCount++;
+              }
+           });
+           setPayments(data);
+         }
+         
+         setStats({ received, pending, overdue, overdueCount });
+
+      } catch(err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (!authLoading) {
+      loadFinance();
+    }
+  }, [user, authLoading]);
+
+  const filteredPayments = payments.filter(p => 
+     p.sales?.contract_url?.toLowerCase().includes(search.toLowerCase()) || 
+     p.sales?.clients?.full_name?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  };
+  
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -26,8 +95,8 @@ export default function FinancePage() {
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-[10px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Recebimentos Mês</p>
-              <h3 className="text-2xl font-light text-white">R$ 145.200,00</h3>
+              <p className="text-[10px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Recebimentos</p>
+              <h3 className="text-2xl font-light text-white">{loading ? '-' : formatCurrency(stats.received)}</h3>
             </div>
             <div className="p-2 rounded-lg bg-[var(--color-success)]/10 text-[var(--color-success)]">
               <TrendingUp className="w-5 h-5" />
@@ -38,8 +107,8 @@ export default function FinancePage() {
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-[10px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-1">A Receber Mês</p>
-              <h3 className="text-2xl font-light text-white">R$ 45.000,00</h3>
+              <p className="text-[10px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-1">A Receber</p>
+              <h3 className="text-2xl font-light text-white">{loading ? '-' : formatCurrency(stats.pending)}</h3>
             </div>
             <div className="p-2 rounded-lg bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
               <Banknote className="w-5 h-5" />
@@ -52,8 +121,8 @@ export default function FinancePage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-[10px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-1">Inadimplência</p>
-              <h3 className="text-2xl font-light text-[var(--color-danger)]">R$ 28.500,00</h3>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">12 contratos pendentes</p>
+              <h3 className="text-2xl font-light text-[var(--color-danger)]">{loading ? '-' : formatCurrency(stats.overdue)}</h3>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">{stats.overdueCount} contratos pendentes</p>
             </div>
             <div className="p-2 rounded-lg bg-[var(--color-danger)]/10 text-[var(--color-danger)]">
               <TrendingDown className="w-5 h-5" />
@@ -94,30 +163,38 @@ export default function FinancePage() {
               </tr>
             </thead>
             <tbody>
-              <FinanceRow 
-                contract="CTR-001/24"
-                lote="Qd A, Lt 01 - R. do Bosque"
-                client="João Batista Souza"
-                dueDate="15/05/2026"
-                value="R$ 1.500,00"
-                status="PAGO"
-              />
-              <FinanceRow 
-                contract="CTR-002/24"
-                lote="Qd C, Lt 15 - R. do Bosque"
-                client="Maria Fernandes"
-                dueDate="20/05/2026"
-                value="R$ 1.250,00"
-                status="A VENCER"
-              />
-              <FinanceRow 
-                contract="CTR-045/23"
-                lote="Qd D, Lt 05 - J. Águas"
-                client="Carlos Silva"
-                dueDate="05/05/2026"
-                value="R$ 950,00"
-                status="ATRASADO"
-              />
+              {loading ? (
+                <tr>
+                   <td colSpan={5} className="text-center p-8">
+                      <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin mx-auto" />
+                   </td>
+                </tr>
+              ) : filteredPayments.length > 0 ? (
+                filteredPayments.map(p => {
+                   const projectName = p.sales?.lots?.blocks?.projects?.name || 'Projeto?';
+                   const blockName = p.sales?.lots?.blocks?.name || 'Quadra?';
+                   const lotNumber = p.sales?.lots?.number || 'Lote?';
+                   const loteDesc = `${projectName} - ${blockName}, ${lotNumber}`;
+                   
+                   return (
+                      <FinanceRow 
+                        key={p.id}
+                        contract={p.sales?.contract_url || p.sales?.id?.split('-')[0].toUpperCase()}
+                        lote={loteDesc}
+                        client={p.sales?.clients?.full_name || 'Desconhecido'}
+                        dueDate={new Date(p.due_date).toLocaleDateString()}
+                        value={formatCurrency(Number(p.amount))}
+                        status={p.status}
+                      />
+                   );
+                })
+              ) : (
+                <tr>
+                   <td colSpan={5} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
+                      Nenhum recebimento encontrado.
+                   </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -129,12 +206,14 @@ export default function FinancePage() {
 function FinanceRow({ contract, lote, client, dueDate, value, status }: any) {
   const getStatusStyle = (s: string) => {
     switch(s) {
-      case 'PAGO': return 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/20';
-      case 'A VENCER': return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/20';
-      case 'ATRASADO': return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/20';
+      case 'PAID': return 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/20';
+      case 'PENDING': return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/20';
+      case 'OVERDUE': return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/20';
       default: return 'bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] border-[var(--color-border)]';
     }
   };
+
+  const statusLabel = status === 'PAID' ? 'PAGO' : status === 'PENDING' ? 'A VENCER' : 'EM ATRASO';
 
   return (
     <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group cursor-pointer">
@@ -153,7 +232,7 @@ function FinanceRow({ contract, lote, client, dueDate, value, status }: any) {
       </td>
       <td className="p-4 text-center">
         <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${getStatusStyle(status)}`}>
-          {status}
+          {statusLabel}
         </span>
       </td>
     </tr>
