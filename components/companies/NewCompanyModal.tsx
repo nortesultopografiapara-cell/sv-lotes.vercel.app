@@ -75,25 +75,20 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
       </div>
       <h3 className="text-xl font-bold text-white mb-2">Empresa Criada com Sucesso!</h3>
       <p className="text-[var(--color-text-muted)] text-sm max-w-md mb-6">
-        O tenant foi provisionado. O administrador pode acessar o sistema usando as credenciais provisórias abaixo:
+        O tenant foi provisionado. Um e-mail de convite padrão do Supabase foi enviado ao administrador.
       </p>
       
       <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl w-full max-w-sm overflow-hidden text-left mb-6">
-        <div className="px-4 py-3 border-b border-[var(--color-border)] grid grid-cols-3 gap-2 items-center">
+        <div className="px-4 py-3 border-[var(--color-border)] grid grid-cols-3 gap-2 items-center">
           <span className="text-xs font-mono font-bold text-[var(--color-text-muted)] col-span-1">LOGIN:</span>
           <span className="text-sm text-white col-span-2 select-all">{successData?.email}</span>
         </div>
-        <div className="px-4 py-3 grid grid-cols-3 gap-2 items-center">
-          <span className="text-xs font-mono font-bold text-[var(--color-text-muted)] col-span-1">SENHA:</span>
-          <span className="text-sm font-mono text-[#06b6d4] font-bold col-span-2 select-all tracking-wider">{successData?.password}</span>
-        </div>
       </div>
 
-      {formData.sendEmail && (
-        <p className="text-xs text-[var(--color-success)] mb-6 font-medium">
-           Email enviado com as instruções de acesso ao administrador.
-        </p>
-      )}
+      <p className="text-xs text-[var(--color-text-muted)] mb-6 max-w-md leading-relaxed">
+         Por favor, peça ao administrador para checar a caixa de entrada (ou pasta de spam) 
+         e clicar no link de acesso para definir sua senha.
+      </p>
 
       <button 
         onClick={onClose}

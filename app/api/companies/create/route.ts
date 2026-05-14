@@ -28,7 +28,27 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, cnpj, phone, email, plan, adminName, adminEmail, adminPhone, sendEmail } = body;
 
-    console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
+    // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
+    console.log(`[ETAPA 1] Criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+    
+    // Tenta criar o usuário por Convite, onde o próprio Supabase cuida de enviar o Email de Confirmação/Setup de Senha
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(adminEmail, {
+      data: {
+        full_name: adminName,
+        role: 'ADMIN' // tenant_id will be set later
+      }
+    });
+
+    if (authError) {
+      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError.message);
+      throw new Error(`O email ${adminEmail} já está em uso ou ocorreu um erro: ${authError.message}`);
+    }
+
+    authUserId = authUser.user.id;
+    console.log(`[SUCESSO] Usuário criado (ou convite enviado) na auth.users! ID: ${authUserId}`);
+
+    // 2. Create the tenant in public.companies
+    console.log(`[ETAPA 2] Criando tenant na tabela public.companies... Nome: ${name}`);
     const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
     
     const { data: newCompany, error: companyError } = await supabaseAdmin
@@ -47,35 +67,24 @@ export async function POST(req: Request) {
 
     if (companyError) {
       console.error('[ERRO] Falha ao criar empresa:', companyError.message);
-      return NextResponse.json({ error: `Erro ao criar empresa: ${companyError.message}` }, { status: 400 });
+      throw new Error(`Erro ao criar empresa: ${companyError.message}`);
     }
 
     newCompanyId = newCompany.id;
     console.log(`[SUCESSO] Empresa criada! ID: ${newCompanyId}`);
 
-    console.log(`[ETAPA 2] Criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
-    const temporaryPassword = generateTempPassword(8);
-
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: adminEmail,
-      password: temporaryPassword,
-      email_confirm: true,
-      user_metadata: {
-        full_name: adminName,
-        role: 'ADMIN',
-        tenant_id: newCompanyId
-      }
+    // Atualizar metadata do auth.user com o tenant_id agora que sabemos qual é
+    await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+       user_metadata: {
+         full_name: adminName,
+         role: 'ADMIN',
+         tenant_id: newCompanyId
+       }
     });
 
-    if (authError) {
-      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError.message);
-      throw new Error(`Erro ao criar conta de usuário: ${authError.message}`);
-    }
-
-    authUserId = authUser.user.id;
-    console.log(`[SUCESSO] Usuário criado na auth.users! ID: ${authUserId}`);
-
+    // 3. Cadastrando perfil em public.users
     console.log(`[ETAPA 3] Cadastrando perfil em public.users...`);
+
     const { error: userError } = await supabaseAdmin
       .from('users')
       .insert({
@@ -96,48 +105,14 @@ export async function POST(req: Request) {
 
     console.log(`[SUCESSO] Perfil criado em public.users!`);
 
-    console.log(`[ETAPA 4] Envio de e-mail com credenciais...`);
-    if (sendEmail) {
-      if (!process.env.RESEND_API_KEY) {
-        console.warn('[AVISO] RESEND_API_KEY não configurada. E-mail de credenciais não foi enviado.');
-      } else {
-        try {
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          
-          await resend.emails.send({
-            from: 'SV LOTES <onboarding@seusistema.com.br>', // Altere para seu domínio verificado
-            to: [adminEmail],
-            subject: 'Bem-vindo ao sistema SV LOTES - Acesso Administrativo',
-            html: `
-              <div style="font-family: sans-serif; max-w: 600px; margin: 0 auto;">
-                <h2>Olá, ${adminName}.</h2>
-                <p>A empresa <strong>${name}</strong> foi cadastrada com sucesso.</p>
-                <p>Você é o administrador do sistema. Seguem seus dados de acesso:</p>
-                <div style="background: #f4f4f5; padding: 16px; border-radius: 8px; margin: 24px 0;">
-                  <p style="margin: 0;"><strong>Link de Acesso:</strong> <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://svlotes.com.br'}">${process.env.NEXT_PUBLIC_SITE_URL || 'https://svlotes.com.br'}</a></p>
-                  <p style="margin: 8px 0 0 0;"><strong>E-mail:</strong> ${adminEmail}</p>
-                  <p style="margin: 8px 0 0 0;"><strong>Senha Provisória:</strong> <code style="color: #06b6d4; font-size: 16px;">${temporaryPassword}</code></p>
-                </div>
-                <p style="color: #ef4444; font-size: 14px;">Importante: Por questões de segurança, sua senha deverá ser alterada no primeiro acesso obrigatório.</p>
-              </div>
-            `
-          });
-          console.log(`[SUCESSO] Email enviado via Resend para ${adminEmail}.`);
-        } catch (emailErr: any) {
-          console.error('[ERRO EMAIL] O envio de email falhou, mas a criação de empresa prosseguiu:', emailErr.message);
-          // Não fazemos rollback por causa de erro no email
-        }
-      }
-    } else {
-      console.log(`[INFO] Envio de e-mail não foi solicitado.`);
-    }
-
+    console.log(`[ETAPA 4] Conclusão...`);
+    // Agora o e-mail é enviado nativamente pelo Supabase via inviteUserByEmail.
     console.log('[PROVISIONAMENTO CONCLUÍDO COM SUCESSO]');
     
     return NextResponse.json({ 
       success: true, 
       companyId: newCompanyId,
-      temporaryPassword 
+      message: 'Empresa criada com sucesso. Um convite por e-mail foi enviado ao administrador.'
     });
 
   } catch (error: any) {
