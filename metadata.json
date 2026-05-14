@@ -1,0 +1,8 @@
+{
+  "name": "SV_LOTES",
+  "description": "Plataforma completa de gestão imobiliária, loteamentos e GIS em tempo real.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}

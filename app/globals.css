@@ -1,0 +1,57 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+  
+  --color-background: #050505;
+  --color-surface-dim: #111111;
+  --color-surface: #18181A;
+  --color-surface-bright: #27272A;
+  
+  --color-border: #27272A;
+  --color-border-hover: #3F3F46;
+  
+  --color-primary: #F27D26; /* Warm Orange for contrast */
+  --color-primary-hover: #D96919;
+  
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-danger: #EF4444;
+  
+  --color-text-main: #FAFAFA;
+  --color-text-muted: #A1A1AA;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-main);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Leaflet dark theme override */
+.leaflet-container {
+  background: var(--color-surface-dim) !important;
+  font-family: var(--font-sans) !important;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--color-surface) !important;
+  color: var(--color-text-main) !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--color-border) !important;
+}
+.leaflet-popup-tip {
+  background: var(--color-surface) !important;
+}
+.leaflet-bar a {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text-main) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+.leaflet-bar a:hover {
+  background-color: var(--color-surface-bright) !important;
+}
