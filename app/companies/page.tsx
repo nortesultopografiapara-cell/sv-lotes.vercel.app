@@ -24,7 +24,7 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('*, projects(count), users(count)')
+        .select('*, users(count)')
         .order('created_at', { ascending: false });
         
       if (error) throw error;
