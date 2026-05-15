@@ -109,6 +109,10 @@ export default function MapPage() {
         const { data, error } = await supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
         
         if (error) {
+           if (error.message.includes('find the table') || error.message.includes('cache')) {
+               window.location.reload();
+               return;
+           }
            // Ignoramos erro de cache no carregamento se formos refazer a query
            throw error;
         }
@@ -198,11 +202,22 @@ export default function MapPage() {
           }
       }
       
+      if (insertResult.error && (insertResult.error.message.includes('find the table') || insertResult.error.message.includes('cache'))) {
+          // Force schema reload and retry
+          try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
+          insertResult = await supabase.from('projects').insert({
+              name: newProjectName.trim(),
+              tenant_id: finalTenantId
+          }).select('*, lots(status, geom)').single();
+      }
+      
       const { data, error } = insertResult;
       
       if (error) {
          if (error.message.includes('find the table') || error.message.includes('cache')) {
-             throw new Error("A tabela 'projects' não existe ou não está visível. Para resolver, vá no SQL Editor do seu Supabase e certifique-se de criar a tabela usando o script gerado, e clique em 'Reload schema' ou rode 'NOTIFY pgrst, ''reload schema'';'.");
+             // Forçando reload da página para limpar cache
+             window.location.reload();
+             return;
          }
          throw error;
       }
