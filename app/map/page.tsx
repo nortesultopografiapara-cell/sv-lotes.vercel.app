@@ -160,6 +160,18 @@ export default function MapPage() {
     }
   };
 
+  const handleDeleteProject = async (projectId: string) => {
+    if (!confirm("Tem certeza que deseja excluir este projeto?")) return;
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', projectId);
+      if (error) throw error;
+      setProjects(projects.filter(p => p.id !== projectId));
+    } catch (err: any) {
+      console.error(err);
+      alert("Erro ao excluir: " + err.message);
+    }
+  };
+
   const handleImportKML = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile || !selectedProject || !user) return;
@@ -210,6 +222,7 @@ export default function MapPage() {
              const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
                 project_id: selectedProject.id,
                 name: importQuadra.toUpperCase(),
+                block_name: importQuadra.toUpperCase(),
                 tenant_id: tId
              }).select().single();
              if (blockError) throw blockError;
@@ -463,6 +476,7 @@ export default function MapPage() {
                    key={p.id} 
                    project={p} 
                    onOpen={() => handleOpenProject(p)} 
+                   onDelete={() => handleDeleteProject(p.id)}
                  />
                ))}
              </div>
@@ -512,7 +526,7 @@ export default function MapPage() {
   );
 }
 
-function ProjectCard({ project, onOpen }: { project: any, onOpen: () => void }) {
+function ProjectCard({ project, onOpen, onDelete }: { project: any, onOpen: () => void, onDelete: () => void }) {
   const total = project.lots?.length || 0;
   const sold = project.lots?.filter((l: any) => l.status === 'SOLD').length || 0;
   const hasGis = project.lots?.some((l: any) => l.geom != null) || false;
@@ -534,7 +548,7 @@ function ProjectCard({ project, onOpen }: { project: any, onOpen: () => void }) 
              <button title="Editar" className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors">
                <Edit2 className="w-4 h-4" />
              </button>
-             <button title="Excluir" className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
+             <button title="Excluir" onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
                <Trash2 className="w-4 h-4" />
              </button>
           </div>
