@@ -123,9 +123,23 @@ export default function MapPage() {
     setCreatingProject(true);
     
     try {
+      let tenantId = user.tenant_id;
+
+      if (!tenantId) {
+        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
+        if (userData?.tenant_id) {
+          tenantId = userData.tenant_id;
+        }
+      }
+
+      if (!tenantId) {
+        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta.");
+        return;
+      }
+
       const { data, error } = await supabase.from('projects').insert({
         name: newProjectName.trim(),
-        tenant_id: user.tenant_id
+        tenant_id: tenantId
       }).select('*, lots(status, geom)').single();
       
       if (error) throw error;
@@ -151,6 +165,19 @@ export default function MapPage() {
     setImporting(true);
     
     try {
+      let tenantId = user.tenant_id;
+      if (!tenantId) {
+        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
+        if (userData?.tenant_id) {
+          tenantId = userData.tenant_id;
+        }
+      }
+
+      if (!tenantId) {
+        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta.");
+        return;
+      }
+
       const text = await importFile.text();
       const polygons = parseKML(text);
       
@@ -171,7 +198,7 @@ export default function MapPage() {
          const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
             project_id: selectedProject.id,
             name: importQuadra.toUpperCase(),
-            tenant_id: user.tenant_id
+            tenant_id: tenantId
          }).select().single();
          if (blockError) throw blockError;
          blockId = newBlock.id;
@@ -188,7 +215,7 @@ export default function MapPage() {
             area: 250, // Default fallback
             price: 50000, // Default fallback
             geom: geom,
-            tenant_id: user.tenant_id
+            tenant_id: tenantId
          };
       });
       
