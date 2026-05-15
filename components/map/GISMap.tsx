@@ -42,10 +42,34 @@ function MapController({ lots }: { lots: any[] }) {
   return null;
 }
 
-export default function GISMap() {
+function LocationController({ active }: { active: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (active) {
+      map.locate({ setView: true, maxZoom: 18, watch: true, enableHighAccuracy: true });
+      map.on('locationfound', (e) => {
+         // Could add a marker here for user position
+      });
+    } else {
+      map.stopLocate();
+    }
+  }, [active, map]);
+  return null;
+}
+
+export default function GISMap({ 
+  projectId, 
+  activeLayer = 'satellite',
+  gpsActive = false,
+  measureActive = false 
+}: { 
+  projectId?: string,
+  activeLayer?: 'streets'|'satellite'|'dark',
+  gpsActive?: boolean,
+  measureActive?: boolean
+}) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
-  const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'>('satellite');
   const [lots, setLots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -54,7 +78,11 @@ export default function GISMap() {
     async function loadLots() {
       if (!user) return;
       try {
-        let query = supabase.from('lots').select('*, blocks(name, projects(name))');
+        let query = supabase.from('lots').select('*, blocks!inner(name, project_id, projects(name))');
+        
+        if (projectId) {
+          query = query.eq('blocks.project_id', projectId);
+        }
         
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
           query = query.eq('tenant_id', user.tenant_id);
@@ -157,20 +185,28 @@ export default function GISMap() {
         className="w-full h-full"
         zoomControl={false}
       >
-        {activeLayer === 'streets' ? (
+        {activeLayer === 'streets' && (
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-        ) : (
+        )}
+        {activeLayer === 'satellite' && (
           <TileLayer
             attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           />
         )}
+        {activeLayer === 'dark' && (
+          <TileLayer
+            attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
+        )}
 
         <ZoomControl position="bottomright" />
         <MapController lots={lots} />
+        <LocationController active={gpsActive} />
 
         {lots.filter(lot => lot.bounds.length > 0).map((lot) => {
           const color = getStatusColor(lot.status);
@@ -258,23 +294,6 @@ export default function GISMap() {
         })}
       </MapContainer>
 
-      {/* Layer Control Custom */}
-      <div className="absolute bottom-6 left-4 md:left-[110px] z-[400]">
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-1 rounded-lg flex shadow-lg">
-          <button 
-            onClick={() => setActiveLayer('satellite')}
-            className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wide rounded-md transition-colors flex items-center gap-2 ${activeLayer === 'satellite' ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-muted)] hover:text-white'}`}
-          >
-            <Layers className="w-4 h-4" /> Satélite
-          </button>
-          <button 
-            onClick={() => setActiveLayer('streets')}
-            className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wide rounded-md transition-colors flex items-center gap-2 ${activeLayer === 'streets' ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-muted)] hover:text-white'}`}
-          >
-            <MapIcon className="w-4 h-4" /> Ruas
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

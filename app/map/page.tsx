@@ -1,6 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
+import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X } from 'lucide-react';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -12,45 +16,429 @@ const GISMap = dynamic(() => import('@/components/map/GISMap'), {
   )
 });
 
+// XML/KML Parser Utility
+function parseKML(xmlString: string) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+  const placemarks = xmlDoc.getElementsByTagName("Placemark");
+  const polygons: any[] = [];
+
+  for (let i = 0; i < placemarks.length; i++) {
+    const polygonNode = placemarks[i].getElementsByTagName("Polygon")[0];
+    if (polygonNode) {
+       const coordinatesNode = polygonNode.getElementsByTagName("coordinates")[0];
+       if (coordinatesNode) {
+         const coordsText = coordinatesNode.textContent || "";
+         const coordsArray = coordsText.trim().split(/\s+/).map(pair => {
+            const [lng, lat] = pair.split(',').map(Number);
+            return [lng, lat];
+         });
+         
+         // Fix rings
+         if (coordsArray.length > 0) {
+            const first = coordsArray[0];
+            const last = coordsArray[coordsArray.length - 1];
+            if (first[0] !== last[0] || first[1] !== last[1]) {
+               coordsArray.push([...first]);
+            }
+         }
+
+         polygons.push({
+           type: "Polygon",
+           coordinates: [coordsArray]
+         });
+       }
+    }
+  }
+  return polygons;
+}
+
 export default function MapPage() {
-  return (
-    <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
-      {/* Search/Tools Overlay */}
-      <div className="absolute top-4 left-4 right-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none">
-        <div className="bg-[var(--color-surface)]/90 backdrop-blur-md border border-[var(--color-border)] rounded-xl shadow-lg p-4 pointer-events-auto">
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-white mb-1">Módulo GIS</h2>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
-              Reserva do Bosque
-            </p>
-          </div>
+  const { user, loading: authLoading } = useAuth();
+  const [search, setSearch] = useState('');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+
+  // KML Import States
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importQuadra, setImportQuadra] = useState('');
+  const [importLoteInicial, setImportLoteInicial] = useState('1');
+  const [importOrdem, setImportOrdem] = useState<'ASC'|'DESC'>('ASC');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  // Map Tools States
+  const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'|'dark'>('satellite');
+  const [gpsActive, setGpsActive] = useState(false);
+  const [measureActive, setMeasureActive] = useState(false);
+
+  useEffect(() => {
+    async function loadProjects() {
+      if (!user) return;
+      try {
+        let query = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        setProjects(data || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    if (!authLoading) {
+      loadProjects();
+    }
+  }, [user, authLoading]);
+
+  const filteredProjects = projects.filter(p => 
+     p.name.toLowerCase().includes(search.toLowerCase()) || 
+     (p.location && p.location.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const handleOpenProject = (project: any) => {
+    setSelectedProject(project);
+  };
+
+  const handleBack = () => {
+    setSelectedProject(null);
+  };
+
+  const handleImportKML = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile || !selectedProject || !user) return;
+    setImporting(true);
+    
+    try {
+      const text = await importFile.text();
+      const polygons = parseKML(text);
+      
+      if (polygons.length === 0) {
+         alert('Nenhum polígono encontrado no arquivo KML.');
+         setImporting(false);
+         return;
+      }
+      
+      // 1. Criar ou buscar Quadra (block)
+      let blockId;
+      const { data: existingBlock } = await supabase.from('blocks')
+         .select('id').eq('project_id', selectedProject.id).eq('name', importQuadra.toUpperCase()).single();
+         
+      if (existingBlock) {
+         blockId = existingBlock.id;
+      } else {
+         const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
+            project_id: selectedProject.id,
+            name: importQuadra.toUpperCase(),
+            tenant_id: user.tenant_id
+         }).select().single();
+         if (blockError) throw blockError;
+         blockId = newBlock.id;
+      }
+      
+      // 2. Preparar lotes
+      let currentNumber = parseInt(importLoteInicial, 10);
+      const lotsToInsert = polygons.map((geom, index) => {
+         const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
+         return {
+            block_id: blockId,
+            number: numberStr,
+            status: 'AVAILABLE',
+            area: 250, // Default fallback
+            price: 50000, // Default fallback
+            geom: geom,
+            tenant_id: user.tenant_id
+         };
+      });
+      
+      const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
+      if (insertError) throw insertError;
+      
+      alert(`Importados ${lotsToInsert.length} lotes com sucesso!`);
+      setIsImportModalOpen(false);
+      setImportFile(null);
+      setImportQuadra('');
+      setImportLoteInicial('1');
+    } catch(err: any) {
+       console.error("Erro no import: ", err);
+       alert("Erro ao importar KML: " + err.message);
+    } finally {
+       setImporting(false);
+    }
+  };
+
+  // Se um projeto foi selecionado, exibe o Mapa
+  if (selectedProject) {
+    return (
+      <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
+        {/* Top Floating Header inside Map */}
+        <div className="absolute top-4 left-4 right-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none flex flex-col gap-2">
           
-          <div className="space-y-3">
-             <input 
-                type="text" 
-                placeholder="Buscar lote ou quadra..."
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)]"
-              />
+          <div className="flex items-center gap-2 mb-2">
+             <button onClick={handleBack} className="p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white pointer-events-auto transition-colors shadow-lg">
+                <ArrowLeft className="w-5 h-5" />
+             </button>
+             <h2 className="text-xl font-bold text-white shadow-sm drop-shadow-md">{selectedProject.name}</h2>
+          </div>
+
+          <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-xl shadow-lg p-4 pointer-events-auto">
+            <div className="mb-4">
+              <h2 className="text-base font-bold text-white mb-1">Painel Operacional</h2>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+                Ferramentas GIS
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setIsImportModalOpen(true)} className="flex flex-col items-center justify-center gap-2 p-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] text-[var(--color-text-muted)] transition-colors">
+                <Upload className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Importar Quadras</span>
+              </button>
               
-              <div className="flex flex-col gap-2 pt-2 border-t border-[var(--color-border)]">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)] mt-1">
-                  <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
-                </div>
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
-                  <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
-                </div>
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
-                  <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
-                </div>
+              <button 
+                onClick={() => setGpsActive(!gpsActive)} 
+                className={`flex flex-col items-center justify-center gap-2 p-3 border rounded-lg transition-colors ${gpsActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
+              >
+                <Navigation className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Navegação GPS</span>
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setMeasureActive(!measureActive);
+                  alert(measureActive ? 'Modo de medição desativado' : 'Modo de medição ativado. Clique no mapa para desenhar polígonos ou traçar distâncias.');
+                }} 
+                className={`flex flex-col items-center justify-center gap-2 p-3 border rounded-lg transition-colors ${measureActive ? 'bg-[var(--color-info)]/10 border-[var(--color-info)] text-[var(--color-info)]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-info)] hover:text-[var(--color-info)]'}`}
+              >
+                <Ruler className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Medição</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                   if (activeLayer === 'satellite') setActiveLayer('streets');
+                   else if (activeLayer === 'streets') setActiveLayer('dark');
+                   else setActiveLayer('satellite');
+                }} 
+                className="flex flex-col items-center justify-center gap-2 p-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
+                title={`Estilo atual: ${activeLayer}`}
+              >
+                <MapIcon className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-center">
+                   {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-[var(--color-border)]">
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)] mt-1">
+                <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
               </div>
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
+                <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
+              </div>
+              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
+                <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
+              </div>
+            </div>
           </div>
         </div>
+        
+        {/* Map Container */}
+        <div className="flex-1 w-full h-full z-0">
+          <GISMap 
+            projectId={selectedProject.id} 
+            activeLayer={activeLayer} 
+            gpsActive={gpsActive} 
+            measureActive={measureActive} 
+          />
+        </div>
+
+        {/* Modal KML Import */}
+        {isImportModalOpen && (
+           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
+                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+                    <h3 className="font-bold text-white text-lg">Importar Lotes (KML)</h3>
+                    <button onClick={() => setIsImportModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                       <X className="w-5 h-5" />
+                    </button>
+                 </div>
+                 <form onSubmit={handleImportKML} className="p-6 flex flex-col gap-4">
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Identificação da Quadra</label>
+                       <input 
+                         type="text" required
+                         value={importQuadra} onChange={e => setImportQuadra(e.target.value)}
+                         placeholder="Ex: A, B, C, Quadra 1..."
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                       />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div>
+                          <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Lote Inicial</label>
+                          <input 
+                            type="number" required
+                            value={importLoteInicial} onChange={e => setImportLoteInicial(e.target.value)}
+                            placeholder="Ex: 1"
+                            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                          />
+                       </div>
+                       <div>
+                          <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Ordenação</label>
+                          <select 
+                             value={importOrdem} onChange={e => setImportOrdem(e.target.value as 'ASC'|'DESC')}
+                             className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                          >
+                             <option value="ASC">Crescente (1,2,3)</option>
+                             <option value="DESC">Decrescente (3,2,1)</option>
+                          </select>
+                       </div>
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Arquivo KML</label>
+                       <input 
+                         type="file" accept=".kml" required
+                         onChange={e => setImportFile(e.target.files?.[0] || null)}
+                         className="w-full text-sm text-[var(--color-text-muted)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--color-primary)]/10 file:text-[var(--color-primary)] hover:file:bg-[var(--color-primary)]/20 file:transition-colors file:cursor-pointer cursor-pointer border border-[var(--color-border)] bg-[var(--color-background)] rounded-lg p-2"
+                       />
+                       <p className="text-[10px] text-[var(--color-text-muted)] mt-2">Dica: O zoom automático é aplicado após salvar.</p>
+                    </div>
+
+                    <button 
+                       type="submit" disabled={importing}
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                    >
+                       {importing ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar e Salvar</>}
+                    </button>
+                 </form>
+              </div>
+           </div>
+        )}
       </div>
-      
-      {/* Map Container */}
-      <div className="flex-1 w-full h-full z-0">
-        <GISMap />
+    );
+  }
+
+  // Lista de Projetos (quando map não está selecionado)
+  return (
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in-up">
+      <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
+          <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
+            Gestão Unificada de Loteamentos
+          </p>
+        </div>
+        <button className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors">
+          <Plus className="w-5 h-5" />
+          Novo Projeto
+        </button>
+      </header>
+
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm">
+        {/* Toolbar */}
+        <div className="p-4 border-b border-[var(--color-border)] flex gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-2.5 w-5 h-5 text-[var(--color-text-muted)]" />
+            <input 
+              type="text" 
+              placeholder="Buscar loteamentos..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)]"
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-auto p-4">
+          {loading ? (
+             <div className="w-full h-full flex items-center justify-center">
+                 <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
+             </div>
+          ) : filteredProjects.length > 0 ? (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {filteredProjects.map(p => (
+                 <ProjectCard 
+                   key={p.id} 
+                   project={p} 
+                   onOpen={() => handleOpenProject(p)} 
+                 />
+               ))}
+             </div>
+          ) : (
+             <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)] text-sm">
+                 Nenhum projeto encontrado.
+             </div>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ProjectCard({ project, onOpen }: { project: any, onOpen: () => void }) {
+  const total = project.lots?.length || 0;
+  const sold = project.lots?.filter((l: any) => l.status === 'SOLD').length || 0;
+  const hasGis = project.lots?.some((l: any) => l.geom != null) || false;
+  const pct = total > 0 ? (sold / total) * 100 : 0;
+
+  return (
+    <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors group flex flex-col">
+       <div className="flex justify-between items-start mb-4">
+          <div className="flex items-center gap-3">
+             <div className="w-12 h-12 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
+               <FolderOpen className="w-6 h-6" />
+             </div>
+             <div>
+                <h3 className="font-bold text-white text-lg leading-tight">{project.name}</h3>
+                <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1">{project.location || 'Sem localização'}</p>
+             </div>
+          </div>
+          <div className="flex items-center gap-1">
+             <button title="Editar" className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors">
+               <Edit2 className="w-4 h-4" />
+             </button>
+             <button title="Excluir" className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
+               <Trash2 className="w-4 h-4" />
+             </button>
+          </div>
+       </div>
+
+       <div className="mt-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">Progresso de Vendas</span>
+            <span className="text-xs font-mono text-white">{sold} / {total}</span>
+          </div>
+          <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
+             <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            {hasGis ? (
+              <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
+                Sincronizado
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
+                Falta KML
+              </span>
+            )}
+            
+            <button 
+              onClick={onOpen}
+              className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
+            >
+              <MapIcon className="w-4 h-4" /> Abrir Mapa
+            </button>
+          </div>
+       </div>
     </div>
   );
 }
