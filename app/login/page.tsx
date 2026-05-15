@@ -62,6 +62,7 @@ export default function LoginPage() {
         
         // Success
         router.push('/');
+        router.refresh();
       }
     } catch (err: any) {
       setError(err.message || 'Ocorreu um erro no login.');

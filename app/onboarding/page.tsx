@@ -16,11 +16,32 @@ export default function OnboardingPage() {
   const [error, setError] = useState('');
   const [step, setStep] = useState(1);
 
-  if (!user || !user.force_password_change) {
+  if (!user || (!user.force_password_change && user.onboarding_completed)) {
     // If not matching constraints, the layout will redirect anyway, 
     // but just return null here to prevent flashing.
     return null;
   }
+
+  const completeOnboardingLegacy = async () => {
+    setLoading(true);
+    try {
+      const { error: userError } = await supabase
+        .from('users')
+        .update({ onboarding_completed: true })
+        .eq('id', user.id);
+
+      if (userError) throw userError;
+      setStep(2);
+      setTimeout(() => {
+        router.push('/');
+        router.refresh();
+      }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao continuar.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,50 +147,67 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              <form onSubmit={handleUpdatePassword} className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
-                    Nova Senha
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
-                    <input 
-                      type="password" 
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                    />
+              {user.force_password_change ? (
+                <form onSubmit={handleUpdatePassword} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
+                      Nova Senha
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                      <input 
+                        type="password" 
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
-                    Confirmar Senha
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
-                    <input 
-                      type="password" 
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
+                      Confirmar Senha
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                      <input 
+                        type="password" 
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full mt-4 bg-[#06b6d4] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? "Processando..." : "Salvar e Continuar"}
-                  {!loading && <ArrowRight className="w-5 h-5" />}
-                </button>
-              </form>
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full mt-4 bg-[#06b6d4] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? "Processando..." : "Salvar e Continuar"}
+                    {!loading && <ArrowRight className="w-5 h-5" />}
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-5">
+                  <p className="text-[var(--color-text-muted)] mb-6 text-sm">
+                    Detectamos que você é um usuário existente que foi migrado para a nova arquitetura de segurança Enterprise do SV_LOTES.
+                    Nenhuma ação adicional é necessária.
+                  </p>
+                  <button 
+                    onClick={completeOnboardingLegacy}
+                    disabled={loading}
+                    className="w-full mt-4 bg-[#06b6d4] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? "Acessando..." : "Entrar no Workspace"}
+                    {!loading && <ArrowRight className="w-5 h-5" />}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
              <div className="text-center animate-in zoom-in duration-300 py-10">

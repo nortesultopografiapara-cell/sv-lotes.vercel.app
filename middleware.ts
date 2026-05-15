@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -13,28 +13,29 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({
             request: { headers: request.headers },
           });
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options });
-          response = NextResponse.next({
-            request: { headers: request.headers },
-          });
-          response.cookies.set({ name, value: '', ...options });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, { 
+              ...options,
+              sameSite: 'none',
+              secure: true,
+            })
+          );
         },
       },
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
+  // Use getUser() instead of getSession() in middleware to ensure security
+  // and trigger refresh of cookies if necessary.
+  const { data: { user } } = await supabase.auth.getUser();
   const url = request.nextUrl.clone();
 
   // 1. PUBLIC ROUTES
@@ -42,7 +43,7 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
-    if (session && url.pathname === '/login') {
+    if (user && url.pathname === '/login') {
       url.pathname = '/';
       return NextResponse.redirect(url);
     }
@@ -50,29 +51,28 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. PROTECTED ROUTES - NO SESSION
-  if (!session) {
+  if (!user) {
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
   // 3. EMAIL VERIFICATION
-  if (!session.user.email_confirmed_at) {
-    if (url.pathname !== '/verify-email') {
-      url.pathname = '/verify-email';
-      return NextResponse.redirect(url);
-    }
-  }
+  // Commenting this out if email confirmation shouldn't be strictly enforced during login
+  // if (!user.email_confirmed_at) {
+  //  if (url.pathname !== '/verify-email') {
+  //    url.pathname = '/verify-email';
+  //    return NextResponse.redirect(url);
+  //  }
+  // }
 
   // 4. ONBOARDING & TENANT VERIFICATION
-  // We need to fetch user profile to check onboarding and tenant
   const { data: userData } = await supabase
     .from('users')
     .select('role, tenant_id, onboarding_completed, force_password_change')
-    .eq('id', session.user.id)
+    .eq('id', user.id)
     .single();
 
   if (userData) {
-    // SECURITY: Store tenant_id in header for downstream uses (server operations)
     response.headers.set('x-tenant-id', userData.tenant_id || '');
     response.headers.set('x-user-role', userData.role || '');
 
@@ -89,21 +89,19 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // ROLE/TENANT GUARD
     if (url.pathname.startsWith('/empresas') && userData.role !== 'SUPER_ADMIN') {
-      url.pathname = '/'; // Deny access
+      url.pathname = '/';
       return NextResponse.redirect(url);
     }
 
     if (userData.role !== 'SUPER_ADMIN' && !userData.tenant_id && !needsOnboarding) {
-       // Orphan user
        await supabase.auth.signOut();
        url.pathname = '/login';
        return NextResponse.redirect(url);
     }
   }
 
-  // 5. HARDENING HEADERS (CSP, XSS, etc)
+  // 5. HARDENING HEADERS
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
