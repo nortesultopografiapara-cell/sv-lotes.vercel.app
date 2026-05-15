@@ -110,7 +110,8 @@ export default function MapPage() {
         
         if (error) {
            if (error.message.includes('find the table') || error.message.includes('cache')) {
-               window.location.reload();
+               console.warn("Table projects not found. Need to create it or refresh schema.");
+               setProjects([]);
                return;
            }
            // Ignoramos erro de cache no carregamento se formos refazer a query
@@ -215,9 +216,7 @@ export default function MapPage() {
       
       if (error) {
          if (error.message.includes('find the table') || error.message.includes('cache')) {
-             // Forçando reload da página para limpar cache
-             window.location.reload();
-             return;
+             throw new Error("A tabela 'projects' não existe ou não está visível. Atualize o schema do banco.");
          }
          throw error;
       }
