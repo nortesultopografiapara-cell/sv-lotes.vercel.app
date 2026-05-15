@@ -176,54 +176,19 @@ export default function MapPage() {
     setCreatingProject(true);
     
     try {
-      let tenantId = user.tenant_id;
-
-      if (!tenantId) {
-        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
-        if (userData?.tenant_id) {
-          tenantId = userData.tenant_id;
-        }
-      }
-
-      const isMasterAdmin = user.email === 'severino@nortesultopografia.com.br' || user.email === 'nortesultopografiapara@gmail.com' || user.role === 'SUPER_ADMIN';
-
-      // Fallback para o Super Admin
-      if (!tenantId && isMasterAdmin) {
-        tenantId = 'MASTER-ADMIN';
-      }
-
-      if (!tenantId) {
-        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta e nem criar uma empresa mestre.");
-        return;
-      }
-
-      // Refresh Supabase schema cache before inserting to fix 'Could not find table' error sometimes
-      try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
-
-      let finalTenantId = tenantId;
+      const nomeObtido = newProjectName.trim();
       
-      let insertResult = await supabase.from('projects').insert([{
-        name: newProjectName.trim(),
-        tenant_id: finalTenantId
+      // Dispara o insert diretamente no Supabase na tabela projects
+      const { error: insertError } = await supabase.from('projects').insert([{ 
+        name: nomeObtido, 
+        tenant_id: 'MASTER-ADMIN' 
       }]);
 
-      if (insertResult.error && insertResult.error.message.includes('invalid input syntax for type uuid')) {
-          // Se MASTER-ADMIN der erro de UUID, pega uma empresa válida real
-          const { data: firstCompany } = await supabase.from('companies').select('id').limit(1).single();
-          if (firstCompany) {
-              finalTenantId = firstCompany.id;
-              insertResult = await supabase.from('projects').insert([{
-                  name: newProjectName.trim(),
-                  tenant_id: finalTenantId
-              }]);
-          }
+      if (insertError) {
+         throw insertError;
       }
       
-      if (insertResult.error) {
-         throw insertResult.error;
-      }
-      
-      // Fetch latest projects directly from the DB to refresh the list
+      // Atualizar a lista (Fetch Dinâmico)
       const { data: refreshedProjects, error: fetchError } = await supabase
          .from('projects')
          .select('*, lots(status, geom)')
@@ -231,10 +196,12 @@ export default function MapPage() {
          
       if (!fetchError && refreshedProjects) {
          setProjects(refreshedProjects);
-         const newlyCreated = refreshedProjects.find(p => p.name === newProjectName.trim() && p.tenant_id === finalTenantId);
+         const newlyCreated = refreshedProjects.find(p => p.name === nomeObtido && p.tenant_id === 'MASTER-ADMIN');
          
+         // Fechar o modal de criação automaticamente
          setIsNewProjectModalOpen(false);
          setNewProjectName('');
+         
          if (newlyCreated) {
            handleOpenProject(newlyCreated);
          }
