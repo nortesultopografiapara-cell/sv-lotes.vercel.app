@@ -61,12 +61,14 @@ export default function GISMap({
   projectId, 
   activeLayer = 'satellite',
   gpsActive = false,
-  measureActive = false 
+  measureActive = false,
+  refreshKey = 0
 }: { 
   projectId?: string,
   activeLayer?: 'streets'|'satellite'|'dark',
   gpsActive?: boolean,
-  measureActive?: boolean
+  measureActive?: boolean,
+  refreshKey?: number
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -133,7 +135,7 @@ export default function GISMap({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, projectId, refreshKey]);
 
   const handleLotAction = async (lot: any, action: 'RESERVE' | 'SELL') => {
     if (!user) return;

@@ -74,6 +74,13 @@ export default function MapPage() {
   const [gpsActive, setGpsActive] = useState(false);
   const [measureActive, setMeasureActive] = useState(false);
 
+  // New Project States
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
+
   useEffect(() => {
     async function loadProjects() {
       if (!user) return;
@@ -108,6 +115,34 @@ export default function MapPage() {
 
   const handleBack = () => {
     setSelectedProject(null);
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjectName.trim() || !user) return;
+    setCreatingProject(true);
+    
+    try {
+      const { data, error } = await supabase.from('projects').insert({
+        name: newProjectName.trim(),
+        tenant_id: user.tenant_id
+      }).select('*, lots(status, geom)').single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setProjects([data, ...projects]);
+        setIsNewProjectModalOpen(false);
+        setNewProjectName('');
+        // Abrir diretamente
+        handleOpenProject(data);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao criar projeto: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setCreatingProject(false);
+    }
   };
 
   const handleImportKML = async (e: React.FormEvent) => {
@@ -165,6 +200,7 @@ export default function MapPage() {
       setImportFile(null);
       setImportQuadra('');
       setImportLoteInicial('1');
+      setMapRefreshKey(prev => prev + 1);
     } catch(err: any) {
        console.error("Erro no import: ", err);
        alert("Erro ao importar KML: " + err.message);
@@ -257,6 +293,7 @@ export default function MapPage() {
             activeLayer={activeLayer} 
             gpsActive={gpsActive} 
             measureActive={measureActive} 
+            refreshKey={mapRefreshKey}
           />
         </div>
 
@@ -335,7 +372,10 @@ export default function MapPage() {
             Gestão Unificada de Loteamentos
           </p>
         </div>
-        <button className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors">
+        <button 
+          onClick={() => setIsNewProjectModalOpen(true)}
+          className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+        >
           <Plus className="w-5 h-5" />
           Novo Projeto
         </button>
@@ -379,6 +419,38 @@ export default function MapPage() {
           )}
         </div>
       </div>
+
+      {/* Modal Novo Projeto */}
+      {isNewProjectModalOpen && (
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-sm overflow-hidden shadow-2xl fade-in-up">
+               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+                  <h3 className="font-bold text-white text-lg">Novo Projeto</h3>
+                  <button onClick={() => setIsNewProjectModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                     <X className="w-5 h-5" />
+                  </button>
+               </div>
+               <form onSubmit={handleCreateProject} className="p-6 flex flex-col gap-4">
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto</label>
+                     <input 
+                       type="text" required
+                       value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                       placeholder="Ex: Loteamento Bosque das Árvores"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+
+                  <button 
+                     type="submit" disabled={creatingProject}
+                     className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-4 rounded-lg transition-colors flex justify-center items-center gap-2"
+                  >
+                     {creatingProject ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Criar Projeto'}
+                  </button>
+               </form>
+            </div>
+         </div>
+      )}
     </div>
   );
 }
