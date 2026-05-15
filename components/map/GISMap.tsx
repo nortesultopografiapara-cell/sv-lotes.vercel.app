@@ -86,7 +86,7 @@ export default function GISMap({
           query = query.eq('blocks.project_id', projectId);
         }
         
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+        if (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id) {
           query = query.eq('tenant_id', user.tenant_id);
         }
 

@@ -86,12 +86,44 @@ export default function MapPage() {
       if (!user) return;
       try {
         let query = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        
+        const isSuperAdmin = user.role === 'SUPER_ADMIN' || user.email === 'severino@nortesultopografia.com.br';
+        
+        let tenantId = user.tenant_id;
+        if (!tenantId && !isSuperAdmin) {
+            const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
+            tenantId = userData?.tenant_id;
         }
-        const { data, error } = await query;
-        if (error) throw error;
-        setProjects(data || []);
+
+        if (!isSuperAdmin) {
+           if (tenantId) {
+             query = query.eq('tenant_id', tenantId);
+           } else {
+             // Se não é admin e não tem tenant_id, não deveria ver nada (ou a query falhará / retornará 0 devido ao RLS)
+             setProjects([]);
+             setLoading(false);
+             return;
+           }
+        }
+
+        const { data, error } = await supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
+        
+        if (error) {
+           // Ignoramos erro de cache no carregamento se formos refazer a query
+           throw error;
+        }
+        
+        // Aplica o filtro RLS se tivermos pego as infos (na verdade deveriamos aplicar na mesma query)
+        // Corrigindo a execução da query com as condições acima:
+        let finalQuery = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
+        if (!isSuperAdmin && tenantId) {
+            finalQuery = finalQuery.eq('tenant_id', tenantId);
+        }
+        
+        const { data: finalData, error: finalError } = await finalQuery;
+        
+        if (finalError) throw finalError;
+        setProjects(finalData || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -132,8 +164,26 @@ export default function MapPage() {
         }
       }
 
+      // Fallback para o Super Admin
+      if (!tenantId && (user.email === 'severino@nortesultopografia.com.br' || user.role === 'SUPER_ADMIN')) {
+        const { data: company } = await supabase.from('companies').select('id').order('created_at', { ascending: true }).limit(1).single();
+        if (company) {
+          tenantId = company.id;
+        } else {
+          try {
+            const { data: newCompany } = await supabase.from('companies').insert({
+              name: 'Norte Sul Topografia (Mestre)',
+              cnpj: '00000000000000'
+            }).select('id').single();
+            tenantId = newCompany?.id;
+          } catch (e) {
+            console.error("Erro ao tentar criar empresa mestre:", e);
+          }
+        }
+      }
+
       if (!tenantId) {
-        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta.");
+        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta e nem criar uma empresa mestre.");
         return;
       }
 
@@ -142,7 +192,12 @@ export default function MapPage() {
         tenant_id: tenantId
       }).select('*, lots(status, geom)').single();
       
-      if (error) throw error;
+      if (error) {
+         if (error.message.includes('find the table')) {
+             throw new Error('A tabela de projetos não foi encontrada (Erro de Cache do Supabase). Tente recarregar a página ou reconectar o banco.');
+         }
+         throw error;
+      }
       
       if (data) {
         setProjects([data, ...projects]);
@@ -170,6 +225,18 @@ export default function MapPage() {
         const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
         if (userData?.tenant_id) {
           tenantId = userData.tenant_id;
+        }
+      }
+
+      // Fallback para o Super Admin
+      if (!tenantId && (user.email === 'severino@nortesultopografia.com.br' || user.role === 'SUPER_ADMIN')) {
+        const { data: company } = await supabase.from('companies').select('id').order('created_at', { ascending: true }).limit(1).single();
+        if (company) {
+          tenantId = company.id;
+        } else {
+           alert("Erro: Empresa mestre não encontrada para o import do KML.");
+           setImporting(false);
+           return;
         }
       }
 
