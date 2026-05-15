@@ -69,6 +69,9 @@ export function useAuth() {
          if (mounted) setUser(null);
        } else if (event === 'SIGNED_IN') {
          getUser();
+       } else if (event === 'PASSWORD_RECOVERY') {
+         // Redirect the invited user to set a new password
+         router.push('/onboarding');
        }
     });
 
@@ -76,7 +79,7 @@ export function useAuth() {
       mounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   return { user, loading };
 }

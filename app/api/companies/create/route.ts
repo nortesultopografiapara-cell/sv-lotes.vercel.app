@@ -36,7 +36,8 @@ export async function POST(req: Request) {
       data: {
         full_name: adminName,
         role: 'ADMIN' // tenant_id will be set later
-      }
+      },
+      redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback` : undefined
     });
 
     if (authError) {
@@ -57,8 +58,6 @@ export async function POST(req: Request) {
         name,
         slug,
         cnpj,
-        phone,
-        email,
         plan,
         active: true
       })

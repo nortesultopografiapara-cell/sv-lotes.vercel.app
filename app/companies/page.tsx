@@ -24,13 +24,19 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('*, users(count)')
+        .select(`
+          *,
+          users:users(count)
+        `)
         .order('created_at', { ascending: false });
         
-      if (error) throw error;
+      if (error) {
+        console.error('SUPABASE_ERROR fetching companies:', error);
+        throw error;
+      }
       setCompanies(data || []);
     } catch (err) {
-      console.error(err);
+      console.error('ERROR in loadCompanies:', err);
     } finally {
       setDataLoading(false);
     }
