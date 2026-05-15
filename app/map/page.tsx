@@ -24,24 +24,25 @@ function parseKML(xmlString: string) {
   const geometries: any[] = [];
 
   for (let i = 0; i < placemarks.length; i++) {
-    const polygonNode = placemarks[i].getElementsByTagName("Polygon")[0];
-    const lineStringNode = placemarks[i].getElementsByTagName("LineString")[0];
+    const placemark = placemarks[i];
+    const coordinatesNode = placemark.querySelector('LineString coordinates') || placemark.querySelector('Polygon coordinates');
     
-    if (polygonNode) {
-       const coordinatesNode = polygonNode.getElementsByTagName("coordinates")[0];
-       if (coordinatesNode && coordinatesNode.textContent) {
-         const coordsText = coordinatesNode.textContent.replace(/\r?\n|\r/g, " ").trim();
-         if (!coordsText) continue;
-         
-         const coordsArray = coordsText.split(/\s+/).filter(Boolean).map(pair => {
-            if (!pair || !pair.includes(',')) return [0, 0];
-            const parts = pair.split(',');
-            const lng = parseFloat(parts[0]) || 0;
-            const lat = parseFloat(parts[1]) || 0;
-            return [lng, lat];
-         }).filter(c => c[0] !== 0 || c[1] !== 0);
-         
-         // Fix rings
+    if (coordinatesNode && coordinatesNode.textContent) {
+      const coordsText = coordinatesNode.textContent.trim();
+      if (!coordsText) continue;
+      
+      const coordsArray = coordsText.replace(/\r?\n|\r/g, " ").split(/\s+/).filter(Boolean).map(pair => {
+         if (!pair || !pair.includes(',')) return [0, 0];
+         const parts = pair.split(',');
+         const lng = parseFloat(parts[0]) || 0;
+         const lat = parseFloat(parts[1]) || 0;
+         return [lng, lat];
+      }).filter(c => c[0] !== 0 || c[1] !== 0);
+      
+      const isPolygon = placemark.querySelector('Polygon') !== null;
+
+      if (isPolygon) {
+         // Fix rings for polygon
          if (coordsArray.length > 0) {
             const first = coordsArray[0];
             const last = coordsArray[coordsArray.length - 1];
@@ -49,31 +50,16 @@ function parseKML(xmlString: string) {
                coordsArray.push([...first]);
             }
          }
-
          geometries.push({
            type: "Polygon",
            coordinates: [coordsArray]
          });
-       }
-    } else if (lineStringNode) {
-       const coordinatesNode = lineStringNode.getElementsByTagName("coordinates")[0];
-       if (coordinatesNode && coordinatesNode.textContent) {
-         const coordsText = coordinatesNode.textContent.replace(/\r?\n|\r/g, " ").trim();
-         if (!coordsText) continue;
-         
-         const coordsArray = coordsText.split(/\s+/).filter(Boolean).map(pair => {
-            if (!pair || !pair.includes(',')) return [0, 0];
-            const parts = pair.split(',');
-            const lng = parseFloat(parts[0]) || 0;
-            const lat = parseFloat(parts[1]) || 0;
-            return [lng, lat];
-         }).filter(c => c[0] !== 0 || c[1] !== 0);
-
+      } else {
          geometries.push({
            type: "LineString",
            coordinates: coordsArray
          });
-       }
+      }
     }
   }
   return geometries;
@@ -111,50 +97,15 @@ export default function MapPage() {
     async function loadProjects() {
       if (!user) return;
       try {
-        let query = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
-        
-        const isSuperAdmin = user.role === 'SUPER_ADMIN' || user.email === 'severino@nortesultopografia.com.br';
-        
-        let tenantId = user.tenant_id;
-        if (!tenantId && !isSuperAdmin) {
-            const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
-            tenantId = userData?.tenant_id;
-        }
-
-        if (!isSuperAdmin) {
-           if (tenantId) {
-             query = query.eq('tenant_id', tenantId);
-           } else {
-             // Se não é admin e não tem tenant_id, não deveria ver nada (ou a query falhará / retornará 0 devido ao RLS)
-             setProjects([]);
-             setLoading(false);
-             return;
-           }
-        }
-
-        const { data, error } = await supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
         
         if (error) {
-           if (error.message.includes('find the table') || error.message.includes('cache')) {
-               console.warn("Table projects not found. Need to create it or refresh schema.");
-               setProjects([]);
-               return;
-           }
-           // Ignoramos erro de cache no carregamento se formos refazer a query
-           throw error;
+           console.warn("Error fetching projects:", error);
+           setProjects([]);
+           return;
         }
         
-        // Aplica o filtro RLS se tivermos pego as infos (na verdade deveriamos aplicar na mesma query)
-        // Corrigindo a execução da query com as condições acima:
-        let finalQuery = supabase.from('projects').select('*, lots(status, geom)').order('created_at', { ascending: false });
-        if (!isSuperAdmin && tenantId) {
-            finalQuery = finalQuery.eq('tenant_id', tenantId);
-        }
-        
-        const { data: finalData, error: finalError } = await finalQuery;
-        
-        if (finalError) throw finalError;
-        setProjects(finalData || []);
+        setProjects(data || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -182,27 +133,25 @@ export default function MapPage() {
 
   const handleCreateProject = async (e?: React.FormEvent | any) => {
     if (e && e.preventDefault) e.preventDefault();
-    const name = newProjectName.trim();
-    if (!name) return;
+    const projectNameStr = newProjectName.trim();
+    if (!projectNameStr) return;
     setCreatingProject(true);
     
     try {
-      const { data, error } = await supabase
-        .from('projects')
-        .insert([{ name: name, tenant_id: 'MASTER-ADMIN' }])
-        .select()
-        .single();
+      const { error } = await supabase.from('projects').insert([{ name: projectNameStr, tenant_id: 'MASTER-ADMIN' }]);
 
       if (error) {
          throw error;
       }
       
-      if (data) {
-         setIsNewProjectModalOpen(false);
-         setProjects([{...data, lots: []}, ...projects]);
-         setNewProjectName('');
+      const { data: updatedProjects } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      if (updatedProjects) {
+         setProjects(updatedProjects);
       }
-
+      
+      setIsNewProjectModalOpen(false);
+      setNewProjectName('');
+      
     } catch (err: any) {
       console.error(err);
       alert('Erro ao criar projeto: ' + (err.message || 'Erro desconhecido'));
@@ -247,6 +196,8 @@ export default function MapPage() {
       }
       
       let finalTenantId = tenantId;
+      
+      try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
       
       const prepareBlock = async (tId: string) => {
           let blockId;
