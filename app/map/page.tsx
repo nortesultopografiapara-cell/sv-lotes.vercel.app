@@ -201,8 +201,8 @@ export default function MapPage() {
       const { data, error } = insertResult;
       
       if (error) {
-         if (error.message.includes('find the table')) {
-             throw new Error('A tabela de projetos não foi encontrada (Erro de Cache). Atualize a tela.');
+         if (error.message.includes('find the table') || error.message.includes('cache')) {
+             throw new Error("A tabela 'projects' não existe ou não está visível. Para resolver, vá no SQL Editor do seu Supabase e certifique-se de criar a tabela usando o script gerado, e clique em 'Reload schema' ou rode 'NOTIFY pgrst, ''reload schema'';'.");
          }
          throw error;
       }
