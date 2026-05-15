@@ -203,26 +203,26 @@ export default function MapPage() {
           }
       }
       
-      const { error } = insertResult;
-      
-      if (error && !error.message.includes('find the table') && !error.message.includes('cache')) {
-         throw error;
+      if (insertResult.error) {
+         throw insertResult.error;
       }
       
-      // Forçar sucesso visual
-      const newMockProject = {
-         id: crypto.randomUUID(),
-         name: newProjectName.trim(),
-         tenant_id: finalTenantId,
-         lots: [],
-         created_at: new Date().toISOString()
-      };
-      
-      setProjects([newMockProject, ...projects]);
-      setIsNewProjectModalOpen(false);
-      setNewProjectName('');
-      // Abrir diretamente
-      handleOpenProject(newMockProject);
+      // Fetch latest projects directly from the DB to refresh the list
+      const { data: refreshedProjects, error: fetchError } = await supabase
+         .from('projects')
+         .select('*, lots(status, geom)')
+         .order('created_at', { ascending: false });
+         
+      if (!fetchError && refreshedProjects) {
+         setProjects(refreshedProjects);
+         const newlyCreated = refreshedProjects.find(p => p.name === newProjectName.trim() && p.tenant_id === finalTenantId);
+         
+         setIsNewProjectModalOpen(false);
+         setNewProjectName('');
+         if (newlyCreated) {
+           handleOpenProject(newlyCreated);
+         }
+      }
 
     } catch (err: any) {
       console.error(err);
