@@ -13,6 +13,8 @@ export function useSessionGuard() {
   useEffect(() => {
     if (loading) return;
 
+    // Disable conflicted redirects temporarily for debugging purposes
+    /*
     if (!user) {
       if (!PUBLIC_ROUTES.includes(pathname)) {
         router.replace('/login');
@@ -39,6 +41,7 @@ export function useSessionGuard() {
       router.replace('/');
       return;
     }
+    */
   }, [user, loading, pathname, router]);
 
   return { user, loading };

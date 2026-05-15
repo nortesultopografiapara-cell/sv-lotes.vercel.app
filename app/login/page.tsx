@@ -12,17 +12,32 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Redirect if already logged in
+  // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        router.push('/');
+    const initializeAuth = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (user) {
+        // We have a VALID, server-confirmed session on client but somehow landed on login.
+        window.location.href = '/';
+      } else if (error) {
+        // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
+        await supabase.auth.signOut();
+        // Also clear our manual caches just in case
+        localStorage.removeItem('active_tenant');
+        sessionStorage.clear();
       }
-    });
-  }, [router]);
+    };
+    initializeAuth();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('ENV CHECK:', {
+       url: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'EXISTS' : 'MISSING',
+       key_length: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0,
+       isConfigured: isSupabaseConfigured
+    });
+
     if (!isSupabaseConfigured) {
       setError('Variáveis de ambiente do Supabase não configuradas no .env');
       return;
@@ -30,21 +45,41 @@ export default function LoginPage() {
     
     setLoading(true);
     setError(null);
+    console.log('LOGIN START - Initiating auth process...');
     
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      // Create a timeout promise to detect if the Supabase call is hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT_ERROR')), 15000)
+      );
+
+      console.log('LOGIN PARAMS:', { email: email.split('@')[0] + '@***' });
+      
+      const authPromise = supabase.auth.signInWithPassword({
         email,
         password,
       });
 
+      // Race between the auth request and the timeout
+      const response: any = await Promise.race([authPromise, timeoutPromise]);
+      
+      console.log('LOGIN RESULT HAS RETURNED', { 
+         error: response.error?.message, 
+         hasSession: !!response.data?.session, 
+         hasUser: !!response.data?.user 
+      });
+
+      const { data, error: authError } = response;
+
       if (authError) {
+        console.error('LOGIN ERROR:', authError);
         setError(authError.message);
-        setLoading(false);
         return;
       }
 
       // Check user role from our public.users table
-      if (data.user) {
+      if (data?.user) {
+        console.log('LOGIN USER CONFIRMED. Fetching profile for ID:', data.user.id);
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('*')
@@ -54,18 +89,25 @@ export default function LoginPage() {
         if (userError || !userData) {
            console.error("Login user fetch error:", userError);
            setError(`Erro ao buscar perfil: ${userError?.message || 'Usuário não encontrado na tabela public.users.'}`);
-           setLoading(false);
            // Sign out since they don't have a valid profile
            await supabase.auth.signOut();
            return;
         }
         
+        console.log('LOGIN PROFILE FETCHED. Redirecting to /');
         // Success
-        router.push('/');
-        router.refresh();
+        window.location.href = '/';
       }
     } catch (err: any) {
-      setError(err.message || 'Ocorreu um erro no login.');
+      if (err.message === 'TIMEOUT_ERROR') {
+        console.error('LOGIN HANG TIMEOUT: A requisição ao Supabase estourou o tempo limite de 15 segundos.');
+        setError('Tempo limite da requisição esgotado. Verifique as variáveis de ambiente ou sua conexão.');
+      } else {
+        console.error('LOGIN EXCEPTION:', err);
+        setError(err.message || 'Ocorreu um erro inesperado no login.');
+      }
+    } finally {
+      console.log('LOGIN FINALLY');
       setLoading(false);
     }
   };

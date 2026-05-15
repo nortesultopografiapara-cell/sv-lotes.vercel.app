@@ -73,13 +73,14 @@ export function useAuth() {
            // Clear sensitive tenant cache on logout
            localStorage.removeItem('active_tenant');
            sessionStorage.clear();
-           router.replace('/login');
+           if (window.location.pathname !== '/login') {
+             window.location.href = '/login';
+           }
          }
        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
          getUser();
        } else if (event === 'PASSWORD_RECOVERY') {
-         // Redirect the invited user to set a new password
-         router.push('/onboarding');
+         // Let middleware handle any further redirect if necessary
        }
     });
 

@@ -81,7 +81,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     return <div className="h-screen w-full bg-[var(--color-background)] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-t-transparent border-[var(--color-primary)] rounded-full"></div></div>;
   }
 
-  if (pathname === '/login' || pathname === '/onboarding') return <>{children}</>;
+  const isPublicStandalone = ['/login', '/onboarding', '/verify-email', '/auth/callback'].some(route => pathname.startsWith(route));
+  if (isPublicStandalone) return <>{children}</>;
 
   const menuItems = getMenuItems(user?.role || '');
 

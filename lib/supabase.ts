@@ -10,13 +10,7 @@ export const supabase = createBrowserClient(
   supabaseAnonKey || 'mock-key',
   {
     auth: {
-      flowType: 'pkce',
-    },
-    cookieOptions: {
-      name: 'sb-auth',
-      path: '/',
-      sameSite: 'none',
-      secure: true,
+      lock: async (name, timeout, fn) => { return await fn(); }
     }
   }
 );

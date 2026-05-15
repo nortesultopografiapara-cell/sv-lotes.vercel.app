@@ -22,11 +22,7 @@ export async function middleware(request: NextRequest) {
             request: { headers: request.headers },
           });
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, { 
-              ...options,
-              sameSite: 'none',
-              secure: true,
-            })
+            response.cookies.set(name, value, options)
           );
         },
       },
@@ -64,7 +60,9 @@ export async function middleware(request: NextRequest) {
   //    return NextResponse.redirect(url);
   //  }
   // }
-
+  
+  // Temporarily disable extra logic to fix the basic auth loop as requested by the user.
+  /*
   // 4. ONBOARDING & TENANT VERIFICATION
   const { data: userData } = await supabase
     .from('users')
@@ -100,6 +98,7 @@ export async function middleware(request: NextRequest) {
        return NextResponse.redirect(url);
     }
   }
+  */
 
   // 5. HARDENING HEADERS
   response.headers.set('X-XSS-Protection', '1; mode=block');
