@@ -101,6 +101,9 @@ export default function GISMap({
             if (lot.geom && lot.geom.type === 'Polygon' && lot.geom.coordinates) {
               const coords = lot.geom.coordinates[0]; // exterior ring
               bounds = coords.map((c: number[]) => [c[1], c[0]]); // [lng, lat] -> [lat, lng]
+            } else if (lot.geom && lot.geom.type === 'LineString' && lot.geom.coordinates) {
+              const coords = lot.geom.coordinates;
+              bounds = coords.map((c: number[]) => [c[1], c[0]]); // [lng, lat] -> [lat, lng]
             }
 
             return {

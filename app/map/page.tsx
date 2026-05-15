@@ -21,15 +21,17 @@ function parseKML(xmlString: string) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, "text/xml");
   const placemarks = xmlDoc.getElementsByTagName("Placemark");
-  const polygons: any[] = [];
+  const geometries: any[] = [];
 
   for (let i = 0; i < placemarks.length; i++) {
     const polygonNode = placemarks[i].getElementsByTagName("Polygon")[0];
+    const lineStringNode = placemarks[i].getElementsByTagName("LineString")[0];
+    
     if (polygonNode) {
        const coordinatesNode = polygonNode.getElementsByTagName("coordinates")[0];
        if (coordinatesNode) {
          const coordsText = coordinatesNode.textContent || "";
-         const coordsArray = coordsText.trim().split(/\s+/).map(pair => {
+         const coordsArray = coordsText.trim().split(/\s+/).filter(Boolean).map(pair => {
             const [lng, lat] = pair.split(',').map(Number);
             return [lng, lat];
          });
@@ -43,14 +45,28 @@ function parseKML(xmlString: string) {
             }
          }
 
-         polygons.push({
+         geometries.push({
            type: "Polygon",
            coordinates: [coordsArray]
          });
        }
+    } else if (lineStringNode) {
+       const coordinatesNode = lineStringNode.getElementsByTagName("coordinates")[0];
+       if (coordinatesNode) {
+         const coordsText = coordinatesNode.textContent || "";
+         const coordsArray = coordsText.trim().split(/\s+/).filter(Boolean).map(pair => {
+            const [lng, lat] = pair.split(',').map(Number);
+            return [lng, lat];
+         });
+
+         geometries.push({
+           type: "LineString",
+           coordinates: coordsArray
+         });
+       }
     }
   }
-  return polygons;
+  return geometries;
 }
 
 export default function MapPage() {
@@ -259,10 +275,10 @@ export default function MapPage() {
       }
 
       const text = await importFile.text();
-      const polygons = parseKML(text);
+      const geometries = parseKML(text);
       
-      if (polygons.length === 0) {
-         alert('Nenhum polígono encontrado no arquivo KML.');
+      if (geometries.length === 0) {
+         alert('Nenhum polígono ou linha encontrado no arquivo KML.');
          setImporting(false);
          return;
       }
@@ -303,7 +319,7 @@ export default function MapPage() {
           
           // 2. Preparar lotes
           let currentNumber = parseInt(importLoteInicial, 10);
-          const lotsToInsert = polygons.map((geom, index) => {
+          const lotsToInsert = geometries.map((geom, index) => {
              const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
              return {
                 block_id: blockId,
