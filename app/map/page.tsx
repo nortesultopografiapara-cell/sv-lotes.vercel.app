@@ -172,39 +172,25 @@ export default function MapPage() {
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim() || !user) return;
+    const name = newProjectName.trim();
+    if (!name) return;
     setCreatingProject(true);
     
     try {
-      const nomeObtido = newProjectName.trim();
-      
-      // Dispara o insert diretamente no Supabase na tabela projects
-      const { error: insertError } = await supabase.from('projects').insert([{ 
-        name: nomeObtido, 
-        tenant_id: 'MASTER-ADMIN' 
-      }]);
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([{ name: name, tenant_id: 'MASTER-ADMIN' }])
+        .select()
+        .single();
 
-      if (insertError) {
-         throw insertError;
+      if (error) {
+         throw error;
       }
       
-      // Atualizar a lista (Fetch Dinâmico)
-      const { data: refreshedProjects, error: fetchError } = await supabase
-         .from('projects')
-         .select('*, lots(status, geom)')
-         .order('created_at', { ascending: false });
-         
-      if (!fetchError && refreshedProjects) {
-         setProjects(refreshedProjects);
-         const newlyCreated = refreshedProjects.find(p => p.name === nomeObtido && p.tenant_id === 'MASTER-ADMIN');
-         
-         // Fechar o modal de criação automaticamente
+      if (data) {
          setIsNewProjectModalOpen(false);
+         setProjects([{...data, lots: []}, ...projects]);
          setNewProjectName('');
-         
-         if (newlyCreated) {
-           handleOpenProject(newlyCreated);
-         }
       }
 
     } catch (err: any) {
