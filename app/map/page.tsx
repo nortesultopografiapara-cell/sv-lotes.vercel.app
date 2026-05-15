@@ -29,12 +29,17 @@ function parseKML(xmlString: string) {
     
     if (polygonNode) {
        const coordinatesNode = polygonNode.getElementsByTagName("coordinates")[0];
-       if (coordinatesNode) {
-         const coordsText = coordinatesNode.textContent || "";
-         const coordsArray = coordsText.trim().split(/\s+/).filter(Boolean).map(pair => {
-            const [lng, lat] = pair.split(',').map(Number);
+       if (coordinatesNode && coordinatesNode.textContent) {
+         const coordsText = coordinatesNode.textContent.replace(/\r?\n|\r/g, " ").trim();
+         if (!coordsText) continue;
+         
+         const coordsArray = coordsText.split(/\s+/).filter(Boolean).map(pair => {
+            if (!pair || !pair.includes(',')) return [0, 0];
+            const parts = pair.split(',');
+            const lng = parseFloat(parts[0]) || 0;
+            const lat = parseFloat(parts[1]) || 0;
             return [lng, lat];
-         });
+         }).filter(c => c[0] !== 0 || c[1] !== 0);
          
          // Fix rings
          if (coordsArray.length > 0) {
@@ -52,12 +57,17 @@ function parseKML(xmlString: string) {
        }
     } else if (lineStringNode) {
        const coordinatesNode = lineStringNode.getElementsByTagName("coordinates")[0];
-       if (coordinatesNode) {
-         const coordsText = coordinatesNode.textContent || "";
-         const coordsArray = coordsText.trim().split(/\s+/).filter(Boolean).map(pair => {
-            const [lng, lat] = pair.split(',').map(Number);
+       if (coordinatesNode && coordinatesNode.textContent) {
+         const coordsText = coordinatesNode.textContent.replace(/\r?\n|\r/g, " ").trim();
+         if (!coordsText) continue;
+         
+         const coordsArray = coordsText.split(/\s+/).filter(Boolean).map(pair => {
+            if (!pair || !pair.includes(',')) return [0, 0];
+            const parts = pair.split(',');
+            const lng = parseFloat(parts[0]) || 0;
+            const lat = parseFloat(parts[1]) || 0;
             return [lng, lat];
-         });
+         }).filter(c => c[0] !== 0 || c[1] !== 0);
 
          geometries.push({
            type: "LineString",
@@ -170,8 +180,8 @@ export default function MapPage() {
     setSelectedProject(null);
   };
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateProject = async (e?: React.FormEvent | any) => {
+    if (e && e.preventDefault) e.preventDefault();
     const name = newProjectName.trim();
     if (!name) return;
     setCreatingProject(true);
@@ -523,24 +533,27 @@ export default function MapPage() {
                      <X className="w-5 h-5" />
                   </button>
                </div>
-               <form onSubmit={handleCreateProject} className="p-6 flex flex-col gap-4">
+               <div className="p-6 flex flex-col gap-4">
                   <div>
                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto</label>
                      <input 
                        type="text" required
                        value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+                       onKeyDown={(e) => { if(e.key === 'Enter') handleCreateProject(e as any) }}
                        placeholder="Ex: Loteamento Bosque das Árvores"
                        className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
                      />
                   </div>
 
                   <button 
-                     type="submit" disabled={creatingProject}
+                     type="button" 
+                     onClick={handleCreateProject}
+                     disabled={creatingProject}
                      className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-4 rounded-lg transition-colors flex justify-center items-center gap-2"
                   >
                      {creatingProject ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Criar Projeto'}
                   </button>
-               </form>
+               </div>
             </div>
          </div>
       )}
