@@ -164,22 +164,11 @@ export default function MapPage() {
         }
       }
 
+      const isMasterAdmin = user.email === 'severino@nortesultopografia.com.br' || user.email === 'nortesultopografiapara@gmail.com' || user.role === 'SUPER_ADMIN';
+
       // Fallback para o Super Admin
-      if (!tenantId && (user.email === 'severino@nortesultopografia.com.br' || user.role === 'SUPER_ADMIN')) {
-        const { data: company } = await supabase.from('companies').select('id').order('created_at', { ascending: true }).limit(1).single();
-        if (company) {
-          tenantId = company.id;
-        } else {
-          try {
-            const { data: newCompany } = await supabase.from('companies').insert({
-              name: 'Norte Sul Topografia (Mestre)',
-              cnpj: '00000000000000'
-            }).select('id').single();
-            tenantId = newCompany?.id;
-          } catch (e) {
-            console.error("Erro ao tentar criar empresa mestre:", e);
-          }
-        }
+      if (!tenantId && isMasterAdmin) {
+        tenantId = 'MASTER-ADMIN';
       }
 
       if (!tenantId) {
@@ -187,14 +176,33 @@ export default function MapPage() {
         return;
       }
 
-      const { data, error } = await supabase.from('projects').insert({
+      // Refresh Supabase schema cache before inserting to fix 'Could not find table' error sometimes
+      try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
+
+      let finalTenantId = tenantId;
+      
+      let insertResult = await supabase.from('projects').insert({
         name: newProjectName.trim(),
-        tenant_id: tenantId
+        tenant_id: finalTenantId
       }).select('*, lots(status, geom)').single();
+
+      if (insertResult.error && insertResult.error.message.includes('invalid input syntax for type uuid')) {
+          // Se MASTER-ADMIN der erro de UUID, pega uma empresa válida real
+          const { data: firstCompany } = await supabase.from('companies').select('id').limit(1).single();
+          if (firstCompany) {
+              finalTenantId = firstCompany.id;
+              insertResult = await supabase.from('projects').insert({
+                  name: newProjectName.trim(),
+                  tenant_id: finalTenantId
+              }).select('*, lots(status, geom)').single();
+          }
+      }
+      
+      const { data, error } = insertResult;
       
       if (error) {
          if (error.message.includes('find the table')) {
-             throw new Error('A tabela de projetos não foi encontrada (Erro de Cache do Supabase). Tente recarregar a página ou reconectar o banco.');
+             throw new Error('A tabela de projetos não foi encontrada (Erro de Cache). Atualize a tela.');
          }
          throw error;
       }
@@ -228,16 +236,11 @@ export default function MapPage() {
         }
       }
 
+      const isMasterAdmin = user.email === 'severino@nortesultopografia.com.br' || user.email === 'nortesultopografiapara@gmail.com' || user.role === 'SUPER_ADMIN';
+
       // Fallback para o Super Admin
-      if (!tenantId && (user.email === 'severino@nortesultopografia.com.br' || user.role === 'SUPER_ADMIN')) {
-        const { data: company } = await supabase.from('companies').select('id').order('created_at', { ascending: true }).limit(1).single();
-        if (company) {
-          tenantId = company.id;
-        } else {
-           alert("Erro: Empresa mestre não encontrada para o import do KML.");
-           setImporting(false);
-           return;
-        }
+      if (!tenantId && isMasterAdmin) {
+        tenantId = 'MASTER-ADMIN';
       }
 
       if (!tenantId) {
@@ -254,40 +257,57 @@ export default function MapPage() {
          return;
       }
       
-      // 1. Criar ou buscar Quadra (block)
-      let blockId;
-      const { data: existingBlock } = await supabase.from('blocks')
-         .select('id').eq('project_id', selectedProject.id).eq('name', importQuadra.toUpperCase()).single();
-         
-      if (existingBlock) {
-         blockId = existingBlock.id;
-      } else {
-         const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
-            project_id: selectedProject.id,
-            name: importQuadra.toUpperCase(),
-            tenant_id: tenantId
-         }).select().single();
-         if (blockError) throw blockError;
-         blockId = newBlock.id;
-      }
+      let finalTenantId = tenantId;
       
-      // 2. Preparar lotes
-      let currentNumber = parseInt(importLoteInicial, 10);
-      const lotsToInsert = polygons.map((geom, index) => {
-         const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
-         return {
-            block_id: blockId,
-            number: numberStr,
-            status: 'AVAILABLE',
-            area: 250, // Default fallback
-            price: 50000, // Default fallback
-            geom: geom,
-            tenant_id: tenantId
-         };
-      });
-      
-      const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
-      if (insertError) throw insertError;
+      const prepareBlock = async (tId: string) => {
+          let blockId;
+          const { data: existingBlock } = await supabase.from('blocks')
+             .select('id').eq('project_id', selectedProject.id).eq('name', importQuadra.toUpperCase()).single();
+             
+          if (existingBlock) {
+             return existingBlock.id;
+          } else {
+             const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
+                project_id: selectedProject.id,
+                name: importQuadra.toUpperCase(),
+                tenant_id: tId
+             }).select().single();
+             if (blockError) throw blockError;
+             return newBlock.id;
+          }
+      };
+
+          // Attempt using standard tenantId first
+          let blockId;
+          try {
+              blockId = await prepareBlock(finalTenantId);
+          } catch(err: any) {
+              if (err.message && err.message.includes('invalid input syntax for type uuid')) {
+                 const { data: firstCompany } = await supabase.from('companies').select('id').limit(1).single();
+                 if (firstCompany) {
+                    finalTenantId = firstCompany.id;
+                    blockId = await prepareBlock(finalTenantId);
+                 } else throw err;
+              } else throw err;
+          }
+          
+          // 2. Preparar lotes
+          let currentNumber = parseInt(importLoteInicial, 10);
+          const lotsToInsert = polygons.map((geom, index) => {
+             const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
+             return {
+                block_id: blockId,
+                number: numberStr,
+                status: 'AVAILABLE',
+                area: 250, // Default fallback
+                price: 50000, // Default fallback
+                geom: geom,
+                tenant_id: finalTenantId
+             };
+          });
+          
+          const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
+          if (insertError) throw insertError;
       
       alert(`Importados ${lotsToInsert.length} lotes com sucesso!`);
       setIsImportModalOpen(false);
