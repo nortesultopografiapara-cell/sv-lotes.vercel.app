@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/hooks/useAuth';
+import { useSessionGuard } from '@/hooks/useSessionGuard';
 
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
@@ -57,20 +57,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   
-  const { user, loading: isCheckingAuth } = useAuth();
+  const { user, loading: isCheckingAuth } = useSessionGuard();
   
-  useEffect(() => {
-    if (!isCheckingAuth) {
-      if (!user && pathname !== '/login') {
-        router.push('/login');
-      } else if (user && user.force_password_change && pathname !== '/onboarding') {
-        router.push('/onboarding');
-      } else if (user && !user.force_password_change && pathname === '/login') {
-        router.push('/');
-      }
-    }
-  }, [user, isCheckingAuth, pathname, router]);
-
+  // Guard checks are moved to useSessionGuard and Middleware
+  
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();

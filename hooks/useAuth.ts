@@ -9,6 +9,7 @@ export interface UserProfile {
   email: string;
   name: string;
   force_password_change: boolean;
+  onboarding_completed: boolean;
 }
 
 export function useAuth() {
@@ -21,8 +22,8 @@ export function useAuth() {
     
     async function getUser() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
           if (mounted) {
             setUser(null);
             setLoading(false);
@@ -49,7 +50,8 @@ export function useAuth() {
               role: userData.role,
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
-              force_password_change: userData.force_password_change || false
+              force_password_change: userData.force_password_change || false,
+              onboarding_completed: userData.onboarding_completed || false,
             });
             setLoading(false);
           }
@@ -66,8 +68,14 @@ export function useAuth() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
        if (event === 'SIGNED_OUT') {
-         if (mounted) setUser(null);
-       } else if (event === 'SIGNED_IN') {
+         if (mounted) {
+           setUser(null);
+           // Clear sensitive tenant cache on logout
+           localStorage.removeItem('active_tenant');
+           sessionStorage.clear();
+           router.replace('/login');
+         }
+       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
          getUser();
        } else if (event === 'PASSWORD_RECOVERY') {
          // Redirect the invited user to set a new password

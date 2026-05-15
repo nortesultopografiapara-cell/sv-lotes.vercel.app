@@ -45,10 +45,13 @@ export default function OnboardingPage() {
 
       if (authError) throw authError;
 
-      // 2. Clear the force_password_change flag in public.users
+      // 2. Clear the force_password_change flag in public.users and verify onboarding
       const { error: userError } = await supabase
         .from('users')
-        .update({ force_password_change: false })
+        .update({ 
+           force_password_change: false,
+           onboarding_completed: true 
+        })
         .eq('id', user.id);
 
       if (userError) throw userError;
