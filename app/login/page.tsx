@@ -49,44 +49,32 @@ export default function LoginPage() {
     console.log('LOGIN START - Initiating auth process...');
     
     try {
-      // 1. Reset Session: Clear old sessions and caches to avoid loops
+      // 1. Force Clean Authentication: Clear old sessions and caches
       await supabase.auth.signOut();
       localStorage.removeItem('active_tenant');
       localStorage.removeItem('supabase.auth.token');
       sessionStorage.clear();
 
-      // Create a timeout promise to detect if the Supabase call is hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT_ERROR')), 15000)
-      );
-
-      console.log('LOGIN PARAMS:', { email: email.split('@')[0] + '@***' });
+      console.log('LOGIN PARAMS:', { email: email.trim().toLowerCase() });
       
-      const authPromise = supabase.auth.signInWithPassword({
-        email,
-        password,
+      // 2. Strict Supabase Authentication
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: password,
       });
-
-      // Race between the auth request and the timeout
-      const response: any = await Promise.race([authPromise, timeoutPromise]);
-      
-      console.log('LOGIN RESULT HAS RETURNED', { 
-         error: response.error?.message, 
-         hasSession: !!response.data?.session, 
-         hasUser: !!response.data?.user 
-      });
-
-      const { data, error: authError } = response;
 
       if (authError) {
-        console.error('LOGIN ERROR:', authError);
+        console.error('Erro detalhado do Auth:', authError);
         setError(authError.message);
+        setLoading(false);
         return;
       }
 
-      // Check user role from our public.users table
+      // Check user role/metadata for redirection
       if (data?.user) {
-        console.log('LOGIN USER CONFIRMED. Fetching profile for ID:', data.user.id);
+        console.log('LOGIN USER CONFIRMED. Metadata:', data.user.user_metadata);
+        
+        // Fetch profile to sync local state
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('*')
@@ -94,27 +82,26 @@ export default function LoginPage() {
           .single();
           
         if (userError || !userData) {
-           console.error("Login user fetch error:", userError);
-           setError(`Erro ao buscar perfil: ${userError?.message || 'Usuário não encontrado na tabela public.users.'}`);
-           // Sign out since they don't have a valid profile
-           await supabase.auth.signOut();
-           return;
+           console.error("Login user profile fetch error:", userError);
+           // Even if profile fetch fails, we might allow entrance if super_admin is in metadata
+           if (data.user.user_metadata?.role !== 'SUPER_ADMIN') {
+              setError(`Erro ao buscar perfil: ${userError?.message || 'Usuário não encontrado.'}`);
+              await supabase.auth.signOut();
+              setLoading(false);
+              return;
+           }
         }
         
-        console.log('LOGIN PROFILE FETCHED. Redirecting to /');
-        // Success
+        const role = data.user.user_metadata?.role || userData?.role || 'CORRETOR';
+        console.log('LOGIN SUCCESS. Role identified:', role);
+
+        // Success redirect
         window.location.href = '/';
       }
     } catch (err: any) {
-      if (err.message === 'TIMEOUT_ERROR') {
-        console.error('LOGIN HANG TIMEOUT: A requisição ao Supabase estourou o tempo limite de 15 segundos.');
-        setError('Tempo limite da requisição esgotado. Verifique as variáveis de ambiente ou sua conexão.');
-      } else {
-        console.error('LOGIN EXCEPTION:', err);
-        setError(err.message || 'Ocorreu um erro inesperado no login.');
-      }
+      console.error('LOGIN EXCEPTION:', err);
+      setError(err.message || 'Ocorreu um erro inesperado no login.');
     } finally {
-      console.log('LOGIN FINALLY');
       setLoading(false);
     }
   };
