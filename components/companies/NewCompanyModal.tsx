@@ -22,7 +22,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     cnpj: initialData?.cnpj || '',
     phone: initialData?.phone || '',
     email: initialData?.email || '',
-    active: initialData?.active !== undefined ? initialData.active : true
+    active: initialData?.active !== undefined ? initialData.active : true,
+    password: ''
   });
 
   if (!isOpen) return null;
@@ -44,12 +45,29 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             phone: formData.phone,
             email: formData.email,
             active: formData.active,
+            default_password: formData.password ? formData.password : undefined,
             slug: slug
          }).eq('id', initialData.id);
          
          if (updateError) throw updateError;
+         
+         // Note: Updating auth email/password from client side typically requires admin privileges
+         // or the user themselves. We only update the companies table here.
       } else {
-         const generatedTenantId = crypto.randomUUID();
+         if (!formData.email || !formData.password) {
+            throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
+         }
+
+         const { data: authUser, error: authError } = await supabase.auth.signUp({ 
+             email: formData.email, 
+             password: formData.password 
+         });
+
+         if (authError) throw authError;
+
+         if (!authUser.user) throw new Error('Não foi possível criar o usuário de autenticação.');
+
+         const generatedTenantId = authUser.user.id;
          const { error: insertError } = await supabase.from('companies').insert([{
            id: generatedTenantId,
            name: formData.name,
@@ -58,10 +76,26 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            email: formData.email,
            active: formData.active,
            slug: slug,
+           default_password: formData.password,
            tenant_id: generatedTenantId
          }]);
 
-         if (insertError) throw insertError;
+         if (insertError) {
+             // In case of error we should probably log it
+             throw insertError;
+         }
+
+         const { error: userInsertError } = await supabase.from('users').insert([{
+            id: authUser.user.id,
+            tenant_id: generatedTenantId,
+            email: formData.email,
+            full_name: `Admin - ${formData.name}`,
+            role: 'ADMIN',
+            status: formData.active ? 'ACTIVE' : 'INACTIVE',
+            phone: formData.phone
+         }]);
+
+         if (userInsertError) throw userInsertError;
       }
 
       if (onSuccess) onSuccess();
@@ -146,6 +180,20 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 placeholder="(11) 90000-0000"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">
+                Senha de Acesso {!initialData && '*'}
+              </label>
+              <input 
+                type="password" 
+                required={!initialData}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder={initialData ? "Deixe em branco para manter a atual" : "Senha forte"}
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>
