@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home } from 'lucide-react';
+import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -10,48 +10,78 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ name: '', cpf_cnpj: '', phone: '', email: '', address: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  async function loadCustomers() {
+    if (!user) return;
+    try {
+      let query = supabase.from('customers').select(`
+          *,
+          blocks (id, block_name, name, number, status, projects(name))
+      `).order('created_at', { ascending: false });
+      
+      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+         query = query.eq('tenant_id', user.tenant_id);
+      }
+      
+      const { data, error } = await query;
+      if (error) {
+         console.error(error);
+         setCustomers([]);
+      } else {
+         setCustomers(data || []);
+      }
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadCustomers() {
-      if (!user) return;
-      try {
-        let query = supabase.from('customers').select(`
-            *,
-            blocks (id, block_name, name, number, status, projects(name))
-        `).order('created_at', { ascending: false });
-        
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
-        }
-        
-        const { data, error } = await query;
-        if (error) {
-           // Ignorar se a tabela não existir, pois acabamos de criar via migração (caso suportado)
-           console.error(error);
-           setCustomers([]);
-        } else {
-           setCustomers(data || []);
-        }
-      } catch(err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     if (!authLoading) {
       loadCustomers();
     }
   }, [user, authLoading]);
 
+  const handleSaveCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.from('customers').upsert([{
+        tenant_id: user?.tenant_id || 'MASTER-ADMIN', // Adjust based on rules
+        name: formData.name,
+        cpf_cnpj: formData.cpf_cnpj,
+        document: formData.cpf_cnpj, // Keep both in sync for the schema constraint
+        phone: formData.phone,
+        email: formData.email,
+        address: formData.address
+      }], { onConflict: 'cpf_cnpj' });
+
+      if (error) throw error;
+
+      setIsModalOpen(false);
+      setFormData({ name: '', cpf_cnpj: '', phone: '', email: '', address: '' });
+      await loadCustomers();
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao salvar cliente: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const filteredCustomers = customers.filter(c => 
      c.name?.toLowerCase().includes(search.toLowerCase()) || 
      c.email?.toLowerCase().includes(search.toLowerCase()) ||
-     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase())
+     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase()) ||
+     c.document?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in relative">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Clientes</h1>
@@ -59,7 +89,10 @@ export default function CustomersPage() {
             Gestão de Clientes e Lotes
           </p>
         </div>
-        <button className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors cursor-not-allowed opacity-50" title="Cadastro via mapa no momento">
+        <button 
+           onClick={() => setIsModalOpen(true)}
+           className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+        >
           <Plus className="w-5 h-5" />
           Novo Cliente
         </button>
@@ -124,6 +157,51 @@ export default function CustomersPage() {
           </table>
         </div>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
+              <h3 className="font-bold text-lg text-white">Novo Cliente</h3>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 text-[var(--color-text-muted)] hover:text-white rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveCustomer} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome Completo *</label>
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Ex: João da Silva" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CPF / CNPJ</label>
+                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
+                </div>
+                <div>
+                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Telefone</label>
+                   <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="(11) 99999-9999" />
+                </div>
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">E-mail</label>
+                 <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="joao@exemplo.com" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Endereço</label>
+                 <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua Exemplo, 123" />
+              </div>
+              <div className="pt-4 flex gap-3">
+                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-white hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
+                   Cancelar
+                 </button>
+                 <button type="submit" disabled={submitting} className={`flex-1 px-4 py-2 bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2`}>
+                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
+                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

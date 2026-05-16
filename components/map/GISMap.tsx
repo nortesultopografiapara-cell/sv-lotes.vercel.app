@@ -467,6 +467,7 @@ export default function GISMap({
            tenant_id: user.tenant_id || lot.tenant_id,
            name: customerData.name,
            cpf_cnpj: customerData.cpf_cnpj,
+           document: customerData.cpf_cnpj,
            phone: customerData.phone,
            email: customerData.email,
            address: customerData.address
