@@ -298,10 +298,7 @@ export default function MapPage() {
               </button>
               
               <button 
-                onClick={() => {
-                  setMeasureActive(!measureActive);
-                  alert(measureActive ? 'Modo de medição desativado' : 'Modo de medição ativado. Clique no mapa para desenhar polígonos ou traçar distâncias.');
-                }} 
+                onClick={() => setMeasureActive(!measureActive)} 
                 className={`flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${measureActive ? 'bg-[var(--color-info)]/10 border-[var(--color-info)] text-[var(--color-info)]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-info)] hover:text-[var(--color-info)]'}`}
                 title="Medição"
               >

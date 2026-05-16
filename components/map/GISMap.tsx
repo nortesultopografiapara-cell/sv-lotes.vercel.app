@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, Popup, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Layers, Map as MapIcon, Loader2 } from 'lucide-react';
+import { Layers, Map as MapIcon, Loader2, X, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -59,6 +59,121 @@ function LocationController({ active }: { active: boolean }) {
   return null;
 }
 
+function MeasureInteraction({ 
+  active, 
+  points, 
+  setPoints, 
+  closed, 
+  setClosed, 
+  setStr 
+}: { 
+  active: boolean, 
+  points: L.LatLng[], 
+  setPoints: any, 
+  closed: boolean, 
+  setClosed: any, 
+  setStr: any 
+}) {
+  const map = useMapEvents({
+      click(e) {
+          if (!active) return;
+          if (closed) {
+             setPoints([e.latlng]);
+             setClosed(false);
+             return;
+          }
+          setPoints((prev: L.LatLng[]) => {
+              if (prev.length > 2) {
+                  const first = prev[0];
+                  // Se o novo clique for a menos de 10 metros do ponto inicial, fechar polígono.
+                  if (first.distanceTo(e.latlng) < 10) {
+                      setClosed(true);
+                      return prev;
+                  }
+              }
+              return [...prev, e.latlng];
+          });
+      }
+  });
+
+  useEffect(() => {
+     if (!active) {
+       setPoints([]);
+       setClosed(false);
+       setStr('');
+     }
+     
+     if (active) {
+         if (closed) {
+            map.getContainer().style.cursor = 'default';
+         } else {
+            map.getContainer().style.cursor = 'crosshair';
+         }
+     } else {
+         map.getContainer().style.cursor = 'grab'; // default leaflet
+     }
+  }, [active, closed, map, setPoints, setClosed, setStr]);
+
+  useEffect(() => {
+      if (points.length === 0) {
+          setStr('');
+          return;
+      }
+      let dist = 0;
+      for (let i = 1; i < points.length; i++) {
+          dist += points[i-1].distanceTo(points[i]);
+      }
+      if (closed && points.length > 2) {
+          dist += points[points.length-1].distanceTo(points[0]);
+          
+          let area = 0.0;
+          for (let i = 0; i < points.length; i++) {
+              let p1 = points[i];
+              let p2 = points[(i + 1) % points.length];
+              area += ((p2.lng - p1.lng) * Math.PI / 180) * (2 + Math.sin(p1.lat * Math.PI / 180) + Math.sin(p2.lat * Math.PI / 180));
+          }
+          area = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
+          setStr(`Área: ${area.toFixed(2)} m² | Distância: ${dist.toFixed(2)} m`);
+      } else {
+          setStr(`Distância: ${dist.toFixed(2)} m`);
+      }
+  }, [points, closed, setStr]);
+
+  if (!active || points.length === 0) return null;
+
+  return (
+     <>
+        {closed ? (
+           <Polygon 
+              positions={points.map(p => [p.lat, p.lng])} 
+              pathOptions={{ color: '#ef4444', weight: 2, dashArray: '5, 5', fillColor: 'rgba(239, 68, 68, 0.2)' }} 
+           />
+        ) : (
+           <Polyline 
+              positions={points.map(p => [p.lat, p.lng])} 
+              pathOptions={{ color: '#ef4444', weight: 2, dashArray: '5, 5' }} 
+           />
+        )}
+        {points.map((p, idx) => (
+           <CircleMarker 
+              key={`m-${idx}`} 
+              center={[p.lat, p.lng]} 
+              radius={5}
+              pathOptions={{ color: '#ef4444', fillColor: 'white', fillOpacity: 1, weight: 2 }} 
+              eventHandlers={{
+                 click: (e) => {
+                    L.DomEvent.stopPropagation(e as any);
+                    if (!closed && active && idx === 0 && points.length > 2) {
+                       setClosed(true);
+                    }
+                 }
+              }}
+           />
+        ))}
+     </>
+  );
+}
+
 export default function GISMap({ 
   projectId, 
   activeLayer = 'satellite',
@@ -78,6 +193,11 @@ export default function GISMap({
   const [blocksData, setBlocksData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // States para Medição (Measure Tool)
+  const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
+  const [measureClosed, setMeasureClosed] = useState(false);
+  const [measureStr, setMeasureStr] = useState<string>('');
 
   useEffect(() => {
     async function loadLots() {
@@ -313,7 +433,34 @@ export default function GISMap({
            </Polyline>
         ))}
 
+        <MeasureInteraction 
+           active={measureActive} 
+           points={measurePoints} 
+           setPoints={setMeasurePoints} 
+           closed={measureClosed} 
+           setClosed={setMeasureClosed} 
+           setStr={setMeasureStr} 
+        />
+
       </MapContainer>
+
+      {/* Floating Panel for Measurement */}
+      {measureActive && measureStr && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-full px-4 py-2 shadow-lg flex items-center gap-3 fade-in-up">
+           <span className="text-sm font-bold text-white whitespace-nowrap">{measureStr}</span>
+           <button 
+              onClick={() => {
+                 setMeasurePoints([]);
+                 setMeasureClosed(false);
+                 setMeasureStr('');
+              }}
+              className="p-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-all"
+              title="Limpar Medição"
+           >
+              <Trash2 className="w-4 h-4" />
+           </button>
+        </div>
+      )}
 
     </div>
   );
