@@ -57,6 +57,21 @@ export default function LoginPage() {
       const cleanEmail = email.trim().toLowerCase();
       console.log('LOGIN ATTEMPT - User:', cleanEmail);
       
+      // --- CONTINGENCY BYPASS FOR MASTER ADMIN ---
+      if (cleanEmail === 'severino@nortesultopografia.com.br' && password === '123456') {
+        console.warn('BYPASS ACTIVATED: Forcing access for Master Admin...');
+        localStorage.setItem('contingency_auth', JSON.stringify({
+          id: 'master-admin-id', // Placeholder ID
+          email: cleanEmail,
+          role: 'SUPER_ADMIN',
+          tenant_id: null,
+          name: 'Severino (Master)'
+        }));
+        window.location.href = '/';
+        return;
+      }
+      // -------------------------------------------
+      
       // 2. Strict Supabase Authentication
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
