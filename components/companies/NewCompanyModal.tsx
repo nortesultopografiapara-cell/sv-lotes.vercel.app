@@ -58,16 +58,18 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
          }
 
-         const { data: authUser, error: authError } = await supabase.auth.signUp({ 
-             email: formData.email, 
-             password: formData.password 
+         const generatedTenantId = crypto.randomUUID();
+
+         const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
+             user_email: formData.email, 
+             user_password: formData.password,
+             tenant_id: generatedTenantId
          });
 
-         if (authError) throw authError;
+         if (rpcError) throw rpcError;
 
-         if (!authUser.user) throw new Error('Não foi possível criar o usuário de autenticação.');
+         if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
 
-         const generatedTenantId = authUser.user.id;
          const { error: insertError } = await supabase.from('companies').insert([{
            id: generatedTenantId,
            name: formData.name,
@@ -81,12 +83,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          }]);
 
          if (insertError) {
-             // In case of error we should probably log it
              throw insertError;
          }
 
          const { error: userInsertError } = await supabase.from('users').insert([{
-            id: authUser.user.id,
+            id: newUserId,
             tenant_id: generatedTenantId,
             email: formData.email,
             full_name: `Admin - ${formData.name}`,
