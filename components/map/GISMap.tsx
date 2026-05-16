@@ -38,7 +38,7 @@ function MapController({ lots, blocksData }: { lots: any[], blocksData: any[] })
     });
 
     if (allBounds.length > 0) {
-       map.fitBounds(L.latLngBounds(allBounds), { padding: [50, 50] });
+       map.fitBounds(L.latLngBounds(allBounds), { padding: [50, 50], maxZoom: 20 });
     }
   }, [lots, blocksData, map]);
   return null;
@@ -59,7 +59,7 @@ function LocationController({ active }: { active: boolean }) {
             setPosition(newPos);
             // We only want to setView on the first fix, or periodically.
             // Let's use map.flyTo to smoothly pan if we are far, or on initial.
-            map.setView(newPos, map.getZoom() > 16 ? map.getZoom() : 18);
+            map.setView(newPos, map.getZoom() > 19 ? map.getZoom() : 20);
           },
           (err) => {
             console.error('Geolocation error:', err);
@@ -614,23 +614,30 @@ export default function GISMap({
       <MapContainer 
         center={center} 
         zoom={18} 
+        maxZoom={22}
         className="w-full h-full"
         zoomControl={false}
       >
         {activeLayer === 'streets' && (
           <TileLayer
+            maxNativeZoom={19}
+            maxZoom={22}
             attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
         )}
         {activeLayer === 'satellite' && (
           <TileLayer
+            maxNativeZoom={19}
+            maxZoom={22}
             attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           />
         )}
         {activeLayer === 'dark' && (
           <TileLayer
+            maxNativeZoom={19}
+            maxZoom={22}
             attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
