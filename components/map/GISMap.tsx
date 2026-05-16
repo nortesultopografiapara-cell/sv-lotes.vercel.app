@@ -363,10 +363,10 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
         <div className="border-b pb-2 mb-1 mt-1">
            <span className="text-gray-600 font-semibold text-xs mb-1 block">Dimensões do Lote</span>
            <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-gray-50 p-2 rounded w-full border border-gray-100">
-             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Frente:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.frente ? `${lot.frente} m` : '--'}</span></div>
-             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Fundo:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.fundo ? `${lot.fundo} m` : '--'}</span></div>
-             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Dir:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_direito ? `${lot.lado_direito} m` : '--'}</span></div>
-             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Esq:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_esquerdo ? `${lot.lado_esquerdo} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Frente:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.frente !== null && lot.frente !== undefined ? `${Number(lot.frente).toFixed(2)} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Fundo:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.fundo !== null && lot.fundo !== undefined ? `${Number(lot.fundo).toFixed(2)} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Dir:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_direito !== null && lot.lado_direito !== undefined ? `${Number(lot.lado_direito).toFixed(2)} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Esq:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined ? `${Number(lot.lado_esquerdo).toFixed(2)} m` : '--'}</span></div>
            </div>
         </div>
         <div className="flex justify-between items-center pt-1">
