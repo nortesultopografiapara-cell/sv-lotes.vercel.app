@@ -14,6 +14,8 @@
     "@hookform/resolvers": "^5.2.1",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "@turf/area": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

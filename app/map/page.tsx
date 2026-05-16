@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X } from 'lucide-react';
+import { area as turfArea } from '@turf/area';
+import { polygon as turfPolygon } from '@turf/helpers';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -39,7 +41,14 @@ function parseKML(xmlString: string) {
        const text = coordsNode.textContent.trim();
        if (text) {
           const coords = extractCoords(text);
-          if (coords.length > 0) geometries.push({ type: "LineString", coordinates: coords });
+          if (coords.length > 2) {
+             const first = coords[0];
+             const last = coords[coords.length - 1];
+             if (first[0] !== last[0] || first[1] !== last[1]) {
+                coords.push([...first]);
+             }
+             geometries.push({ type: "Polygon", coordinates: [coords] });
+          }
        }
     }
   }
@@ -51,7 +60,7 @@ function parseKML(xmlString: string) {
        const text = coordsNode.textContent.trim();
        if (text) {
           const coords = extractCoords(text);
-          if (coords.length > 0) {
+          if (coords.length > 2) {
              const first = coords[0];
              const last = coords[coords.length - 1];
              if (first[0] !== last[0] || first[1] !== last[1]) {
@@ -213,32 +222,25 @@ export default function MapPage() {
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
           
       // Preparar inserção na tabela blocks
+      const PRICE_PER_M2 = 0.0993035247984734;
       let currentNumber = parseInt(importLoteInicial, 10) || 1;
       const blocksToInsert = geometries.map((geom, index) => {
           const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
           
           let calcArea = 0;
-          if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0]) {
-             const coords = geom.coordinates[0];
-             let area = 0.0;
-             for (let i = 0; i < coords.length; i++) {
-                 let p1 = coords[i];
-                 let p2 = coords[(i + 1) % coords.length];
-                 area += ((p2[0] - p1[0]) * Math.PI / 180) * (2 + Math.sin(p1[1] * Math.PI / 180) + Math.sin(p2[1] * Math.PI / 180));
+          if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0].length >= 4) {
+             try {
+                const poly = turfPolygon(geom.coordinates);
+                calcArea = turfArea(poly);
+             } catch (e) {
+                console.error("Error calculating area:", e);
              }
-             calcArea = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
-          } else if (geom.type === 'LineString' && geom.coordinates) {
-             const coords = geom.coordinates;
-             let area = 0.0;
-             for (let i = 0; i < coords.length; i++) {
-                 let p1 = coords[i];
-                 let p2 = coords[(i + 1) % coords.length];
-                 area += ((p2[0] - p1[0]) * Math.PI / 180) * (2 + Math.sin(p1[1] * Math.PI / 180) + Math.sin(p2[1] * Math.PI / 180));
-             }
-             calcArea = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
           }
           
-          calcArea = calcArea * 10;
+          if (calcArea <= 0) calcArea = 2500; // Fallback
+          
+          const finalArea = parseFloat(calcArea.toFixed(2));
+          const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
 
           return {
              project_id: selectedProject.id,
@@ -247,8 +249,8 @@ export default function MapPage() {
              number: numberStr,
              lot_number: numberStr,
              status: 'Disponível',
-             area: calcArea > 0 ? parseFloat(calcArea.toFixed(2)) : 2500,
-             price: 50000,
+             area: finalArea,
+             price: finalPrice,
              geometry: geom,
              tenant_id: finalTenantId
           };

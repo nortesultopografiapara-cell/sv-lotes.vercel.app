@@ -23,6 +23,9 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import dynamic from 'next/dynamic';
+
+const GISMap = dynamic(() => import('@/components/map/GISMap'), { ssr: false });
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -34,20 +37,32 @@ export default function DashboardPage() {
   });
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   useEffect(() => {
     async function loadDashboardStats() {
       if (!user) return;
       
       try {
-        let query = supabase.from('blocks').select('status, price', { count: 'exact' });
+        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
+        let projectsQuery = supabase.from('projects').select('id, name');
         
         // Se não for super admin, limita por tenant
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
           query = query.eq('tenant_id', user.tenant_id);
+          projectsQuery = projectsQuery.eq('tenant_id', user.tenant_id);
         }
 
         const { data, error } = await query;
+        const { data: projectsData } = await projectsQuery;
+
+        if (projectsData) {
+          setProjects(projectsData);
+          if (projectsData.length > 0 && !selectedProjectId) {
+             setSelectedProjectId(projectsData[0].id);
+          }
+        }
         
         if (error) throw error;
 
@@ -58,11 +73,14 @@ export default function DashboardPage() {
 
         if (data) {
           data.forEach(lot => {
+            // Apply project filter effectively to the dashboard stats as requested. Wait, if we filter stats, the entire dashboard stats update based on selected project. Actually "O mapa do Dashboard deve atualizar instantaneamente". The user probably also wants stats for the selected project. Let's do that!
+            if (selectedProjectId && lot.project_id !== selectedProjectId) return;
+            
             if (lot.status === 'Disponível') available++;
             if (lot.status === 'Reservado') reserved++;
             if (lot.status === 'Vendido') {
               sold++;
-              vgv += Number(lot.price || 0); // Accumulate actual sales value or lot price.
+              vgv += Number(lot.price || 0);
             }
           });
         }
@@ -85,7 +103,7 @@ export default function DashboardPage() {
     }
 
     loadDashboardStats();
-  }, [user]);
+  }, [user, selectedProjectId]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -126,6 +144,21 @@ export default function DashboardPage() {
              <Calendar className="w-3.5 h-3.5 text-white" />
              14/05/2026
           </div>
+      </div>
+
+      {/* Project Selector */}
+      <div className="mb-6 flex items-center gap-4">
+        <label htmlFor="project-select" className="text-[var(--color-text-muted)] text-sm font-medium">Projeto:</label>
+        <select 
+           id="project-select"
+           value={selectedProjectId}
+           onChange={(e) => setSelectedProjectId(e.target.value)}
+           className="bg-[var(--color-surface)] border border-[var(--color-border)] text-white text-sm py-2 px-3 rounded-lg focus:outline-none focus:border-[var(--color-primary)] outline-none min-w-[200px]"
+        >
+           {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+           ))}
+        </select>
       </div>
 
       {/* Top Stats Grid */}
@@ -179,29 +212,16 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="flex-1 relative bg-[#0b1111]">
-            {/* Using a styled div to simulate the map in the dashboard view exactly like the mockup, avoiding heavy iframe loading for preview */}
-            <div 
-              className="absolute inset-0 opacity-80" 
-              style={{
-                backgroundImage: 'url("https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=2000")',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }} 
-            />
-            
-            {/* Simulated overlay grid for lots */}
-            <div className="absolute inset-0 flex items-center justify-center p-8">
-               <div className="w-full max-w-2xl h-[80%] grid grid-cols-6 grid-rows-4 gap-1 md:gap-2 transform -rotate-12 skew-x-12 scale-110">
-                  {Array.from({ length: 24 }).map((_, i) => {
-                    let bg = i % 7 === 0 ? 'bg-[var(--color-danger)]' : i % 5 === 0 ? 'bg-[var(--color-warning)]' : 'bg-[var(--color-success)]';
-                    if (i === 2 || i === 8 || i === 14) bg = 'bg-transparent border-none'; // Fake roads
-                    return <div key={i} className={`${bg} opacity-70 border border-white/20 rounded-sm hover:opacity-100 cursor-pointer shadow-lg`} />
-                  })}
+            {selectedProjectId ? (
+               <div className="absolute inset-0">
+                  <GISMap projectId={selectedProjectId} activeLayer="satellite" />
                </div>
-            </div>
+            ) : (
+               <div className="flex items-center justify-center h-full text-white">Carregando mapa...</div>
+            )}
 
             {/* Map Legend */}
-            <div className="absolute bottom-5 left-5 bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-xl p-3 md:p-4 shadow-xl z-20">
+            <div className="absolute bottom-5 left-5 bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-xl p-3 md:p-4 shadow-xl z-[400]">
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-8 text-[13px]">
                   <div className="flex items-center gap-3 text-white"><div className="w-3.5 h-3.5 rounded-[4px] bg-[var(--color-success)]" /> Disponível</div>
@@ -216,13 +236,6 @@ export default function DashboardPage() {
                   <span className="font-mono text-white text-right">{loading ? '-' : stats.sold}</span>
                 </div>
               </div>
-            </div>
-
-            {/* Map Controls */}
-            <div className="absolute bottom-5 right-5 bg-[var(--color-surface)]/90 backdrop-blur-md border border-[var(--color-border)] rounded-xl flex flex-col shadow-xl overflow-hidden z-20">
-              <button className="p-3 text-white hover:bg-[var(--color-surface-bright)] border-b border-[var(--color-border)] transition-colors"><Plus className="w-5 h-5"/></button>
-              <button className="p-3 text-white hover:bg-[var(--color-surface-bright)] border-b border-[var(--color-border)] transition-colors"><Minus className="w-5 h-5"/></button>
-              <button className="p-3 text-white hover:bg-[var(--color-surface-bright)] transition-colors"><Crosshair className="w-5 h-5"/></button>
             </div>
           </div>
         </div>

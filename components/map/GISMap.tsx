@@ -181,11 +181,12 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
   const area = lot.area || 0;
   const currentPrice = Number(editedPrice) || 0;
   const meterPrice = area > 0 ? (currentPrice / area) : 0;
+  const displayNum = String(lot.number).replace(/[^0-9A-Za-z]/g, '').replace(/.*linha.*/i, '').replace(/.*kml.*/i, '') || String(lot.number).replace(/\D/g, '');
 
   return (
-    <div className="p-2 min-w-[280px] bg-white text-gray-900 rounded-md font-sans">
+    <div className="p-2 min-w-[280px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
       <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-lg text-gray-900">Lote {lot.number}</span>
+        <span className="font-bold text-lg text-gray-900">Lote {displayNum}</span>
       </div>
       
       <div className="space-y-2 mb-4 text-sm">
@@ -194,12 +195,12 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
           <span className="text-gray-900 text-right max-w-[150px] truncate">{lot.projectName}</span>
         </div>
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Quadra (Quadra):</span>
+          <span className="text-gray-600 font-semibold">Quadra:</span>
           <span className="text-gray-900">{lot.block}</span>
         </div>
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Lote (Lote):</span>
-          <span className="text-gray-900">{lot.number}</span>
+          <span className="text-gray-600 font-semibold">Lote:</span>
+          <span className="text-gray-900">{displayNum}</span>
         </div>
         <div className="flex justify-between items-center border-b pb-1">
           <span className="text-gray-600 font-semibold">Status:</span>
@@ -420,6 +421,8 @@ export default function GISMap({
 
         {lots.filter(lot => lot.bounds.length > 0).map((lot) => {
           const color = getStatusColor(lot.status);
+          const displayNum = String(lot.number).replace(/[^0-9A-Za-z]/g, '').replace(/.*linha.*/i, '').replace(/.*kml.*/i, '') || String(lot.number).replace(/\D/g, '');
+          
           return (
             <Polygon 
               key={lot.id}
@@ -448,10 +451,10 @@ export default function GISMap({
                 }
               }}
             >
-              {lot.number !== '0' && (
+              {displayNum && displayNum !== '0' && (
                 <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]" opacity={1}>
                    <div style={{ textShadow: '1px 1px 2px black, 0 0 1em black' }}>
-                     Lote {lot.number}
+                     Lote {displayNum}
                    </div>
                 </Tooltip>
               )}
@@ -462,7 +465,10 @@ export default function GISMap({
           );
         })}
 
-        {blocksData.map(block => (
+        {blocksData.map(block => {
+           const displayNum = String(block.number).replace(/[^0-9A-Za-z]/g, '').replace(/.*linha.*/i, '').replace(/.*kml.*/i, '') || String(block.number).replace(/\D/g, '');
+
+           return (
            <Polygon 
               key={`block-${block.id}`} 
               positions={block.bounds} 
@@ -490,10 +496,10 @@ export default function GISMap({
                 }
               }}
            >
-              {block.number !== '0' && (
+              {displayNum && displayNum !== '0' && (
                 <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]" opacity={1}>
                    <div style={{ textShadow: '1px 1px 2px black, 0 0 1em black' }}>
-                     {block.name || block.block_name} {block.number !== '0' && `(Linha ${block.number})`}
+                     Lote {displayNum}
                    </div>
                 </Tooltip>
               )}
@@ -501,7 +507,7 @@ export default function GISMap({
                  <LotPopupContent lot={block} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
            </Polygon>
-        ))}
+        )})}
 
         <MeasureInteraction 
            active={measureActive} 
