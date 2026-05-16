@@ -47,7 +47,7 @@ export default function CustomersPage() {
   const filteredCustomers = customers.filter(c => 
      c.name?.toLowerCase().includes(search.toLowerCase()) || 
      c.email?.toLowerCase().includes(search.toLowerCase()) ||
-     c.document?.toLowerCase().includes(search.toLowerCase())
+     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -105,7 +105,7 @@ export default function CustomersPage() {
                     <CustomerRow 
                       key={c.id}
                       name={c.name}
-                      document={c.document}
+                      cpf_cnpj={c.cpf_cnpj}
                       email={c.email || '—'}
                       phone={c.phone || '—'}
                       blocks={c.blocks || []}
@@ -128,7 +128,7 @@ export default function CustomersPage() {
   );
 }
 
-function CustomerRow({ name, document, email, phone, blocks, createdAt }: any) {
+function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt }: any) {
   return (
     <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group">
       <td className="p-4">
@@ -138,7 +138,7 @@ function CustomerRow({ name, document, email, phone, blocks, createdAt }: any) {
           </div>
           <div>
             <div className="font-bold text-sm text-white">{name}</div>
-            <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5">{document || 'Sem Documento'}</div>
+            <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5">{cpf_cnpj || 'Sem Documento'}</div>
           </div>
         </div>
       </td>

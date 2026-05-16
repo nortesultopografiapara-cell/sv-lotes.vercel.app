@@ -177,7 +177,7 @@ function MeasureInteraction({
 function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot: any, actionName: string, price: number, onClose: () => void, onConfirm: (data: any) => void }) {
   const [formData, setFormData] = useState({
     name: '',
-    document: '',
+    cpf_cnpj: '',
     phone: '',
     email: '',
     address: ''
@@ -212,7 +212,7 @@ function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot
                <div className="grid grid-cols-2 gap-4">
                    <div>
                        <label className="block text-xs font-semibold text-gray-700 mb-1">CPF / CNPJ</label>
-                       <input type="text" value={formData.document} onChange={e => setFormData({...formData, document: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="000.000.000-00" />
+                       <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="000.000.000-00" />
                    </div>
                    <div>
                        <label className="block text-xs font-semibold text-gray-700 mb-1">Telefone</label>
@@ -462,15 +462,15 @@ export default function GISMap({
     if (!user) return;
     
     try {
-       // Create Customer first (async/await correctly)
-       const { data: newCustomer, error: custError } = await supabase.from('customers').insert([{
+       // Upsert Customer (verify by cpf_cnpj)
+       const { data: newCustomer, error: custError } = await supabase.from('customers').upsert([{
            tenant_id: user.tenant_id || lot.tenant_id,
            name: customerData.name,
-           document: customerData.document,
+           cpf_cnpj: customerData.cpf_cnpj,
            phone: customerData.phone,
            email: customerData.email,
            address: customerData.address
-       }]).select('id').single();
+       }], { onConflict: 'cpf_cnpj' }).select('id').single();
        
        if (custError) throw custError;
 

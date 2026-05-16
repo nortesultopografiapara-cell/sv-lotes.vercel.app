@@ -3,7 +3,7 @@ create table if not exists public.customers (
     id uuid default gen_random_uuid() primary key,
     tenant_id uuid references public.companies(id) on delete cascade,
     name text not null,
-    document text, -- CPF/CNPJ
+    cpf_cnpj text unique, -- CPF/CNPJ
     phone text,
     email text,
     address text,
