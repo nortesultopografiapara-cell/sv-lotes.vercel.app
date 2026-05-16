@@ -231,7 +231,9 @@ export default function MapPage() {
           if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0].length >= 4) {
              try {
                 const poly = turfPolygon(geom.coordinates);
-                calcArea = turfArea(poly);
+                const areaCalculada = turfArea(poly);
+                const areaRealCorrigida = areaCalculada * 0.9952546259435014;
+                calcArea = areaRealCorrigida;
              } catch (e) {
                 console.error("Error calculating area:", e);
              }
