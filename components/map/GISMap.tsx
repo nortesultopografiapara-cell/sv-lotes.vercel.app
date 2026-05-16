@@ -276,7 +276,13 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
           <span className="text-gray-600 font-semibold">Lote:</span>
           <span className="text-gray-900">{displayNum}</span>
         </div>
-        <div className="flex justify-between items-center border-b pb-1">
+        {lot.customerName && lot.status !== 'Disponível' && (
+          <div className="flex justify-between border-b pb-1 bg-yellow-50 px-1 rounded -mx-1">
+            <span className="text-gray-600 font-semibold">Cliente:</span>
+            <span className="text-gray-900 text-right max-w-[140px] truncate font-medium">{lot.customerName}</span>
+          </div>
+        )}
+        <div className="flex justify-between items-center border-b pb-1 mt-1">
           <span className="text-gray-600 font-semibold">Status:</span>
           <span className="text-white text-[11px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: color }}>
             {getStatusLabel(lot.status)}
@@ -363,7 +369,7 @@ export default function GISMap({
     async function loadLots() {
       if (!user) return;
       try {
-        let blocksQuery = supabase.from('blocks').select('*, projects(name)');
+        let blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
         
         if (projectId) {
           blocksQuery = blocksQuery.eq('project_id', projectId);
@@ -388,6 +394,8 @@ export default function GISMap({
                id: b.id,
                block: b.block_name || b.name || '?',
                projectName: b.projects?.name || '?',
+               customerName: b.customers?.name || null,
+               customerId: b.customer_id || null,
                number: b.number || '0',
                status: b.status || 'Disponível',
                area: b.area !== null && b.area !== undefined ? Number(b.area) : 0,
@@ -428,8 +436,8 @@ export default function GISMap({
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;
     
     // Optimistic UI updates
-    setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
-    setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+    setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, ...(newStatus === 'Disponível' ? { customer_id: null, customerId: null, customerName: null } : {}) } : l));
+    setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, ...(newStatus === 'Disponível' ? { customer_id: null, customerId: null, customerName: null } : {}) } : l));
 
     try {
       const updatePayload: any = { status: newStatus, price: finalPrice };
@@ -510,8 +518,8 @@ export default function GISMap({
        if (updateError) throw updateError;
        
        // Optimistic UI updates
-       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
-       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, customerName: nameUpper, customerId: customerId } : l));
+       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, customerName: nameUpper, customerId: customerId } : l));
        
        // Log
        await supabase.from('logs').insert({
