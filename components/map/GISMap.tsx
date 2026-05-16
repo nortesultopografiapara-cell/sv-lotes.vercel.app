@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Popup, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Popup, Tooltip, useMap, useMapEvents, ZoomControl, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Layers, Map as MapIcon, Loader2, X, Trash2 } from 'lucide-react';
@@ -46,17 +46,80 @@ function MapController({ lots, blocksData }: { lots: any[], blocksData: any[] })
 
 function LocationController({ active }: { active: boolean }) {
   const map = useMap();
+  const [position, setPosition] = useState<L.LatLng | null>(null);
+
   useEffect(() => {
+    let watchId: number;
+
     if (active) {
-      map.locate({ setView: true, maxZoom: 18, watch: true, enableHighAccuracy: true });
-      map.on('locationfound', (e) => {
-         // Could add a marker here for user position
-      });
+      if ('geolocation' in navigator) {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const newPos = L.latLng(pos.coords.latitude, pos.coords.longitude);
+            setPosition(newPos);
+            // We only want to setView on the first fix, or periodically.
+            // Let's use map.flyTo to smoothly pan if we are far, or on initial.
+            map.setView(newPos, map.getZoom() > 16 ? map.getZoom() : 18);
+          },
+          (err) => {
+            console.error('Geolocation error:', err);
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+        );
+      }
     } else {
-      map.stopLocate();
+      setTimeout(() => setPosition(null), 0);
     }
+
+    return () => {
+      if (watchId !== undefined) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
   }, [active, map]);
-  return null;
+
+  if (!active || !position) return null;
+
+  const pulseIcon = L.divIcon({
+    className: 'custom-pulse-icon',
+    html: `<div class="gps-pulse-marker"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
+
+  return (
+    <>
+      <style>{`
+        .gps-pulse-marker {
+          width: 20px;
+          height: 20px;
+          background-color: #3b82f6;
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 0 10px rgba(0,0,0,0.5);
+          position: relative;
+        }
+        .gps-pulse-marker::after {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 100%;
+          height: 100%;
+          transform: translate(-50%, -50%);
+          background-color: #3b82f6;
+          border-radius: 50%;
+          animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+          z-index: -1;
+        }
+        @keyframes pulse-ring {
+          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+          100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+        }
+      `}</style>
+      <Marker position={position} icon={pulseIcon} zIndexOffset={1000} />
+    </>
+  );
 }
 
 function MeasureInteraction({ 

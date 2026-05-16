@@ -58,37 +58,61 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
          }
 
-         const generatedTenantId = crypto.randomUUID();
+         let existingCompany = null;
+         if (formData.cnpj && formData.cnpj.trim() !== '') {
+            const { data } = await supabase.from('companies').select('id').eq('cnpj', formData.cnpj).maybeSingle();
+            if (data) existingCompany = data;
+         }
+
+         // Fallback check by slug to prevent unique constraint errors
+         if (!existingCompany) {
+            const { data } = await supabase.from('companies').select('id').eq('slug', slug).maybeSingle();
+            if (data) existingCompany = data;
+         }
+
+         const finalTenantId = existingCompany ? existingCompany.id : crypto.randomUUID();
 
          const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
              user_email: formData.email, 
              user_password: formData.password,
-             tenant_id: generatedTenantId
+             tenant_id: finalTenantId
          });
 
          if (rpcError) throw rpcError;
 
          if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
 
-         const { error: insertError } = await supabase.from('companies').insert([{
-           id: generatedTenantId,
-           name: formData.name,
-           cnpj: formData.cnpj,
-           phone: formData.phone,
-           email: formData.email,
-           active: formData.active,
-           slug: slug,
-           default_password: formData.password,
-           tenant_id: generatedTenantId
-         }]);
+         if (existingCompany) {
+             const { error: updateExistingError } = await supabase.from('companies').update({
+               name: formData.name,
+               phone: formData.phone,
+               email: formData.email,
+               active: formData.active,
+               default_password: formData.password
+             }).eq('id', existingCompany.id);
 
-         if (insertError) {
-             throw insertError;
+             if (updateExistingError) throw updateExistingError;
+         } else {
+             const { error: insertError } = await supabase.from('companies').insert([{
+               id: finalTenantId,
+               name: formData.name,
+               cnpj: formData.cnpj,
+               phone: formData.phone,
+               email: formData.email,
+               active: formData.active,
+               slug: slug,
+               default_password: formData.password,
+               tenant_id: finalTenantId
+             }]);
+
+             if (insertError) {
+                 throw insertError;
+             }
          }
 
          const { error: userInsertError } = await supabase.from('users').insert([{
             id: newUserId,
-            tenant_id: generatedTenantId,
+            tenant_id: finalTenantId,
             email: formData.email,
             full_name: `Admin - ${formData.name}`,
             role: 'ADMIN',
