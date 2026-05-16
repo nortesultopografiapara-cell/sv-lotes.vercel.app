@@ -462,32 +462,32 @@ export default function GISMap({
     if (!user) return;
     
     try {
-       // Optimistic UI
-       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
-       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
-       
-       // Create Customer
-       const { data: customer, error: customerError } = await supabase.from('customers').insert({
+       // Create Customer first (async/await correctly)
+       const { data: newCustomer, error: custError } = await supabase.from('customers').insert([{
            tenant_id: user.tenant_id || lot.tenant_id,
            name: customerData.name,
            document: customerData.document,
            phone: customerData.phone,
            email: customerData.email,
            address: customerData.address
-       }).select().single();
+       }]).select('id').single();
        
-       if (customerError) throw customerError;
-       
-       // Update block
+       if (custError) throw custError;
+
+       // Update block with the customer_id
        const { error: updateError } = await supabase.from('blocks')
          .update({ 
             status: newStatus, 
             price: finalPrice,
-            customer_id: customer?.id 
+            customer_id: newCustomer.id 
          })
          .eq('id', lot.id);
          
        if (updateError) throw updateError;
+       
+       // Optimistic UI updates
+       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
        
        // Log
        await supabase.from('logs').insert({
@@ -503,9 +503,6 @@ export default function GISMap({
     } catch (e: any) {
        console.error("Error saving customer and lot:", e);
        alert("Erro ao salvar cliente: " + e.message);
-       // Revert Optimistic
-       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: lot.status, price: lot.price } : l));
-       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: lot.status, price: lot.price } : l));
     }
   };
 
