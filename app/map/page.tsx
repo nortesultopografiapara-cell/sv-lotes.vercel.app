@@ -20,48 +20,49 @@ const GISMap = dynamic(() => import('@/components/map/GISMap'), {
 function parseKML(xmlString: string) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-  const placemarks = xmlDoc.getElementsByTagName("Placemark");
   const geometries: any[] = [];
 
-  for (let i = 0; i < placemarks.length; i++) {
-    const placemark = placemarks[i];
-    const coordinatesNode = placemark.querySelector('LineString coordinates') || placemark.querySelector('Polygon coordinates');
-    
-    if (coordinatesNode && coordinatesNode.textContent) {
-      const coordsText = coordinatesNode.textContent.trim();
-      if (!coordsText) continue;
-      
-      const coordsArray = coordsText.replace(/\r?\n|\r/g, " ").split(/\s+/).filter(Boolean).map(pair => {
-         if (!pair || !pair.includes(',')) return [0, 0];
-         const parts = pair.split(',');
-         const lng = parseFloat(parts[0]) || 0;
-         const lat = parseFloat(parts[1]) || 0;
-         return [lng, lat];
-      }).filter(c => c[0] !== 0 || c[1] !== 0);
-      
-      const isPolygon = placemark.querySelector('Polygon') !== null;
+  const extractCoords = (text: string) => {
+    return text.replace(/\r?\n|\r/g, " ").split(/\s+/).filter(Boolean).map(pair => {
+       if (!pair || !pair.includes(',')) return [0, 0];
+       const parts = pair.split(',');
+       const lng = parseFloat(parts[0]);
+       const lat = parseFloat(parts[1]);
+       return [Number.isNaN(lng) ? 0 : lng, Number.isNaN(lat) ? 0 : lat];
+    }).filter(c => c[0] !== 0 || c[1] !== 0);
+  };
 
-      if (isPolygon) {
-         // Fix rings for polygon
-         if (coordsArray.length > 0) {
-            const first = coordsArray[0];
-            const last = coordsArray[coordsArray.length - 1];
-            if (first[0] !== last[0] || first[1] !== last[1]) {
-               coordsArray.push([...first]);
-            }
-         }
-         geometries.push({
-           type: "Polygon",
-           coordinates: [coordsArray]
-         });
-      } else {
-         geometries.push({
-           type: "LineString",
-           coordinates: coordsArray
-         });
-      }
+  const lineStrings = xmlDoc.getElementsByTagName("LineString");
+  for (let i = 0; i < lineStrings.length; i++) {
+    const coordsNode = lineStrings[i].getElementsByTagName("coordinates")[0];
+    if (coordsNode && coordsNode.textContent) {
+       const text = coordsNode.textContent.trim();
+       if (text) {
+          const coords = extractCoords(text);
+          if (coords.length > 0) geometries.push({ type: "LineString", coordinates: coords });
+       }
     }
   }
+
+  const polygons = xmlDoc.getElementsByTagName("Polygon");
+  for (let i = 0; i < polygons.length; i++) {
+    const coordsNode = polygons[i].getElementsByTagName("coordinates")[0];
+    if (coordsNode && coordsNode.textContent) {
+       const text = coordsNode.textContent.trim();
+       if (text) {
+          const coords = extractCoords(text);
+          if (coords.length > 0) {
+             const first = coords[0];
+             const last = coords[coords.length - 1];
+             if (first[0] !== last[0] || first[1] !== last[1]) {
+                coords.push([...first]);
+             }
+             geometries.push({ type: "Polygon", coordinates: [coords] });
+          }
+       }
+    }
+  }
+
   return geometries;
 }
 
@@ -230,7 +231,7 @@ export default function MapPage() {
           if (insertError) throw insertError;
       }
       
-      alert(`Importados ${blocksToInsert.length} elementos geográficos com sucesso!`);
+      alert(`Importados ${blocksToInsert.length} lotes com sucesso!`);
       setIsImportModalOpen(false);
       setImportFile(null);
       setImportQuadra('');
