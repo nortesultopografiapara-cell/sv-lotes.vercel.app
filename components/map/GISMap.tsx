@@ -191,7 +191,7 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
       <div className="space-y-3 mb-4">
         <div className="flex justify-between text-sm items-center">
           <span className="text-[var(--color-text-muted)]">Área total:</span>
-          <span className="font-mono text-white">{lot.area} m²</span>
+          <span className="font-mono text-white">{(lot.area || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²</span>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[var(--color-text-muted)] text-sm">Valor (R$):</span>
@@ -211,9 +211,9 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
       </div>
 
       <div className="grid grid-cols-3 gap-1 mb-2">
-         <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#22C55E]/20 text-[#22C55E] hover:bg-[#22C55E]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">D</button>
-         <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EAB308]/20 text-[#EAB308] hover:bg-[#EAB308]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">R</button>
-         <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">V</button>
+         <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#22C55E]/20 text-[#22C55E] hover:bg-[#22C55E]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Disponível</button>
+         <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EAB308]/20 text-[#EAB308] hover:bg-[#EAB308]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Reservar</button>
+         <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Vender</button>
       </div>
 
       <button onClick={() => onAction(lot, lot.status, Number(editedPrice))} disabled={actionLoading === lot.id} className="w-full bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] hover:text-white border border-[var(--color-border)] text-sm font-bold py-1.5 rounded transition-colors flex items-center justify-center">
@@ -317,6 +317,10 @@ export default function GISMap({
     const newStatus = newStatusString;
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;
     
+    // Optimistic UI updates
+    setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+    setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+
     try {
       const { error: updateError } = await supabase.from('blocks')
         .update({ status: newStatus, price: finalPrice })

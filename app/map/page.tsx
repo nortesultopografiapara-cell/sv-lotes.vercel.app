@@ -216,6 +216,30 @@ export default function MapPage() {
       let currentNumber = parseInt(importLoteInicial, 10) || 1;
       const blocksToInsert = geometries.map((geom, index) => {
           const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
+          
+          let calcArea = 0;
+          if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0]) {
+             const coords = geom.coordinates[0];
+             let area = 0.0;
+             for (let i = 0; i < coords.length; i++) {
+                 let p1 = coords[i];
+                 let p2 = coords[(i + 1) % coords.length];
+                 area += ((p2[0] - p1[0]) * Math.PI / 180) * (2 + Math.sin(p1[1] * Math.PI / 180) + Math.sin(p2[1] * Math.PI / 180));
+             }
+             calcArea = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
+          } else if (geom.type === 'LineString' && geom.coordinates) {
+             const coords = geom.coordinates;
+             let area = 0.0;
+             for (let i = 0; i < coords.length; i++) {
+                 let p1 = coords[i];
+                 let p2 = coords[(i + 1) % coords.length];
+                 area += ((p2[0] - p1[0]) * Math.PI / 180) * (2 + Math.sin(p1[1] * Math.PI / 180) + Math.sin(p2[1] * Math.PI / 180));
+             }
+             calcArea = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
+          }
+          
+          calcArea = calcArea * 10;
+
           return {
              project_id: selectedProject.id,
              name: importQuadra.toUpperCase(),
@@ -223,7 +247,7 @@ export default function MapPage() {
              number: numberStr,
              lot_number: numberStr,
              status: 'Disponível',
-             area: 2500,
+             area: calcArea > 0 ? parseFloat(calcArea.toFixed(2)) : 2500,
              price: 50000,
              geometry: geom,
              tenant_id: finalTenantId
