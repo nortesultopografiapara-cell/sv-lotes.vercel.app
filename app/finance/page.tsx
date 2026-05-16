@@ -25,7 +25,7 @@ export default function FinancePage() {
       try {
         let query = supabase
            .from('payments')
-           .select('*, sales(*, lots(number, blocks(name, projects(name))), clients(full_name))')
+           .select('*, sales(*, blocks(name, block_name, number, projects(name)), clients(full_name))')
            .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
@@ -171,9 +171,9 @@ export default function FinancePage() {
                 </tr>
               ) : filteredPayments.length > 0 ? (
                 filteredPayments.map(p => {
-                   const projectName = p.sales?.lots?.blocks?.projects?.name || 'Projeto?';
-                   const blockName = p.sales?.lots?.blocks?.name || 'Quadra?';
-                   const lotNumber = p.sales?.lots?.number || 'Lote?';
+                   const projectName = p.sales?.blocks?.projects?.name || 'Projeto?';
+                   const blockName = p.sales?.blocks?.block_name || p.sales?.blocks?.name || 'Quadra?';
+                   const lotNumber = p.sales?.blocks?.number || 'Lote?';
                    const loteDesc = `${projectName} - ${blockName}, ${lotNumber}`;
                    
                    return (

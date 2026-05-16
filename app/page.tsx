@@ -40,7 +40,7 @@ export default function DashboardPage() {
       if (!user) return;
       
       try {
-        let query = supabase.from('lots').select('status, price', { count: 'exact' });
+        let query = supabase.from('blocks').select('status, price', { count: 'exact' });
         
         // Se não for super admin, limita por tenant
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {

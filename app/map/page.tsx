@@ -85,6 +85,7 @@ export default function MapPage() {
   const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'|'dark'>('satellite');
   const [gpsActive, setGpsActive] = useState(false);
   const [measureActive, setMeasureActive] = useState(false);
+  const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
 
   // New Project States
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
@@ -97,7 +98,7 @@ export default function MapPage() {
     async function loadProjects() {
       if (!user) return;
       try {
-        const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
         
         if (error) {
            console.warn("Error fetching projects:", error);
@@ -206,71 +207,30 @@ export default function MapPage() {
          setImporting(false);
          return;
       }
-      
-      const blockGeom = geometries.find(g => g.type === 'LineString') || null;
-      const polygonGeoms = geometries.filter(g => g.type === 'Polygon');
 
       let finalTenantId = tenantId;
-      
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
-      
-      const prepareBlock = async (tId: string) => {
-          const { data: existingBlock } = await supabase.from('blocks')
-             .select('id').eq('project_id', selectedProject.id).eq('name', importQuadra.toUpperCase()).single();
-             
-          if (existingBlock) {
-             if (blockGeom) {
-                await supabase.from('blocks').update({ geometry: blockGeom }).eq('id', existingBlock.id);
-             }
-             return existingBlock.id;
-          } else {
-             const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
-                project_id: selectedProject.id,
-                name: importQuadra.toUpperCase(),
-                block_name: importQuadra.toUpperCase(),
-                geometry: blockGeom,
-                tenant_id: tId
-             }).select().single();
-             if (blockError) throw blockError;
-             return newBlock.id;
-          }
-      };
-
-          // Attempt using standard tenantId first
-          let blockId;
-          try {
-              blockId = await prepareBlock(finalTenantId);
-          } catch(err: any) {
-              if (err.message && err.message.includes('invalid input syntax for type uuid')) {
-                 const { data: firstCompany } = await supabase.from('companies').select('id').limit(1).single();
-                 if (firstCompany) {
-                    finalTenantId = firstCompany.id;
-                    blockId = await prepareBlock(finalTenantId);
-                 } else throw err;
-              } else throw err;
-          }
           
-          // 2. Preparar lotes
-          let currentNumber = parseInt(importLoteInicial, 10);
-          const lotsToInsert = polygonGeoms.map((geom, index) => {
-             const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
-             return {
-                block_id: blockId,
-                number: numberStr,
-                status: 'AVAILABLE',
-                area: 250, // Default fallback
-                price: 50000, // Default fallback
-                geom: geom,
-                tenant_id: finalTenantId
-             };
-          });
-          
-          if (lotsToInsert.length > 0) {
-              const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
-              if (insertError) throw insertError;
-          }
+      // Preparar inserção na tabela blocks
+      let currentNumber = parseInt(importLoteInicial, 10) || 1;
+      const blocksToInsert = geometries.map((geom, index) => {
+          const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
+          return {
+             project_id: selectedProject.id,
+             name: importQuadra.toUpperCase(),
+             block_name: importQuadra.toUpperCase(),
+             number: numberStr,
+             geometry: geom,
+             tenant_id: finalTenantId
+          };
+      });
       
-      alert(`Importados ${lotsToInsert.length} lotes com sucesso!`);
+      if (blocksToInsert.length > 0) {
+          const { error: insertError } = await supabase.from('blocks').insert(blocksToInsert);
+          if (insertError) throw insertError;
+      }
+      
+      alert(`Importados ${blocksToInsert.length} elementos geográficos com sucesso!`);
       setIsImportModalOpen(false);
       setImportFile(null);
       setImportQuadra('');
@@ -291,33 +251,49 @@ export default function MapPage() {
         {/* Top Floating Header inside Map */}
         <div className="absolute top-4 left-4 right-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none flex flex-col gap-2">
           
-          <div className="flex items-center gap-2 mb-2">
-             <button onClick={handleBack} className="p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white pointer-events-auto transition-colors shadow-lg">
-                <ArrowLeft className="w-5 h-5" />
+          <div className="flex items-center justify-between mb-2 pointer-events-auto">
+             <div className="flex items-center gap-2">
+                <button onClick={handleBack} className="p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white transition-colors shadow-lg">
+                   <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h2 className="text-xl font-bold text-white shadow-sm drop-shadow-md">{selectedProject.name}</h2>
+             </div>
+             <button 
+                onClick={() => setIsMobilePanelOpen(!isMobilePanelOpen)}
+                className="md:hidden p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white transition-colors shadow-lg"
+             >
+                <MoreVertical className="w-5 h-5" />
              </button>
-             <h2 className="text-xl font-bold text-white shadow-sm drop-shadow-md">{selectedProject.name}</h2>
           </div>
 
-          <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-xl shadow-lg p-4 pointer-events-auto">
-            <div className="mb-4">
-              <h2 className="text-base font-bold text-white mb-1">Painel Operacional</h2>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
-                Ferramentas GIS
-              </p>
-            </div>
+          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-xl shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] ${isMobilePanelOpen ? 'p-4 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[500px] md:opacity-100 md:p-4'}`}>
+             <div className="flex flex-row justify-between items-start mb-4">
+               <div>
+                  <h2 className="text-base font-bold text-white mb-1">Painel Operacional</h2>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">Ferramentas GIS</p>
+               </div>
+               <button onClick={() => setIsMobilePanelOpen(false)} className="md:hidden text-[var(--color-text-muted)] hover:text-white p-1 -mr-2 -mt-2">
+                  <X className="w-5 h-5"/>
+               </button>
+             </div>
             
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setIsImportModalOpen(true)} className="flex flex-col items-center justify-center gap-2 p-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] text-[var(--color-text-muted)] transition-colors">
-                <Upload className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Importar Quadras</span>
+            <div className="flex flex-row md:grid md:grid-cols-2 gap-2 flex-wrap pb-1">
+              <button 
+                onClick={() => setIsImportModalOpen(true)} 
+                className="flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] text-[var(--color-text-muted)] transition-colors"
+                title="Importar Quadras"
+              >
+                <Upload className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">Importar</span>
               </button>
               
               <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`flex flex-col items-center justify-center gap-2 p-3 border rounded-lg transition-colors ${gpsActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
+                className={`flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${gpsActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
+                title="Navegação GPS"
               >
-                <Navigation className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Navegação GPS</span>
+                <Navigation className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">GPS</span>
               </button>
               
               <button 
@@ -325,10 +301,11 @@ export default function MapPage() {
                   setMeasureActive(!measureActive);
                   alert(measureActive ? 'Modo de medição desativado' : 'Modo de medição ativado. Clique no mapa para desenhar polígonos ou traçar distâncias.');
                 }} 
-                className={`flex flex-col items-center justify-center gap-2 p-3 border rounded-lg transition-colors ${measureActive ? 'bg-[var(--color-info)]/10 border-[var(--color-info)] text-[var(--color-info)]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-info)] hover:text-[var(--color-info)]'}`}
+                className={`flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${measureActive ? 'bg-[var(--color-info)]/10 border-[var(--color-info)] text-[var(--color-info)]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-info)] hover:text-[var(--color-info)]'}`}
+                title="Medição"
               >
-                <Ruler className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center">Medição</span>
+                <Ruler className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">Medição</span>
               </button>
 
               <button 
@@ -337,25 +314,25 @@ export default function MapPage() {
                    else if (activeLayer === 'streets') setActiveLayer('dark');
                    else setActiveLayer('satellite');
                 }} 
-                className="flex flex-col items-center justify-center gap-2 p-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
+                className="flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
                 title={`Estilo atual: ${activeLayer}`}
               >
-                <MapIcon className="w-5 h-5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-center">
+                <MapIcon className="w-4 h-4" />
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">
                    {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
                 </span>
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 pt-4 mt-4 border-t border-[var(--color-border)]">
-              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)] mt-1">
-                <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
+            <div className="flex flex-row md:flex-col gap-3 md:gap-2 pt-3 mt-3 md:pt-4 md:mt-4 border-t border-[var(--color-border)] overflow-x-auto">
+              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
+                <div className="w-2.5 h-2.5 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
               </div>
-              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
-                <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
+              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
+                <div className="w-2.5 h-2.5 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
               </div>
-              <div className="flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)]">
-                <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
+              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
+                <div className="w-2.5 h-2.5 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
               </div>
             </div>
           </div>
@@ -535,9 +512,9 @@ export default function MapPage() {
 }
 
 function ProjectCard({ project, onOpen, onDelete }: { project: any, onOpen: () => void, onDelete: () => void }) {
-  const total = project.lots?.length || 0;
-  const sold = project.lots?.filter((l: any) => l.status === 'SOLD').length || 0;
-  const hasGis = project.lots?.some((l: any) => l.geom != null) || false;
+  const total = project.blocks?.length || 0;
+  const sold = project.blocks?.filter((l: any) => l.status === 'SOLD').length || 0;
+  const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
   const pct = total > 0 ? (sold / total) * 100 : 0;
 
   return (

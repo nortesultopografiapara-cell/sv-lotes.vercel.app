@@ -83,21 +83,17 @@ export default function GISMap({
     async function loadLots() {
       if (!user) return;
       try {
-        let query = supabase.from('lots').select('*, blocks!inner(name, project_id, projects(name))');
-        let blocksQuery = supabase.from('blocks').select('*');
+        let blocksQuery = supabase.from('blocks').select('*, projects(name)');
         
         if (projectId) {
-          query = query.eq('blocks.project_id', projectId);
           blocksQuery = blocksQuery.eq('project_id', projectId);
         }
         
         if (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id) {
-          query = query.eq('tenant_id', user.tenant_id);
           blocksQuery = blocksQuery.eq('tenant_id', user.tenant_id);
         }
 
-        const [lotsRes, blocksRes] = await Promise.all([query, blocksQuery]);
-        if (lotsRes.error) throw lotsRes.error;
+        const blocksRes = await blocksQuery;
         if (blocksRes.error) throw blocksRes.error;
         
         if (blocksRes.data) {
@@ -108,40 +104,25 @@ export default function GISMap({
              } else if (b.geometry && b.geometry.type === 'Polygon' && b.geometry.coordinates) {
                  bounds = b.geometry.coordinates[0].map((c: number[]) => [c[1], c[0]]);
              }
-             return { ...b, bounds };
+             return { 
+               id: b.id,
+               block: b.block_name || b.name || '?',
+               projectName: b.projects?.name || '?',
+               number: b.number || '0',
+               status: b.status || 'AVAILABLE',
+               area: Number(b.area || 250),
+               price: Number(b.price || 50000),
+               geometryType: b.geometry?.type,
+               bounds 
+             };
            }).filter(b => b.bounds.length > 0);
-           setBlocksData(parsedBlocks);
+           setLots(parsedBlocks);
+           // Separando os dados de bloco caso o componente espere 'blocksData' e 'lots'
+           setBlocksData(parsedBlocks.filter(b => b.geometryType === 'LineString'));
         }
-
-        if (lotsRes.data) {
-          const parsedLots = lotsRes.data.map(lot => {
-            let bounds: [number, number][] = [];
-            
-            // Parse GeoJSON Polygon to Leaflet [lat, lng] array
-            if (lot.geom && lot.geom.type === 'Polygon' && lot.geom.coordinates) {
-              const coords = lot.geom.coordinates[0]; // exterior ring
-              bounds = coords.map((c: number[]) => [c[1], c[0]]); // [lng, lat] -> [lat, lng]
-            } else if (lot.geom && lot.geom.type === 'LineString' && lot.geom.coordinates) {
-              const coords = lot.geom.coordinates;
-              bounds = coords.map((c: number[]) => [c[1], c[0]]); // [lng, lat] -> [lat, lng]
-            }
-
-            return {
-              id: lot.id,
-              block: lot.blocks?.name || '?',
-              projectName: lot.blocks?.projects?.name || '?',
-              number: lot.number,
-              status: lot.status,
-              area: Number(lot.area),
-              price: Number(lot.price),
-              bounds
-            };
-          });
-          
-          setLots(parsedLots);
-        }
+        
       } catch (e) {
-        console.error("Error loading map lots:", e);
+        console.error("Error loading map geometries:", e);
       } finally {
         setLoading(false);
       }
@@ -149,8 +130,8 @@ export default function GISMap({
     
     loadLots();
 
-    const channel = supabase.channel('realtime:lots')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lots' }, () => {
+    const channel = supabase.channel('realtime:blocks')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'blocks' }, () => {
          loadLots();
       })
       .subscribe();
@@ -166,7 +147,7 @@ export default function GISMap({
     const newStatus = action === 'RESERVE' ? 'RESERVED' : 'SOLD';
     
     try {
-      const { error: updateError } = await supabase.from('lots')
+      const { error: updateError } = await supabase.from('blocks')
         .update({ status: newStatus })
         .eq('id', lot.id);
         
