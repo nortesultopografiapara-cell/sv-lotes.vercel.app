@@ -1,7 +1,7 @@
 'use client';
 
 import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 
@@ -14,7 +14,7 @@ export default function CustomersPage() {
   const [formData, setFormData] = useState({ name: '', cpf_cnpj: '', phone: '', email: '', address: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  async function loadCustomers() {
+  const loadCustomers = useCallback(async () => {
     if (!user) return;
     try {
       let query = supabase.from('customers').select(`
@@ -38,27 +38,28 @@ export default function CustomersPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [user]);
 
   useEffect(() => {
     if (!authLoading) {
       loadCustomers();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, loadCustomers]);
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const cpfCnpjValue = formData.cpf_cnpj?.trim() ? formData.cpf_cnpj.trim() : null;
       const { error } = await supabase.from('customers').upsert([{
-        tenant_id: user?.tenant_id || 'MASTER-ADMIN', // Adjust based on rules
         name: formData.name,
-        cpf_cnpj: formData.cpf_cnpj,
-        document: formData.cpf_cnpj, // Keep both in sync for the schema constraint
+        ...(user?.tenant_id ? { tenant_id: user.tenant_id } : {}),
+        cpf_cnpj: cpfCnpjValue,
+        document: cpfCnpjValue, // Keep both in sync for the schema constraint
         phone: formData.phone,
         email: formData.email,
         address: formData.address
-      }], { onConflict: 'cpf_cnpj' });
+      }], { onConflict: cpfCnpjValue ? 'cpf_cnpj' : 'id' });
 
       if (error) throw error;
 

@@ -441,7 +441,7 @@ export default function GISMap({
       const title = `Lote Quadra ${lot.block} Lote ${lot.number} atualizado para ${newStatus}`;
 
       await supabase.from('logs').insert({
-        tenant_id: user.tenant_id || lot.tenant_id,
+        ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
         user_id: user.id,
         action: newStatus,
         details: {
@@ -463,15 +463,16 @@ export default function GISMap({
     
     try {
        // Upsert Customer (verify by cpf_cnpj)
+       const cpfCnpjValue = customerData.cpf_cnpj?.trim() ? customerData.cpf_cnpj.trim() : null;
        const { data: newCustomer, error: custError } = await supabase.from('customers').upsert([{
-           tenant_id: user.tenant_id || lot.tenant_id,
-           name: customerData.name,
-           cpf_cnpj: customerData.cpf_cnpj,
-           document: customerData.cpf_cnpj,
+       ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
+       name: customerData.name,
+           cpf_cnpj: cpfCnpjValue,
+           document: cpfCnpjValue,
            phone: customerData.phone,
            email: customerData.email,
            address: customerData.address
-       }], { onConflict: 'cpf_cnpj' }).select('id').single();
+       }], { onConflict: cpfCnpjValue ? 'cpf_cnpj' : 'id' }).select('id').single();
        
        if (custError) throw custError;
 
@@ -492,7 +493,7 @@ export default function GISMap({
        
        // Log
        await supabase.from('logs').insert({
-         tenant_id: user.tenant_id || lot.tenant_id,
+         ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
          user_id: user.id,
          action: newStatus,
          details: {
