@@ -187,7 +187,7 @@ export default function CustomersPage() {
                       cpf_cnpj={c.cpf_cnpj}
                       email={c.email || '—'}
                       phone={c.phone || '—'}
-                      blocks={c.blocks || []}
+                      blocks={(c.blocks || []).filter((b: any) => b.status && b.status !== 'Disponível')}
                       createdAt={new Date(c.created_at).toLocaleDateString()}
                     />
                   );
