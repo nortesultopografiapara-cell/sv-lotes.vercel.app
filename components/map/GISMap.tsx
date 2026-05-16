@@ -174,7 +174,75 @@ function MeasureInteraction({
   );
 }
 
-function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction: (lot: any, action: string, newPrice?: number) => void, actionLoading: string | null }) {
+function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot: any, actionName: string, price: number, onClose: () => void, onConfirm: (data: any) => void }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    document: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    await onConfirm(formData);
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto p-4 font-sans">
+       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+           <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+               <div>
+                  <h3 className="font-bold text-lg text-gray-900">Novo Cliente</h3>
+                  <p className="text-xs text-gray-500">Lot {lot.number} - Quadra {lot.block} ({actionName})</p>
+               </div>
+               <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+                  <X className="w-5 h-5" />
+               </button>
+           </div>
+           
+           <form onSubmit={handleSubmit} className="p-5 space-y-4">
+               <div>
+                   <label className="block text-xs font-semibold text-gray-700 mb-1">Nome Completo *</label>
+                   <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="Ex: João da Silva" />
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                   <div>
+                       <label className="block text-xs font-semibold text-gray-700 mb-1">CPF / CNPJ</label>
+                       <input type="text" value={formData.document} onChange={e => setFormData({...formData, document: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="000.000.000-00" />
+                   </div>
+                   <div>
+                       <label className="block text-xs font-semibold text-gray-700 mb-1">Telefone</label>
+                       <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="(11) 99999-9999" />
+                   </div>
+               </div>
+               <div>
+                   <label className="block text-xs font-semibold text-gray-700 mb-1">E-mail</label>
+                   <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="joao@exemplo.com" />
+               </div>
+               <div>
+                   <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço</label>
+                   <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" placeholder="Rua Exemplo, 123" />
+               </div>
+               
+               <div className="pt-4 flex gap-3">
+                   <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm">
+                       Cancelar
+                   </button>
+                   <button type="submit" disabled={submitting} className={`flex-1 px-4 py-2 text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${actionName === 'Reservado' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-red-600 hover:bg-red-700'}`}>
+                       {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
+                   </button>
+               </div>
+           </form>
+       </div>
+    </div>
+  );
+}
+
+function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }: { lot: any, onAction: (lot: any, action: string, newPrice?: number) => void, onRequestCustomerForm: (lot: any, action: string, newPrice: number) => void, actionLoading: string | null }) {
   const [editedPrice, setEditedPrice] = useState(lot.price.toString());
   const color = getStatusColor(lot.status);
   
@@ -182,6 +250,12 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
   const currentPrice = Number(editedPrice) || 0;
   const meterPrice = area > 0 ? (currentPrice / area) : 0;
   const displayNum = String(lot.number).replace(/[^0-9A-Za-z]/g, '').replace(/.*linha.*/i, '').replace(/.*kml.*/i, '') || String(lot.number).replace(/\D/g, '');
+
+  const handlePriceBlur = () => {
+    if (Number(editedPrice) !== lot.price) {
+      onAction(lot, lot.status, Number(editedPrice));
+    }
+  };
 
   return (
     <div className="p-2 min-w-[280px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
@@ -222,6 +296,7 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
             type="number" 
             value={editedPrice}
             onChange={(e) => setEditedPrice(e.target.value)}
+            onBlur={handlePriceBlur}
             className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500 font-mono text-right"
           />
         </div>
@@ -233,13 +308,13 @@ function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction:
            <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-2 rounded">
              Disponibilizar
            </button>
-           <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded">
+           <button onClick={() => onRequestCustomerForm(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded">
              Reservar
            </button>
-           <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded">
+           <button onClick={() => onRequestCustomerForm(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded">
              Vender
            </button>
-           <button onClick={() => onAction(lot, lot.status, Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center">
+           <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center">
              {actionLoading === lot.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
              <span className="text-[8px] leading-tight">Limpar</span>
            </button>
@@ -280,6 +355,9 @@ export default function GISMap({
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
   const [measureClosed, setMeasureClosed] = useState(false);
   const [measureStr, setMeasureStr] = useState<string>('');
+
+  // Formulário de Cliente
+  const [customerForm, setCustomerForm] = useState<{lot: any, action: string, price: number} | null>(null);
 
   useEffect(() => {
     async function loadLots() {
@@ -380,6 +458,57 @@ export default function GISMap({
     }
   };
 
+  const handleSaveCustomerAndLot = async (lot: any, newStatus: string, finalPrice: number, customerData: any) => {
+    if (!user) return;
+    
+    try {
+       // Optimistic UI
+       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
+       
+       // Create Customer
+       const { data: customer, error: customerError } = await supabase.from('customers').insert({
+           tenant_id: user.tenant_id || lot.tenant_id,
+           name: customerData.name,
+           document: customerData.document,
+           phone: customerData.phone,
+           email: customerData.email,
+           address: customerData.address
+       }).select().single();
+       
+       if (customerError) throw customerError;
+       
+       // Update block
+       const { error: updateError } = await supabase.from('blocks')
+         .update({ 
+            status: newStatus, 
+            price: finalPrice,
+            customer_id: customer?.id 
+         })
+         .eq('id', lot.id);
+         
+       if (updateError) throw updateError;
+       
+       // Log
+       await supabase.from('logs').insert({
+         tenant_id: user.tenant_id || lot.tenant_id,
+         user_id: user.id,
+         action: newStatus,
+         details: {
+           title: `Lote Quadra ${lot.block} Lote ${lot.number} reservado para ${customerData.name}`,
+           subtitle: `Ação comercial concluída por ${user.name}`
+         }
+       });
+       
+    } catch (e: any) {
+       console.error("Error saving customer and lot:", e);
+       alert("Erro ao salvar cliente: " + e.message);
+       // Revert Optimistic
+       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: lot.status, price: lot.price } : l));
+       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: lot.status, price: lot.price } : l));
+    }
+  };
+
   if (loading) {
      return (
         <div className="w-full h-full flex items-center justify-center bg-[var(--color-background)]">
@@ -459,7 +588,7 @@ export default function GISMap({
                 </Tooltip>
               )}
               <Popup>
-                 <LotPopupContent lot={lot} onAction={handleLotAction} actionLoading={actionLoading} />
+                 <LotPopupContent lot={lot} onAction={handleLotAction} onRequestCustomerForm={(l, a, p) => setCustomerForm({lot: l, action: a, price: p})} actionLoading={actionLoading} />
               </Popup>
             </Polygon>
           );
@@ -504,7 +633,7 @@ export default function GISMap({
                 </Tooltip>
               )}
               <Popup>
-                 <LotPopupContent lot={block} onAction={handleLotAction} actionLoading={actionLoading} />
+                 <LotPopupContent lot={block} onAction={handleLotAction} onRequestCustomerForm={(l, a, p) => setCustomerForm({lot: l, action: a, price: p})} actionLoading={actionLoading} />
               </Popup>
            </Polygon>
         )})}
@@ -536,6 +665,19 @@ export default function GISMap({
               <Trash2 className="w-4 h-4" />
            </button>
         </div>
+      )}
+
+      {customerForm && (
+         <CustomerFormModal 
+             lot={customerForm.lot} 
+             actionName={customerForm.action} 
+             price={customerForm.price} 
+             onClose={() => setCustomerForm(null)}
+             onConfirm={async (data) => {
+                 await handleSaveCustomerAndLot(customerForm.lot, customerForm.action, customerForm.price, data);
+                 setCustomerForm(null);
+             }}
+         />
       )}
 
     </div>

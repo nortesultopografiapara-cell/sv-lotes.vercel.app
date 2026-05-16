@@ -25,7 +25,7 @@ const getMenuItems = (role: string) => {
       { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-[#06b6d4]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-      { name: 'CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
     ];
   }
@@ -34,7 +34,7 @@ const getMenuItems = (role: string) => {
     return [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Corretores', href: '/corretores', icon: Users, color: 'text-[#06b6d4]' },
-      { name: 'Clientes & CRM', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
     ];
@@ -44,7 +44,7 @@ const getMenuItems = (role: string) => {
   return [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-    { name: 'Clientes & Reservas', href: '/crm', icon: Users, color: 'text-[var(--color-purple)]' },
+    { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
   ];
 };
 
