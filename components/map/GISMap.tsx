@@ -317,7 +317,6 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
   
   const area = lot.area || 0;
   const currentPrice = Number(editedPrice) || 0;
-  const meterPrice = area > 0 ? (currentPrice / area) : 0;
   const displayNum = String(lot.number).replace(/[^0-9A-Za-z]/g, '').replace(/.*linha.*/i, '').replace(/.*kml.*/i, '') || String(lot.number).replace(/\D/g, '');
 
   const handlePriceBlur = () => {
@@ -327,7 +326,7 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
   };
 
   return (
-    <div className="p-2 min-w-[280px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
+    <div className="p-2 min-w-[320px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
       <div className="flex justify-between items-center mb-3">
         <span className="font-bold text-lg text-gray-900">Lote {displayNum}</span>
       </div>
@@ -361,9 +360,14 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
           <span className="text-gray-600 font-semibold">Área (m²):</span>
           <span className="text-gray-900">{area.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-        <div className="flex justify-between border-b pb-1 items-center">
-          <span className="text-gray-600 font-semibold">Valor do Metro (R$/m²):</span>
-          <span className="text-gray-900">{meterPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</span>
+        <div className="border-b pb-2 mb-1 mt-1">
+           <span className="text-gray-600 font-semibold text-xs mb-1 block">Dimensões do Lote</span>
+           <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-gray-50 p-2 rounded w-full border border-gray-100">
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Frente:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.frente ? `${lot.frente} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Fundo:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.fundo ? `${lot.fundo} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Dir:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_direito ? `${lot.lado_direito} m` : '--'}</span></div>
+             <div className="flex justify-between items-center"><span className="text-gray-500 text-[10px]">Lado Esq:</span> <span className="text-gray-900 text-[11px] font-medium w-16 text-right">{lot.lado_esquerdo ? `${lot.lado_esquerdo} m` : '--'}</span></div>
+           </div>
         </div>
         <div className="flex justify-between items-center pt-1">
           <span className="text-gray-600 font-semibold">Valor do Lote (R$):</span>
@@ -470,7 +474,11 @@ export default function GISMap({
                area: b.area !== null && b.area !== undefined ? Number(b.area) : 0,
                price: b.price !== null && b.price !== undefined ? Number(b.price) : 0,
                geometryType: b.geometry?.type,
-               bounds 
+               bounds,
+               frente: b.frente || null,
+               fundo: b.fundo || null,
+               lado_direito: b.lado_direito || null,
+               lado_esquerdo: b.lado_esquerdo || null
              };
            }).filter(b => b.bounds.length > 0);
            setLots(parsedBlocks.filter(b => b.geometryType === 'Polygon'));
