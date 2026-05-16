@@ -425,24 +425,25 @@ export default function GISMap({
               key={lot.id}
               positions={lot.bounds}
               pathOptions={{ 
-                color: lot.status === 'Disponível' ? '#16a34a' : getStatusColor(lot.status), 
+                color: '#000000', 
                 fillColor: getStatusColor(lot.status), 
-                fillOpacity: lot.status === 'Disponível' ? 0.8 : 0.9,
-                weight: 2
+                fillOpacity: 0.75,
+                stroke: true,
+                weight: 1
               }}
               eventHandlers={{
                 mouseover: (e) => {
                   const layer = e.target;
                   layer.setStyle({
                     fillOpacity: 1,
-                    weight: 3
+                    weight: 2
                   });
                 },
                 mouseout: (e) => {
                   const layer = e.target;
                   layer.setStyle({
-                    fillOpacity: lot.status === 'Disponível' ? 0.8 : 0.9,
-                    weight: 2
+                    fillOpacity: 0.75,
+                    weight: 1
                   });
                 }
               }}
@@ -462,10 +463,32 @@ export default function GISMap({
         })}
 
         {blocksData.map(block => (
-           <Polyline 
+           <Polygon 
               key={`block-${block.id}`} 
               positions={block.bounds} 
-              pathOptions={{ color: getStatusColor(block.status), weight: 3, dashArray: '5, 10' }} 
+              pathOptions={{ 
+                color: '#000000', 
+                fillColor: getStatusColor(block.status), 
+                fillOpacity: 0.75,
+                stroke: true,
+                weight: 1 
+              }} 
+              eventHandlers={{
+                mouseover: (e) => {
+                  const layer = e.target;
+                  layer.setStyle({
+                    fillOpacity: 1,
+                    weight: 2
+                  });
+                },
+                mouseout: (e) => {
+                  const layer = e.target;
+                  layer.setStyle({
+                    fillOpacity: 0.75,
+                    weight: 1
+                  });
+                }
+              }}
            >
               {block.number !== '0' && (
                 <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]" opacity={1}>
@@ -477,7 +500,7 @@ export default function GISMap({
               <Popup>
                  <LotPopupContent lot={block} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
-           </Polyline>
+           </Polygon>
         ))}
 
         <MeasureInteraction 
