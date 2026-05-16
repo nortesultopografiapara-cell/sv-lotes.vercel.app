@@ -14,37 +14,67 @@ export default function CustomersPage() {
   const [formData, setFormData] = useState({ name: '', cpf_cnpj: '', phone: '', email: '', address: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const loadCustomers = useCallback(async () => {
-    if (!user) return;
-    try {
-      let query = supabase.from('customers').select(`
-          *,
-          blocks (id, block_name, name, number, status, projects(name))
-      `).order('created_at', { ascending: false });
-      
-      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-         query = query.eq('tenant_id', user.tenant_id);
-      }
-      
-      const { data, error } = await query;
-      if (error) {
-         console.error(error);
-         setCustomers([]);
-      } else {
-         setCustomers(data || []);
-      }
-    } catch(err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
   useEffect(() => {
-    if (!authLoading) {
-      loadCustomers();
+    let isMounted = true;
+    async function fetchCustomers() {
+      if (!user) return;
+      try {
+        let query = supabase.from('customers').select(`
+            *,
+            blocks (id, block_name, name, number, status, projects(name))
+        `).order('created_at', { ascending: false });
+        
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        
+        const { data, error } = await query;
+        if (!isMounted) return;
+        if (error) {
+           console.error(error);
+           setCustomers([]);
+        } else {
+           setCustomers(data || []);
+        }
+      } catch(err) {
+        console.error(err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
     }
-  }, [user, authLoading, loadCustomers]);
+
+    if (!authLoading) {
+      fetchCustomers();
+    }
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [user, authLoading]);
+
+  const loadCustomers = async () => {
+     if (!user) return;
+     try {
+       setLoading(true);
+       let query = supabase.from('customers').select(`
+           *,
+           blocks (id, block_name, name, number, status, projects(name))
+       `).order('created_at', { ascending: false });
+       if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          query = query.eq('tenant_id', user.tenant_id);
+       }
+       const { data, error } = await query;
+       if (error) {
+          setCustomers([]);
+       } else {
+          setCustomers(data || []);
+       }
+     } catch(err) {
+       console.error(err);
+     } finally {
+       setLoading(false);
+     }
+  };
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();

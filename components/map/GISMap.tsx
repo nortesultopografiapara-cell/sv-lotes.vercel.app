@@ -432,8 +432,13 @@ export default function GISMap({
     setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice } : l));
 
     try {
+      const updatePayload: any = { status: newStatus, price: finalPrice };
+      if (newStatus === 'Disponível') {
+        updatePayload.customer_id = null;
+      }
+
       const { error: updateError } = await supabase.from('blocks')
-        .update({ status: newStatus, price: finalPrice })
+        .update(updatePayload)
         .eq('id', lot.id);
         
       if (updateError) throw updateError;
