@@ -207,22 +207,28 @@ export default function MapPage() {
          return;
       }
       
+      const blockGeom = geometries.find(g => g.type === 'LineString') || null;
+      const polygonGeoms = geometries.filter(g => g.type === 'Polygon');
+
       let finalTenantId = tenantId;
       
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
       
       const prepareBlock = async (tId: string) => {
-          let blockId;
           const { data: existingBlock } = await supabase.from('blocks')
              .select('id').eq('project_id', selectedProject.id).eq('name', importQuadra.toUpperCase()).single();
              
           if (existingBlock) {
+             if (blockGeom) {
+                await supabase.from('blocks').update({ geometry: blockGeom }).eq('id', existingBlock.id);
+             }
              return existingBlock.id;
           } else {
              const { data: newBlock, error: blockError } = await supabase.from('blocks').insert({
                 project_id: selectedProject.id,
                 name: importQuadra.toUpperCase(),
                 block_name: importQuadra.toUpperCase(),
+                geometry: blockGeom,
                 tenant_id: tId
              }).select().single();
              if (blockError) throw blockError;
@@ -246,7 +252,7 @@ export default function MapPage() {
           
           // 2. Preparar lotes
           let currentNumber = parseInt(importLoteInicial, 10);
-          const lotsToInsert = geometries.map((geom, index) => {
+          const lotsToInsert = polygonGeoms.map((geom, index) => {
              const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
              return {
                 block_id: blockId,
@@ -259,8 +265,10 @@ export default function MapPage() {
              };
           });
           
-          const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
-          if (insertError) throw insertError;
+          if (lotsToInsert.length > 0) {
+              const { error: insertError } = await supabase.from('lots').insert(lotsToInsert);
+              if (insertError) throw insertError;
+          }
       
       alert(`Importados ${lotsToInsert.length} lotes com sucesso!`);
       setIsImportModalOpen(false);

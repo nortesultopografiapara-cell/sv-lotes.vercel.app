@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Popup, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Polyline, Popup, useMap, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Layers, Map as MapIcon, Loader2 } from 'lucide-react';
@@ -26,19 +26,21 @@ const getStatusLabel = (status: string) => {
   }
 };
 
-function MapController({ lots }: { lots: any[] }) {
+function MapController({ lots, blocksData }: { lots: any[], blocksData: any[] }) {
   const map = useMap();
   useEffect(() => {
-    if (lots.length > 0) {
-      const bounds = L.latLngBounds(lots[0].bounds);
-      lots.forEach(lot => {
-         if (lot.bounds && lot.bounds.length > 0) {
-            bounds.extend(L.latLngBounds(lot.bounds));
-         }
-      });
-      map.fitBounds(bounds, { padding: [50, 50] });
+    let allBounds: [number, number][] = [];
+    lots.forEach(l => {
+       if (l.bounds) allBounds.push(...l.bounds);
+    });
+    blocksData.forEach(b => {
+       if (b.bounds) allBounds.push(...b.bounds);
+    });
+
+    if (allBounds.length > 0) {
+       map.fitBounds(L.latLngBounds(allBounds), { padding: [50, 50] });
     }
-  }, [map, lots]);
+  }, [lots, blocksData, map]);
   return null;
 }
 
@@ -73,6 +75,7 @@ export default function GISMap({
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
   const [lots, setLots] = useState<any[]>([]);
+  const [blocksData, setBlocksData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -81,20 +84,37 @@ export default function GISMap({
       if (!user) return;
       try {
         let query = supabase.from('lots').select('*, blocks!inner(name, project_id, projects(name))');
+        let blocksQuery = supabase.from('blocks').select('*');
         
         if (projectId) {
           query = query.eq('blocks.project_id', projectId);
+          blocksQuery = blocksQuery.eq('project_id', projectId);
         }
         
         if (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id) {
           query = query.eq('tenant_id', user.tenant_id);
+          blocksQuery = blocksQuery.eq('tenant_id', user.tenant_id);
         }
 
-        const { data, error } = await query;
-        if (error) throw error;
+        const [lotsRes, blocksRes] = await Promise.all([query, blocksQuery]);
+        if (lotsRes.error) throw lotsRes.error;
+        if (blocksRes.error) throw blocksRes.error;
         
-        if (data) {
-          const parsedLots = data.map(lot => {
+        if (blocksRes.data) {
+           const parsedBlocks = blocksRes.data.map(b => {
+             let bounds: [number, number][] = [];
+             if (b.geometry && b.geometry.type === 'LineString' && b.geometry.coordinates) {
+                 bounds = b.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+             } else if (b.geometry && b.geometry.type === 'Polygon' && b.geometry.coordinates) {
+                 bounds = b.geometry.coordinates[0].map((c: number[]) => [c[1], c[0]]);
+             }
+             return { ...b, bounds };
+           }).filter(b => b.bounds.length > 0);
+           setBlocksData(parsedBlocks);
+        }
+
+        if (lotsRes.data) {
+          const parsedLots = lotsRes.data.map(lot => {
             let bounds: [number, number][] = [];
             
             // Parse GeoJSON Polygon to Leaflet [lat, lng] array
@@ -210,7 +230,7 @@ export default function GISMap({
         )}
 
         <ZoomControl position="bottomright" />
-        <MapController lots={lots} />
+        <MapController lots={lots} blocksData={blocksData} />
         <LocationController active={gpsActive} />
 
         {lots.filter(lot => lot.bounds.length > 0).map((lot) => {
@@ -297,6 +317,21 @@ export default function GISMap({
             </Polygon>
           );
         })}
+
+        {blocksData.map(block => (
+           <Polyline 
+              key={`block-${block.id}`} 
+              positions={block.bounds} 
+              pathOptions={{ color: '#f59e0b', weight: 3, dashArray: '5, 10' }} 
+           >
+              <Popup>
+                <div className="p-1">
+                   <h4 className="font-bold">Quadra {block.name || block.block_name}</h4>
+                </div>
+              </Popup>
+           </Polyline>
+        ))}
+
       </MapContainer>
 
     </div>
