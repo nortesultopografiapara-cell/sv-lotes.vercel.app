@@ -36,9 +36,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     setError('');
 
     try {
-      const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
-
       if (initialData) {
+         const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
          const { error: updateError } = await supabase.from('companies').update({
             name: formData.name,
             cnpj: formData.cnpj,
@@ -59,18 +58,29 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          }
 
          let existingCompany = null;
+         
+         // 1. Check by CNPJ
          if (formData.cnpj && formData.cnpj.trim() !== '') {
-            const { data } = await supabase.from('companies').select('id').eq('cnpj', formData.cnpj).maybeSingle();
+            const { data } = await supabase.from('companies').select('*').eq('cnpj', formData.cnpj).maybeSingle();
             if (data) existingCompany = data;
          }
 
-         // Fallback check by slug to prevent unique constraint errors
-         if (!existingCompany) {
-            const { data } = await supabase.from('companies').select('id').eq('slug', slug).maybeSingle();
+         // 2. Check by Email
+         if (!existingCompany && formData.email) {
+            const { data } = await supabase.from('companies').select('*').eq('email', formData.email).maybeSingle();
             if (data) existingCompany = data;
          }
 
          const finalTenantId = existingCompany ? existingCompany.id : crypto.randomUUID();
+         
+         // Generate slug
+         const cleanCnpj = formData.cnpj ? formData.cnpj.replace(/\D/g, '') : '';
+         let finalSlug = '';
+         if (existingCompany && existingCompany.slug) {
+             finalSlug = existingCompany.slug;
+         } else {
+             finalSlug = cleanCnpj ? cleanCnpj : formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+         }
 
          const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
              user_email: formData.email, 
@@ -89,9 +99,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            phone: formData.phone,
            email: formData.email,
            active: formData.active,
-           slug: slug,
+           slug: finalSlug,
            default_password: formData.password
-         }, { onConflict: 'cnpj' });
+         }, { onConflict: 'id' });
 
          if (upsertError) {
              throw upsertError;
