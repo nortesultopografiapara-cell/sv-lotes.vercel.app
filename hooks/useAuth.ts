@@ -47,7 +47,7 @@ export function useAuth() {
             setUser({
               id: session.user.id,
               tenant_id: userData.tenant_id,
-              role: userData.role,
+              role: (userData.role || '').toUpperCase(),
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
               force_password_change: userData.force_password_change || false,

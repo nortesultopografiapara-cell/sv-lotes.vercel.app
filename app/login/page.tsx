@@ -49,6 +49,12 @@ export default function LoginPage() {
     console.log('LOGIN START - Initiating auth process...');
     
     try {
+      // 1. Reset Session: Clear old sessions and caches to avoid loops
+      await supabase.auth.signOut();
+      localStorage.removeItem('active_tenant');
+      localStorage.removeItem('supabase.auth.token');
+      sessionStorage.clear();
+
       // Create a timeout promise to detect if the Supabase call is hanging
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('TIMEOUT_ERROR')), 15000)
