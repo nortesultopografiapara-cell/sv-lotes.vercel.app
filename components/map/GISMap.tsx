@@ -236,7 +236,7 @@ export default function GISMap({
                bounds 
              };
            }).filter(b => b.bounds.length > 0);
-           setLots(parsedBlocks);
+           setLots(parsedBlocks.filter(b => b.geometryType === 'Polygon'));
            // Separando os dados de bloco caso o componente espere 'blocksData' e 'lots'
            setBlocksData(parsedBlocks.filter(b => b.geometryType === 'LineString'));
         }
@@ -427,7 +427,7 @@ export default function GISMap({
            >
               <Popup>
                 <div className="p-1">
-                   <h4 className="font-bold">Quadra {block.name || block.block_name}</h4>
+                   <h4 className="font-bold">Quadra {block.name || block.block_name} {block.number !== '0' && `(Linha ${block.number})`}</h4>
                 </div>
               </Popup>
            </Polyline>

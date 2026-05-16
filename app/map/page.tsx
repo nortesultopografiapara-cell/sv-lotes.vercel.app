@@ -221,6 +221,7 @@ export default function MapPage() {
              name: importQuadra.toUpperCase(),
              block_name: importQuadra.toUpperCase(),
              number: numberStr,
+             lot_number: numberStr,
              geometry: geom,
              tenant_id: finalTenantId
           };
