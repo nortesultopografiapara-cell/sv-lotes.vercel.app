@@ -82,35 +82,22 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
          if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
 
-         if (existingCompany) {
-             const { error: updateExistingError } = await supabase.from('companies').update({
-               name: formData.name,
-               phone: formData.phone,
-               email: formData.email,
-               active: formData.active,
-               default_password: formData.password
-             }).eq('id', existingCompany.id);
+         const { error: upsertError } = await supabase.from('companies').upsert({
+           id: finalTenantId,
+           name: formData.name,
+           cnpj: formData.cnpj,
+           phone: formData.phone,
+           email: formData.email,
+           active: formData.active,
+           slug: slug,
+           default_password: formData.password
+         }, { onConflict: 'cnpj' });
 
-             if (updateExistingError) throw updateExistingError;
-         } else {
-             const { error: insertError } = await supabase.from('companies').insert([{
-               id: finalTenantId,
-               name: formData.name,
-               cnpj: formData.cnpj,
-               phone: formData.phone,
-               email: formData.email,
-               active: formData.active,
-               slug: slug,
-               default_password: formData.password,
-               tenant_id: finalTenantId
-             }]);
-
-             if (insertError) {
-                 throw insertError;
-             }
+         if (upsertError) {
+             throw upsertError;
          }
 
-         const { error: userInsertError } = await supabase.from('users').insert([{
+         const { error: userInsertError } = await supabase.from('users').upsert({
             id: newUserId,
             tenant_id: finalTenantId,
             email: formData.email,
@@ -118,7 +105,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             role: 'ADMIN',
             status: formData.active ? 'ACTIVE' : 'INACTIVE',
             phone: formData.phone
-         }]);
+         }, { onConflict: 'id' });
 
          if (userInsertError) throw userInsertError;
       }
