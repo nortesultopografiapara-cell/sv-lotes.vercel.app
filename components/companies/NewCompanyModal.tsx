@@ -9,19 +9,20 @@ interface NewCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  initialData?: any;
 }
 
-export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompanyModalProps) {
+export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
-    name: '',
-    cnpj: '',
-    phone: '',
-    email: '',
-    active: true
+    name: initialData?.name || '',
+    cnpj: initialData?.cnpj || '',
+    phone: initialData?.phone || '',
+    email: initialData?.email || '',
+    active: initialData?.active !== undefined ? initialData.active : true
   });
 
   if (!isOpen) return null;
@@ -34,27 +35,40 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
     setError('');
 
     try {
-      const generatedTenantId = crypto.randomUUID();
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
-      const { error: insertError } = await supabase.from('companies').insert([{
-        id: generatedTenantId,
-        name: formData.name,
-        cnpj: formData.cnpj,
-        phone: formData.phone,
-        email: formData.email,
-        active: formData.active,
-        slug: slug,
-        tenant_id: generatedTenantId
-      }]);
+      if (initialData) {
+         const { error: updateError } = await supabase.from('companies').update({
+            name: formData.name,
+            cnpj: formData.cnpj,
+            phone: formData.phone,
+            email: formData.email,
+            active: formData.active,
+            slug: slug
+         }).eq('id', initialData.id);
+         
+         if (updateError) throw updateError;
+      } else {
+         const generatedTenantId = crypto.randomUUID();
+         const { error: insertError } = await supabase.from('companies').insert([{
+           id: generatedTenantId,
+           name: formData.name,
+           cnpj: formData.cnpj,
+           phone: formData.phone,
+           email: formData.email,
+           active: formData.active,
+           slug: slug,
+           tenant_id: generatedTenantId
+         }]);
 
-      if (insertError) throw insertError;
+         if (insertError) throw insertError;
+      }
 
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
-      console.error('Error creating company:', err);
-      setError(err.message || 'Erro ao criar empresa');
+      console.error('Error saving company:', err);
+      setError(err.message || 'Erro ao salvar empresa');
     } finally {
       setLoading(false);
     }
@@ -70,7 +84,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess }: NewCompa
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[#06b6d4]" />
-              Nova Empresa
+              {initialData ? "Editar Empresa" : "Nova Empresa"}
             </h2>
           </div>
           <button 

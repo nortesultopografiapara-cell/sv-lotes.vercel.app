@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Building2, Search, Plus, MoreHorizontal, CheckCircle2, 
-  XOctagon, Power, Users, Map as MapIcon, Database, Eye, Loader2
+  Building2, Search, Plus, CheckCircle2, 
+  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,6 +15,7 @@ export default function CompaniesPage() {
   const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -42,6 +43,23 @@ export default function CompaniesPage() {
       setDataLoading(false);
     }
   }, []);
+
+  const handleEdit = (company: any) => {
+    setCompanyToEdit(company);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (company: any) => {
+    if (confirm(`Tem certeza que deseja excluir a empresa ${company.name}? Isso pode afetar dados vinculados.`)) {
+      try {
+        const { error } = await supabase.from('companies').delete().eq('id', company.id);
+        if (error) throw error;
+        loadCompanies();
+      } catch (err: any) {
+        alert('Erro ao excluir empresa: ' + err.message);
+      }
+    }
+  };
 
   // Verification if user is SUPER_ADMIN
   useEffect(() => {
@@ -87,7 +105,10 @@ export default function CompaniesPage() {
           </p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setCompanyToEdit(null);
+            setIsModalOpen(true);
+          }}
           className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
         >
           <Plus className="w-5 h-5" />
@@ -135,13 +156,10 @@ export default function CompaniesPage() {
               {filteredCompanies.map((c, idx) => (
                 <CompanyRow 
                   key={c.id}
-                  name={c.name}
-                  slug={c.slug}
-                  cnpj={c.cnpj || ''}
-                  active={c.active}
-                  projects={c.projects?.[0]?.count || 0}
-                  users={c.users?.[0]?.count || 0}
+                  company={c}
                   isMain={idx === 0} // just for highlight
+                  onEdit={() => handleEdit(c)}
+                  onDelete={() => handleDelete(c)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -157,7 +175,9 @@ export default function CompaniesPage() {
       </div>
 
       <NewCompanyModal 
+         key={isModalOpen ? (companyToEdit ? companyToEdit.id : 'new') : 'closed'}
          isOpen={isModalOpen} 
+         initialData={companyToEdit}
          onClose={() => setIsModalOpen(false)} 
          onSuccess={loadCompanies}
       />
@@ -181,7 +201,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ name, slug, cnpj, active, projects, users, isMain }: any) {
+function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
   const getStatusBadge = (isActive: boolean) => {
     if (isActive) {
       return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
@@ -195,41 +215,43 @@ function CompanyRow({ name, slug, cnpj, active, projects, users, isMain }: any) 
       <td className="p-4">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-[#06b6d4]/20 text-[#06b6d4] border-[#06b6d4]/30' : 'bg-[var(--color-background)] text-white border-[var(--color-border)]'}`}>
-            {name.charAt(0)}
+            {company.name.charAt(0)}
           </div>
           <div>
             <div className="font-bold text-sm text-white flex items-center gap-2">
-              {name}
+              {company.name}
               {isMain && <span className="text-[9px] font-mono uppercase bg-[#06b6d4] text-white px-1.5 py-0.5 rounded-sm">Master</span>}
             </div>
-            <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">slug: {slug}</div>
+            <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">slug: {company.slug}</div>
           </div>
         </div>
       </td>
       <td className="p-4 hidden md:table-cell">
-        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{cnpj ? `CNPJ: ${cnpj}` : '—'}</div>
+        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
       </td>
       <td className="p-4 text-center">
-        {getStatusBadge(active)}
+        {getStatusBadge(company.active)}
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {projects}
+          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.projects?.[0]?.count || 0}
         </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
          <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <Users className="w-3.5 h-3.5 text-[var(--color-purple)]" /> {users}
+          <Users className="w-3.5 h-3.5 text-[var(--color-purple)]" /> {company.users?.[0]?.count || 0}
         </div>
       </td>
       <td className="p-4 text-right">
         <div className="flex items-center justify-end gap-2">
-          <button className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[#06b6d4]/10 tooltip-trigger" title="Acessar Dashboard da Empresa">
-            <Eye className="w-4 h-4" />
+          <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
+            <Edit className="w-4 h-4" />
           </button>
-          <button className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors rounded-lg hover:bg-[var(--color-surface-bright)]">
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+          {!isMain && (
+            <button onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </td>
     </tr>
