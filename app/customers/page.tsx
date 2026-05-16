@@ -51,17 +51,32 @@ export default function CustomersPage() {
     setSubmitting(true);
     try {
       const cpfCnpjValue = formData.cpf_cnpj?.trim() ? formData.cpf_cnpj.trim() : null;
-      const { error } = await supabase.from('customers').upsert([{
-        name: formData.name,
-        ...(user?.tenant_id ? { tenant_id: user.tenant_id } : {}),
-        cpf_cnpj: cpfCnpjValue,
-        document: cpfCnpjValue, // Keep both in sync for the schema constraint
-        phone: formData.phone,
-        email: formData.email,
-        address: formData.address
-      }], { onConflict: cpfCnpjValue ? 'cpf_cnpj' : 'id' });
+      const nameUpper = formData.name?.trim().toUpperCase() || '';
+      const emailUpper = formData.email?.trim().toUpperCase() || '';
+      const addressUpper = formData.address?.trim().toUpperCase() || '';
+      const phoneClean = formData.phone?.trim() || '';
 
-      if (error) throw error;
+      let customerId = null;
+
+      if (cpfCnpjValue) {
+          const { data: existingCustomer } = await supabase.from('customers').select('id').eq('document', cpfCnpjValue).maybeSingle();
+          if (existingCustomer) {
+              customerId = existingCustomer.id;
+          }
+      }
+
+      if (!customerId) {
+          const { error: custError } = await supabase.from('customers').insert([{
+              name: nameUpper,
+              ...(user?.tenant_id ? { tenant_id: user.tenant_id } : {}),
+              cpf_cnpj: cpfCnpjValue,
+              document: cpfCnpjValue, // Keep both in sync for the schema constraint
+              phone: phoneClean,
+              email: emailUpper,
+              address: addressUpper
+          }]);
+          if (custError) throw custError;
+      }
 
       setIsModalOpen(false);
       setFormData({ name: '', cpf_cnpj: '', phone: '', email: '', address: '' });

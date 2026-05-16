@@ -464,24 +464,41 @@ export default function GISMap({
     try {
        // Upsert Customer (verify by cpf_cnpj)
        const cpfCnpjValue = customerData.cpf_cnpj?.trim() ? customerData.cpf_cnpj.trim() : null;
-       const { data: newCustomer, error: custError } = await supabase.from('customers').upsert([{
-       ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
-       name: customerData.name,
-           cpf_cnpj: cpfCnpjValue,
-           document: cpfCnpjValue,
-           phone: customerData.phone,
-           email: customerData.email,
-           address: customerData.address
-       }], { onConflict: cpfCnpjValue ? 'cpf_cnpj' : 'id' }).select('id').single();
-       
-       if (custError) throw custError;
+       const nameUpper = customerData.name?.trim().toUpperCase() || '';
+       const emailUpper = customerData.email?.trim().toUpperCase() || '';
+       const addressUpper = customerData.address?.trim().toUpperCase() || '';
+       const phoneClean = customerData.phone?.trim() || '';
+
+       let customerId = null;
+
+       if (cpfCnpjValue) {
+           const { data: existingCustomer } = await supabase.from('customers').select('id').eq('document', cpfCnpjValue).maybeSingle();
+           if (existingCustomer) {
+               customerId = existingCustomer.id;
+           }
+       }
+
+       if (!customerId) {
+           const { data: newCustomer, error: custError } = await supabase.from('customers').insert([{
+               ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
+               name: nameUpper,
+               cpf_cnpj: cpfCnpjValue,
+               document: cpfCnpjValue,
+               phone: phoneClean,
+               email: emailUpper,
+               address: addressUpper
+           }]).select('id').single();
+           
+           if (custError) throw custError;
+           customerId = newCustomer.id;
+       }
 
        // Update block with the customer_id
        const { error: updateError } = await supabase.from('blocks')
          .update({ 
             status: newStatus, 
             price: finalPrice,
-            customer_id: newCustomer.id 
+            customer_id: customerId 
          })
          .eq('id', lot.id);
          
