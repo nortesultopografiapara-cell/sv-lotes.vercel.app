@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Popup, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Popup, Tooltip, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Layers, Map as MapIcon, Loader2, X, Trash2 } from 'lucide-react';
@@ -177,48 +177,79 @@ function MeasureInteraction({
 function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction: (lot: any, action: string, newPrice?: number) => void, actionLoading: string | null }) {
   const [editedPrice, setEditedPrice] = useState(lot.price.toString());
   const color = getStatusColor(lot.status);
+  
+  const area = lot.area || 0;
+  const currentPrice = Number(editedPrice) || 0;
+  const meterPrice = area > 0 ? (currentPrice / area) : 0;
 
   return (
-    <div className="p-1 min-w-[200px]">
+    <div className="p-2 min-w-[280px] bg-white text-gray-900 rounded-md font-sans">
       <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-white text-lg">Lote {lot.number}</span>
-        <span className="text-[10px] font-mono uppercase bg-[var(--color-surface-dim)] px-2 py-1 rounded">
-          Quadra {lot.block}
-        </span>
+        <span className="font-bold text-lg text-gray-900">Lote {lot.number}</span>
       </div>
-      <div className="text-[11px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">{lot.projectName}</div>
       
-      <div className="space-y-3 mb-4">
-        <div className="flex justify-between text-sm items-center">
-          <span className="text-[var(--color-text-muted)]">Área total:</span>
-          <span className="font-mono text-white">{(lot.area || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²</span>
+      <div className="space-y-2 mb-4 text-sm">
+        <div className="flex justify-between border-b pb-1">
+          <span className="text-gray-600 font-semibold">Projeto:</span>
+          <span className="text-gray-900 text-right max-w-[150px] truncate">{lot.projectName}</span>
         </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[var(--color-text-muted)] text-sm">Valor (R$):</span>
+        <div className="flex justify-between border-b pb-1">
+          <span className="text-gray-600 font-semibold">Quadra (Quadra):</span>
+          <span className="text-gray-900">{lot.block}</span>
+        </div>
+        <div className="flex justify-between border-b pb-1">
+          <span className="text-gray-600 font-semibold">Lote (Lote):</span>
+          <span className="text-gray-900">{lot.number}</span>
+        </div>
+        <div className="flex justify-between items-center border-b pb-1">
+          <span className="text-gray-600 font-semibold">Status:</span>
+          <span className="text-white text-[11px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: color }}>
+            {getStatusLabel(lot.status)}
+          </span>
+        </div>
+        <div className="flex justify-between border-b pb-1">
+          <span className="text-gray-600 font-semibold">Área (m²):</span>
+          <span className="text-gray-900">{area.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+        <div className="flex justify-between border-b pb-1 items-center">
+          <span className="text-gray-600 font-semibold">Valor do Metro (R$/m²):</span>
+          <span className="text-gray-900">{meterPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</span>
+        </div>
+        <div className="flex justify-between items-center pt-1">
+          <span className="text-gray-600 font-semibold">Valor do Lote (R$):</span>
           <input 
             type="number" 
             value={editedPrice}
             onChange={(e) => setEditedPrice(e.target.value)}
-            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-[var(--color-primary)] font-mono"
+            className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500 font-mono text-right"
           />
         </div>
-        <div className="flex justify-between text-sm items-center mt-2 pt-2 border-t border-[var(--color-border)]">
-          <span className="text-[var(--color-text-muted)]">Status:</span>
-          <span className="font-mono text-xs font-bold px-2 py-1 rounded" style={{ backgroundColor: `${color}20`, color: color }}>
-            {getStatusLabel(lot.status)}
-          </span>
+      </div>
+
+      <div className="mb-2">
+        <span className="text-sm font-semibold text-gray-800">Ações de comercial</span>
+        <div className="flex gap-1 mt-1">
+           <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-2 rounded">
+             Disponibilizar
+           </button>
+           <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded">
+             Reservar
+           </button>
+           <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded">
+             Vender
+           </button>
+           <button onClick={() => onAction(lot, lot.status, Number(editedPrice))} disabled={actionLoading === lot.id} className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center">
+             {actionLoading === lot.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+             <span className="text-[8px] leading-tight">Limpar</span>
+           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1 mb-2">
-         <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#22C55E]/20 text-[#22C55E] hover:bg-[#22C55E]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Disponível</button>
-         <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EAB308]/20 text-[#EAB308] hover:bg-[#EAB308]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Reservar</button>
-         <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 text-[9px] font-bold py-1.5 rounded uppercase flex justify-center items-center">Vender</button>
+      <div className="flex items-center gap-2 text-xs text-gray-500 justify-center pb-1">
+         <span className="text-green-500 text-lg leading-none">●</span> / 
+         <span className="text-yellow-400 text-lg leading-none">●</span> / 
+         <span className="text-red-500 text-lg leading-none">●</span>
       </div>
-
-      <button onClick={() => onAction(lot, lot.status, Number(editedPrice))} disabled={actionLoading === lot.id} className="w-full bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] hover:text-white border border-[var(--color-border)] text-sm font-bold py-1.5 rounded transition-colors flex items-center justify-center">
-         {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Valor'}
-      </button>
     </div>
   );
 }
@@ -394,28 +425,35 @@ export default function GISMap({
               key={lot.id}
               positions={lot.bounds}
               pathOptions={{ 
-                color: getStatusColor(lot.status), 
+                color: lot.status === 'Disponível' ? '#16a34a' : getStatusColor(lot.status), 
                 fillColor: getStatusColor(lot.status), 
-                fillOpacity: lot.status === 'Disponível' ? 0.3 : 0.6,
+                fillOpacity: lot.status === 'Disponível' ? 0.8 : 0.9,
                 weight: 2
               }}
               eventHandlers={{
                 mouseover: (e) => {
                   const layer = e.target;
                   layer.setStyle({
-                    fillOpacity: 0.8,
+                    fillOpacity: 1,
                     weight: 3
                   });
                 },
                 mouseout: (e) => {
                   const layer = e.target;
                   layer.setStyle({
-                    fillOpacity: lot.status === 'Disponível' ? 0.3 : 0.6,
+                    fillOpacity: lot.status === 'Disponível' ? 0.8 : 0.9,
                     weight: 2
                   });
                 }
               }}
             >
+              {lot.number !== '0' && (
+                <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]" opacity={1}>
+                   <div style={{ textShadow: '1px 1px 2px black, 0 0 1em black' }}>
+                     Lote {lot.number}
+                   </div>
+                </Tooltip>
+              )}
               <Popup>
                  <LotPopupContent lot={lot} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
@@ -429,6 +467,13 @@ export default function GISMap({
               positions={block.bounds} 
               pathOptions={{ color: getStatusColor(block.status), weight: 3, dashArray: '5, 10' }} 
            >
+              {block.number !== '0' && (
+                <Tooltip permanent direction="center" className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]" opacity={1}>
+                   <div style={{ textShadow: '1px 1px 2px black, 0 0 1em black' }}>
+                     {block.name || block.block_name} {block.number !== '0' && `(Linha ${block.number})`}
+                   </div>
+                </Tooltip>
+              )}
               <Popup>
                  <LotPopupContent lot={block} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
