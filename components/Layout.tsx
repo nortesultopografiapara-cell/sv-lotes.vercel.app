@@ -22,7 +22,7 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
     return [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-[#06b6d4]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
@@ -32,7 +32,7 @@ const getMenuItems = (role: string) => {
   
   if (role === 'ADMIN') {
     return [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Corretores', href: '/corretores', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
@@ -42,7 +42,7 @@ const getMenuItems = (role: string) => {
 
   // DEFAULT (CORRETOR)
   return [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
   ];
@@ -72,6 +72,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('contingency_auth');
+    document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    window.location.href = '/login';
   };
 
   if (isCheckingAuth) {
