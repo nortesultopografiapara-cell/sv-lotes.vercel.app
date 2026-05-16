@@ -241,9 +241,13 @@ export default function MapPage() {
       const getLotDimensions = (coords: number[][]) => {
          if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
          
+         const FATOR_CORRECAO = 0.9984089101034208;
+
          const segments = [];
          for (let i=0; i<coords.length-1; i++) {
-            segments.push({ p1: coords[i], p2: coords[i+1], length: haversineDist(coords[i], coords[i+1]), isExt: true, idx: i });
+            const valDistanciaCalculada = haversineDist(coords[i], coords[i+1]);
+            const valDistanciaCorrigida = valDistanciaCalculada * FATOR_CORRECAO;
+            segments.push({ p1: coords[i], p2: coords[i+1], length: valDistanciaCorrigida, isExt: true, idx: i });
          }
 
          for (let seg of segments) {
