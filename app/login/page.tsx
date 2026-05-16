@@ -70,32 +70,10 @@ export default function LoginPage() {
         return;
       }
 
-      // Check user role/metadata for redirection
+      // 73: Check result for redirection
       if (data?.user) {
-        console.log('LOGIN USER CONFIRMED. Metadata:', data.user.user_metadata);
-        
-        // Fetch profile to sync local state
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-          
-        if (userError || !userData) {
-           console.error("Login user profile fetch error:", userError);
-           // Even if profile fetch fails, we might allow entrance if super_admin is in metadata
-           if (data.user.user_metadata?.role !== 'SUPER_ADMIN') {
-              setError(`Erro ao buscar perfil: ${userError?.message || 'Usuário não encontrado.'}`);
-              await supabase.auth.signOut();
-              setLoading(false);
-              return;
-           }
-        }
-        
-        const role = data.user.user_metadata?.role || userData?.role || 'CORRETOR';
-        console.log('LOGIN SUCCESS. Role identified:', role);
-
-        // Success redirect
+        console.log('LOGIN SUCCESS. Redirecting to dashboard...');
+        // Success redirect immediately
         window.location.href = '/';
       }
     } catch (err: any) {
