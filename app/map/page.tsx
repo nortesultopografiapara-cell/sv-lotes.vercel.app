@@ -34,41 +34,116 @@ function parseKML(xmlString: string) {
     }).filter(c => c[0] !== 0 || c[1] !== 0);
   };
 
-  const lineStrings = xmlDoc.getElementsByTagName("LineString");
-  for (let i = 0; i < lineStrings.length; i++) {
-    const coordsNode = lineStrings[i].getElementsByTagName("coordinates")[0];
-    if (coordsNode && coordsNode.textContent) {
-       const text = coordsNode.textContent.trim();
-       if (text) {
-          const coords = extractCoords(text);
-          if (coords.length > 2) {
-             const first = coords[0];
-             const last = coords[coords.length - 1];
-             if (first[0] !== last[0] || first[1] !== last[1]) {
-                coords.push([...first]);
-             }
-             geometries.push({ type: "Polygon", coordinates: [coords] });
-          }
-       }
+  const extractProperties = (node: Element) => {
+    const props: any = {};
+    const nameNode = node.getElementsByTagName("name")[0];
+    if (nameNode && nameNode.textContent) props.name = nameNode.textContent.trim();
+    
+    const descNode = node.getElementsByTagName("description")[0];
+    if (descNode && descNode.textContent) props.description = descNode.textContent.trim();
+    
+    const extendedData = node.getElementsByTagName("ExtendedData")[0];
+    if (extendedData) {
+      const dataNodes = extendedData.getElementsByTagName("Data");
+      for (let i = 0; i < dataNodes.length; i++) {
+        const nameAttr = dataNodes[i].getAttribute("name");
+        const valNode = dataNodes[i].getElementsByTagName("value")[0];
+        if (nameAttr && valNode && valNode.textContent) {
+          props[nameAttr.toUpperCase()] = valNode.textContent.trim();
+        }
+      }
+      const simpleDataNodes = extendedData.getElementsByTagName("SimpleData");
+      for (let i = 0; i < simpleDataNodes.length; i++) {
+        const nameAttr = simpleDataNodes[i].getAttribute("name");
+        if (nameAttr && simpleDataNodes[i].textContent) {
+          props[nameAttr.toUpperCase()] = simpleDataNodes[i].textContent.trim();
+        }
+      }
     }
-  }
+    return props;
+  };
 
-  const polygons = xmlDoc.getElementsByTagName("Polygon");
-  for (let i = 0; i < polygons.length; i++) {
-    const coordsNode = polygons[i].getElementsByTagName("coordinates")[0];
-    if (coordsNode && coordsNode.textContent) {
-       const text = coordsNode.textContent.trim();
-       if (text) {
-          const coords = extractCoords(text);
-          if (coords.length > 2) {
-             const first = coords[0];
-             const last = coords[coords.length - 1];
-             if (first[0] !== last[0] || first[1] !== last[1]) {
-                coords.push([...first]);
-             }
-             geometries.push({ type: "Polygon", coordinates: [coords] });
-          }
-       }
+  const placemarks = xmlDoc.getElementsByTagName("Placemark");
+  if (placemarks.length > 0) {
+    for (let i = 0; i < placemarks.length; i++) {
+      const placemark = placemarks[i];
+      const properties = extractProperties(placemark);
+      
+      const polys = placemark.getElementsByTagName("Polygon");
+      for (let j = 0; j < polys.length; j++) {
+        const coordsNode = polys[j].getElementsByTagName("coordinates")[0];
+        if (coordsNode && coordsNode.textContent) {
+           const text = coordsNode.textContent.trim();
+           if (text) {
+              const coords = extractCoords(text);
+              if (coords.length > 2) {
+                 const first = coords[0];
+                 const last = coords[coords.length - 1];
+                 if (first[0] !== last[0] || first[1] !== last[1]) {
+                    coords.push([...first]);
+                 }
+                 geometries.push({ type: "Polygon", coordinates: [coords], properties });
+              }
+           }
+        }
+      }
+      
+      const lines = placemark.getElementsByTagName("LineString");
+      for (let j = 0; j < lines.length; j++) {
+        const coordsNode = lines[j].getElementsByTagName("coordinates")[0];
+        if (coordsNode && coordsNode.textContent) {
+           const text = coordsNode.textContent.trim();
+           if (text) {
+              const coords = extractCoords(text);
+              if (coords.length > 2) {
+                 const first = coords[0];
+                 const last = coords[coords.length - 1];
+                 if (first[0] !== last[0] || first[1] !== last[1]) {
+                    coords.push([...first]);
+                 }
+                 geometries.push({ type: "Polygon", coordinates: [coords], properties });
+              }
+           }
+        }
+      }
+    }
+  } else {
+    // Fallback if no placemarks
+    const polygons = xmlDoc.getElementsByTagName("Polygon");
+    for (let i = 0; i < polygons.length; i++) {
+      const coordsNode = polygons[i].getElementsByTagName("coordinates")[0];
+      if (coordsNode && coordsNode.textContent) {
+         const text = coordsNode.textContent.trim();
+         if (text) {
+            const coords = extractCoords(text);
+            if (coords.length > 2) {
+               const first = coords[0];
+               const last = coords[coords.length - 1];
+               if (first[0] !== last[0] || first[1] !== last[1]) {
+                  coords.push([...first]);
+               }
+               geometries.push({ type: "Polygon", coordinates: [coords], properties: {} });
+            }
+         }
+      }
+    }
+    const lineStrings = xmlDoc.getElementsByTagName("LineString");
+    for (let i = 0; i < lineStrings.length; i++) {
+      const coordsNode = lineStrings[i].getElementsByTagName("coordinates")[0];
+      if (coordsNode && coordsNode.textContent) {
+         const text = coordsNode.textContent.trim();
+         if (text) {
+            const coords = extractCoords(text);
+            if (coords.length > 2) {
+               const first = coords[0];
+               const last = coords[coords.length - 1];
+               if (first[0] !== last[0] || first[1] !== last[1]) {
+                  coords.push([...first]);
+               }
+               geometries.push({ type: "Polygon", coordinates: [coords], properties: {} });
+            }
+         }
+      }
     }
   }
 
@@ -238,16 +313,60 @@ export default function MapPage() {
       // Extract all polygon coordinates for checking externals
       const allPolys = geometries.filter(g => g.type === 'Polygon' && g.coordinates).map(g => g.coordinates[0]);
 
-      const getLotDimensions = (coords: number[][]) => {
+      const getLotDimensions = (coords: number[][], geomProps: any) => {
          if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
          
          const FATOR_CORRECAO = 0.9984089101034208;
 
+         // Priorizar Metadados do KML (ExtendedData, description, etc)
+         const extractProp = (keys: string[]) => {
+             for (let key of keys) {
+                for (let prop in geomProps) {
+                   if (prop.toUpperCase().includes(key)) {
+                      const valStr = geomProps[prop];
+                      if (typeof valStr === 'string' || typeof valStr === 'number') {
+                         const match = String(valStr).replace(/\s/g, '').match(/^[\d.,]+/);
+                         if (match) {
+                             const val = parseFloat(match[0].replace(',', '.'));
+                             if (!isNaN(val) && val > 0) return val;
+                         }
+                      }
+                   }
+                }
+             }
+             return null;
+         };
+
+         const propFrente = extractProp(['FRENTE', 'FRONT']);
+         const propFundo = extractProp(['FUNDO', 'BACK']);
+         const propDir = extractProp(['DIR', 'DIREITA', 'LADO_DIR', 'LDIREITO', 'COMPR_DIR', 'COMPRIMENTO_DIR']);
+         const propEsq = extractProp(['ESQ', 'ESQUERDA', 'LADO_ESQ', 'LESQUERDO', 'COMPR_ESQ', 'MEDIDA_ESQ']);
+
+         if (propFrente || propFundo || propDir || propEsq) {
+             return {
+                 frente: propFrente || null,
+                 fundo: propFundo || null,
+                 ladoD: propDir || null,
+                 ladoE: propEsq || null
+             };
+         }
+
+         // Fallback: Geometria com Agrupamento por Azimute (para curvas) e Fator de Correção
          const segments = [];
          for (let i=0; i<coords.length-1; i++) {
             const valDistanciaCalculada = haversineDist(coords[i], coords[i+1]);
             const valDistanciaCorrigida = valDistanciaCalculada * FATOR_CORRECAO;
-            segments.push({ p1: coords[i], p2: coords[i+1], length: valDistanciaCorrigida, isExt: true, idx: i });
+            
+            const lat1 = coords[i][1] * Math.PI/180;
+            const lon1 = coords[i][0] * Math.PI/180;
+            const lat2 = coords[i+1][1] * Math.PI/180;
+            const lon2 = coords[i+1][0] * Math.PI/180;
+            const y = Math.sin(lon2-lon1) * Math.cos(lat2);
+            const x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1);
+            let brng = Math.atan2(y, x) * 180 / Math.PI;
+            brng = (brng + 360) % 360;
+            
+            segments.push({ p1: coords[i], p2: coords[i+1], length: valDistanciaCorrigida, isExt: true, idx: i, azimuth: brng });
          }
 
          for (let seg of segments) {
@@ -259,8 +378,7 @@ export default function MapPage() {
                   const d2 = haversineDist(seg.p2, other[j+1]);
                   const d3 = haversineDist(seg.p1, other[j+1]);
                   const d4 = haversineDist(seg.p2, other[j]);
-                  // Threshold of 1 meter to consider vertices identical, typical in KML variations
-                  if ((d1 < 1 && d2 < 1) || (d3 < 1 && d4 < 1)) {
+                  if ((d1 < 1.0 && d2 < 1.0) || (d3 < 1.0 && d4 < 1.0)) {
                      matched = true; break;
                   }
                }
@@ -269,50 +387,28 @@ export default function MapPage() {
          }
 
          let extSides = segments.filter(s => s.isExt).sort((a,b) => a.length - b.length);
-         let frente = extSides[0] || [...segments].sort((a,b) => a.length - b.length)[0];
+         let frenteSeg = extSides[0] || [...segments].sort((a,b) => a.length - b.length)[0];
+         let baseAzimuth = frenteSeg.azimuth;
 
-         if (segments.length === 4) {
-            const i1 = (frente.idx + 1) % 4;
-            const i2 = (frente.idx + 2) % 4;
-            const i3 = (frente.idx + 3) % 4;
-            
-            // centroid
-            let cx = 0, cy = 0;
-            for(let i=0; i<4; i++){ cx += coords[i][0]; cy += coords[i][1]; }
-            cx /= 4; cy /= 4;
-            
-            const mx = (frente.p1[0] + frente.p2[0])/2;
-            const my = (frente.p1[1] + frente.p2[1])/2;
-            const vx = mx - cx;
-            const vy = my - cy;
-
-            const m2x = (segments[i1].p1[0] + segments[i1].p2[0])/2;
-            const m2y = (segments[i1].p1[1] + segments[i1].p2[1])/2;
-            const v2x = m2x - cx;
-            const v2y = m2y - cy;
-            
-            // left means cross product > 0
-            const cross = vx * v2y - vy * v2x;
-            
-            const iDir = cross < 0 ? i1 : i3;
-            const iEsq = cross < 0 ? i3 : i1;
-
-            return {
-               frente: parseFloat(frente.length.toFixed(2)),
-               fundo: parseFloat(segments[i2].length.toFixed(2)),
-               ladoD: parseFloat(segments[iDir].length.toFixed(2)),
-               ladoE: parseFloat(segments[iEsq].length.toFixed(2))
-            };
-         } else {
-            // roughly approximation for irregular polygon
-            let sorted = [...segments].sort((a,b) => b.length - a.length);
-            return {
-               frente: parseFloat(frente.length.toFixed(2)),
-               fundo: parseFloat((sorted.find(s => s.idx !== frente.idx)?.length || 0).toFixed(2)),
-               ladoD: parseFloat((sorted[0]?.length || 0).toFixed(2)),
-               ladoE: parseFloat((sorted[1]?.length || 0).toFixed(2))
-            };
+         let buckets = [0, 0, 0, 0];
+         for (let s of segments) {
+             let diff = s.azimuth - baseAzimuth;
+             while(diff < 0) diff += 360;
+             if (diff >= 315 || diff < 45) { buckets[0] += s.length; } // Frente
+             else if (diff >= 45 && diff < 135) { buckets[1] += s.length; } // Lateral 1
+             else if (diff >= 135 && diff < 225) { buckets[2] += s.length; } // Fundo
+             else { buckets[3] += s.length; } // Lateral 2
          }
+
+         let lD = buckets[1] > buckets[3] ? buckets[1] : buckets[3];
+         let lE = buckets[1] > buckets[3] ? buckets[3] : buckets[1];
+
+         return {
+             frente: parseFloat(buckets[0].toFixed(2)),
+             fundo: parseFloat(buckets[2].toFixed(2)),
+             ladoD: parseFloat(lD.toFixed(2)),
+             ladoE: parseFloat(lE.toFixed(2))
+         };
       };
 
       // Preparar inserção na tabela blocks
@@ -330,7 +426,7 @@ export default function MapPage() {
                 const areaRealCorrigida = areaCalculada * 0.9952546259435014;
                 calcArea = areaRealCorrigida;
                 
-                dims = getLotDimensions(geom.coordinates[0]);
+                dims = getLotDimensions(geom.coordinates[0], geom.properties || {});
              } catch (e) {
                 console.error("Error calculating area:", e);
              }
