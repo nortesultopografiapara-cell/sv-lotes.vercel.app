@@ -49,17 +49,17 @@ export default function LoginPage() {
     console.log('LOGIN START - Initiating auth process...');
     
     try {
-      // 1. Force Clean Authentication: Clear old sessions and caches
+      // 1. Force Clean Authentication: Clear everything before attempt
       await supabase.auth.signOut();
-      localStorage.removeItem('active_tenant');
-      localStorage.removeItem('supabase.auth.token');
+      localStorage.clear(); // Complete wipe
       sessionStorage.clear();
 
-      console.log('LOGIN PARAMS:', { email: email.trim().toLowerCase() });
+      const cleanEmail = email.trim().toLowerCase();
+      console.log('LOGIN ATTEMPT - User:', cleanEmail);
       
       // 2. Strict Supabase Authentication
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password: password,
       });
 
