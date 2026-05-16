@@ -10,19 +10,19 @@ import { useAuth } from '@/hooks/useAuth';
 
 const getStatusColor = (status: string) => {
   switch(status) {
-    case 'AVAILABLE': return '#22C55E';
-    case 'RESERVED': return '#EAB308';
-    case 'SOLD': return '#EF4444';
-    default: return '#A1A1AA';
+    case 'Disponível': return '#22C55E';
+    case 'Reservado': return '#EAB308';
+    case 'Vendido': return '#EF4444';
+    default: return '#22C55E';
   }
 };
 
 const getStatusLabel = (status: string) => {
   switch(status) {
-    case 'AVAILABLE': return 'DISPONÍVEL';
-    case 'RESERVED': return 'RESERVADO';
-    case 'SOLD': return 'VENDIDO';
-    default: return 'DESCONHECIDO';
+    case 'Disponível': return 'DISPONÍVEL';
+    case 'Reservado': return 'RESERVADO';
+    case 'Vendido': return 'VENDIDO';
+    default: return 'DISPONÍVEL';
   }
 };
 
@@ -174,7 +174,57 @@ function MeasureInteraction({
   );
 }
 
+function LotPopupContent({ lot, onAction, actionLoading }: { lot: any, onAction: (lot: any, action: string, newPrice?: number) => void, actionLoading: string | null }) {
+  const [editedPrice, setEditedPrice] = useState(lot.price.toString());
+  const color = getStatusColor(lot.status);
+
+  return (
+    <div className="p-1 min-w-[200px]">
+      <div className="flex justify-between items-center mb-3">
+        <span className="font-bold text-white text-lg">Lote {lot.number}</span>
+        <span className="text-[10px] font-mono uppercase bg-[var(--color-surface-dim)] px-2 py-1 rounded">
+          Quadra {lot.block}
+        </span>
+      </div>
+      <div className="text-[11px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">{lot.projectName}</div>
+      
+      <div className="space-y-3 mb-4">
+        <div className="flex justify-between text-sm items-center">
+          <span className="text-[var(--color-text-muted)]">Área total:</span>
+          <span className="font-mono text-white">{lot.area} m²</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[var(--color-text-muted)] text-sm">Valor (R$):</span>
+          <input 
+            type="number" 
+            value={editedPrice}
+            onChange={(e) => setEditedPrice(e.target.value)}
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-[var(--color-primary)] font-mono"
+          />
+        </div>
+        <div className="flex justify-between text-sm items-center mt-2 pt-2 border-t border-[var(--color-border)]">
+          <span className="text-[var(--color-text-muted)]">Status:</span>
+          <span className="font-mono text-xs font-bold px-2 py-1 rounded" style={{ backgroundColor: `${color}20`, color: color }}>
+            {getStatusLabel(lot.status)}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 mb-2">
+         <button onClick={() => onAction(lot, 'Disponível', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#22C55E]/20 text-[#22C55E] hover:bg-[#22C55E]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">D</button>
+         <button onClick={() => onAction(lot, 'Reservado', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EAB308]/20 text-[#EAB308] hover:bg-[#EAB308]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">R</button>
+         <button onClick={() => onAction(lot, 'Vendido', Number(editedPrice))} disabled={actionLoading === lot.id} className="bg-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/30 text-[10px] font-bold py-1.5 rounded uppercase flex justify-center items-center">V</button>
+      </div>
+
+      <button onClick={() => onAction(lot, lot.status, Number(editedPrice))} disabled={actionLoading === lot.id} className="w-full bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] hover:text-white border border-[var(--color-border)] text-sm font-bold py-1.5 rounded transition-colors flex items-center justify-center">
+         {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar Valor'}
+      </button>
+    </div>
+  );
+}
+
 export default function GISMap({ 
+
   projectId, 
   activeLayer = 'satellite',
   gpsActive = false,
@@ -229,8 +279,8 @@ export default function GISMap({
                block: b.block_name || b.name || '?',
                projectName: b.projects?.name || '?',
                number: b.number || '0',
-               status: b.status || 'AVAILABLE',
-               area: Number(b.area || 250),
+               status: b.status || 'Disponível',
+               area: Number(b.area || 2500),
                price: Number(b.price || 50000),
                geometryType: b.geometry?.type,
                bounds 
@@ -261,21 +311,20 @@ export default function GISMap({
     };
   }, [user, projectId, refreshKey]);
 
-  const handleLotAction = async (lot: any, action: 'RESERVE' | 'SELL') => {
+  const handleLotAction = async (lot: any, newStatusString: string, newPrice?: number) => {
     if (!user) return;
     setActionLoading(lot.id);
-    const newStatus = action === 'RESERVE' ? 'RESERVED' : 'SOLD';
+    const newStatus = newStatusString;
+    const finalPrice = newPrice !== undefined ? newPrice : lot.price;
     
     try {
       const { error: updateError } = await supabase.from('blocks')
-        .update({ status: newStatus })
+        .update({ status: newStatus, price: finalPrice })
         .eq('id', lot.id);
         
       if (updateError) throw updateError;
       
-      const title = action === 'RESERVE' 
-        ? `Lote Quadra ${lot.block} Lote ${lot.number} reservado`
-        : `Lote Quadra ${lot.block} Lote ${lot.number} vendido`;
+      const title = `Lote Quadra ${lot.block} Lote ${lot.number} atualizado para ${newStatus}`;
 
       await supabase.from('logs').insert({
         tenant_id: user.tenant_id || lot.tenant_id,
@@ -341,9 +390,9 @@ export default function GISMap({
               key={lot.id}
               positions={lot.bounds}
               pathOptions={{ 
-                color: color, 
-                fillColor: color, 
-                fillOpacity: lot.status === 'AVAILABLE' ? 0.3 : 0.6,
+                color: getStatusColor(lot.status), 
+                fillColor: getStatusColor(lot.status), 
+                fillOpacity: lot.status === 'Disponível' ? 0.3 : 0.6,
                 weight: 2
               }}
               eventHandlers={{
@@ -357,63 +406,14 @@ export default function GISMap({
                 mouseout: (e) => {
                   const layer = e.target;
                   layer.setStyle({
-                    fillOpacity: lot.status === 'AVAILABLE' ? 0.3 : 0.6,
+                    fillOpacity: lot.status === 'Disponível' ? 0.3 : 0.6,
                     weight: 2
                   });
                 }
               }}
             >
               <Popup>
-                <div className="p-1 min-w-[180px]">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="font-bold text-white text-lg">Lote {lot.number}</span>
-                    <span className="text-[10px] font-mono uppercase bg-[var(--color-surface-dim)] px-2 py-1 rounded">
-                      Quadra {lot.block}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">{lot.projectName}</div>
-                  
-                  <div className="space-y-2 mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[var(--color-text-muted)]">Área total:</span>
-                      <span className="font-mono text-white">{lot.area} m²</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[var(--color-text-muted)]">Valor:</span>
-                      <span className="font-mono text-white">R$ {lot.price.toLocaleString('pt-BR')}</span>
-                    </div>
-                    <div className="flex justify-between text-sm items-center mt-2 pt-2 border-t border-[var(--color-border)]">
-                      <span className="text-[var(--color-text-muted)]">Status:</span>
-                      <span className="font-mono text-xs font-bold px-2 py-1 rounded" style={{ backgroundColor: `${color}20`, color: color }}>
-                        {getStatusLabel(lot.status)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {lot.status === 'AVAILABLE' && (
-                    <button 
-                      onClick={() => handleLotAction(lot, 'RESERVE')}
-                      disabled={actionLoading === lot.id}
-                      className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Reservar Lote'}
-                    </button>
-                  )}
-                  {lot.status === 'RESERVED' && (
-                    <button 
-                      onClick={() => handleLotAction(lot, 'SELL')}
-                      disabled={actionLoading === lot.id}
-                      className="w-full bg-[var(--color-success)] hover:bg-[#16a34a] text-white text-sm font-bold py-2 rounded transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {actionLoading === lot.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Efetivar Venda'}
-                    </button>
-                  )}
-                  {lot.status === 'SOLD' && (
-                    <button className="w-full bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] hover:text-white border border-[var(--color-border)] text-sm font-bold py-2 rounded transition-colors">
-                      Ver Contrato
-                    </button>
-                  )}
-                </div>
+                 <LotPopupContent lot={lot} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
             </Polygon>
           );
@@ -423,12 +423,10 @@ export default function GISMap({
            <Polyline 
               key={`block-${block.id}`} 
               positions={block.bounds} 
-              pathOptions={{ color: '#f59e0b', weight: 3, dashArray: '5, 10' }} 
+              pathOptions={{ color: getStatusColor(block.status), weight: 3, dashArray: '5, 10' }} 
            >
               <Popup>
-                <div className="p-1">
-                   <h4 className="font-bold">Quadra {block.name || block.block_name} {block.number !== '0' && `(Linha ${block.number})`}</h4>
-                </div>
+                 <LotPopupContent lot={block} onAction={handleLotAction} actionLoading={actionLoading} />
               </Popup>
            </Polyline>
         ))}

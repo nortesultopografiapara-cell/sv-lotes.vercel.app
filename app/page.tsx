@@ -58,9 +58,9 @@ export default function DashboardPage() {
 
         if (data) {
           data.forEach(lot => {
-            if (lot.status === 'AVAILABLE') available++;
-            if (lot.status === 'RESERVED') reserved++;
-            if (lot.status === 'SOLD') {
+            if (lot.status === 'Disponível') available++;
+            if (lot.status === 'Reservado') reserved++;
+            if (lot.status === 'Vendido') {
               sold++;
               vgv += Number(lot.price || 0); // Accumulate actual sales value or lot price.
             }
@@ -103,8 +103,8 @@ export default function DashboardPage() {
 
   const getActionIcon = (action: string) => {
     switch (action) {
-      case 'RESERVED': return { icon: Calendar, color: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]' };
-      case 'SOLD': return { icon: Tag, color: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' };
+      case 'Reservado': return { icon: Calendar, color: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]' };
+      case 'Vendido': return { icon: Tag, color: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' };
       case 'NEW_CLIENT': return { icon: UserPlus, color: 'bg-[var(--color-purple)]/10 text-[var(--color-purple)]' };
       case 'PAYMENT': return { icon: Wallet, color: 'bg-[var(--color-success)]/10 text-[var(--color-success)]' };
       default: return { icon: FileText, color: 'bg-[var(--color-info)]/10 text-[var(--color-info)]' };

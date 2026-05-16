@@ -222,6 +222,9 @@ export default function MapPage() {
              block_name: importQuadra.toUpperCase(),
              number: numberStr,
              lot_number: numberStr,
+             status: 'Disponível',
+             area: 2500,
+             price: 50000,
              geometry: geom,
              tenant_id: finalTenantId
           };
@@ -512,7 +515,7 @@ export default function MapPage() {
 
 function ProjectCard({ project, onOpen, onDelete }: { project: any, onOpen: () => void, onDelete: () => void }) {
   const total = project.blocks?.length || 0;
-  const sold = project.blocks?.filter((l: any) => l.status === 'SOLD').length || 0;
+  const sold = project.blocks?.filter((l: any) => l.status === 'Vendido').length || 0;
   const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
   const pct = total > 0 ? (sold / total) * 100 : 0;
 
