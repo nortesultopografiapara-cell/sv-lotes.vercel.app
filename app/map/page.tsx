@@ -221,6 +221,96 @@ export default function MapPage() {
       let finalTenantId = tenantId;
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
           
+      // Utility to calculate distance between coords in meters
+      const haversineDist = (p1: number[], p2: number[]) => {
+        const r = 6371000;
+        const p1lat = p1[1] * Math.PI/180;
+        const p2lat = p2[1] * Math.PI/180;
+        const dLat = (p2[1]-p1[1]) * Math.PI/180;
+        const dLon = (p2[0]-p1[0]) * Math.PI/180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(p1lat) * Math.cos(p2lat) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return r * c;
+      };
+
+      // Extract all polygon coordinates for checking externals
+      const allPolys = geometries.filter(g => g.type === 'Polygon' && g.coordinates).map(g => g.coordinates[0]);
+
+      const getLotDimensions = (coords: number[][]) => {
+         if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
+         
+         const segments = [];
+         for (let i=0; i<coords.length-1; i++) {
+            segments.push({ p1: coords[i], p2: coords[i+1], length: haversineDist(coords[i], coords[i+1]), isExt: true, idx: i });
+         }
+
+         for (let seg of segments) {
+            for (let other of allPolys) {
+               if (other === coords) continue;
+               let matched = false;
+               for (let j=0; j<other.length-1; j++) {
+                  const d1 = haversineDist(seg.p1, other[j]);
+                  const d2 = haversineDist(seg.p2, other[j+1]);
+                  const d3 = haversineDist(seg.p1, other[j+1]);
+                  const d4 = haversineDist(seg.p2, other[j]);
+                  // Threshold of 1 meter to consider vertices identical, typical in KML variations
+                  if ((d1 < 1 && d2 < 1) || (d3 < 1 && d4 < 1)) {
+                     matched = true; break;
+                  }
+               }
+               if (matched) { seg.isExt = false; break; }
+            }
+         }
+
+         let extSides = segments.filter(s => s.isExt).sort((a,b) => a.length - b.length);
+         let frente = extSides[0] || [...segments].sort((a,b) => a.length - b.length)[0];
+
+         if (segments.length === 4) {
+            const i1 = (frente.idx + 1) % 4;
+            const i2 = (frente.idx + 2) % 4;
+            const i3 = (frente.idx + 3) % 4;
+            
+            // centroid
+            let cx = 0, cy = 0;
+            for(let i=0; i<4; i++){ cx += coords[i][0]; cy += coords[i][1]; }
+            cx /= 4; cy /= 4;
+            
+            const mx = (frente.p1[0] + frente.p2[0])/2;
+            const my = (frente.p1[1] + frente.p2[1])/2;
+            const vx = mx - cx;
+            const vy = my - cy;
+
+            const m2x = (segments[i1].p1[0] + segments[i1].p2[0])/2;
+            const m2y = (segments[i1].p1[1] + segments[i1].p2[1])/2;
+            const v2x = m2x - cx;
+            const v2y = m2y - cy;
+            
+            // left means cross product > 0
+            const cross = vx * v2y - vy * v2x;
+            
+            const iDir = cross < 0 ? i1 : i3;
+            const iEsq = cross < 0 ? i3 : i1;
+
+            return {
+               frente: parseFloat(frente.length.toFixed(2)),
+               fundo: parseFloat(segments[i2].length.toFixed(2)),
+               ladoD: parseFloat(segments[iDir].length.toFixed(2)),
+               ladoE: parseFloat(segments[iEsq].length.toFixed(2))
+            };
+         } else {
+            // roughly approximation for irregular polygon
+            let sorted = [...segments].sort((a,b) => b.length - a.length);
+            return {
+               frente: parseFloat(frente.length.toFixed(2)),
+               fundo: parseFloat((sorted.find(s => s.idx !== frente.idx)?.length || 0).toFixed(2)),
+               ladoD: parseFloat((sorted[0]?.length || 0).toFixed(2)),
+               ladoE: parseFloat((sorted[1]?.length || 0).toFixed(2))
+            };
+         }
+      };
+
       // Preparar inserção na tabela blocks
       const PRICE_PER_M2 = 0.0993035247984734;
       let currentNumber = parseInt(importLoteInicial, 10) || 1;
@@ -228,12 +318,15 @@ export default function MapPage() {
           const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
           
           let calcArea = 0;
+          let dims = { frente: null as number|null, fundo: null as number|null, ladoD: null as number|null, ladoE: null as number|null };
           if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0].length >= 4) {
              try {
                 const poly = turfPolygon(geom.coordinates);
                 const areaCalculada = turfArea(poly);
                 const areaRealCorrigida = areaCalculada * 0.9952546259435014;
                 calcArea = areaRealCorrigida;
+                
+                dims = getLotDimensions(geom.coordinates[0]);
              } catch (e) {
                 console.error("Error calculating area:", e);
              }
@@ -254,7 +347,11 @@ export default function MapPage() {
              area: finalArea,
              price: finalPrice,
              geometry: geom,
-             tenant_id: finalTenantId
+             tenant_id: finalTenantId,
+             frente: dims.frente,
+             fundo: dims.fundo,
+             lado_direito: dims.ladoD,
+             lado_esquerdo: dims.ladoE
           };
       });
       
