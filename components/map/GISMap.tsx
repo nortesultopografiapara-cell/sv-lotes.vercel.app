@@ -390,8 +390,8 @@ export default function GISMap({
                projectName: b.projects?.name || '?',
                number: b.number || '0',
                status: b.status || 'Disponível',
-               area: Number(b.area || 2500),
-               price: Number(b.price || 50000),
+               area: b.area !== null && b.area !== undefined ? Number(b.area) : 0,
+               price: b.price !== null && b.price !== undefined ? Number(b.price) : 0,
                geometryType: b.geometry?.type,
                bounds 
              };
