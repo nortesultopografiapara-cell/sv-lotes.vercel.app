@@ -750,18 +750,18 @@ export default function GISMap({
 
       {/* Floating Panel for Measurement */}
       {measureActive && measureStr && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-full px-4 py-2 shadow-lg flex items-center gap-3 fade-in-up">
-           <span className="text-sm font-bold text-white whitespace-nowrap">{measureStr}</span>
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-full px-3 md:px-4 py-1.5 md:py-2 shadow-lg flex items-center gap-2 md:gap-3 fade-in-up">
+           <span className="text-[11px] md:text-sm font-bold text-white whitespace-nowrap">{measureStr}</span>
            <button 
               onClick={() => {
                  setMeasurePoints([]);
                  setMeasureClosed(false);
                  setMeasureStr('');
               }}
-              className="p-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-all"
+              className="p-1 md:p-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-all"
               title="Limpar Medição"
            >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
            </button>
         </div>
       )}

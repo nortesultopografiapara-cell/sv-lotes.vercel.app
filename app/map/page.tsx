@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 
@@ -282,32 +282,30 @@ export default function MapPage() {
     return (
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* Top Floating Header inside Map */}
-        <div className="absolute top-4 left-4 right-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none flex flex-col gap-2">
+        <div className="absolute top-2 left-2 right-2 md:top-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none flex flex-col gap-1.5 md:gap-2">
           
-          <div className="flex items-center justify-between mb-2 pointer-events-auto">
-             <div className="flex items-center gap-2">
-                <button onClick={handleBack} className="p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white transition-colors shadow-lg">
-                   <ArrowLeft className="w-5 h-5" />
+          <div className="flex items-center justify-between pointer-events-auto bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-lg p-2 shadow-sm">
+             <div className="flex items-center gap-2 overflow-hidden">
+                <button onClick={handleBack} className="flex-shrink-0 p-1.5 hover:bg-[var(--color-border)] rounded-md text-[var(--color-text-muted)] hover:text-white transition-colors">
+                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <h2 className="text-xl font-bold text-white shadow-sm drop-shadow-md">{selectedProject.name}</h2>
+                <h2 className="text-sm font-bold text-white truncate">{selectedProject.name}</h2>
              </div>
              <button 
                 onClick={() => setIsMobilePanelOpen(!isMobilePanelOpen)}
-                className="md:hidden p-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-white transition-colors shadow-lg"
+                className="flex-shrink-0 p-1.5 hover:bg-[var(--color-border)] rounded-md text-[var(--color-text-muted)] hover:text-white transition-colors"
+                title={isMobilePanelOpen ? "Recolher painel" : "Expandir painel"}
              >
-                <MoreVertical className="w-5 h-5" />
+                {isMobilePanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
              </button>
           </div>
 
-          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-xl shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] ${isMobilePanelOpen ? 'p-4 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[500px] md:opacity-100 md:p-4'}`}>
-             <div className="flex flex-row justify-between items-start mb-4">
+          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-lg shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] ${isMobilePanelOpen ? 'p-3 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[500px] md:opacity-100 md:p-3'}`}>
+             <div className="flex flex-row justify-between items-start mb-3 hidden md:flex">
                <div>
-                  <h2 className="text-base font-bold text-white mb-1">Painel Operacional</h2>
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">Ferramentas GIS</p>
+                  <h2 className="text-sm font-bold text-white mb-0.5">Painel Operacional</h2>
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">Ferramentas GIS</p>
                </div>
-               <button onClick={() => setIsMobilePanelOpen(false)} className="md:hidden text-[var(--color-text-muted)] hover:text-white p-1 -mr-2 -mt-2">
-                  <X className="w-5 h-5"/>
-               </button>
              </div>
             
             <div className="flex flex-row md:grid md:grid-cols-2 gap-2 flex-wrap pb-1">
