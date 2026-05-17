@@ -37,13 +37,13 @@ export default function GISDashboard() {
       setLoading(true);
       try {
         const { data: lotesData } = await supabase
-          .from("lotes")
-          .select("*, customers(name)")
+          .from("lots")
+          .select("*")
           .eq("project_id", selectedProjectId);
 
         const { data: bData } = await supabase
           .from("blocks")
-          .select("*, customers(name)")
+          .select("*")
           .eq("project_id", selectedProjectId);
 
         const mapGeom = (item: any) => {
