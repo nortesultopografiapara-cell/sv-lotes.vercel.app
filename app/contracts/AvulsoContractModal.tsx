@@ -113,6 +113,42 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
 
       if (blockErr) throw blockErr;
 
+      // Generate contract text
+      const { data: comp } = await supabase.from('companies').select('*').eq('id', tenantId).single();
+      
+      const { generateContractText } = await import('@/lib/contractGenerator');
+      
+      const contractText = generateContractText({
+         company_name: comp?.name || comp?.razao_social,
+         company_cnpj: comp?.cnpj,
+         comprador_nome: formData.customer_name,
+         comprador_cpf: formData.customer_cpf_cnpj,
+         comprador_estado_civil: formData.customer_estado_civil,
+         comprador_endereco: formData.customer_address,
+         lote_numero: formData.number,
+         lote_quadra: formData.block_name,
+         lote_area: formData.area,
+         conf_norte: formData.frente,
+         conf_sul: formData.fundo,
+         projeto_nome: 'Empreendimento Avulso',
+         valor_total: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numberPrice),
+         valor_entrada: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numberDownPayment),
+         data_entrada: new Date().toLocaleDateString('pt-BR'),
+         qtd_parcelas: formData.installments,
+         valor_parcela: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numberInstallmentValue),
+         primeiro_vencimento: formData.first_due_date
+      });
+
+      // Save to public.contracts
+      await supabase.from('contracts').insert([{
+         company_id: tenantId,
+         project_id: projId,
+         lot_id: block.id,
+         buyer_name: formData.customer_name,
+         buyer_cpf: formData.customer_cpf_cnpj,
+         contract_text: contractText
+      }]);
+
       onSave(block);
 
     } catch (e: any) {
