@@ -173,7 +173,13 @@ export default function MapPage() {
     async function loadProjects() {
       if (!user) return;
       try {
-        const { data, error } = await supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
+        let query = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
+        
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          query = query.eq('company_id', user.tenant_id);
+        }
+        
+        const { data, error } = await query;
         
         if (error) {
            console.warn("Error fetching projects:", error);
@@ -220,7 +226,11 @@ export default function MapPage() {
          throw error;
       }
       
-      const { data: updatedProjects } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      let updatedQuery = supabase.from('projects').select('*').order('created_at', { ascending: false });
+      if (user && user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+         updatedQuery = updatedQuery.eq('company_id', user.tenant_id);
+      }
+      const { data: updatedProjects } = await updatedQuery;
       if (updatedProjects) {
          setProjects(updatedProjects);
       }
