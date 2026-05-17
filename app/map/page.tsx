@@ -317,36 +317,27 @@ export default function MapPage() {
     setCreatingProject(true);
 
     try {
-      const { error } = await supabase.from("projects").insert([
-        {
-          name: projectNameStr,
-          company_id: targetCompanyId,
-        },
-      ]);
+      const { data: novoProjetoCriado, error } = await supabase
+        .from("projects")
+        .insert([
+          {
+            name: projectNameStr,
+            company_id: targetCompanyId,
+          },
+        ])
+        .select("*, lotes(status, geometry)")
+        .single();
 
       if (error) {
         throw error;
       }
 
-      let updatedQuery = supabase
-        .from("projects")
-        .select("*, lotes(status, geometry)")
-        .order("created_at", { ascending: false });
-
-      if (!isMasterAdmin) {
-        if (user && user.tenant_id) {
-          updatedQuery = updatedQuery.eq("company_id", user.tenant_id);
-        } else {
-          updatedQuery = updatedQuery.eq(
-            "company_id",
-            "00000000-0000-0000-0000-000000000000",
-          );
-        }
-      }
-
-      const { data: updatedProjects } = await updatedQuery;
-      if (updatedProjects) {
-        setProjects(updatedProjects);
+      if (novoProjetoCriado) {
+        // Atualiza a lista de projetos imediatamente
+        setProjects((prev) => [novoProjetoCriado, ...prev]);
+        
+        // Define o projeto criado como o projeto selecionado para abrir a tela dele
+        setSelectedProject(novoProjetoCriado);
       }
 
       setIsNewProjectModalOpen(false);
