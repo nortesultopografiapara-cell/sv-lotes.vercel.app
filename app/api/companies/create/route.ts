@@ -88,6 +88,7 @@ export async function POST(req: Request) {
       .from('users')
       .insert({
         id: authUserId,
+        company_id: newCompanyId,
         tenant_id: newCompanyId,
         full_name: adminName,
         email: adminEmail,

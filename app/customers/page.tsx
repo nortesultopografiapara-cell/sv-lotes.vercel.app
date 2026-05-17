@@ -30,8 +30,12 @@ export default function CustomersPage() {
             blocks (id, block_name, name, number, status, projects(name))
         `).order('created_at', { ascending: false });
         
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        if (user.role !== 'SUPER_ADMIN') {
+           if (user.tenant_id) {
+              query = query.eq('company_id', user.tenant_id);
+           } else {
+              query = query.eq('company_id', '00000000-0000-0000-0000-000000000000');
+           }
         }
         
         const { data, error } = await query;
@@ -66,8 +70,12 @@ export default function CustomersPage() {
            *,
            blocks (id, block_name, name, number, status, projects(name))
        `).order('created_at', { ascending: false });
-       if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.eq('tenant_id', user.tenant_id);
+       if (user.role !== 'SUPER_ADMIN') {
+          if (user.tenant_id) {
+             query = query.eq('company_id', user.tenant_id);
+          } else {
+             query = query.eq('company_id', '00000000-0000-0000-0000-000000000000');
+          }
        }
        const { data, error } = await query;
        if (error) {
@@ -104,7 +112,7 @@ export default function CustomersPage() {
       if (!customerId) {
           const { error: custError } = await supabase.from('customers').insert([{
               name: nameUpper,
-              ...(user?.tenant_id ? { tenant_id: user.tenant_id } : {}),
+              ...(user?.tenant_id ? { company_id: user.tenant_id, tenant_id: user.tenant_id } : {}),
               cpf_cnpj: cpfCnpjValue,
               document: cpfCnpjValue, // Keep both in sync for the schema constraint
               phone: phoneClean,

@@ -16,8 +16,12 @@ export default function CRMPage() {
       if (!user) return;
       try {
         let query = supabase.from('clients').select(`*, reservations(id), sales(id)`).order('created_at', { ascending: false });
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        if (user.role !== 'SUPER_ADMIN') {
+           if (user.tenant_id) {
+              query = query.eq('company_id', user.tenant_id);
+           } else {
+              query = query.eq('company_id', '00000000-0000-0000-0000-000000000000');
+           }
         }
         
         const { data, error } = await query;

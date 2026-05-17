@@ -56,7 +56,7 @@ export default function CorretoresPage() {
       let query = supabase.from('users').select(`*`).order('created_at', { ascending: false });
       
       if (user.role === 'ADMIN' || user.role === 'ADMIN_TENANT') {
-         query = query.eq('tenant_id', user.tenant_id).in('role', ['CORRETOR', 'USER', 'broker']);
+         query = query.eq('company_id', user.tenant_id).in('role', ['CORRETOR', 'USER', 'broker', 'GERENTE']);
       } else if (user.role === 'SUPER_ADMIN') {
          query = query.in('role', ['CORRETOR', 'USER', 'broker']); 
       }

@@ -52,8 +52,12 @@ export default function ContractsPage() {
         let query = supabase
           .from("contracts")
           .select("*, blocks(block_name, number)");
-        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-          query = query.eq("company_id", user.tenant_id);
+        if (user.role !== "SUPER_ADMIN") {
+          if (user.tenant_id) {
+            query = query.eq("company_id", user.tenant_id);
+          } else {
+            query = query.eq("company_id", "00000000-0000-0000-0000-000000000000");
+          }
         }
         const { data: contractsData } = await query.order("created_at", {
           ascending: false,
@@ -79,8 +83,12 @@ export default function ContractsPage() {
       let query = supabase
         .from("contracts")
         .select("*, blocks(block_name, number)");
-      if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-        query = query.eq("company_id", user.tenant_id);
+      if (user.role !== "SUPER_ADMIN") {
+        if (user.tenant_id) {
+          query = query.eq("company_id", user.tenant_id);
+        } else {
+          query = query.eq("company_id", "00000000-0000-0000-0000-000000000000");
+        }
       }
       const { data: contractsData } = await query.order("created_at", {
         ascending: false,

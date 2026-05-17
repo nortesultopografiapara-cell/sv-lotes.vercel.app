@@ -34,8 +34,12 @@ export default function FinancePage() {
            .select('*, sales(*, blocks(name, block_name, number, projects(name)), clients(full_name))')
            .order('due_date', { ascending: true });
            
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        if (user.role !== 'SUPER_ADMIN') {
+           if (user.tenant_id) {
+              query = query.eq('company_id', user.tenant_id);
+           } else {
+              query = query.eq('company_id', '00000000-0000-0000-0000-000000000000');
+           }
         }
         
         const { data, error } = await query;

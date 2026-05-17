@@ -62,6 +62,7 @@ export function AvulsoContractModal({
         const { data: newCustomer, error: cErr } = await supabase
           .from("customers")
           .insert({
+            company_id: tenantId,
             tenant_id: tenantId,
             name: formData.customer_name.trim().toUpperCase(),
             document: formData.customer_cpf_cnpj.trim(),
@@ -85,6 +86,7 @@ export function AvulsoContractModal({
             .from("customers")
             .upsert(
               {
+                company_id: tenantId,
                 tenant_id: tenantId,
                 name: formData.customer_name.trim().toUpperCase(),
                 document: formData.customer_cpf_cnpj.trim(),
@@ -127,6 +129,7 @@ export function AvulsoContractModal({
       const { data: block, error: blockErr } = await supabase
         .from("blocks")
         .insert({
+          company_id: tenantId,
           tenant_id: tenantId,
           project_id: projId,
           name: formData.block_name,

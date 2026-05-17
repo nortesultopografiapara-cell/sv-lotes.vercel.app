@@ -34,7 +34,7 @@ export async function POST(req: Request) {
        const { data: comp } = await supabaseAdmin.from('companies').select('plan_type').eq('id', tenantId).single();
        if (comp) {
           const limit = comp.plan_type === 'professional' ? 100 : comp.plan_type === 'standard' ? 10 : 5;
-          const { count } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('role', 'CORRETOR');
+          const { count } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true }).eq('company_id', tenantId).eq('role', 'CORRETOR');
           if (count !== null && count >= limit) {
              throw new Error(`Limite de ${limit} corretores do plano ${comp.plan_type} atingido.`);
           }
@@ -65,6 +65,7 @@ export async function POST(req: Request) {
     // insert
     const insertData: any = {
       id: authUserId,
+      company_id: tenantId,
       tenant_id: tenantId,
       full_name: fullName,
       email: email,

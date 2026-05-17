@@ -111,8 +111,12 @@ export default function DashboardPage() {
           .select("*, users(full_name)")
           .order("created_at", { ascending: false })
           .limit(5);
-        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-          logsQuery = logsQuery.eq("tenant_id", user.tenant_id);
+        if (!isMasterAdmin) {
+          if (user.tenant_id) {
+            logsQuery = logsQuery.eq("company_id", user.tenant_id);
+          } else {
+            logsQuery = logsQuery.eq("company_id", "00000000-0000-0000-0000-000000000000");
+          }
         }
 
         const { data: logsData } = await logsQuery;
