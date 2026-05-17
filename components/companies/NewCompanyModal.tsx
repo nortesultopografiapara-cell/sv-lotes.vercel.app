@@ -63,7 +63,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     setError('');
 
     try {
-      const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+      const baseSlug = formData.name || formData.razao_social || 'nova-empresa';
+      const slug = baseSlug.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
          let finalTenantId = crypto.randomUUID();
 
