@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, CheckCircle2, 
-  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle
+  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -61,6 +61,22 @@ export default function CompaniesPage() {
     }
   };
 
+  const handleResetPassword = async (email: string) => {
+    if (!email) {
+      alert('Esta empresa não possui um e-mail cadastrado para redefinir a senha.');
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login?type=recovery`,
+      });
+      if (error) throw error;
+      alert(`Um link de recuperação de senha foi enviado para ${email}`);
+    } catch (err: any) {
+      alert('Erro ao enviar e-mail de recuperação: ' + err.message);
+    }
+  };
+
   // Verification if user is SUPER_ADMIN
   useEffect(() => {
     if (!authLoading) {
@@ -104,16 +120,24 @@ export default function CompaniesPage() {
             Modo Super Administrador (Multi-Tenant)
           </p>
         </div>
-        <button 
-          onClick={() => {
-            setCompanyToEdit(null);
-            setIsModalOpen(true);
-          }}
-          className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-        >
-          <Plus className="w-5 h-5" />
-          Nova Empresa
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => loadCompanies()}
+            className="bg-transparent hover:bg-white/5 border border-[var(--color-border)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+          >
+            Recarregar
+          </button>
+          <button 
+            onClick={() => {
+              setCompanyToEdit(null);
+              setIsModalOpen(true);
+            }}
+            className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+          >
+            <Plus className="w-5 h-5" />
+            Nova Empresa
+          </button>
+        </div>
       </header>
 
       {/* Multi-Tenant Stats */}
@@ -160,6 +184,7 @@ export default function CompaniesPage() {
                   isMain={idx === 0} // just for highlight
                   onEdit={() => handleEdit(c)}
                   onDelete={() => handleDelete(c)}
+                  onResetPassword={() => handleResetPassword(c.email)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -201,7 +226,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
+function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any) {
   const getStatusBadge = (isActive: boolean) => {
     if (isActive) {
       return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
@@ -245,6 +270,11 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
       </td>
       <td className="p-4 text-right">
         <div className="flex items-center justify-end gap-2">
+          {company.email && (
+            <button onClick={onResetPassword} className="p-2 text-[var(--color-text-muted)] hover:text-yellow-500 transition-colors rounded-lg hover:bg-yellow-500/10 tooltip-trigger" title={`Redefinir senha para ${company.email}`}>
+              <Key className="w-4 h-4" />
+            </button>
+          )}
           <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
             <Edit className="w-4 h-4" />
           </button>
