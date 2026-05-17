@@ -422,6 +422,23 @@ export default function MapPage() {
         return r * c;
       };
 
+      const pointToSegmentDistMeters = (
+        px: number,
+        py: number,
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number,
+      ) => {
+        const l2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+        if (l2 === 0) return haversineDist([px, py], [ax, ay]);
+        let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const projX = ax + t * (bx - ax);
+        const projY = ay + t * (by - ay);
+        return haversineDist([px, py], [projX, projY]);
+      };
+
       // Extract all polygon coordinates for checking externals
       const allPolys = geometries
         .filter((g) => g.type === "Polygon" && g.coordinates)
@@ -496,7 +513,10 @@ export default function MapPage() {
               }
             }
           }
-          if (geomProps.description && typeof geomProps.description === "string") {
+          if (
+            geomProps.description &&
+            typeof geomProps.description === "string"
+          ) {
             for (let key of keys) {
               const regex = new RegExp(key + "\\s*[:=]?\\s*([\\d.,]+)", "i");
               const match = geomProps.description.match(regex);
@@ -555,51 +575,77 @@ export default function MapPage() {
         cx /= Math.max(1, coords.length - 1);
         cy /= Math.max(1, coords.length - 1);
 
-        // Definir Segmento da Frente (mais próximo a uma linha de arruamento ou mais externo)
+        // Definir Segmento da Frente (Regra da Rua ou Área Externa)
         let frenteSeg = null;
         let minLineDist = Infinity;
 
-        for (let s of segments) {
-          let touchesLine = false;
-          for (let lineItem of allLines) {
-            for (let i = 0; i < lineItem.length; i++) {
-              const d1 = haversineDist([s.mx, s.my], lineItem[i]);
-              if (d1 < minLineDist) {
-                minLineDist = d1;
-                touchesLine = true;
-              }
-            }
-          }
-        }
-
-        if (minLineDist < 10) {
-          // dentro de 10m de uma via
+        // 1. Regra da Rua (procurar na camada de logradouros)
+        if (allLines.length > 0) {
           for (let s of segments) {
             for (let lineItem of allLines) {
-              for (let i = 0; i < lineItem.length; i++) {
-                const d = haversineDist([s.mx, s.my], lineItem[i]);
-                if (d === minLineDist) frenteSeg = s;
+              for (let i = 0; i < lineItem.length - 1; i++) {
+                const d = pointToSegmentDistMeters(
+                  s.mx,
+                  s.my,
+                  lineItem[i][0],
+                  lineItem[i][1],
+                  lineItem[i + 1][0],
+                  lineItem[i + 1][1],
+                );
+                if (d < minLineDist) {
+                  minLineDist = d;
+                  frenteSeg = s;
+                }
+              }
+            }
+          }
+          if (minLineDist > 20) {
+            // Se a rua mais próxima estiver a mais de 20 metros, provavelmente não é rua adjacente
+            frenteSeg = null;
+          }
+        }
+
+        // 2. Se não houver rua, pegar o menor segmento que faz limite com a área externa
+        if (!frenteSeg) {
+          let shortestExtLen = Infinity;
+
+          for (let s of segments) {
+            let isShared = false;
+            for (let pCoords of allPolys) {
+              if (pCoords === coords) continue;
+
+              for (let i = 0; i < pCoords.length - 1; i++) {
+                const px = (pCoords[i][0] + pCoords[i + 1][0]) / 2;
+                const py = (pCoords[i][1] + pCoords[i + 1][1]) / 2;
+                const d = haversineDist([s.mx, s.my], [px, py]);
+                if (d < 1) {
+                  // Distância entre pontos médios menor que 1m -> segmento compartilhado com outro lote
+                  isShared = true;
+                  break;
+                }
+              }
+              if (isShared) break;
+            }
+
+            if (!isShared) {
+              // É uma divisa com a área externa
+              if (s.rawLength < shortestExtLen) {
+                shortestExtLen = s.rawLength;
+                frenteSeg = s;
               }
             }
           }
         }
 
+        // 3. Fallback absoluto
         if (!frenteSeg) {
-          // Fallback to max distance from centroid
-          let maxD = -1;
-          for (let s of segments) {
-            let d = Math.sqrt(Math.pow(s.mx - cx, 2) + Math.pow(s.my - cy, 2));
-            if (d > maxD) {
-              maxD = d;
-              frenteSeg = s;
-            }
-          }
+          frenteSeg = segments[0];
         }
 
         let fmx = frenteSeg!.mx;
         let fmy = frenteSeg!.my;
 
-        // Centroid to front midpoint
+        // Centroid to front midpoint (Vetor de Visão voltado para a Rua)
         let vxFront = fmx - cx;
         let vyFront = fmy - cy;
         let vLen = Math.sqrt(vxFront * vxFront + vyFront * vyFront);
@@ -611,11 +657,11 @@ export default function MapPage() {
         vxFront /= vLen;
         vyFront /= vLen;
 
-        // Clockwise directions relative to Front vector
+        // Distribuição dos lados (Olhando do lote para a rua)
         let dirFrente = { x: vxFront, y: vyFront };
         let dirFundo = { x: -vxFront, y: -vyFront };
-        let dirDir = { x: vyFront, y: -vxFront }; // Right (looking at front, rotate +90 deg clockwise)
-        let dirEsq = { x: -vyFront, y: vxFront }; // Left
+        let dirDir = { x: vyFront, y: -vxFront }; // Alinhamento à Direita
+        let dirEsq = { x: -vyFront, y: vxFront }; // Alinhamento à Esquerda
 
         let somaFrente = 0;
         let somaFundo = 0;
@@ -638,6 +684,7 @@ export default function MapPage() {
 
           let maxDot = Math.max(dotFrente, dotFundo, dotDir, dotEsq);
 
+          // Soma o comprimento real nos respectivos eixos
           if (maxDot === dotFrente) somaFrente += s.rawLength;
           else if (maxDot === dotFundo) somaFundo += s.rawLength;
           else if (maxDot === dotDir) somaDir += s.rawLength;
