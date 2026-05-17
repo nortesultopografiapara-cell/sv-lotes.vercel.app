@@ -749,8 +749,12 @@ export default function MapPage() {
 
         const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
 
+        // Garantir que os campos vitais existam e sejam números/strings corretos.
+        // Adicionamos company_id que muitas vezes é obrigatório no lugar de tenant_id
         const blockObj: any = {
           project_id: selectedProject.id,
+          company_id: finalTenantId,
+          tenant_id: finalTenantId,
           name: importQuadra.toUpperCase(),
           block_name: importQuadra.toUpperCase(),
           number: numberStr,
@@ -760,24 +764,28 @@ export default function MapPage() {
           area_oficial: finalArea,
           price: finalPrice,
           geometry: geom,
-          tenant_id: finalTenantId,
-          frente: dims.frente,
-          fundo: dims.fundo,
-          lado_direito: dims.ladoD,
-          lado_esquerdo: dims.ladoE,
         };
 
         // Salvar primariamente nos campos oficiais, com fallback para o cálculo matemático
-        blockObj.frente_oficial =
-          dims.frente_oficial !== null ? dims.frente_oficial : dims.frente;
-        blockObj.fundo_oficial =
-          dims.fundo_oficial !== null ? dims.fundo_oficial : dims.fundo;
-        blockObj.dir_oficial =
-          dims.dir_oficial !== null ? dims.dir_oficial : dims.ladoD;
-        blockObj.esq_oficial =
-          dims.esq_oficial !== null ? dims.esq_oficial : dims.ladoE;
+        const pFloat = (v: any) =>
+          v !== null && v !== undefined
+            ? parseFloat(String(v).replace(",", ".")) || null
+            : null;
 
-        // Se quiser compatibilidade retroativa temporária:
+        blockObj.frente_oficial = pFloat(
+          dims.frente_oficial !== null ? dims.frente_oficial : dims.frente,
+        );
+        blockObj.fundo_oficial = pFloat(
+          dims.fundo_oficial !== null ? dims.fundo_oficial : dims.fundo,
+        );
+        blockObj.dir_oficial = pFloat(
+          dims.dir_oficial !== null ? dims.dir_oficial : dims.ladoD,
+        );
+        blockObj.esq_oficial = pFloat(
+          dims.esq_oficial !== null ? dims.esq_oficial : dims.ladoE,
+        );
+
+        // Compatibilidade retroativa
         blockObj.frente = blockObj.frente_oficial;
         blockObj.fundo = blockObj.fundo_oficial;
         blockObj.lado_direito = blockObj.dir_oficial;
@@ -787,12 +795,15 @@ export default function MapPage() {
       });
 
       if (blocksToInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from("lotes")
-          .insert(blocksToInsert);
-        if (insertError) {
-          console.error("Erro do Supabase ao inserir lotes:", insertError);
-          throw insertError;
+        for (const dadosDoLote of blocksToInsert) {
+          const { data, error: insertError } = await supabase
+            .from("lotes")
+            .insert([dadosDoLote]);
+
+          if (insertError) {
+            console.error("Erro do Supabase ao inserir lote:", insertError);
+            throw insertError;
+          }
         }
       }
 
@@ -804,7 +815,8 @@ export default function MapPage() {
       setMapRefreshKey((prev) => prev + 1);
     } catch (err: any) {
       console.error("Erro no import: ", err);
-      alert("Erro ao importar KML: " + err.message);
+      const detailStr = err.details ? ` - ${err.details}` : "";
+      alert(`Erro do Banco: ${err.message}${detailStr}`);
     } finally {
       setImporting(false);
     }
