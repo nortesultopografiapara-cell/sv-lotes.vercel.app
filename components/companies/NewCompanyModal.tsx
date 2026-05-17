@@ -24,7 +24,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     cnpj: initialData?.cnpj || '',
     email: initialData?.email || '',
     plan_type: initialData?.plan_type || 'basic',
-    password: ''
+    password: '',
+    next_payment_date: initialData?.next_payment_date || ''
   });
 
   if (!isOpen) return null;
@@ -111,7 +112,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                email: formData.email,
                plan_type: formData.plan_type,
                slug: slug,
-               default_password: formData.password
+               default_password: formData.password,
+               next_payment_date: formData.next_payment_date || null
             });
 
             if (insertCompanyError) {
@@ -140,7 +142,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                email: formData.email,
                plan_type: formData.plan_type,
                default_password: formData.password ? formData.password : undefined,
-               slug: slug
+               slug: slug,
+               next_payment_date: formData.next_payment_date || null
             }).eq('id', initialData.id);
             
             if (updateError) throw new Error('Erro ao atualizar empresa: ' + updateError.message);
@@ -265,6 +268,32 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 <option value="standard">Standard</option>
                 <option value="professional">Profissional</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {initialData && (
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Data de Cadastro</label>
+                  <input 
+                    type="text" 
+                    disabled
+                    value={initialData.created_at ? new Date(initialData.created_at).toLocaleDateString('pt-BR') : ''}
+                    className="w-full bg-[var(--color-background)] opacity-50 cursor-not-allowed border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none transition-colors"
+                  />
+                </div>
+              )}
+
+              <div className={!initialData ? 'col-span-2' : ''}>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider flex items-center gap-2">
+                  Vencimento / Próx. Pagamento
+                </label>
+                <input 
+                  type="date" 
+                  value={formData.next_payment_date}
+                  onChange={(e) => setFormData({ ...formData, next_payment_date: e.target.value })}
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                />
+              </div>
             </div>
           </form>
         </div>

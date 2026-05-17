@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, CheckCircle2, 
-  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key
+  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key, Lock, Unlock, Calendar
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,7 +27,7 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, name, slug, cnpj, email, plan_type, created_at')
+        .select('id, name, slug, cnpj, email, plan_type, created_at, active, next_payment_date')
         .order('created_at', { ascending: false });
         
       if (error) {
@@ -45,6 +45,20 @@ export default function CompaniesPage() {
   const handleEdit = (company: any) => {
     setCompanyToEdit(company);
     setIsModalOpen(true);
+  };
+
+  const handleToggleActive = async (company: any) => {
+    const newStatus = !company.active;
+    const actionText = newStatus ? 'liberar' : 'bloquear';
+    if (confirm(`Tem certeza que deseja ${actionText} o acesso da empresa ${company.name}?`)) {
+      try {
+        const { error } = await supabase.from('companies').update({ active: newStatus }).eq('id', company.id);
+        if (error) throw error;
+        loadCompanies();
+      } catch (err: any) {
+        alert(`Erro ao ${actionText} empresa: ` + err.message);
+      }
+    }
   };
 
   const handleDelete = async (company: any) => {
@@ -97,7 +111,7 @@ export default function CompaniesPage() {
      );
   }
 
-  const activeCompanies = companies.length;
+  const activeCompanies = companies.filter(c => c.active !== false).length;
   const totalUsers = 0;
   const totalProjects = 0;
 
@@ -167,6 +181,7 @@ export default function CompaniesPage() {
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Empresa / Tenant</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Status</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">CNPJ</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">E-mail de Acesso</th>
                 <th className="p-4 w-24 text-right">Ações</th>
@@ -181,6 +196,7 @@ export default function CompaniesPage() {
                   onEdit={() => handleEdit(c)}
                   onDelete={() => handleDelete(c)}
                   onResetPassword={() => handleResetPassword(c.email)}
+                  onToggleActive={() => handleToggleActive(c)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -222,12 +238,14 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any) {
-  const getStatusBadge = (isActive: boolean) => {
+function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive, isMain }: any) {
+  const isActive = company.active !== false;
+
+  const getStatusBadge = () => {
     if (isActive) {
       return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
     } else {
-      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20">Inativa</span>;
+      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20"><Lock className="w-3 h-3 mr-1" /> Bloqueada</span>;
     }
   };
 
@@ -249,6 +267,9 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any)
         </div>
       </td>
       <td className="p-4 hidden md:table-cell">
+        {getStatusBadge()}
+      </td>
+      <td className="p-4 hidden md:table-cell">
         <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
@@ -261,6 +282,16 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any)
           {company.email && (
             <button onClick={onResetPassword} className="p-2 text-[var(--color-text-muted)] hover:text-yellow-500 transition-colors rounded-lg hover:bg-yellow-500/10 tooltip-trigger" title={`Redefinir senha para ${company.email}`}>
               <Key className="w-4 h-4" />
+            </button>
+          )}
+          {!isMain && (
+            <button 
+              onClick={onToggleActive} 
+              className={`p-2 transition-colors rounded-lg flex items-center gap-1 text-[var(--color-text-muted)] 
+                ${isActive ? 'hover:text-red-500 hover:bg-red-500/10' : 'hover:text-green-500 hover:bg-green-500/10'}`} 
+              title={isActive ? 'Bloquear Acesso' : 'Liberar Acesso'}
+            >
+              {isActive ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
             </button>
           )}
           <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">

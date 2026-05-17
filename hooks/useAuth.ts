@@ -62,13 +62,15 @@ export function useAuth() {
 
         let tenant_id = userData?.tenant_id || session.user.user_metadata?.tenant_id || null;
         let role = (userData?.role || session.user.user_metadata?.role || '').toUpperCase();
+        let companyActive = true;
 
         if (session.user.email) {
             // Buscando o ID da empresa associada ao e-mail
-            const { data: comp } = await supabase.from('companies').select('id, admin_email, email').or(`email.eq.${session.user.email},admin_email.eq.${session.user.email}`).maybeSingle();
+            const { data: comp } = await supabase.from('companies').select('id, admin_email, email, active').or(`email.eq.${session.user.email},admin_email.eq.${session.user.email}`).maybeSingle();
             
             if (comp && comp.id) {
                 tenant_id = comp.id;
+                companyActive = comp.active !== false;
                 // Gestor
                 if (!role || role === 'USER') {
                     role = 'ADMIN_TENANT';
@@ -80,6 +82,22 @@ export function useAuth() {
                   tenant_id = allComps[0].id;
                }
             }
+        }
+
+        if (tenant_id && role !== 'SUPER_ADMIN') {
+             // check active again just in case it wasn't caught by the email check
+             const { data: c } = await supabase.from('companies').select('active').eq('id', tenant_id).maybeSingle();
+             if (c) companyActive = c.active !== false;
+        }
+
+        if (role !== 'SUPER_ADMIN' && companyActive === false) {
+             await supabase.auth.signOut();
+             setUser(null);
+             setLoading(false);
+             if (window.location.pathname !== '/login') {
+                window.location.href = '/login?error=blocked';
+             }
+             return;
         }
 
         if (error || !userData) {

@@ -21,6 +21,12 @@ export default function LoginPage() {
         setIsRecovery(true);
       }
 
+      if (window.location.search.includes('error=blocked')) {
+        setError("Acesso bloqueado. Entre em contato com o administrador do sistema para regularizar sua anuidade.");
+        // Remova a query string para não ficar persistente
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user && !window.location.search.includes('type=recovery') && !window.location.hash.includes('type=recovery')) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
@@ -127,6 +133,33 @@ export default function LoginPage() {
 
       // 73: Check result for redirection
       if (data?.user) {
+        console.log('LOGIN SUCCESS. Checking company status...');
+
+        let isCompanyActive = true;
+        const { data: comp } = await supabase.from('companies')  
+          .select('active')
+          .or(`email.eq.${cleanEmail},admin_email.eq.${cleanEmail}`)
+          .maybeSingle();
+          
+        if (comp) {
+            isCompanyActive = comp.active !== false;
+        } else {
+            // fallback using user metadata tenant just in case
+            const tId = data.user.user_metadata?.tenant_id;
+            if (tId) {
+                const { data: cData } = await supabase.from('companies').select('active').eq('id', tId).maybeSingle();
+                if (cData) isCompanyActive = cData.active !== false;
+            }
+        }
+
+        const forceRole = data.user.user_metadata?.role;
+        if (forceRole !== 'SUPER_ADMIN' && !isCompanyActive) {
+             await supabase.auth.signOut();
+             setError("Acesso bloqueado. Entre em contato com o administrador do sistema para regularizar sua anuidade.");
+             setLoading(false);
+             return;
+        }
+
         console.log('LOGIN SUCCESS. Redirecting to dashboard...');
         // Success redirect immediately using native href for reliability
         window.location.href = '/dashboard';
