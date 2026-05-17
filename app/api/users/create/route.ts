@@ -51,7 +51,8 @@ export async function POST(req: Request) {
         full_name: fullName,
         role: role || 'USER', // 'CORRETOR' ou 'USER'
         tenant_id: tenantId,
-        creci: creci
+        creci: creci,
+        phone: phone
       }
     });
 
@@ -69,10 +70,8 @@ export async function POST(req: Request) {
       email: email,
       role: role || 'USER',
       status: 'ACTIVE',
-      phone: phone,
       force_password_change: true
     };
-    if (creci) insertData.creci = creci;
 
     const { error: userError } = await supabaseAdmin
       .from('users')

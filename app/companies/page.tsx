@@ -182,7 +182,7 @@ export default function CompaniesPage() {
               <tr>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Empresa / Tenant</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Status</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">CNPJ</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Cadastro / Pgto</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">E-mail de Acesso</th>
                 <th className="p-4 w-24 text-right">Ações</th>
               </tr>
@@ -270,7 +270,16 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive
         {getStatusBadge()}
       </td>
       <td className="p-4 hidden md:table-cell">
-        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
+        <div className="text-sm text-white mb-0.5">
+          <Calendar className="w-3 h-3 inline-block mr-1 text-gray-400" />
+          <span className="text-gray-400 mr-1 text-xs">C:</span>
+          {company.created_at ? new Date(company.created_at).toLocaleDateString('pt-BR') : '—'}
+        </div>
+        <div className="text-sm text-white mt-1">
+          <Calendar className="w-3 h-3 inline-block mr-1 text-purple-400" />
+          <span className="text-purple-400 mr-1 text-xs">V:</span>
+          {company.next_payment_date ? new Date(company.next_payment_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Sem data'}
+        </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
         <div className="text-sm text-gray-400 font-mono">
