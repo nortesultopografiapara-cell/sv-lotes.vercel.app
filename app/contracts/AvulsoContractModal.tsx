@@ -127,7 +127,7 @@ export function AvulsoContractModal({
         Number(formData.installment_value.replace(/\D/g, "")) / 100 || 0;
 
       const { data: block, error: blockErr } = await supabase
-        .from("blocks")
+        .from("lotes")
         .insert({
           company_id: tenantId,
           tenant_id: tenantId,
@@ -135,6 +135,7 @@ export function AvulsoContractModal({
           name: formData.block_name,
           block_name: formData.block_name,
           number: formData.number,
+          lot_number: formData.number,
           area: Number(formData.area),
           price: numberPrice,
           down_payment: numberDownPayment > 0 ? numberDownPayment : null,

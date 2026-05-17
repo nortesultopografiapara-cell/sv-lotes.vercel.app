@@ -51,12 +51,15 @@ export default function ContractsPage() {
         // Load Sold Lots (Contracts)
         let query = supabase
           .from("contracts")
-          .select("*, blocks(block_name, number)");
+          .select("*, lotes(block_name, number)");
         if (user.role !== "SUPER_ADMIN") {
           if (user.tenant_id) {
             query = query.eq("company_id", user.tenant_id);
           } else {
-            query = query.eq("company_id", "00000000-0000-0000-0000-000000000000");
+            query = query.eq(
+              "company_id",
+              "00000000-0000-0000-0000-000000000000",
+            );
           }
         }
         const { data: contractsData } = await query.order("created_at", {
@@ -82,12 +85,15 @@ export default function ContractsPage() {
       setLoading(true);
       let query = supabase
         .from("contracts")
-        .select("*, blocks(block_name, number)");
+        .select("*, lotes(block_name, number)");
       if (user.role !== "SUPER_ADMIN") {
         if (user.tenant_id) {
           query = query.eq("company_id", user.tenant_id);
         } else {
-          query = query.eq("company_id", "00000000-0000-0000-0000-000000000000");
+          query = query.eq(
+            "company_id",
+            "00000000-0000-0000-0000-000000000000",
+          );
         }
       }
       const { data: contractsData } = await query.order("created_at", {
@@ -111,7 +117,7 @@ export default function ContractsPage() {
   const filteredContracts = contracts.filter(
     (c) =>
       c.buyer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.blocks?.block_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.lotes?.block_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.buyer_cpf?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
@@ -192,8 +198,8 @@ export default function ContractsPage() {
                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                            {contract.blocks
-                              ? `Quadra ${contract.blocks.block_name} / Lote ${contract.blocks.number}`
+                            {contract.lotes
+                              ? `Quadra ${contract.lotes.block_name} / Lote ${contract.lotes.number}`
                               : "Lote Avulso"}
                           </span>
                         </td>
