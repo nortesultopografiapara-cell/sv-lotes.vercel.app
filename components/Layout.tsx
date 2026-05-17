@@ -13,7 +13,8 @@ import {
   User,
   ChevronDown,
   Building2,
-  LogOut
+  LogOut,
+  FileText
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +28,7 @@ const getMenuItems = (role: string) => {
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
     ];
   }
   
@@ -37,6 +39,7 @@ const getMenuItems = (role: string) => {
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
     ];
   }
 
@@ -45,6 +48,7 @@ const getMenuItems = (role: string) => {
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
+    { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
   ];
 };
 
