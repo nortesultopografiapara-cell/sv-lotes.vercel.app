@@ -89,6 +89,19 @@ export default function CompaniesPage() {
     }
   };
 
+  const handleUpdatePaymentDate = async (companyId: string, newDate: string) => {
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ next_payment_date: newDate || null })
+        .eq('id', companyId);
+      if (error) throw error;
+      loadCompanies();
+    } catch (err: any) {
+      alert('Erro ao atualizar data de vencimento: ' + err.message);
+    }
+  };
+
   // Verification if user is SUPER_ADMIN
   useEffect(() => {
     if (!authLoading) {
@@ -197,6 +210,7 @@ export default function CompaniesPage() {
                   onDelete={() => handleDelete(c)}
                   onResetPassword={() => handleResetPassword(c.email)}
                   onToggleActive={() => handleToggleActive(c)}
+                  onUpdatePaymentDate={(date: string) => handleUpdatePaymentDate(c.id, date)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -238,7 +252,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive, isMain }: any) {
+function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive, onUpdatePaymentDate, isMain }: any) {
   const isActive = company.active !== false;
 
   const getStatusBadge = () => {
@@ -275,10 +289,16 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive
           <span className="text-gray-400 mr-1 text-xs">C:</span>
           {company.created_at ? new Date(company.created_at).toLocaleDateString('pt-BR') : '—'}
         </div>
-        <div className="text-sm text-white mt-1">
-          <Calendar className="w-3 h-3 inline-block mr-1 text-purple-400" />
-          <span className="text-purple-400 mr-1 text-xs">V:</span>
-          {company.next_payment_date ? new Date(company.next_payment_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'Sem data'}
+        <div className="text-sm text-white mt-1 flex items-center gap-1">
+          <Calendar className="w-3 h-3 inline-block text-purple-400" />
+          <span className="text-purple-400 text-xs">V:</span>
+          <input 
+            type="date" 
+            defaultValue={company.next_payment_date ? company.next_payment_date.split('T')[0] : ''}
+            onChange={(e) => onUpdatePaymentDate(e.target.value)}
+            className="bg-transparent border-none text-white text-xs p-0 m-0 outline-none cursor-pointer hover:underline focus:ring-0"
+            title="Alterar Vencimento"
+          />
         </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
