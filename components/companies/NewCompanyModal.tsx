@@ -72,6 +72,21 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
             }
 
+            // Check if email already exists in users or companies
+            const { count: usersCount } = await supabase
+              .from('users')
+              .select('id', { count: 'exact', head: true })
+              .eq('email', formData.email);
+              
+            const { count: companiesCount } = await supabase
+              .from('companies')
+              .select('id', { count: 'exact', head: true })
+              .eq('email', formData.email);
+
+            if ((usersCount && usersCount > 0) || (companiesCount && companiesCount > 0)) {
+               throw new Error('Este e-mail já está vinculado a um cadastro ativo no sistema');
+            }
+
             // 1. Create user with signUp and only essential metadata
             const { data: authData, error: authError } = await supabase.auth.signUp({
                email: formData.email,
