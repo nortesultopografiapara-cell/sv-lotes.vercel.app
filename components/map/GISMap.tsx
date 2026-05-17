@@ -665,7 +665,7 @@ export default function GISMap({
       if (!user) return;
       try {
         let blocksQuery = supabase
-          .from("lotes")
+          .from("blocks")
           .select("*, projects!inner(name, company_id), customers(name)");
 
         if (user.tenant_id) {
@@ -763,10 +763,10 @@ export default function GISMap({
     loadLots();
 
     const channel = supabase
-      .channel("realtime:lotes")
+      .channel("realtime:blocks")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "lotes" },
+        { event: "*", schema: "public", table: "blocks" },
         () => {
           loadLots();
         },
@@ -825,7 +825,7 @@ export default function GISMap({
       }
 
       const { error: updateError } = await supabase
-        .from("lotes")
+        .from("blocks")
         .update(updatePayload)
         .eq("id", lot.id);
 
@@ -908,7 +908,7 @@ export default function GISMap({
 
       // Update block with the customer_id
       const { error: updateError } = await supabase
-        .from("lotes")
+        .from("blocks")
         .update({
           status: newStatus,
           price: finalPrice,

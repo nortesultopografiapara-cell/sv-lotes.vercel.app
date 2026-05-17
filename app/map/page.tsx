@@ -786,7 +786,7 @@ export default function MapPage() {
 
       if (blocksToInsert.length > 0) {
         const { error: insertError } = await supabase
-          .from("lotes")
+          .from("blocks")
           .insert(blocksToInsert);
         if (insertError) throw insertError;
       }

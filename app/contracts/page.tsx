@@ -51,7 +51,7 @@ export default function ContractsPage() {
         // Load Sold Lots (Contracts)
         let query = supabase
           .from("contracts")
-          .select("*, lotes(block_name, number)");
+          .select("*, blocks(block_name, number)");
         if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
           query = query.eq("company_id", user.tenant_id);
         }
@@ -78,7 +78,7 @@ export default function ContractsPage() {
       setLoading(true);
       let query = supabase
         .from("contracts")
-        .select("*, lotes(block_name, number)");
+        .select("*, blocks(block_name, number)");
       if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
         query = query.eq("company_id", user.tenant_id);
       }
@@ -184,8 +184,8 @@ export default function ContractsPage() {
                         </td>
                         <td className="p-4">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                            {contract.lotes
-                              ? `Quadra ${contract.lotes.block_name} / Lote ${contract.lotes.number}`
+                            {contract.blocks
+                              ? `Quadra ${contract.blocks.block_name} / Lote ${contract.blocks.number}`
                               : "Lote Avulso"}
                           </span>
                         </td>
