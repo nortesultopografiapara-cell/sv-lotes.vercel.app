@@ -15,6 +15,7 @@ interface NewCompanyModalProps {
 export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
@@ -30,6 +31,36 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
   });
 
   if (!isOpen) return null;
+
+  const handleCNPJSearch = async () => {
+    const rawCnpj = formData.cnpj.replace(/\D/g, '');
+    if (rawCnpj.length !== 14) return;
+    
+    setError('');
+    setIsSearchingCNPJ(true);
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${rawCnpj}`);
+      if (!res.ok) {
+        throw new Error('Erro ao buscar CNPJ na API.');
+      }
+      const data = await res.json();
+      
+      const newAddress = `${data.logradouro || ''}, ${data.numero || ''} ${data.complemento ? '- ' + data.complemento : ''} - ${data.bairro || ''}, ${data.municipio || ''} - ${data.uf || ''}, ${data.cep || ''}`.replace(/,\s*,/g, ',').replace(/\s+/g, ' ').trim();
+
+      setFormData(prev => ({
+        ...prev,
+        razao_social: data.razao_social || prev.razao_social,
+        name: data.nome_fantasia || data.razao_social || prev.name,
+        address: newAddress.length > 5 ? newAddress : prev.address,
+        phone: data.ddd_telefone_1 || prev.phone,
+      }));
+    } catch (err: any) {
+      console.error(err);
+      setError('CNPJ não encontrado ou erro na busca.');
+    } finally {
+      setIsSearchingCNPJ(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,13 +216,21 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
             <div>
               <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
-              <input 
-                type="text" 
-                value={formData.cnpj}
-                onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                placeholder="00.000.000/0001-00"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={formData.cnpj}
+                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                  onBlur={handleCNPJSearch}
+                  placeholder="00.000.000/0001-00"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 pr-10 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                />
+                {isSearchingCNPJ && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>
