@@ -475,10 +475,10 @@ export default function GISMap({
                price: b.price !== null && b.price !== undefined ? Number(b.price) : 0,
                geometryType: b.geometry?.type,
                bounds,
-               frente: b.frente_oficial !== null && b.frente_oficial !== undefined ? b.frente_oficial : b.frente || null,
-               fundo: b.fundo_oficial !== null && b.fundo_oficial !== undefined ? b.fundo_oficial : b.fundo || null,
-               lado_direito: b.dir_oficial !== null && b.dir_oficial !== undefined ? b.dir_oficial : b.lado_direito || null,
-               lado_esquerdo: b.esq_oficial !== null && b.esq_oficial !== undefined ? b.esq_oficial : b.lado_esquerdo || null
+               frente: b.frente || null,
+               fundo: b.fundo || null,
+               lado_direito: b.lado_direito || null,
+               lado_esquerdo: b.lado_esquerdo || null
              };
            }).filter(b => b.bounds.length > 0);
            setLots(parsedBlocks.filter(b => b.geometryType === 'Polygon'));

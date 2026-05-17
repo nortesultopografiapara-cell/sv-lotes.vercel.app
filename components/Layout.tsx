@@ -13,9 +13,7 @@ import {
   User,
   ChevronDown,
   Building2,
-  LogOut,
-  FileText,
-  Settings
+  LogOut
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -29,7 +27,6 @@ const getMenuItems = (role: string) => {
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
     ];
   }
   
@@ -40,14 +37,14 @@ const getMenuItems = (role: string) => {
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
-      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-gray-400' },
     ];
   }
 
   // DEFAULT (CORRETOR)
   return [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+    { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
   ];
 };
 
@@ -195,9 +192,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <h1 className="text-xl font-medium text-white flex items-center gap-1">
                 <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                 {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Admin Empresa' : 'Corretor'}
-              </p>
+              <p className="text-sm text-[var(--color-text-muted)]">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
             </div>
 
             <div className="flex items-center gap-6">

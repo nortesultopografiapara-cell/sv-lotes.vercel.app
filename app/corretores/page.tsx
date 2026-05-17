@@ -1,23 +1,15 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, AlertCircle } from 'lucide-react';
+import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-
-// Map limits
-const PLAN_LIMITS: Record<string, number> = {
-  basic: 5,
-  standard: 10,
-  professional: 100
-};
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
   const [corretores, setCorretores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [companyPlan, setCompanyPlan] = useState<string>('basic');
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,18 +23,9 @@ export default function CorretoresPage() {
   const [successData, setSuccessData] = useState<{ email: string, password: string } | null>(null);
 
   useEffect(() => {
-    async function loadData() {
+    async function loadCorretores() {
       if (!user) return;
       try {
-        setLoading(true);
-
-        if (user.tenant_id) {
-           const { data: comp } = await supabase.from('companies').select('plan_type').eq('id', user.tenant_id).single();
-           if (comp && comp.plan_type) {
-             setCompanyPlan(comp.plan_type);
-           }
-        }
-
         let query = supabase.from('users').select(`*`).order('created_at', { ascending: false });
         
         if (user.role === 'ADMIN') {
@@ -63,21 +46,9 @@ export default function CorretoresPage() {
     }
 
     if (!authLoading) {
-      loadData();
+      loadCorretores();
     }
   }, [user, authLoading]);
-
-  const limit = PLAN_LIMITS[companyPlan] || 5;
-  const isLimitReached = corretores.length >= limit && user?.role === 'ADMIN';
-
-  const handleOpenModal = () => {
-    if (isLimitReached) {
-      alert(`O limite de ${limit} corretores do seu plano (${companyPlan}) foi atingido. Faça upgrade para adicionar mais.`);
-      return;
-    }
-    setSuccessData(null); 
-    setIsModalOpen(true);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,7 +116,7 @@ export default function CorretoresPage() {
             />
           </div>
           <button 
-            onClick={handleOpenModal}
+            onClick={() => { setSuccessData(null); setIsModalOpen(true); }}
             className="flex items-center gap-2 bg-[var(--color-primary)] text-white px-4 py-2 rounded-lg text-sm font-bold shadow-[0_0_15px_rgba(20,184,166,0.3)] hover:bg-[#0f766e] transition-colors whitespace-nowrap"
           >
             <Plus className="w-4 h-4" /> Novo Corretor

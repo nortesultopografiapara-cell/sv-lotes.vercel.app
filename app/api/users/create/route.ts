@@ -30,17 +30,6 @@ export async function POST(req: Request) {
       throw new Error("O tenantId é obrigatório para cadastrar um corretor.");
     }
 
-    if (role === 'CORRETOR') {
-       const { data: comp } = await supabaseAdmin.from('companies').select('plan_type').eq('id', tenantId).single();
-       if (comp) {
-          const limit = comp.plan_type === 'professional' ? 100 : comp.plan_type === 'standard' ? 10 : 5;
-          const { count } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('role', 'CORRETOR');
-          if (count !== null && count >= limit) {
-             throw new Error(`Limite de ${limit} corretores do plano ${comp.plan_type} atingido.`);
-          }
-       }
-    }
-
     const temporaryPassword = generateTempPassword(8);
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({

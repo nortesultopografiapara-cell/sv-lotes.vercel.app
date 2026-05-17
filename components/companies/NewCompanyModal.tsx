@@ -19,13 +19,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
-    razao_social: initialData?.razao_social || '',
     cnpj: initialData?.cnpj || '',
-    address: initialData?.address || '',
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     active: initialData?.active !== undefined ? initialData.active : true,
-    plan_type: initialData?.plan_type || 'basic',
     password: ''
   });
 
@@ -44,13 +41,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       if (initialData) {
          const { error: updateError } = await supabase.from('companies').update({
             name: formData.name,
-            razao_social: formData.razao_social,
             cnpj: formData.cnpj,
-            address: formData.address,
             phone: formData.phone,
             email: formData.email,
             active: formData.active,
-            plan_type: formData.plan_type,
             default_password: formData.password ? formData.password : undefined,
             slug: slug
          }).eq('id', initialData.id);
@@ -91,13 +85,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          const { error: upsertError } = await supabase.from('companies').upsert({
            id: finalTenantId,
            name: formData.name,
-           razao_social: formData.razao_social,
            cnpj: formData.cnpj,
-           address: formData.address,
            phone: formData.phone,
            email: formData.email,
            active: formData.active,
-           plan_type: formData.plan_type,
            slug: slug,
            default_password: formData.password
          }, { onConflict: 'cnpj' });
@@ -161,7 +152,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             )}
             
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome da Empresa / Imobiliária *</label>
               <input 
                 type="text" 
                 required
@@ -173,18 +164,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Razão Social</label>
-              <input 
-                type="text" 
-                value={formData.razao_social}
-                onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
-                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ / CPF</label>
               <input 
                 type="text" 
                 value={formData.cnpj}
@@ -195,18 +175,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Endereço Completo</label>
-              <input 
-                type="text" 
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Av. Exemplo, 1000 - Bairro, Cidade - UF"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail Master (Contato)</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Contato</label>
               <input 
                 type="email" 
                 value={formData.email}
@@ -250,19 +219,6 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
               >
                 <option value="true">Ativo</option>
                 <option value="false">Inativo</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano (Limites)</label>
-              <select 
-                value={formData.plan_type}
-                onChange={(e) => setFormData({ ...formData, plan_type: e.target.value })}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
-              >
-                <option value="basic">Basic (Até 5 corretores)</option>
-                <option value="standard">Standard (Até 10 corretores)</option>
-                <option value="professional">Professional (Até 100 corretores)</option>
               </select>
             </div>
           </form>
