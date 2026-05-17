@@ -455,10 +455,10 @@ export default function MapPage() {
           fundo: null as number | null,
           ladoD: null as number | null,
           ladoE: null as number | null,
-          frente_oficial: null as string | null,
-          fundo_oficial: null as string | null,
-          dir_oficial: null as string | null,
-          esq_oficial: null as string | null,
+          frente_oficial: null as number | null,
+          fundo_oficial: null as number | null,
+          dir_oficial: null as number | null,
+          esq_oficial: null as number | null,
           area_oficial: null as number | null,
         };
         if (!coords || coords.length < 4) return result;
@@ -473,7 +473,8 @@ export default function MapPage() {
                 if (typeof valStr === "string" || typeof valStr === "number") {
                   const match = String(valStr).match(/^[\d.,]+/);
                   if (match) {
-                    return match[0] + " m";
+                    const parsed = parseFloat(match[0].replace(",", "."));
+                    return isNaN(parsed) ? null : Number(parsed.toFixed(2));
                   }
                 }
               }
@@ -490,7 +491,8 @@ export default function MapPage() {
               const regex = new RegExp(key + "\\s*[:=]?\\s*([\\d.,]+)", "i");
               const match = geomProps.description.match(regex);
               if (match && match[1]) {
-                return match[1] + " m";
+                const parsed = parseFloat(match[1].replace(",", "."));
+                return isNaN(parsed) ? null : Number(parsed.toFixed(2));
               }
             }
           }
@@ -714,10 +716,10 @@ export default function MapPage() {
           fundo: null as number | null,
           ladoD: null as number | null,
           ladoE: null as number | null,
-          frente_oficial: null as string | null,
-          fundo_oficial: null as string | null,
-          dir_oficial: null as string | null,
-          esq_oficial: null as string | null,
+          frente_oficial: null as number | null,
+          fundo_oficial: null as number | null,
+          dir_oficial: null as number | null,
+          esq_oficial: null as number | null,
           area_oficial: null as number | null,
         };
         if (
@@ -786,9 +788,12 @@ export default function MapPage() {
 
       if (blocksToInsert.length > 0) {
         const { error: insertError } = await supabase
-          .from("blocks")
+          .from("lotes")
           .insert(blocksToInsert);
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error("Erro do Supabase ao inserir lotes:", insertError);
+          throw insertError;
+        }
       }
 
       alert(`Importados ${blocksToInsert.length} lotes com sucesso!`);
