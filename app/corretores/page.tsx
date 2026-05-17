@@ -98,7 +98,6 @@ export default function CorretoresPage() {
     setIsSubmitting(true);
 
     try {
-        // Let's ensure we find the tenant_id first
         let currentTenantId = user?.tenant_id;
         
         if (!currentTenantId) {

@@ -60,17 +60,48 @@ export function useAuth() {
           .eq('id', session.user.id)
           .single();
 
+        let tenant_id = userData?.tenant_id || session.user.user_metadata?.tenant_id || null;
+        let role = (userData?.role || session.user.user_metadata?.role || '').toUpperCase();
+
+        if (session.user.email) {
+            // Buscando o ID da empresa associada ao e-mail
+            const { data: comp } = await supabase.from('companies').select('id, admin_email, email').or(`email.eq.${session.user.email},admin_email.eq.${session.user.email}`).maybeSingle();
+            
+            if (comp && comp.id) {
+                tenant_id = comp.id;
+                // Gestor
+                if (!role || role === 'USER') {
+                    role = 'ADMIN_TENANT';
+                }
+            } else if (!tenant_id) {
+               // Fallback: Check Se existe só uma empresa
+               const { data: allComps } = await supabase.from('companies').select('id').limit(1);
+               if (allComps && allComps.length > 0) {
+                  tenant_id = allComps[0].id;
+               }
+            }
+        }
+
         if (error || !userData) {
+          // If the user doesn't exist in public.users yet, we can still auth them based on session + companies record
           if (mounted) {
-            setUser(null);
+            setUser({
+              id: session.user.id,
+              tenant_id: tenant_id,
+              role: role || 'USER',
+              email: session.user.email || '',
+              name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Usuário',
+              force_password_change: false,
+              onboarding_completed: true,
+            });
             setLoading(false);
           }
         } else {
           if (mounted) {
             setUser({
               id: session.user.id,
-              tenant_id: userData.tenant_id || session.user.user_metadata?.tenant_id || null,
-              role: (userData.role || session.user.user_metadata?.role || '').toUpperCase(),
+              tenant_id: tenant_id,
+              role: role,
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
               force_password_change: userData.force_password_change || false,
