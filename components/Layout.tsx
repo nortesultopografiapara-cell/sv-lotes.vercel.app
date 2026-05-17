@@ -20,6 +20,7 @@ import {
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
+import Image from 'next/image';
 
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
@@ -73,6 +74,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const toggleSidebar = () => setIsOpen(!isOpen);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadNotifications() {
@@ -86,8 +88,19 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       if (data) setNotifications(data);
     }
     
+    async function loadLogo() {
+      if (!user || user.role === 'SUPER_ADMIN' || !user.tenant_id) return;
+      try {
+        const { data } = await supabase.from('companies').select('logo_url').eq('id', user.tenant_id).single();
+        if (data?.logo_url) {
+           setCompanyLogoUrl(data.logo_url);
+        }
+      } catch (e) {}
+    }
+    
     if (user && !isCheckingAuth) {
       loadNotifications();
+      loadLogo();
       
       // Subscribe to real-time notifications
       const channel = supabase.channel('schema-db-changes')
@@ -137,8 +150,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <Menu className="w-6 h-6" />
             </button>
             <div className="flex items-center gap-2">
-              <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-              <span className="font-sans font-bold text-lg tracking-wide text-white">SV_LOTES</span>
+              {companyLogoUrl ? (
+                 <div className="relative w-28 h-8">
+                     <Image src={companyLogoUrl} alt="Logo" fill className="object-contain object-left" unoptimized referrerPolicy="no-referrer" />
+                 </div>
+              ) : (
+                 <>
+                   <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
+                   <span className="font-sans font-bold text-lg tracking-wide text-white">SV_LOTES</span>
+                 </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -161,8 +182,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {!isMobile && (
         <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
           <div className="h-20 flex items-center px-6 gap-3">
-            <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
-            <span className="font-sans font-bold text-xl tracking-wider text-white">SV_LOTES</span>
+             {companyLogoUrl ? (
+                <div className="relative w-40 h-10">
+                    <Image src={companyLogoUrl} alt="Logo" fill className="object-contain object-left" unoptimized referrerPolicy="no-referrer" />
+                </div>
+             ) : (
+                <>
+                  <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
+                  <span className="font-sans font-bold text-xl tracking-wider text-white">SV_LOTES</span>
+                </>
+             )}
           </div>
 
           <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-2">
@@ -195,8 +224,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           }`}
         >
           <div className="h-16 flex items-center px-6 border-b border-[var(--color-border)] gap-2">
-            <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-            <span className="font-sans font-bold text-xl tracking-wide text-white">SV_LOTES</span>
+             {companyLogoUrl ? (
+                <div className="relative w-32 h-8">
+                    <Image src={companyLogoUrl} alt="Logo" fill className="object-contain object-left" unoptimized referrerPolicy="no-referrer" />
+                </div>
+             ) : (
+                <>
+                  <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
+                  <span className="font-sans font-bold text-xl tracking-wide text-white">SV_LOTES</span>
+                </>
+             )}
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
             {menuItems.map((item) => {

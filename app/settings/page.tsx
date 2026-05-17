@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Settings, Save, Loader2, Building2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Settings, Save, Loader2, Building2, Upload, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import Image from 'next/image';
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -17,7 +20,8 @@ export default function SettingsPage() {
     cnpj: '',
     address: '',
     phone: '',
-    email: ''
+    email: '',
+    logo_url: ''
   });
 
   useEffect(() => {
@@ -40,7 +44,8 @@ export default function SettingsPage() {
             cnpj: data.cnpj || '',
             address: data.address || '',
             phone: data.phone || '',
-            email: data.email || ''
+            email: data.email || '',
+            logo_url: data.logo_url || ''
           });
         }
       } catch (err) {
@@ -52,6 +57,47 @@ export default function SettingsPage() {
     
     loadCompany();
   }, [user]);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user || !user.tenant_id) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("A imagem deve ter no máximo 2MB.");
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const filePath = `logos/${user.tenant_id}/logo_${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('company-logos')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('company-logos')
+        .getPublicUrl(filePath);
+
+      setFormData(prev => ({ ...prev, logo_url: publicUrl }));
+      
+      // Update directly in DB immediately
+      await supabase
+         .from('companies')
+         .update({ logo_url: publicUrl })
+         .eq('id', user.tenant_id);
+         
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      alert('Erro ao fazer upload da logomarca: ' + err.message);
+    } finally {
+      setUploadingLogo(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +115,8 @@ export default function SettingsPage() {
           cnpj: formData.cnpj,
           address: formData.address,
           phone: formData.phone,
-          email: formData.email
+          email: formData.email,
+          logo_url: formData.logo_url
         })
         .eq('id', user.tenant_id);
         
@@ -100,7 +147,7 @@ export default function SettingsPage() {
             Configurações da Empresa
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Atualize os dados da sua empresa que aparecerão nos contratos gerados.
+            Atualize os dados e a identidade visual da sua empresa.
           </p>
         </header>
 
@@ -113,6 +160,43 @@ export default function SettingsPage() {
                </div>
             )}
             
+            {/* Logo Upload */}
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 pb-6 border-b border-gray-100">
+               <div className="relative w-24 h-24 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {formData.logo_url ? (
+                     <Image src={formData.logo_url} alt="Logo da Empresa" fill className="object-contain p-2" unoptimized referrerPolicy="no-referrer" />
+                  ) : (
+                     <ImageIcon className="w-8 h-8 text-gray-300" />
+                  )}
+                  {uploadingLogo && (
+                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <Loader2 className="w-5 h-5 text-white animate-spin" />
+                     </div>
+                  )}
+               </div>
+               <div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-1">Logomarca da Empresa</h3>
+                  <p className="text-xs text-gray-500 mb-3 block max-w-sm">Recomendado: imagem quadrada ou horizontal (PNG, JPG) com fundo transparente. Máx: 2MB.</p>
+                  
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    ref={fileInputRef}
+                    onChange={handleLogoUpload}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingLogo}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                     <Upload className="w-4 h-4" />
+                     {formData.logo_url ? 'Trocar Logomarca' : 'Fazer Upload'}
+                  </button>
+               </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Nome Fantasia</label>
