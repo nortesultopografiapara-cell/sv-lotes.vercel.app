@@ -474,7 +474,7 @@ export default function GISMap({
                customerId: b.customer_id || null,
                number: b.number || '0',
                status: b.status || 'Disponível',
-               area: b.area !== null && b.area !== undefined ? Number(b.area) : 0,
+               area: b.area_oficial !== null && b.area_oficial !== undefined ? Number(b.area_oficial) : (b.area !== null && b.area !== undefined ? Number(b.area) : 0),
                price: b.price !== null && b.price !== undefined ? Number(b.price) : 0,
                geometryType: b.geometry?.type,
                bounds,

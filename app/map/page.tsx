@@ -442,6 +442,7 @@ export default function MapPage() {
           fundo_oficial: null as string | null,
           dir_oficial: null as string | null,
           esq_oficial: null as string | null,
+          area_oficial: null as number | null,
         };
         if (!coords || coords.length < 4) return result;
 
@@ -480,6 +481,34 @@ export default function MapPage() {
           return null;
         };
 
+        const extractNumber = (keys: string[]) => {
+          for (let key of keys) {
+            for (let prop in geomProps) {
+              if (prop.toUpperCase().includes(key)) {
+                const valStr = geomProps[prop];
+                if (typeof valStr === "string" || typeof valStr === "number") {
+                  const match = String(valStr).match(/^[\d.,]+/);
+                  if (match) {
+                    const val = parseFloat(match[0].replace(",", "."));
+                    if (!isNaN(val) && val > 0) return val;
+                  }
+                }
+              }
+            }
+          }
+          if (geomProps.description && typeof geomProps.description === "string") {
+            for (let key of keys) {
+              const regex = new RegExp(key + "\\s*[:=]?\\s*([\\d.,]+)", "i");
+              const match = geomProps.description.match(regex);
+              if (match && match[1]) {
+                const val = parseFloat(match[1].replace(",", "."));
+                if (!isNaN(val) && val > 0) return val;
+              }
+            }
+          }
+          return null;
+        };
+
         result.frente_oficial = extractProp(["FRENTE", "FRONT"]);
         result.fundo_oficial = extractProp(["FUNDO", "BACK"]);
         result.dir_oficial = extractProp([
@@ -500,6 +529,7 @@ export default function MapPage() {
           "MEDIDA_ESQ",
           "LAT_ESQ",
         ]);
+        result.area_oficial = extractNumber(["AREA", "AREA_M2", "SUPERFICIE"]);
 
         // Fallback: Classificação de Lados por Orientação a Partir da Via Pública (Rua)
         const FATOR_CORRECAO_HORIZ = 0.9984089101034208;
@@ -641,6 +671,7 @@ export default function MapPage() {
           fundo_oficial: null as string | null,
           dir_oficial: null as string | null,
           esq_oficial: null as string | null,
+          area_oficial: null as number | null,
         };
         if (
           geom.type === "Polygon" &&
@@ -661,7 +692,12 @@ export default function MapPage() {
 
         if (calcArea <= 0) calcArea = 2500; // Fallback
 
-        const finalArea = parseFloat(calcArea.toFixed(2));
+        // area oficial has priority
+        let finalArea = parseFloat(calcArea.toFixed(2));
+        if (dims.area_oficial !== null) {
+          finalArea = dims.area_oficial;
+        }
+
         const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
 
         const blockObj: any = {
@@ -672,6 +708,7 @@ export default function MapPage() {
           lot_number: numberStr,
           status: "Disponível",
           area: finalArea,
+          area_oficial: finalArea,
           price: finalPrice,
           geometry: geom,
           tenant_id: finalTenantId,
