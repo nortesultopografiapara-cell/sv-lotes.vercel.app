@@ -98,7 +98,18 @@ export default function SettingsPage() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const targetId = tenantId || user?.tenant_id;
-    if (!file || !user || !targetId) return;
+    if (!file || !user) return;
+    
+    // We strictly need targetId for storage path, try fetching it if missing
+    let finalTargetId = targetId;
+    if (!finalTargetId) {
+       const { data: comp } = await supabase.from('companies').select('id').eq('admin_email', user.email).maybeSingle();
+       if (comp) finalTargetId = comp.id;
+    }
+    if (!finalTargetId) {
+      alert("Erro: Empresa não encontrada para salvar logo.");
+      return;
+    }
 
     if (file.size > 2 * 1024 * 1024) {
       alert("A imagem deve ter no máximo 2MB.");
@@ -108,7 +119,7 @@ export default function SettingsPage() {
     setUploadingLogo(true);
     try {
       const fileExt = file.name.split(".").pop();
-      const filePath = `logos/${targetId}/logo_${Date.now()}.${fileExt}`;
+      const filePath = `logos/${finalTargetId}/logo_${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("company-logos")
@@ -126,7 +137,7 @@ export default function SettingsPage() {
       await supabase
         .from("companies")
         .update({ logo_url: publicUrl })
-        .eq("id", targetId);
+        .eq("id", finalTargetId);
     } catch (err: any) {
       console.error("Upload error:", err);
       alert("Erro ao fazer upload da logomarca: " + err.message);
@@ -139,13 +150,13 @@ export default function SettingsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const targetId = tenantId || user?.tenant_id;
-    if (!user || !targetId) return;
+    if (!user) return;
 
     setSaving(true);
     setSuccess(false);
 
     try {
-      const { error } = await supabase
+      let updateQuery = supabase
         .from("companies")
         .update({
           name: formData.name,
@@ -155,13 +166,42 @@ export default function SettingsPage() {
           phone: formData.phone,
           email: formData.email,
           logo_url: formData.logo_url,
-        })
-        .eq("id", targetId);
+        });
 
-      if (error) throw error;
+      // Try update by ID, but also match email as fallback
+      if (targetId) {
+          updateQuery = updateQuery.eq("id", targetId);
+      } else if (user?.email) {
+          updateQuery = updateQuery.eq("admin_email", user.email);
+      } else {
+          throw new Error("ID ou E-mail da empresa não encontrado.");
+      }
+
+      const { error } = await updateQuery;
+
+      if (error) {
+        // Try fallback to email column
+        if (user?.email) {
+           const { error: fallbackErr } = await supabase
+             .from("companies")
+             .update({
+               name: formData.name,
+               razao_social: formData.razao_social,
+               cnpj: formData.cnpj,
+               address: formData.address,
+               phone: formData.phone,
+               email: formData.email,
+               logo_url: formData.logo_url,
+             })
+             .eq("email", user.email);
+           if (fallbackErr) throw fallbackErr;
+        } else {
+           throw error;
+        }
+      }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving company:", err);
       alert("Erro ao salvar as configurações.");
     } finally {
