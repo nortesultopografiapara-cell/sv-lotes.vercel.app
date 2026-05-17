@@ -537,14 +537,11 @@ export default function MapPage() {
         for (let s of segments) {
           let touchesLine = false;
           for (let lineItem of allLines) {
-            for (let line of lineItem) {
-              for (let i = 0; i < line.length - 1; i++) {
-                // simplestic check dist form midpoint to line segment points
-                const d1 = haversineDist([s.mx, s.my], line[i]);
-                if (d1 < minLineDist) {
-                  minLineDist = d1;
-                  touchesLine = true;
-                }
+            for (let i = 0; i < lineItem.length; i++) {
+              const d1 = haversineDist([s.mx, s.my], lineItem[i]);
+              if (d1 < minLineDist) {
+                minLineDist = d1;
+                touchesLine = true;
               }
             }
           }
@@ -554,11 +551,9 @@ export default function MapPage() {
           // dentro de 10m de uma via
           for (let s of segments) {
             for (let lineItem of allLines) {
-              for (let line of lineItem) {
-                for (let i = 0; i < line.length - 1; i++) {
-                  const d = haversineDist([s.mx, s.my], line[i]);
-                  if (d === minLineDist) frenteSeg = s;
-                }
+              for (let i = 0; i < lineItem.length; i++) {
+                const d = haversineDist([s.mx, s.my], lineItem[i]);
+                if (d === minLineDist) frenteSeg = s;
               }
             }
           }

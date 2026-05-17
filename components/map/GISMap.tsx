@@ -442,12 +442,13 @@ export default function GISMap({
     async function loadLots() {
       if (!user) return;
       try {
-        let blocksQuery;
-        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id)) {
-           blocksQuery = supabase.from('blocks').select('*, projects!inner(name, company_id), customers(name)')
-             .eq('projects.company_id', user.tenant_id);
+        let blocksQuery = supabase.from('blocks').select('*, projects!inner(name, company_id), customers(name)');
+        
+        if (user.tenant_id) {
+           blocksQuery = blocksQuery.eq('projects.company_id', user.tenant_id);
         } else {
-           blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
+           // Super admin com tenant vazio não vê nada, para não misturar.
+           blocksQuery = blocksQuery.eq('projects.company_id', '00000000-0000-0000-0000-000000000000');
         }
         
         if (projectId) {
