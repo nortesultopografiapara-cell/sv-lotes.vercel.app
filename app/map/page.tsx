@@ -95,13 +95,8 @@ function parseKML(xmlString: string) {
            const text = coordsNode.textContent.trim();
            if (text) {
               const coords = extractCoords(text);
-              if (coords.length > 2) {
-                 const first = coords[0];
-                 const last = coords[coords.length - 1];
-                 if (first[0] !== last[0] || first[1] !== last[1]) {
-                    coords.push([...first]);
-                 }
-                 geometries.push({ type: "Polygon", coordinates: [coords], properties });
+              if (coords.length >= 2) {
+                 geometries.push({ type: "LineString", coordinates: coords, properties });
               }
            }
         }
@@ -134,13 +129,8 @@ function parseKML(xmlString: string) {
          const text = coordsNode.textContent.trim();
          if (text) {
             const coords = extractCoords(text);
-            if (coords.length > 2) {
-               const first = coords[0];
-               const last = coords[coords.length - 1];
-               if (first[0] !== last[0] || first[1] !== last[1]) {
-                  coords.push([...first]);
-               }
-               geometries.push({ type: "Polygon", coordinates: [coords], properties: {} });
+            if (coords.length >= 2) {
+               geometries.push({ type: "LineString", coordinates: coords, properties: {} });
             }
          }
       }
@@ -313,10 +303,14 @@ export default function MapPage() {
       // Extract all polygon coordinates for checking externals
       const allPolys = geometries.filter(g => g.type === 'Polygon' && g.coordinates).map(g => g.coordinates[0]);
 
+      // Extract all line coordinates for checking frontage against streets
+      const allLines = geometries.filter(g => g.type === 'LineString' && g.coordinates).map(g => g.coordinates);
+
       const getLotDimensions = (coords: number[][], geomProps: any) => {
-         if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
+         let result = { frente: null as number|null, fundo: null as number|null, ladoD: null as number|null, ladoE: null as number|null, frente_oficial: null as number|null, fundo_oficial: null as number|null, dir_oficial: null as number|null, esq_oficial: null as number|null };
+         if (!coords || coords.length < 4) return result;
          
-         // Priorizar Metadados do KML (ExtendedData, description, etc)
+         // Priorizar Metadados do KML (ExtendedData, description, etc) -> Oficial
          const extractProp = (keys: string[]) => {
              for (let key of keys) {
                 for (let prop in geomProps) {
@@ -335,21 +329,12 @@ export default function MapPage() {
              return null;
          };
 
-         const propFrente = extractProp(['FRENTE', 'FRONT']);
-         const propFundo = extractProp(['FUNDO', 'BACK']);
-         const propDir = extractProp(['DIR', 'DIREITA', 'LADO_DIR', 'LDIREITO', 'COMPR_DIR', 'COMPRIMENTO_DIR']);
-         const propEsq = extractProp(['ESQ', 'ESQUERDA', 'LADO_ESQ', 'LESQUERDO', 'COMPR_ESQ', 'MEDIDA_ESQ']);
+         result.frente_oficial = extractProp(['FRENTE', 'FRONT']);
+         result.fundo_oficial = extractProp(['FUNDO', 'BACK']);
+         result.dir_oficial = extractProp(['DIR', 'DIREITA', 'LADO_DIR', 'LDIREITO', 'COMPR_DIR', 'COMPRIMENTO_DIR', 'LAT_DIR']);
+         result.esq_oficial = extractProp(['ESQ', 'ESQUERDA', 'LADO_ESQ', 'LESQUERDO', 'COMPR_ESQ', 'MEDIDA_ESQ', 'LAT_ESQ']);
 
-         if (propFrente || propFundo || propDir || propEsq) {
-             return {
-                 frente: propFrente || null,
-                 fundo: propFundo || null,
-                 ladoD: propDir || null,
-                 ladoE: propEsq || null
-             };
-         }
-
-         // Fallback: Classificação de Lados por Pares (Menores x Maiores) e Orientação
+         // Fallback: Classificação de Lados por Orientação a Partir da Via Pública (Rua)
          const FATOR_CORRECAO_HORIZ = 0.9984089101034208;
          const FATOR_CORRECAO_VERT = 0.996941;
 
@@ -358,125 +343,103 @@ export default function MapPage() {
          for (let i=0; i<coords.length-1; i++) {
             cx += coords[i][0]; cy += coords[i][1];
             const rawLength = haversineDist(coords[i], coords[i+1]);
-            const lat1 = coords[i][1] * Math.PI/180;
-            const lon1 = coords[i][0] * Math.PI/180;
-            const lat2 = coords[i+1][1] * Math.PI/180;
-            const lon2 = coords[i+1][0] * Math.PI/180;
-            const y = Math.sin(lon2-lon1) * Math.cos(lat2);
-            const x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1);
-            let brng = Math.atan2(y, x) * 180 / Math.PI;
-            brng = (brng + 360) % 360;
-            
             const mx = (coords[i][0] + coords[i+1][0]) / 2;
             const my = (coords[i][1] + coords[i+1][1]) / 2;
-
-            segments.push({ p1: coords[i], p2: coords[i+1], rawLength, isExt: true, idx: i, azimuth: brng, mx, my });
+            segments.push({ p1: coords[i], p2: coords[i+1], rawLength, mx, my });
          }
          cx /= Math.max(1, coords.length-1);
          cy /= Math.max(1, coords.length-1);
 
-         for (let seg of segments) {
-            for (let other of allPolys) {
-               if (other === coords) continue;
-               let matched = false;
-               for (let j=0; j<other.length-1; j++) {
-                  const d1 = haversineDist(seg.p1, other[j]);
-                  const d2 = haversineDist(seg.p2, other[j+1]);
-                  const d3 = haversineDist(seg.p1, other[j+1]);
-                  const d4 = haversineDist(seg.p2, other[j]);
-                  if ((d1 < 1.0 && d2 < 1.0) || (d3 < 1.0 && d4 < 1.0)) {
-                     matched = true; break;
-                  }
-               }
-               if (matched) { seg.isExt = false; break; }
-            }
+         // Definir Segmento da Frente (mais próximo a uma linha de arruamento ou mais externo)
+         let frenteSeg = null;
+         let minLineDist = Infinity;
+         
+         for (let s of segments) {
+             let touchesLine = false;
+             for (let lineItem of allLines) {
+                 for (let line of lineItem) {
+                     for (let i = 0; i < line.length - 1; i++) {
+                         // simplestic check dist form midpoint to line segment points
+                         const d1 = haversineDist([s.mx, s.my], line[i]);
+                         if (d1 < minLineDist) {
+                             minLineDist = d1;
+                             touchesLine = true;
+                         }
+                     }
+                 }
+             }
          }
 
-         let baseAzimuth = segments[0]?.azimuth || 0;
-         let sides = [
-             { id: 0, rawLength: 0, segments: [] as any[], hasExt: false },
-             { id: 1, rawLength: 0, segments: [] as any[], hasExt: false },
-             { id: 2, rawLength: 0, segments: [] as any[], hasExt: false },
-             { id: 3, rawLength: 0, segments: [] as any[], hasExt: false }
-         ];
+         if (minLineDist < 10) { // dentro de 10m de uma via
+             for (let s of segments) {
+                 for (let lineItem of allLines) {
+                     for (let line of lineItem) {
+                         for (let i = 0; i < line.length - 1; i++) {
+                             const d = haversineDist([s.mx, s.my], line[i]);
+                             if (d === minLineDist) frenteSeg = s;
+                         }
+                     }
+                 }
+             }
+         }
+
+         if (!frenteSeg) {
+             // Fallback to max distance from centroid
+             let maxD = -1;
+             for(let s of segments) {
+                 let d = Math.sqrt(Math.pow(s.mx - cx, 2) + Math.pow(s.my - cy, 2));
+                 if (d > maxD) { maxD = d; frenteSeg = s; }
+             }
+         }
+
+         let fmx = frenteSeg!.mx;
+         let fmy = frenteSeg!.my;
+
+         let inDirX = cx - fmx;
+         let inDirY = cy - fmy;
+         let inLen = Math.sqrt(inDirX * inDirX + inDirY * inDirY);
+         if (inLen === 0) { inDirX = 0; inDirY = 1; inLen = 1; }
+         inDirX /= inLen;
+         inDirY /= inLen;
+
+         let dirFrente = { x: -inDirX, y: -inDirY };
+         let dirFundo  = { x: inDirX, y: inDirY };
+         let dirDir    = { x: inDirY, y: -inDirX };
+         let dirEsq    = { x: -inDirY, y: inDirX };
+
+         let somaFrente = 0;
+         let somaFundo = 0;
+         let somaDir = 0;
+         let somaEsq = 0;
 
          for (let s of segments) {
-             let diff = s.azimuth - baseAzimuth;
-             while(diff < 0) diff += 360;
-             let bIdx = 0;
-             if (diff >= 315 || diff < 45) { bIdx = 0; }
-             else if (diff >= 45 && diff < 135) { bIdx = 1; }
-             else if (diff >= 135 && diff < 225) { bIdx = 2; }
-             else { bIdx = 3; }
+            let vx = s.mx - cx;
+            let vy = s.my - cy;
+            
+            let vLen = Math.sqrt(vx*vx + vy*vy);
+            if (vLen === 0) continue;
+            vx /= vLen;
+            vy /= vLen;
 
-             sides[bIdx].segments.push(s);
-             sides[bIdx].rawLength += s.rawLength;
-             if (s.isExt) sides[bIdx].hasExt = true;
+            let dotFrente = vx * dirFrente.x + vy * dirFrente.y;
+            let dotFundo  = vx * dirFundo.x + vy * dirFundo.y;
+            let dotDir    = vx * dirDir.x + vy * dirDir.y;
+            let dotEsq    = vx * dirEsq.x + vy * dirEsq.y;
+
+            let maxDot = Math.max(dotFrente, dotFundo, dotDir, dotEsq);
+            
+            if (maxDot === dotFrente) somaFrente += s.rawLength;
+            else if (maxDot === dotFundo)  somaFundo += s.rawLength;
+            else if (maxDot === dotDir)    somaDir += s.rawLength;
+            else                           somaEsq += s.rawLength;
          }
 
-         let pairA = { s1: sides[0], s2: sides[2], avg: (sides[0].rawLength + sides[2].rawLength)/2 };
-         let pairB = { s1: sides[1], s2: sides[3], avg: (sides[1].rawLength + sides[3].rawLength)/2 };
+         result.frente = Math.round(somaFrente * FATOR_CORRECAO_HORIZ * 100) / 100;
+         result.fundo = Math.round(somaFundo * FATOR_CORRECAO_HORIZ * 100) / 100;
+         result.ladoD = Math.round(somaDir * FATOR_CORRECAO_VERT * 100) / 100;
+         result.ladoE = Math.round(somaEsq * FATOR_CORRECAO_VERT * 100) / 100;
 
-         let smallerPair = pairA.avg < pairB.avg ? pairA : pairB;
-         let largerPair = pairA.avg < pairB.avg ? pairB : pairA;
-
-         let frenteSide = smallerPair.s1;
-         let fundoSide = smallerPair.s2;
-         if (smallerPair.s2.hasExt && !smallerPair.s1.hasExt) {
-             frenteSide = smallerPair.s2;
-             fundoSide = smallerPair.s1;
-         }
-
-         let fmx = cx, fmy = cy;
-         if (frenteSide.segments.length > 0) {
-             fmx = 0; fmy = 0;
-             for (let s of frenteSide.segments) { fmx += s.mx; fmy += s.my; }
-             fmx /= frenteSide.segments.length;
-             fmy /= frenteSide.segments.length;
-         }
-
-         let bmx = cx, bmy = cy;
-         if (fundoSide.segments.length > 0) {
-             bmx = 0; bmy = 0;
-             for (let s of fundoSide.segments) { bmx += s.mx; bmy += s.my; }
-             bmx /= fundoSide.segments.length;
-             bmy /= fundoSide.segments.length;
-         }
-
-         let vx = bmx - fmx;
-         let vy = bmy - fmy;
-
-         let lado1 = largerPair.s1;
-         let lado2 = largerPair.s2;
-
-         let l1mx = cx, l1my = cy;
-         if (lado1.segments.length > 0) {
-             l1mx = 0; l1my = 0;
-             for (let s of lado1.segments) { l1mx += s.mx; l1my += s.my; }
-             l1mx /= lado1.segments.length;
-             l1my /= lado1.segments.length;
-         }
-
-         let v1x = l1mx - fmx;
-         let v1y = l1my - fmy;
-
-         let cross = vx * v1y - vy * v1x;
-         
-         let ladoDirSide, ladoEsqSide;
-         if (cross < 0) {
-             ladoDirSide = lado1;
-             ladoEsqSide = lado2;
-         } else {
-             ladoDirSide = lado2;
-             ladoEsqSide = lado1;
-         }
-
-         return {
-             frente: Math.round(frenteSide.rawLength * FATOR_CORRECAO_HORIZ * 100) / 100,
-             fundo: Math.round(fundoSide.rawLength * FATOR_CORRECAO_HORIZ * 100) / 100,
-             ladoD: Math.round(ladoDirSide.rawLength * FATOR_CORRECAO_VERT * 100) / 100,
-             ladoE: Math.round(ladoEsqSide.rawLength * FATOR_CORRECAO_VERT * 100) / 100
-         };
+         return result;
       };
 
       // Preparar inserção na tabela blocks
@@ -486,7 +449,7 @@ export default function MapPage() {
           const numberStr = (importOrdem === 'ASC' ? currentNumber + index : currentNumber - index).toString();
           
           let calcArea = 0;
-          let dims = { frente: null as number|null, fundo: null as number|null, ladoD: null as number|null, ladoE: null as number|null };
+          let dims = { frente: null as number|null, fundo: null as number|null, ladoD: null as number|null, ladoE: null as number|null, frente_oficial: null as number|null, fundo_oficial: null as number|null, dir_oficial: null as number|null, esq_oficial: null as number|null };
           if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0].length >= 4) {
              try {
                 const poly = turfPolygon(geom.coordinates);
@@ -505,7 +468,7 @@ export default function MapPage() {
           const finalArea = parseFloat(calcArea.toFixed(2));
           const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
 
-          return {
+          const blockObj: any = {
              project_id: selectedProject.id,
              name: importQuadra.toUpperCase(),
              block_name: importQuadra.toUpperCase(),
@@ -521,6 +484,13 @@ export default function MapPage() {
              lado_direito: dims.ladoD,
              lado_esquerdo: dims.ladoE
           };
+          
+          if (dims.frente_oficial !== null) blockObj.frente_oficial = dims.frente_oficial;
+          if (dims.fundo_oficial !== null) blockObj.fundo_oficial = dims.fundo_oficial;
+          if (dims.dir_oficial !== null) blockObj.dir_oficial = dims.dir_oficial;
+          if (dims.esq_oficial !== null) blockObj.esq_oficial = dims.esq_oficial;
+          
+          return blockObj;
       });
       
       if (blocksToInsert.length > 0) {
