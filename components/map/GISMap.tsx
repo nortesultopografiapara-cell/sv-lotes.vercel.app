@@ -442,14 +442,16 @@ export default function GISMap({
     async function loadLots() {
       if (!user) return;
       try {
-        let blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
+        let blocksQuery;
+        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id)) {
+           blocksQuery = supabase.from('blocks').select('*, projects!inner(name, company_id), customers(name)')
+             .eq('projects.company_id', user.tenant_id);
+        } else {
+           blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
+        }
         
         if (projectId) {
           blocksQuery = blocksQuery.eq('project_id', projectId);
-        }
-        
-        if (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id) {
-          blocksQuery = blocksQuery.eq('tenant_id', user.tenant_id);
         }
 
         const blocksRes = await blocksQuery;

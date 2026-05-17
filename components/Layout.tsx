@@ -238,7 +238,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
               </h1>
               <p className="text-sm text-[var(--color-text-muted)]">
-                 {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Admin Empresa' : 'Corretor'}
+                 {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : (user?.role === 'ADMIN' || user?.role === 'ADMIN_TENANT') ? 'Gestor' : 'Corretor'}
               </p>
             </div>
 

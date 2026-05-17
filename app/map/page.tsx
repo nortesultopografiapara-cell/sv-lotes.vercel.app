@@ -175,7 +175,7 @@ export default function MapPage() {
       try {
         let query = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
         
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id)) {
           query = query.eq('company_id', user.tenant_id);
         }
         
@@ -227,7 +227,7 @@ export default function MapPage() {
       }
       
       let updatedQuery = supabase.from('projects').select('*').order('created_at', { ascending: false });
-      if (user && user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+      if (user && (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id))) {
          updatedQuery = updatedQuery.eq('company_id', user.tenant_id);
       }
       const { data: updatedProjects } = await updatedQuery;

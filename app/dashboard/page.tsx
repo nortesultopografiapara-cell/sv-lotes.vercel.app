@@ -48,7 +48,7 @@ export default function DashboardPage() {
         let projectsQuery = supabase.from('projects').select('*');
         
         // Se não for super admin, limita por tenant
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id)) {
           projectsQuery = projectsQuery.eq('company_id', user.tenant_id);
         }
 
@@ -138,7 +138,7 @@ export default function DashboardPage() {
             <h1 className="text-lg font-medium text-white flex items-center gap-1">
               <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
             </h1>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : (user?.role === 'ADMIN' || user?.role === 'ADMIN_TENANT') ? 'Gestor' : 'Corretor'}</p>
           </div>
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)] py-1.5 px-3 rounded-lg border border-[var(--color-border)]">
              <Calendar className="w-3.5 h-3.5 text-white" />
