@@ -675,18 +675,32 @@ export default function MapPage() {
           price: finalPrice,
           geometry: geom,
           tenant_id: finalTenantId,
-          frente: dims.frente,
-          fundo: dims.fundo,
-          lado_direito: dims.ladoD,
-          lado_esquerdo: dims.ladoE,
         };
 
-        if (dims.frente_oficial !== null)
+        // Salvar primariamente nos campos oficiais
+        if (dims.frente_oficial !== null) {
           blockObj.frente_oficial = dims.frente_oficial;
-        if (dims.fundo_oficial !== null)
+        } else if (dims.frente !== null) {
+          blockObj.frente_oficial = `${dims.frente} m`;
+        }
+
+        if (dims.fundo_oficial !== null) {
           blockObj.fundo_oficial = dims.fundo_oficial;
-        if (dims.dir_oficial !== null) blockObj.dir_oficial = dims.dir_oficial;
-        if (dims.esq_oficial !== null) blockObj.esq_oficial = dims.esq_oficial;
+        } else if (dims.fundo !== null) {
+          blockObj.fundo_oficial = `${dims.fundo} m`;
+        }
+
+        if (dims.dir_oficial !== null) {
+          blockObj.dir_oficial = dims.dir_oficial;
+        } else if (dims.ladoD !== null) {
+          blockObj.dir_oficial = `${dims.ladoD} m`;
+        }
+
+        if (dims.esq_oficial !== null) {
+          blockObj.esq_oficial = dims.esq_oficial;
+        } else if (dims.ladoE !== null) {
+          blockObj.esq_oficial = `${dims.ladoE} m`;
+        }
 
         return blockObj;
       });
