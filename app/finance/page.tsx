@@ -4,9 +4,11 @@ import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCirc
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +22,10 @@ export default function FinancePage() {
   });
 
   useEffect(() => {
+    if (!authLoading && user && user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN' && user.role !== 'ADMIN_TENANT') {
+      router.replace('/dashboard');
+    }
+
     async function loadFinance() {
       if (!user) return;
       try {

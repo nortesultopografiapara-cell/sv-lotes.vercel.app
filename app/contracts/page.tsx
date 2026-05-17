@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 
 export default function ContractsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +26,10 @@ export default function ContractsPage() {
   const [isAvulsoModalOpen, setIsAvulsoModalOpen] = useState(false);
 
   useEffect(() => {
+    if (!authLoading && user && user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN' && user.role !== 'ADMIN_TENANT') {
+      router.replace('/dashboard');
+    }
+
     const loadData = async () => {
       if (!user) return;
       try {

@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { fullName, email, phone, tenantId, role, creci } = body;
+    const { fullName, email, phone, tenantId, role, creci, password } = body;
 
     // Verify calling user is ADMIN or SUPER_ADMIN
     // For now we trust the payload but ideally extract from token
@@ -41,11 +41,11 @@ export async function POST(req: Request) {
        }
     }
 
-    const temporaryPassword = generateTempPassword(8);
+    const finalPassword = password || generateTempPassword(8);
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: email,
-      password: temporaryPassword,
+      password: finalPassword,
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      temporaryPassword 
+      temporaryPassword: finalPassword 
     });
 
   } catch (error: any) {

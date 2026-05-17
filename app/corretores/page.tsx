@@ -4,6 +4,7 @@ import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, L
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 // Map limits
 const PLAN_LIMITS: Record<string, number> = {
@@ -25,11 +26,20 @@ export default function CorretoresPage() {
     fullName: '',
     email: '',
     phone: '',
-    creci: ''
+    creci: '',
+    password: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState<{ email: string, password: string } | null>(null);
+
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user && user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN' && user.role !== 'ADMIN_TENANT') {
+      router.replace('/dashboard');
+    }
+  }, [user, authLoading, router]);
 
   const loadData = async () => {
     if (!user) return;
@@ -331,6 +341,21 @@ export default function CorretoresPage() {
                           placeholder="Ex: 12345-F"
                           value={formData.creci}
                           onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
+                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
+                        />
+                      </div>
+                   </div>
+
+                   <div className="space-y-1.5">
+                      <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Senha de Acesso</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                        <input 
+                          type="password" 
+                          required
+                          placeholder="Defina a senha do corretor"
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                           className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
                         />
                       </div>

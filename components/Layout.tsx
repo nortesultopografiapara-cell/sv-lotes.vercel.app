@@ -48,6 +48,7 @@ const getMenuItems = (role: string) => {
 
   // DEFAULT (CORRETOR)
   return [
+    { name: 'Início', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
   ];
 };

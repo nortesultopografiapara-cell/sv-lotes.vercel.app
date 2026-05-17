@@ -4,9 +4,11 @@ import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Tr
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 export default function CustomersPage() {
   const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -15,6 +17,10 @@ export default function CustomersPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!authLoading && user && user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN' && user.role !== 'ADMIN_TENANT') {
+      router.replace('/dashboard');
+    }
+
     let isMounted = true;
     async function fetchCustomers() {
       if (!user) return;

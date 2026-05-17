@@ -5,9 +5,11 @@ import { Settings, Save, Loader2, Building2, Upload, ExternalLink, Image as Imag
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -25,6 +27,10 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
+    if (!authLoading && user && user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN' && user.role !== 'ADMIN_TENANT') {
+       router.replace('/dashboard');
+    }
+
     async function loadCompany() {
       if (!user || !user.tenant_id) return;
       
