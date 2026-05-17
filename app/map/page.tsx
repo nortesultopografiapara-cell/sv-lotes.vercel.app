@@ -220,13 +220,16 @@ export default function MapPage() {
     setCreatingProject(true);
     
     try {
-      const { error } = await supabase.from('projects').insert([{ name: projectNameStr, tenant_id: 'MASTER-ADMIN' }]);
+      const { error } = await supabase.from('projects').insert([{ 
+         name: projectNameStr, 
+         company_id: user?.tenant_id || null 
+      }]);
 
       if (error) {
          throw error;
       }
       
-      let updatedQuery = supabase.from('projects').select('*').order('created_at', { ascending: false });
+      let updatedQuery = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
       if (user && (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id))) {
          updatedQuery = updatedQuery.eq('company_id', user.tenant_id);
       }
@@ -285,10 +288,27 @@ export default function MapPage() {
       }
 
       const text = await importFile.text();
-      const geometries = parseKML(text);
+      let geometries: any[] = [];
+      const extension = importFile.name.split('.').pop()?.toLowerCase();
+
+      if (extension === 'geojson' || extension === 'json') {
+         try {
+            const geojson = JSON.parse(text);
+            const features = geojson.features || (geojson.type === 'Feature' ? [geojson] : []);
+            geometries = features.map((f: any) => ({
+               type: f.geometry?.type,
+               coordinates: f.geometry?.coordinates,
+               properties: f.properties || {}
+            })).filter((g: any) => g.type === 'Polygon' || g.type === 'LineString');
+         } catch(err) {
+            console.error("GeoJSON parse error", err);
+         }
+      } else {
+         geometries = parseKML(text);
+      }
       
       if (geometries.length === 0) {
-         alert('Nenhum polígono ou linha encontrado no arquivo KML.');
+         alert('Nenhum polígono ou linha encontrado no arquivo.');
          setImporting(false);
          return;
       }
@@ -627,7 +647,7 @@ export default function MapPage() {
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
               <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
                  <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-                    <h3 className="font-bold text-white text-lg">Importar Lotes (KML)</h3>
+                    <h3 className="font-bold text-white text-lg">Importar Lotes (KML/GeoJSON)</h3>
                     <button onClick={() => setIsImportModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
                        <X className="w-5 h-5" />
                     </button>
@@ -664,9 +684,9 @@ export default function MapPage() {
                        </div>
                     </div>
                     <div>
-                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Arquivo KML</label>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Arquivo KML, GeoJSON</label>
                        <input 
-                         type="file" accept=".kml" required
+                         type="file" accept=".kml,.geojson,.json" required
                          onChange={e => setImportFile(e.target.files?.[0] || null)}
                          className="w-full text-sm text-[var(--color-text-muted)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--color-primary)]/10 file:text-[var(--color-primary)] hover:file:bg-[var(--color-primary)]/20 file:transition-colors file:cursor-pointer cursor-pointer border border-[var(--color-border)] bg-[var(--color-background)] rounded-lg p-2"
                        />
