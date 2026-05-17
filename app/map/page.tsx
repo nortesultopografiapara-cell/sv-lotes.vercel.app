@@ -438,10 +438,10 @@ export default function MapPage() {
           fundo: null as number | null,
           ladoD: null as number | null,
           ladoE: null as number | null,
-          frente_oficial: null as number | null,
-          fundo_oficial: null as number | null,
-          dir_oficial: null as number | null,
-          esq_oficial: null as number | null,
+          frente_oficial: null as string | null,
+          fundo_oficial: null as string | null,
+          dir_oficial: null as string | null,
+          esq_oficial: null as string | null,
         };
         if (!coords || coords.length < 4) return result;
 
@@ -453,12 +453,9 @@ export default function MapPage() {
               if (prop.toUpperCase().includes(key)) {
                 const valStr = geomProps[prop];
                 if (typeof valStr === "string" || typeof valStr === "number") {
-                  const match = String(valStr)
-                    .replace(/\s/g, "")
-                    .match(/^[\d.,]+/);
+                  const match = String(valStr).match(/^[\d.,]+/);
                   if (match) {
-                    const val = parseFloat(match[0].replace(",", "."));
-                    if (!isNaN(val) && val > 0) return val;
+                    return match[0] + " m";
                   }
                 }
               }
@@ -470,14 +467,12 @@ export default function MapPage() {
             geomProps.description &&
             typeof geomProps.description === "string"
           ) {
-            const descText = geomProps.description.toUpperCase();
             for (let key of keys) {
               // Exemplo: 'FRENTE: 10,5' ou 'LADO DIR 25 m'
               const regex = new RegExp(key + "\\s*[:=]?\\s*([\\d.,]+)", "i");
               const match = geomProps.description.match(regex);
               if (match && match[1]) {
-                const val = parseFloat(match[1].replace(",", "."));
-                if (!isNaN(val) && val > 0) return val;
+                return match[1] + " m";
               }
             }
           }
@@ -642,10 +637,10 @@ export default function MapPage() {
           fundo: null as number | null,
           ladoD: null as number | null,
           ladoE: null as number | null,
-          frente_oficial: null as number | null,
-          fundo_oficial: null as number | null,
-          dir_oficial: null as number | null,
-          esq_oficial: null as number | null,
+          frente_oficial: null as string | null,
+          fundo_oficial: null as string | null,
+          dir_oficial: null as string | null,
+          esq_oficial: null as string | null,
         };
         if (
           geom.type === "Polygon" &&
@@ -680,13 +675,10 @@ export default function MapPage() {
           price: finalPrice,
           geometry: geom,
           tenant_id: finalTenantId,
-          frente:
-            dims.frente_oficial !== null ? dims.frente_oficial : dims.frente,
-          fundo: dims.fundo_oficial !== null ? dims.fundo_oficial : dims.fundo,
-          lado_direito:
-            dims.dir_oficial !== null ? dims.dir_oficial : dims.ladoD,
-          lado_esquerdo:
-            dims.esq_oficial !== null ? dims.esq_oficial : dims.ladoE,
+          frente: dims.frente,
+          fundo: dims.fundo,
+          lado_direito: dims.ladoD,
+          lado_esquerdo: dims.ladoE,
         };
 
         if (dims.frente_oficial !== null)
