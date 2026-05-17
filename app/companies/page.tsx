@@ -10,6 +10,8 @@ import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 export default function CompaniesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -25,11 +27,7 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select(`
-          *,
-          users(count),
-          projects(count)
-        `)
+        .select('id, name, slug, cnpj, email, plan_type, created_at')
         .order('created_at', { ascending: false });
         
       if (error) {
@@ -99,9 +97,9 @@ export default function CompaniesPage() {
      );
   }
 
-  const activeCompanies = companies.filter(c => c.active === true).length;
-  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
-  const totalProjects = companies.reduce((acc, c) => acc + (c.projects?.[0]?.count || 0), 0);
+  const activeCompanies = companies.length;
+  const totalUsers = 0;
+  const totalProjects = 0;
 
   const filteredCompanies = companies.filter(c => 
      c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -169,10 +167,8 @@ export default function CompaniesPage() {
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Empresa / Tenant</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Contato</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center">Status</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">Projetos</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">Usuários</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">CNPJ</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">E-mail de Acesso</th>
                 <th className="p-4 w-24 text-right">Ações</th>
               </tr>
             </thead>
@@ -255,17 +251,9 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any)
       <td className="p-4 hidden md:table-cell">
         <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
       </td>
-      <td className="p-4 text-center">
-        {getStatusBadge(company.active)}
-      </td>
       <td className="p-4 text-center hidden lg:table-cell">
-        <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.projects?.[0]?.count || 0}
-        </div>
-      </td>
-      <td className="p-4 text-center hidden lg:table-cell">
-         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <Users className="w-3.5 h-3.5 text-[var(--color-purple)]" /> {company.users?.[0]?.count || 0}
+        <div className="text-sm text-gray-400 font-mono">
+           {company.email ? company.email : 'Sem e-mail'}
         </div>
       </td>
       <td className="p-4 text-right">
