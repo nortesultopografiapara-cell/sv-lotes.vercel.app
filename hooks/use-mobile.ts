@@ -1,20 +1,21 @@
-import * as React from "react"
+"use client";
 
-const MOBILE_BREAKPOINT = 768
+import { useState, useEffect } from "react";
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+  const [isMobile, setIsMobile] = useState<boolean>(false);
 
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    }
-    mql.addEventListener("change", onChange)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMobile(mql.matches)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
+  useEffect(() => {
+    // Check if initial size is mobile
+    setIsMobile(window.innerWidth < 768);
 
-  return !!isMobile
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return isMobile;
 }

@@ -1,79 +1,27 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@theme {
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono);
-  
-  --color-background: #0B1121;
-  --color-surface-dim: #111827;
-  --color-surface: #151E2E;
-  --color-surface-bright: #1E293B;
-  
-  --color-border: #1E293B;
-  --color-border-hover: #334155;
-  
-  --color-primary: #F97316; /* Orange */
-  --color-primary-hover: #EA580C;
-  
-  --color-success: #22C55E;
-  --color-warning: #EAB308;
-  --color-danger: #EF4444;
-  --color-info: #3B82F6;
-  --color-purple: #A855F7;
-  
-  --color-text-main: #F8FAFC;
-  --color-text-muted: #94A3B8;
+:root {
+  --color-background: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-bright: #334155;
+  --color-border: #334155;
+  --color-text-muted: #94a3b8;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-warning: #f59e0b;
 }
 
-@layer base {
-  body {
-    background-color: var(--color-background);
-    color: var(--color-text-main);
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-  }
+body {
+  background-color: var(--color-background);
+  color: #fff;
+  overflow: hidden;
 }
 
-/* Scrollbar styles to match the premium look */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
-::-webkit-scrollbar-track {
-  background: var(--color-background);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-surface-bright);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-hover);
-}
-
-/* Leaflet dark theme override */
-.leaflet-container {
-  background: var(--color-surface-dim) !important;
-  font-family: var(--font-sans) !important;
-}
-.leaflet-popup-content-wrapper {
-  background: var(--color-surface) !important;
-  color: var(--color-text-main) !important;
-  border-radius: 8px !important;
-  border: 1px solid var(--color-border) !important;
-}
-.leaflet-popup-tip {
-  background: var(--color-surface) !important;
-}
-.leaflet-bar {
-  border: none !important;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
-}
-.leaflet-bar a {
-  background-color: var(--color-surface) !important;
-  color: var(--color-text-main) !important;
-  border-bottom: 1px solid var(--color-border) !important;
-}
-.leaflet-bar a:hover {
-  background-color: var(--color-surface-bright) !important;
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }

@@ -1,27 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import { useGIS } from "@/hooks/gis/useGIS";
-import TopFilters from "./TopFilters";
-import dynamic from "next/dynamic";
-import LotDrawer from "./LotDrawer";
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
+import DesktopGIS from "./DesktopGIS";
+import MobileGIS from "./MobileGIS";
 import { supabase } from "@/lib/supabase";
 
-const LeafletMap = dynamic(() => import("@/components/maps/LeafletMap"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--color-background)]">
-      <div className="w-8 h-8 border-4 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin mb-4" />
-      <span className="font-mono text-sm uppercase tracking-wider text-[var(--color-text-muted)]">
-        Carregando Motor GIS...
-      </span>
-    </div>
-  ),
-});
-
 export default function GISDashboard() {
-  const { user } = useAuth();
+  const isMobile = useIsMobile();
   const { 
     setProjects, 
     selectedProjectId, 
@@ -32,12 +19,13 @@ export default function GISDashboard() {
 
   useEffect(() => {
     async function loadProjects() {
-      if (!user) return;
+      // Fake session wait just for safety in case of auth dependencies
+      // but here we just load directly if we don't need auth, or skip for now.
       const { data } = await supabase.from("projects").select("*").order("name");
       if (data) setProjects(data);
     }
     loadProjects();
-  }, [user, setProjects]);
+  }, [setProjects]);
 
   useEffect(() => {
     async function fetchLots() {
@@ -65,7 +53,6 @@ export default function GISDashboard() {
             try {
               parsedGeom = typeof item.geometry === "string" ? JSON.parse(item.geometry) : item.geometry;
               if (parsedGeom && parsedGeom.coordinates) {
-                // Approximate bounding boxes
                 let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
                 const coords = Array.isArray(parsedGeom.coordinates[0][0])
                   ? parsedGeom.coordinates[0]
@@ -78,10 +65,7 @@ export default function GISDashboard() {
                   if (lng < minLng) minLng = lng;
                   if (lng > maxLng) maxLng = lng;
                 });
-                calcBounds = [
-                  [minLat, minLng],
-                  [maxLat, maxLng],
-                ];
+                calcBounds = [ [minLat, minLng], [maxLat, maxLng] ];
               }
             } catch (e) {}
           }
@@ -106,13 +90,8 @@ export default function GISDashboard() {
   }, [selectedProjectId, setLoading, setLots, setBlocksData]);
 
   return (
-    <div className="flex flex-col h-full w-full bg-[var(--color-background)] overflow-hidden relative">
-      <TopFilters />
-      
-      <div className="flex-1 w-full relative">
-        <LeafletMap />
-        <LotDrawer />
-      </div>
+    <div className="w-full h-screen overflow-hidden bg-[var(--color-background)]">
+      {isMobile ? <MobileGIS /> : <DesktopGIS />}
     </div>
   );
 }

@@ -28,8 +28,6 @@ interface GISContextType {
   blocksData: LotData[];
   setBlocksData: (lots: LotData[]) => void;
   
-  selectedCompanyId: string;
-  setSelectedCompanyId: (id: string) => void;
   selectedProjectId: string;
   setSelectedProjectId: (id: string) => void;
   searchQuery: string;
@@ -44,12 +42,14 @@ interface GISContextType {
 
   isDrawerOpen: boolean;
   setIsDrawerOpen: (open: boolean) => void;
+  
+  isBottomSheetOpen: boolean;
+  setIsBottomSheetOpen: (open: boolean) => void;
 
   loading: boolean;
   setLoading: (l: boolean) => void;
   
   refreshMap: () => void;
-  
   summary: { total: number; disponivel: number; vendido: number; reservado: number; inadimplente: number; bloqueado: number };
 }
 
@@ -60,7 +60,6 @@ export function GISProvider({ children }: { children: ReactNode }) {
   const [lots, setLots] = useState<LotData[]>([]);
   const [blocksData, setBlocksData] = useState<LotData[]>([]);
   
-  const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("Todos");
@@ -68,11 +67,11 @@ export function GISProvider({ children }: { children: ReactNode }) {
 
   const [selectedLot, setSelectedLot] = useState<LotData | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
-  const refreshMap = useCallback(() => {
-  }, []);
+  const refreshMap = useCallback(() => {}, []);
 
   const summary = useMemo(() => {
     let total = 0, disponivel = 0, vendido = 0, reservado = 0, inadimplente = 0, bloqueado = 0;
@@ -90,19 +89,13 @@ export function GISProvider({ children }: { children: ReactNode }) {
   }, [lots, blocksData]);
 
   const value = {
-    projects, setProjects,
-    lots, setLots,
-    blocksData, setBlocksData,
-    selectedCompanyId, setSelectedCompanyId,
+    projects, setProjects, lots, setLots, blocksData, setBlocksData,
     selectedProjectId, setSelectedProjectId,
-    searchQuery, setSearchQuery,
-    selectedStatus, setSelectedStatus,
-    selectedQuadra, setSelectedQuadra,
-    selectedLot, setSelectedLot,
+    searchQuery, setSearchQuery, selectedStatus, setSelectedStatus,
+    selectedQuadra, setSelectedQuadra, selectedLot, setSelectedLot,
     isDrawerOpen, setIsDrawerOpen,
-    loading, setLoading,
-    refreshMap,
-    summary
+    isBottomSheetOpen, setIsBottomSheetOpen,
+    loading, setLoading, refreshMap, summary
   };
 
   return <GISContext.Provider value={value}>{children}</GISContext.Provider>;

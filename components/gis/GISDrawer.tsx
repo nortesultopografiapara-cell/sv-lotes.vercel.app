@@ -1,11 +1,11 @@
 "use client";
 
 import { useGIS } from "@/hooks/gis/useGIS";
-import { X, User, MapPin, Ruler, DollarSign, FileText, Calendar, CreditCard, ChevronRight } from "lucide-react";
+import { X, User, Ruler, DollarSign, FileText, CreditCard, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-export default function LotDrawer() {
+export default function GISDrawer() {
   const { isDrawerOpen, setIsDrawerOpen, selectedLot, setSelectedLot } = useGIS();
   const [loading, setLoading] = useState(false);
   const [contracts, setContracts] = useState<any[]>([]);
@@ -48,7 +48,7 @@ export default function LotDrawer() {
   return (
     <>
       <div 
-        className="absolute inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity" 
+        className="absolute inset-0 z-40 bg-black/20 backdrop-blur-sm transition-opacity hidden md:block" 
         onClick={handleClose}
       />
       <div className={`absolute right-0 top-0 bottom-0 w-[400px] bg-[var(--color-surface)] border-l border-[var(--color-border)] z-50 shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform ${isDrawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -64,7 +64,7 @@ export default function LotDrawer() {
            </div>
            <div className="flex items-center gap-3">
              <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider border ${getStatusColor(selectedLot.status)}`}>
-               {selectedLot.status}
+               {selectedLot.status || 'Disponível'}
              </span>
              <button onClick={handleClose} className="p-1.5 rounded-full hover:bg-[var(--color-border)] text-[var(--color-text-muted)] hover:text-white transition-colors">
                 <X className="w-5 h-5" />
@@ -127,26 +127,13 @@ export default function LotDrawer() {
                     </div>
                     <ChevronRight className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors" />
                  </div>
-
-                 <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--color-background)] border border-[var(--color-border)] hover:border-[var(--color-warning)]/50 transition-colors cursor-pointer group">
-                    <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center text-[var(--color-warning)]">
-                         <CreditCard className="w-4 h-4" />
-                       </div>
-                       <div>
-                          <p className="text-sm font-bold text-white group-hover:text-[var(--color-warning)] transition-colors">Ver Parcelas</p>
-                          <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{activeContract.parcelas || 0} parcelas registradas</p>
-                       </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-warning)] transition-colors" />
-                 </div>
               </div>
            )}
         </div>
 
         <div className="p-4 border-t border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col gap-3">
            <div className="grid grid-cols-2 gap-3">
-              {(selectedLot.status === 'Disponível' || !selectedLot.status) && (
+              {(!selectedLot.status || selectedLot.status === 'Disponível') && (
                  <>
                     <button className="flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20 transition-all">
                        Reservar
@@ -166,15 +153,6 @@ export default function LotDrawer() {
                    Painel Financeiro
                 </button>
               )}
-           </div>
-           
-           <div className="flex items-center gap-2 justify-center pt-2">
-             <button className="flex-1 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] hover:text-white bg-[var(--color-background)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded transition-colors">
-               Editar Lote
-             </button>
-             <button className="flex-1 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] hover:text-white bg-[var(--color-background)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded transition-colors">
-               Histórico
-             </button>
            </div>
         </div>
       </div>
