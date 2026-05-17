@@ -121,9 +121,13 @@ export default function SettingsPage() {
       const fileExt = file.name.split(".").pop();
       const filePath = `logos/${finalTargetId}/logo_${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
+      const { data, error: uploadError } = await supabase
+        .storage
         .from("company-logos")
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
 
       if (uploadError) throw uploadError;
 
