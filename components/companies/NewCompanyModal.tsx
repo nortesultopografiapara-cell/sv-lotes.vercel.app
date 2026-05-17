@@ -97,10 +97,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
             }
 
-            // 1. Create user with signUp as requested
+            // 1. Create user with signUp and only essential metadata
             const { data: authData, error: authError } = await supabase.auth.signUp({
                email: formData.email,
                password: formData.password,
+               options: {
+                 data: {
+                   role: 'ADMIN',
+                   tenant_id: finalTenantId,
+                   plan_type: formData.plan_type
+                 }
+               }
             });
 
             if (authError) {
@@ -111,8 +118,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                throw new Error('Falha ao obter ID do usuário gerado.');
             }
 
-            // We must update the raw_app_meta_data or user metadata to grant access, but we'll insert into basic tables:
-            // Insert company
+            // 2. Insert company
             const { error: insertCompanyError } = await supabase.from('companies').insert({
                id: finalTenantId,
                name: formData.name,
@@ -138,7 +144,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                default_password: formData.password
             });
 
-            if (insertCompanyError) throw new Error('Erro ao salvar empresa: ' + insertCompanyError.message);
+            if (insertCompanyError) {
+               console.error('Erro de gravação na tabela companies (Detalhes da coluna/restrição):', insertCompanyError);
+               throw new Error('Erro ao salvar empresa: ' + insertCompanyError.message);
+            }
 
             const { error: userInsertError } = await supabase.from('users').upsert({
                id: authData.user.id,
@@ -150,7 +159,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                phone: formData.phone
             }, { onConflict: 'id' });
 
-            if (userInsertError) console.error('Aviso: Falha ao inserir metadata no users:', userInsertError);
+            if (userInsertError) {
+               console.error('Aviso: Falha ao inserir metadata no users. Coluna/Detalhes:', userInsertError);
+            }
 
          } else {
             const { error: updateError } = await supabase.from('companies').update({
