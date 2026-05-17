@@ -125,9 +125,14 @@ function parseKML(xmlString: string) {
           if (text) {
             const coords = extractCoords(text);
             if (coords.length >= 2) {
+              const first = coords[0];
+              const last = coords[coords.length - 1];
+              if (first[0] !== last[0] || first[1] !== last[1]) {
+                coords.push([...first]);
+              }
               geometries.push({
-                type: "LineString",
-                coordinates: coords,
+                type: "Polygon", // Force to Polygon as requested
+                coordinates: [coords],
                 properties,
               });
             }
@@ -167,9 +172,14 @@ function parseKML(xmlString: string) {
         if (text) {
           const coords = extractCoords(text);
           if (coords.length >= 2) {
+            const first = coords[0];
+            const last = coords[coords.length - 1];
+            if (first[0] !== last[0] || first[1] !== last[1]) {
+              coords.push([...first]);
+            }
             geometries.push({
-              type: "LineString",
-              coordinates: coords,
+              type: "Polygon",
+              coordinates: [coords],
               properties: {},
             });
           }
@@ -218,7 +228,7 @@ export default function MapPage() {
       try {
         let query = supabase
           .from("projects")
-          .select("*, blocks(status, geometry)")
+          .select("*, lotes(status, geometry)")
           .order("created_at", { ascending: false });
 
         if (user.tenant_id) {
@@ -294,7 +304,7 @@ export default function MapPage() {
 
       let updatedQuery = supabase
         .from("projects")
-        .select("*, blocks(status, geometry)")
+        .select("*, lotes(status, geometry)")
         .order("created_at", { ascending: false });
       if (user && user.tenant_id) {
         updatedQuery = updatedQuery.eq("company_id", user.tenant_id);
@@ -1169,10 +1179,10 @@ function ProjectCard({
   onOpen: () => void;
   onDelete: () => void;
 }) {
-  const total = project.blocks?.length || 0;
+  const total = project.lotes?.length || 0;
   const sold =
-    project.blocks?.filter((l: any) => l.status === "Vendido").length || 0;
-  const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
+    project.lotes?.filter((l: any) => l.status === "Vendido").length || 0;
+  const hasGis = project.lotes?.some((l: any) => l.geometry != null) || false;
   const pct = total > 0 ? (sold / total) * 100 : 0;
 
   return (
