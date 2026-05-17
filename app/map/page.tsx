@@ -316,8 +316,6 @@ export default function MapPage() {
       const getLotDimensions = (coords: number[][], geomProps: any) => {
          if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
          
-         const FATOR_CORRECAO = 0.9984089101034208;
-
          // Priorizar Metadados do KML (ExtendedData, description, etc)
          const extractProp = (keys: string[]) => {
              for (let key of keys) {
@@ -355,7 +353,15 @@ export default function MapPage() {
          const segments = [];
          for (let i=0; i<coords.length-1; i++) {
             const valDistanciaCalculada = haversineDist(coords[i], coords[i+1]);
-            const valDistanciaCorrigida = valDistanciaCalculada * FATOR_CORRECAO;
+            
+            const diffLon = Math.abs(coords[i+1][0] - coords[i][0]);
+            const diffLat = Math.abs(coords[i+1][1] - coords[i][1]);
+            
+            const FATOR_CORRECAO_HORIZ = 0.9984089101034208;
+            const FATOR_CORRECAO_VERT = 0.996941;
+            
+            const fator = diffLon > diffLat ? FATOR_CORRECAO_HORIZ : FATOR_CORRECAO_VERT;
+            const valDistanciaCorrigida = valDistanciaCalculada * fator;
             
             const lat1 = coords[i][1] * Math.PI/180;
             const lon1 = coords[i][0] * Math.PI/180;
@@ -404,10 +410,10 @@ export default function MapPage() {
          let lE = buckets[1] > buckets[3] ? buckets[3] : buckets[1];
 
          return {
-             frente: parseFloat(buckets[0].toFixed(2)),
-             fundo: parseFloat(buckets[2].toFixed(2)),
-             ladoD: parseFloat(lD.toFixed(2)),
-             ladoE: parseFloat(lE.toFixed(2))
+             frente: Math.round(buckets[0] * 100) / 100,
+             fundo: Math.round(buckets[2] * 100) / 100,
+             ladoD: Math.round(lD * 100) / 100,
+             ladoE: Math.round(lE * 100) / 100
          };
       };
 
