@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Building2,
   LogOut,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +41,7 @@ const getMenuItems = (role: string) => {
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
+      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-gray-400' },
     ];
   }
 

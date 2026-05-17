@@ -19,7 +19,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
+    razao_social: initialData?.razao_social || '',
     cnpj: initialData?.cnpj || '',
+    address: initialData?.address || '',
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     active: initialData?.active !== undefined ? initialData.active : true,
@@ -41,7 +43,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       if (initialData) {
          const { error: updateError } = await supabase.from('companies').update({
             name: formData.name,
+            razao_social: formData.razao_social,
             cnpj: formData.cnpj,
+            address: formData.address,
             phone: formData.phone,
             email: formData.email,
             active: formData.active,
@@ -85,7 +89,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          const { error: upsertError } = await supabase.from('companies').upsert({
            id: finalTenantId,
            name: formData.name,
+           razao_social: formData.razao_social,
            cnpj: formData.cnpj,
+           address: formData.address,
            phone: formData.phone,
            email: formData.email,
            active: formData.active,
@@ -152,7 +158,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             )}
             
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome da Empresa / Imobiliária *</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
               <input 
                 type="text" 
                 required
@@ -164,7 +170,18 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ / CPF</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Razão Social</label>
+              <input 
+                type="text" 
+                value={formData.razao_social}
+                onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
+                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
               <input 
                 type="text" 
                 value={formData.cnpj}
@@ -175,7 +192,18 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Contato</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Endereço Completo</label>
+              <input 
+                type="text" 
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Av. Exemplo, 1000 - Bairro, Cidade - UF"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail Master (Contato)</label>
               <input 
                 type="email" 
                 value={formData.email}
