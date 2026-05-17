@@ -609,6 +609,15 @@ export default function GISMap({
          }
        });
        
+       // Notification
+       if (newStatus === 'Vendido') {
+          await supabase.from('notifications').insert({
+             tenant_id: user.tenant_id || lot.tenant_id,
+             title: 'Nova Venda Realizada!',
+             message: `Lote ${lot.number}, Quadra ${lot.block} vendido por ${user.name} aguardando validação de contrato.`
+          });
+       }
+
     } catch (e: any) {
        console.error("Error saving customer and lot:", e);
        alert("Erro ao salvar cliente: " + e.message);

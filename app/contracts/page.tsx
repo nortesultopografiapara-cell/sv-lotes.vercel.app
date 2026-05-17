@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { AvulsoContractModal } from './AvulsoContractModal';
 
 export default function ContractsPage() {
   const { user } = useAuth();
@@ -20,40 +21,43 @@ export default function ContractsPage() {
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tenantData, setTenantData] = useState<any>(null);
+  const [isAvulsoModalOpen, setIsAvulsoModalOpen] = useState(false);
+
+  const loadData = async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      // Load Tenant Data
+      const { data: tData } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', user.tenant_id)
+        .single();
+      if (tData) setTenantData(tData);
+
+      // Load Sold Lots (Contracts)
+      const { data: lotsData } = await supabase
+        .from('blocks')
+        .select(`
+          *,
+          customers(
+            id, name, cpf_cnpj, address, phone
+          )
+        `)
+        .in('status', ['Vendido', 'Reservado'])
+        .order('updated_at', { ascending: false });
+
+      if (lotsData) {
+        setContracts(lotsData);
+      }
+    } catch (err) {
+      console.error("Error loading contracts", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadData() {
-      if (!user) return;
-      try {
-        // Load Tenant Data
-        const { data: tData } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', user.tenant_id)
-          .single();
-        if (tData) setTenantData(tData);
-
-        // Load Sold Lots (Contracts)
-        const { data: lotsData } = await supabase
-          .from('blocks')
-          .select(`
-            *,
-            customers(
-              id, name, cpf_cnpj, address, phone
-            )
-          `)
-          .in('status', ['Vendido', 'Reservado'])
-          .order('updated_at', { ascending: false });
-
-        if (lotsData) {
-          setContracts(lotsData);
-        }
-      } catch (err) {
-        console.error("Error loading contracts", err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, [user]);
 
@@ -170,7 +174,10 @@ export default function ContractsPage() {
             />
           </div>
           
-          <button className="flex items-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm">
+          <button 
+            onClick={() => setIsAvulsoModalOpen(true)}
+            className="flex items-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm"
+          >
             <Plus className="w-4 h-4" />
             Criar Avulso
           </button>
@@ -246,6 +253,16 @@ export default function ContractsPage() {
         </div>
         )}
       </div>
+
+      <AvulsoContractModal 
+         isOpen={isAvulsoModalOpen} 
+         onClose={() => setIsAvulsoModalOpen(false)} 
+         tenantId={user?.tenant_id || ''}
+         onSave={() => {
+            setIsAvulsoModalOpen(false);
+            loadData();
+         }}
+      />
     </div>
   );
 }

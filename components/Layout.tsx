@@ -71,7 +71,45 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const [notifications, setNotifications] = useState<any[]>([]);
   const toggleSidebar = () => setIsOpen(!isOpen);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      if (!user) return;
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false });
+      
+      if (data) setNotifications(data);
+    }
+    
+    if (user && !isCheckingAuth) {
+      loadNotifications();
+      
+      // Subscribe to real-time notifications
+      const channel = supabase.channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `tenant_id=eq.${user.tenant_id}`
+          },
+          (payload) => {
+            setNotifications(prev => [payload.new, ...prev]);
+          }
+        )
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(channel);
+      }
+    }
+  }, [user, isCheckingAuth]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -106,7 +144,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-4">
             <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
               <Bell className="w-6 h-6" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-surface)] text-[8px] font-bold text-white flex items-center justify-center">3</span>
+              {notifications.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-surface)] text-[8px] font-bold text-white flex items-center justify-center">
+                  {notifications.length}
+                </span>
+              )}
             </button>
             <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white border-2 border-[var(--color-surface)]">
               <User className="w-5 h-5" />
@@ -208,7 +250,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
               <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
                 <Bell className="w-6 h-6" />
-                <span className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-background)] text-[10px] font-bold text-white flex items-center justify-center">3</span>
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-background)] text-[10px] font-bold text-white flex items-center justify-center">
+                     {notifications.length}
+                  </span>
+                )}
               </button>
               
               <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogout} title="Clique para sair">
