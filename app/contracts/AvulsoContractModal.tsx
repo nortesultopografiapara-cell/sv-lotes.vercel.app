@@ -83,7 +83,7 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
       }
 
       // Find an arbitrary project to link to, or a dummy project if project_id is required
-      const { data: proj } = await supabase.from('projects').select('id').eq('tenant_id', tenantId).limit(1).maybeSingle();
+      const { data: proj } = await supabase.from('projects').select('id').eq('company_id', tenantId).limit(1).maybeSingle();
       const projId = proj ? proj.id : null;
 
       // Insert "block" (contract/lote avulso)

@@ -45,17 +45,15 @@ export default function DashboardPage() {
       if (!user) return;
       
       try {
-        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
         let projectsQuery = supabase.from('projects').select('*');
         
         // Se não for super admin, limita por tenant
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.eq('tenant_id', user.tenant_id);
           projectsQuery = projectsQuery.eq('company_id', user.tenant_id);
         }
 
-        const { data, error } = await query;
-        const { data: projectsData } = await projectsQuery;
+        const { data: projectsData, error: projectsError } = await projectsQuery;
+        if (projectsError) throw projectsError;
 
         if (projectsData) {
           setProjects(projectsData);
@@ -64,24 +62,27 @@ export default function DashboardPage() {
           }
         }
         
-        if (error) throw error;
-
+        const validProjectIds = projectsData ? projectsData.map(p => p.id) : [];
         let available = 0;
         let reserved = 0;
         let sold = 0;
         let vgv = 0;
 
-        if (data) {
-          data.forEach(lot => {
-            if (selectedProjectId && lot.project_id !== selectedProjectId) return;
-            
-            if (lot.status === 'Disponível') available++;
-            if (lot.status === 'Reservado') reserved++;
-            if (lot.status === 'Vendido') {
-              sold++;
-              vgv += Number(lot.price || 0);
-            }
-          });
+        if (validProjectIds.length > 0) {
+          const { data, error } = await supabase.from('blocks').select('project_id, status, price').in('project_id', validProjectIds);
+          
+          if (!error && data) {
+            data.forEach(lot => {
+              if (selectedProjectId && lot.project_id !== selectedProjectId) return;
+              
+              if (lot.status === 'Disponível') available++;
+              if (lot.status === 'Reservado') reserved++;
+              if (lot.status === 'Vendido') {
+                sold++;
+                vgv += Number(lot.price || 0);
+              }
+            });
+          }
         }
 
         // Load Activities / Logs

@@ -33,14 +33,14 @@ const getMenuItems = (role: string) => {
     ];
   }
   
-  if (role === 'ADMIN') {
+  if (role === 'ADMIN' || role === 'ADMIN_TENANT') {
     return [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-      { name: 'Corretores', href: '/corretores', icon: Users, color: 'text-[#06b6d4]' },
-      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[#f59e0b]' },
+      { name: 'Meus Corretores', href: '/corretores', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-gray-400' },
     ];
   }
