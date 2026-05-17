@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { fullName, email, phone, tenantId, role } = body;
+    const { fullName, email, phone, tenantId, role, creci } = body;
 
     // Verify calling user is ADMIN or SUPER_ADMIN
     // For now we trust the payload but ideally extract from token
@@ -49,8 +49,9 @@ export async function POST(req: Request) {
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
-        role: role || 'CORRETOR',
-        tenant_id: tenantId
+        role: role || 'USER', // 'CORRETOR' ou 'USER'
+        tenant_id: tenantId,
+        creci: creci
       }
     });
 
@@ -60,18 +61,22 @@ export async function POST(req: Request) {
 
     authUserId = authUser.user.id;
 
+    // insert
+    const insertData: any = {
+      id: authUserId,
+      tenant_id: tenantId,
+      full_name: fullName,
+      email: email,
+      role: role || 'USER',
+      status: 'ACTIVE',
+      phone: phone,
+      force_password_change: true
+    };
+    if (creci) insertData.creci = creci;
+
     const { error: userError } = await supabaseAdmin
       .from('users')
-      .insert({
-        id: authUserId,
-        tenant_id: tenantId,
-        full_name: fullName,
-        email: email,
-        role: role || 'CORRETOR',
-        status: 'ACTIVE',
-        phone: phone,
-        force_password_change: true
-      });
+      .insert(insertData);
 
     if (userError) {
       throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);
