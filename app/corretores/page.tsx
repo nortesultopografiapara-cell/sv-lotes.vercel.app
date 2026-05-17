@@ -74,8 +74,10 @@ export default function CorretoresPage() {
 
   useEffect(() => {
     if (!authLoading) {
+      // eslint-disable-next-line
       loadData();
     }
+    // eslint-disable-next-line
   }, [user, authLoading]);
 
   const limit = PLAN_LIMITS[companyPlan] || 5;
@@ -96,12 +98,19 @@ export default function CorretoresPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/users/create', {
+        // Let's ensure we find the tenant_id first
+        let currentTenantId = user?.tenant_id;
+        
+        if (!currentTenantId) {
+            throw new Error("Erro: O ID da imobiliária (tenantId) não pôde ser identificado. Por favor, faça logout e login novamente para atualizar sua sessão.");
+        }
+        
+        const response = await fetch('/api/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
            ...formData,
-           tenantId: user?.tenant_id,
+           tenantId: currentTenantId,
            role: 'USER'
         })
       });

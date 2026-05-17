@@ -69,8 +69,8 @@ export function useAuth() {
           if (mounted) {
             setUser({
               id: session.user.id,
-              tenant_id: userData.tenant_id,
-              role: (userData.role || '').toUpperCase(),
+              tenant_id: userData.tenant_id || session.user.user_metadata?.tenant_id || null,
+              role: (userData.role || session.user.user_metadata?.role || '').toUpperCase(),
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
               force_password_change: userData.force_password_change || false,
@@ -94,8 +94,7 @@ export function useAuth() {
          if (mounted) {
            setUser(null);
            // Clear sensitive tenant cache on logout
-           localStorage.removeItem('active_tenant');
-           localStorage.removeItem('contingency_auth');
+           localStorage.clear();
            sessionStorage.clear();
            if (window.location.pathname !== '/login') {
              window.location.href = '/login';

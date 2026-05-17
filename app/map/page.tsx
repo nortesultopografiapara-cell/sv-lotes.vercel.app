@@ -219,10 +219,16 @@ export default function MapPage() {
     if (!projectNameStr) return;
     setCreatingProject(true);
     
+    if (!user?.tenant_id) {
+       alert("Erro: Empresa não identificada no seu usuário. Faça login novamente.");
+       setCreatingProject(false);
+       return;
+    }
+
     try {
       const { error } = await supabase.from('projects').insert([{ 
          name: projectNameStr, 
-         company_id: user?.tenant_id || null 
+         company_id: user.tenant_id 
       }]);
 
       if (error) {
