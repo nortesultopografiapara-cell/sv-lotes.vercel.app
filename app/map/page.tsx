@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -221,24 +221,45 @@ export default function MapPage() {
   const [creatingProject, setCreatingProject] = useState(false);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
+
+  const isMasterAdmin = useMemo(() => {
+    return (
+      user?.email === "severino@nortesultopografia.com.br" ||
+      user?.email === "nortesultopografiapara@gmail.com" ||
+      user?.role === "SUPER_ADMIN"
+    );
+  }, [user?.email, user?.role]);
 
   useEffect(() => {
     async function loadProjects() {
       if (!user) return;
+
       try {
+        if (isMasterAdmin) {
+          const { data: compData } = await supabase
+            .from("companies")
+            .select("id, name, trade_name")
+            .order("name");
+          if (compData) setCompanies(compData);
+        }
+
         let query = supabase
           .from("projects")
           .select("*, lotes(status, geometry)")
           .order("created_at", { ascending: false });
 
-        if (user.tenant_id) {
-          query = query.eq("company_id", user.tenant_id);
-        } else {
-          // Se não tiver tenant_id, não mostra nenhum projeto por segurança (ou de outras empresas)
-          query = query.eq(
-            "company_id",
-            "00000000-0000-0000-0000-000000000000",
-          );
+        if (!isMasterAdmin) {
+          if (user.tenant_id) {
+            query = query.eq("company_id", user.tenant_id);
+          } else {
+            // Se não tiver tenant_id, não mostra nenhum projeto por segurança
+            query = query.eq(
+              "company_id",
+              "00000000-0000-0000-0000-000000000000",
+            );
+          }
         }
 
         const { data, error } = await query;
@@ -260,7 +281,7 @@ export default function MapPage() {
     if (!authLoading) {
       loadProjects();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, isMasterAdmin]);
 
   const filteredProjects = projects.filter(
     (p) =>
@@ -280,21 +301,26 @@ export default function MapPage() {
     if (e && e.preventDefault) e.preventDefault();
     const projectNameStr = newProjectName.trim();
     if (!projectNameStr) return;
-    setCreatingProject(true);
 
-    if (!user?.tenant_id) {
+    let targetCompanyId = user?.tenant_id;
+    if (isMasterAdmin) {
+      targetCompanyId = selectedCompanyId || null;
+    }
+
+    if (!targetCompanyId && !isMasterAdmin) {
       alert(
         "Erro: Empresa não identificada no seu usuário. Faça login novamente.",
       );
-      setCreatingProject(false);
       return;
     }
+
+    setCreatingProject(true);
 
     try {
       const { error } = await supabase.from("projects").insert([
         {
           name: projectNameStr,
-          company_id: user.tenant_id,
+          company_id: targetCompanyId,
         },
       ]);
 
@@ -306,14 +332,18 @@ export default function MapPage() {
         .from("projects")
         .select("*, lotes(status, geometry)")
         .order("created_at", { ascending: false });
-      if (user && user.tenant_id) {
-        updatedQuery = updatedQuery.eq("company_id", user.tenant_id);
-      } else {
-        updatedQuery = updatedQuery.eq(
-          "company_id",
-          "00000000-0000-0000-0000-000000000000",
-        );
+
+      if (!isMasterAdmin) {
+        if (user && user.tenant_id) {
+          updatedQuery = updatedQuery.eq("company_id", user.tenant_id);
+        } else {
+          updatedQuery = updatedQuery.eq(
+            "company_id",
+            "00000000-0000-0000-0000-000000000000",
+          );
+        }
       }
+
       const { data: updatedProjects } = await updatedQuery;
       if (updatedProjects) {
         setProjects(updatedProjects);
@@ -321,6 +351,7 @@ export default function MapPage() {
 
       setIsNewProjectModalOpen(false);
       setNewProjectName("");
+      if (isMasterAdmin) setSelectedCompanyId("");
     } catch (err: any) {
       console.error(err);
       alert("Erro ao criar projeto: " + (err.message || "Erro desconhecido"));
@@ -1149,6 +1180,26 @@ export default function MapPage() {
                   className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
                 />
               </div>
+
+              {isMasterAdmin && (
+                <div>
+                  <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2 mt-4">
+                    Empresa (Apenas Master Admin)
+                  </label>
+                  <select
+                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                    value={selectedCompanyId}
+                    onChange={(e) => setSelectedCompanyId(e.target.value)}
+                  >
+                    <option value="">Selecione uma empresa</option>
+                    {companies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.trade_name || c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <button
                 type="button"
