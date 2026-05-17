@@ -252,7 +252,9 @@ export default function MapPage() {
 
         if (!isMasterAdmin) {
           if (user.tenant_id) {
-            query = query.eq("company_id", user.tenant_id);
+            query = query.or(
+              `company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id},company_id.is.null`,
+            );
           } else {
             // Se não tiver tenant_id, não mostra nenhum projeto por segurança
             query = query.eq(
@@ -335,7 +337,7 @@ export default function MapPage() {
       if (novoProjetoCriado) {
         // Atualiza a lista de projetos imediatamente
         setProjects((prev) => [novoProjetoCriado, ...prev]);
-        
+
         // Define o projeto criado como o projeto selecionado para abrir a tela dele
         setSelectedProject(novoProjetoCriado);
       }
