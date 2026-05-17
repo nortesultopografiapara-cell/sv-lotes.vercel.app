@@ -90,111 +90,101 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     try {
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
-      if (initialData) {
-         const { error: updateError } = await supabase.from('companies').update({
-            name: formData.name,
-            razao_social: formData.razao_social,
-            cnpj: formData.cnpj,
-            address: formData.address,
-            end_logradouro: formData.end_logradouro,
-            end_numero: formData.end_numero,
-            end_bairro: formData.end_bairro,
-            end_cidade: formData.end_cidade,
-            end_uf: formData.end_uf,
-            end_cep: formData.end_cep,
-            default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
-            default_installments: formData.default_installments ? Number(formData.default_installments) : null,
-            default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
-            default_first_due_date: formData.default_first_due_date,
-            foro_cidade: formData.foro_cidade,
-            phone: formData.phone,
-            email: formData.email,
-            active: formData.active,
-            plan_type: formData.plan_type,
-            default_password: formData.password ? formData.password : undefined,
-            slug: slug
-         }).eq('id', initialData.id);
-         
-         if (updateError) throw updateError;
-         
-         // Note: Updating auth email/password from client side typically requires admin privileges
-         // or the user themselves. We only update the companies table here.
-      } else {
-         if (!formData.email || !formData.password) {
-            throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
+         let finalTenantId = crypto.randomUUID();
+
+         if (!initialData) {
+            if (!formData.email || !formData.password) {
+               throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
+            }
+
+            // 1. Create user with signUp as requested
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+               email: formData.email,
+               password: formData.password,
+            });
+
+            if (authError) {
+               throw new Error('Erro ao criar usuário: ' + authError.message);
+            }
+
+            if (!authData.user) {
+               throw new Error('Falha ao obter ID do usuário gerado.');
+            }
+
+            // We must update the raw_app_meta_data or user metadata to grant access, but we'll insert into basic tables:
+            // Insert company
+            const { error: insertCompanyError } = await supabase.from('companies').insert({
+               id: finalTenantId,
+               name: formData.name,
+               razao_social: formData.razao_social,
+               cnpj: formData.cnpj,
+               address: formData.address,
+               end_logradouro: formData.end_logradouro,
+               end_numero: formData.end_numero,
+               end_bairro: formData.end_bairro,
+               end_cidade: formData.end_cidade,
+               end_uf: formData.end_uf,
+               end_cep: formData.end_cep,
+               default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
+               default_installments: formData.default_installments ? Number(formData.default_installments) : null,
+               default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
+               default_first_due_date: formData.default_first_due_date,
+               foro_cidade: formData.foro_cidade,
+               phone: formData.phone,
+               email: formData.email,
+               active: formData.active,
+               plan_type: formData.plan_type,
+               slug: slug,
+               default_password: formData.password
+            });
+
+            if (insertCompanyError) throw new Error('Erro ao salvar empresa: ' + insertCompanyError.message);
+
+            const { error: userInsertError } = await supabase.from('users').upsert({
+               id: authData.user.id,
+               tenant_id: finalTenantId,
+               email: formData.email,
+               full_name: formData.name,
+               role: 'ADMIN',
+               status: formData.active ? 'ACTIVE' : 'INACTIVE',
+               phone: formData.phone
+            }, { onConflict: 'id' });
+
+            if (userInsertError) console.error('Aviso: Falha ao inserir metadata no users:', userInsertError);
+
+         } else {
+            const { error: updateError } = await supabase.from('companies').update({
+               name: formData.name,
+               razao_social: formData.razao_social,
+               cnpj: formData.cnpj,
+               address: formData.address,
+               end_logradouro: formData.end_logradouro,
+               end_numero: formData.end_numero,
+               end_bairro: formData.end_bairro,
+               end_cidade: formData.end_cidade,
+               end_uf: formData.end_uf,
+               end_cep: formData.end_cep,
+               default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
+               default_installments: formData.default_installments ? Number(formData.default_installments) : null,
+               default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
+               default_first_due_date: formData.default_first_due_date,
+               foro_cidade: formData.foro_cidade,
+               phone: formData.phone,
+               email: formData.email,
+               active: formData.active,
+               plan_type: formData.plan_type,
+               default_password: formData.password ? formData.password : undefined,
+               slug: slug
+            }).eq('id', initialData.id);
+            
+            if (updateError) throw new Error('Erro ao atualizar empresa: ' + updateError.message);
          }
 
-         let existingCompany = null;
-         if (formData.cnpj && formData.cnpj.trim() !== '') {
-            const { data } = await supabase.from('companies').select('id').eq('cnpj', formData.cnpj).maybeSingle();
-            if (data) existingCompany = data;
-         }
-
-         // Fallback check by slug to prevent unique constraint errors
-         if (!existingCompany) {
-            const { data } = await supabase.from('companies').select('id').eq('slug', slug).maybeSingle();
-            if (data) existingCompany = data;
-         }
-
-         const finalTenantId = existingCompany ? existingCompany.id : crypto.randomUUID();
-
-         const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
-             user_email: formData.email, 
-             user_password: formData.password,
-             tenant_id: finalTenantId
-         });
-
-         if (rpcError) throw rpcError;
-
-         if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
-
-         const { error: upsertError } = await supabase.from('companies').upsert({
-           id: finalTenantId,
-           name: formData.name,
-           razao_social: formData.razao_social,
-           cnpj: formData.cnpj,
-           address: formData.address,
-           end_logradouro: formData.end_logradouro,
-           end_numero: formData.end_numero,
-           end_bairro: formData.end_bairro,
-           end_cidade: formData.end_cidade,
-           end_uf: formData.end_uf,
-           end_cep: formData.end_cep,
-           default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
-           default_installments: formData.default_installments ? Number(formData.default_installments) : null,
-           default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
-           default_first_due_date: formData.default_first_due_date,
-           foro_cidade: formData.foro_cidade,
-           phone: formData.phone,
-           email: formData.email,
-           active: formData.active,
-           plan_type: formData.plan_type,
-           slug: slug,
-           default_password: formData.password
-         }, { onConflict: 'cnpj' });
-
-         if (upsertError) {
-             throw upsertError;
-         }
-
-         const { error: userInsertError } = await supabase.from('users').upsert({
-            id: newUserId,
-            tenant_id: finalTenantId,
-            email: formData.email,
-            full_name: `Admin - ${formData.name}`,
-            role: 'ADMIN',
-            status: formData.active ? 'ACTIVE' : 'INACTIVE',
-            phone: formData.phone
-         }, { onConflict: 'id' });
-
-         if (userInsertError) throw userInsertError;
-      }
-
-      if (onSuccess) onSuccess();
-      onClose();
+         if (onSuccess) onSuccess();
+         onClose();
     } catch (err: any) {
       console.error('Error saving company:', err);
-      setError(err.message || 'Erro ao salvar empresa');
+      setError(err.message || 'Erro inesperado ao salvar empresa. Verifique os dados e tente novamente.');
     } finally {
       setLoading(false);
     }

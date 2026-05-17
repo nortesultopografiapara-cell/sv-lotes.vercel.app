@@ -23,43 +23,63 @@ export default function ContractsPage() {
   const [tenantData, setTenantData] = useState<any>(null);
   const [isAvulsoModalOpen, setIsAvulsoModalOpen] = useState(false);
 
-  const loadData = async () => {
-    if (!user) return;
-    try {
-      setLoading(true);
-      // Load Tenant Data
-      const { data: tData } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('id', user.tenant_id)
-        .single();
-      if (tData) setTenantData(tData);
-
-      // Load Sold Lots (Contracts)
-      const { data: lotsData } = await supabase
-        .from('blocks')
-        .select(`
-          *,
-          customers(
-            id, name, cpf_cnpj, address, phone
-          )
-        `)
-        .in('status', ['Vendido', 'Reservado'])
-        .order('updated_at', { ascending: false });
-
-      if (lotsData) {
-        setContracts(lotsData);
-      }
-    } catch (err) {
-      console.error("Error loading contracts", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const loadData = async () => {
+      if (!user) return;
+      try {
+        setLoading(true);
+        // Load Tenant Data
+        const { data: tData } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('id', user.tenant_id)
+          .single();
+        if (tData) setTenantData(tData);
+
+        // Load Sold Lots (Contracts)
+        const { data: lotsData } = await supabase
+          .from('blocks')
+          .select(`
+            *,
+            customers(
+              id, name, cpf_cnpj, address, phone
+            )
+          `)
+          .in('status', ['Vendido', 'Reservado'])
+          .order('updated_at', { ascending: false });
+
+        if (lotsData) {
+          setContracts(lotsData);
+        }
+      } catch (err) {
+        console.error("Error loading contracts", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     loadData();
   }, [user]);
+
+  const refreshData = async () => {
+     if (!user) return;
+     try {
+       setLoading(true);
+       const { data: lotsData } = await supabase
+         .from('blocks')
+         .select(`*, customers(id, name, cpf_cnpj, address, phone)`)
+         .in('status', ['Vendido', 'Reservado'])
+         .order('updated_at', { ascending: false });
+
+       if (lotsData) {
+         setContracts(lotsData);
+       }
+     } catch (err) {
+       console.error("Error loading contracts", err);
+     } finally {
+       setLoading(false);
+     }
+  };
 
   const handlePrint = (contract: any) => {
     const customer = contract.customers || {};
@@ -260,7 +280,7 @@ export default function ContractsPage() {
          tenantId={user?.tenant_id || ''}
          onSave={() => {
             setIsAvulsoModalOpen(false);
-            loadData();
+            refreshData();
          }}
       />
     </div>
