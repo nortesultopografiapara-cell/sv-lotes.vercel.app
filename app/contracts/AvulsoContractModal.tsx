@@ -13,8 +13,16 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
     lateral_dir: '',
     lateral_esq: '',
     price: '',
+    down_payment: '',
+    installments: '',
+    installment_value: '',
+    first_due_date: '',
     customer_name: '',
     customer_cpf_cnpj: '',
+    customer_rg: '',
+    customer_nacionalidade: '',
+    customer_estado_civil: '',
+    customer_profissao: '',
     customer_phone: '',
     customer_email: '',
     customer_address: ''
@@ -42,6 +50,10 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
           name: formData.customer_name.trim().toUpperCase(),
           document: formData.customer_cpf_cnpj.trim(),
           cpf_cnpj: formData.customer_cpf_cnpj.trim(), /* some logic had both */
+          rg: formData.customer_rg.trim(),
+          nacionalidade: formData.customer_nacionalidade.trim(),
+          estado_civil: formData.customer_estado_civil.trim(),
+          profissao: formData.customer_profissao.trim(),
           email: formData.customer_email.trim().toUpperCase(),
           phone: formData.customer_phone.trim(),
           address: formData.customer_address.trim().toUpperCase()
@@ -55,6 +67,10 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
               name: formData.customer_name.trim().toUpperCase(),
               document: formData.customer_cpf_cnpj.trim(),
               cpf_cnpj: formData.customer_cpf_cnpj.trim(),
+              rg: formData.customer_rg.trim(),
+              nacionalidade: formData.customer_nacionalidade.trim(),
+              estado_civil: formData.customer_estado_civil.trim(),
+              profissao: formData.customer_profissao.trim(),
               email: formData.customer_email.trim().toUpperCase(),
               phone: formData.customer_phone.trim(),
               address: formData.customer_address.trim().toUpperCase()
@@ -72,6 +88,8 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
 
       // Insert "block" (contract/lote avulso)
       const numberPrice = Number(formData.price.replace(/\D/g, '')) / 100 || 0;
+      const numberDownPayment = Number(formData.down_payment.replace(/\D/g, '')) / 100 || 0;
+      const numberInstallmentValue = Number(formData.installment_value.replace(/\D/g, '')) / 100 || 0;
 
       const { data: block, error: blockErr } = await supabase.from('blocks').insert({
         tenant_id: tenantId,
@@ -81,6 +99,10 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
         number: formData.number,
         area: Number(formData.area),
         price: numberPrice,
+        down_payment: numberDownPayment > 0 ? numberDownPayment : null,
+        installments: formData.installments ? Number(formData.installments) : null,
+        installment_value: numberInstallmentValue > 0 ? numberInstallmentValue : null,
+        first_due_date: formData.first_due_date || null,
         frente_oficial: Number(formData.frente) || 0,
         fundo_oficial: Number(formData.fundo) || 0,
         dir_oficial: Number(formData.lateral_dir) || 0,
@@ -164,6 +186,30 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Total (R$)</label>
                         <input required type="text" name="price" value={formData.price} onChange={handlePriceChange} className="w-full border border-gray-300 rounded p-2 text-sm font-medium" placeholder="R$ 0,00" />
                      </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Valor de Entrada (R$)</label>
+                        <input required type="text" name="down_payment" value={formData.down_payment} onChange={(e) => {
+                           let raw = e.target.value.replace(/\D/g, '');
+                           let num = Number(raw) / 100;
+                           setFormData(p => ({ ...p, down_payment: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num) }));
+                        }} className="w-full border border-gray-300 rounded p-2 text-sm font-medium" placeholder="R$ 0,00" />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Quantidade de Parcelas</label>
+                        <input required type="number" name="installments" value={formData.installments} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm font-medium" placeholder="Ex: 60" />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Valor da Parcela (R$)</label>
+                        <input required type="text" name="installment_value" value={formData.installment_value} onChange={(e) => {
+                           let raw = e.target.value.replace(/\D/g, '');
+                           let num = Number(raw) / 100;
+                           setFormData(p => ({ ...p, installment_value: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num) }));
+                        }} className="w-full border border-gray-300 rounded p-2 text-sm font-medium" placeholder="R$ 0,00" />
+                     </div>
+                     <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Data de Vencimento da 1ª Parcela</label>
+                        <input required type="date" name="first_due_date" value={formData.first_due_date} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm font-medium" />
+                     </div>
                   </div>
                </div>
 
@@ -179,10 +225,26 @@ export function AvulsoContractModal({ isOpen, onClose, onSave, tenantId }: { isO
                         <input required type="text" name="customer_cpf_cnpj" value={formData.customer_cpf_cnpj} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
                      </div>
                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">RG</label>
+                        <input type="text" name="customer_rg" value={formData.customer_rg} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Nacionalidade</label>
+                        <input type="text" name="customer_nacionalidade" value={formData.customer_nacionalidade} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado Civil</label>
+                        <input type="text" name="customer_estado_civil" value={formData.customer_estado_civil} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Profissão</label>
+                        <input type="text" name="customer_profissao" value={formData.customer_profissao} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
+                     </div>
+                     <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Telefone</label>
                         <input type="text" name="customer_phone" value={formData.customer_phone} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
                      </div>
-                     <div>
+                     <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-gray-700 mb-1">E-mail</label>
                         <input type="email" name="customer_email" value={formData.customer_email} onChange={handleChange} className="w-full border border-gray-300 rounded p-2 text-sm" />
                      </div>

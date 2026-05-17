@@ -33,17 +33,26 @@ BEGIN
     RAISE EXCEPTION 'Not authorized';
   END IF;
 
-  new_user_id := gen_random_uuid();
-
-  INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data)
-  VALUES (
-    new_user_id, 
-    user_email, 
-    crypt(user_password, gen_salt('bf')),
-    now(),
-    json_build_object('tenant_id', tenant_id, 'role', user_role)
-  )
-  RETURNING id INTO new_user_id;
+  -- Check if user already exists
+  SELECT id INTO new_user_id FROM auth.users WHERE email = user_email;
+  
+  IF new_user_id IS NOT NULL THEN
+    -- Update existing user
+    UPDATE auth.users SET 
+      encrypted_password = crypt(user_password, gen_salt('bf')),
+      raw_user_meta_data = json_build_object('tenant_id', tenant_id, 'role', user_role)
+    WHERE id = new_user_id;
+  ELSE
+    new_user_id := gen_random_uuid();
+    INSERT INTO auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data)
+    VALUES (
+      new_user_id, 
+      user_email, 
+      crypt(user_password, gen_salt('bf')),
+      now(),
+      json_build_object('tenant_id', tenant_id, 'role', user_role)
+    );
+  END IF;
 
   RETURN new_user_id;
 END;
