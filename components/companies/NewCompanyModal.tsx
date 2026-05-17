@@ -22,21 +22,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     name: initialData?.name || '',
     razao_social: initialData?.razao_social || '',
     cnpj: initialData?.cnpj || '',
-    address: initialData?.address || '',
-    end_logradouro: initialData?.end_logradouro || '',
-    end_numero: initialData?.end_numero || '',
-    end_bairro: initialData?.end_bairro || '',
-    end_cidade: initialData?.end_cidade || '',
-    end_uf: initialData?.end_uf || '',
-    end_cep: initialData?.end_cep || '',
-    default_down_payment: initialData?.default_down_payment?.toString() || '',
-    default_installments: initialData?.default_installments?.toString() || '',
-    default_installment_value: initialData?.default_installment_value?.toString() || '',
-    default_first_due_date: initialData?.default_first_due_date || '',
-    foro_cidade: initialData?.foro_cidade || '',
-    phone: initialData?.phone || '',
     email: initialData?.email || '',
-    active: initialData?.active !== undefined ? initialData.active : true,
     plan_type: initialData?.plan_type || 'basic',
     password: ''
   });
@@ -56,21 +42,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       }
       const data = await res.json();
       
-      const newAddress = `${data.logradouro || ''}, ${data.numero || ''} ${data.complemento ? '- ' + data.complemento : ''} - ${data.bairro || ''}, ${data.municipio || ''} - ${data.uf || ''}, ${data.cep || ''}`.replace(/,\s*,/g, ',').replace(/\s+/g, ' ').trim();
-
       setFormData(prev => ({
         ...prev,
         razao_social: data.razao_social || prev.razao_social,
         name: data.nome_fantasia || data.razao_social || prev.name,
-        address: newAddress.length > 5 ? newAddress : prev.address,
-        end_logradouro: data.logradouro || prev.end_logradouro,
-        end_numero: data.numero || prev.end_numero,
-        end_bairro: data.bairro || prev.end_bairro,
-        end_cidade: data.municipio || prev.end_cidade,
-        end_uf: data.uf || prev.end_uf,
-        end_cep: data.cep || prev.end_cep,
-        foro_cidade: prev.foro_cidade || data.municipio || '',
-        phone: data.ddd_telefone_1 || prev.phone,
       }));
     } catch (err: any) {
       console.error(err);
@@ -101,13 +76,6 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             const { data: authData, error: authError } = await supabase.auth.signUp({
                email: formData.email,
                password: formData.password,
-               options: {
-                 data: {
-                   role: 'ADMIN',
-                   tenant_id: finalTenantId,
-                   plan_type: formData.plan_type
-                 }
-               }
             });
 
             if (authError) {
@@ -124,28 +92,14 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                name: formData.name,
                razao_social: formData.razao_social,
                cnpj: formData.cnpj,
-               address: formData.address,
-               end_logradouro: formData.end_logradouro,
-               end_numero: formData.end_numero,
-               end_bairro: formData.end_bairro,
-               end_cidade: formData.end_cidade,
-               end_uf: formData.end_uf,
-               end_cep: formData.end_cep,
-               default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
-               default_installments: formData.default_installments ? Number(formData.default_installments) : null,
-               default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
-               default_first_due_date: formData.default_first_due_date,
-               foro_cidade: formData.foro_cidade,
-               phone: formData.phone,
                email: formData.email,
-               active: formData.active,
                plan_type: formData.plan_type,
                slug: slug,
                default_password: formData.password
             });
 
             if (insertCompanyError) {
-               console.error('Erro de gravação na tabela companies (Detalhes da coluna/restrição):', insertCompanyError);
+               console.error('Erro de gravação na tabela companies:', insertCompanyError);
                throw new Error('Erro ao salvar empresa: ' + insertCompanyError.message);
             }
 
@@ -155,12 +109,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                email: formData.email,
                full_name: formData.name,
                role: 'ADMIN',
-               status: formData.active ? 'ACTIVE' : 'INACTIVE',
-               phone: formData.phone
+               status: 'ACTIVE'
             }, { onConflict: 'id' });
 
             if (userInsertError) {
-               console.error('Aviso: Falha ao inserir metadata no users. Coluna/Detalhes:', userInsertError);
+               console.error('Aviso: Falha ao inserir metadata no users:', userInsertError);
             }
 
          } else {
@@ -168,21 +121,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                name: formData.name,
                razao_social: formData.razao_social,
                cnpj: formData.cnpj,
-               address: formData.address,
-               end_logradouro: formData.end_logradouro,
-               end_numero: formData.end_numero,
-               end_bairro: formData.end_bairro,
-               end_cidade: formData.end_cidade,
-               end_uf: formData.end_uf,
-               end_cep: formData.end_cep,
-               default_down_payment: formData.default_down_payment ? Number(formData.default_down_payment) : null,
-               default_installments: formData.default_installments ? Number(formData.default_installments) : null,
-               default_installment_value: formData.default_installment_value ? Number(formData.default_installment_value) : null,
-               default_first_due_date: formData.default_first_due_date,
-               foro_cidade: formData.foro_cidade,
-               phone: formData.phone,
                email: formData.email,
-               active: formData.active,
                plan_type: formData.plan_type,
                default_password: formData.password ? formData.password : undefined,
                slug: slug
@@ -233,29 +172,6 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             )}
             
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
-              <input 
-                type="text" 
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Razão Social</label>
-              <input 
-                type="text" 
-                value={formData.razao_social}
-                onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
-                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
-            </div>
-
-            <div>
               <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
               <div className="relative">
                 <input 
@@ -275,163 +191,35 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Endereço Completo</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Razão Social</label>
               <input 
                 type="text" 
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Av. Exemplo, 1000 - Bairro, Cidade - UF"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                title="Endereço Completo (Geral)"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="col-span-2">
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Logradouro / Rua</label>
-                <input 
-                  type="text" 
-                  value={formData.end_logradouro}
-                  onChange={(e) => setFormData({ ...formData, end_logradouro: e.target.value })}
-                  placeholder="Ex: Av. Brasil"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Número</label>
-                <input 
-                  type="text" 
-                  value={formData.end_numero}
-                  onChange={(e) => setFormData({ ...formData, end_numero: e.target.value })}
-                  placeholder="Ex: 100"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Bairro</label>
-                <input 
-                  type="text" 
-                  value={formData.end_bairro}
-                  onChange={(e) => setFormData({ ...formData, end_bairro: e.target.value })}
-                  placeholder="Bairro"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CEP</label>
-                <input 
-                  type="text" 
-                  value={formData.end_cep}
-                  onChange={(e) => setFormData({ ...formData, end_cep: e.target.value })}
-                  placeholder="00000-000"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="col-span-2">
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Cidade</label>
-                <input 
-                  type="text" 
-                  value={formData.end_cidade}
-                  onChange={(e) => setFormData({ ...formData, end_cidade: e.target.value })}
-                  placeholder="Cidade"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">UF</label>
-                <input 
-                  type="text" 
-                  value={formData.end_uf}
-                  onChange={(e) => setFormData({ ...formData, end_uf: e.target.value })}
-                  placeholder="UF"
-                  maxLength={2}
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors uppercase"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Foro / Localidade da Assinatura</label>
-              <input 
-                type="text" 
-                value={formData.foro_cidade}
-                onChange={(e) => setFormData({ ...formData, foro_cidade: e.target.value })}
-                placeholder="Ex: São Paulo - SP"
+                value={formData.razao_social}
+                onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
+                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>
 
-            <div className="pt-2 border-t border-[var(--color-border)]">
-              <h3 className="text-xs font-bold text-white mb-3 uppercase tracking-widest opacity-80">Configurações Base de Contrato</h3>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                 <div>
-                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Valor de Entrada Padrão (R$)</label>
-                   <input 
-                     type="number" step="0.01"
-                     value={formData.default_down_payment}
-                     onChange={(e) => setFormData({ ...formData, default_down_payment: e.target.value })}
-                     placeholder="0.00"
-                     className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                   />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Qtd. de Parcelas</label>
-                   <input 
-                     type="number"
-                     value={formData.default_installments}
-                     onChange={(e) => setFormData({ ...formData, default_installments: e.target.value })}
-                     placeholder="Ex: 120"
-                     className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                   />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Valor Padrão da Parcela (R$)</label>
-                   <input 
-                     type="number" step="0.01"
-                     value={formData.default_installment_value}
-                     onChange={(e) => setFormData({ ...formData, default_installment_value: e.target.value })}
-                     placeholder="0.00"
-                     className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                   />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Data do 1º Vencimento (Fixo ou Info)</label>
-                   <input 
-                     type="text" 
-                     value={formData.default_first_due_date}
-                     onChange={(e) => setFormData({ ...formData, default_first_due_date: e.target.value })}
-                     placeholder="Ex: 10/11/2026 ou 'Todo dia 10'"
-                     className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                   />
-                 </div>
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
+              <input 
+                type="text" 
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Ex: Lotes Prime"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail Master (Contato)</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Acesso (Admin)</label>
               <input 
                 type="email" 
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="contato@empresa.com.br"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Telefone</label>
-              <input 
-                type="tel" 
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="(11) 90000-0000"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>
@@ -451,27 +239,15 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Status</label>
-              <select 
-                value={formData.active ? 'true' : 'false'}
-                onChange={(e) => setFormData({ ...formData, active: e.target.value === 'true' })}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
-              >
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano (Limites)</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano de Assinatura</label>
               <select 
                 value={formData.plan_type}
                 onChange={(e) => setFormData({ ...formData, plan_type: e.target.value })}
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
               >
-                <option value="basic">Basic (Até 5 corretores)</option>
-                <option value="standard">Standard (Até 10 corretores)</option>
-                <option value="professional">Professional (Até 100 corretores)</option>
+                <option value="basic">Básico</option>
+                <option value="standard">Standard</option>
+                <option value="professional">Profissional</option>
               </select>
             </div>
           </form>
@@ -492,7 +268,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             disabled={loading}
             className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-bold text-white bg-[#06b6d4] hover:bg-[#0891b2] transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar Empresa"}
           </button>
         </div>
 
@@ -500,4 +276,3 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     </div>
   );
 }
-
