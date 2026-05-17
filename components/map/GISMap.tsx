@@ -586,24 +586,31 @@ function LotPopupContent({
           >
             Disponibilizar
           </button>
-          <button
-            onClick={() =>
-              onRequestCustomerForm(lot, "Reservado", Number(editedPrice))
-            }
-            disabled={actionLoading === lot.id}
-            className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded"
-          >
-            Reservar
-          </button>
-          <button
-            onClick={() =>
-              onRequestCustomerForm(lot, "Vendido", Number(editedPrice))
-            }
-            disabled={actionLoading === lot.id}
-            className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded"
-          >
-            Vender
-          </button>
+          
+          {lot.status !== "Vendido" && lot.status !== "Reservado" && (
+            <button
+              onClick={() =>
+                onRequestCustomerForm(lot, "Reservado", Number(editedPrice))
+              }
+              disabled={actionLoading === lot.id}
+              className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded"
+            >
+              Reservar
+            </button>
+          )}
+
+          {lot.status !== "Vendido" && (
+            <button
+              onClick={() =>
+                onRequestCustomerForm(lot, "Vendido", Number(editedPrice))
+              }
+              disabled={actionLoading === lot.id}
+              className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded"
+            >
+              Vender
+            </button>
+          )}
+          
           <button
             onClick={() => onAction(lot, "Disponível", Number(editedPrice))}
             disabled={actionLoading === lot.id}
@@ -1006,16 +1013,34 @@ export default function GISMap({
             primeiro_vencimento: "",
           });
 
-          await supabase.from("contracts").insert([
+          const { data: gisContract, error: gErr } = await supabase.from("contracts").insert([
             {
               company_id: tenantId,
-              project_id: lot.project_id,
-              lot_id: lot.id,
+              empreendimento_id: lot.project_id,
+              lote_id: lot.id,
+              cliente_id: customerId,
               buyer_name: nameUpper,
               buyer_cpf: cpfCnpjValue,
               contract_text: contractText,
+              valor_total: finalPrice,
+              entrada: 0,
+              parcelas: 0,
+              vencimento: new Date().toISOString().split('T')[0],
+              status: 'ativo'
             },
-          ]);
+          ]).select().single();
+          
+          if (!gErr && gisContract && finalPrice > 0) {
+            await supabase.from("payments").insert([{
+              company_id: tenantId,
+              contract_id: gisContract.id,
+              cliente_id: customerId,
+              amount: finalPrice,
+              due_date: new Date().toISOString().split('T')[0],
+              status: 'PENDING',
+              parcela_numero: 1
+            }]);
+          }
         } catch (err) {
           console.error("Failed to generate contract for map sale", err);
         }

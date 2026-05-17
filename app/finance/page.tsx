@@ -47,7 +47,7 @@ export default function FinancePage() {
         let query = supabase
           .from("payments")
           .select(
-            "*, sales(*, lotes(name, block_name, number, projects(name)), clients(full_name))",
+            "*, contracts(*, lotes(name, block_name, number, projects(name)), customers(name))",
           )
           .order("due_date", { ascending: true });
 
@@ -97,8 +97,9 @@ export default function FinancePage() {
 
   const filteredPayments = payments.filter(
     (p) =>
-      p.sales?.contract_url?.toLowerCase().includes(search.toLowerCase()) ||
-      p.sales?.clients?.full_name?.toLowerCase().includes(search.toLowerCase()),
+      p.id?.toLowerCase().includes(search.toLowerCase()) ||
+      p.contracts?.buyer_name?.toLowerCase().includes(search.toLowerCase()) ||
+      p.contracts?.customers?.name?.toLowerCase().includes(search.toLowerCase()),
   );
 
   const formatCurrency = (val: number) => {
@@ -231,23 +232,22 @@ export default function FinancePage() {
               ) : filteredPayments.length > 0 ? (
                 filteredPayments.map((p) => {
                   const projectName =
-                    p.sales?.lotes?.projects?.name || "Projeto?";
+                    p.contracts?.lotes?.projects?.name || "Projeto?";
                   const blockName =
-                    p.sales?.lotes?.block_name ||
-                    p.sales?.lotes?.name ||
+                    p.contracts?.lotes?.block_name ||
+                    p.contracts?.lotes?.name ||
                     "Quadra?";
-                  const lotNumber = p.sales?.lotes?.number || "Lote?";
+                  const lotNumber = p.contracts?.lotes?.number || "Lote?";
                   const loteDesc = `${projectName} - ${blockName}, ${lotNumber}`;
 
                   return (
                     <FinanceRow
                       key={p.id}
                       contract={
-                        p.sales?.contract_url ||
-                        p.sales?.id?.split("-")[0].toUpperCase()
+                        p.contracts?.id?.split("-")[0].toUpperCase() || p.id?.split("-")[0].toUpperCase()
                       }
                       lote={loteDesc}
-                      client={p.sales?.clients?.full_name || "Desconhecido"}
+                      client={p.contracts?.buyer_name || p.contracts?.customers?.name || "Desconhecido"}
                       dueDate={new Date(p.due_date).toLocaleDateString()}
                       value={formatCurrency(Number(p.amount))}
                       status={p.status}

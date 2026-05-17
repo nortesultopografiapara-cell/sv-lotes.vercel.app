@@ -197,16 +197,47 @@ export function AvulsoContractModal({
       });
 
       // Save to public.contracts
-      await supabase.from("contracts").insert([
+      const { data: generatedContract, error: contractInsertErr } = await supabase.from("contracts").insert([
         {
           company_id: tenantId,
-          project_id: projId,
-          lot_id: block.id,
+          cliente_id: customerId,
+          lote_id: block.id,
+          empreendimento_id: projId,
           buyer_name: formData.customer_name,
           buyer_cpf: formData.customer_cpf_cnpj,
           contract_text: contractText,
+          valor_total: numberPrice,
+          entrada: numberDownPayment > 0 ? numberDownPayment : null,
+          parcelas: formData.installments ? Number(formData.installments) : null,
+          vencimento: formData.first_due_date || null,
+          status: 'ativo'
         },
-      ]);
+      ]).select().single();
+
+      if (contractInsertErr) throw contractInsertErr;
+
+      const numInstallments = formData.installments ? Number(formData.installments) : 0;
+      if (numInstallments > 0 && numberInstallmentValue > 0 && formData.first_due_date) {
+        const installmentsToInsert = [];
+        let currentDate = new Date(formData.first_due_date + 'T12:00:00Z');
+        for (let i = 1; i <= numInstallments; i++) {
+          installmentsToInsert.push({
+            company_id: tenantId,
+            contract_id: generatedContract.id,
+            cliente_id: customerId,
+            amount: numberInstallmentValue,
+            due_date: new Date(currentDate).toISOString().split('T')[0],
+            status: 'PENDING',
+            parcela_numero: i
+          });
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+        
+        if (installmentsToInsert.length > 0) {
+           const { error: pErr } = await supabase.from("payments").insert(installmentsToInsert);
+           if (pErr) console.error("Error inserting payments", pErr);
+        }
+      }
 
       onSave(block);
     } catch (e: any) {

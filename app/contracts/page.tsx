@@ -205,7 +205,7 @@ export default function ContractsPage() {
                         </td>
                         <td className="p-4">
                           <span className="text-gray-900 font-medium">
-                            Ver Contrato
+                            {contract.valor_total ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.valor_total) : "Ver Contrato"}
                           </span>
                         </td>
                         <td className="p-4 text-gray-600 text-sm">
@@ -216,8 +216,14 @@ export default function ContractsPage() {
                             : ""}
                         </td>
                         <td className="p-4">
-                          <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700">
-                            Gerado
+                          <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            contract.status?.toLowerCase() === 'ativo' ? 'bg-green-100 text-green-700' :
+                            contract.status?.toLowerCase() === 'inadimplente' ? 'bg-red-100 text-red-700' :
+                            contract.status?.toLowerCase() === 'quitado' ? 'bg-blue-100 text-blue-700' :
+                            contract.status?.toLowerCase() === 'cancelado' ? 'bg-gray-100 text-gray-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {contract.status || "Pendente"}
                           </span>
                         </td>
                         <td className="p-4 pr-6">
