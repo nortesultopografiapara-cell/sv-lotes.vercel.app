@@ -120,7 +120,7 @@ export default function SettingsPage() {
     try {
       const filePath = `logos/${finalTargetId}/logo.png`;
 
-      const { data, error: uploadError } = await supabase
+      const { data: uploadData, error: uploadError } = await supabase
         .storage
         .from("company-logos")
         .upload(filePath, file, {
@@ -132,15 +132,17 @@ export default function SettingsPage() {
 
       const {
         data: { publicUrl },
-      } = supabase.storage.from("company-logos").getPublicUrl(filePath);
+      } = supabase.storage.from("company-logos").getPublicUrl(uploadData?.path || filePath);
 
       setFormData((prev) => ({ ...prev, logo_url: publicUrl }));
 
       // Update directly in DB immediately
-      await supabase
+      const { error: dbError } = await supabase
         .from("companies")
         .update({ logo_url: publicUrl })
         .eq("id", finalTargetId);
+        
+      if (dbError) throw dbError;
     } catch (err: any) {
       console.error("Upload error:", err);
       if (err?.message?.includes("Bucket not found") || err?.message?.includes("bucket_not_found") || err?.message?.includes("not found")) {
