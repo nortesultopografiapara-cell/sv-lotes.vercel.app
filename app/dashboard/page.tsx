@@ -45,31 +45,41 @@ export default function DashboardPage() {
       if (!user) return;
       
       try {
+        const isMasterAdmin = 
+          user.email === 'severino@nortesultopografia.com.br' || 
+          user.email === 'nortesultopografiapara@gmail.com' || 
+          user.role === 'SUPER_ADMIN';
+
         let projectsQuery = supabase.from('projects').select('*');
         
         // Se não for super admin, limita por tenant
-        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id)) {
-          projectsQuery = projectsQuery.eq('company_id', user.tenant_id);
+        if (!isMasterAdmin) {
+          if (user.tenant_id) {
+            projectsQuery = projectsQuery.eq('company_id', user.tenant_id);
+          } else {
+             projectsQuery = projectsQuery.eq('company_id', '00000000-0000-0000-0000-000000000000');
+          }
         }
 
         const { data: projectsData, error: projectsError } = await projectsQuery;
-        if (projectsError) throw projectsError;
+        if (projectsError) {
+          console.error("Dashboard error fetching projects: ", projectsError);
+        }
 
-        if (projectsData) {
-          setProjects(projectsData);
-          if (projectsData.length > 0 && !selectedProjectId) {
-             setSelectedProjectId(projectsData[0].id);
-          }
+        const safeProjects = projectsData || [];
+        setProjects(safeProjects);
+        if (safeProjects.length > 0 && !selectedProjectId) {
+           setSelectedProjectId(safeProjects[0].id);
         }
         
-        const validProjectIds = projectsData ? projectsData.map(p => p.id) : [];
+        const validProjectIds = safeProjects.map(p => p.id);
         let available = 0;
         let reserved = 0;
         let sold = 0;
         let vgv = 0;
 
         if (validProjectIds.length > 0) {
-          const { data, error } = await supabase.from('blocks').select('project_id, status, price').in('project_id', validProjectIds);
+          const { data, error } = await supabase.from('lotes').select('project_id, status, price').in('project_id', validProjectIds);
           
           if (!error && data) {
             data.forEach(lot => {
