@@ -349,20 +349,15 @@ export default function MapPage() {
              };
          }
 
-         // Fallback: Geometria com Agrupamento por Azimute (para curvas) e Fator de Correção
+         // Fallback: Classificação de Lados por Pares (Menores x Maiores) e Orientação
+         const FATOR_CORRECAO_HORIZ = 0.9984089101034208;
+         const FATOR_CORRECAO_VERT = 0.996941;
+
          const segments = [];
+         let cx = 0, cy = 0;
          for (let i=0; i<coords.length-1; i++) {
-            const valDistanciaCalculada = haversineDist(coords[i], coords[i+1]);
-            
-            const diffLon = Math.abs(coords[i+1][0] - coords[i][0]);
-            const diffLat = Math.abs(coords[i+1][1] - coords[i][1]);
-            
-            const FATOR_CORRECAO_HORIZ = 0.9984089101034208;
-            const FATOR_CORRECAO_VERT = 0.996941;
-            
-            const fator = diffLon > diffLat ? FATOR_CORRECAO_HORIZ : FATOR_CORRECAO_VERT;
-            const valDistanciaCorrigida = valDistanciaCalculada * fator;
-            
+            cx += coords[i][0]; cy += coords[i][1];
+            const rawLength = haversineDist(coords[i], coords[i+1]);
             const lat1 = coords[i][1] * Math.PI/180;
             const lon1 = coords[i][0] * Math.PI/180;
             const lat2 = coords[i+1][1] * Math.PI/180;
@@ -372,8 +367,13 @@ export default function MapPage() {
             let brng = Math.atan2(y, x) * 180 / Math.PI;
             brng = (brng + 360) % 360;
             
-            segments.push({ p1: coords[i], p2: coords[i+1], length: valDistanciaCorrigida, isExt: true, idx: i, azimuth: brng });
+            const mx = (coords[i][0] + coords[i+1][0]) / 2;
+            const my = (coords[i][1] + coords[i+1][1]) / 2;
+
+            segments.push({ p1: coords[i], p2: coords[i+1], rawLength, isExt: true, idx: i, azimuth: brng, mx, my });
          }
+         cx /= Math.max(1, coords.length-1);
+         cy /= Math.max(1, coords.length-1);
 
          for (let seg of segments) {
             for (let other of allPolys) {
@@ -392,28 +392,90 @@ export default function MapPage() {
             }
          }
 
-         let extSides = segments.filter(s => s.isExt).sort((a,b) => a.length - b.length);
-         let frenteSeg = extSides[0] || [...segments].sort((a,b) => a.length - b.length)[0];
-         let baseAzimuth = frenteSeg.azimuth;
+         let baseAzimuth = segments[0]?.azimuth || 0;
+         let sides = [
+             { id: 0, rawLength: 0, segments: [] as any[], hasExt: false },
+             { id: 1, rawLength: 0, segments: [] as any[], hasExt: false },
+             { id: 2, rawLength: 0, segments: [] as any[], hasExt: false },
+             { id: 3, rawLength: 0, segments: [] as any[], hasExt: false }
+         ];
 
-         let buckets = [0, 0, 0, 0];
          for (let s of segments) {
              let diff = s.azimuth - baseAzimuth;
              while(diff < 0) diff += 360;
-             if (diff >= 315 || diff < 45) { buckets[0] += s.length; } // Frente
-             else if (diff >= 45 && diff < 135) { buckets[1] += s.length; } // Lateral 1
-             else if (diff >= 135 && diff < 225) { buckets[2] += s.length; } // Fundo
-             else { buckets[3] += s.length; } // Lateral 2
+             let bIdx = 0;
+             if (diff >= 315 || diff < 45) { bIdx = 0; }
+             else if (diff >= 45 && diff < 135) { bIdx = 1; }
+             else if (diff >= 135 && diff < 225) { bIdx = 2; }
+             else { bIdx = 3; }
+
+             sides[bIdx].segments.push(s);
+             sides[bIdx].rawLength += s.rawLength;
+             if (s.isExt) sides[bIdx].hasExt = true;
          }
 
-         let lD = buckets[1] > buckets[3] ? buckets[1] : buckets[3];
-         let lE = buckets[1] > buckets[3] ? buckets[3] : buckets[1];
+         let pairA = { s1: sides[0], s2: sides[2], avg: (sides[0].rawLength + sides[2].rawLength)/2 };
+         let pairB = { s1: sides[1], s2: sides[3], avg: (sides[1].rawLength + sides[3].rawLength)/2 };
+
+         let smallerPair = pairA.avg < pairB.avg ? pairA : pairB;
+         let largerPair = pairA.avg < pairB.avg ? pairB : pairA;
+
+         let frenteSide = smallerPair.s1;
+         let fundoSide = smallerPair.s2;
+         if (smallerPair.s2.hasExt && !smallerPair.s1.hasExt) {
+             frenteSide = smallerPair.s2;
+             fundoSide = smallerPair.s1;
+         }
+
+         let fmx = cx, fmy = cy;
+         if (frenteSide.segments.length > 0) {
+             fmx = 0; fmy = 0;
+             for (let s of frenteSide.segments) { fmx += s.mx; fmy += s.my; }
+             fmx /= frenteSide.segments.length;
+             fmy /= frenteSide.segments.length;
+         }
+
+         let bmx = cx, bmy = cy;
+         if (fundoSide.segments.length > 0) {
+             bmx = 0; bmy = 0;
+             for (let s of fundoSide.segments) { bmx += s.mx; bmy += s.my; }
+             bmx /= fundoSide.segments.length;
+             bmy /= fundoSide.segments.length;
+         }
+
+         let vx = bmx - fmx;
+         let vy = bmy - fmy;
+
+         let lado1 = largerPair.s1;
+         let lado2 = largerPair.s2;
+
+         let l1mx = cx, l1my = cy;
+         if (lado1.segments.length > 0) {
+             l1mx = 0; l1my = 0;
+             for (let s of lado1.segments) { l1mx += s.mx; l1my += s.my; }
+             l1mx /= lado1.segments.length;
+             l1my /= lado1.segments.length;
+         }
+
+         let v1x = l1mx - fmx;
+         let v1y = l1my - fmy;
+
+         let cross = vx * v1y - vy * v1x;
+         
+         let ladoDirSide, ladoEsqSide;
+         if (cross < 0) {
+             ladoDirSide = lado1;
+             ladoEsqSide = lado2;
+         } else {
+             ladoDirSide = lado2;
+             ladoEsqSide = lado1;
+         }
 
          return {
-             frente: Math.round(buckets[0] * 100) / 100,
-             fundo: Math.round(buckets[2] * 100) / 100,
-             ladoD: Math.round(lD * 100) / 100,
-             ladoE: Math.round(lE * 100) / 100
+             frente: Math.round(frenteSide.rawLength * FATOR_CORRECAO_HORIZ * 100) / 100,
+             fundo: Math.round(fundoSide.rawLength * FATOR_CORRECAO_HORIZ * 100) / 100,
+             ladoD: Math.round(ladoDirSide.rawLength * FATOR_CORRECAO_VERT * 100) / 100,
+             ladoE: Math.round(ladoEsqSide.rawLength * FATOR_CORRECAO_VERT * 100) / 100
          };
       };
 
