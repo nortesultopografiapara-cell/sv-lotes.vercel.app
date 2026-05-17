@@ -765,29 +765,28 @@ export default function MapPage() {
           lado_esquerdo: dims.ladoE,
         };
 
-        // Salvar primariamente nos campos oficiais
-        if (dims.frente_oficial !== null) {
-          blockObj.frente_oficial = dims.frente_oficial;
-        }
+        // Salvar primariamente nos campos oficiais, com fallback para o cálculo matemático
+        blockObj.frente_oficial =
+          dims.frente_oficial !== null ? dims.frente_oficial : dims.frente;
+        blockObj.fundo_oficial =
+          dims.fundo_oficial !== null ? dims.fundo_oficial : dims.fundo;
+        blockObj.dir_oficial =
+          dims.dir_oficial !== null ? dims.dir_oficial : dims.ladoD;
+        blockObj.esq_oficial =
+          dims.esq_oficial !== null ? dims.esq_oficial : dims.ladoE;
 
-        if (dims.fundo_oficial !== null) {
-          blockObj.fundo_oficial = dims.fundo_oficial;
-        }
-
-        if (dims.dir_oficial !== null) {
-          blockObj.dir_oficial = dims.dir_oficial;
-        }
-
-        if (dims.esq_oficial !== null) {
-          blockObj.esq_oficial = dims.esq_oficial;
-        }
+        // Se quiser compatibilidade retroativa temporária:
+        blockObj.frente = blockObj.frente_oficial;
+        blockObj.fundo = blockObj.fundo_oficial;
+        blockObj.lado_direito = blockObj.dir_oficial;
+        blockObj.lado_esquerdo = blockObj.esq_oficial;
 
         return blockObj;
       });
 
       if (blocksToInsert.length > 0) {
         const { error: insertError } = await supabase
-          .from("blocks")
+          .from("lotes")
           .insert(blocksToInsert);
         if (insertError) throw insertError;
       }

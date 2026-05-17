@@ -69,7 +69,7 @@ export default function DashboardPage() {
         let vgv = 0;
 
         if (validProjectIds.length > 0) {
-          const { data, error } = await supabase.from('blocks').select('project_id, status, price').in('project_id', validProjectIds);
+          const { data, error } = await supabase.from('lotes').select('project_id, status, price').in('project_id', validProjectIds);
           
           if (!error && data) {
             data.forEach(lot => {
