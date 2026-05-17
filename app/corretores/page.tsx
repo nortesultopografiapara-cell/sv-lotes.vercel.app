@@ -100,8 +100,30 @@ export default function CorretoresPage() {
     try {
         let currentTenantId = user?.tenant_id;
         
+        // Se force-fetch from companies via email is needed:
+        if (!currentTenantId && user?.email) {
+             const { data: comp } = await supabase.from('companies').select('id').eq('admin_email', user.email).maybeSingle();
+             if (comp) {
+                 currentTenantId = comp.id;
+             }
+        }
+        
         if (!currentTenantId) {
-            throw new Error("Erro: O ID da imobiliária (tenantId) não pôde ser identificado. Por favor, faça logout e login novamente para atualizar sua sessão.");
+            // Backup fetch if we still don't have it
+            const { data: allComps } = await supabase.from('companies').select('id, admin_email').limit(10);
+            const userComp = allComps?.find(c => c.admin_email === user?.email);
+            if (userComp) {
+                currentTenantId = userComp.id;
+            } else if (allComps && allComps.length === 1) {
+                // Se só tem uma empresa no banco inteiro, assume ela (fallback de emergência)
+                currentTenantId = allComps[0].id;
+            } else {
+               throw new Error("Erro: O ID da imobiliária (tenantId) não pôde ser identificado. Por favor, faça logout e login novamente para atualizar sua sessão.");
+            }
+        }
+        
+        if (formData.email.toLowerCase().trim() === user?.email?.toLowerCase().trim()) {
+            throw new Error("Este e-mail já está em uso pelo administrador. Por favor, insira o e-mail individual do corretor.");
         }
         
         const response = await fetch('/api/users/create', {

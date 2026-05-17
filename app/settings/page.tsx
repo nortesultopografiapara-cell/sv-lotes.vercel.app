@@ -28,7 +28,7 @@ export default function SettingsPage() {
     name: "",
     razao_social: "",
     cnpj: "",
-    address: "",
+    end_logradouro: "",
     phone: "",
     email: "",
     logo_url: "",
@@ -79,7 +79,7 @@ export default function SettingsPage() {
             name: data.name || "",
             razao_social: data.razao_social || "",
             cnpj: data.cnpj || "",
-            address: data.address || "",
+            end_logradouro: data.end_logradouro || "",
             phone: data.phone || "",
             email: data.email || "",
             logo_url: data.logo_url || "",
@@ -181,7 +181,7 @@ export default function SettingsPage() {
           name: formData.name,
           razao_social: formData.razao_social,
           cnpj: formData.cnpj,
-          address: formData.address,
+          end_logradouro: formData.end_logradouro,
           phone: formData.phone,
           email: formData.email,
           logo_url: formData.logo_url,
@@ -207,7 +207,7 @@ export default function SettingsPage() {
                name: formData.name,
                razao_social: formData.razao_social,
                cnpj: formData.cnpj,
-               address: formData.address,
+               end_logradouro: formData.end_logradouro,
                phone: formData.phone,
                email: formData.email,
                logo_url: formData.logo_url,
@@ -378,15 +378,15 @@ export default function SettingsPage() {
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Endereço Completo
+                Endereço
               </label>
               <input
                 type="text"
-                value={formData.address}
+                value={formData.end_logradouro}
                 onChange={(e) =>
-                  setFormData({ ...formData, address: e.target.value })
+                  setFormData({ ...formData, end_logradouro: e.target.value })
                 }
-                placeholder="Av. Exemplo, 1000 - Bairro, Cidade - UF"
+                placeholder="Av. Exemplo, 1000"
                 className="w-full bg-white border border-gray-300 rounded-lg py-2 px-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#f59e0b]/50 focus:border-[#f59e0b]"
               />
             </div>
