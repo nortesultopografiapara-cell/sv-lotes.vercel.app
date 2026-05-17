@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, CheckCircle2, 
-  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key, Lock, Unlock, Calendar
+  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key, Lock, Unlock, Calendar, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -316,11 +316,11 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive
           {!isMain && (
             <button 
               onClick={onToggleActive} 
-              className={`p-2 transition-colors rounded-lg flex items-center gap-1 text-[var(--color-text-muted)] 
-                ${isActive ? 'hover:text-red-500 hover:bg-red-500/10' : 'hover:text-green-500 hover:bg-green-500/10'}`} 
-              title={isActive ? 'Bloquear Acesso' : 'Liberar Acesso'}
+              className={`p-2 transition-colors rounded-lg flex items-center gap-1 
+                ${isActive ? 'text-green-500 hover:bg-green-500/10' : 'text-gray-400 hover:bg-gray-500/10'}`} 
+              title={isActive ? 'Desativar Empresa' : 'Ativar Empresa'}
             >
-              {isActive ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              {isActive ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
             </button>
           )}
           <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
