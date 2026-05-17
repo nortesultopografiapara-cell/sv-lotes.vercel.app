@@ -45,15 +45,17 @@ export default function DashboardPage() {
       if (!user) return;
       
       try {
-        let projectsQuery = supabase.from('projects').select('*');
+        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
+        let projectsQuery = supabase.from('projects').select('id, name');
         
         // Se não for super admin, limita por tenant
-        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.tenant_id)) {
-          projectsQuery = projectsQuery.eq('company_id', user.tenant_id);
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          query = query.eq('tenant_id', user.tenant_id);
+          projectsQuery = projectsQuery.eq('tenant_id', user.tenant_id);
         }
 
-        const { data: projectsData, error: projectsError } = await projectsQuery;
-        if (projectsError) throw projectsError;
+        const { data, error } = await query;
+        const { data: projectsData } = await projectsQuery;
 
         if (projectsData) {
           setProjects(projectsData);
@@ -62,27 +64,24 @@ export default function DashboardPage() {
           }
         }
         
-        const validProjectIds = projectsData ? projectsData.map(p => p.id) : [];
+        if (error) throw error;
+
         let available = 0;
         let reserved = 0;
         let sold = 0;
         let vgv = 0;
 
-        if (validProjectIds.length > 0) {
-          const { data, error } = await supabase.from('blocks').select('project_id, status, price').in('project_id', validProjectIds);
-          
-          if (!error && data) {
-            data.forEach(lot => {
-              if (selectedProjectId && lot.project_id !== selectedProjectId) return;
-              
-              if (lot.status === 'Disponível') available++;
-              if (lot.status === 'Reservado') reserved++;
-              if (lot.status === 'Vendido') {
-                sold++;
-                vgv += Number(lot.price || 0);
-              }
-            });
-          }
+        if (data) {
+          data.forEach(lot => {
+            if (selectedProjectId && lot.project_id !== selectedProjectId) return;
+            
+            if (lot.status === 'Disponível') available++;
+            if (lot.status === 'Reservado') reserved++;
+            if (lot.status === 'Vendido') {
+              sold++;
+              vgv += Number(lot.price || 0);
+            }
+          });
         }
 
         // Load Activities / Logs
@@ -138,7 +137,7 @@ export default function DashboardPage() {
             <h1 className="text-lg font-medium text-white flex items-center gap-1">
               <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
             </h1>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : (user?.role === 'ADMIN' || user?.role === 'ADMIN_TENANT') ? 'Gestor' : 'Corretor'}</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
           </div>
           <div className="flex items-center gap-2 text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)] py-1.5 px-3 rounded-lg border border-[var(--color-border)]">
              <Calendar className="w-3.5 h-3.5 text-white" />

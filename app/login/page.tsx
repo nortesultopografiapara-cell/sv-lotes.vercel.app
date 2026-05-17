@@ -11,21 +11,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isRecovery, setIsRecovery] = useState(false);
   const router = useRouter();
 
   // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
     const initializeAuth = async () => {
-      if (window.location.search.includes('type=recovery') || window.location.hash.includes('type=recovery')) {
-        setIsRecovery(true);
-      }
-
       const { data: { user }, error } = await supabase.auth.getUser();
-      if (user && !window.location.search.includes('type=recovery') && !window.location.hash.includes('type=recovery')) {
+      if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
         window.location.href = '/';
-      } else if (error && !window.location.search.includes('type=recovery') && !window.location.hash.includes('type=recovery')) {
+      } else if (error) {
         // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
         await supabase.auth.signOut();
         // Also clear our manual caches just in case
@@ -34,35 +29,7 @@ export default function LoginPage() {
       }
     };
     initializeAuth();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          setIsRecovery(true);
-        }
-      }
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
   }, []);
-
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-       const { error } = await supabase.auth.updateUser({ password: password });
-       if (error) throw error;
-       alert('Senha atualizada com sucesso!');
-       window.location.href = '/dashboard';
-    } catch (err: any) {
-       setError(err.message || 'Erro ao atualizar senha.');
-    } finally {
-       setLoading(false);
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,89 +138,55 @@ export default function LoginPage() {
           </div>
         )}
 
-        {isRecovery ? (
-          <form onSubmit={handleUpdatePassword} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Nova Senha</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-                <input 
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                placeholder="nome@nortesultopografia.com.br"
+                required
+              />
             </div>
+          </div>
 
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Atualizar Senha'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-                <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                  placeholder="nome@nortesultopografia.com.br"
-                  required
-                />
-              </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
+              <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
             </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
-                <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-                <input 
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <input 
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
+          </div>
 
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
-            </button>
-          </form>
-        )}
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
+          </button>
+        </form>
 
         <div className="mt-8 pt-6 border-t border-[var(--color-border)] text-center">
           <p className="text-[10px] font-mono text-[var(--color-text-muted)]">

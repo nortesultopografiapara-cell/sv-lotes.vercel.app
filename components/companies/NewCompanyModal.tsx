@@ -15,45 +15,21 @@ interface NewCompanyModalProps {
 export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [isSearchingCNPJ, setIsSearchingCNPJ] = useState(false);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
     razao_social: initialData?.razao_social || '',
     cnpj: initialData?.cnpj || '',
+    address: initialData?.address || '',
+    phone: initialData?.phone || '',
     email: initialData?.email || '',
+    active: initialData?.active !== undefined ? initialData.active : true,
     plan_type: initialData?.plan_type || 'basic',
     password: ''
   });
 
   if (!isOpen) return null;
-
-  const handleCNPJSearch = async () => {
-    const rawCnpj = formData.cnpj.replace(/\D/g, '');
-    if (rawCnpj.length !== 14) return;
-    
-    setError('');
-    setIsSearchingCNPJ(true);
-    try {
-      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${rawCnpj}`);
-      if (!res.ok) {
-        throw new Error('Erro ao buscar CNPJ na API.');
-      }
-      const data = await res.json();
-      
-      setFormData(prev => ({
-        ...prev,
-        razao_social: data.razao_social || prev.razao_social,
-        name: data.nome_fantasia || data.razao_social || prev.name,
-      }));
-    } catch (err: any) {
-      console.error(err);
-      setError('CNPJ não encontrado ou erro na busca.');
-    } finally {
-      setIsSearchingCNPJ(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,94 +39,91 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     setError('');
 
     try {
-      const baseSlug = formData.name || formData.razao_social || 'nova-empresa';
-      const slug = baseSlug.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
-         let finalTenantId = crypto.randomUUID();
-
-         if (!initialData) {
-            if (!formData.email || !formData.password) {
-               throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
-            }
-
-            // Check if email already exists in users or companies
-            const { count: usersCount } = await supabase
-              .from('users')
-              .select('id', { count: 'exact', head: true })
-              .eq('email', formData.email);
-              
-            const { count: companiesCount } = await supabase
-              .from('companies')
-              .select('id', { count: 'exact', head: true })
-              .eq('email', formData.email);
-
-            if ((usersCount && usersCount > 0) || (companiesCount && companiesCount > 0)) {
-               throw new Error('Este e-mail já está vinculado a um cadastro ativo no sistema');
-            }
-
-            // 1. Create user with signUp and only essential metadata
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-               email: formData.email,
-               password: formData.password,
-            });
-
-            if (authError) {
-               throw new Error('Erro ao criar usuário: ' + authError.message);
-            }
-
-            if (!authData.user) {
-               throw new Error('Falha ao obter ID do usuário gerado.');
-            }
-
-            // 2. Insert company
-            const { error: insertCompanyError } = await supabase.from('companies').insert({
-               id: finalTenantId,
-               name: formData.name,
-               razao_social: formData.razao_social,
-               cnpj: formData.cnpj,
-               email: formData.email,
-               plan_type: formData.plan_type,
-               slug: slug,
-               default_password: formData.password
-            });
-
-            if (insertCompanyError) {
-               console.error('Erro de gravação na tabela companies:', insertCompanyError);
-               throw new Error('Erro ao salvar empresa: ' + insertCompanyError.message);
-            }
-
-            const { error: userInsertError } = await supabase.from('users').upsert({
-               id: authData.user.id,
-               tenant_id: finalTenantId,
-               email: formData.email,
-               full_name: formData.name,
-               role: 'ADMIN',
-               status: 'ACTIVE'
-            }, { onConflict: 'id' });
-
-            if (userInsertError) {
-               console.error('Aviso: Falha ao inserir metadata no users:', userInsertError);
-            }
-
-         } else {
-            const { error: updateError } = await supabase.from('companies').update({
-               name: formData.name,
-               razao_social: formData.razao_social,
-               cnpj: formData.cnpj,
-               email: formData.email,
-               plan_type: formData.plan_type,
-               default_password: formData.password ? formData.password : undefined,
-               slug: slug
-            }).eq('id', initialData.id);
-            
-            if (updateError) throw new Error('Erro ao atualizar empresa: ' + updateError.message);
+      if (initialData) {
+         const { error: updateError } = await supabase.from('companies').update({
+            name: formData.name,
+            razao_social: formData.razao_social,
+            cnpj: formData.cnpj,
+            address: formData.address,
+            phone: formData.phone,
+            email: formData.email,
+            active: formData.active,
+            plan_type: formData.plan_type,
+            default_password: formData.password ? formData.password : undefined,
+            slug: slug
+         }).eq('id', initialData.id);
+         
+         if (updateError) throw updateError;
+         
+         // Note: Updating auth email/password from client side typically requires admin privileges
+         // or the user themselves. We only update the companies table here.
+      } else {
+         if (!formData.email || !formData.password) {
+            throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
          }
 
-         if (onSuccess) onSuccess();
-         onClose();
+         let existingCompany = null;
+         if (formData.cnpj && formData.cnpj.trim() !== '') {
+            const { data } = await supabase.from('companies').select('id').eq('cnpj', formData.cnpj).maybeSingle();
+            if (data) existingCompany = data;
+         }
+
+         // Fallback check by slug to prevent unique constraint errors
+         if (!existingCompany) {
+            const { data } = await supabase.from('companies').select('id').eq('slug', slug).maybeSingle();
+            if (data) existingCompany = data;
+         }
+
+         const finalTenantId = existingCompany ? existingCompany.id : crypto.randomUUID();
+
+         const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
+             user_email: formData.email, 
+             user_password: formData.password,
+             tenant_id: finalTenantId
+         });
+
+         if (rpcError) throw rpcError;
+
+         if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
+
+         const { error: upsertError } = await supabase.from('companies').upsert({
+           id: finalTenantId,
+           name: formData.name,
+           razao_social: formData.razao_social,
+           cnpj: formData.cnpj,
+           address: formData.address,
+           phone: formData.phone,
+           email: formData.email,
+           active: formData.active,
+           plan_type: formData.plan_type,
+           slug: slug,
+           default_password: formData.password
+         }, { onConflict: 'cnpj' });
+
+         if (upsertError) {
+             throw upsertError;
+         }
+
+         const { error: userInsertError } = await supabase.from('users').upsert({
+            id: newUserId,
+            tenant_id: finalTenantId,
+            email: formData.email,
+            full_name: `Admin - ${formData.name}`,
+            role: 'ADMIN',
+            status: formData.active ? 'ACTIVE' : 'INACTIVE',
+            phone: formData.phone
+         }, { onConflict: 'id' });
+
+         if (userInsertError) throw userInsertError;
+      }
+
+      if (onSuccess) onSuccess();
+      onClose();
     } catch (err: any) {
       console.error('Error saving company:', err);
-      setError(err.message || 'Erro inesperado ao salvar empresa. Verifique os dados e tente novamente.');
+      setError(err.message || 'Erro ao salvar empresa');
     } finally {
       setLoading(false);
     }
@@ -188,22 +161,15 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             )}
             
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
-              <div className="relative">
-                <input 
-                  type="text" 
-                  value={formData.cnpj}
-                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                  onBlur={handleCNPJSearch}
-                  placeholder="00.000.000/0001-00"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 pr-10 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
-                />
-                {isSearchingCNPJ && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
-                  </div>
-                )}
-              </div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
+              <input 
+                type="text" 
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Ex: Lotes Prime Empreendimentos LTDA"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
             </div>
 
             <div>
@@ -218,24 +184,45 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome Fantasia *</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ</label>
               <input 
                 type="text" 
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Ex: Lotes Prime"
+                value={formData.cnpj}
+                onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                placeholder="00.000.000/0001-00"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Acesso (Admin)</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Endereço Completo</label>
+              <input 
+                type="text" 
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Av. Exemplo, 1000 - Bairro, Cidade - UF"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail Master (Contato)</label>
               <input 
                 type="email" 
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="contato@empresa.com.br"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Telefone</label>
+              <input 
+                type="tel" 
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="(11) 90000-0000"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>
@@ -255,15 +242,27 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano de Assinatura</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Status</label>
+              <select 
+                value={formData.active ? 'true' : 'false'}
+                onChange={(e) => setFormData({ ...formData, active: e.target.value === 'true' })}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
+              >
+                <option value="true">Ativo</option>
+                <option value="false">Inativo</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano (Limites)</label>
               <select 
                 value={formData.plan_type}
                 onChange={(e) => setFormData({ ...formData, plan_type: e.target.value })}
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
               >
-                <option value="basic">Básico</option>
-                <option value="standard">Standard</option>
-                <option value="professional">Profissional</option>
+                <option value="basic">Basic (Até 5 corretores)</option>
+                <option value="standard">Standard (Até 10 corretores)</option>
+                <option value="professional">Professional (Até 100 corretores)</option>
               </select>
             </div>
           </form>
@@ -284,7 +283,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             disabled={loading}
             className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-bold text-white bg-[#06b6d4] hover:bg-[#0891b2] transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar Empresa"}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
           </button>
         </div>
 
@@ -292,3 +291,4 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     </div>
   );
 }
+

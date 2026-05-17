@@ -4,13 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, Plus, CheckCircle2, 
-  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key
+  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-
-export const dynamic = 'force-dynamic';
 
 export default function CompaniesPage() {
   const router = useRouter();
@@ -27,7 +25,11 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, name, slug, cnpj, email, plan_type, created_at')
+        .select(`
+          *,
+          users(count),
+          projects(count)
+        `)
         .order('created_at', { ascending: false });
         
       if (error) {
@@ -59,22 +61,6 @@ export default function CompaniesPage() {
     }
   };
 
-  const handleResetPassword = async (email: string) => {
-    if (!email) {
-      alert('Esta empresa não possui um e-mail cadastrado para redefinir a senha.');
-      return;
-    }
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login?type=recovery`,
-      });
-      if (error) throw error;
-      alert(`Um link de recuperação de senha foi enviado para ${email}`);
-    } catch (err: any) {
-      alert('Erro ao enviar e-mail de recuperação: ' + err.message);
-    }
-  };
-
   // Verification if user is SUPER_ADMIN
   useEffect(() => {
     if (!authLoading) {
@@ -97,9 +83,9 @@ export default function CompaniesPage() {
      );
   }
 
-  const activeCompanies = companies.length;
-  const totalUsers = 0;
-  const totalProjects = 0;
+  const activeCompanies = companies.filter(c => c.active === true).length;
+  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
+  const totalProjects = companies.reduce((acc, c) => acc + (c.projects?.[0]?.count || 0), 0);
 
   const filteredCompanies = companies.filter(c => 
      c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -118,24 +104,16 @@ export default function CompaniesPage() {
             Modo Super Administrador (Multi-Tenant)
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => loadCompanies()}
-            className="bg-transparent hover:bg-white/5 border border-[var(--color-border)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
-          >
-            Recarregar
-          </button>
-          <button 
-            onClick={() => {
-              setCompanyToEdit(null);
-              setIsModalOpen(true);
-            }}
-            className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-          >
-            <Plus className="w-5 h-5" />
-            Nova Empresa
-          </button>
-        </div>
+        <button 
+          onClick={() => {
+            setCompanyToEdit(null);
+            setIsModalOpen(true);
+          }}
+          className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+        >
+          <Plus className="w-5 h-5" />
+          Nova Empresa
+        </button>
       </header>
 
       {/* Multi-Tenant Stats */}
@@ -167,8 +145,10 @@ export default function CompaniesPage() {
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Empresa / Tenant</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">CNPJ</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">E-mail de Acesso</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Contato</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center">Status</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">Projetos</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">Usuários</th>
                 <th className="p-4 w-24 text-right">Ações</th>
               </tr>
             </thead>
@@ -180,7 +160,6 @@ export default function CompaniesPage() {
                   isMain={idx === 0} // just for highlight
                   onEdit={() => handleEdit(c)}
                   onDelete={() => handleDelete(c)}
-                  onResetPassword={() => handleResetPassword(c.email)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -222,7 +201,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any) {
+function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
   const getStatusBadge = (isActive: boolean) => {
     if (isActive) {
       return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
@@ -251,18 +230,21 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, isMain }: any)
       <td className="p-4 hidden md:table-cell">
         <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
       </td>
+      <td className="p-4 text-center">
+        {getStatusBadge(company.active)}
+      </td>
       <td className="p-4 text-center hidden lg:table-cell">
-        <div className="text-sm text-gray-400 font-mono">
-           {company.email ? company.email : 'Sem e-mail'}
+        <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
+          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.projects?.[0]?.count || 0}
+        </div>
+      </td>
+      <td className="p-4 text-center hidden lg:table-cell">
+         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
+          <Users className="w-3.5 h-3.5 text-[var(--color-purple)]" /> {company.users?.[0]?.count || 0}
         </div>
       </td>
       <td className="p-4 text-right">
         <div className="flex items-center justify-end gap-2">
-          {company.email && (
-            <button onClick={onResetPassword} className="p-2 text-[var(--color-text-muted)] hover:text-yellow-500 transition-colors rounded-lg hover:bg-yellow-500/10 tooltip-trigger" title={`Redefinir senha para ${company.email}`}>
-              <Key className="w-4 h-4" />
-            </button>
-          )}
           <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
             <Edit className="w-4 h-4" />
           </button>

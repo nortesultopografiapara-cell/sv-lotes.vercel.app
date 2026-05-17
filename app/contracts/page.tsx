@@ -13,23 +13,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import { AvulsoContractModal } from './AvulsoContractModal';
-import { useRouter } from 'next/navigation';
 
 export default function ContractsPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tenantData, setTenantData] = useState<any>(null);
-  const [isAvulsoModalOpen, setIsAvulsoModalOpen] = useState(false);
 
   useEffect(() => {
-    const loadData = async () => {
+    async function loadData() {
       if (!user) return;
       try {
-        setLoading(true);
         // Load Tenant Data
         const { data: tData } = await supabase
           .from('companies')
@@ -39,53 +34,117 @@ export default function ContractsPage() {
         if (tData) setTenantData(tData);
 
         // Load Sold Lots (Contracts)
-        let query = supabase.from('contracts').select('*, blocks(block_name, number)');
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('company_id', user.tenant_id);
-        }
-        const { data: contractsData } = await query.order('created_at', { ascending: false });
+        const { data: lotsData } = await supabase
+          .from('blocks')
+          .select(`
+            *,
+            customers(
+              id, name, cpf_cnpj, address, phone
+            )
+          `)
+          .in('status', ['Vendido', 'Reservado'])
+          .order('updated_at', { ascending: false });
 
-        if (contractsData) {
-          setContracts(contractsData);
+        if (lotsData) {
+          setContracts(lotsData);
         }
       } catch (err) {
         console.error("Error loading contracts", err);
       } finally {
         setLoading(false);
       }
-    };
-
+    }
     loadData();
   }, [user]);
 
-  const refreshData = async () => {
-     if (!user) return;
-     try {
-       setLoading(true);
-       let query = supabase.from('contracts').select('*, blocks(block_name, number)');
-       if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.eq('company_id', user.tenant_id);
-       }
-       const { data: contractsData } = await query.order('created_at', { ascending: false });
-
-       if (contractsData) {
-         setContracts(contractsData);
-       }
-     } catch (err) {
-       console.error("Error loading contracts", err);
-     } finally {
-       setLoading(false);
-     }
-  };
-
   const handlePrint = (contract: any) => {
-     router.push(`/contracts/${contract.id}`);
+    const customer = contract.customers || {};
+    const htmlContract = `
+      <html>
+        <head>
+          <title>Contrato de Venda - ${contract.block_name} Lote ${contract.number}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; }
+            h1 { text-align: center; margin-bottom: 30px; font-size: 24px; text-transform: uppercase; }
+            h2 { font-size: 18px; border-bottom: 2px solid #ccc; padding-bottom: 5px; margin-top: 30px; }
+            p { margin-bottom: 15px; text-justify: inter-word; text-align: justify; }
+            .info-block { background: #f9f9f9; padding: 15px; border border: #eee; margin-bottom: 20px; border-radius: 5px; }
+            .signatures { margin-top: 60px; display: flex; justify-content: space-between; }
+            .sig-box { width: 45%; text-align: center; border-top: 1px solid #333; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <h1>INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h1>
+          
+          <h2>1. VENDEDORA (PROMITENTE)</h2>
+          <div class="info-block">
+            <strong>Razão Social:</strong> ${tenantData?.razao_social || tenantData?.name || '__________________________'}<br/>
+            <strong>CNPJ:</strong> ${tenantData?.cnpj || '__________________________'}<br/>
+            <strong>Endereço:</strong> ${tenantData?.address || '__________________________'}<br/>
+            <strong>Contato:</strong> ${tenantData?.email || ''} ${tenantData?.phone || ''}
+          </div>
+
+          <h2>2. COMPRADOR (PROMISSÁRIO)</h2>
+          <div class="info-block">
+            <strong>Nome:</strong> ${customer.name || '__________________________'}<br/>
+            <strong>CPF/CNPJ:</strong> ${customer.cpf_cnpj || '__________________________'}<br/>
+            <strong>Endereço:</strong> ${customer.address || '__________________________'}<br/>
+            <strong>Telefone:</strong> ${customer.phone || '__________________________'}
+          </div>
+
+          <h2>3. OBJETO DO CONTRATO</h2>
+          <p>
+            O presente contrato tem como objeto o lote de terreno designado por <strong>Lote ${contract.number}</strong> 
+            da <strong>Quadra ${contract.block_name}</strong>, localizado no empreendimento. 
+            <strong>Área Total:</strong> ${contract.area} m².
+          </p>
+
+          <h2>4. VALOR E FORMA DE PAGAMENTO</h2>
+          <p>
+            O preço certo e ajustado para a promessa de compra e venda do imóvel objeto deste contrato é de 
+            <strong>${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.price || 0)}</strong>.
+          </p>
+
+          <h2>5. DISPOSIÇÕES GERAIS</h2>
+          <p>
+            As partes elegem o foro desta comarca para dirimir quaisquer dúvidas originadas do presente instrumento.
+            E por estarem justos e contratados, assinam o presente em 02 (duas) vias de igual teor.
+          </p>
+
+          <p style="text-align: right; margin-top: 40px;">
+            Data: ${new Date().toLocaleDateString('pt-BR')}
+          </p>
+
+          <div class="signatures">
+            <div class="sig-box">
+              ${tenantData?.razao_social || tenantData?.name || 'Vendedora'}<br/>
+              (Vendedora)
+            </div>
+            <div class="sig-box">
+              ${customer.name || 'Comprador'}<br/>
+              (Compradora)
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(htmlContract);
+      printWindow.document.close();
+      printWindow.focus();
+      // Delay printing a little so the browser has time to render the DOM
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    }
   };
 
   const filteredContracts = contracts.filter(c => 
-    c.buyer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.blocks?.block_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.buyer_cpf?.toLowerCase().includes(searchTerm.toLowerCase())
+    c.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.block_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.status?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -111,10 +170,7 @@ export default function ContractsPage() {
             />
           </div>
           
-          <button 
-            onClick={() => setIsAvulsoModalOpen(true)}
-            className="flex items-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm"
-          >
+          <button className="flex items-center gap-2 bg-[#f59e0b] hover:bg-[#d97706] text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors shadow-sm">
             <Plus className="w-4 h-4" />
             Criar Avulso
           </button>
@@ -151,29 +207,33 @@ export default function ContractsPage() {
                   filteredContracts.map((contract) => (
                     <tr key={contract.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="p-4 pl-6">
-                        <div className="font-medium text-gray-900">{contract.buyer_name || 'Cliente Sem Nome'}</div>
-                        <div className="text-xs text-gray-500">{contract.buyer_cpf || ''}</div>
+                        <div className="font-medium text-gray-900">{contract.customers?.name || 'Cliente Sem Nome'}</div>
+                        <div className="text-xs text-gray-500">{contract.customers?.cpf_cnpj || ''}</div>
                       </td>
                       <td className="p-4">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                          {contract.blocks ? `Quadra ${contract.blocks.block_name} / Lote ${contract.blocks.number}` : 'Lote Avulso'}
+                          {`Quadra ${contract.block_name} / Lote ${contract.number}`}
                         </span>
                       </td>
                       <td className="p-4">
                         <span className="text-gray-900 font-medium">
-                          Ver Contrato
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.price || 0)}
                         </span>
                       </td>
                       <td className="p-4 text-gray-600 text-sm">
-                        {contract.created_at ? new Date(contract.created_at).toLocaleDateString('pt-BR') : ''}
+                        {contract.updated_at ? new Date(contract.updated_at).toLocaleDateString('pt-BR') : ''}
                       </td>
                       <td className="p-4">
-                         <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700">Gerado</span>
+                         {contract.status === 'Vendido' ? (
+                           <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700">Vendido</span>
+                         ) : (
+                           <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-100 text-yellow-700">Reservado</span>
+                         )}
                       </td>
                       <td className="p-4 pr-6">
                         <div className="flex items-center justify-center gap-2">
                           <button onClick={() => handlePrint(contract)} className="p-1.5 text-gray-400 hover:text-[#f59e0b] hover:bg-amber-50 rounded transition-colors tooltip-trigger" title="Gerar Contrato (PDF) / Imprimir">
-                             <Eye className="w-4 h-4" />
+                            <Printer className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -186,16 +246,6 @@ export default function ContractsPage() {
         </div>
         )}
       </div>
-
-      <AvulsoContractModal 
-         isOpen={isAvulsoModalOpen} 
-         onClose={() => setIsAvulsoModalOpen(false)} 
-         tenantId={user?.tenant_id || ''}
-         onSave={() => {
-            setIsAvulsoModalOpen(false);
-            refreshData();
-         }}
-      />
     </div>
   );
 }

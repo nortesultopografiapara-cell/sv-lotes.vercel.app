@@ -442,16 +442,14 @@ export default function GISMap({
     async function loadLots() {
       if (!user) return;
       try {
-        let blocksQuery;
-        if (user.role === 'ADMIN_TENANT' || (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id)) {
-           blocksQuery = supabase.from('blocks').select('*, projects!inner(name, company_id), customers(name)')
-             .eq('projects.company_id', user.tenant_id);
-        } else {
-           blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
-        }
+        let blocksQuery = supabase.from('blocks').select('*, projects(name), customers(name)');
         
         if (projectId) {
           blocksQuery = blocksQuery.eq('project_id', projectId);
+        }
+        
+        if (user.role !== 'SUPER_ADMIN' && user.email !== 'severino@nortesultopografia.com.br' && user.tenant_id) {
+          blocksQuery = blocksQuery.eq('tenant_id', user.tenant_id);
         }
 
         const blocksRes = await blocksQuery;
@@ -611,54 +609,6 @@ export default function GISMap({
          }
        });
        
-       // Notification
-       if (newStatus === 'Vendido') {
-          await supabase.from('notifications').insert({
-             tenant_id: user.tenant_id || lot.tenant_id,
-             title: 'Nova Venda Realizada!',
-             message: `Lote ${lot.number}, Quadra ${lot.block} vendido por ${user.name} aguardando validação de contrato.`
-          });
-          
-          try {
-             const tenantId = user.tenant_id || lot.tenant_id;
-             const { data: comp } = await supabase.from('companies').select('*').eq('id', tenantId).single();
-             const { data: projectData } = await supabase.from('projects').select('name').eq('id', lot.project_id).single();
-             const { generateContractText } = await import('@/lib/contractGenerator');
-             
-             const contractText = generateContractText({
-                company_name: comp?.name || comp?.razao_social,
-                company_cnpj: comp?.cnpj,
-                comprador_nome: nameUpper,
-                comprador_cpf: cpfCnpjValue,
-                comprador_estado_civil: '',
-                comprador_endereco: addressUpper,
-                lote_numero: lot.number,
-                lote_quadra: lot.block || lot.block_name,
-                lote_area: lot.area,
-                conf_norte: '',
-                conf_sul: '',
-                projeto_nome: projectData?.name || 'Empreendimento',
-                valor_total: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(finalPrice),
-                valor_entrada: '0,00',
-                data_entrada: new Date().toLocaleDateString('pt-BR'),
-                qtd_parcelas: 'À vista',
-                valor_parcela: '0,00',
-                primeiro_vencimento: ''
-             });
-
-             await supabase.from('contracts').insert([{
-                company_id: tenantId,
-                project_id: lot.project_id,
-                lot_id: lot.id,
-                buyer_name: nameUpper,
-                buyer_cpf: cpfCnpjValue,
-                contract_text: contractText
-             }]);
-          } catch(err) {
-             console.error("Failed to generate contract for map sale", err);
-          }
-       }
-
     } catch (e: any) {
        console.error("Error saving customer and lot:", e);
        alert("Erro ao salvar cliente: " + e.message);

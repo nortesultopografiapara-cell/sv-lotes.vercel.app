@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, AlertCircle, Trash2 } from 'lucide-react';
+import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, AlertCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -25,44 +25,43 @@ export default function CorretoresPage() {
     fullName: '',
     email: '',
     phone: '',
-    creci: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState<{ email: string, password: string } | null>(null);
 
-  const loadData = async () => {
-    if (!user) return;
-    try {
-      setLoading(true);
-
-      if (user.tenant_id) {
-         const { data: comp } = await supabase.from('companies').select('plan_type').eq('id', user.tenant_id).single();
-         if (comp && comp.plan_type) {
-           setCompanyPlan(comp.plan_type);
-         }
-      }
-
-      let query = supabase.from('users').select(`*`).order('created_at', { ascending: false });
-      
-      if (user.role === 'ADMIN' || user.role === 'ADMIN_TENANT') {
-         query = query.eq('tenant_id', user.tenant_id).in('role', ['CORRETOR', 'USER', 'broker']);
-      } else if (user.role === 'SUPER_ADMIN') {
-         query = query.in('role', ['CORRETOR', 'USER', 'broker']); 
-      }
-      
-      const { data, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-      
-      setCorretores(data || []);
-    } catch(err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    async function loadData() {
+      if (!user) return;
+      try {
+        setLoading(true);
+
+        if (user.tenant_id) {
+           const { data: comp } = await supabase.from('companies').select('plan_type').eq('id', user.tenant_id).single();
+           if (comp && comp.plan_type) {
+             setCompanyPlan(comp.plan_type);
+           }
+        }
+
+        let query = supabase.from('users').select(`*`).order('created_at', { ascending: false });
+        
+        if (user.role === 'ADMIN') {
+           query = query.eq('tenant_id', user.tenant_id).eq('role', 'CORRETOR');
+        } else if (user.role === 'SUPER_ADMIN') {
+           query = query.eq('role', 'CORRETOR'); // maybe?
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        setCorretores(data || []);
+      } catch(err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
     if (!authLoading) {
       loadData();
     }
@@ -92,7 +91,7 @@ export default function CorretoresPage() {
         body: JSON.stringify({
            ...formData,
            tenantId: user?.tenant_id,
-           role: 'USER'
+           role: 'CORRETOR'
         })
       });
       
@@ -116,26 +115,8 @@ export default function CorretoresPage() {
   const handleCloseModal = () => {
      setIsModalOpen(false);
      if (successData) {
-        loadData();
+        window.location.reload();
      }
-  };
-
-  const handleDelete = async (brokerId: string, brokerName: string) => {
-    if (!confirm(`Tem certeza que deseja remover o corretor ${brokerName}? Essa ação não pode ser desfeita.`)) return;
-
-    try {
-      const response = await fetch(`/api/users/delete?id=${brokerId}`, { method: 'DELETE' });
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error);
-      }
-      
-      // Update list
-      setCorretores(prev => prev.filter(c => c.id !== brokerId));
-    } catch(err: any) {
-      alert(`Erro ao excluir: ${err.message}`);
-    }
   };
 
   const filtered = corretores.filter(c => 
@@ -216,14 +197,9 @@ export default function CorretoresPage() {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)] rounded-lg transition-colors tooltip-trigger" title="Opções">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDelete(c.id, c.full_name)} className="p-2 text-[var(--color-text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors tooltip-trigger" title="Excluir Corretor">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <button className="p-2 text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)] rounded-lg transition-colors">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -317,20 +293,6 @@ export default function CorretoresPage() {
                           type="tel" 
                           value={formData.phone}
                           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
-                        />
-                      </div>
-                   </div>
-
-                   <div className="space-y-1.5">
-                      <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">CRECI (Opcional)</label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
-                        <input 
-                          type="text" 
-                          placeholder="Ex: 12345-F"
-                          value={formData.creci}
-                          onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
                           className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
                         />
                       </div>
