@@ -1,24 +1,40 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { 
-  Building2, Search, Plus, CheckCircle2, 
-  Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle, Key, Lock, Unlock, Calendar, ToggleLeft, ToggleRight
-} from 'lucide-react';
-import NewCompanyModal from '@/components/companies/NewCompanyModal';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Building2,
+  Search,
+  Plus,
+  CheckCircle2,
+  Map as MapIcon,
+  Database,
+  Users,
+  Eye,
+  Edit,
+  Trash2,
+  Loader2,
+  AlertCircle,
+  Key,
+  Lock,
+  Unlock,
+  Calendar,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
+import NewCompanyModal from "@/components/companies/NewCompanyModal";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default function CompaniesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
-  
+
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -26,17 +42,19 @@ export default function CompaniesPage() {
     setDataLoading(true);
     try {
       const { data, error } = await supabase
-        .from('companies')
-        .select('id, name, slug, cnpj, email, phone, plan_type, created_at, active, next_payment_date')
-        .order('created_at', { ascending: false });
-        
+        .from("companies")
+        .select(
+          "id, name, slug, cnpj, email, phone, plan_type, created_at, active, next_payment_date",
+        )
+        .order("created_at", { ascending: false });
+
       if (error) {
-        console.error('SUPABASE_ERROR fetching companies:', error);
+        console.error("SUPABASE_ERROR fetching companies:", error);
         throw error;
       }
       setCompanies(data || []);
     } catch (err) {
-      console.error('ERROR in loadCompanies:', err);
+      console.error("ERROR in loadCompanies:", err);
     } finally {
       setDataLoading(false);
     }
@@ -49,10 +67,17 @@ export default function CompaniesPage() {
 
   const handleToggleActive = async (company: any) => {
     const newStatus = !company.active;
-    const actionText = newStatus ? 'liberar' : 'bloquear';
-    if (confirm(`Tem certeza que deseja ${actionText} o acesso da empresa ${company.name}?`)) {
+    const actionText = newStatus ? "liberar" : "bloquear";
+    if (
+      confirm(
+        `Tem certeza que deseja ${actionText} o acesso da empresa ${company.name}?`,
+      )
+    ) {
       try {
-        const { error } = await supabase.from('companies').update({ active: newStatus }).eq('id', company.id);
+        const { error } = await supabase
+          .from("companies")
+          .update({ active: newStatus })
+          .eq("id", company.id);
         if (error) throw error;
         loadCompanies();
       } catch (err: any) {
@@ -62,20 +87,29 @@ export default function CompaniesPage() {
   };
 
   const handleDelete = async (company: any) => {
-    if (confirm(`Tem certeza que deseja excluir a empresa ${company.name}? Isso pode afetar dados vinculados.`)) {
+    if (
+      confirm(
+        `Tem certeza que deseja excluir a empresa ${company.name}? Isso pode afetar dados vinculados.`,
+      )
+    ) {
       try {
-        const { error } = await supabase.from('companies').delete().eq('id', company.id);
+        const { error } = await supabase
+          .from("companies")
+          .delete()
+          .eq("id", company.id);
         if (error) throw error;
         loadCompanies();
       } catch (err: any) {
-        alert('Erro ao excluir empresa: ' + err.message);
+        alert("Erro ao excluir empresa: " + err.message);
       }
     }
   };
 
   const handleResetPassword = async (email: string) => {
     if (!email) {
-      alert('Esta empresa não possui um e-mail cadastrado para redefinir a senha.');
+      alert(
+        "Esta empresa não possui um e-mail cadastrado para redefinir a senha.",
+      );
       return;
     }
     try {
@@ -85,20 +119,23 @@ export default function CompaniesPage() {
       if (error) throw error;
       alert(`Um link de recuperação de senha foi enviado para ${email}`);
     } catch (err: any) {
-      alert('Erro ao enviar e-mail de recuperação: ' + err.message);
+      alert("Erro ao enviar e-mail de recuperação: " + err.message);
     }
   };
 
-  const handleUpdatePaymentDate = async (companyId: string, newDate: string) => {
+  const handleUpdatePaymentDate = async (
+    companyId: string,
+    newDate: string,
+  ) => {
     try {
       const { error } = await supabase
-        .from('companies')
+        .from("companies")
         .update({ next_payment_date: newDate || null })
-        .eq('id', companyId);
+        .eq("id", companyId);
       if (error) throw error;
       loadCompanies();
     } catch (err: any) {
-      alert('Erro ao atualizar data de vencimento: ' + err.message);
+      alert("Erro ao atualizar data de vencimento: " + err.message);
     }
   };
 
@@ -106,9 +143,9 @@ export default function CompaniesPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/login');
-      } else if (user.role !== 'SUPER_ADMIN') {
-        router.push('/');
+        router.push("/login");
+      } else if (user.role !== "SUPER_ADMIN") {
+        router.push("/");
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         loadCompanies();
@@ -117,20 +154,21 @@ export default function CompaniesPage() {
   }, [authLoading, user, router, loadCompanies]);
 
   if (authLoading || (dataLoading && companies.length === 0)) {
-     return (
-       <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
-          <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
-       </div>
-     );
+    return (
+      <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
+        <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
+      </div>
+    );
   }
 
-  const activeCompanies = companies.filter(c => c.active !== false).length;
+  const activeCompanies = companies.filter((c) => c.active !== false).length;
   const totalUsers = 0;
   const totalProjects = 0;
 
-  const filteredCompanies = companies.filter(c => 
-     c.name.toLowerCase().includes(search.toLowerCase()) || 
-     c.slug.toLowerCase().includes(search.toLowerCase())
+  const filteredCompanies = companies.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.slug.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -146,13 +184,13 @@ export default function CompaniesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={() => loadCompanies()}
             className="bg-transparent hover:bg-white/5 border border-[var(--color-border)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
           >
             Recarregar
           </button>
-          <button 
+          <button
             onClick={() => {
               setCompanyToEdit(null);
               setIsModalOpen(true);
@@ -167,10 +205,38 @@ export default function CompaniesPage() {
 
       {/* Multi-Tenant Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[#06b6d4]" bg="bg-[#06b6d4]/10" border="border-[#06b6d4]/20" />
-        <StatCard title="Empresas Ativas" value={activeCompanies} icon={CheckCircle2} iconColor="text-[var(--color-success)]" bg="bg-[var(--color-success)]/10" border="border-[var(--color-success)]/20" />
-        <StatCard title="Total de Loteamentos" value={totalProjects} icon={MapIcon} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
-        <StatCard title="Total de Usuários" value={totalUsers} icon={Users} iconColor="text-[var(--color-purple)]" bg="bg-[var(--color-purple)]/10" border="border-[var(--color-purple)]/20" />
+        <StatCard
+          title="Total de Empresas"
+          value={companies.length}
+          icon={Database}
+          iconColor="text-[#06b6d4]"
+          bg="bg-[#06b6d4]/10"
+          border="border-[#06b6d4]/20"
+        />
+        <StatCard
+          title="Empresas Ativas"
+          value={activeCompanies}
+          icon={CheckCircle2}
+          iconColor="text-[var(--color-success)]"
+          bg="bg-[var(--color-success)]/10"
+          border="border-[var(--color-success)]/20"
+        />
+        <StatCard
+          title="Total de Loteamentos"
+          value={totalProjects}
+          icon={MapIcon}
+          iconColor="text-[var(--color-primary)]"
+          bg="bg-[var(--color-primary)]/10"
+          border="border-[var(--color-primary)]/20"
+        />
+        <StatCard
+          title="Total de Usuários"
+          value={totalUsers}
+          icon={Users}
+          iconColor="text-[var(--color-purple)]"
+          bg="bg-[var(--color-purple)]/10"
+          border="border-[var(--color-purple)]/20"
+        />
       </div>
 
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl flex-1 flex flex-col overflow-hidden shadow-lg">
@@ -178,8 +244,8 @@ export default function CompaniesPage() {
         <div className="p-4 border-b border-[var(--color-border)] flex flex-wrap gap-4 items-center">
           <div className="relative flex-1 min-w-[250px] max-w-sm">
             <Search className="absolute left-3 top-2.5 w-5 h-5 text-[var(--color-text-muted)]" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Buscar por nome ou slug..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -193,44 +259,59 @@ export default function CompaniesPage() {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Empresa / Tenant</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Status</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">Cadastro / Pgto</th>
-                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">E-mail de Acesso</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">
+                  Empresa / Tenant
+                </th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">
+                  Status
+                </th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold hidden md:table-cell">
+                  Cadastro / Pgto
+                </th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center hidden lg:table-cell">
+                  E-mail de Acesso
+                </th>
                 <th className="p-4 w-24 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filteredCompanies.map((c, idx) => (
-                <CompanyRow 
+                <CompanyRow
                   key={c.id}
                   company={c}
-                  isMain={idx === 0} // just for highlight
+                  isMain={user?.tenant_id === c.id}
                   onEdit={() => handleEdit(c)}
                   onDelete={() => handleDelete(c)}
                   onResetPassword={() => handleResetPassword(c.email)}
                   onToggleActive={() => handleToggleActive(c)}
-                  onUpdatePaymentDate={(date: string) => handleUpdatePaymentDate(c.id, date)}
+                  onUpdatePaymentDate={(date: string) =>
+                    handleUpdatePaymentDate(c.id, date)
+                  }
                 />
               ))}
               {filteredCompanies.length === 0 && (
-                 <tr>
-                    <td colSpan={6} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
-                       Nenhuma empresa encontrada.
-                    </td>
-                 </tr>
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="text-center p-8 text-[var(--color-text-muted)] text-sm"
+                  >
+                    Nenhuma empresa encontrada.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      <NewCompanyModal 
-         key={isModalOpen ? (companyToEdit ? companyToEdit.id : 'new') : 'closed'}
-         isOpen={isModalOpen} 
-         initialData={companyToEdit}
-         onClose={() => setIsModalOpen(false)} 
-         onSuccess={loadCompanies}
+      <NewCompanyModal
+        key={
+          isModalOpen ? (companyToEdit ? companyToEdit.id : "new") : "closed"
+        }
+        isOpen={isModalOpen}
+        initialData={companyToEdit}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={loadCompanies}
       />
     </div>
   );
@@ -238,10 +319,14 @@ export default function CompaniesPage() {
 
 function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   return (
-    <div className={`bg-[var(--color-surface)] border ${border} p-5 rounded-2xl relative overflow-hidden shadow-sm`}>
+    <div
+      className={`bg-[var(--color-surface)] border ${border} p-5 rounded-2xl relative overflow-hidden shadow-sm`}
+    >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[11px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-2">{title}</p>
+          <p className="text-[11px] font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+            {title}
+          </p>
           <h3 className="text-3xl font-semibold text-white">{value}</h3>
         </div>
         <div className={`p-3 rounded-xl ${bg} ${iconColor}`}>
@@ -252,49 +337,81 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive, onUpdatePaymentDate, isMain }: any) {
+function CompanyRow({
+  company,
+  onEdit,
+  onDelete,
+  onResetPassword,
+  onToggleActive,
+  onUpdatePaymentDate,
+  isMain,
+}: any) {
   const isActive = company.active !== false;
 
   const getStatusBadge = () => {
     if (isActive) {
-      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20">
+          <CheckCircle2 className="w-3 h-3 mr-1" /> Ativa
+        </span>
+      );
     } else {
-      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20"><Lock className="w-3 h-3 mr-1" /> Bloqueada</span>;
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20">
+          <Lock className="w-3 h-3 mr-1" /> Bloqueada
+        </span>
+      );
     }
   };
 
   return (
-    <tr className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group ${isMain ? 'bg-[#06b6d4]/5 hover:bg-[#06b6d4]/10' : ''}`}>
+    <tr
+      className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group ${isMain ? "bg-[#06b6d4]/5 hover:bg-[#06b6d4]/10" : ""}`}
+    >
       <td className="p-4">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-[#06b6d4]/20 text-[#06b6d4] border-[#06b6d4]/30' : 'bg-[var(--color-background)] text-white border-[var(--color-border)]'}`}>
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? "bg-[#06b6d4]/20 text-[#06b6d4] border-[#06b6d4]/30" : "bg-[var(--color-background)] text-white border-[var(--color-border)]"}`}
+          >
             {company.name.charAt(0)}
           </div>
           <div>
             <div className="font-bold text-sm text-white flex items-center gap-2">
               {company.name}
-              {isMain && <span className="text-[9px] font-mono uppercase bg-[#06b6d4] text-white px-1.5 py-0.5 rounded-sm">Master</span>}
-               <span className="text-[9px] font-mono uppercase bg-gray-600 text-white px-1.5 py-0.5 rounded-sm">{company.plan_type || 'basic'}</span>
+              {isMain && (
+                <span className="text-[9px] font-mono uppercase bg-[#06b6d4] text-white px-1.5 py-0.5 rounded-sm">
+                  Master
+                </span>
+              )}
+              <span className="text-[9px] font-mono uppercase bg-gray-600 text-white px-1.5 py-0.5 rounded-sm">
+                {company.plan_type || "basic"}
+              </span>
             </div>
-            <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">slug: {company.slug}</div>
+            <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">
+              slug: {company.slug}
+            </div>
           </div>
         </div>
       </td>
-      <td className="p-4 hidden md:table-cell">
-        {getStatusBadge()}
-      </td>
+      <td className="p-4 hidden md:table-cell">{getStatusBadge()}</td>
       <td className="p-4 hidden md:table-cell">
         <div className="text-sm text-white mb-0.5">
           <Calendar className="w-3 h-3 inline-block mr-1 text-gray-400" />
           <span className="text-gray-400 mr-1 text-xs">C:</span>
-          {company.created_at ? new Date(company.created_at).toLocaleDateString('pt-BR') : '—'}
+          {company.created_at
+            ? new Date(company.created_at).toLocaleDateString("pt-BR")
+            : "—"}
         </div>
         <div className="text-sm text-white mt-1 flex items-center gap-1">
           <Calendar className="w-3 h-3 inline-block text-purple-400" />
           <span className="text-purple-400 text-xs">V:</span>
-          <input 
-            type="date" 
-            defaultValue={company.next_payment_date ? company.next_payment_date.split('T')[0] : ''}
+          <input
+            type="date"
+            defaultValue={
+              company.next_payment_date
+                ? company.next_payment_date.split("T")[0]
+                : ""
+            }
             onChange={(e) => onUpdatePaymentDate(e.target.value)}
             className="bg-transparent border-none text-white text-xs p-0 m-0 outline-none cursor-pointer hover:underline focus:ring-0"
             title="Alterar Vencimento"
@@ -303,31 +420,47 @@ function CompanyRow({ company, onEdit, onDelete, onResetPassword, onToggleActive
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
         <div className="text-sm text-gray-400 font-mono">
-           {company.email ? company.email : 'Sem e-mail'}
+          {company.email ? company.email : "Sem e-mail"}
         </div>
       </td>
       <td className="p-4 text-right">
         <div className="flex items-center justify-end gap-2">
           {company.email && (
-            <button onClick={onResetPassword} className="p-2 text-[var(--color-text-muted)] hover:text-yellow-500 transition-colors rounded-lg hover:bg-yellow-500/10 tooltip-trigger" title={`Redefinir senha para ${company.email}`}>
+            <button
+              onClick={onResetPassword}
+              className="p-2 text-[var(--color-text-muted)] hover:text-yellow-500 transition-colors rounded-lg hover:bg-yellow-500/10 tooltip-trigger"
+              title={`Redefinir senha para ${company.email}`}
+            >
               <Key className="w-4 h-4" />
             </button>
           )}
           {!isMain && (
-            <button 
-              onClick={onToggleActive} 
+            <button
+              onClick={onToggleActive}
               className={`p-2 transition-colors rounded-lg flex items-center gap-1 
-                ${isActive ? 'text-green-500 hover:bg-green-500/10' : 'text-gray-400 hover:bg-gray-500/10'}`} 
-              title={isActive ? 'Desativar Empresa' : 'Ativar Empresa'}
+                ${isActive ? "text-green-500 hover:bg-green-500/10" : "text-gray-400 hover:bg-gray-500/10"}`}
+              title={isActive ? "Desativar Empresa" : "Ativar Empresa"}
             >
-              {isActive ? <ToggleRight className="w-6 h-6" /> : <ToggleLeft className="w-6 h-6" />}
+              {isActive ? (
+                <ToggleRight className="w-6 h-6" />
+              ) : (
+                <ToggleLeft className="w-6 h-6" />
+              )}
             </button>
           )}
-          <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
+          <button
+            onClick={onEdit}
+            className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger"
+            title="Editar"
+          >
             <Edit className="w-4 h-4" />
           </button>
           {!isMain && (
-            <button onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir">
+            <button
+              onClick={onDelete}
+              className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10"
+              title="Excluir"
+            >
               <Trash2 className="w-4 h-4" />
             </button>
           )}
