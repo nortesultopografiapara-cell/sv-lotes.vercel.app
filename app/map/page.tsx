@@ -307,6 +307,10 @@ export default function MapPage() {
     let targetCompanyId = user?.tenant_id;
     if (isMasterAdmin) {
       targetCompanyId = selectedCompanyId || null;
+      if (!targetCompanyId) {
+        alert("Por favor, selecione uma empresa para vincular ao projeto.");
+        return;
+      }
     }
 
     if (!targetCompanyId && !isMasterAdmin) {
