@@ -118,8 +118,7 @@ export default function SettingsPage() {
 
     setUploadingLogo(true);
     try {
-      const fileExt = file.name.split(".").pop();
-      const filePath = `logos/${finalTargetId}/logo_${Date.now()}.${fileExt}`;
+      const filePath = `logos/${finalTargetId}/logo.png`;
 
       const { data, error: uploadError } = await supabase
         .storage
@@ -144,7 +143,11 @@ export default function SettingsPage() {
         .eq("id", finalTargetId);
     } catch (err: any) {
       console.error("Upload error:", err);
-      alert("Erro ao fazer upload da logomarca: " + err.message);
+      if (err?.message?.includes("Bucket not found") || err?.message?.includes("bucket_not_found") || err?.message?.includes("not found")) {
+         alert("Atenção: O bucket 'company-logos' não foi encontrado. Certifique-se de que ele já foi criado publicamente no painel do Storage do Supabase.");
+      } else {
+         alert("Erro ao fazer upload da logomarca: " + err.message);
+      }
     } finally {
       setUploadingLogo(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
