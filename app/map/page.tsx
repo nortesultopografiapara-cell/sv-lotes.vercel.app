@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
+import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -313,104 +314,6 @@ export default function MapPage() {
       // Extract all polygon coordinates for checking externals
       const allPolys = geometries.filter(g => g.type === 'Polygon' && g.coordinates).map(g => g.coordinates[0]);
 
-      const getLotDimensions = (coords: number[][], geomProps: any) => {
-         if (!coords || coords.length < 4) return { frente: null, fundo: null, ladoD: null, ladoE: null };
-         
-         const FATOR_CORRECAO = 0.9984089101034208;
-
-         // Priorizar Metadados do KML (ExtendedData, description, etc)
-         const extractProp = (keys: string[]) => {
-             for (let key of keys) {
-                for (let prop in geomProps) {
-                   if (prop.toUpperCase().includes(key)) {
-                      const valStr = geomProps[prop];
-                      if (typeof valStr === 'string' || typeof valStr === 'number') {
-                         const match = String(valStr).replace(/\s/g, '').match(/^[\d.,]+/);
-                         if (match) {
-                             const val = parseFloat(match[0].replace(',', '.'));
-                             if (!isNaN(val) && val > 0) return val;
-                         }
-                      }
-                   }
-                }
-             }
-             return null;
-         };
-
-         const propFrente = extractProp(['FRENTE', 'FRONT']);
-         const propFundo = extractProp(['FUNDO', 'BACK']);
-         const propDir = extractProp(['DIR', 'DIREITA', 'LADO_DIR', 'LDIREITO', 'COMPR_DIR', 'COMPRIMENTO_DIR']);
-         const propEsq = extractProp(['ESQ', 'ESQUERDA', 'LADO_ESQ', 'LESQUERDO', 'COMPR_ESQ', 'MEDIDA_ESQ']);
-
-         if (propFrente || propFundo || propDir || propEsq) {
-             return {
-                 frente: propFrente || null,
-                 fundo: propFundo || null,
-                 ladoD: propDir || null,
-                 ladoE: propEsq || null
-             };
-         }
-
-         // Fallback: Geometria com Agrupamento por Azimute (para curvas) e Fator de Correção
-         const segments = [];
-         for (let i=0; i<coords.length-1; i++) {
-            const valDistanciaCalculada = haversineDist(coords[i], coords[i+1]);
-            const valDistanciaCorrigida = valDistanciaCalculada * FATOR_CORRECAO;
-            
-            const lat1 = coords[i][1] * Math.PI/180;
-            const lon1 = coords[i][0] * Math.PI/180;
-            const lat2 = coords[i+1][1] * Math.PI/180;
-            const lon2 = coords[i+1][0] * Math.PI/180;
-            const y = Math.sin(lon2-lon1) * Math.cos(lat2);
-            const x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1);
-            let brng = Math.atan2(y, x) * 180 / Math.PI;
-            brng = (brng + 360) % 360;
-            
-            segments.push({ p1: coords[i], p2: coords[i+1], length: valDistanciaCorrigida, isExt: true, idx: i, azimuth: brng });
-         }
-
-         for (let seg of segments) {
-            for (let other of allPolys) {
-               if (other === coords) continue;
-               let matched = false;
-               for (let j=0; j<other.length-1; j++) {
-                  const d1 = haversineDist(seg.p1, other[j]);
-                  const d2 = haversineDist(seg.p2, other[j+1]);
-                  const d3 = haversineDist(seg.p1, other[j+1]);
-                  const d4 = haversineDist(seg.p2, other[j]);
-                  if ((d1 < 1.0 && d2 < 1.0) || (d3 < 1.0 && d4 < 1.0)) {
-                     matched = true; break;
-                  }
-               }
-               if (matched) { seg.isExt = false; break; }
-            }
-         }
-
-         let extSides = segments.filter(s => s.isExt).sort((a,b) => a.length - b.length);
-         let frenteSeg = extSides[0] || [...segments].sort((a,b) => a.length - b.length)[0];
-         let baseAzimuth = frenteSeg.azimuth;
-
-         let buckets = [0, 0, 0, 0];
-         for (let s of segments) {
-             let diff = s.azimuth - baseAzimuth;
-             while(diff < 0) diff += 360;
-             if (diff >= 315 || diff < 45) { buckets[0] += s.length; } // Frente
-             else if (diff >= 45 && diff < 135) { buckets[1] += s.length; } // Lateral 1
-             else if (diff >= 135 && diff < 225) { buckets[2] += s.length; } // Fundo
-             else { buckets[3] += s.length; } // Lateral 2
-         }
-
-         let lD = buckets[1] > buckets[3] ? buckets[1] : buckets[3];
-         let lE = buckets[1] > buckets[3] ? buckets[3] : buckets[1];
-
-         return {
-             frente: parseFloat(buckets[0].toFixed(2)),
-             fundo: parseFloat(buckets[2].toFixed(2)),
-             ladoD: parseFloat(lD.toFixed(2)),
-             ladoE: parseFloat(lE.toFixed(2))
-         };
-      };
-
       // Preparar inserção na tabela blocks
       const PRICE_PER_M2 = 0.0993035247984734;
       let currentNumber = parseInt(importLoteInicial, 10) || 1;
@@ -426,7 +329,13 @@ export default function MapPage() {
                 const areaRealCorrigida = areaCalculada * 0.9952546259435014;
                 calcArea = areaRealCorrigida;
                 
-                dims = getLotDimensions(geom.coordinates[0], geom.properties || {});
+                const calculatedDims = calculateLotDimensions(geom.coordinates[0], allPolys, geom.properties || {});
+                dims = {
+                    frente: calculatedDims.frente as unknown as number,
+                    fundo: calculatedDims.fundo as unknown as number,
+                    ladoD: calculatedDims.ladoDireito as unknown as number,
+                    ladoE: calculatedDims.ladoEsquerdo as unknown as number
+                };
              } catch (e) {
                 console.error("Error calculating area:", e);
              }
