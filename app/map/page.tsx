@@ -574,21 +574,23 @@ export default function MapPage() {
         let fmx = frenteSeg!.mx;
         let fmy = frenteSeg!.my;
 
-        let inDirX = cx - fmx;
-        let inDirY = cy - fmy;
-        let inLen = Math.sqrt(inDirX * inDirX + inDirY * inDirY);
-        if (inLen === 0) {
-          inDirX = 0;
-          inDirY = 1;
-          inLen = 1;
+        // Centroid to front midpoint
+        let vxFront = fmx - cx;
+        let vyFront = fmy - cy;
+        let vLen = Math.sqrt(vxFront * vxFront + vyFront * vyFront);
+        if (vLen === 0) {
+          vxFront = 0;
+          vyFront = 1;
+          vLen = 1;
         }
-        inDirX /= inLen;
-        inDirY /= inLen;
+        vxFront /= vLen;
+        vyFront /= vLen;
 
-        let dirFrente = { x: -inDirX, y: -inDirY };
-        let dirFundo = { x: inDirX, y: inDirY };
-        let dirDir = { x: inDirY, y: -inDirX };
-        let dirEsq = { x: -inDirY, y: inDirX };
+        // Clockwise directions relative to Front vector
+        let dirFrente = { x: vxFront, y: vyFront };
+        let dirFundo = { x: -vxFront, y: -vyFront };
+        let dirDir = { x: vyFront, y: -vxFront }; // Right (looking at front, rotate +90 deg clockwise)
+        let dirEsq = { x: -vyFront, y: vxFront }; // Left
 
         let somaFrente = 0;
         let somaFundo = 0;
@@ -599,10 +601,10 @@ export default function MapPage() {
           let vx = s.mx - cx;
           let vy = s.my - cy;
 
-          let vLen = Math.sqrt(vx * vx + vy * vy);
-          if (vLen === 0) continue;
-          vx /= vLen;
-          vy /= vLen;
+          let sLen = Math.sqrt(vx * vx + vy * vy);
+          if (sLen === 0) continue;
+          vx /= sLen;
+          vy /= sLen;
 
           let dotFrente = vx * dirFrente.x + vy * dirFrente.y;
           let dotFundo = vx * dirFundo.x + vy * dirFundo.y;
