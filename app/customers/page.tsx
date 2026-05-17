@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X } from 'lucide-react';
+import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Trash2 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -119,6 +119,19 @@ export default function CustomersPage() {
     }
   };
 
+  const handleDeleteCustomer = async (id: string, name: string) => {
+    if (window.confirm(`Tem certeza que deseja excluir o cliente ${name || 'sem nome'}? Esta ação não poderá ser desfeita.`)) {
+      try {
+        const { error } = await supabase.from('customers').delete().eq('id', id);
+        if (error) throw error;
+        setCustomers(prev => prev.filter(c => c.id !== id));
+      } catch (err: any) {
+        console.error(err);
+        alert('Erro ao excluir cliente: ' + err.message);
+      }
+    }
+  };
+
   const filteredCustomers = customers.filter(c => 
      c.name?.toLowerCase().includes(search.toLowerCase()) || 
      c.email?.toLowerCase().includes(search.toLowerCase()) ||
@@ -169,12 +182,13 @@ export default function CustomersPage() {
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Contato</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Lotes (Quadra/Lote)</th>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-right">Data Inclusão</th>
+                <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                   <td colSpan={4} className="text-center p-8">
+                   <td colSpan={5} className="text-center p-8">
                       <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin mx-auto" />
                    </td>
                 </tr>
@@ -183,18 +197,20 @@ export default function CustomersPage() {
                   return (
                     <CustomerRow 
                       key={c.id}
+                      id={c.id}
                       name={c.name}
                       cpf_cnpj={c.cpf_cnpj}
                       email={c.email || '—'}
                       phone={c.phone || '—'}
                       blocks={(c.blocks || []).filter((b: any) => b.status && b.status !== 'Disponível')}
                       createdAt={new Date(c.created_at).toLocaleDateString()}
+                      onDelete={() => handleDeleteCustomer(c.id, c.name)}
                     />
                   );
                 })
               ) : (
                 <tr>
-                   <td colSpan={4} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
+                   <td colSpan={5} className="text-center p-8 text-[var(--color-text-muted)] text-sm">
                       Nenhum cliente cadastrado via nova tabela.
                    </td>
                 </tr>
@@ -252,7 +268,7 @@ export default function CustomersPage() {
   );
 }
 
-function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt }: any) {
+function CustomerRow({ id, name, cpf_cnpj, email, phone, blocks, createdAt, onDelete }: any) {
   return (
     <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group">
       <td className="p-4">
@@ -292,6 +308,15 @@ function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt }: any) {
       </td>
       <td className="p-4 text-right text-sm font-mono text-[var(--color-text-muted)]">
         {createdAt}
+      </td>
+      <td className="p-4 text-center">
+        <button 
+           onClick={onDelete}
+           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors inline-block"
+           title={`Excluir ${name}`}
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </td>
     </tr>
   );
