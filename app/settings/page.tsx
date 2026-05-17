@@ -149,8 +149,18 @@ export default function SettingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user || !user.id) {
+      console.error("Usuário não autenticado");
+      alert("Usuário não autenticado");
+      return;
+    }
+
     const targetId = tenantId || user?.tenant_id;
-    if (!user) return;
+
+    if (!targetId && !user.email) {
+       alert("Erro: ID da Empresa ou E-mail não encontrado na sessão.");
+       return;
+    }
 
     setSaving(true);
     setSuccess(false);
@@ -203,7 +213,7 @@ export default function SettingsPage() {
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
       console.error("Error saving company:", err);
-      alert("Erro ao salvar as configurações.");
+      alert("Erro ao salvar as configurações: " + err.message);
     } finally {
       setSaving(false);
     }
