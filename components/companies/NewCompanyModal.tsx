@@ -25,6 +25,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     active: initialData?.active !== undefined ? initialData.active : true,
+    plan_type: initialData?.plan_type || 'basic',
     password: ''
   });
 
@@ -49,6 +50,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             phone: formData.phone,
             email: formData.email,
             active: formData.active,
+            plan_type: formData.plan_type,
             default_password: formData.password ? formData.password : undefined,
             slug: slug
          }).eq('id', initialData.id);
@@ -95,6 +97,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            phone: formData.phone,
            email: formData.email,
            active: formData.active,
+           plan_type: formData.plan_type,
            slug: slug,
            default_password: formData.password
          }, { onConflict: 'cnpj' });
@@ -247,6 +250,19 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
               >
                 <option value="true">Ativo</option>
                 <option value="false">Inativo</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano (Limites)</label>
+              <select 
+                value={formData.plan_type}
+                onChange={(e) => setFormData({ ...formData, plan_type: e.target.value })}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
+              >
+                <option value="basic">Basic (Até 5 corretores)</option>
+                <option value="standard">Standard (Até 10 corretores)</option>
+                <option value="professional">Professional (Até 100 corretores)</option>
               </select>
             </div>
           </form>

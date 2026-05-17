@@ -221,6 +221,7 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
             <div className="font-bold text-sm text-white flex items-center gap-2">
               {company.name}
               {isMain && <span className="text-[9px] font-mono uppercase bg-[#06b6d4] text-white px-1.5 py-0.5 rounded-sm">Master</span>}
+               <span className="text-[9px] font-mono uppercase bg-gray-600 text-white px-1.5 py-0.5 rounded-sm">{company.plan_type || 'basic'}</span>
             </div>
             <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">slug: {company.slug}</div>
           </div>
