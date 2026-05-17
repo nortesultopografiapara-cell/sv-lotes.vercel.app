@@ -23,6 +23,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     razao_social: initialData?.razao_social || '',
     cnpj: initialData?.cnpj || '',
     email: initialData?.email || '',
+    phone: initialData?.phone || '',
     plan_type: initialData?.plan_type || 'basic',
     password: '',
     next_payment_date: initialData?.next_payment_date || ''
@@ -110,10 +111,12 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                razao_social: formData.razao_social,
                cnpj: formData.cnpj,
                email: formData.email,
+               phone: formData.phone,
                plan_type: formData.plan_type,
                slug: slug,
                default_password: formData.password,
-               next_payment_date: formData.next_payment_date || null
+               next_payment_date: formData.next_payment_date || null,
+               active: true
             });
 
             if (insertCompanyError) {
@@ -140,6 +143,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                razao_social: formData.razao_social,
                cnpj: formData.cnpj,
                email: formData.email,
+               phone: formData.phone,
                plan_type: formData.plan_type,
                default_password: formData.password ? formData.password : undefined,
                slug: slug,
@@ -233,12 +237,24 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Acesso (Admin)</label>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Acesso (Admin) *</label>
               <input 
                 type="email" 
+                required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder="contato@empresa.com.br"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Telefone</label>
+              <input 
+                type="text" 
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="(00) 00000-0000"
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
             </div>

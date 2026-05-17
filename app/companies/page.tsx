@@ -27,7 +27,7 @@ export default function CompaniesPage() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, name, slug, cnpj, email, plan_type, created_at, active, next_payment_date')
+        .select('id, name, slug, cnpj, email, phone, plan_type, created_at, active, next_payment_date')
         .order('created_at', { ascending: false });
         
       if (error) {
