@@ -56,9 +56,9 @@ export async function POST(req: Request) {
     
     // Calcular limites do plano
     const planLimits = {
-        'Básico': { broker_limit: 5, project_limit: 2, admin_limit: 1 },
+        'Básico': { broker_limit: 5, project_limit: 1, admin_limit: 1 },
         'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
-        'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 9999 }
+        'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 10 }
     };
     const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
 
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
         name,
         slug,
         cnpj,
-        plan,
+        module_plan: plan,
         active: true,
         ...limits
       })
