@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
     const { error: userError } = await supabaseAdmin
       .from('users')
-      .insert({
+      .upsert({
         id: authUserId,
         tenant_id: tenantId,
         full_name: fullName,
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
         status: 'ACTIVE',
         phone: phone,
         force_password_change: true
-      });
+      }, { onConflict: 'id' });
 
     if (userError) {
       throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);

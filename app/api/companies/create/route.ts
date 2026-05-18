@@ -130,7 +130,7 @@ export async function POST(req: Request) {
 
     const { error: userError } = await supabaseAdmin
       .from('users')
-      .insert({
+      .upsert({
         id: authUserId,
         tenant_id: newCompanyId,
         full_name: adminName,
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
         status: 'ACTIVE',
         phone: adminPhone,
         force_password_change: true
-      });
+      }, { onConflict: 'id' });
 
     if (userError) {
       console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message, userError.code, userError);
