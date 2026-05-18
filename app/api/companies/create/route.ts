@@ -28,17 +28,29 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, cnpj, phone, email, plan, adminName, adminEmail, adminPhone, sendEmail } = body;
 
-    // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
-    const password = body.password || generateTempPassword(8);
-    console.log(`[ETAPA 1] Verificando e criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+    // 0. Pre-validar se o CNPJ, Slug ou Email já existem na tabela public.companies ou public.users
+    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
+    
+    const [ { data: existingUser }, { data: existingCnpj } ] = await Promise.all([
+       supabaseAdmin.from('users').select('id').eq('email', adminEmail).maybeSingle(),
+       supabaseAdmin.from('companies').select('id').eq('cnpj', cnpj).maybeSingle()
+    ]);
 
-    // Verificar se já existe usuário no public.users
-    const { data: existingUser } = await supabaseAdmin.from('users').select('id').eq('email', adminEmail).maybeSingle();
     if (existingUser) {
        console.log('[ERRO] Usuário já existe na tabela public.users.');
        throw new Error('Este e-mail já possui cadastro no sistema.');
     }
-    
+
+    if (existingCnpj) {
+       console.log('[ERRO] CNPJ já cadastrado na public.companies.');
+       throw new Error('Falha ao criar empresa: CNPJ já possui cadastro no sistema.');
+    }
+
+    // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
+    const password = body.password || generateTempPassword(8);
+    console.log(`[ETAPA 1] Verificando e criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+
+    // Verificar iterativamente se o usuário existe no AUTH? O createUser já faz isso e retorna 'already registered'.
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: adminEmail,
       password: password,
@@ -62,7 +74,6 @@ export async function POST(req: Request) {
 
     // 2. Create the tenant in public.companies
     console.log(`[ETAPA 2] Criando tenant na tabela public.companies... Nome: ${name}`);
-    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
     
     // Calcular limites do plano
     const planLimits = {

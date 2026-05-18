@@ -24,31 +24,51 @@ export async function POST(req: Request) {
         page++;
     }
 
-    // 2. Get all public.users
-    const { data: publicUsers } = await supabaseAdmin.from('users').select('id');
-    const publicUserIds = publicUsers?.map(u => u.id) || [];
+    // 2. Get all companies
+    const { data: companies } = await supabaseAdmin.from('companies').select('id');
+    const companyIds = new Set(companies?.map(c => c.id) || []);
 
-    // 3. Find orphaned auth users (not in public.users)
+    // 3. Get all public.users
+    const { data: publicUsers } = await supabaseAdmin.from('users').select('id, email, tenant_id');
+    const publicUserMap = new Map(publicUsers?.map(u => [u.id, u]) || []);
+
     let cleanedStats = {
       orphanedAuthUsers: 0,
+      invalidPublicUsers: 0,
       emptyCompanies: 0
     };
 
-    for (const au of authUsersList) {
-        // preserve the true master email just in case
-        if (au.email.toLowerCase().includes('nortesul')) continue;
+    // 4. Limpar public.users sem tenant válido (incompletos)
+    for (const pu of publicUsers || []) {
+        if (pu.email?.toLowerCase().includes('nortesul') || pu.email?.toLowerCase().includes('admin')) {
+             // Protect master, assume no tenant_id is fine for master
+             continue; 
+        }
 
-        if (!publicUserIds.includes(au.id)) {
+        if (!pu.tenant_id || !companyIds.has(pu.tenant_id)) {
+            console.log(`[CLEANUP] Removendo registro público órfão (sem tenant real): ${pu.email}`);
+            await supabaseAdmin.from('users').delete().eq('id', pu.id);
+            cleanedStats.invalidPublicUsers++;
+        }
+    }
+
+    // Refresh public.users mapping after deletions
+    const { data: refreshedPublicUsers } = await supabaseAdmin.from('users').select('id');
+    const validPublicUserIds = new Set(refreshedPublicUsers?.map(u => u.id) || []);
+
+    // 5. Limpar Auth users sem correspondente no public.users (or that were just deleted)
+    for (const au of authUsersList) {
+        if (au.email?.toLowerCase().includes('nortesul') || au.email?.toLowerCase().includes('admin')) continue;
+
+        if (!validPublicUserIds.has(au.id)) {
             console.log(`[CLEANUP] Removendo usuário órfão do Auth: ${au.email}`);
             await supabaseAdmin.auth.admin.deleteUser(au.id);
             cleanedStats.orphanedAuthUsers++;
         }
     }
 
-    // 4. Delete companies that have no users tied to them
-    const { data: companies } = await supabaseAdmin.from('companies').select('id');
+    // 6. Delete companies that have no users tied to them
     const { data: usersWithTenants } = await supabaseAdmin.from('users').select('tenant_id');
-    
     const usedTenantIds = new Set(usersWithTenants?.map(u => u.tenant_id).filter(Boolean));
 
     if (companies) {
