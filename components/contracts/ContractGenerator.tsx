@@ -37,7 +37,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                    <title>Contrato de Compra e Venda</title>
                    <style>
                        body { font-family: Arial, sans-serif; padding: 40px; color: #000; line-height: 1.5; }
-                       h1 { text-align: center; font-size: 18px; margin-bottom: 20px; }
+                       h1 { text-align: center; font-size: 18px; margin-bottom: 20px; text-decoration: underline; }
                        h2 { font-size: 14px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
                        p { font-size: 12px; margin-bottom: 10px; text-align: justify; }
                        .header { text-align: center; margin-bottom: 20px; }
@@ -86,7 +86,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                         }),
                         new Paragraph({ text: "" }),
                         new Paragraph({ text: "VENDEDOR", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: `Razão Social: ${company?.razao_social || company?.name || 'Não informado'}` }),
+                        new Paragraph({ text: `Razão Social: ${company?.razao_social || company?.fantasy_name || company?.name || 'Não informado'}` }),
                         new Paragraph({ text: `CNPJ: ${company?.cnpj || 'Não informado'}` }),
                         new Paragraph({ text: `Endereço: ${company?.address || ''}, ${company?.city || ''} - ${company?.state || ''}, CEP: ${company?.zip_code || ''}` }),
                         new Paragraph({ text: "" }),
@@ -126,27 +126,27 @@ export function ContractGenerator({ sale }: { sale: any }) {
        saveAs(blob, `Contrato_${sale.clients?.full_name || 'Venda'}.docx`);
    };
 
-   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>;
+   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" /></div>;
 
    return (
-       <div className="flex flex-col h-full">
-           <div className="p-4 border-b border-gray-200 bg-white flex items-center justify-between shadow-sm">
-               <h3 className="font-bold text-gray-800">Visualização de Contrato</h3>
+       <div className="flex flex-col h-full bg-[var(--color-background)]">
+           <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-between shadow-sm">
+               <h3 className="font-bold text-white">Visualização de Contrato</h3>
                <div className="flex items-center gap-2">
-                   <button onClick={handlePrint} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                   <button onClick={handlePrint} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)] text-white text-sm font-medium rounded-lg transition-colors border border-[var(--color-border)]">
                        <Printer className="w-4 h-4" /> Imprimir
                    </button>
-                   <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-sm font-medium rounded-lg transition-colors">
+                   <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 text-sm font-medium rounded-lg transition-colors">
                        <FileDown className="w-4 h-4" /> PDF
                    </button>
-                   <button onClick={handleDownloadDocx} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                   <button onClick={handleDownloadDocx} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[#8b5cf6] text-white text-sm font-medium rounded-lg transition-colors">
                        <Download className="w-4 h-4" /> DOCX
                    </button>
                </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-gray-100">
-               <div className="bg-white shadow-lg border border-gray-200 p-12 max-w-3xl w-full text-black font-serif text-sm leading-relaxed" ref={printRef} style={{ minHeight: '1056px' }}>
+           <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center bg-[var(--color-background)]">
+               <div className="bg-white shadow-2xl border border-gray-200 p-8 md:p-12 max-w-3xl w-full text-black font-serif text-sm leading-relaxed" ref={printRef} style={{ minHeight: '1056px' }}>
                    
                    <div className="text-center mb-8">
                        {company?.logo_url && <img src={company.logo_url} alt="Logo da Empresa" className="h-16 object-contain mx-auto mb-4" />}
@@ -155,10 +155,10 @@ export function ContractGenerator({ sale }: { sale: any }) {
 
                    <h2 className="font-bold border-b border-black pb-1 mb-3 uppercase text-xs mt-6">1. Dos Contratantes</h2>
                    <p className="mb-2 text-justify">
-                       <strong>VENDEDOR(A):</strong> {company?.razao_social || company?.name || '__________'}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº {company?.cnpj || '__________'}, com sede na {company?.address || '__________'}, CEP: {company?.zip_code || '__________'}, na cidade de {company?.city || '__________'} - {company?.state || '___'}, neste ato representado por seu responsável legal {company?.responsible_name || '__________'} (CPF: {company?.responsible_cpf || '__________'}).
+                       <strong>VENDEDOR(A):</strong> {company?.razao_social || company?.fantasy_name || company?.name || '__________'}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº {company?.cnpj || '__________'}, com sede na {company?.address || '__________'}, CEP: {company?.zip_code || '__________'}, na cidade de {company?.city || '__________'} - {company?.state || '___'}, neste ato representado por seu responsável legal {company?.legal_representative || company?.responsible_name || '__________'} (CPF: {company?.representative_cpf || company?.responsible_cpf || '__________'}).
                    </p>
                    <p className="mb-2 text-justify">
-                       <strong>COMPRADOR(A):</strong> {sale.clients?.full_name}, inscrito(a) no CPF/CNPJ sob o nº {sale.clients?.cpf_cnpj || '__________'}, MG/RG nº {sale.clients?.rg || '__________'}, profissão: {sale.clients?.profession || '__________'}, estado civil: {sale.clients?.marital_status || '__________'}, residente e domiciliado(a) na {sale.clients?.address || '__________'}, telefone {sale.clients?.phone || '__________'}, e-mail {sale.clients?.email || '__________'}.
+                       <strong>COMPRADOR(A):</strong> {sale.clients?.full_name}, inscrito(a) no CPF/CNPJ sob o nº {sale.clients?.cpf_cnpj || '__________'}, RG nº {sale.clients?.rg || '__________'}, profissão: {sale.clients?.profession || '__________'}, estado civil: {sale.clients?.marital_status || '__________'}, residente e domiciliado(a) na {sale.clients?.address || '__________'}, telefone {sale.clients?.phone || '__________'}, e-mail {sale.clients?.email || '__________'}.
                    </p>
 
                    <h2 className="font-bold border-b border-black pb-1 mb-3 uppercase text-xs mt-6">2. Do Imóvel (Objeto do Contrato)</h2>
@@ -184,7 +184,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                        Esta venda e compra é pactuada em caráter irrevogável e irretratável. As partes elegem o foro da Comarca do imóvel para dirimir quaisquer dúvidas oriundas deste contrato.
                    </p>
                    <p className="mb-12 text-center text-sm">
-                       {company?.city || 'Localidade'}, {new Date(sale.created_at || Date.now()).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}.
+                       {company?.city || 'Localidade'}, {sale.created_at ? new Date(sale.created_at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) : '___/___/____'}.
                    </p>
 
                    <div className="grid grid-cols-2 gap-8 mt-16 px-8 text-center text-sm">
@@ -194,7 +194,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                            ) : (
                                <div className="h-16 border-b border-black mx-4 mb-2"></div>
                            )}
-                           <p className="font-bold">{company?.razao_social || company?.name || 'VENDEDOR'}</p>
+                           <p className="font-bold">{company?.razao_social || company?.fantasy_name || company?.name || 'VENDEDOR'}</p>
                            <p className="text-xs">CNPJ: {company?.cnpj}</p>
                        </div>
                        <div>

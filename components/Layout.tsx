@@ -43,7 +43,6 @@ const getMenuItems = (role: string) => {
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
-      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
     ];
   }
 
@@ -65,17 +64,19 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<any>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
-  
+
   useEffect(() => {
     async function fetchCompany() {
       if (user?.tenant_id) {
-        const { data } = await supabase.from('companies').select('logo_url, name').eq('id', user.tenant_id).single();
+        const { data } = await supabase.from('companies').select('logo_url, name, fantasy_name').eq('id', user.tenant_id).single();
         if (data) setCompany(data);
       }
     }
     if (user) fetchCompany();
   }, [user]);
-
+  
+  // Guard checks are moved to useSessionGuard and Middleware
+  
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
@@ -119,7 +120,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               ) : (
                   <>
                     <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-lg tracking-wide text-white">{company?.name || 'SV_LOTES'}</span>
+                    <span className="font-sans font-bold text-lg tracking-wide text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
                   </>
               )}
             </div>
@@ -145,7 +146,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               ) : (
                   <>
                     <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wider text-white">{company?.name || 'SV_LOTES'}</span>
+                    <span className="font-sans font-bold text-xl tracking-wider text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
                   </>
               )}
           </div>
@@ -185,7 +186,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               ) : (
                   <>
                     <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wide text-white">{company?.name || 'SV_LOTES'}</span>
+                    <span className="font-sans font-bold text-xl tracking-wide text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
                   </>
               )}
           </div>
