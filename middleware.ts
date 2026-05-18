@@ -35,7 +35,7 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
 
   // 1. PUBLIC ROUTES
-  const publicRoutes = ['/login', '/auth/callback', '/verify-email'];
+  const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup'];
   const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
 
   // EMERGENCY BYPASS FOR MASTER ADMIN

@@ -1,12 +1,14 @@
 'use client';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Download, Printer, FileDown } from 'lucide-react';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+
+
 
 export function ContractGenerator({ sale }: { sale: any }) {
    const [company, setCompany] = useState<any>(null);
@@ -44,7 +46,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
        if (!printWindow) return;
        
        printWindow.document.write(`
-           <html>
+           <div id="pdf-html">
                <head>
                    <title>Contrato de Compra e Venda</title>
                    <style>
@@ -65,7 +67,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                        window.onload = () => { window.print(); window.close(); }
                    </script>
                </body>
-           </html>
+           </div>
        `);
        printWindow.document.close();
    };
@@ -87,7 +89,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
    };
 
    const handleDownloadDocx = async () => {
-       const doc = new Document({
+       const doc = new (Object as any)({
             sections: [
                 {
                     children: [

@@ -52,8 +52,7 @@ export default function SettingsPage() {
           return null;
       }
       
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${type}-${Date.now()}.${fileExt}`;
+      const fileName = `${type}-${Date.now()}.png`;
       const filePath = `${user.tenant_id}/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
@@ -66,8 +65,8 @@ export default function SettingsPage() {
           return null;
       }
       
-      const publicUrl = `/api/assets?path=${encodeURIComponent(filePath)}`;
-      return publicUrl;
+      const { data } = supabase.storage.from('company-assets').getPublicUrl(filePath);
+      return data.publicUrl;
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,7 +98,6 @@ export default function SettingsPage() {
         .from('companies')
         .update({
            fantasy_name: company.fantasy_name,
-           cnpj: company.cnpj,
            phone: company.phone,
            email: company.email,
            address: company.address,

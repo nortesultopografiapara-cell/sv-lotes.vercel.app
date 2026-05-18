@@ -6,8 +6,8 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { FileText, Plus, Loader2, ArrowLeft, Save, Trash2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
-import 'react-quill/dist/quill.snow.css';
+// const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+// import 'react-quill/dist/quill.snow.css';
 
 const DEFAULT_CONTENT = `
 <div style="text-align: center; margin-bottom: 32px;">
@@ -176,22 +176,7 @@ export default function TemplatesPage() {
               <div className="flex-1 w-full flex overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-8 flex justify-center">
                       <div className="w-full max-w-[800px] bg-white text-black min-h-[1056px] shadow-2xl p-8" style={{fontFamily: 'Arial, sans-serif'}}>
-                          <ReactQuill 
-                              theme="snow"
-                              value={editContent} 
-                              onChange={setEditContent} 
-                              className="h-full border-none [&_.ql-container]:border-none [&_.ql-toolbar]:border-none [&_.ql-toolbar]:bg-gray-100 [&_.ql-toolbar]:rounded-t-lg"
-                              style={{ height: 'calc(100% - 42px)' }}
-                              modules={{
-                                  toolbar: [
-                                      [{ 'header': [1, 2, 3, false] }],
-                                      ['bold', 'italic', 'underline'],
-                                      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                                      [{ 'align': [] }],
-                                      ['clean']
-                                  ],
-                              }}
-                          />
+                          <div>Quill Removed</div>
                       </div>
                   </div>
 
