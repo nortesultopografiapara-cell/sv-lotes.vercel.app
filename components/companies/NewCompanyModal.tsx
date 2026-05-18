@@ -47,6 +47,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
 
       if (initialData) {
+         // ... existing update logic ...
          const { error: updateError } = await supabase.from('companies').update({
             name: formData.name,
             cnpj: formData.cnpj,
@@ -59,67 +60,36 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             ...limits
          }).eq('id', initialData.id);
          
-         if (updateError) throw updateError;
-         
-         // Note: Updating auth email/password from client side typically requires admin privileges
-         // or the user themselves. We only update the companies table here.
+         if (updateError) {
+             if (updateError.message.includes('unique')) throw new Error('E-mail ou CNPJ já cadastrado.');
+             throw new Error(updateError.message);
+         }
       } else {
-         if (!formData.email || !formData.password) {
-            throw new Error('E-mail e senha são obrigatórios para novos cadastros.');
+         if (!formData.email) {
+            throw new Error('E-mail é obrigatório para novos cadastros.');
          }
 
-         let existingCompany = null;
-         if (formData.cnpj && formData.cnpj.trim() !== '') {
-            const { data } = await supabase.from('companies').select('id').eq('cnpj', formData.cnpj).maybeSingle();
-            if (data) existingCompany = data;
-         }
-
-         // Fallback check by slug to prevent unique constraint errors
-         if (!existingCompany) {
-            const { data } = await supabase.from('companies').select('id').eq('slug', slug).maybeSingle();
-            if (data) existingCompany = data;
-         }
-
-         const finalTenantId = existingCompany ? existingCompany.id : crypto.randomUUID();
-
-         const { data: newUserId, error: rpcError } = await supabase.rpc('handle_create_tenant_user', { 
-             user_email: formData.email, 
-             user_password: formData.password,
-             tenant_id: finalTenantId
+         const response = await fetch('/api/companies/create', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+                 name: formData.name,
+                 cnpj: formData.cnpj,
+                 phone: formData.phone,
+                 email: formData.email,
+                 active: formData.active,
+                 plan: formData.plan,
+                 password: formData.password,
+                 adminName: `Admin - ${formData.name}`,
+                 adminEmail: formData.email,
+                 adminPhone: formData.phone
+             })
          });
-
-         if (rpcError) throw rpcError;
-
-         if (!newUserId) throw new Error('Não foi possível criar o usuário de autenticação via RPC.');
-
-         const { error: upsertError } = await supabase.from('companies').upsert({
-           id: finalTenantId,
-           name: formData.name,
-           cnpj: formData.cnpj,
-           phone: formData.phone,
-           email: formData.email,
-           active: formData.active,
-           slug: slug,
-           default_password: formData.password,
-           plan: formData.plan,
-           ...limits
-         }, { onConflict: 'cnpj' });
-
-         if (upsertError) {
-             throw upsertError;
+         
+         const result = await response.json();
+         if (!response.ok || result.error) {
+             throw new Error(result.error || 'Erro ao cadastrar empresa.');
          }
-
-         const { error: userInsertError } = await supabase.from('users').upsert({
-            id: newUserId,
-            tenant_id: finalTenantId,
-            email: formData.email,
-            full_name: `Admin - ${formData.name}`,
-            role: 'ADMIN',
-            status: formData.active ? 'ACTIVE' : 'INACTIVE',
-            phone: formData.phone
-         }, { onConflict: 'id' });
-
-         if (userInsertError) throw userInsertError;
       }
 
       if (onSuccess) onSuccess();

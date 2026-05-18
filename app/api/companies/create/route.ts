@@ -29,20 +29,22 @@ export async function POST(req: Request) {
     const { name, cnpj, phone, email, plan, adminName, adminEmail, adminPhone, sendEmail } = body;
 
     // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
+    const password = body.password || generateTempPassword(8);
     console.log(`[ETAPA 1] Criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
     
-    // Tenta criar o usuário por Convite, onde o próprio Supabase cuida de enviar o Email de Confirmação/Setup de Senha
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(adminEmail, {
-      data: {
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: adminEmail,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
         full_name: adminName,
-        role: 'ADMIN' // tenant_id will be set later
-      },
-      redirectTo: process.env.NEXT_PUBLIC_SITE_URL ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback` : undefined
+        role: 'ADMIN'
+      }
     });
 
     if (authError) {
       console.error('[ERRO] Falha ao criar usuário na auth.users:', authError.message);
-      throw new Error(`O email ${adminEmail} já está em uso ou ocorreu um erro: ${authError.message}`);
+      throw new Error(`E-mail já está em uso ou inválido (${authError.message})`);
     }
 
     authUserId = authUser.user.id;
@@ -52,6 +54,14 @@ export async function POST(req: Request) {
     console.log(`[ETAPA 2] Criando tenant na tabela public.companies... Nome: ${name}`);
     const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
     
+    // Calcular limites do plano
+    const planLimits = {
+        'Básico': { broker_limit: 5, project_limit: 2, admin_limit: 1 },
+        'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
+        'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 9999 }
+    };
+    const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
+
     const { data: newCompany, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert({
@@ -59,7 +69,8 @@ export async function POST(req: Request) {
         slug,
         cnpj,
         plan,
-        active: true
+        active: true,
+        ...limits
       })
       .select()
       .single();
