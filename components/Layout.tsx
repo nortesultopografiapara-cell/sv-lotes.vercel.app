@@ -43,6 +43,7 @@ const getMenuItems = (role: string) => {
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
+      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
     ];
   }
 
@@ -61,11 +62,20 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [company, setCompany] = useState<any>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
   
-  // Guard checks are moved to useSessionGuard and Middleware
-  
+  useEffect(() => {
+    async function fetchCompany() {
+      if (user?.tenant_id) {
+        const { data } = await supabase.from('companies').select('logo_url, name').eq('id', user.tenant_id).single();
+        if (data) setCompany(data);
+      }
+    }
+    if (user) fetchCompany();
+  }, [user]);
+
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
@@ -104,8 +114,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <Menu className="w-6 h-6" />
             </button>
             <div className="flex items-center gap-2">
-              <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-              <span className="font-sans font-bold text-lg tracking-wide text-white">SV_LOTES</span>
+              {company?.logo_url ? (
+                  <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
+              ) : (
+                  <>
+                    <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
+                    <span className="font-sans font-bold text-lg tracking-wide text-white">{company?.name || 'SV_LOTES'}</span>
+                  </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -124,8 +140,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {!isMobile && (
         <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
           <div className="h-20 flex items-center px-6 gap-3">
-            <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
-            <span className="font-sans font-bold text-xl tracking-wider text-white">SV_LOTES</span>
+             {company?.logo_url ? (
+                  <img src={company.logo_url} alt="Logo" className="max-h-12 w-full object-contain object-left" />
+              ) : (
+                  <>
+                    <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
+                    <span className="font-sans font-bold text-xl tracking-wider text-white">{company?.name || 'SV_LOTES'}</span>
+                  </>
+              )}
           </div>
 
           <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-2">
@@ -158,8 +180,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           }`}
         >
           <div className="h-16 flex items-center px-6 border-b border-[var(--color-border)] gap-2">
-            <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-            <span className="font-sans font-bold text-xl tracking-wide text-white">SV_LOTES</span>
+              {company?.logo_url ? (
+                  <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
+              ) : (
+                  <>
+                    <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
+                    <span className="font-sans font-bold text-xl tracking-wide text-white">{company?.name || 'SV_LOTES'}</span>
+                  </>
+              )}
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
             {menuItems.map((item) => {
