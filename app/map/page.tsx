@@ -302,8 +302,20 @@ export default function MapPage() {
        }
 
        if (updates.length > 0) {
-           const { error: upsertError } = await supabase.from('blocks').upsert(updates);
-           if (upsertError) throw upsertError;
+           const updatePromises = updates.map(updateObj => {
+              const { id, ...fieldsToUpdate } = updateObj;
+              return supabase.from('blocks').update({
+                  ...fieldsToUpdate,
+                  updated_at: new Date().toISOString()
+              }).eq('id', id);
+           });
+           
+           const results = await Promise.all(updatePromises);
+           const errors = results.filter(r => r.error).map(r => r.error);
+           if (errors.length > 0) {
+               console.error("Updates errors:", errors);
+               throw new Error("Falha ao atualizar alguns lotes. " + (errors[0]?.message || "Erro desconhecido."));
+           }
        }
 
        alert(`Frentes identificadas e recalculadas para ${updates.length} lotes!`);
@@ -544,7 +556,7 @@ export default function MapPage() {
     try {
         let validTenantId = selectedProject.tenant_id;
         if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
-           validTenantId = selectedProject.company_id || null;
+           validTenantId = selectedProject.company_id || user?.tenant_id || null;
         }
 
         const newGuideName = `Rua/Eixo ${streetGuides.length + 1}`;
@@ -560,7 +572,7 @@ export default function MapPage() {
         console.log('saving street guide', {
             tenant_id: validTenantId,
             project_id: selectedProject.id,
-            user: user?.id,
+            user: user, // changed to user instead of user?.id
             role: user?.role,
             geometry_geojson: geojson
         });
