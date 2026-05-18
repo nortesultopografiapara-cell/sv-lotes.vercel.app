@@ -66,8 +66,8 @@ export default function SettingsPage() {
           return null;
       }
       
-      const { data } = supabase.storage.from('company-assets').getPublicUrl(filePath);
-      return data.publicUrl;
+      const publicUrl = `/api/assets?path=${encodeURIComponent(filePath)}`;
+      return publicUrl;
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,9 +98,7 @@ export default function SettingsPage() {
      const { error } = await supabase
         .from('companies')
         .update({
-           name: company.name,
            fantasy_name: company.fantasy_name,
-           razao_social: company.razao_social || company.fantasy_name,
            cnpj: company.cnpj,
            phone: company.phone,
            email: company.email,
@@ -218,10 +216,6 @@ export default function SettingsPage() {
               <div>
                  <label className="block text-xs font-semibold text-gray-400 mb-1">Nome Fantasia *</label>
                  <input type="text" required name="fantasy_name" value={company?.fantasy_name || company?.name || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
-              </div>
-              <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Razão Social</label>
-                 <input type="text" name="razao_social" value={company?.razao_social || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
                  <label className="block text-xs font-semibold text-gray-400 mb-1">CNPJ</label>

@@ -35,7 +35,7 @@ const getMenuItems = (role: string) => {
     ];
   }
 
-  if (role === 'ADMIN' || role === 'COMPANY_ADMIN') {
+  if (['ADMIN', 'COMPANY_ADMIN', 'ADMIN_EMPRESA', 'MASTER-ADMIN'].includes(role)) {
     return [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
@@ -43,6 +43,7 @@ const getMenuItems = (role: string) => {
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
+      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
     ];
   }
 
