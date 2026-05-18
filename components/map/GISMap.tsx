@@ -409,19 +409,76 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
   );
 }
 
-export default function GISMap({ 
+function DrawStreetInteraction({ 
+  active, 
+  onSaveLine
+}: { 
+  active: boolean, 
+  onSaveLine: (line: L.LatLng[]) => void
+}) {
+  const [points, setPoints] = useState<L.LatLng[]>([]);
+  const map = useMapEvents({
+      click(e) {
+          if (!active) return;
+          setPoints((prev) => {
+              const next = [...prev, e.latlng];
+              if (next.length === 2) {
+                  onSaveLine(next);
+                  return [];
+              }
+              return next;
+          });
+      }
+  });
 
+  useEffect(() => {
+     // eslint-disable-next-line react-hooks/set-state-in-effect
+     if (!active) setPoints([]);
+     if (active) {
+         map.getContainer().style.cursor = 'crosshair';
+     } else {
+         map.getContainer().style.cursor = '';
+     }
+  }, [active, map]);
+
+  if (!active || points.length === 0) return null;
+
+  return (
+     <>
+        {points.map((p, idx) => (
+           <CircleMarker 
+              key={`dp-${idx}`} 
+              center={[p.lat, p.lng]} 
+              radius={5}
+              pathOptions={{ color: '#10b981', fillColor: 'white', fillOpacity: 1, weight: 2 }} 
+           />
+        ))}
+     </>
+  );
+}
+
+export default function GISMap({ 
   projectId, 
   activeLayer = 'satellite',
   gpsActive = false,
   measureActive = false,
-  refreshKey = 0
+  refreshKey = 0,
+  streetGuides = [],
+  streetGuidesVisible = true,
+  drawStreetActive = false,
+  onSaveStreetGuide,
+  onDeleteStreetGuide
 }: { 
   projectId?: string,
   activeLayer?: 'streets'|'satellite'|'dark',
   gpsActive?: boolean,
   measureActive?: boolean,
-  refreshKey?: number
+  refreshKey?: number,
+  streetGuides?: any[],
+  streetGuidesVisible?: boolean,
+  drawStreetActive?: boolean,
+  onSaveStreetGuide?: (latlngs: L.LatLng[]) => void,
+  onDeleteStreetGuide?: (id: string) => void
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -751,6 +808,31 @@ export default function GISMap({
            </Polygon>
         )})}
 
+        {streetGuidesVisible && streetGuides.map(guide => {
+            if (!guide.geometry_geojson || !guide.geometry_geojson.coordinates) return null;
+            const pts = guide.geometry_geojson.coordinates.map((c: any[]) => [c[1], c[0]]); // GeoJSON is [lng, lat], Leaflet is [lat, lng]
+            return (
+               <Polyline 
+                 key={`guide-${guide.id}`} 
+                 positions={pts}
+                 pathOptions={{ color: '#10b981', weight: 4, dashArray: '10, 10' }}
+               >
+                 <Tooltip direction="top" sticky>Linha-Guia: {guide.name}</Tooltip>
+                 <Popup>
+                    <div className="p-2 space-y-2 font-sans font-medium">
+                       <p className="text-gray-900 mb-2"><strong>Linha de Rua</strong></p>
+                       <p className="text-sm text-gray-700">{guide.name}</p>
+                       {onDeleteStreetGuide && (
+                          <button onClick={() => onDeleteStreetGuide(guide.id)} className="w-full flex items-center justify-center gap-2 p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs transition-colors">
+                             <Trash2 className="w-4 h-4" /> Apagar Linha
+                          </button>
+                       )}
+                    </div>
+                 </Popup>
+               </Polyline>
+            );
+        })}
+
         <MeasureInteraction 
            active={measureActive} 
            points={measurePoints} 
@@ -758,6 +840,13 @@ export default function GISMap({
            closed={measureClosed} 
            setClosed={setMeasureClosed} 
            setStr={setMeasureStr} 
+        />
+
+        <DrawStreetInteraction 
+           active={drawStreetActive}
+           onSaveLine={(line) => {
+              if (onSaveStreetGuide) onSaveStreetGuide(line);
+           }}
         />
 
       </MapContainer>

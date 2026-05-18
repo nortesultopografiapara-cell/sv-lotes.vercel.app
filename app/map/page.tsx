@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -179,6 +179,141 @@ export default function MapPage() {
   const [creatingProject, setCreatingProject] = useState(false);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+
+  // Street Guides States
+  const [streetGuides, setStreetGuides] = useState<any[]>([]);
+  const [drawStreetActive, setDrawStreetActive] = useState(false);
+  const [streetGuidesVisible, setStreetGuidesVisible] = useState(true);
+
+  const loadStreetGuides = useCallback(async () => {
+    if (!selectedProject) return;
+    try {
+      const { data, error } = await supabase.from('street_guides').select('*').eq('project_id', selectedProject.id);
+      if (error && error.code !== 'PGRST205') console.warn('Error loading street guides:', error);
+      if (data) setStreetGuides(data);
+    } catch (e) {}
+  }, [selectedProject]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (selectedProject) loadStreetGuides();
+  }, [selectedProject, loadStreetGuides]);
+
+  const handleIdentifyFronts = async () => {
+    if (!selectedProject || streetGuides.length === 0) {
+       alert("Desenhe ao menos uma linha de rua para identificar as frentes.");
+       return;
+    }
+    const visibleGuides = streetGuides.filter(g => g.visible);
+    if (visibleGuides.length === 0) {
+       alert("Habilite a visibilidade das linhas de rua para utilizá-las.");
+       return;
+    }
+
+    try {
+       // Only dynamically import turf logic to avoid SSR issues if necessary or just await import
+       const turfHelpers = await import('@turf/helpers');
+       const turfNearestOnLine = await import('@turf/nearest-point-on-line');
+       const turfDistance = await import('@turf/distance');
+       const { extractSegments, detectSides, normalizeDimensions } = await import('@/utils/calculateLotDimensions');
+
+       // 1. Load all blocks from this project
+       const { data: blocks, error } = await supabase.from('blocks').select('*').eq('project_id', selectedProject.id);
+       if (error) throw error;
+       if (!blocks || blocks.length === 0) return;
+
+       // 2. Prepare guide lines
+       const guideLines = visibleGuides.map(g => turfHelpers.lineString(g.geometry_geojson.coordinates));
+
+       const updates = [];
+
+       for (const block of blocks) {
+          if (!block.geometry || block.geometry.type !== 'Polygon') continue;
+          
+          let coords = block.geometry.coordinates[0];
+          if (!coords || coords.length < 4) continue;
+          
+          // Use calculateLotDimensions utilities to extract segments
+          const segments = extractSegments(coords, []); // not passing allPolys to keep it fast, we only care about closest to street
+          
+          let bestSegment = null;
+          let bestScore = Infinity;
+
+          for (const seg of segments) {
+             const pA = turfHelpers.point(seg.p1);
+             const pB = turfHelpers.point(seg.p2);
+             
+             for (const guide of guideLines) {
+                 const nearestA = turfNearestOnLine.default(guide, pA);
+                 const nearestB = turfNearestOnLine.default(guide, pB);
+                 
+                 const distA = nearestA.properties.dist || 0;
+                 const distB = nearestB.properties.dist || 0;
+                 
+                 const avgDist = (distA + distB) / 2;
+                 const parallelVariance = Math.abs(distA - distB);
+                 
+                 // Score = Average Distance + Penalty for not being parallel
+                 const score = avgDist + (parallelVariance * 3);
+                 
+                 if (score < bestScore) {
+                     bestScore = score;
+                     bestSegment = seg;
+                 }
+             }
+          }
+
+          if (bestSegment) {
+             // Set FRONT
+             const frenteLength = bestSegment.length;
+             
+             // Back is furthest/opposite
+             const otherSegments = segments.filter(s => s !== bestSegment);
+             let backSegment = null;
+             let maxDist = -1;
+             
+             const midFront = [ (bestSegment.p1[0] + bestSegment.p2[0])/2, (bestSegment.p1[1] + bestSegment.p2[1])/2 ];
+             for (const oSeg of otherSegments) {
+                const midO = [ (oSeg.p1[0] + oSeg.p2[0])/2, (oSeg.p1[1] + oSeg.p2[1])/2 ];
+                const d = turfDistance.default(turfHelpers.point(midFront), turfHelpers.point(midO));
+                if (d > maxDist) {
+                   maxDist = d;
+                   backSegment = oSeg;
+                }
+             }
+
+             const fundoLength = backSegment ? backSegment.length : frenteLength;
+             
+             const sides = detectSides(segments, bestSegment, backSegment);
+             
+             const finalFrente = normalizeDimensions(frenteLength, 10);
+             const finalFundo = normalizeDimensions(fundoLength, finalFrente);
+             const finalDir = normalizeDimensions(sides.ladoDireito, finalFrente * 2);
+             const finalEsq = normalizeDimensions(sides.ladoEsquerdo, finalDir);
+             
+             updates.push({
+                 id: block.id,
+                 frente: finalFrente,
+                 fundo: finalFundo,
+                 lado_direito: finalDir,
+                 lado_esquerdo: finalEsq
+             });
+          }
+       }
+
+       if (updates.length > 0) {
+           const { error: upsertError } = await supabase.from('blocks').upsert(updates);
+           if (upsertError) throw upsertError;
+       }
+
+       alert(`Frentes identificadas e recalculadas para ${updates.length} lotes!`);
+       setMapRefreshKey(prev => prev + 1);
+
+    } catch (e: any) {
+       console.error(e);
+       alert("Erro ao identificar frentes: " + e.message);
+    }
+  };
 
   useEffect(() => {
     async function loadProjects() {
@@ -383,6 +518,51 @@ export default function MapPage() {
     }
   };
 
+  const handleSaveStreetGuide = async (latlngs: L.LatLng[]) => {
+    if (!selectedProject || latlngs.length < 2) return;
+    
+    // Create LineString geojson
+    const coordinates = latlngs.map(ll => [ll.lng, ll.lat]);
+    const geojson = {
+        type: "LineString",
+        coordinates
+    };
+
+    try {
+        const { error } = await supabase.from('street_guides').insert({
+            tenant_id: selectedProject.tenant_id, // If project has tenant_id
+            project_id: selectedProject.id,
+            name: `Rua/Eixo ${streetGuides.length + 1}`,
+            geometry_geojson: geojson
+        });
+        
+        if (error) {
+            if (error.code === 'PGRST205') {
+                alert("Erro: Tabela 'street_guides' não encontrada. Verifique se o schema/migration foi aplicado no banco.");
+            } else {
+                throw error;
+            }
+        }
+        
+        loadStreetGuides();
+        setDrawStreetActive(false);
+    } catch (e: any) {
+        console.error(e);
+        alert("Erro ao salvar linha-guia: " + e.message);
+    }
+  };
+
+  const handleDeleteStreetGuide = async (id: string) => {
+      try {
+          const { error } = await supabase.from('street_guides').delete().eq('id', id);
+          if (error) throw error;
+          loadStreetGuides();
+      } catch (e: any) {
+          console.error(e);
+          alert("Erro ao apagar linha-guia: " + e.message);
+      }
+  };
+
   // Se um projeto foi selecionado, exibe o Mapa
   if (selectedProject) {
     return (
@@ -406,7 +586,7 @@ export default function MapPage() {
              </button>
           </div>
 
-          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-lg shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] ${isMobilePanelOpen ? 'p-3 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[500px] md:opacity-100 md:p-3'}`}>
+          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-lg shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] md:overflow-y-auto ${isMobilePanelOpen ? 'p-3 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[800px] md:opacity-100 md:p-3'}`}>
              <div className="flex flex-row justify-between items-start mb-3 hidden md:flex">
                <div>
                   <h2 className="text-sm font-bold text-white mb-0.5">Painel Operacional</h2>
@@ -458,6 +638,33 @@ export default function MapPage() {
               </button>
             </div>
 
+            <div className="hidden lg:flex flex-col gap-2 pt-3 mt-3 border-t border-[var(--color-border)]">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">Ruas & Frentes</span>
+              <div className="grid grid-cols-2 gap-2">
+                 <button 
+                   onClick={() => setDrawStreetActive(!drawStreetActive)} 
+                   className={`flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${drawStreetActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
+                   title="Linha de Rua"
+                 >
+                   <span className="text-[10px] font-bold uppercase tracking-wider">Linha de Rua</span>
+                 </button>
+                 <button 
+                   onClick={handleIdentifyFronts} 
+                   className="flex items-center justify-center gap-2 p-2.5 bg-[var(--color-primary)]/10 border border-[var(--color-primary)] rounded-lg hover:bg-[var(--color-primary)] text-[var(--color-primary)] hover:text-white transition-colors"
+                   title="Identificar Frentes"
+                 >
+                   <span className="text-[10px] font-bold uppercase tracking-wider">Identificar Frentes</span>
+                 </button>
+                 <button 
+                   onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
+                   className="col-span-2 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
+                   title={streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
+                 >
+                   <span className="text-[10px] font-bold uppercase tracking-wider">{streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}</span>
+                 </button>
+              </div>
+            </div>
+
             <div className="flex flex-row md:flex-col gap-3 md:gap-2 pt-3 mt-3 md:pt-4 md:mt-4 border-t border-[var(--color-border)] overflow-x-auto">
               <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
                 <div className="w-2.5 h-2.5 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
@@ -480,6 +687,11 @@ export default function MapPage() {
             gpsActive={gpsActive} 
             measureActive={measureActive} 
             refreshKey={mapRefreshKey}
+            streetGuides={streetGuides}
+            streetGuidesVisible={streetGuidesVisible}
+            drawStreetActive={drawStreetActive}
+            onSaveStreetGuide={handleSaveStreetGuide}
+            onDeleteStreetGuide={handleDeleteStreetGuide}
           />
         </div>
 
