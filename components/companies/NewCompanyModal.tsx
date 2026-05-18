@@ -23,7 +23,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     active: initialData?.active !== undefined ? initialData.active : true,
-    password: ''
+    password: '',
+    plan: initialData?.plan || 'Básico'
   });
 
   if (!isOpen) return null;
@@ -38,6 +39,13 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     try {
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
+      const planLimits = {
+          'Básico': { broker_limit: 5, project_limit: 2, admin_limit: 1 },
+          'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
+          'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 9999 }
+      };
+      const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
+
       if (initialData) {
          const { error: updateError } = await supabase.from('companies').update({
             name: formData.name,
@@ -46,7 +54,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             email: formData.email,
             active: formData.active,
             default_password: formData.password ? formData.password : undefined,
-            slug: slug
+            slug: slug,
+            plan: formData.plan,
+            ...limits
          }).eq('id', initialData.id);
          
          if (updateError) throw updateError;
@@ -90,7 +100,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            email: formData.email,
            active: formData.active,
            slug: slug,
-           default_password: formData.password
+           default_password: formData.password,
+           plan: formData.plan,
+           ...limits
          }, { onConflict: 'cnpj' });
 
          if (upsertError) {
@@ -208,6 +220,24 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 placeholder={initialData ? "Deixe em branco para manter a atual" : "Senha forte"}
                 className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Módulo / Plano do Sistema</label>
+              <select 
+                value={formData.plan}
+                onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 px-3 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors appearance-none"
+              >
+                <option value="Básico">Básico</option>
+                <option value="Standard">Standard</option>
+                <option value="Professional">Professional</option>
+              </select>
+              <div className="mt-2 text-xs text-[#06b6d4] p-2.5 bg-[#06b6d4]/10 rounded-lg border border-[#06b6d4]/20 flex flex-col gap-1 shadow-inner">
+                {formData.plan === 'Básico' && '✔ Até 5 corretores, 2 loteamentos e 1 administrador.'}
+                {formData.plan === 'Standard' && '✔ Até 10 corretores, 10 loteamentos e 3 administradores.'}
+                {formData.plan === 'Professional' && '✔ Corretores ilimitados, loteamentos ilimitados, recursos premium GIS.'}
+              </div>
             </div>
 
             <div>

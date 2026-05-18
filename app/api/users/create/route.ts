@@ -68,7 +68,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      temporaryPassword 
+      temporaryPassword,
+      userId: authUserId
     });
 
   } catch (error: any) {

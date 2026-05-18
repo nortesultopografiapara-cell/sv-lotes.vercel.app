@@ -10,6 +10,7 @@ export default function CorretoresPage() {
   const [search, setSearch] = useState('');
   const [corretores, setCorretores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [brokerLimit, setBrokerLimit] = useState(0);
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -17,6 +18,8 @@ export default function CorretoresPage() {
     fullName: '',
     email: '',
     phone: '',
+    cpf: '',
+    creci: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -26,13 +29,21 @@ export default function CorretoresPage() {
     async function loadCorretores() {
       if (!user) return;
       try {
-        let query = supabase.from('users').select(`*`).order('created_at', { ascending: false });
-        
-        if (user.role === 'ADMIN') {
-           query = query.eq('tenant_id', user.tenant_id).eq('role', 'CORRETOR');
-        } else if (user.role === 'SUPER_ADMIN') {
-           query = query.eq('role', 'CORRETOR'); // maybe?
+        let limit = 5;
+        if (user.tenant_id) {
+           const { data: companyData } = await supabase.from('companies').select('broker_limit').eq('id', user.tenant_id).single();
+           if (companyData && companyData.broker_limit) {
+              limit = companyData.broker_limit;
+           }
         }
+        setBrokerLimit(limit);
+
+        let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
+        
+        if (user.role === 'ADMIN' || user.role === 'COMPANY_ADMIN') {
+           query = query.eq('company_id', user.tenant_id);
+        }
+        // SUPER_ADMIN implicitly sees all because of RLS
         
         const { data, error } = await query;
         if (error) throw error;
@@ -52,6 +63,10 @@ export default function CorretoresPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (corretores.length >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
+        setError('Limite de corretores do plano atingido.');
+        return;
+    }
     setError('');
     setIsSubmitting(true);
 
@@ -60,7 +75,9 @@ export default function CorretoresPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-           ...formData,
+           fullName: formData.fullName,
+           email: formData.email,
+           phone: formData.phone,
            tenantId: user?.tenant_id,
            role: 'CORRETOR'
         })
@@ -70,6 +87,19 @@ export default function CorretoresPage() {
       if (!response.ok) {
         throw new Error(result.error);
       }
+
+      const { error: brokerError } = await supabase.from('brokers').insert([{
+         id: result.userId,
+         company_id: user?.tenant_id,
+         full_name: formData.fullName,
+         cpf: formData.cpf,
+         creci: formData.creci,
+         phone: formData.phone,
+         email: formData.email,
+         status: 'Ativo'
+      }]);
+
+      if (brokerError) throw brokerError;
 
       setSuccessData({
         email: formData.email,
@@ -105,6 +135,10 @@ export default function CorretoresPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex flex-col text-right mr-4">
+             <span className="text-xs text-[var(--color-text-muted)] uppercase font-bold tracking-wider">Licenças</span>
+             <span className="text-sm font-bold text-[#14b8a6]">{corretores.length} / {brokerLimit}</span>
+          </div>
           <div className="relative">
             <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
@@ -131,7 +165,7 @@ export default function CorretoresPage() {
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-background)]">
                 <th className="p-4 text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-wider w-[300px]">Corretor</th>
-                <th className="p-4 text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-wider hidden md:table-cell">Contato</th>
+                <th className="p-4 text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-wider hidden md:table-cell">CRECI</th>
                 <th className="p-4 text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-wider text-center">Status</th>
                 <th className="p-4 text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-wider w-[100px] text-right">Ações</th>
               </tr>
@@ -160,7 +194,7 @@ export default function CorretoresPage() {
                       </div>
                     </td>
                     <td className="p-4 hidden md:table-cell">
-                      <div className="text-sm text-white mb-0.5">{c.phone || '—'}</div>
+                      <div className="text-sm text-white font-mono">{c.creci || '—'}</div>
                     </td>
                     <td className="p-4 text-center">
                       <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20">
@@ -269,14 +303,42 @@ export default function CorretoresPage() {
                       </div>
                    </div>
 
-                   <div className="pt-2">
-                     <button 
-                       type="submit"
-                       disabled={isSubmitting}
-                       className="w-full py-2.5 rounded-lg font-bold text-white bg-[#14b8a6] hover:bg-[#0f766e] transition-colors disabled:opacity-50"
-                     >
-                       {isSubmitting ? 'Gerando Acesso...' : 'Cadastrar Corretor'}
-                     </button>
+                   <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                        <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">CPF</label>
+                        <input 
+                          type="text" 
+                          value={formData.cpf}
+                          onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
+                        />
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">CRECI</label>
+                        <input 
+                          type="text" 
+                          value={formData.creci}
+                          onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
+                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
+                        />
+                     </div>
+                   </div>
+
+                   <div className="space-y-1.5 pt-2">
+                       {corretores.length >= brokerLimit && user?.role !== 'SUPER_ADMIN' ? (
+                          <div className="flex flex-col items-center justify-center p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+                             <p className="text-red-500 text-sm font-bold mb-2">Limite de corretores do plano atingido.</p>
+                             <button type="button" className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-md transition-colors text-xs uppercase tracking-wider">Fazer Upgrade</button>
+                          </div>
+                       ) : (
+                         <button 
+                           type="submit"
+                           disabled={isSubmitting}
+                           className="w-full py-2.5 rounded-lg font-bold text-white bg-[#14b8a6] hover:bg-[#0f766e] transition-colors disabled:opacity-50"
+                         >
+                           {isSubmitting ? 'Gerando Acesso...' : 'Cadastrar Corretor'}
+                         </button>
+                       )}
                    </div>
                  </form>
                )}

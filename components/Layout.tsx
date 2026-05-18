@@ -13,39 +13,36 @@ import {
   User,
   ChevronDown,
   Building2,
-  LogOut
+  LogOut,
+  Settings,
+  FileText
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 
 const getMenuItems = (role: string) => {
-  if (role === 'SUPER_ADMIN') {
-    return [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-      { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-[#06b6d4]' },
-      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
-      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-    ];
-  }
-  
-  if (role === 'ADMIN') {
-    return [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-      { name: 'Corretores', href: '/corretores', icon: Users, color: 'text-[#06b6d4]' },
-      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
-      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-    ];
-  }
-
-  // DEFAULT (CORRETOR)
-  return [
+  // SUPER_ADMIN and ADMIN (Company Admin) see similar structures now
+  const base = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
+    { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
+    { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+    { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
+    { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
   ];
+
+  // DEFAULT (CORRETOR)
+  if (role !== 'SUPER_ADMIN' && role !== 'ADMIN' && role !== 'COMPANY_ADMIN') {
+    return [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
+    ];
+  }
+
+  return base;
 };
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
