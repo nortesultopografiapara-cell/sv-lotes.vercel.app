@@ -23,20 +23,39 @@ export default function CompaniesPage() {
   const loadCompanies = useCallback(async () => {
     setDataLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select(`
-          *,
-          users(count),
-          projects(count)
-        `)
-        .order('created_at', { ascending: false });
+      const [ { data: companiesData, error: companiesError }, { data: projectsData, error: projectsError } ] = await Promise.all([
+         supabase
+          .from('companies')
+          .select(`
+            *,
+            users(count)
+          `)
+          .order('created_at', { ascending: false }),
+         supabase
+          .from('projects')
+          .select('tenant_id')
+      ]);
         
-      if (error) {
-        console.error('SUPABASE_ERROR fetching companies:', error);
-        throw error;
+      if (companiesError) {
+        console.error('SUPABASE_ERROR fetching companies:', companiesError);
+        throw companiesError;
       }
-      setCompanies(data || []);
+      
+      const counts: Record<string, number> = {};
+      if (projectsData) {
+         projectsData.forEach((p: any) => {
+            if (p.tenant_id) {
+               counts[p.tenant_id] = (counts[p.tenant_id] || 0) + 1;
+            }
+         });
+      }
+
+      const mergedData = (companiesData || []).map((c: any) => ({
+         ...c,
+         project_count: counts[c.id] || 0
+      }));
+
+      setCompanies(mergedData);
     } catch (err) {
       console.error('ERROR in loadCompanies:', err);
     } finally {
@@ -85,7 +104,7 @@ export default function CompaniesPage() {
 
   const activeCompanies = companies.filter(c => c.active === true).length;
   const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
-  const totalProjects = companies.reduce((acc, c) => acc + (c.projects?.[0]?.count || 0), 0);
+  const totalProjects = companies.reduce((acc, c) => acc + (c.project_count || 0), 0);
 
   const filteredCompanies = companies.filter(c => 
      c.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -255,7 +274,7 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.projects?.[0]?.count || 0}
+          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.project_count || 0}
         </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
