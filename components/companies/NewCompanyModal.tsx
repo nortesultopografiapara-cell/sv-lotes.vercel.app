@@ -24,7 +24,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     email: initialData?.email || '',
     active: initialData?.active !== undefined ? initialData.active : true,
     password: '',
-    plan: initialData?.module_plan || initialData?.plan || 'Básico'
+    plan: initialData?.plan || 'Básico'
   });
 
   if (!isOpen) return null;
@@ -56,10 +56,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             active: formData.active,
             default_password: formData.password ? formData.password : undefined,
             slug: slug,
-            company_slug: slug,
-            module_plan: formData.plan,
-            module_type: formData.plan.toLowerCase(),
-            company_status: formData.active ? 'active' : 'inactive',
+            plan: formData.plan,
+            module: formData.plan.toLowerCase(),
+            status: formData.active ? 'active' : 'inactive',
             ...limits
          }).eq('id', initialData.id);
          

@@ -46,40 +46,14 @@ export async function POST(req: Request) {
        throw new Error('Falha ao criar empresa: CNPJ já possui cadastro no sistema.');
     }
 
-    // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
-    const password = body.password || generateTempPassword(8);
-    console.log(`[ETAPA 1] Verificando e criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
-
-    // Verificar iterativamente se o usuário existe no AUTH? O createUser já faz isso e retorna 'already registered'.
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: adminEmail,
-      password: password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: adminName,
-        role: 'ADMIN'
-      }
-    });
-
-    if (authError) {
-      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError);
-      if (authError.message.includes('already registered') || authError.status === 422) {
-         throw new Error('Este e-mail já possui cadastro no sistema.');
-      }
-      throw new Error(`Erro interno no AUTH (${authError.message})`);
-    }
-
-    authUserId = authUser.user.id;
-    console.log(`[SUCESSO] Usuário criado (ou convite enviado) na auth.users! ID: ${authUserId}`);
-
-    // 2. Create the tenant in public.companies
-    console.log(`[ETAPA 2] Criando tenant na tabela public.companies... Nome: ${name}`);
+    // 1. Criar Empresa (Tenant) primeiro
+    console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
     
     // Calcular limites do plano
     const planLimits = {
-        'Básico': { broker_limit: 5, project_limit: 3, admin_limit: 1 },
-        'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
-        'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 10 }
+        'Básico': { broker_limit: 5, admin_limit: 1 },
+        'Standard': { broker_limit: 10, admin_limit: 3 },
+        'Professional': { broker_limit: 100, admin_limit: 10 }
     };
     const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
 
@@ -88,19 +62,25 @@ export async function POST(req: Request) {
       .insert({
         name,
         slug,
-        company_slug: slug,
         cnpj,
-        module_plan: plan,
-        module_type: plan.toLowerCase(),
+        email: email || adminEmail,
+        phone: phone || adminPhone,
+        plan: plan,
+        module: plan.toLowerCase(),
+        status: 'active',
         active: true,
-        company_status: 'active',
         ...limits
       })
       .select()
       .single();
 
     if (companyError) {
-      console.error('[ERRO] Falha ao criar empresa:', companyError.message, companyError.code);
+      console.error('[ERRO] Falha ao criar empresa em public.companies:', companyError.message, 'Código:', companyError.code, companyError);
+      
+      if (companyError.code === 'PGRST204' || companyError.message.includes('Could not find')) {
+        throw new Error(`Erro na estrutura do banco: O banco de dados ainda não possui as colunas módulo/limites. Por favor, execute a migration no SQL Editor. Detalhe: ${companyError.message}`);
+      }
+
       if (companyError.code === '23505' || companyError.message.includes('unique')) {
          if (companyError.message.includes('cnpj')) {
            throw new Error('Falha ao criar empresa: CNPJ já possui cadastro no sistema.');
@@ -115,16 +95,37 @@ export async function POST(req: Request) {
     newCompanyId = newCompany.id;
     console.log(`[SUCESSO] Empresa criada! ID: ${newCompanyId}`);
 
-    // Atualizar metadata do auth.user com o tenant_id agora que sabemos qual é
-    await supabaseAdmin.auth.admin.updateUserById(authUserId, {
-       user_metadata: {
-         full_name: adminName,
-         role: 'ADMIN',
-         tenant_id: newCompanyId
-       }
+    // 2. Criar usuário no auth.users
+    const password = body.password || generateTempPassword(8);
+    console.log(`[ETAPA 2] Verificando e criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: adminEmail,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: adminName,
+        role: 'ADMIN',
+        tenant_id: newCompanyId
+      }
     });
 
-    // 3. Cadastrando perfil em public.users
+    if (authError) {
+      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError);
+      
+      let errMsg = `Erro interno no AUTH (${authError.message})`;
+      if (authError.message.includes('already registered') || authError.status === 422) {
+         errMsg = 'Este e-mail já possui cadastro no sistema (preso no Auth. Tente usar a função limpar testes).';
+      }
+      
+      // Como a empresa foi criada no Passo 1, vamos fazer rollback dela aqui
+      throw new Error(errMsg);
+    }
+
+    authUserId = authUser.user.id;
+    console.log(`[SUCESSO] Usuário criado na auth.users! ID: ${authUserId}`);
+
+    // 3. Cadastrando perfil em public.users e vinculando à empresa
     console.log(`[ETAPA 3] Cadastrando perfil em public.users...`);
 
     const { error: userError } = await supabaseAdmin
@@ -141,11 +142,11 @@ export async function POST(req: Request) {
       });
 
     if (userError) {
-      console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message, userError.code);
+      console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message, userError.code, userError);
       throw new Error(`Falha ao criar administrador: ${userError.message}`);
     }
 
-    console.log(`[SUCESSO] Perfil criado em public.users!`);
+    console.log(`[SUCESSO] Perfil criado em public.users e vinculado à empresa!`);
 
     console.log(`[ETAPA 4] Conclusão...`);
     // Agora o e-mail é enviado nativamente pelo Supabase via inviteUserByEmail.
