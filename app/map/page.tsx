@@ -360,7 +360,20 @@ export default function MapPage() {
     setCreatingProject(true);
     
     try {
-      const { error } = await supabase.from('projects').insert([{ name: projectNameStr, tenant_id: 'MASTER-ADMIN' }]);
+      let createTenantId = user?.tenant_id;
+      if (!createTenantId) {
+        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user?.id).single();
+        if (userData?.tenant_id) {
+            createTenantId = userData.tenant_id;
+        }
+      }
+      
+      const isMasterAdmin = user?.email === 'severino@nortesultopografia.com.br' || user?.email === 'nortesultopografiapara@gmail.com' || user?.role === 'SUPER_ADMIN';
+      if (!createTenantId && isMasterAdmin) {
+          createTenantId = null;
+      }
+      
+      const { error } = await supabase.from('projects').insert([{ name: projectNameStr, tenant_id: createTenantId }]);
 
       if (error) {
          throw error;
@@ -412,14 +425,14 @@ export default function MapPage() {
 
       // Fallback para o Super Admin
       if (!tenantId && isMasterAdmin) {
-        tenantId = 'MASTER-ADMIN';
+        tenantId = null; // MASTER-ADMIN invalid UUID for tenant_id column
       }
 
-      if (!tenantId) {
-        alert("Erro: Não foi possível identificar a empresa vinculada à sua conta.");
-        return;
+      // If tenantId is not null, ensure it's not a generic string.
+      if (tenantId === 'MASTER-ADMIN') {
+        tenantId = null;
       }
-
+      
       const text = await importFile.text();
       const geometries = parseKML(text);
       
@@ -529,8 +542,18 @@ export default function MapPage() {
     };
 
     try {
+        let validTenantId = selectedProject.tenant_id;
+        if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
+           validTenantId = selectedProject.company_id || null;
+        }
+        
+        console.log("Saving street guide with:", {
+            tenant_id: validTenantId,
+            project_id: selectedProject.id
+        });
+
         const { error } = await supabase.from('street_guides').insert({
-            tenant_id: selectedProject.tenant_id, // If project has tenant_id
+            tenant_id: validTenantId,
             project_id: selectedProject.id,
             name: `Rua/Eixo ${streetGuides.length + 1}`,
             geometry_geojson: geojson
