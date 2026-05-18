@@ -40,7 +40,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
       const planLimits = {
-          'Básico': { broker_limit: 5, project_limit: 1, admin_limit: 1 },
+          'Básico': { broker_limit: 5, project_limit: 3, admin_limit: 1 },
           'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
           'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 10 }
       };
@@ -56,7 +56,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             active: formData.active,
             default_password: formData.password ? formData.password : undefined,
             slug: slug,
+            company_slug: slug,
             module_plan: formData.plan,
+            module_type: formData.plan.toLowerCase(),
+            company_status: formData.active ? 'active' : 'inactive',
             ...limits
          }).eq('id', initialData.id);
          
@@ -204,7 +207,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 <option value="Professional">Professional</option>
               </select>
               <div className="mt-2 text-xs text-[#06b6d4] p-2.5 bg-[#06b6d4]/10 rounded-lg border border-[#06b6d4]/20 flex flex-col gap-1 shadow-inner">
-                {formData.plan === 'Básico' && '✔ Até 5 corretores, 1 loteamento e 1 administrador.'}
+                {formData.plan === 'Básico' && '✔ Até 5 corretores, 3 loteamentos e 1 administrador.'}
                 {formData.plan === 'Standard' && '✔ Até 10 corretores, 10 loteamentos e 3 administradores.'}
                 {formData.plan === 'Professional' && '✔ Até 100 corretores, loteamentos ilimitados e 10 administradores.'}
               </div>

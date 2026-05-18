@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     
     // Calcular limites do plano
     const planLimits = {
-        'Básico': { broker_limit: 5, project_limit: 1, admin_limit: 1 },
+        'Básico': { broker_limit: 5, project_limit: 3, admin_limit: 1 },
         'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
         'Professional': { broker_limit: 100, project_limit: 9999, admin_limit: 10 }
     };
@@ -88,9 +88,12 @@ export async function POST(req: Request) {
       .insert({
         name,
         slug,
+        company_slug: slug,
         cnpj,
         module_plan: plan,
+        module_type: plan.toLowerCase(),
         active: true,
+        company_status: 'active',
         ...limits
       })
       .select()
