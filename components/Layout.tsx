@@ -74,6 +74,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       }
     }
     if (user) fetchCompany();
+
+    const handleCompanyUpdate = () => { if (user) fetchCompany(); };
+    window.addEventListener('company_updated', handleCompanyUpdate);
+    return () => window.removeEventListener('company_updated', handleCompanyUpdate);
   }, [user]);
   
   // Guard checks are moved to useSessionGuard and Middleware

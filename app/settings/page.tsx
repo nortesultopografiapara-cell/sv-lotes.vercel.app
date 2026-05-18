@@ -52,12 +52,13 @@ export default function SettingsPage() {
           return null;
       }
       
-      const fileName = `${type}-${Date.now()}.png`;
+      const fileExt = file.name.split('.').pop() || 'png';
+      const fileName = `${type}-${Date.now()}.${fileExt}`;
       const filePath = `${user.tenant_id}/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
           .from('company-assets')
-          .upload(filePath, file);
+          .upload(filePath, file, { upsert: true, cacheControl: '3600' });
           
       if (uploadError) {
           console.error("Upload error:", uploadError);
@@ -70,21 +71,24 @@ export default function SettingsPage() {
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0) return;
+      if (!e.target.files || e.target.files.length === 0 || !company?.id) return;
       setUploadingLogo(true);
       const url = await uploadImage(e.target.files[0], 'logo');
       if (url) {
-          setCompany({ ...company, logo_url: url });
+          setCompany((prev: any) => ({ ...prev, logo_url: url }));
+          await supabase.from('companies').update({ logo_url: url }).eq('id', company.id);
+          window.dispatchEvent(new Event('company_updated'));
       }
       setUploadingLogo(false);
   };
 
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0) return;
+      if (!e.target.files || e.target.files.length === 0 || !company?.id) return;
       setUploadingSignature(true);
       const url = await uploadImage(e.target.files[0], 'signature');
       if (url) {
-          setCompany({ ...company, signature_url: url });
+          setCompany((prev: any) => ({ ...prev, signature_url: url }));
+          await supabase.from('companies').update({ signature_url: url }).eq('id', company.id);
       }
       setUploadingSignature(false);
   };
@@ -116,6 +120,7 @@ export default function SettingsPage() {
         alert("Erro ao salvar: " + error.message);
      } else {
         alert("Configurações salvas com sucesso!");
+        window.dispatchEvent(new Event('company_updated'));
      }
   };
 
