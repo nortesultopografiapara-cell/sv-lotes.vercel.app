@@ -52,11 +52,16 @@ export default function ContractsPage() {
     <div className="flex h-full font-sans">
       <div className="w-1/3 border-r border-[var(--color-border)] bg-[var(--color-background)] flex flex-col h-full">
          <div className="p-4 border-b border-[var(--color-border)] flex-none">
-             <div className="flex items-center gap-2 mb-4">
-                 <div className="w-10 h-10 bg-[var(--color-primary)]/10 rounded-xl flex items-center justify-center text-[var(--color-primary)]">
-                     <FileText className="w-5 h-5" />
+             <div className="flex items-center justify-between mb-4">
+                 <div className="flex items-center gap-2">
+                     <div className="w-10 h-10 bg-[var(--color-primary)]/10 rounded-xl flex items-center justify-center text-[var(--color-primary)]">
+                         <FileText className="w-5 h-5" />
+                     </div>
+                     <h2 className="text-lg font-bold text-white">Contratos</h2>
                  </div>
-                 <h2 className="text-lg font-bold text-white">Contratos</h2>
+                 <a href="/contracts/templates" className="px-3 py-1.5 text-xs font-semibold bg-[var(--color-surface)] hover:bg-[var(--color-border)] text-white border border-[var(--color-border)] rounded-lg transition-colors">
+                     Modelos
+                 </a>
              </div>
              <div className="relative">
                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
