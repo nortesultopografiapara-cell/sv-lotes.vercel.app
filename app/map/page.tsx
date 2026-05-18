@@ -190,7 +190,7 @@ export default function MapPage() {
     try {
       const { data, error } = await supabase.from('street_guides').select('*').eq('project_id', selectedProject.id);
       if (error && error.code !== 'PGRST205') console.warn('Error loading street guides:', error);
-      if (data) setStreetGuides(data);
+      if (data) setStreetGuides(data.map(g => ({ ...g, visible: true })));
     } catch (e) {}
   }, [selectedProject]);
 
@@ -557,6 +557,14 @@ export default function MapPage() {
             visible: true
         };
         
+        console.log('saving street guide', {
+            tenant_id: validTenantId,
+            project_id: selectedProject.id,
+            user: user?.id,
+            role: user?.role,
+            geometry_geojson: geojson
+        });
+        
         // Optimistic UI
         setStreetGuides(prev => [...prev, tempGuide]);
         setDrawStreetActive(false);
@@ -569,11 +577,11 @@ export default function MapPage() {
         }).select();
         
         if (error) {
-            setStreetGuides(prev => prev.filter(g => g.id !== tempGuide.id));
+            console.error("Save street guide error:", error);
             if (error.code === 'PGRST205') {
-                alert("Erro: Tabela 'street_guides' não encontrada. Verifique se o schema/migration foi aplicado no banco.");
+                alert("Aviso: Tabela 'street_guides' não existe. A linha foi criada apenas localmente e pode ser usada para frentes.");
             } else {
-                throw error;
+                alert("Aviso: Erro ao salvar linha no banco (RLS?). Linha criada localmente. Detalhe: " + error.message);
             }
         } else if (data && data.length > 0) {
             setStreetGuides(prev => prev.map(g => g.id === tempGuide.id ? data[0] : g));
@@ -581,12 +589,16 @@ export default function MapPage() {
         
     } catch (e: any) {
         console.error(e);
-        alert("Erro ao salvar linha-guia: " + e.message);
+        alert("Aviso: Exceção ao salvar linha-guia no banco. Linha mantida localmente. " + e.message);
     }
   };
 
   const handleDeleteStreetGuide = async (id: string) => {
       try {
+          if (typeof id === 'string' && id.startsWith('temp-')) {
+              setStreetGuides(prev => prev.filter(g => g.id !== id));
+              return;
+          }
           const { error } = await supabase.from('street_guides').delete().eq('id', id);
           if (error) throw error;
           loadStreetGuides();
