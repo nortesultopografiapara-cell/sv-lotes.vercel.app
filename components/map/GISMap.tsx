@@ -411,12 +411,15 @@ function LotPopupContent({ lot, onAction, onRequestCustomerForm, actionLoading }
 
 function DrawStreetInteraction({ 
   active, 
+  points,
+  setPoints,
   onSaveLine
 }: { 
   active: boolean, 
+  points: L.LatLng[],
+  setPoints: React.Dispatch<React.SetStateAction<L.LatLng[]>>,
   onSaveLine: (line: L.LatLng[]) => void
 }) {
-  const [points, setPoints] = useState<L.LatLng[]>([]);
   const map = useMapEvents({
       click(e) {
           if (!active) return;
@@ -439,7 +442,7 @@ function DrawStreetInteraction({
      } else {
          map.getContainer().style.cursor = '';
      }
-  }, [active, map]);
+  }, [active, map, setPoints]);
 
   if (!active || points.length === 0) return null;
 
@@ -494,6 +497,9 @@ export default function GISMap({
 
   // Formulário de Cliente
   const [customerForm, setCustomerForm] = useState<{lot: any, action: string, price: number} | null>(null);
+
+  // Draw street state
+  const [drawStreetPoints, setDrawStreetPoints] = useState<L.LatLng[]>([]);
 
   useEffect(() => {
     async function loadLots() {
@@ -726,6 +732,7 @@ export default function GISMap({
             <Polygon 
               key={lot.id}
               positions={lot.bounds}
+              interactive={!(drawStreetActive || measureActive)}
               pathOptions={{ 
                 color: '#000000', 
                 fillColor: getStatusColor(lot.status), 
@@ -771,6 +778,7 @@ export default function GISMap({
            <Polygon 
               key={`block-${block.id}`} 
               positions={block.bounds} 
+              interactive={!(drawStreetActive || measureActive)}
               pathOptions={{ 
                 color: '#000000', 
                 fillColor: getStatusColor(block.status), 
@@ -844,6 +852,8 @@ export default function GISMap({
 
         <DrawStreetInteraction 
            active={drawStreetActive}
+           points={drawStreetPoints}
+           setPoints={setDrawStreetPoints}
            onSaveLine={(line) => {
               if (onSaveStreetGuide) onSaveStreetGuide(line);
            }}
@@ -851,7 +861,15 @@ export default function GISMap({
 
       </MapContainer>
 
-      {/* Floating Panel for Measurement */}
+      {/* Floating Panel for Measurement/Drawing */}
+      {drawStreetActive && (
+         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-emerald-600/90 backdrop-blur-sm border border-emerald-500 rounded-xl md:rounded-full px-4 py-2 shadow-lg flex fade-in-up w-auto min-w-[200px] text-center">
+            <span className="text-[11px] md:text-sm font-bold text-white tracking-wider mx-auto">
+               {drawStreetPoints.length === 0 ? 'Clique no primeiro ponto da rua' : 'Clique no segundo ponto da rua'}
+            </span>
+         </div>
+      )}
+
       {measureActive && measureStr && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-slate-900/90 backdrop-blur-sm border border-[var(--color-border)] rounded-xl md:rounded-full px-3 md:px-4 py-2 shadow-lg flex flex-col md:flex-row items-center gap-1 md:gap-3 fade-in-up w-auto min-w-[200px] text-center">
            <span className="text-[11px] md:text-sm font-bold text-white whitespace-nowrap md:whitespace-normal">

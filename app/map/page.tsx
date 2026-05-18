@@ -546,29 +546,39 @@ export default function MapPage() {
         if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
            validTenantId = selectedProject.company_id || null;
         }
-        
-        console.log("Saving street guide with:", {
-            tenant_id: validTenantId,
-            project_id: selectedProject.id
-        });
 
-        const { error } = await supabase.from('street_guides').insert({
+        const newGuideName = `Rua/Eixo ${streetGuides.length + 1}`;
+        const tempGuide = {
+            id: `temp-${Date.now()}`,
             tenant_id: validTenantId,
             project_id: selectedProject.id,
-            name: `Rua/Eixo ${streetGuides.length + 1}`,
+            name: newGuideName,
+            geometry_geojson: geojson,
+            visible: true
+        };
+        
+        // Optimistic UI
+        setStreetGuides(prev => [...prev, tempGuide]);
+        setDrawStreetActive(false);
+
+        const { data, error } = await supabase.from('street_guides').insert({
+            tenant_id: validTenantId,
+            project_id: selectedProject.id,
+            name: newGuideName,
             geometry_geojson: geojson
-        });
+        }).select();
         
         if (error) {
+            setStreetGuides(prev => prev.filter(g => g.id !== tempGuide.id));
             if (error.code === 'PGRST205') {
                 alert("Erro: Tabela 'street_guides' não encontrada. Verifique se o schema/migration foi aplicado no banco.");
             } else {
                 throw error;
             }
+        } else if (data && data.length > 0) {
+            setStreetGuides(prev => prev.map(g => g.id === tempGuide.id ? data[0] : g));
         }
         
-        loadStreetGuides();
-        setDrawStreetActive(false);
     } catch (e: any) {
         console.error(e);
         alert("Erro ao salvar linha-guia: " + e.message);
