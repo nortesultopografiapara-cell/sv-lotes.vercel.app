@@ -104,16 +104,37 @@ export default function CompaniesPage() {
             Modo Super Administrador (Multi-Tenant)
           </p>
         </div>
-        <button 
-          onClick={() => {
-            setCompanyToEdit(null);
-            setIsModalOpen(true);
-          }}
-          className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-        >
-          <Plus className="w-5 h-5" />
-          Nova Empresa
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={async () => {
+              if (confirm('Atenção: Esta ação irá limpar todos os usuários do AUTH que não possuem empresa, além de empresas de teste sem usuários. Deseja continuar?')) {
+                 try {
+                   const res = await fetch('/api/companies/cleanup', { method: 'POST' });
+                   if (!res.ok) throw new Error('Falha ao limpar cadastros');
+                   alert('Cadastros de teste limpos com sucesso!');
+                   loadCompanies();
+                 } catch (e: any) {
+                   alert(e.message);
+                 }
+              }
+            }}
+            className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-2.5 rounded-lg flex items-center justify-center gap-2 font-mono text-[10px] uppercase font-bold tracking-wider transition-colors border border-red-500/20 opacity-50 hover:opacity-100"
+            title="Limpar Cadastros Incompletos / Órfãos"
+          >
+            <AlertCircle className="w-4 h-4" />
+            Limpar Testes
+          </button>
+          <button 
+            onClick={() => {
+              setCompanyToEdit(null);
+              setIsModalOpen(true);
+            }}
+            className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+          >
+            <Plus className="w-5 h-5" />
+            Nova Empresa
+          </button>
+        </div>
       </header>
 
       {/* Multi-Tenant Stats */}

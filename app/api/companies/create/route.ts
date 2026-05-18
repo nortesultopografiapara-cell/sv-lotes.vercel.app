@@ -30,7 +30,14 @@ export async function POST(req: Request) {
 
     // 1. Criar/Verificar usuário no auth.users PRIMEIRO para evitar empresas orfãs
     const password = body.password || generateTempPassword(8);
-    console.log(`[ETAPA 1] Criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+    console.log(`[ETAPA 1] Verificando e criando usuário master (Administrador) no auth.users... Email: ${adminEmail}`);
+
+    // Verificar se já existe usuário no public.users
+    const { data: existingUser } = await supabaseAdmin.from('users').select('id').eq('email', adminEmail).maybeSingle();
+    if (existingUser) {
+       console.log('[ERRO] Usuário já existe na tabela public.users.');
+       throw new Error('Este e-mail já possui cadastro no sistema.');
+    }
     
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: adminEmail,
@@ -43,8 +50,11 @@ export async function POST(req: Request) {
     });
 
     if (authError) {
-      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError.message);
-      throw new Error(`E-mail já está em uso ou inválido (${authError.message})`);
+      console.error('[ERRO] Falha ao criar usuário na auth.users:', authError);
+      if (authError.message.includes('already registered') || authError.status === 422) {
+         throw new Error('Este e-mail já possui cadastro no sistema.');
+      }
+      throw new Error(`Erro interno no AUTH (${authError.message})`);
     }
 
     authUserId = authUser.user.id;
@@ -76,8 +86,16 @@ export async function POST(req: Request) {
       .single();
 
     if (companyError) {
-      console.error('[ERRO] Falha ao criar empresa:', companyError.message);
-      throw new Error(`Erro ao criar empresa: ${companyError.message}`);
+      console.error('[ERRO] Falha ao criar empresa:', companyError.message, companyError.code);
+      if (companyError.code === '23505' || companyError.message.includes('unique')) {
+         if (companyError.message.includes('cnpj')) {
+           throw new Error('Falha ao criar empresa: CNPJ já possui cadastro no sistema.');
+         }
+         if (companyError.message.includes('slug')) {
+           throw new Error('Falha ao criar empresa: O nome da empresa gerou um identificador único já existente. Tente modificar um pouco o nome.');
+         }
+      }
+      throw new Error(`Falha ao criar empresa: ${companyError.message}`);
     }
 
     newCompanyId = newCompany.id;
@@ -109,8 +127,8 @@ export async function POST(req: Request) {
       });
 
     if (userError) {
-      console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message);
-      throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);
+      console.error('[ERRO] Falha ao criar perfil em public.users:', userError.message, userError.code);
+      throw new Error(`Falha ao criar administrador: ${userError.message}`);
     }
 
     console.log(`[SUCESSO] Perfil criado em public.users!`);
