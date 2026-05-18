@@ -291,6 +291,7 @@ export default function MapPage() {
              const finalDir = normalizeDimensions(sides.ladoDireito, finalFrente * 2);
              const finalEsq = normalizeDimensions(sides.ladoEsquerdo, finalDir);
              
+             if (!block.id) continue;
              updates.push({
                  id: block.id,
                  frente: finalFrente,
@@ -303,15 +304,18 @@ export default function MapPage() {
 
        if (updates.length > 0) {
            const updatePromises = updates.map(updateObj => {
-              const { id, ...fieldsToUpdate } = updateObj;
+              if (!updateObj.id) return Promise.resolve({ error: { message: "Mock error for no id" } });
               return supabase.from('blocks').update({
-                  ...fieldsToUpdate,
+                  frente: updateObj.frente,
+                  fundo: updateObj.fundo,
+                  lado_direito: updateObj.lado_direito,
+                  lado_esquerdo: updateObj.lado_esquerdo,
                   updated_at: new Date().toISOString()
-              }).eq('id', id);
+              }).eq('id', updateObj.id);
            });
            
            const results = await Promise.all(updatePromises);
-           const errors = results.filter(r => r.error).map(r => r.error);
+           const errors = results.filter(r => r.error && r.error.message !== "Mock error for no id").map(r => r.error);
            if (errors.length > 0) {
                console.error("Updates errors:", errors);
                throw new Error("Falha ao atualizar alguns lotes. " + (errors[0]?.message || "Erro desconhecido."));
