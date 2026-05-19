@@ -413,8 +413,8 @@ export default function FinancePage() {
      const wb = XLSX.utils.book_new();
 
      // Company Info Config
-     const companyName = tenantData ? tenantData.trade_name || tenantData.company_name : 'Empresa não informada';
-     const companyDoc = tenantData?.document || 'CNPJ não informado';
+     const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
+     const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
      const infoLine = [
          tenantData?.email ? `Email: ${tenantData.email}` : null,
          tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
@@ -449,8 +449,8 @@ export default function FinancePage() {
       const summary = getSummaryData();
       const doc = new jsPDF('landscape');
       
-      const companyName = tenantData ? tenantData.trade_name || tenantData.company_name : 'Empresa não informada';
-      const companyDoc = tenantData?.document || 'CNPJ não informado';
+      const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
+      const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
       const infoLine = [
          tenantData?.email ? `Email: ${tenantData.email}` : null,
          tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
@@ -521,89 +521,6 @@ export default function FinancePage() {
           </p>
         </div>
         <div className="flex gap-2 items-center">
-          
-          <div className="relative">
-            <button 
-              onClick={() => { setShowNotifications(!showNotifications); setHiddenNotifications(false); }}
-              className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 w-10 h-[38px] rounded-lg flex items-center justify-center transition-colors shadow-sm relative">
-              <Bell className="w-5 h-5" />
-              {!hiddenNotifications && (stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)) > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#f04449] text-[10px] font-bold text-white shadow-sm ring-2 ring-[#0b0e14]">
-                  {stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)}
-                </span>
-              )}
-            </button>
-            
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-72 bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl overflow-hidden z-50">
-                 <div className="p-4 border-b border-[#1f232b] flex justify-between items-center">
-                    <h3 className="font-semibold text-white">Notificações</h3>
-                    <span className="text-xs bg-[#1f232b] text-gray-300 px-2 py-0.5 rounded font-bold">
-                       {stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)} Alertas
-                    </span>
-                 </div>
-                 <div className="p-2 max-h-64 overflow-y-auto">
-                    {stats.qtyLate > 0 && (
-                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
-                         <div className="w-8 h-8 rounded-full bg-[#f04449]/10 text-[#f04449] flex items-center justify-center shrink-0">
-                           <TrendingDown className="w-4 h-4" />
-                         </div>
-                         <div>
-                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{stats.qtyLate} parcelas vencidas</p>
-                           <p className="text-xs text-gray-500">Exigem cobrança urgente</p>
-                         </div>
-                      </div>
-                    )}
-                    {stats.qtyDueToday > 0 && (
-                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
-                         <div className="w-8 h-8 rounded-full bg-[#f8b63a]/10 text-[#f8b63a] flex items-center justify-center shrink-0">
-                           <AlertCircle className="w-4 h-4" />
-                         </div>
-                         <div>
-                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{stats.qtyDueToday} parcelas vencem hoje</p>
-                           <p className="text-xs text-gray-500">Acompanhamento diário</p>
-                         </div>
-                      </div>
-                    )}
-                    {(stats as any).qtyNext7Days > 0 && (
-                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
-                         <div className="w-8 h-8 rounded-full bg-[#4999e9]/10 text-[#4999e9] flex items-center justify-center shrink-0">
-                           <Banknote className="w-4 h-4" />
-                         </div>
-                         <div>
-                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{(stats as any).qtyNext7Days} nos próximos 7 dias</p>
-                           <p className="text-xs text-gray-500">Programe-se</p>
-                         </div>
-                      </div>
-                    )}
-                    {(stats as any).qtyNoPaymentContracts > 0 && (
-                      <div className="px-3 py-2 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
-                         <div className="w-8 h-8 rounded-full bg-gray-500/10 text-gray-400 flex items-center justify-center shrink-0">
-                           <FileText className="w-4 h-4" />
-                         </div>
-                         <div>
-                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{(stats as any).qtyNoPaymentContracts} contratos sem base</p>
-                           <p className="text-xs text-gray-500">Sem pagamentos recebidos</p>
-                         </div>
-                      </div>
-                    )}
-                    {stats.qtyLate === 0 && stats.qtyDueToday === 0 && !(stats as any).qtyNext7Days && !(stats as any).qtyNoPaymentContracts && (
-                      <div className="px-3 py-4 text-center">
-                         <p className="text-sm text-gray-500">Nenhum alerta pendente</p>
-                      </div>
-                    )}
-                 </div>
-                 <div className="p-4 border-t border-[#1f232b] flex flex-col gap-2">
-                    <button onClick={() => setShowNotifications(false)} className="w-full py-2 bg-[#4999e9] hover:bg-[#4999e9]/90 text-white rounded font-medium transition-colors text-sm">
-                       Ver financeiro
-                    </button>
-                    <button onClick={() => { setHiddenNotifications(true); setShowNotifications(false); }} className="w-full py-2 bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 rounded font-medium transition-colors text-sm">
-                       Limpar notificações visuais
-                    </button>
-                 </div>
-              </div>
-            )}
-          </div>
           
           <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100">
             <Trash2 className="w-4 h-4" />

@@ -15,11 +15,177 @@ import {
   Building2,
   LogOut,
   Settings,
-  FileText
+  FileText,
+  TrendingDown,
+  AlertCircle,
+  Banknote
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
+
+function NotificationBell({ user }: { user: any }) {
+  const [show, setShow] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const router = useRouter();
+  const [stats, setStats] = useState({
+     qtyLate: 0,
+     qtyDueToday: 0,
+     qtyNext7Days: 0,
+     qtyNoPaymentContracts: 0
+  });
+
+  useEffect(() => {
+    async function loadAlerts() {
+      if (!user) return;
+      try {
+        let query = supabase.from('finance_receipts').select('amount, due_date, status, sale_id');
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+           query = query.eq('tenant_id', user.tenant_id);
+        }
+        const { data, error } = await query;
+        if (error || !data) return;
+
+        let qtyLate = 0;
+        let qtyDueToday = 0;
+        let qtyNext7Days = 0;
+        const paidContracts = new Set<string>();
+        const allContracts = new Set<string>();
+
+        const today = new Date();
+        today.setUTCHours(0,0,0,0);
+        const todayStr = today.toISOString().split('T')[0];
+        const todayTime = today.getTime();
+
+        data.forEach(p => {
+             const dueDate = new Date(p.due_date);
+             const dueStr = p.due_date.split('T')[0];
+             
+             let computedStatus = p.status?.toLowerCase() || 'pendente';
+             if ((computedStatus === 'pendente' || computedStatus === 'pending') && dueStr < todayStr) {
+                 computedStatus = 'atrasado';
+             }
+
+             if (p.sale_id) {
+                allContracts.add(p.sale_id);
+                if (computedStatus === 'pago' || computedStatus === 'paid') {
+                   paidContracts.add(p.sale_id);
+                }
+             }
+
+             if (computedStatus === 'atrasado') {
+                 qtyLate++;
+             } else if (computedStatus === 'pendente' || computedStatus === 'pending') {
+                 if (dueStr === todayStr) {
+                     qtyDueToday++;
+                 } else if (dueDate.getTime() > todayTime && dueDate.getTime() <= todayTime + 7*24*60*60*1000) {
+                     qtyNext7Days++;
+                 }
+             }
+        });
+
+        let qtyNoPaymentContracts = 0;
+        allContracts.forEach(c => {
+           if (!paidContracts.has(c)) qtyNoPaymentContracts++;
+        });
+
+        setStats({ qtyLate, qtyDueToday, qtyNext7Days, qtyNoPaymentContracts });
+
+      } catch(err) {
+        // ignore
+      }
+    }
+    loadAlerts();
+  }, [user]);
+
+  const totalAlerts = stats.qtyLate + stats.qtyDueToday + stats.qtyNext7Days + stats.qtyNoPaymentContracts;
+
+  return (
+    <div className="relative">
+      <button 
+        onClick={() => { setShow(!show); setHidden(false); }}
+        className="relative text-[var(--color-text-muted)] hover:text-white transition-colors"
+      >
+        <Bell className="w-6 h-6" />
+        {!hidden && totalAlerts > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-surface)] text-[8px] font-bold text-white shadow-sm">
+            {totalAlerts}
+          </span>
+        )}
+      </button>
+
+      {show && (
+        <div className="absolute right-0 mt-2 w-72 bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl overflow-hidden z-[9999]" style={{ top: '100%' }}>
+           <div className="p-4 border-b border-[#1f232b] flex justify-between items-center bg-[#181c25]">
+              <h3 className="font-semibold text-white">Notificações</h3>
+              <span className="text-xs bg-[#1f232b] text-gray-300 px-2 py-0.5 rounded font-bold">
+                 {totalAlerts} Alertas
+              </span>
+           </div>
+           <div className="p-2 max-h-64 overflow-y-auto">
+              {stats.qtyLate > 0 && (
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                   <div className="w-8 h-8 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
+                     <TrendingDown className="w-4 h-4" />
+                   </div>
+                   <div>
+                     <p className="text-sm font-medium text-gray-200">{stats.qtyLate} parcelas vencidas</p>
+                     <p className="text-xs text-gray-500">Exigem cobrança urgente</p>
+                   </div>
+                </div>
+              )}
+              {stats.qtyDueToday > 0 && (
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                   <div className="w-8 h-8 rounded-full bg-[var(--color-warning)]/10 text-[var(--color-warning)] flex items-center justify-center shrink-0">
+                     <AlertCircle className="w-4 h-4" />
+                   </div>
+                   <div>
+                     <p className="text-sm font-medium text-gray-200">{stats.qtyDueToday} parcelas vencem hoje</p>
+                     <p className="text-xs text-gray-500">Acompanhamento diário</p>
+                   </div>
+                </div>
+              )}
+              {stats.qtyNext7Days > 0 && (
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                   <div className="w-8 h-8 rounded-full bg-[var(--color-info)]/10 text-[var(--color-info)] flex items-center justify-center shrink-0">
+                     <Banknote className="w-4 h-4" />
+                   </div>
+                   <div>
+                     <p className="text-sm font-medium text-gray-200">{stats.qtyNext7Days} nos próximos 7 dias</p>
+                     <p className="text-xs text-gray-500">Programe-se</p>
+                   </div>
+                </div>
+              )}
+              {stats.qtyNoPaymentContracts > 0 && (
+                <div className="px-3 py-2 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                   <div className="w-8 h-8 rounded-full bg-gray-500/10 text-gray-400 flex items-center justify-center shrink-0">
+                     <FileText className="w-4 h-4" />
+                   </div>
+                   <div>
+                     <p className="text-sm font-medium text-gray-200">{stats.qtyNoPaymentContracts} contratos sem base</p>
+                     <p className="text-xs text-gray-500">Sem pagamentos recebidos</p>
+                   </div>
+                </div>
+              )}
+              {totalAlerts === 0 && (
+                <div className="px-3 py-4 text-center">
+                   <p className="text-sm text-gray-500">Nenhum alerta pendente</p>
+                </div>
+              )}
+           </div>
+           <div className="p-4 border-t border-[#1f232b] flex flex-col gap-2 bg-[#181c25]">
+              <button onClick={() => { setShow(false); router.push('/finance'); }} className="w-full py-2 bg-[var(--color-primary)] hover:opacity-90 text-white rounded font-medium transition-colors text-sm">
+                 Ver financeiro
+              </button>
+              <button onClick={() => { setHidden(true); setShow(false); }} className="w-full py-2 bg-transparent border border-[var(--color-border)] hover:bg-[#1a1f29] text-gray-300 rounded font-medium transition-colors text-sm">
+                 Limpar notificações visuais
+              </button>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
@@ -131,10 +297,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
-              <Bell className="w-6 h-6" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-surface)] text-[8px] font-bold text-white flex items-center justify-center">3</span>
-            </button>
+            <NotificationBell user={user} />
             <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white border-2 border-[var(--color-surface)]">
               <User className="w-5 h-5" />
             </button>
@@ -243,10 +406,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   MODO DEUS
                 </div>
               )}
-              <button className="relative text-[var(--color-text-muted)] hover:text-white transition-colors">
-                <Bell className="w-6 h-6" />
-                <span className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-[var(--color-danger)] border-2 border-[var(--color-background)] text-[10px] font-bold text-white flex items-center justify-center">3</span>
-              </button>
+              <NotificationBell user={user} />
               
               <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogout} title="Clique para sair">
                 <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg uppercase">
