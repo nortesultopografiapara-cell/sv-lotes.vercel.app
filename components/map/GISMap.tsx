@@ -796,16 +796,22 @@ export default function GISMap({
        if (updateError) throw updateError;
        
        // Handle Finance & Contracts if Vendido
-       if (newStatus === 'Vendido' && clientId) {
+       if (newStatus === 'Vendido') {
            const saleInsert = {
                ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
                block_id: lot.id,
+               lot_id: lot.id,
                client_id: clientId,
-               user_id: user.id,
+               customer_id: customerId,
+               project_id: lot.project_id || null,
+               user_id: user.id || null,
                agreed_price: customerData.final_value || finalPrice,
+               lot_price: price,
                payment_type: customerData.payment_type || 'À vista',
                discount_value: customerData.discount_value || 0,
+               discount: customerData.discount_value || 0,
                final_value: customerData.final_value || finalPrice,
+               total_value: customerData.final_value || finalPrice,
                down_payment: customerData.down_payment || 0,
                down_payment_due_date: customerData.down_payment_due_date || null,
                installments_count: customerData.installments_count || 1,
@@ -816,8 +822,13 @@ export default function GISMap({
            
            const { data: saleData, error: saleErr } = await supabase.from('sales').insert([saleInsert]).select('id').single();
 
-            if (!saleErr && saleData) {
-               console.log("venda criada", saleData);
+            if (saleErr || !saleData) {
+                console.error("erro ao criar venda", saleErr);
+                alert("Erro ao confirmar venda no sistema: " + (saleErr?.message || "Desconhecido"));
+                throw new Error("Erro ao criar venda: " + (saleErr?.message || "Desconhecido"));
+            }
+
+            console.log("venda criada", saleData);
 
                const financeReceiptsInsert: any[] = [];
                
@@ -873,10 +884,16 @@ export default function GISMap({
                }
                
                if (financeReceiptsInsert.length > 0) {
-                   await supabase.from('finance_receipts').insert(financeReceiptsInsert);
-                   console.log("financeiro criado", financeReceiptsInsert.length);
+                   const { error: finError } = await supabase.from('finance_receipts').insert(financeReceiptsInsert);
+                   if (finError) {
+                       console.error("erro ao criar financeiro", finError);
+                       alert("Erro ao criar parcelas: " + finError.message);
+                   } else {
+                       console.log("financeiro criado", financeReceiptsInsert.length);
+                   }
                }
 
+               const numInstallments = Math.max(1, Number(customerData.installments_count) || 1);
                const contractHtml = `
                     <div style="font-family: sans-serif; padding: 20px;">
                         <h2>Contrato de Compra e Venda</h2>
@@ -901,12 +918,14 @@ export default function GISMap({
                    status: 'ativo'
                };
 
-               await supabase.from('contracts').insert([contractInsert]);
-               console.log("contrato criado", contractInsert);
+               const { error: contractErr } = await supabase.from('contracts').insert([contractInsert]);
+               if (contractErr) {
+                   console.error("erro ao criar contrato", contractErr);
+                   alert("Erro ao criar contrato: " + contractErr.message);
+               } else {
+                   console.log("contrato criado", contractInsert);
+               }
 
-            } else {
-                console.warn("Erro ao criar registro de venda:", saleErr);
-            }
        }
        
        // Optimistic UI updates
