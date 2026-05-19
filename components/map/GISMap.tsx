@@ -268,6 +268,7 @@ function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    alert("BOTÃO CONFIRMAR VENDA CLICADO");
     
     // Validations
     if (actionName === 'Vendido') {
