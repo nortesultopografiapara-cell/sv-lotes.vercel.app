@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -39,13 +39,15 @@ export default function FinancePage() {
      qtyContracts: 0
   });
 
-  useEffect(() => {
-    async function loadFinance() {
+  const [selectedPayment, setSelectedPayment] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const loadFinance = async () => {
       if (!user) return;
       try {
         let query = supabase
            .from('finance_receipts')
-           .select('*, customers(name), blocks(name, block_name, number), projects(name)')
+           .select('*, customers(name, phone), blocks(name, block_name, number), projects(name)')
            .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
@@ -140,11 +142,14 @@ export default function FinancePage() {
       } finally {
         setLoading(false);
       }
-    }
+    };
 
+  useEffect(() => {
     if (!authLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFinance();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading]);
 
   // Client-side filtering
@@ -189,6 +194,82 @@ export default function FinancePage() {
     setCurrentPage(1);
   };
 
+  const handleMarkPaid = async (p: any) => {
+    console.log('FINANCE MARK PAID', p);
+    if (!window.confirm("Confirmar pagamento desta parcela?")) return;
+    try {
+      const { error } = await supabase
+        .from('finance_receipts')
+        .update({
+          status: 'pago',
+          paid_amount: p.amount,
+          paid_at: new Date().toISOString()
+        })
+        .eq('id', p.id);
+      if (error) throw error;
+      await loadFinance();
+      alert("Pagamento registrado com sucesso!");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao registrar pagamento.");
+    }
+  };
+
+  const handleDeleteReceipt = async (p: any) => {
+    console.log('FINANCE DELETE RECEIPT', p);
+    if (!window.confirm("Tem certeza que deseja excluir esta parcela? Essa ação não pode ser desfeita.")) return;
+    try {
+      const { error } = await supabase.from('finance_receipts').delete().eq('id', p.id);
+      if (error) throw error;
+      await loadFinance();
+      alert("Recebimento excluído com sucesso.");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao excluir recebimento.");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) {
+      alert("Selecione ao menos um recebimento para excluir.");
+      return;
+    }
+    if (!window.confirm("Deseja excluir todos os recebimentos pendentes deste cliente/lote usados em teste?")) return;
+    try {
+      const { error } = await supabase.from('finance_receipts').delete().in('id', Array.from(selectedIds));
+      if (error) throw error;
+      setSelectedIds(new Set());
+      await loadFinance();
+      alert("Recebimentos excluídos com sucesso.");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao excluir recebimentos.");
+    }
+  };
+
+  const handleWhatsApp = (p: any) => {
+    console.log('FINANCE WHATSAPP', p);
+    const phone = p.customers?.phone;
+    if (!phone) {
+      alert("Cliente sem telefone cadastrado.");
+      return;
+    }
+    const blockName = p.blocks?.block_name || p.blocks?.name || '?';
+    const lotNumber = p.blocks?.number || '?';
+    const lotDesc = `QD ${blockName} LT ${lotNumber}`;
+    const amountStr = formatCurrency(Number(p.amount) || 0);
+    const dateStr = p.due_date ? new Date(p.due_date + 'T12:00:00Z').toLocaleDateString('pt-BR') : '';
+    const msg = `Olá, ${p.customers?.name || 'Cliente'}. Identificamos uma parcela referente ao lote ${lotDesc}, no valor de ${amountStr}, com vencimento em ${dateStr}. Poderia verificar, por favor?`;
+    window.open(`https://wa.me/55${phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-[#0b0e14] p-6 md:p-8 text-white h-full font-sans">
       
@@ -200,10 +281,16 @@ export default function FinancePage() {
             CONTRATOS, TÍTULOS E INADIMPLÊNCIA
           </p>
         </div>
-        <button className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
-          <Download className="w-4 h-4" />
-          Exportar Relatório
-        </button>
+        <div className="flex gap-2 items-center">
+          <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100">
+            <Trash2 className="w-4 h-4" />
+            Limpar recebimentos de teste
+          </button>
+          <button className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+            <Download className="w-4 h-4" />
+            Exportar Relatório
+          </button>
+        </div>
       </header>
 
       {/* STATS CARDS */}
@@ -347,6 +434,15 @@ export default function FinancePage() {
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="border-b border-[#1f232b] bg-[#161a22]">
+                <th className="px-4 py-4 w-10">
+                   <input type="checkbox" onChange={(e) => {
+                     if (e.target.checked) {
+                       setSelectedIds(new Set(currentPayments.map(p => p.id)));
+                     } else {
+                       setSelectedIds(new Set());
+                     }
+                   }} checked={currentPayments.length > 0 && selectedIds.size === currentPayments.length} />
+                </th>
                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Contrato / Lote</th>
                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Cliente</th>
                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Projeto</th>
@@ -394,6 +490,9 @@ export default function FinancePage() {
 
                    return (
                       <tr key={p.id} className="hover:bg-[#1a1f29] transition-colors group">
+                        <td className="px-4 py-4">
+                          <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelection(p.id)} />
+                        </td>
                         <td className="px-6 py-4">
                           <div className="font-bold text-gray-200 text-sm mb-0.5">{contractNo}</div>
                           <div className="text-[11px] text-gray-500">{loteDesc}</div>
@@ -422,14 +521,19 @@ export default function FinancePage() {
                         </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex items-center justify-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                             <button className="p-1.5 hover:text-white text-gray-500 transition-colors" title="Visualizar Detalhes">
+                             <button onClick={() => { console.log('FINANCE VIEW DETAIL', p); setSelectedPayment(p); }} className="p-1.5 hover:text-white text-gray-500 transition-colors" title="Visualizar Detalhes">
                                <Eye className="w-5 h-5" />
                              </button>
-                             <button className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Registrar Pagamento">
-                                <CheckCircle className="w-5 h-5" />
-                             </button>
-                             <button className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Cobrar no WhatsApp">
+                             {!isPaid && (
+                               <button onClick={() => handleMarkPaid(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Registrar Pagamento">
+                                  <CheckCircle className="w-5 h-5" />
+                               </button>
+                             )}
+                             <button onClick={() => handleWhatsApp(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Cobrar no WhatsApp">
                                 <MessageCircle className="w-5 h-5" />
+                             </button>
+                             <button onClick={() => handleDeleteReceipt(p)} className="p-1.5 hover:text-[#f04449] text-gray-500 transition-colors" title="Excluir Parcela">
+                                <Trash2 className="w-5 h-5" />
                              </button>
                           </div>
                         </td>
@@ -541,6 +645,64 @@ export default function FinancePage() {
            </div>
         </div>
       </div>
+
+      {selectedPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white">Detalhes do Recebimento</h3>
+              <button onClick={() => setSelectedPayment(null)} className="text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 text-sm text-gray-300">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Cliente</span>
+                  <div className="font-medium text-white">{selectedPayment.customers?.name || 'Não localizado'}</div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Lote</span>
+                  <div className="font-medium text-white">
+                    {selectedPayment.projects?.name || 'Projeto'} - QD {selectedPayment.blocks?.block_name || selectedPayment.blocks?.name} LT {selectedPayment.blocks?.number}
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Vencimento</span>
+                  <div>{selectedPayment.due_date ? new Date((selectedPayment.due_date?.split('T')[0]) + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}</div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Parcela</span>
+                  <div>{selectedPayment.installment_number || 1}</div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Parcela</span>
+                  <div className="font-medium text-white">{formatCurrency(Number(selectedPayment.amount) || 0)}</div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Pago</span>
+                  <div className="font-medium text-white">{formatCurrency(selectedPayment.status === 'pago' || selectedPayment.status === 'PAID' ? (Number(selectedPayment.paid_amount) || Number(selectedPayment.amount)) : 0)}</div>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Status</span>
+                  <StatusBadge status={selectedPayment.status || 'pendente'} />
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Data Criação</span>
+                  <div>{selectedPayment.created_at ? new Date(selectedPayment.created_at).toLocaleDateString('pt-BR') : '-'}</div>
+                </div>
+              </div>
+              <div className="pt-4 border-t border-[#1f232b]">
+                <div className="text-[10px] text-gray-500 font-mono space-y-1">
+                  <div>Sale ID: {selectedPayment.sale_id || '-'}</div>
+                  <div>Customer ID: {selectedPayment.customer_id || '-'}</div>
+                  <div>Receipt ID: {selectedPayment.id}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
