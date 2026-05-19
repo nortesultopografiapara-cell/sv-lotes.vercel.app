@@ -807,7 +807,7 @@ export default function GISMap({
 
            const processarPosVenda = async () => {
                try {
-                   const resolvedTenantId = user?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
+                   const resolvedTenantId = (user as any)?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
                    
                    if (!resolvedTenantId) {
                        alert("ERRO PÓS-VENDA: tenant_id não encontrado");

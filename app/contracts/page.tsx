@@ -21,7 +21,7 @@ export default function ContractsPage() {
        }
 
        let query = supabase.from('contracts')
-           .select('*, customers(*), sales(*, clients(*)), blocks(number, block_name, name, projects(name, city, state))')
+           .select('*, customers(name), sales(id, agreed_price, total_value, final_value), blocks(number, block_name, name), projects(name, city, state)')
            .order('created_at', { ascending: false });
            
        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
@@ -29,7 +29,7 @@ export default function ContractsPage() {
        }
 
        const { data, error } = await query;
-       console.log("CONTRACTS FETCH:", data, error);
+       console.log("CONTRACTS FETCH RESULT", data, error);
        if (!error && data) {
            setContracts(data);
        }
@@ -42,8 +42,8 @@ export default function ContractsPage() {
   }, [user, authLoading]);
 
   const filteredContracts = contracts.filter(c => {
-      const p = c.customers?.name?.toLowerCase() || c.sales?.clients?.full_name?.toLowerCase() || '';
-      const proj = c.blocks?.projects?.name?.toLowerCase() || '';
+      const p = c.customers?.name?.toLowerCase() || '';
+      const proj = c.projects?.name?.toLowerCase() || '';
       return p.includes(search.toLowerCase()) || proj.includes(search.toLowerCase());
   });
 
@@ -88,11 +88,20 @@ export default function ContractsPage() {
                          onClick={() => setSelectedContract(contract)}
                          className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedContract?.id === contract.id ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20' : 'hover:bg-[var(--color-surface)] border border-transparent'}`}
                      >
-                         <h3 className="text-sm font-semibold text-white">{contract.customers?.name || contract.sales?.clients?.full_name || 'Cliente Desconhecido'}</h3>
-                         <div className="text-xs text-gray-400 mt-1">
-                             {contract.blocks?.projects?.name} - {contract.blocks?.block_name || contract.blocks?.name} / Lote {contract.blocks?.number}
+                         <div className="flex justify-between items-start mb-1">
+                             <h3 className="text-sm font-semibold text-white truncate pr-2">{contract.customers?.name || 'Cliente Desconhecido'}</h3>
+                             <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[var(--color-border)] text-gray-300">
+                                 {contract.status || 'Rascunho'}
+                             </span>
                          </div>
-                         <div className="text-xs font-semibold text-[var(--color-primary)] mt-1">
+                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1 mt-2">
+                             <span className="font-mono">{contract.contract_number || contract.id?.split('-')[0].toUpperCase()}</span>
+                             <span>{new Date(contract.created_at).toLocaleDateString('pt-BR')}</span>
+                         </div>
+                         <div className="text-xs text-gray-400 mt-1 truncate">
+                             {contract.projects?.name || 'Projeto'} - {contract.blocks?.block_name || contract.blocks?.name || 'Quadra'} / Lote {contract.blocks?.number || '?'}
+                         </div>
+                         <div className="text-xs font-semibold text-[var(--color-primary)] mt-1.5">
                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.sales?.total_value || contract.sales?.final_value || contract.sales?.agreed_price || 0)}
                          </div>
                      </div>

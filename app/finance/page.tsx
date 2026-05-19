@@ -45,7 +45,7 @@ export default function FinancePage() {
       try {
         let query = supabase
            .from('finance_receipts')
-           .select('*, sales(id, contract_number, contract_url, clients(full_name)), customers(name), blocks(name, block_name, number, projects(name))')
+           .select('*, customers(name), blocks(name, block_name, number), projects(name)')
            .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
@@ -53,7 +53,7 @@ export default function FinancePage() {
         }
         
         const { data, error } = await query;
-        console.log("FINANCE RECEIPTS FETCH:", data, error);
+        console.log("FINANCE FETCH RESULT", data, error);
         if (error) throw error;
         
         let localRecebido = 0;
@@ -84,7 +84,7 @@ export default function FinancePage() {
              if (p.sale_id) contractSet.add(p.sale_id);
              
              // Extract project name for filters
-             const projName = p.blocks?.projects?.name || 'Projeto Desconhecido';
+             const projName = p.projects?.name || 'Projeto Desconhecido';
              if (projName !== 'Projeto Desconhecido') pList.add(projName);
              
              localTotal += amt;
@@ -151,9 +151,8 @@ export default function FinancePage() {
   const filteredPayments = payments.filter(p => {
      const matchSearch = search ? (
          p.sales?.contract_number?.toLowerCase().includes(search.toLowerCase()) || 
-         p.sales?.contract_url?.toLowerCase().includes(search.toLowerCase()) || 
+         p.sales?.id?.toLowerCase().includes(search.toLowerCase()) || 
          p.customers?.name?.toLowerCase().includes(search.toLowerCase()) ||
-         p.sales?.clients?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
          p.blocks?.name?.toLowerCase().includes(search.toLowerCase()) ||
          p.blocks?.block_name?.toLowerCase().includes(search.toLowerCase()) ||
          String(p.blocks?.number).includes(search)
@@ -166,7 +165,7 @@ export default function FinancePage() {
          (statusFilter.toLowerCase() === 'cancelado' && (p.status === 'cancelado' || p.status === 'CANCELED'))
          : true;
          
-     const matchProject = projectFilter !== 'Todos os projetos' ? (p.blocks?.projects?.name === projectFilter) : true;
+     const matchProject = projectFilter !== 'Todos os projetos' ? (p.projects?.name === projectFilter) : true;
      
      const matchStartDate = startDate ? (p.due_date >= startDate) : true;
      const matchEndDate = endDate ? (p.due_date <= endDate) : true;
@@ -369,14 +368,14 @@ export default function FinancePage() {
                 </tr>
               ) : currentPayments.length > 0 ? (
                 currentPayments.map(p => {
-                   const projectName = p.blocks?.projects?.name || 'Projeto Desconhecido';
+                   const projectName = p.projects?.name || 'Projeto Desconhecido';
                    const blockName = p.blocks?.block_name || p.blocks?.name || '?';
                    const lotNumber = p.blocks?.number || '?';
                    
                    const loteDesc = `QD ${blockName} - LT ${lotNumber}`;
                    const contractNo = p.sales?.contract_number || p.sales?.id?.split('-')[0].toUpperCase() || 'CT-S/N';
                    
-                   const clientName = p.customers?.name || p.sales?.clients?.full_name || 'Desconhecido';
+                   const clientName = p.customers?.name || 'Desconhecido';
                    const parcelInfo = `${p.installment_number || 1}`;
                    const maxParcel = p.sales?.installments_count ? ` / ${p.sales.installments_count}` : '';
                    
