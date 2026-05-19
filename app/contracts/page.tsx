@@ -3,15 +3,24 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { FileText, Loader2, Search } from 'lucide-react';
+import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical } from 'lucide-react';
 import { ContractGenerator } from '@/components/contracts/ContractGenerator';
 
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
-   const [contracts, setContracts] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedContract, setSelectedContract] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('Visualização');
+
+  const [stats, setStats] = useState({
+    ativos: 0,
+    assinados: 0,
+    pendentes: 0,
+    cancelados: 0,
+    valorTotal: 0
+  });
 
   useEffect(() => {
     async function loadContracts() {
@@ -21,7 +30,13 @@ export default function ContractsPage() {
        }
 
        let query = supabase.from('contracts')
-           .select('*, customers(name), sales(id, agreed_price, total_value, final_value), blocks(number, block_name, name), projects(name, city, state)')
+           .select(`
+             *,
+             customers(name, document, cpf),
+             sales(id, agreed_price, total_value, final_value, projects(name, city, state), blocks(number, block_name, name)),
+             projects(name, city, state),
+             blocks(number, block_name, name)
+           `)
            .order('created_at', { ascending: false });
            
        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
@@ -30,8 +45,31 @@ export default function ContractsPage() {
 
        const { data, error } = await query;
        console.log("CONTRACTS FETCH RESULT", data, error);
+       
        if (!error && data) {
            setContracts(data);
+           
+           let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+           
+           data.forEach(c => {
+               const st = c.status?.toLowerCase() || 'pendente';
+               const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+               
+               valorTotal += val;
+               
+               if (st === 'assinado') {
+                 assinados++;
+                 ativos++;
+               } else if (st === 'cancelado') {
+                 cancelados++;
+               } else { 
+                 // Pendente or Rascunho or Ativo
+                 pendentes++;
+                 ativos++;
+               }
+           });
+           
+           setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
        }
        setLoading(false);
     }
@@ -43,83 +81,345 @@ export default function ContractsPage() {
 
   const filteredContracts = contracts.filter(c => {
       const p = c.customers?.name?.toLowerCase() || '';
-      const proj = c.projects?.name?.toLowerCase() || '';
-      return p.includes(search.toLowerCase()) || proj.includes(search.toLowerCase());
+      const proj = c.projects?.name?.toLowerCase() || c.sales?.projects?.name?.toLowerCase() || '';
+      const doc = c.customers?.document?.toLowerCase() || c.customers?.cpf?.toLowerCase() || '';
+      const cnum = c.contract_number?.toLowerCase() || '';
+      const term = search.toLowerCase();
+      
+      return p.includes(term) || proj.includes(term) || doc.includes(term) || cnum.includes(term);
   });
+
+  const getStatusColor = (status: string) => {
+      const st = status?.toLowerCase() || 'pendente';
+      if (st === 'assinado') return 'text-[var(--color-success)] bg-[var(--color-success)]/10 border-[var(--color-success)]/20';
+      if (st === 'cancelado') return 'text-[var(--color-danger)] bg-[var(--color-danger)]/10 border-[var(--color-danger)]/20';
+      return 'text-[var(--color-warning)] bg-[var(--color-warning)]/10 border-[var(--color-warning)]/20';
+  };
+
+  const getStatusLabel = (status: string) => {
+     const st = status?.toLowerCase() || 'pendente';
+     if (st === 'assinado') return 'Assinado';
+     if (st === 'cancelado') return 'Cancelado';
+     return 'Pendente';
+  };
 
   if (authLoading) return null;
 
   return (
-    <div className="flex h-full font-sans">
-      <div className="w-1/3 border-r border-[var(--color-border)] bg-[var(--color-background)] flex flex-col h-full">
-         <div className="p-4 border-b border-[var(--color-border)] flex-none">
-             <div className="flex items-center justify-between mb-4">
-                 <div className="flex items-center gap-2">
-                     <div className="w-10 h-10 bg-[var(--color-primary)]/10 rounded-xl flex items-center justify-center text-[var(--color-primary)]">
-                         <FileText className="w-5 h-5" />
-                     </div>
-                     <h2 className="text-lg font-bold text-white">Contratos</h2>
-                 </div>
-                 <a href="/contracts/templates" className="px-3 py-1.5 text-xs font-semibold bg-[var(--color-surface)] hover:bg-[var(--color-border)] text-white border border-[var(--color-border)] rounded-lg transition-colors">
-                     Modelos
-                 </a>
-             </div>
-             <div className="relative">
-                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                 <input 
-                     type="text" 
-                     placeholder="Buscar por cliente ou projeto..." 
-                     value={search}
-                     onChange={e => setSearch(e.target.value)}
-                     className="w-full pl-9 pr-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]"
-                 />
-             </div>
-         </div>
-         
-         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-             {loading ? (
-                 <div className="p-4 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" /></div>
-             ) : filteredContracts.length === 0 ? (
-                 <div className="p-4 text-sm text-gray-500 text-center">Nenhum contrato encontrado.</div>
-             ) : (
-                 filteredContracts.map(contract => (
-                     <div 
-                         key={contract.id}
-                         onClick={() => setSelectedContract(contract)}
-                         className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedContract?.id === contract.id ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20' : 'hover:bg-[var(--color-surface)] border border-transparent'}`}
-                     >
-                         <div className="flex justify-between items-start mb-1">
-                             <h3 className="text-sm font-semibold text-white truncate pr-2">{contract.customers?.name || 'Cliente Desconhecido'}</h3>
-                             <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[var(--color-border)] text-gray-300">
-                                 {contract.status || 'Rascunho'}
-                             </span>
-                         </div>
-                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1 mt-2">
-                             <span className="font-mono">{contract.contract_number || contract.id?.split('-')[0].toUpperCase()}</span>
-                             <span>{new Date(contract.created_at).toLocaleDateString('pt-BR')}</span>
-                         </div>
-                         <div className="text-xs text-gray-400 mt-1 truncate">
-                             {contract.projects?.name || 'Projeto'} - {contract.blocks?.block_name || contract.blocks?.name || 'Quadra'} / Lote {contract.blocks?.number || '?'}
-                         </div>
-                         <div className="text-xs font-semibold text-[var(--color-primary)] mt-1.5">
-                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.sales?.total_value || contract.sales?.final_value || contract.sales?.agreed_price || 0)}
-                         </div>
-                     </div>
-                 ))
-             )}
-         </div>
-      </div>
+    <div className="flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden">
       
-      <div className="flex-1 bg-[var(--color-background)] border-l border-[var(--color-border)] flex flex-col h-full overflow-hidden">
-         {selectedContract ? (
-             <ContractGenerator sale={selectedContract.sales || selectedContract} />
-         ) : (
-             <div className="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
-                 <FileText className="w-16 h-16 mb-4 opacity-50" />
-                 <p>Selecione um contrato na lista para visualizar e exportar.</p>
+      {/* Top Banner Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-6 border-b border-[var(--color-border)] bg-[#11151c]">
+           <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+              <div>
+                 <p className="text-gray-400 text-sm font-medium mb-1">Contratos Ativos</p>
+                 <h3 className="text-2xl font-bold">{stats.ativos}</h3>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]">
+                 <FileText className="w-5 h-5" />
+              </div>
+           </div>
+           
+           <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+              <div>
+                 <p className="text-gray-400 text-sm font-medium mb-1">Assinados</p>
+                 <h3 className="text-2xl font-bold">{stats.assinados}</h3>
+                 <p className="text-[10px] text-[var(--color-success)] mt-1 font-medium">{stats.ativos > 0 ? Math.round((stats.assinados/stats.ativos)*100) : 0}% do total</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[var(--color-success)]/10 flex items-center justify-center text-[var(--color-success)]">
+                 <CheckCircle2 className="w-5 h-5" />
+              </div>
+           </div>
+
+           <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+              <div>
+                 <p className="text-gray-400 text-sm font-medium mb-1">Pendentes</p>
+                 <h3 className="text-2xl font-bold">{stats.pendentes}</h3>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center text-[var(--color-warning)]">
+                 <Clock className="w-5 h-5" />
+              </div>
+           </div>
+
+           <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+              <div>
+                 <p className="text-gray-400 text-sm font-medium mb-1">Cancelados</p>
+                 <h3 className="text-2xl font-bold">{stats.cancelados}</h3>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 flex items-center justify-center text-[var(--color-danger)]">
+                 <XCircle className="w-5 h-5" />
+              </div>
+           </div>
+
+           <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+              <div>
+                 <p className="text-gray-400 text-sm font-medium mb-1">Val Total Contratado</p>
+                 <h3 className="text-xl lg:text-2xl font-bold">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.valorTotal)}</h3>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400">
+                 <Wallet className="w-5 h-5" />
+              </div>
+           </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+          {/* SIDEBAR LIST */}
+          <div className="w-1/3 min-w-[350px] max-w-[450px] flex flex-col border-r border-[#1f232b] bg-[#0b0e14]">
+             <div className="p-4 border-b border-[#1f232b]">
+                <div className="relative">
+                   <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
+                   <input
+                      type="text"
+                      className="w-full pl-9 pr-4 py-2 text-sm bg-[#11151c] border border-[#1f232b] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+                      placeholder="Buscar por cliente, contrato, projeto..."
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                   />
+                </div>
              </div>
-         )}
+
+             <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                 {loading ? (
+                    <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" /></div>
+                 ) : filteredContracts.length === 0 ? (
+                    <div className="text-center text-gray-500 p-8 text-sm">Nenhum contrato encontrado.</div>
+                 ) : (
+                    filteredContracts.map(c => {
+                       const isSelected = selectedContract?.id === c.id;
+                       const cnum = c.contract_number || c.id?.split('-')[0].toUpperCase();
+                       const projName = c.projects?.name || c.sales?.projects?.name || 'Projeto Desconhecido';
+                       const quad = c.blocks?.block_name || c.blocks?.name || c.sales?.blocks?.block_name || '?';
+                       const lote = c.blocks?.number || c.sales?.blocks?.number || '?';
+                       const loc = `QD ${quad} • LT ${lote}`;
+                       const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+
+                       return (
+                           <button 
+                              key={c.id}
+                              onClick={() => setSelectedContract(c)}
+                              className={`w-full text-left p-3 rounded-xl border transition-all duration-200 ${
+                                 isSelected ? 'bg-[#1a2333] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]' 
+                                 : 'bg-[#11151c] border-[#1f232b] hover:border-[#2d3340] hover:bg-[#151a23]'
+                              }`}
+                           >
+                              <div className="flex justify-between items-start mb-1.5">
+                                  <div className="flex items-center gap-2">
+                                      <FileText className={`w-4 h-4 ${isSelected ? 'text-[var(--color-primary)]' : 'text-gray-400'}`} />
+                                      <span className="font-mono text-sm font-bold text-white">{cnum}</span>
+                                  </div>
+                                  <div className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}>
+                                      {getStatusLabel(c.status)}
+                                  </div>
+                              </div>
+                              <div className="text-sm font-semibold text-gray-200 truncate pr-4">
+                                  {c.customers?.name || 'Cliente Desconhecido'}
+                              </div>
+                              {c.customers?.document && (
+                                  <div className="text-[10px] text-gray-500 mt-0.5">
+                                      CPF/CNPJ: {c.customers.document}
+                                  </div>
+                              )}
+                              
+                              <div className="flex justify-between items-end mt-3">
+                                  <div>
+                                      <div className="text-xs text-gray-400">{projName}</div>
+                                      <div className="text-[10px] text-gray-500">{loc}</div>
+                                  </div>
+                                  <div className="text-right">
+                                      <div className="text-xs font-bold text-white">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)}</div>
+                                      <div className="text-[10px] text-gray-500">{new Date(c.created_at).toLocaleDateString('pt-BR')}</div>
+                                  </div>
+                              </div>
+                           </button>
+                       )
+                    })
+                 )}
+             </div>
+          </div>
+
+          {/* MAIN PREVIEW PANEL */}
+          <div className="flex-1 bg-[#11151c] flex flex-col overflow-hidden relative">
+             {selectedContract ? (
+                <>
+                  <div className="p-6 border-b border-[#1f232b]">
+                      <div className="flex items-center justify-between mb-6">
+                          <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
+                                  <FileText className="w-5 h-5 text-[var(--color-primary)]" />
+                              </div>
+                              <div>
+                                  <h2 className="text-xl font-bold flex items-center gap-3">
+                                      {selectedContract.contract_number || selectedContract.id?.split('-')[0].toUpperCase()}
+                                      <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}>
+                                          {getStatusLabel(selectedContract.status)}
+                                      </span>
+                                  </h2>
+                              </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                              {/* Botão Dropdown "Modelos" */}
+                              <div className="relative group">
+                                  <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-gray-300 border border-[#2d3340] rounded-lg hover:bg-[#1a1f2b] transition-colors text-sm font-medium">
+                                     Modelos
+                                     <ChevronDown className="w-4 h-4" />
+                                  </button>
+                                  <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1f2b] border border-[#2d3340] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                                      <a href="/contracts/templates" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">Novo Contrato</a>
+                                      <a href="/contracts/templates" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">Modelos</a>
+                                      <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">Gerar PDF</button>
+                                      <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">Exportar</button>
+                                      <button className="block w-full text-left px-4 py-2 text-sm text-[var(--color-success)] hover:bg-[var(--color-success)]/10 hover:text-[var(--color-success)]">Assinar</button>
+                                  </div>
+                              </div>
+                              <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[#1f6b9c] transition-colors text-sm font-medium shadow-sm">
+                                 <Send className="w-4 h-4" />
+                                 Assinar via WhatsApp
+                              </button>
+                          </div>
+                      </div>
+
+                      {/* Header Infos */}
+                      <div className="grid grid-cols-4 gap-4 text-sm mt-4">
+                          <div>
+                              <p className="text-gray-500 text-xs mb-1">Cliente</p>
+                              <p className="font-semibold text-gray-200">{selectedContract.customers?.name}</p>
+                              <p className="text-[10px] text-gray-500">CPF: {selectedContract.customers?.document || selectedContract.customers?.cpf || '-'}</p>
+                          </div>
+                          <div>
+                              <p className="text-gray-500 text-xs mb-1">Projeto</p>
+                              <p className="font-semibold text-gray-200">{selectedContract.projects?.name || selectedContract.sales?.projects?.name}</p>
+                          </div>
+                          <div>
+                              <p className="text-gray-500 text-xs mb-1">Localização</p>
+                              <p className="font-semibold text-gray-200">QD {selectedContract.blocks?.block_name || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || '?'} • LT {selectedContract.blocks?.number || selectedContract.sales?.blocks?.number || '?'}</p>
+                          </div>
+                          <div>
+                              <p className="text-gray-500 text-xs mb-1">Valor do Contrato</p>
+                              <p className="font-semibold text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(selectedContract.sales?.total_value || selectedContract.sales?.final_value || selectedContract.sales?.agreed_price || 0))}</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Tabs */}
+                  <div className="flex items-center gap-6 px-6 border-b border-[#1f232b]">
+                      {['Visualização', 'Dados do Contrato', 'Parcelas', 'Arquivos', 'Histórico'].map(tab => (
+                         <button 
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                         >
+                            {tab}
+                         </button>
+                      ))}
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="flex-1 overflow-hidden flex bg-[#0b0e14]">
+                      {activeTab === 'Visualização' && (
+                         <>
+                            <div className="flex-1 p-6 overflow-y-auto">
+                                <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top">
+                                   {/* If ContractGenerator expects 'sale', we push 'selectedContract.sales' or selectedContract */}
+                                   <div className="text-black transform scale-[0.85] origin-top-left w-[117.6%] h-full min-h-[800px]">
+                                        <ContractGenerator sale={selectedContract.sales || selectedContract} />
+                                   </div>
+                                </div>
+                            </div>
+                            
+                            {/* Timeline Sidebar inside preview */}
+                            <div className="w-[300px] border-l border-[#1f232b] bg-[#11151c] p-6 overflow-y-auto hidden xl:block">
+                               <h3 className="text-sm font-bold text-white mb-6">Linha do Tempo</h3>
+                               <div className="space-y-6">
+                                   <TimelineItem icon={<FileText />} color="success" title="Contrato criado" date={new Date(selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />
+                                   <TimelineItem icon={<CheckCircle2 />} color="success" title="Cliente cadastrado" date={new Date(selectedContract.customers?.created_at || selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />
+                                   <TimelineItem icon={<Wallet />} color="info" title="Entrada registrada" subtitle="No momento da venda" active />
+                                   <TimelineItem icon={<FileText />} color="purple" title="PDF gerado" subtitle="Sistema" active />
+                                   <TimelineItem icon={<Clock />} color="warning" title="Assinatura pendente" subtitle="Aguardando assinatura do cliente" active={getStatusLabel(selectedContract.status) === 'Pendente'} />
+                               </div>
+                            </div>
+                         </>
+                      )}
+
+                      {activeTab !== 'Visualização' && (
+                         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50 p-6 text-center">
+                            <Clock className="w-12 h-12 mb-3" />
+                            <p>Aba <strong>{activeTab}</strong> em desenvolvimento para a próxima atualização.</p>
+                         </div>
+                      )}
+                  </div>
+
+                  {/* BOTTOM ACTION BAR */}
+                  <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
+                       <ActionBtn icon={<Download />} label="Baixar PDF" color="primary" />
+                       <ActionBtn icon={<Printer />} label="Imprimir" color="info" />
+                       <ActionBtn icon={<Send />} label="Reenviar" color="purple" />
+                       <ActionBtn icon={<Edit />} label="Editar" color="warning" />
+                       <ActionBtn icon={<X />} label="Cancelar" color="danger" />
+                       
+                       <div className="h-8 w-[1px] bg-[#2d3340] mx-2 hidden sm:block"></div>
+                       
+                       <button className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors">
+                           <Receipt className="w-4 h-4" />
+                           Gerar Carnê
+                           <ChevronDown className="w-4 h-4 text-gray-500" />
+                       </button>
+                  </div>
+                </>
+             ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                    <div className="w-24 h-24 rounded-full bg-[#1a1f2b] flex items-center justify-center mb-6">
+                       <FileText className="w-10 h-10 opacity-30" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-400 mb-2">Nenhum contrato selecionado</h3>
+                    <p className="text-sm">Selecione um contrato na lista à esquerda para visualizar os detalhes.</p>
+                </div>
+             )}
+          </div>
       </div>
     </div>
   );
 }
+
+function TimelineItem({ icon, title, subtitle, date, author, color, active }: any) {
+    const colors: Record<string, string> = {
+        success: 'text-[var(--color-success)] bg-[var(--color-success)]/20',
+        warning: 'text-[var(--color-warning)] bg-[var(--color-warning)]/20',
+        danger: 'text-[var(--color-danger)] bg-[var(--color-danger)]/20',
+        info: 'text-[var(--color-info)] bg-[var(--color-info)]/20',
+        purple: 'text-purple-400 bg-purple-500/20',
+        inactive: 'text-gray-500 bg-[#1f232b]'
+    };
+
+    return (
+        <div className="flex gap-4 relative">
+             <div className="absolute left-[15px] top-8 bottom-[-24px] w-[2px] bg-[#1f232b] z-0"></div>
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 shrink-0 ${active ? colors[color] : colors['inactive']}`}>
+                 <div className="w-4 h-4">{icon}</div>
+             </div>
+             <div>
+                 <p className={`text-sm font-bold ${active ? 'text-gray-200' : 'text-gray-500'}`}>{title}</p>
+                 {date && <p className="text-xs text-gray-500 mt-0.5">{date}</p>}
+                 {subtitle && <p className={`text-xs mt-0.5 ${active && color === 'warning' ? 'text-[var(--color-warning)]' : 'text-gray-500'}`}>{subtitle}</p>}
+                 {author && <p className="text-[10px] text-gray-600 mt-1">{author}</p>}
+             </div>
+        </div>
+    );
+}
+
+function ActionBtn({ icon, label, color }: any) {
+    const colorClasses: Record<string, string> = {
+        primary: 'border-[var(--color-primary)]/30 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10',
+        info: 'border-[var(--color-info)]/30 text-[var(--color-info)] hover:bg-[var(--color-info)]/10',
+        purple: 'border-purple-500/30 text-purple-400 hover:bg-purple-500/10',
+        warning: 'border-[var(--color-warning)]/30 text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10',
+        danger: 'border-[var(--color-danger)]/30 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10',
+    };
+
+    return (
+        <button className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors ${colorClasses[color]}`}>
+            <div className="w-4 h-4">{icon}</div>
+            <span className="hidden sm:inline">{label}</span>
+        </button>
+    );
+}
+
