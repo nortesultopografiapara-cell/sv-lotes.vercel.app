@@ -586,6 +586,356 @@ export default function FinancePage() {
      document.body.removeChild(link);
   };
 
+  const prepareResumidoData = async () => {
+    // Busca compacta agrupando lotes e somando faturamentos reais via map local.
+    let query = supabase.from('blocks').select(`
+      id,
+      block_name,
+      number,
+      status,
+      price,
+      projects(name),
+      sales(installments_count, down_payment, payment_type)
+    `);
+
+    if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+        query = query.eq('tenant_id', user.tenant_id);
+    }
+    
+    const { data: blocks, error } = await query;
+    if (error || !blocks) {
+        console.error("Erro buscar resumido", error);
+        return [];
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const filteredBlocks = blocks.filter(b => {
+        if (projectFilter !== 'Todos os projetos') {
+             const projName = b.projects?.name || 'Projeto Desconhecido';
+             if (projName !== projectFilter) return false;
+        }
+        return true;
+    });
+
+    const processed = filteredBlocks.map(b => {
+         const projName = b.projects?.name || 'Projeto Desconhecido';
+         const quadra = b.block_name || '?';
+         const lote = String(b.number || '?');
+         const statusLote = (b.status || 'DISPONÍVEL').toUpperCase(); 
+         
+         const salesArr = (b.sales || []) as any[];
+         const latestSale = salesArr.length > 0 ? salesArr[salesArr.length - 1] : null;
+         
+         const vlVenda = Number(b.price) || 0;
+         const numParc = Number(latestSale?.installments_count) || 0;
+         const vendaTipo = (numParc <= 1 && latestSale?.payment_type !== 'INSTALLMENT') ? 'À Vista' : 'Parcelado';
+         const entrada = Number(latestSale?.down_payment) || 0;
+         
+         const receipts = payments.filter(p => p.block_id === b.id || p.blocks?.id === b.id);
+         
+         let recebido = 0;
+         let receber = 0;
+         let atraso = 0;
+         
+         receipts.forEach(r => {
+             const rStatus = r.status?.toLowerCase() || 'pendente';
+             const isPaid = rStatus === 'pago' || rStatus === 'paid';
+             let isLate = false;
+             if (!isPaid && r.due_date) {
+                 if (r.due_date.split('T')[0] < todayStr) isLate = true;
+             }
+             const amt = Number(r.amount) || 0;
+             const pAmt = Number(r.paid_amount) || amt;
+
+             if (isPaid) recebido += pAmt;
+             else receber += amt;
+             
+             if (isLate) atraso += amt;
+         });
+
+         return {
+            Projeto: projName,
+            Quadra: quadra,
+            Lote: lote,
+            Status: statusLote,
+            Venda: statusLote === 'VENDIDO' ? vendaTipo : '-',
+            Entrada: statusLote === 'VENDIDO' ? (entrada > 0 ? formatCurrency(entrada) : '-') : '-',
+            Parc: statusLote === 'VENDIDO' ? numParc.toString() : '-',
+            Vl_Parc: statusLote === 'VENDIDO' && numParc > 0 ? formatCurrency(vlVenda/numParc) : '-',
+            Recebido: statusLote === 'VENDIDO' ? formatCurrency(recebido) : '-',
+            Receber: statusLote === 'VENDIDO' ? formatCurrency(receber) : '-',
+            Atraso: statusLote === 'VENDIDO' ? formatCurrency(atraso) : '-',
+            _raw: {
+                vlVenda: statusLote === 'VENDIDO' ? vlVenda : 0,
+                recebido: statusLote === 'VENDIDO' ? recebido : 0,
+                receber: statusLote === 'VENDIDO' ? receber : 0,
+                atraso: statusLote === 'VENDIDO' ? atraso : 0,
+                status: statusLote
+            }
+         };
+    });
+
+    processed.sort((a, b) => {
+        if (a.Projeto !== b.Projeto) return a.Projeto.localeCompare(b.Projeto);
+        const aq = parseInt(a.Quadra) || 0;
+        const bq = parseInt(b.Quadra) || 0;
+        if (aq !== bq) return aq - bq;
+        if (a.Quadra !== b.Quadra) return a.Quadra.localeCompare(b.Quadra);
+        const aNum = parseInt(a.Lote) || 0;
+        const bNum = parseInt(b.Lote) || 0;
+        if (aNum !== bNum) return aNum - bNum;
+        return a.Lote.localeCompare(b.Lote);
+    });
+
+    return processed;
+  };
+
+  const handleExportResumidoPDF = async () => {
+       const data = await prepareResumidoData();
+       if (!data || data.length === 0) {
+           alert("Nenhum dado encontrado para exportar.");
+           return;
+       }
+       
+       const doc = new jsPDF('landscape');
+       const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
+       const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
+       const infoLine = [
+          tenantData?.email ? `Email: ${tenantData.email}` : null,
+          tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
+          tenantData?.address ? `Endereço: ${tenantData.address}` : null
+       ].filter(Boolean).join(' | ');
+
+       const title = `RELATÓRIO RESUMIDO`;
+       let startY = 35;
+       
+       if (tenantData?.logo_url) {
+          try {
+              const imgBase64 = await new Promise<string>((resolve, reject) => {
+                  const img = new Image();
+                  img.crossOrigin = 'Anonymous';
+                  img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.width;
+                      canvas.height = img.height;
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) {
+                          ctx.drawImage(img, 0, 0);
+                          resolve(canvas.toDataURL('image/png'));
+                      } else reject();
+                  };
+                  img.onerror = reject;
+                  img.src = tenantData.logo_url;
+              });
+              doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
+              doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 50, 15);
+              doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 50, 20);
+              doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
+              doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 50, 24);
+              doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 50, 28);
+          } catch(e) {
+              doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 14, 15);
+              doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 14, 20);
+              doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
+              doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
+              doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 14, 28);
+          }
+       } else {
+          doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 14, 15);
+          doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60); doc.text(companyName.toUpperCase(), 14, 20);
+          doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
+          doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
+          doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 14, 28);
+       }
+
+       const groupedData: any = {};
+       data.forEach(d => {
+           const key = `${d.Projeto} - Quadra ${d.Quadra}`;
+           if (!groupedData[key]) groupedData[key] = { items: [], stats: { total: 0, vendidos: 0, reservados: 0, disponiveis: 0, recebido: 0, receber: 0, atraso: 0 }};
+           groupedData[key].items.push(d);
+           groupedData[key].stats.total++;
+           if (d.Status === 'VENDIDO') groupedData[key].stats.vendidos++;
+           else if (d.Status === 'RESERVADO') groupedData[key].stats.reservados++;
+           else groupedData[key].stats.disponiveis++;
+           groupedData[key].stats.recebido += d._raw.recebido;
+           groupedData[key].stats.receber += d._raw.receber;
+           groupedData[key].stats.atraso += d._raw.atraso;
+       });
+
+       let currentY = startY;
+       
+       Object.keys(groupedData).forEach((groupName, i) => {
+           const group = groupedData[groupName];
+           
+           if (currentY > 170) {
+              doc.addPage();
+              currentY = 20;
+           }
+           
+           doc.setFontSize(10);
+           doc.setFont('helvetica', 'bold');
+           doc.setTextColor(52, 73, 94);
+           doc.text(groupName, 14, currentY);
+           currentY += 5;
+
+           autoTable(doc, {
+               startY: currentY,
+               head: [['LT', 'STATUS', 'VENDA', 'ENTRADA', 'PARC', 'VL PARC', 'RECEBIDO', 'RECEBER', 'ATRASO']],
+               body: group.items.map((d: any) => [d.Lote, d.Status, d.Venda, d.Entrada, d.Parc, d.Vl_Parc, d.Recebido, d.Receber, d.Atraso]),
+               styles: { fontSize: 7, cellPadding: 1.5 },
+               headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+               alternateRowStyles: { fillColor: [245, 247, 250] },
+               didParseCell: function(dataObj) {
+                   if (dataObj.section === 'body' && dataObj.column.index === 1) {
+                      const status = dataObj.cell.raw as string;
+                      if (status === 'VENDIDO') dataObj.cell.styles.textColor = [231, 76, 60]; 
+                      else if (status === 'RESERVADO') dataObj.cell.styles.textColor = [243, 156, 18]; 
+                      else if (status === 'DISPONÍVEL') dataObj.cell.styles.textColor = [39, 174, 96]; 
+                      dataObj.cell.styles.fontStyle = 'bold';
+                   }
+               },
+               didDrawPage: (dataObj) => {
+                   doc.setFontSize(8); doc.setTextColor(150);
+                   let pageSize = doc.internal.pageSize;
+                   let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
+                   const footerText = `Gerado automaticamente por SV LOTES GIS | Usuário: ${user?.name || 'Admin'} | Emitido em: ${new Date().toLocaleString('pt-BR')}`;
+                   doc.text(footerText, 14, pageHeight - 10);
+                   let str = 'Página ' + (doc.internal as any).getNumberOfPages();
+                   doc.text(str, pageSize.width - 30, pageHeight - 10);
+               }
+           });
+           
+           currentY = (doc as any).lastAutoTable.finalY + 3;
+           
+           doc.setFontSize(8);
+           doc.setFont('helvetica', 'normal');
+           doc.setTextColor(80);
+           const sumText = `Lotes: ${group.stats.total} | Vendidos: ${group.stats.vendidos} | Reservados: ${group.stats.reservados} | Disponíveis: ${group.stats.disponiveis}  ***  Recebido: ${formatCurrency(group.stats.recebido)} | Receber: ${formatCurrency(group.stats.receber)} | Atraso: ${formatCurrency(group.stats.atraso)}`;
+           doc.text(sumText, 14, currentY);
+           
+           currentY += 10;
+       });
+
+       doc.save(`relatorio_resumido_${new Date().getTime()}.pdf`);
+  };
+
+  const handleExportResumidoExcel = async () => {
+     const data = await prepareResumidoData();
+     if (!data || data.length === 0) {
+         alert("Nenhum dado encontrado para exportar.");
+         return;
+     }
+
+     const ExcelJS = (await import('exceljs')).default;
+     const workbook = new ExcelJS.Workbook();
+     workbook.creator = user?.name || 'Sistema SV_LOTES';
+     workbook.created = new Date();
+
+     // === ABA 1: Resumo (Lista) ===
+     const ws = workbook.addWorksheet('Resumo', { views: [{ state: 'frozen', ySplit: 6 }] });
+     
+     if (tenantData?.logo_url) {
+         try {
+             const base64Image = await new Promise<string>((resolve, reject) => {
+                 const img = new Image();
+                 img.crossOrigin = 'Anonymous';
+                 img.onload = () => {
+                     const canvas = document.createElement('canvas');
+                     canvas.width = img.width; canvas.height = img.height;
+                     const ctx = canvas.getContext('2d');
+                     if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
+                 };
+                 img.onerror = reject; img.src = tenantData.logo_url;
+             });
+             const imageId = workbook.addImage({ base64: base64Image, extension: 'png' });
+             ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 60 } });
+         } catch (e) {}
+     }
+
+     const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
+     const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
+     const infoLine = [
+         tenantData?.email ? `Email: ${tenantData.email}` : null,
+         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
+         tenantData?.address ? `Endereço: ${tenantData.address}` : null
+     ].filter(Boolean).join(' | ');
+
+     ws.mergeCells('A1:K1');
+     ws.getCell('A1').value = `RELATÓRIO RESUMIDO - ${companyName.toUpperCase()}`;
+     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
+     ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+     ws.getRow(1).height = 40; 
+
+     ws.mergeCells('A2:K2'); ws.getCell('A2').value = `CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`; ws.getCell('A2').font = { size: 10, bold: true }; ws.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
+     ws.mergeCells('A3:K3'); ws.getCell('A3').value = `Data de emissão: ${new Date().toLocaleString('pt-BR')} | Filtros: ${projectFilter}`; ws.getCell('A3').font = { size: 9 }; ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
+     ws.addRow([]);
+
+     const headers = ['Projeto', 'QD', 'LT', 'STATUS', 'VENDA', 'ENTRADA', 'PARC', 'VL PARC', 'RECEBIDO', 'RECEBER', 'ATRASO'];
+     const headerRow = ws.addRow(headers);
+     
+     headerRow.eachCell((cell) => {
+         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
+         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+     });
+
+     data.forEach(d => {
+         const row = ws.addRow([d.Projeto, d.Quadra, d.Lote, d.Status, d.Venda, d.Entrada, d.Parc, d.Vl_Parc, d.Recebido, d.Receber, d.Atraso]);
+         
+         const statusCell = row.getCell(4); 
+         if (d.Status === 'VENDIDO') statusCell.font = { color: { argb: 'FFE74C3C' }, bold: true }; 
+         else if (d.Status === 'RESERVADO') statusCell.font = { color: { argb: 'FFF39C12' }, bold: true }; 
+         else if (d.Status === 'DISPONÍVEL') statusCell.font = { color: { argb: 'FF27AE60' }, bold: true }; 
+
+         row.eachCell((cell) => {
+             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+         });
+     });
+
+     ws.columns = [
+        { width: 25 }, { width: 10 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }
+     ];
+     ws.autoFilter = 'A6:K6';
+
+     // === ABA 2: Totais ===
+     const wsTot = workbook.addWorksheet('Totais');
+     wsTot.mergeCells('A1:G1');
+     wsTot.getCell('A1').value = 'TOTAIS POR QUADRA';
+     wsTot.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+     wsTot.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+     
+     const totHead = wsTot.addRow(['Projeto', 'Quadra', 'Lotes', 'Vendidos', 'Recebido', 'Receber', 'Atraso']);
+     totHead.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } }; c.font = { bold: true }; });
+
+     const groupedData: any = {};
+     data.forEach(d => {
+         const key = `${d.Projeto} - ${d.Quadra}`;
+         if (!groupedData[key]) groupedData[key] = { proj: d.Projeto, quad: d.Quadra, loc: 0, v: 0, r1: 0, r2: 0, a: 0 };
+         groupedData[key].loc++;
+         if (d.Status === 'VENDIDO') groupedData[key].v++;
+         groupedData[key].r1 += d._raw.recebido;
+         groupedData[key].r2 += d._raw.receber;
+         groupedData[key].a += d._raw.atraso;
+     });
+
+     Object.values(groupedData).forEach((g: any) => {
+         const row = wsTot.addRow([g.proj, g.quad, g.loc, g.v, formatCurrency(g.r1), formatCurrency(g.r2), formatCurrency(g.a)]);
+         row.eachCell(c => { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
+     });
+     wsTot.columns = [{ width: 25 }, { width: 15 }, { width: 10 }, { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }];
+
+     const buffer = await workbook.xlsx.writeBuffer();
+     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+     const link = document.createElement('a');
+     link.href = URL.createObjectURL(blob);
+     link.download = `relatorio_resumido_${new Date().getTime()}.xlsx`;
+     document.body.appendChild(link);
+     link.click();
+     document.body.removeChild(link);
+  };
+
   const handleExportPDF = async () => {
       const data = prepareExportData();
       const summary = getSummaryData();
@@ -753,19 +1103,33 @@ export default function FinancePage() {
             CONTRATOS, TÍTULOS E INADIMPLÊNCIA
           </p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center mt-4 md:mt-0">
           
           <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100">
             <Trash2 className="w-4 h-4" />
-            Limpar recebimentos de teste
+            Limpar testes
           </button>
-          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          
+          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+
+          <button onClick={handleExportResumidoPDF} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+            <FileText className="w-4 h-4 text-[#e74c3c]" />
+            PDF Resumido
+          </button>
+          <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+            <Download className="w-4 h-4 text-[#27ae60]" />
+            Excel Resumido
+          </button>
+
+          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+
+          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <FileText className="w-4 h-4" />
-            Exportar PDF
+            PDF Completo
           </button>
-          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <Download className="w-4 h-4" />
-            Exportar Excel
+            Excel Completo
           </button>
         </div>
       </header>
