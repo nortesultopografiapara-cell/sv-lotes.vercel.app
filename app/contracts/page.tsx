@@ -29,6 +29,7 @@ export default function ContractsPage() {
        }
 
        const { data, error } = await query;
+       console.log("CONTRACTS FETCH:", data, error);
        if (!error && data) {
            setContracts(data);
        }

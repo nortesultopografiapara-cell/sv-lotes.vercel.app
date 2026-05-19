@@ -53,6 +53,7 @@ export default function FinancePage() {
         }
         
         const { data, error } = await query;
+        console.log("FINANCE RECEIPTS FETCH:", data, error);
         if (error) throw error;
         
         let localRecebido = 0;

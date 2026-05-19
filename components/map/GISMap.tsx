@@ -814,7 +814,7 @@ export default function GISMap({
                        return;
                    }
 
-                   alert("INSERINDO SALES");
+                   console.log("INSERINDO SALES...");
 
                    const salePayload = {
                        tenant_id: resolvedTenantId,
@@ -836,23 +836,19 @@ export default function GISMap({
                    const { data: saleData, error: saleError } = await supabase
                        .from('sales')
                        .insert([salePayload])
-                       .select('id')
+                       .select()
                        .single();
 
-                   if (saleError) {
+                   if (saleError || !saleData) {
                        alert("ERRO SALES: " + JSON.stringify(saleError));
                        console.error("ERRO SALES: ", saleError);
-                       throw saleError;
+                       throw saleError || new Error("saleData not returned");
                    }
                    
-                   if (!saleData || !saleData.id) {
-                       alert("ERRO SALES: ID não retornado");
-                       throw new Error("sale.id não retornado");
-                   }
+                   console.log("SALES DATA:", saleData);
+                   alert("SALES ID CRIADO: " + saleData.id);
                    
-                   alert("SALES CRIADO");
-                   alert("INSERINDO FINANCEIRO");
-                   
+                   console.log("INSERINDO FINANCEIRO...");
                    const saleId = saleData.id;
                    const financePayloads: any[] = [];
                    
@@ -910,18 +906,25 @@ export default function GISMap({
                        }
                    }
                    
+                   let financeData = [];
                    if (financePayloads.length > 0) {
-                       const { error: financeError } = await supabase.from('finance_receipts').insert(financePayloads);
-                       if (financeError) {
+                       const { data: fData, error: financeError } = await supabase
+                           .from('finance_receipts')
+                           .insert(financePayloads)
+                           .select();
+                           
+                       if (financeError || !fData) {
                            alert("ERRO FINANCEIRO: " + JSON.stringify(financeError));
                            console.error("ERRO FINANCE", financeError);
-                           throw financeError;
+                           throw financeError || new Error("financeData not returned");
                        }
+                       financeData = fData;
                    }
                    
-                   alert("FINANCEIRO CRIADO");
-                   alert("INSERINDO CONTRATO");
+                   console.log("FINANCE INSERT RESULT:", financeData);
+                   alert("FINANCEIRO CRIADO: " + financeData.length + " parcelas");
                    
+                   console.log("INSERINDO CONTRATO...");
                    const cName = nameUpper || customerData.name || 'Cliente';
                    const lName = lot.block_name || lot.name || String(lot.id);
                    const contractHtml = `
@@ -944,15 +947,27 @@ export default function GISMap({
                        status: 'ativo'
                    };
                    
-                   const { error: contractError } = await supabase.from('contracts').insert([contractPayload]);
-                   if (contractError) {
+                   const { data: contractData, error: contractError } = await supabase
+                       .from('contracts')
+                       .insert([contractPayload])
+                       .select()
+                       .single();
+                       
+                   if (contractError || !contractData) {
                        alert("ERRO CONTRATO: " + JSON.stringify(contractError));
                        console.error("ERRO CONTRACT", contractError);
-                       throw contractError;
+                       throw contractError || new Error("contractData not returned");
                    }
                    
-                   alert("CONTRATO CRIADO");
-                   alert("PÓS-VENDA FINALIZADO");
+                   console.log("CONTRACT INSERT RESULT:", contractData);
+                   alert("CONTRATO CRIADO: " + contractData.id);
+                   
+                   alert(
+                       "PÓS-VENDA FINALIZADO\n" +
+                       "Sale ID: " + saleData.id + "\n" +
+                       "Parcelas: " + financeData.length + "\n" +
+                       "Contrato ID: " + contractData.id
+                   );
                    
                } catch (err: any) {
                    console.error("Erro no pós-venda:", err);
