@@ -6,9 +6,6 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { FileText, Plus, Loader2, ArrowLeft, Save, Trash2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-// const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
-// import 'react-quill/dist/quill.snow.css';
-
 const DEFAULT_CONTENT = `
 <div style="text-align: center; margin-bottom: 32px;">
   <h1>CONTRATO DE COMPRA E VENDA</h1>
@@ -175,8 +172,13 @@ export default function TemplatesPage() {
               
               <div className="flex-1 w-full flex overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-8 flex justify-center">
-                      <div className="w-full max-w-[800px] bg-white text-black min-h-[1056px] shadow-2xl p-8" style={{fontFamily: 'Arial, sans-serif'}}>
-                          <div>Quill Removed</div>
+                      <div className="w-full max-w-[800px] bg-white text-black min-h-[1056px] shadow-2xl flex flex-col p-8" style={{fontFamily: 'Arial, sans-serif'}}>
+                          <textarea 
+                              className="w-full flex-1 resize-none border-none focus:outline-none focus:ring-0 p-0 m-0 text-black text-base leading-relaxed bg-transparent"
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                              placeholder="Digite ou cole o conteúdo do seu contrato aqui..."
+                          />
                       </div>
                   </div>
 
