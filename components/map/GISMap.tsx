@@ -316,9 +316,9 @@ function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto p-4 font-sans overflow-y-auto">
-       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-           <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50 flex-none">
+    <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto sm:p-4 font-sans">
+       <div className="bg-white w-full max-w-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl">
+           <div className="sticky top-0 z-20 p-4 border-b border-gray-100 flex items-center justify-between bg-white flex-none shadow-sm">
                <div>
                   <h3 className="font-bold text-lg text-gray-900">Novo Cliente {actionName === 'Vendido' && '- Venda de Lote'}</h3>
                   <p className="text-xs text-gray-500">Lot {lot.number} - Quadra {lot.block} ({actionName})</p>
@@ -422,11 +422,11 @@ function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot
              </form>
            </div>
            
-           <div className="p-4 border-t border-gray-100 flex gap-3 bg-white flex-none">
-               <button type="button" onClick={onClose} className="flex-1 px-4 py-2 flex items-center justify-center bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm">
+           <div className="sticky bottom-0 z-20 p-4 pb-8 sm:pb-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white flex-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+               <button type="button" onClick={onClose} className="w-full sm:w-1/2 px-4 py-3 sm:py-2 flex items-center justify-center bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm">
                    Cancelar
                </button>
-               <button type="submit" form="customer-form" disabled={submitting} className={`flex-1 px-4 py-2 text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${actionName === 'Reservado' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'}`}>
+               <button type="submit" form="customer-form" disabled={submitting} className={`w-full sm:w-1/2 px-4 py-3 sm:py-2 text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${actionName === 'Reservado' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700'}`}>
                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (actionName === 'Vendido' ? 'Confirmar Venda' : 'Confirmar')}
                </button>
            </div>
