@@ -305,14 +305,19 @@ function CustomerFormModal({ lot, actionName, price, onClose, onConfirm }: { lot
     }
 
     setSubmitting(true);
-    await onConfirm({
-        ...formData,
-        // send derived financial info as well
-        lot_value: price,
-        final_value: finalValue,
-        installment_value: installmentValue
-    });
-    setSubmitting(false);
+    try {
+        await onConfirm({
+            ...formData,
+            // send derived financial info as well
+            lot_value: price,
+            final_value: finalValue,
+            installment_value: installmentValue
+        });
+    } catch (e) {
+        console.error("error submitting", e);
+    } finally {
+        setSubmitting(false);
+    }
   };
 
   return (
@@ -800,13 +805,12 @@ export default function GISMap({
            const saleInsert = {
                ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
                block_id: lot.id,
-               lot_id: lot.id,
                client_id: clientId,
                customer_id: customerId,
                project_id: lot.project_id || null,
                user_id: user.id || null,
                agreed_price: customerData.final_value || finalPrice,
-               lot_price: price,
+               lot_price: finalPrice,
                payment_type: customerData.payment_type || 'À vista',
                discount_value: customerData.discount_value || 0,
                discount: customerData.discount_value || 0,
@@ -829,6 +833,7 @@ export default function GISMap({
             }
 
             console.log("venda criada", saleData);
+            alert("Venda criada no sales");
 
                const financeReceiptsInsert: any[] = [];
                
@@ -890,6 +895,7 @@ export default function GISMap({
                        alert("Erro ao criar parcelas: " + finError.message);
                    } else {
                        console.log("financeiro criado", financeReceiptsInsert.length);
+                       alert("Financeiro criado");
                    }
                }
 
@@ -924,6 +930,7 @@ export default function GISMap({
                    alert("Erro ao criar contrato: " + contractErr.message);
                } else {
                    console.log("contrato criado", contractInsert);
+                   alert("Contrato criado");
                }
 
        }
