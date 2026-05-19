@@ -96,6 +96,25 @@ function NotificationBell({ user }: { user: any }) {
       }
     }
     loadAlerts();
+
+    // Listen to custom local event for immediate feedback without refreshing page
+    const handleLocalUpdate = () => loadAlerts();
+    window.addEventListener('finance_updated', handleLocalUpdate);
+
+    // Supabase Realtime subscription
+    let channel: any = null;
+    if (user?.tenant_id || user?.role === 'SUPER_ADMIN') {
+        channel = supabase.channel('finance_receipts_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_receipts' }, () => {
+                loadAlerts();
+            })
+            .subscribe();
+    }
+
+    return () => {
+        window.removeEventListener('finance_updated', handleLocalUpdate);
+        if (channel) supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const totalAlerts = stats.qtyLate + stats.qtyDueToday + stats.qtyNext7Days + stats.qtyNoPaymentContracts;
@@ -168,8 +187,8 @@ function NotificationBell({ user }: { user: any }) {
                 </div>
               )}
               {totalAlerts === 0 && (
-                <div className="px-3 py-4 text-center">
-                   <p className="text-sm text-gray-500">Nenhum alerta pendente</p>
+                <div className="px-3 py-6 text-center">
+                   <p className="text-sm font-medium text-[var(--color-text-muted)]">Sem notificações</p>
                 </div>
               )}
            </div>

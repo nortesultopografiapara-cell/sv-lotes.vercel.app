@@ -243,6 +243,7 @@ export default function FinancePage() {
         .eq('id', p.id);
       if (error) throw error;
       await loadFinance();
+      window.dispatchEvent(new Event('finance_updated'));
       alert("Pagamento registrado com sucesso!");
     } catch (err) {
       console.error(err);
@@ -268,6 +269,7 @@ export default function FinancePage() {
       
       setPayments(prev => prev.filter(r => r.id !== p.id));
       await loadFinance();
+      window.dispatchEvent(new Event('finance_updated'));
       alert("Recebimento excluído com sucesso.");
     } catch (err: any) {
       console.error(err);
@@ -298,6 +300,7 @@ export default function FinancePage() {
       setPayments(prev => prev.filter(r => !idsToDelete.includes(r.id)));
       setSelectedIds(new Set());
       await loadFinance();
+      window.dispatchEvent(new Event('finance_updated'));
       alert(`${data.length} recebimento(s) excluído(s) com sucesso.`);
     } catch (err: any) {
       console.error(err);
@@ -407,12 +410,50 @@ export default function FinancePage() {
      ];
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
      const data = prepareExportData();
      const summary = getSummaryData();
-     const wb = XLSX.utils.book_new();
 
-     // Company Info Config
+     const ExcelJS = (await import('exceljs')).default;
+     const workbook = new ExcelJS.Workbook();
+     workbook.creator = user?.name || 'Sistema SV_LOTES';
+     workbook.created = new Date();
+
+     // === ABA 1: Relatório Completo ===
+     const ws = workbook.addWorksheet('Relatório', { views: [{ state: 'frozen', ySplit: 6 }] });
+     
+     // Fetch Logo if exists
+     if (tenantData?.logo_url) {
+         try {
+             const base64Image = await new Promise<string>((resolve, reject) => {
+                 const img = new Image();
+                 img.crossOrigin = 'Anonymous';
+                 img.onload = () => {
+                     const canvas = document.createElement('canvas');
+                     canvas.width = img.width;
+                     canvas.height = img.height;
+                     const ctx = canvas.getContext('2d');
+                     if (ctx) {
+                         ctx.drawImage(img, 0, 0);
+                         resolve(canvas.toDataURL('image/png'));
+                     } else reject();
+                 };
+                 img.onerror = reject;
+                 img.src = tenantData.logo_url;
+             });
+             const imageId = workbook.addImage({
+                 base64: base64Image,
+                 extension: 'png',
+             });
+             ws.addImage(imageId, {
+                 tl: { col: 0, row: 0 },
+                 ext: { width: 120, height: 60 }
+             });
+         } catch (e) {
+             console.error("Error loading image for excel", e);
+         }
+     }
+
      const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
      const companyDoc = tenantData?.cnpj || 'CNPJ não informado';
      const infoLine = [
@@ -420,31 +461,132 @@ export default function FinancePage() {
          tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
          tenantData?.address ? `Endereço: ${tenantData.address}` : null
      ].filter(Boolean).join(' | ');
+
+     // Cabeçalho
+     ws.mergeCells('A1:L1');
+     ws.getCell('A1').value = `RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`;
+     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
+     ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+     ws.getRow(1).height = 40; // increase height to fit logo
+
+     ws.mergeCells('A2:L2');
+     ws.getCell('A2').value = `CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`;
+     ws.getCell('A2').font = { size: 10, bold: true };
+     ws.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center' };
+
+     ws.mergeCells('A3:L3');
+     ws.getCell('A3').value = `Data de emissão: ${new Date().toLocaleString('pt-BR')} | Filtros: Status = ${statusFilter} | Projeto = ${projectFilter}`;
+     ws.getCell('A3').font = { size: 9 };
+     ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
+
+     ws.addRow([]);
+
+     // Títulos das colunas
+     const headers = ['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento'];
+     const headerRow = ws.addRow(headers);
      
-     const headerData = [
-         [`RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`],
-         [`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`],
-         [`Data de emissão: ${new Date().toLocaleString('pt-BR')}`],
-         [`Filtros: Status = ${statusFilter} | Projeto = ${projectFilter}`],
-         []
+     headerRow.eachCell((cell) => {
+         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
+         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+     });
+
+     // Dados
+     data.forEach(d => {
+         const row = ws.addRow([d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]);
+         
+         const statusCell = row.getCell(11); // Status column K
+         const statusStr = (d.Status || '').toUpperCase();
+         if (statusStr === 'PAGO' || statusStr === 'PAID') {
+             statusCell.font = { color: { argb: 'FF27AE60' }, bold: true }; // Green
+         } else if (statusStr === 'ATRASADO' || statusStr === 'OVERDUE') {
+             statusCell.font = { color: { argb: 'FFE74C3C' }, bold: true }; // Red
+         } else {
+             statusCell.font = { color: { argb: 'FFF39C12' }, bold: true }; // Orange
+         }
+
+         row.eachCell((cell) => {
+             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+         });
+     });
+
+     ws.columns = [
+        { width: 15 }, { width: 35 }, { width: 20 }, { width: 25 }, { width: 10 }, { width: 10 },
+        { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 },
      ];
 
-     const ws = XLSX.utils.aoa_to_sheet(headerData);
-     XLSX.utils.sheet_add_json(ws, data, { origin: 'A6' });
-     XLSX.utils.sheet_add_json(ws, summary, { origin: `A${data.length + 8}` });
-     
-     // Columns auto-width
-     const colWidths = [
-        {wch: 15}, {wch: 30}, {wch: 18}, {wch: 25}, {wch: 10}, {wch: 10},
-        {wch: 10}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15},
-     ];
-     ws['!cols'] = colWidths;
+     // Ativar auto filter
+     ws.autoFilter = 'A6:L6';
 
-     XLSX.utils.book_append_sheet(wb, ws, "Relatório");
-     XLSX.writeFile(wb, `relatorio_financeiro_${new Date().getTime()}.xlsx`);
+     // === ABA 2: Resumo Financeiro ===
+     const wsSummary = workbook.addWorksheet('Resumo Financeiro');
+     
+     wsSummary.mergeCells('A1:B1');
+     wsSummary.getCell('A1').value = 'RESUMO FINANCEIRO';
+     wsSummary.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+     wsSummary.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+     
+     wsSummary.addRow([]);
+
+     const sumHeader = wsSummary.addRow(['Descrição', 'Valor']);
+     sumHeader.eachCell(cell => {
+         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } };
+         cell.font = { bold: true };
+     });
+
+     summary.forEach(s => {
+         const row = wsSummary.addRow([s.Descricao, s.Valor]);
+         row.eachCell(cell => {
+             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+         });
+     });
+
+     wsSummary.columns = [{ width: 30 }, { width: 20 }];
+
+     // === ABA 3: Indicadores ===
+     const wsInd = workbook.addWorksheet('Indicadores');
+     
+     wsInd.mergeCells('A1:B1');
+     wsInd.getCell('A1').value = 'INDICADORES CHAVE';
+     wsInd.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+     wsInd.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+     
+     wsInd.addRow([]);
+
+     const indHeader = wsInd.addRow(['Indicador', 'Valor']);
+     indHeader.eachCell(cell => {
+         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDC3C7' } };
+         cell.font = { bold: true };
+     });
+
+     const indData = [
+         ['Total Vendido (Contratos Ativos)', formatCurrency(stats.totalContratosValor)],
+         ['Inadimplência (%)', `${stats.inadimplencia.toFixed(2)}%`],
+         ['Contratos Ativos', stats.qtyContracts.toString()],
+     ];
+
+     indData.forEach(d => {
+         const row = wsInd.addRow(d);
+         row.eachCell(cell => {
+             cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+         });
+     });
+
+     wsInd.columns = [{ width: 40 }, { width: 20 }];
+
+     // Exportar
+     const buffer = await workbook.xlsx.writeBuffer();
+     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+     const link = document.createElement('a');
+     link.href = URL.createObjectURL(blob);
+     link.download = `relatorio_financeiro_${new Date().getTime()}.xlsx`;
+     document.body.appendChild(link);
+     link.click();
+     document.body.removeChild(link);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
       const data = prepareExportData();
       const summary = getSummaryData();
       const doc = new jsPDF('landscape');
@@ -457,45 +599,136 @@ export default function FinancePage() {
          tenantData?.address ? `Endereço: ${tenantData.address}` : null
       ].filter(Boolean).join(' | ');
 
-      const title = `RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`;
+      const title = `RELATÓRIO FINANCEIRO`;
       
-      doc.setFontSize(14);
-      doc.text(title, 14, 15);
-      doc.setFontSize(9);
-      doc.setTextColor(80);
-      doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 21);
-      doc.setFontSize(8);
-      doc.setTextColor(120);
-      doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 26);
+      let startY = 35;
+      
+      // Try to load logo
+      if (tenantData?.logo_url) {
+         try {
+             const imgBase64 = await new Promise<string>((resolve, reject) => {
+                 const img = new Image();
+                 img.crossOrigin = 'Anonymous';
+                 img.onload = () => {
+                     const canvas = document.createElement('canvas');
+                     canvas.width = img.width;
+                     canvas.height = img.height;
+                     const ctx = canvas.getContext('2d');
+                     if (ctx) {
+                         ctx.drawImage(img, 0, 0);
+                         resolve(canvas.toDataURL('image/png'));
+                     } else reject();
+                 };
+                 img.onerror = reject;
+                 img.src = tenantData.logo_url;
+             });
+             doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
+             
+             doc.setFontSize(14);
+             doc.setTextColor(40);
+             doc.text(title, 50, 15);
+             
+             doc.setFontSize(9);
+             doc.setFont('helvetica', 'bold');
+             doc.setTextColor(60);
+             doc.text(companyName.toUpperCase(), 50, 20);
+             
+             doc.setFontSize(8);
+             doc.setFont('helvetica', 'normal');
+             doc.setTextColor(100);
+             doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 50, 24);
+             doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 50, 28);
+             
+         } catch(e) {
+             // Fallback if logo fails
+             doc.setFontSize(14);
+             doc.setTextColor(40);
+             doc.text(title, 14, 15);
+             doc.setFontSize(9);
+             doc.setFont('helvetica', 'bold');
+             doc.setTextColor(60);
+             doc.text(companyName.toUpperCase(), 14, 20);
+             doc.setFontSize(8);
+             doc.setFont('helvetica', 'normal');
+             doc.setTextColor(100);
+             doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
+             doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 28);
+         }
+      } else {
+         doc.setFontSize(14);
+         doc.setTextColor(40);
+         doc.text(title, 14, 15);
+         doc.setFontSize(9);
+         doc.setFont('helvetica', 'bold');
+         doc.setTextColor(60);
+         doc.text(companyName.toUpperCase(), 14, 20);
+         doc.setFontSize(8);
+         doc.setFont('helvetica', 'normal');
+         doc.setTextColor(100);
+         doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
+         doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 28);
+      }
 
       autoTable(doc, {
-          startY: 30,
+          startY: startY,
           head: [['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento']],
           body: data.map(d => [d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]),
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [41, 128, 185] },
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [245, 247, 250] },
+          didParseCell: function(dataObj) {
+              if (dataObj.section === 'body' && dataObj.column.index === 10) {
+                 const status = dataObj.cell.raw as string;
+                 if (status === 'PAGO' || status === 'PAID') {
+                     dataObj.cell.styles.textColor = [39, 174, 96]; // Green
+                     dataObj.cell.styles.fontStyle = 'bold';
+                 } else if (status === 'ATRASADO' || status === 'OVERDUE') {
+                     dataObj.cell.styles.textColor = [231, 76, 60]; // Red
+                     dataObj.cell.styles.fontStyle = 'bold';
+                 } else {
+                     dataObj.cell.styles.textColor = [243, 156, 18]; // Orange/Yellow
+                     dataObj.cell.styles.fontStyle = 'bold';
+                 }
+              }
+          },
           didDrawPage: (dataObj) => {
               // Footer
-              let str = 'Página ' + (doc.internal as any).getNumberOfPages();
               doc.setFontSize(8);
+              doc.setTextColor(150);
               let pageSize = doc.internal.pageSize;
               let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
-              doc.text(str, dataObj.settings.margin.left, pageHeight - 10);
+              
+              const footerText = `Gerado automaticamente por SV LOTES GIS | Usuário: ${user?.name || 'Admin'} | Emitido em: ${new Date().toLocaleString('pt-BR')}`;
+              doc.text(footerText, 14, pageHeight - 10);
+              
+              let str = 'Página ' + (doc.internal as any).getNumberOfPages();
+              doc.text(str, pageSize.width - 30, pageHeight - 10);
           }
       });
       
       // Calculate summary StartY
       let finalY = (doc as any).lastAutoTable.finalY + 10;
+      
+      // Prevent summary splitting at extreme end
+      let pageSize = doc.internal.pageSize;
+      let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
+      if (finalY > pageHeight - 40) {
+          doc.addPage();
+          finalY = 20;
+      }
+
       doc.setFontSize(10);
-      doc.setTextColor(0);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(40);
       doc.text('RESUMO FINANCEIRO', 14, finalY);
 
       autoTable(doc, {
           startY: finalY + 5,
           head: [['Descrição', 'Valor']],
           body: summary.map(s => [s.Descricao, s.Valor]),
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [52, 73, 94] },
+          styles: { fontSize: 9, cellPadding: 2 },
+          headStyles: { fillColor: [52, 73, 94], textColor: 255 },
+          alternateRowStyles: { fillColor: [245, 247, 250] },
           margin: { right: 150 } // prevent taking full width
       });
 
