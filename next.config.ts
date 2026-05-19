@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  productionBrowserSourceMaps: false,
   // Allow access to remote image placeholder.
   images: {
     remotePatterns: [
