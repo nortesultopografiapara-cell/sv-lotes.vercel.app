@@ -7,6 +7,7 @@ import L from 'leaflet';
 import { Layers, Map as MapIcon, Loader2, X, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { generateContractHTML } from '@/lib/contractTemplate';
 
 const getStatusColor = (status: string) => {
   switch(status) {
@@ -925,16 +926,23 @@ export default function GISMap({
                    alert("FINANCEIRO CRIADO: " + financeData.length + " parcelas");
                    
                    console.log("INSERINDO CONTRATO...");
-                   const cName = nameUpper || customerData.name || 'Cliente';
-                   const lName = lot.block_name || lot.name || String(lot.id);
-                   const contractHtml = `
-                       <div style="font-family: sans-serif; padding: 20px;">
-                           <h2>Contrato de Compra e Venda</h2>
-                           <p><strong>Cliente:</strong> ${cName}</p>
-                           <p><strong>Lote:</strong> ${lName}</p>
-                           <p><strong>Valor Final:</strong> R$ ${fValue}</p>
-                       </div>
-                   `;
+                   
+                   const { data: tenantData } = await supabase.from('companies').select('*').eq('id', resolvedTenantId).single();
+                   const { data: projData } = await supabase.from('projects').select('*').eq('id', lot.project_id).maybeSingle();
+                   
+                   let fullCustomer = customerData;
+                   if (customerId) {
+                       const { data: custDb } = await supabase.from('customers').select('*').eq('id', customerId).single();
+                       if (custDb) fullCustomer = { ...custDb, ...customerData };
+                   }
+
+                   const contractHtml = generateContractHTML({
+                       tenant: tenantData || {},
+                       customer: fullCustomer || {},
+                       project: projData || lot.projects || {},
+                       block: lot,
+                       sale: saleData
+                   });
 
                    const contractPayload = {
                        tenant_id: resolvedTenantId,

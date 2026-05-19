@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical } from 'lucide-react';
+import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical, RefreshCw } from 'lucide-react';
 import { ContractGenerator } from '@/components/contracts/ContractGenerator';
 import jsPDF from 'jspdf';
+import { generateContractHTML } from '@/lib/contractTemplate';
 
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
@@ -181,6 +182,31 @@ export default function ContractsPage() {
   };
 
   const handleAlertDev = () => alert('Função em desenvolvimento');
+
+  const handleRegenerarContrato = async () => {
+      if (!selectedContract) return;
+      if (!confirm("Isso irá recriar o visual do contrato com os dados atuais. Deseja continuar?")) return;
+      
+      const newHtml = generateContractHTML({
+          tenant: tenantData || {},
+          customer: selectedContract.customers || (selectedContract.customer_id ? { id: selectedContract.customer_id } : {}),
+          project: selectedContract.projects || selectedContract.sales?.projects || {},
+          block: selectedContract.blocks || selectedContract.sales?.blocks || {},
+          sale: selectedContract.sales || {},
+          contractDate: selectedContract.created_at
+      });
+
+      const { data, error } = await supabase.from('contracts').update({ generated_html: newHtml }).eq('id', selectedContract.id).select().single();
+      
+      if (error) {
+          console.error("Erro recriando", error);
+          alert("Erro ao regenerar contrato");
+      } else {
+          setSelectedContract({ ...selectedContract, generated_html: newHtml });
+          setContracts(contracts.map(c => c.id === selectedContract.id ? { ...c, generated_html: newHtml } : c));
+          alert("Contrato regenerado com sucesso!");
+      }
+  };
 
   if (authLoading) return null;
 
@@ -397,6 +423,17 @@ export default function ContractsPage() {
                       {activeTab === 'Visualização' && (
                          <>
                             <div className="flex-1 p-6 overflow-y-auto">
+                                {(!selectedContract.generated_html || selectedContract.generated_html.length < 500) && (
+                                    <div className="max-w-[800px] mx-auto mb-4 bg-blue-900/40 border border-blue-500/50 p-4 rounded-lg flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm text-blue-200 font-semibold flex items-center gap-2"><RefreshCw className="w-4 h-4" /> Versão antiga ou sem conteúdo completo</p>
+                                            <p className="text-xs text-blue-300 mt-1">Este contrato foi gerado antes do modelo completo atual. Deseja recriá-lo?</p>
+                                        </div>
+                                        <button onClick={handleRegenerarContrato} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors">
+                                            Regenerar Contrato
+                                        </button>
+                                    </div>
+                                )}
                                 <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top p-8 text-black min-h-[800px]">
                                    {selectedContract.generated_html ? (
                                         <div dangerouslySetInnerHTML={{ __html: selectedContract.generated_html }} />
