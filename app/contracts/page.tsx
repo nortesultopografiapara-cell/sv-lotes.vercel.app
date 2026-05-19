@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical } from 'lucide-react';
 import { ContractGenerator } from '@/components/contracts/ContractGenerator';
+import jsPDF from 'jspdf';
 
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
@@ -21,10 +22,24 @@ export default function ContractsPage() {
     cancelados: 0,
     valorTotal: 0
   });
+  const [tenantData, setTenantData] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadTenant() {
+      const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
+      if (resolvedTenantId) {
+         const { data } = await supabase.from('companies').select('*').eq('id', resolvedTenantId).single();
+         if (data) setTenantData(data);
+      }
+    }
+    if (user) loadTenant();
+  }, [user]);
 
   useEffect(() => {
     async function loadContracts() {
-       if (!user?.tenant_id && user?.role !== 'SUPER_ADMIN') {
+       const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
+       if (!resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
+          console.warn('tenant_id não encontrado para carregar contratos');
           setLoading(false);
           return;
        }
@@ -32,15 +47,15 @@ export default function ContractsPage() {
        let query = supabase.from('contracts')
            .select(`
              *,
-             customers(name, document, cpf),
-             sales(id, agreed_price, total_value, final_value, projects(name, city, state), blocks(number, block_name, name)),
+             customers(name, document, cpf, email, phone, address),
+             sales(id, total_value, final_value, agreed_price, payment_type, status, created_at, projects(name, city, state), blocks(number, block_name, name)),
              projects(name, city, state),
              blocks(number, block_name, name)
            `)
            .order('created_at', { ascending: false });
            
-       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+       if (user?.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+           query = query.eq('tenant_id', resolvedTenantId);
        }
 
        const { data, error } = await query;
@@ -102,6 +117,55 @@ export default function ContractsPage() {
      if (st === 'cancelado') return 'Cancelado';
      return 'Pendente';
   };
+
+  const handleBaixarPDF = async () => {
+    if (!selectedContract) return;
+    try {
+      const { default: html2pdf } = await import('html2pdf.js');
+      const element = document.createElement('div');
+      
+      const headerHtml = `
+          <div style="text-align: center; margin-bottom: 20px;">
+             ${tenantData?.logo_url ? `<img src="${tenantData.logo_url}" style="max-height: 80px;" />` : ''}
+             <h2>${tenantData?.name || tenantData?.razao_social || 'Empresa'}</h2>
+             <p>CNPJ: ${tenantData?.cnpj || ''} | Tel: ${tenantData?.phone || ''}</p>
+          </div>
+      `;
+      element.innerHTML = headerHtml + (selectedContract.generated_html || '<p>Contrato sem conteúdo.</p>');
+      
+      const opt = {
+        margin: 10,
+        filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      
+      html2pdf().from(element).set(opt).save();
+    } catch (e) {
+      alert('Erro ao tentar baixar PDF. Certifique-se que html2pdf.js está instalado.');
+      console.error(e);
+    }
+  };
+
+  const handleImprimir = () => {
+      if (!selectedContract) return;
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+          printWindow.document.write(`
+              <html>
+                  <head><title>Imprimir Contrato - ${selectedContract.contract_number || ''}</title></head>
+                  <body style="font-family: sans-serif; padding: 20px;">
+                      ${selectedContract.generated_html || '<p>Contrato sem conteúdo.</p>'}
+                      <script>window.onload = function() { window.print(); }</script>
+                  </body>
+              </html>
+          `);
+          printWindow.document.close();
+      }
+  };
+
+  const handleAlertDev = () => alert('Função em desenvolvimento');
 
   if (authLoading) return null;
 
@@ -318,11 +382,15 @@ export default function ContractsPage() {
                       {activeTab === 'Visualização' && (
                          <>
                             <div className="flex-1 p-6 overflow-y-auto">
-                                <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top">
-                                   {/* If ContractGenerator expects 'sale', we push 'selectedContract.sales' or selectedContract */}
-                                   <div className="text-black transform scale-[0.85] origin-top-left w-[117.6%] h-full min-h-[800px]">
-                                        <ContractGenerator sale={selectedContract.sales || selectedContract} />
-                                   </div>
+                                <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top p-8 text-black min-h-[800px]">
+                                   {selectedContract.generated_html ? (
+                                        <div dangerouslySetInnerHTML={{ __html: selectedContract.generated_html }} />
+                                   ) : (
+                                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 h-full py-32">
+                                            <FileText className="w-16 h-16 mb-4 opacity-30" />
+                                            <p>Contrato gerado sem conteúdo. Verifique o modelo.</p>
+                                        </div>
+                                   )}
                                 </div>
                             </div>
                             
@@ -332,8 +400,8 @@ export default function ContractsPage() {
                                <div className="space-y-6">
                                    <TimelineItem icon={<FileText />} color="success" title="Contrato criado" date={new Date(selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />
                                    <TimelineItem icon={<CheckCircle2 />} color="success" title="Cliente cadastrado" date={new Date(selectedContract.customers?.created_at || selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />
-                                   <TimelineItem icon={<Wallet />} color="info" title="Entrada registrada" subtitle="No momento da venda" active />
-                                   <TimelineItem icon={<FileText />} color="purple" title="PDF gerado" subtitle="Sistema" active />
+                                   <TimelineItem icon={<Wallet />} color="info" title="Entrada registrada" subtitle="No momento da venda" active={Number(selectedContract.sales?.down_payment) > 0} />
+                                   <TimelineItem icon={<FileText />} color="purple" title="PDF gerado" subtitle="Sistema" active={!!selectedContract.generated_html} />
                                    <TimelineItem icon={<Clock />} color="warning" title="Assinatura pendente" subtitle="Aguardando assinatura do cliente" active={getStatusLabel(selectedContract.status) === 'Pendente'} />
                                </div>
                             </div>
@@ -350,15 +418,15 @@ export default function ContractsPage() {
 
                   {/* BOTTOM ACTION BAR */}
                   <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
-                       <ActionBtn icon={<Download />} label="Baixar PDF" color="primary" />
-                       <ActionBtn icon={<Printer />} label="Imprimir" color="info" />
-                       <ActionBtn icon={<Send />} label="Reenviar" color="purple" />
-                       <ActionBtn icon={<Edit />} label="Editar" color="warning" />
-                       <ActionBtn icon={<X />} label="Cancelar" color="danger" />
+                       <ActionBtn onClick={handleBaixarPDF} icon={<Download />} label="Baixar PDF" color="primary" />
+                       <ActionBtn onClick={handleImprimir} icon={<Printer />} label="Imprimir" color="info" />
+                       <ActionBtn onClick={handleAlertDev} icon={<Send />} label="Reenviar" color="purple" />
+                       <ActionBtn onClick={handleAlertDev} icon={<Edit />} label="Editar" color="warning" />
+                       <ActionBtn onClick={handleAlertDev} icon={<X />} label="Cancelar" color="danger" />
                        
                        <div className="h-8 w-[1px] bg-[#2d3340] mx-2 hidden sm:block"></div>
                        
-                       <button className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors">
+                       <button onClick={handleAlertDev} className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors">
                            <Receipt className="w-4 h-4" />
                            Gerar Carnê
                            <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -406,7 +474,7 @@ function TimelineItem({ icon, title, subtitle, date, author, color, active }: an
     );
 }
 
-function ActionBtn({ icon, label, color }: any) {
+function ActionBtn({ icon, label, color, onClick }: any) {
     const colorClasses: Record<string, string> = {
         primary: 'border-[var(--color-primary)]/30 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10',
         info: 'border-[var(--color-info)]/30 text-[var(--color-info)] hover:bg-[var(--color-info)]/10',
@@ -416,7 +484,7 @@ function ActionBtn({ icon, label, color }: any) {
     };
 
     return (
-        <button className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors ${colorClasses[color]}`}>
+        <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors ${colorClasses[color]}`}>
             <div className="w-4 h-4">{icon}</div>
             <span className="hidden sm:inline">{label}</span>
         </button>
