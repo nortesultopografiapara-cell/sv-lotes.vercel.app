@@ -38,6 +38,9 @@ export default function ContractsPage() {
   useEffect(() => {
     async function loadContracts() {
        const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
+       console.log("USER CONTRATOS:", user);
+       console.log("TENANT CONTRATOS:", resolvedTenantId);
+       
        if (!resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
           console.warn('tenant_id não encontrado para carregar contratos');
           setLoading(false);
@@ -47,10 +50,10 @@ export default function ContractsPage() {
        let query = supabase.from('contracts')
            .select(`
              *,
-             customers(name, document, cpf, email, phone, address),
-             sales(id, total_value, final_value, agreed_price, payment_type, status, created_at, projects(name, city, state), blocks(number, block_name, name)),
-             projects(name, city, state),
-             blocks(number, block_name, name)
+             customers:customer_id(name, document, cpf, email, phone, address),
+             sales:sale_id(id, total_value, final_value, agreed_price, payment_type, status, created_at),
+             projects:project_id(name, city, state),
+             blocks:block_id(block_name, name, number)
            `)
            .order('created_at', { ascending: false });
            
@@ -59,9 +62,24 @@ export default function ContractsPage() {
        }
 
        const { data, error } = await query;
-       console.log("CONTRACTS FETCH RESULT", data, error);
        
-       if (!error && data) {
+       if (error) {
+           console.error("ERRO JOIN CONTRACTS:", error);
+           let fallbackQuery = supabase.from('contracts').select('*').order('created_at', { ascending: false });
+           if (user?.role !== 'SUPER_ADMIN' && resolvedTenantId) fallbackQuery = fallbackQuery.eq('tenant_id', resolvedTenantId);
+           const fallbackRes = await fallbackQuery;
+           if (!fallbackRes.error && fallbackRes.data) {
+               console.log("CONTRACTS RAW FALLBACK:", fallbackRes.data);
+               processContracts(fallbackRes.data);
+           }
+       } else {
+           console.log("CONTRACTS RAW:", data, error);
+           if (data) processContracts(data);
+       }
+       setLoading(false);
+    }
+    
+    function processContracts(data: any[]) {
            setContracts(data);
            
            let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
@@ -78,15 +96,12 @@ export default function ContractsPage() {
                } else if (st === 'cancelado') {
                  cancelados++;
                } else { 
-                 // Pendente or Rascunho or Ativo
                  pendentes++;
                  ativos++;
                }
            });
            
            setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
-       }
-       setLoading(false);
     }
     
     if (user && !authLoading) {
@@ -250,8 +265,8 @@ export default function ContractsPage() {
                  ) : (
                     filteredContracts.map(c => {
                        const isSelected = selectedContract?.id === c.id;
-                       const cnum = c.contract_number || c.id?.split('-')[0].toUpperCase();
-                       const projName = c.projects?.name || c.sales?.projects?.name || 'Projeto Desconhecido';
+                       const cnum = c.contract_number || (c.id ? `CTR-${c.id.slice(-6).toUpperCase()}` : 'CTR-NOID');
+                       const projName = c.projects?.name || c.sales?.projects?.name || 'Projeto não informado';
                        const quad = c.blocks?.block_name || c.blocks?.name || c.sales?.blocks?.block_name || '?';
                        const lote = c.blocks?.number || c.sales?.blocks?.number || '?';
                        const loc = `QD ${quad} • LT ${lote}`;
@@ -276,7 +291,7 @@ export default function ContractsPage() {
                                   </div>
                               </div>
                               <div className="text-sm font-semibold text-gray-200 truncate pr-4">
-                                  {c.customers?.name || 'Cliente Desconhecido'}
+                                  {c.customers?.name || 'Cliente não informado'}
                               </div>
                               {c.customers?.document && (
                                   <div className="text-[10px] text-gray-500 mt-0.5">
@@ -313,7 +328,7 @@ export default function ContractsPage() {
                               </div>
                               <div>
                                   <h2 className="text-xl font-bold flex items-center gap-3">
-                                      {selectedContract.contract_number || selectedContract.id?.split('-')[0].toUpperCase()}
+                                      {selectedContract.contract_number || (selectedContract.id ? `CTR-${selectedContract.id.slice(-6).toUpperCase()}` : 'CTR-NOID')}
                                       <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}>
                                           {getStatusLabel(selectedContract.status)}
                                       </span>
@@ -346,12 +361,12 @@ export default function ContractsPage() {
                       <div className="grid grid-cols-4 gap-4 text-sm mt-4">
                           <div>
                               <p className="text-gray-500 text-xs mb-1">Cliente</p>
-                              <p className="font-semibold text-gray-200">{selectedContract.customers?.name}</p>
+                              <p className="font-semibold text-gray-200">{selectedContract.customers?.name || 'Cliente não informado'}</p>
                               <p className="text-[10px] text-gray-500">CPF: {selectedContract.customers?.document || selectedContract.customers?.cpf || '-'}</p>
                           </div>
                           <div>
                               <p className="text-gray-500 text-xs mb-1">Projeto</p>
-                              <p className="font-semibold text-gray-200">{selectedContract.projects?.name || selectedContract.sales?.projects?.name}</p>
+                              <p className="font-semibold text-gray-200">{selectedContract.projects?.name || selectedContract.sales?.projects?.name || 'Projeto não informado'}</p>
                           </div>
                           <div>
                               <p className="text-gray-500 text-xs mb-1">Localização</p>
