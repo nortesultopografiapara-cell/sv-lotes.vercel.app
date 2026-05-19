@@ -8,20 +8,20 @@ import { ContractGenerator } from '@/components/contracts/ContractGenerator';
 
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
-  const [sales, setSales] = useState<any[]>([]);
+   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [selectedContract, setSelectedContract] = useState<any>(null);
 
   useEffect(() => {
-    async function loadSales() {
+    async function loadContracts() {
        if (!user?.tenant_id && user?.role !== 'SUPER_ADMIN') {
           setLoading(false);
           return;
        }
 
-       let query = supabase.from('sales')
-           .select('*, clients(*), blocks(number, block_name, name, projects(name, city, state))')
+       let query = supabase.from('contracts')
+           .select('*, customers(*), sales(*, clients(*)), blocks(number, block_name, name, projects(name, city, state))')
            .order('created_at', { ascending: false });
            
        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
@@ -30,20 +30,20 @@ export default function ContractsPage() {
 
        const { data, error } = await query;
        if (!error && data) {
-           setSales(data);
+           setContracts(data);
        }
        setLoading(false);
     }
     
     if (user && !authLoading) {
-       loadSales();
+       loadContracts();
     }
   }, [user, authLoading]);
 
-  const filteredSales = sales.filter(s => {
-      const p = s.clients?.full_name?.toLowerCase() || '';
-      const c = s.blocks?.projects?.name?.toLowerCase() || '';
-      return p.includes(search.toLowerCase()) || c.includes(search.toLowerCase());
+  const filteredContracts = contracts.filter(c => {
+      const p = c.customers?.name?.toLowerCase() || c.sales?.clients?.full_name?.toLowerCase() || '';
+      const proj = c.blocks?.projects?.name?.toLowerCase() || '';
+      return p.includes(search.toLowerCase()) || proj.includes(search.toLowerCase());
   });
 
   if (authLoading) return null;
@@ -78,21 +78,21 @@ export default function ContractsPage() {
          <div className="flex-1 overflow-y-auto p-2 space-y-1">
              {loading ? (
                  <div className="p-4 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" /></div>
-             ) : filteredSales.length === 0 ? (
+             ) : filteredContracts.length === 0 ? (
                  <div className="p-4 text-sm text-gray-500 text-center">Nenhum contrato encontrado.</div>
              ) : (
-                 filteredSales.map(sale => (
+                 filteredContracts.map(contract => (
                      <div 
-                         key={sale.id}
-                         onClick={() => setSelectedSale(sale)}
-                         className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedSale?.id === sale.id ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20' : 'hover:bg-[var(--color-surface)] border border-transparent'}`}
+                         key={contract.id}
+                         onClick={() => setSelectedContract(contract)}
+                         className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedContract?.id === contract.id ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20' : 'hover:bg-[var(--color-surface)] border border-transparent'}`}
                      >
-                         <h3 className="text-sm font-semibold text-white">{sale.clients?.full_name || 'Cliente Desconhecido'}</h3>
+                         <h3 className="text-sm font-semibold text-white">{contract.customers?.name || contract.sales?.clients?.full_name || 'Cliente Desconhecido'}</h3>
                          <div className="text-xs text-gray-400 mt-1">
-                             {sale.blocks?.projects?.name} - {sale.blocks?.block_name || sale.blocks?.name} / Lote {sale.blocks?.number}
+                             {contract.blocks?.projects?.name} - {contract.blocks?.block_name || contract.blocks?.name} / Lote {contract.blocks?.number}
                          </div>
                          <div className="text-xs font-semibold text-[var(--color-primary)] mt-1">
-                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.final_value || sale.agreed_price)}
+                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.sales?.total_value || contract.sales?.final_value || contract.sales?.agreed_price || 0)}
                          </div>
                      </div>
                  ))
@@ -101,8 +101,8 @@ export default function ContractsPage() {
       </div>
       
       <div className="flex-1 bg-[var(--color-background)] border-l border-[var(--color-border)] flex flex-col h-full overflow-hidden">
-         {selectedSale ? (
-             <ContractGenerator sale={selectedSale} />
+         {selectedContract ? (
+             <ContractGenerator sale={selectedContract.sales || selectedContract} />
          ) : (
              <div className="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
                  <FileText className="w-16 h-16 mb-4 opacity-50" />

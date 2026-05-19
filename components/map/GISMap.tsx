@@ -831,7 +831,8 @@ export default function GISMap({
                        installment_number: 1,
                        amount: customerData.final_value || finalPrice,
                        due_date: customerData.down_payment_due_date || new Date().toISOString().split('T')[0],
-                       status: 'pago'
+                       status: 'pago',
+                       paid_at: new Date().toISOString()
                    });
                } else if (customerData.payment_type === 'Parcelado') {
                    let currentInstallment = 1;
@@ -879,9 +880,13 @@ export default function GISMap({
                const contractHtml = `
                     <div style="font-family: sans-serif; padding: 20px;">
                         <h2>Contrato de Compra e Venda</h2>
-                        <p><strong>Referência:</strong> ${lot.number || lot.id}</p>
-                        <p><strong>Valor:</strong> ${finalPrice}</p>
-                        <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+                        <p><strong>Cliente:</strong> ${customerData.name || 'Desconhecido'}</p>
+                        <p><strong>Projeto:</strong> ${lot.projects?.name || 'Não informado'}</p>
+                        <p><strong>Quadra:</strong> ${lot.block_name || lot.name || 'Não informado'}</p>
+                        <p><strong>Lote:</strong> ${lot.number || lot.id}</p>
+                        <p><strong>Valor:</strong> ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(customerData.final_value || finalPrice))}</p>
+                        <p><strong>Parcelas:</strong> ${customerData.payment_type === 'À vista' ? 1 : (numInstallments || 1)}</p>
+                        <p><strong>Data da Venda:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
                     </div>
                `;
 
