@@ -741,6 +741,7 @@ export default function GISMap({
   };
 
   const handleSaveCustomerAndLot = async (lot: any, newStatus: string, finalPrice: number, customerData: any) => {
+    alert("FUNÇÃO REAL DE VENDA CHAMADA");
     if (!user) return;
     
     try {
