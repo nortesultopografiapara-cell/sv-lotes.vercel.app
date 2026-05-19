@@ -807,8 +807,16 @@ export default function GISMap({
            
            const processarPosVenda = async () => {
                try {
+                   const resolvedTenantId = user?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
+                   console.log("TENANT RESOLVIDO", resolvedTenantId);
+
+                   if (!resolvedTenantId) {
+                       alert("tenant_id não encontrado");
+                       return;
+                   }
+
                    const salePayload = {
-                       ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                       tenant_id: resolvedTenantId,
                        project_id: lot.project_id || null,
                        block_id: lot.id,
                        customer_id: customerId,
@@ -824,7 +832,7 @@ export default function GISMap({
                        status: 'ACTIVE'
                    };
                    
-                   console.log("SALE PAYLOAD", salePayload);
+                   console.log("SALE INSERT", salePayload);
                    
                    const { data: saleData, error: saleError } = await supabase
                        .from('sales')
@@ -834,6 +842,7 @@ export default function GISMap({
 
                    if (saleError) {
                        alert("ERRO SALES: " + JSON.stringify(saleError));
+                       console.error("ERRO SALES: ", saleError);
                        throw saleError;
                    }
                    
@@ -851,7 +860,7 @@ export default function GISMap({
 
                    if (pmtType === 'À vista') {
                        financePayloads.push({
-                           ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                           tenant_id: resolvedTenantId,
                            sale_id: saleId,
                            customer_id: customerId,
                            project_id: lot.project_id || null,
@@ -866,7 +875,7 @@ export default function GISMap({
                        let currentInst = 1;
                        if (downPayment > 0 && customerData.down_payment_due_date) {
                            financePayloads.push({
-                               ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                               tenant_id: resolvedTenantId,
                                sale_id: saleId,
                                customer_id: customerId,
                                project_id: lot.project_id || null,
@@ -883,7 +892,7 @@ export default function GISMap({
                            let cDate = new Date(customerData.first_installment_due_date + 'T12:00:00Z');
                            for (let i = 0; i < instCount; i++) {
                                financePayloads.push({
-                                   ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                                   tenant_id: resolvedTenantId,
                                    sale_id: saleId,
                                    customer_id: customerId,
                                    project_id: lot.project_id || null,
@@ -897,13 +906,14 @@ export default function GISMap({
                            }
                        }
                    }
-
-                   console.log("FINANCE PAYLOAD", financePayloads);
+                   
+                   console.log("FINANCE INSERT", financePayloads);
                    
                    if (financePayloads.length > 0) {
                        const { error: financeError } = await supabase.from('finance_receipts').insert(financePayloads);
                        if (financeError) {
                            alert("ERRO FINANCE: " + JSON.stringify(financeError));
+                           console.error("ERRO FINANCE", financeError);
                            throw financeError;
                        }
                    }
@@ -920,7 +930,7 @@ export default function GISMap({
                    `;
 
                    const contractPayload = {
-                       ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                       tenant_id: resolvedTenantId,
                        sale_id: saleId,
                        customer_id: customerId,
                        project_id: lot.project_id || null,
@@ -930,29 +940,25 @@ export default function GISMap({
                        status: 'ativo'
                    };
                    
-                   console.log("CONTRACT PAYLOAD", contractPayload);
+                   console.log("CONTRACT INSERT", contractPayload);
 
                    const { error: contractError } = await supabase.from('contracts').insert([contractPayload]);
                    if (contractError) {
                        alert("ERRO CONTRACT: " + JSON.stringify(contractError));
+                       console.error("ERRO CONTRACT", contractError);
                        throw contractError;
                    }
                    
-                   alert("Pós-venda gerado com sucesso");
+                   alert("Pós-venda gerado com sucesso (Sales, Finance, Contracts)");
                    
                } catch (err: any) {
                    console.error("Erro no pós-venda:", err);
+                   alert("Exceção Pós Venda: " + JSON.stringify(err));
                }
            };
 
            await processarPosVenda();
        }
-       
-       // Optimistic UI updates
-       setLots((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, customerName: nameUpper, customerId: customerId } : l));
-       setBlocksData((prev) => prev.map((l) => l.id === lot.id ? { ...l, status: newStatus, price: finalPrice, customerName: nameUpper, customerId: customerId } : l));
-       
-       // Log
        await supabase.from('logs').insert({
          ...( (user.tenant_id || lot.tenant_id) ? { tenant_id: user.tenant_id || lot.tenant_id } : {} ),
          user_id: user.id,
