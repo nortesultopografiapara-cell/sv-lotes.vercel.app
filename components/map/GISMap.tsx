@@ -801,10 +801,8 @@ export default function GISMap({
          
        if (updateError) throw updateError;
        
-       // Processar Pós-Venda
-       if (newStatus === 'Vendido' || newStatus === 'vendido') {
-           alert("LOTE VENDIDO, CHAMANDO PÓS-VENDA");
-           
+       if (newStatus.toLowerCase().trim() === 'vendido') {
+           alert("UPDATE DO BLOCK VENDIDO CONCLUÍDO - INICIANDO PÓS-VENDA");
            const processarPosVenda = async () => {
                try {
                    const resolvedTenantId = user?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
