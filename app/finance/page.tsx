@@ -219,17 +219,19 @@ export default function FinancePage() {
     console.log('FINANCE DELETE RECEIPT', p);
     if (!window.confirm("Tem certeza que deseja excluir esta parcela? Essa ação não pode ser desfeita.")) return;
     try {
-      const { data, error } = await supabase.from('finance_receipts').delete().eq('id', p.id).select();
+      const { data, error } = await supabase.from('finance_receipts').delete().eq('id', p.id).select().single();
       if (error) {
         console.error('ERRO DELETE FINANCE_RECEIPTS:', error);
         alert('Erro ao excluir recebimento: ' + JSON.stringify(error));
         return;
       }
-      if (!data || data.length === 0) {
+      if (!data) {
         alert('Nenhum recebimento foi excluído no banco. Verifique permissões (RLS) ou IDs.');
         return;
       }
       console.log('FINANCE DELETE RECEIPT OK:', data);
+      
+      setPayments(prev => prev.filter(r => r.id !== p.id));
       await loadFinance();
       alert("Recebimento excluído com sucesso.");
     } catch (err: any) {
@@ -243,20 +245,22 @@ export default function FinancePage() {
       alert("Selecione ao menos um recebimento para excluir.");
       return;
     }
-    if (!window.confirm("Deseja excluir todos os recebimentos selecionados?")) return;
+    if (!window.confirm("Deseja excluir todos os recebimentos pendentes deste cliente/lote usados em teste?")) return;
     try {
       const idsToDelete = Array.from(selectedIds);
       const { data, error } = await supabase.from('finance_receipts').delete().in('id', idsToDelete).select();
       if (error) {
-        console.error('ERRO DELETE FINANCE_RECEIPTS LOTE:', error);
+        console.error('ERRO DELETE FINANCE_RECEIPTS:', error);
         alert('Erro ao excluir recebimentos: ' + JSON.stringify(error));
         return;
       }
       if (!data || data.length === 0) {
-        alert('Nenhum recebimento foi excluído no banco. Verifique permissões (RLS) ou IDs.');
+        alert('Nenhum recebimento foi excluído no banco. Verifique RLS/policy ou IDs.');
         return;
       }
       console.log('FINANCE DELETE RECEIPTS OK:', data);
+      
+      setPayments(prev => prev.filter(r => !idsToDelete.includes(r.id)));
       setSelectedIds(new Set());
       await loadFinance();
       alert(`${data.length} recebimento(s) excluído(s) com sucesso.`);
