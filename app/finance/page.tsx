@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -36,18 +36,21 @@ export default function FinancePage() {
      qtyPending: 0,
      qtyLate: 0,
      qtyDueToday: 0,
-     qtyContracts: 0
+     qtyContracts: 0,
+     qtyNext7Days: 0,
+     qtyNoPaymentContracts: 0
   });
 
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const loadFinance = async () => {
       if (!user) return;
       try {
         let query = supabase
            .from('finance_receipts')
-           .select('*, customers(name, phone), blocks(name, block_name, number), projects(name)')
+           .select('*, customers(name, phone, document), blocks(name, block_name, number, projects(name)), projects(name), sales(id, installments_count, projects(name), contracts(contract_number))')
            .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
@@ -66,13 +69,16 @@ export default function FinancePage() {
         
         let qtyLate = 0;
         let qtyDueToday = 0;
+        let qtyNext7Days = 0;
         let qtyPending = 0;
         let pList = new Set<string>();
         let contractSet = new Set<string>();
+        let paidContracts = new Set<string>();
 
         const today = new Date();
         today.setUTCHours(0,0,0,0);
         const todayStr = today.toISOString().split('T')[0];
+        const todayTime = today.getTime();
         const currentMonth = today.getMonth();
         const currentYear = today.getFullYear();
 
@@ -86,7 +92,7 @@ export default function FinancePage() {
              if (p.sale_id) contractSet.add(p.sale_id);
              
              // Extract project name for filters
-             const projName = p.projects?.name || 'Projeto Desconhecido';
+             const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
              if (projName !== 'Projeto Desconhecido') pList.add(projName);
              
              localTotal += amt;
@@ -97,6 +103,7 @@ export default function FinancePage() {
              }
              
              if (computedStatus === 'pago' || computedStatus === 'paid') {
+                 if (p.sale_id) paidContracts.add(p.sale_id);
                  const paidDate = p.paid_at ? new Date(p.paid_at) : dueDate;
                  if (paidDate.getMonth() === currentMonth && paidDate.getFullYear() === currentYear) {
                      localRecebido += amt;
@@ -109,6 +116,8 @@ export default function FinancePage() {
                  if (dueStr === todayStr) {
                      localVencendoHoje += amt;
                      qtyDueToday++;
+                 } else if (dueDate.getTime() > todayTime && dueDate.getTime() <= todayTime + 7*24*60*60*1000) {
+                     qtyNext7Days++;
                  }
              }
              
@@ -122,6 +131,11 @@ export default function FinancePage() {
           setProjectsList(Array.from(pList));
         }
         
+        let qtyNoPaymentContracts = 0;
+        contractSet.forEach(c => {
+           if (!paidContracts.has(c)) qtyNoPaymentContracts++;
+        });
+        
         const inadimplencia = localTotal > 0 ? (localVencidas / localTotal) * 100 : 0;
         
         setStats({ 
@@ -134,8 +148,10 @@ export default function FinancePage() {
             qtyPending,
             qtyLate,
             qtyDueToday,
-            qtyContracts: contractSet.size
-        });
+            qtyContracts: contractSet.size,
+            qtyNext7Days,
+            qtyNoPaymentContracts
+        } as any);
 
       } catch(err) {
         console.error(err);
@@ -154,8 +170,11 @@ export default function FinancePage() {
 
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
+     const computedContract = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
+     const computedProjName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
+
      const matchSearch = search ? (
-         p.sales?.contract_number?.toLowerCase().includes(search.toLowerCase()) || 
+         computedContract.toLowerCase().includes(search.toLowerCase()) || 
          p.sales?.id?.toLowerCase().includes(search.toLowerCase()) || 
          p.customers?.name?.toLowerCase().includes(search.toLowerCase()) ||
          p.blocks?.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -170,7 +189,7 @@ export default function FinancePage() {
          (statusFilter.toLowerCase() === 'cancelado' && (p.status === 'cancelado' || p.status === 'CANCELED'))
          : true;
          
-     const matchProject = projectFilter !== 'Todos os projetos' ? (p.projects?.name === projectFilter) : true;
+     const matchProject = projectFilter !== 'Todos os projetos' ? (computedProjName === projectFilter) : true;
      
      const matchStartDate = startDate ? (p.due_date >= startDate) : true;
      const matchEndDate = endDate ? (p.due_date <= endDate) : true;
@@ -286,6 +305,47 @@ export default function FinancePage() {
     window.open(`https://wa.me/55${phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  const handleExportCSV = () => {
+    let csv = 'Contrato,Cliente,CPF/CNPJ,Projeto,Quadra,Lote,Parcela,Vencimento,Valor Parcela,Valor Pago,Status,Data Pagamento,Total Vendido,Total Recebido,Total a Receber,Total Vencido,Data da Emissão\n';
+    
+    filteredPayments.forEach(p => {
+       const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
+       const client = p.customers?.name || 'Desconhecido';
+       const doc = p.customers?.document || '-';
+       const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
+       const quadra = p.blocks?.block_name || p.blocks?.name || '?';
+       const lote = String(p.blocks?.number || '?');
+       const parcela = String(p.installment_number || 1);
+       const vencimento = p.due_date ? new Date((p.due_date?.split('T')[0]) + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-';
+       const valor = Number(p.amount) || 0;
+       
+       const pStatusRaw = p.status?.toLowerCase() || 'pendente';
+       const todayStr = new Date().toISOString().split('T')[0];
+       let status = pStatusRaw;
+       if ((status === 'pendente' || status === 'pending') && p.due_date && p.due_date.split('T')[0] < todayStr) status = 'atrasado';
+       
+       const isPaid = status === 'pago' || status === 'paid';
+       const valorPago = isPaid ? (Number(p.paid_amount) || valor) : 0;
+       const dataPgto = isPaid && p.paid_at ? new Date(p.paid_at).toLocaleDateString('pt-BR') : '-';
+       
+       csv += `"${contractNo}","${client}","${doc}","${projName}","${quadra}","${lote}","${parcela}","${vencimento}",${valor},${valorPago},"${status}","${dataPgto}","","","","",""\n`;
+    });
+    
+    csv += `\nTotal Recebido,${stats.recebidoMes}\n`;
+    csv += `Total a Receber,${stats.aReceber}\n`;
+    csv += `Total Vencido,${stats.vencidas}\n`;
+    csv += `Gerado em,${new Date().toLocaleString('pt-BR')}\n`;
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `relatorio_financeiro_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) newSet.delete(id);
@@ -305,11 +365,87 @@ export default function FinancePage() {
           </p>
         </div>
         <div className="flex gap-2 items-center">
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 w-10 h-[38px] rounded-lg flex items-center justify-center transition-colors shadow-sm relative">
+              <Bell className="w-5 h-5" />
+              {(stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)) > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#f04449] text-[10px] font-bold text-white shadow-sm ring-2 ring-[#0b0e14]">
+                  {stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)}
+                </span>
+              )}
+            </button>
+            
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-72 bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl overflow-hidden z-50">
+                 <div className="p-4 border-b border-[#1f232b] flex justify-between items-center">
+                    <h3 className="font-semibold text-white">Notificações</h3>
+                    <span className="text-xs bg-[#1f232b] text-gray-300 px-2 py-0.5 rounded font-bold">
+                       {stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)} Alertas
+                    </span>
+                 </div>
+                 <div className="p-2 max-h-64 overflow-y-auto">
+                    {stats.qtyLate > 0 && (
+                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
+                         <div className="w-8 h-8 rounded-full bg-[#f04449]/10 text-[#f04449] flex items-center justify-center shrink-0">
+                           <TrendingDown className="w-4 h-4" />
+                         </div>
+                         <div>
+                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{stats.qtyLate} parcelas vencidas</p>
+                           <p className="text-xs text-gray-500">Exigem cobrança urgente</p>
+                         </div>
+                      </div>
+                    )}
+                    {stats.qtyDueToday > 0 && (
+                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
+                         <div className="w-8 h-8 rounded-full bg-[#f8b63a]/10 text-[#f8b63a] flex items-center justify-center shrink-0">
+                           <AlertCircle className="w-4 h-4" />
+                         </div>
+                         <div>
+                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{stats.qtyDueToday} parcelas vencem hoje</p>
+                           <p className="text-xs text-gray-500">Acompanhamento diário</p>
+                         </div>
+                      </div>
+                    )}
+                    {(stats as any).qtyNext7Days > 0 && (
+                      <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
+                         <div className="w-8 h-8 rounded-full bg-[#4999e9]/10 text-[#4999e9] flex items-center justify-center shrink-0">
+                           <Banknote className="w-4 h-4" />
+                         </div>
+                         <div>
+                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{(stats as any).qtyNext7Days} nos próximos 7 dias</p>
+                           <p className="text-xs text-gray-500">Programe-se</p>
+                         </div>
+                      </div>
+                    )}
+                    {(stats as any).qtyNoPaymentContracts > 0 && (
+                      <div className="px-3 py-2 hover:bg-[#1f232b]/30 rounded-lg transition-colors cursor-pointer flex gap-3 items-center group">
+                         <div className="w-8 h-8 rounded-full bg-gray-500/10 text-gray-400 flex items-center justify-center shrink-0">
+                           <FileText className="w-4 h-4" />
+                         </div>
+                         <div>
+                           <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{(stats as any).qtyNoPaymentContracts} contratos sem base</p>
+                           <p className="text-xs text-gray-500">Sem pagamentos recebidos</p>
+                         </div>
+                      </div>
+                    )}
+                    {stats.qtyLate === 0 && stats.qtyDueToday === 0 && !(stats as any).qtyNext7Days && !(stats as any).qtyNoPaymentContracts && (
+                      <div className="px-3 py-4 text-center">
+                         <p className="text-sm text-gray-500">Nenhum alerta pendente</p>
+                      </div>
+                    )}
+                 </div>
+              </div>
+            )}
+          </div>
+          
           <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100">
             <Trash2 className="w-4 h-4" />
             Limpar recebimentos de teste
           </button>
-          <button className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportCSV} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <Download className="w-4 h-4" />
             Exportar Relatório
           </button>
@@ -487,12 +623,12 @@ export default function FinancePage() {
                 </tr>
               ) : currentPayments.length > 0 ? (
                 currentPayments.map(p => {
-                   const projectName = p.projects?.name || 'Projeto Desconhecido';
+                   const projectName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
                    const blockName = p.blocks?.block_name || p.blocks?.name || '?';
                    const lotNumber = p.blocks?.number || '?';
                    
                    const loteDesc = `QD ${blockName} - LT ${lotNumber}`;
-                   const contractNo = p.sales?.contract_number || p.sales?.id?.split('-')[0].toUpperCase() || 'CT-S/N';
+                   const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
                    
                    const clientName = p.customers?.name || 'Desconhecido';
                    const parcelInfo = `${p.installment_number || 1}`;
@@ -685,9 +821,10 @@ export default function FinancePage() {
                   <div className="font-medium text-white">{selectedPayment.customers?.name || 'Não localizado'}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Lote</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Lote / Contrato</span>
                   <div className="font-medium text-white">
-                    {selectedPayment.projects?.name || 'Projeto'} - QD {selectedPayment.blocks?.block_name || selectedPayment.blocks?.name} LT {selectedPayment.blocks?.number}
+                    {selectedPayment.projects?.name || selectedPayment.sales?.projects?.name || selectedPayment.blocks?.projects?.name || 'Projeto'} - QD {selectedPayment.blocks?.block_name || selectedPayment.blocks?.name} LT {selectedPayment.blocks?.number}
+                    <div className="text-xs text-gray-400 mt-1 uppercase">CT: {selectedPayment.sales?.contracts?.[0]?.contract_number || (selectedPayment.sales?.id ? 'CT-' + new Date(selectedPayment.created_at || new Date()).getFullYear() + '-' + selectedPayment.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N')}</div>
                   </div>
                 </div>
                 <div>
