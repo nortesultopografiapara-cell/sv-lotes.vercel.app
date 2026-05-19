@@ -805,13 +805,15 @@ export default function GISMap({
            alert("UPDATE DO BLOCK VENDIDO CONCLUÍDO - INICIANDO PÓS-VENDA");
            const processarPosVenda = async () => {
                try {
+                   alert("INICIANDO processarPosVenda");
                    const resolvedTenantId = user?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
-                   console.log("TENANT RESOLVIDO", resolvedTenantId);
-
+                   
                    if (!resolvedTenantId) {
-                       alert("tenant_id não encontrado");
+                       alert("ERRO PÓS-VENDA: tenant_id não encontrado");
                        return;
                    }
+
+                   alert("INICIANDO SALES INSERT. Cliente: " + customerId + " ClientId: " + clientId);
 
                    const salePayload = {
                        tenant_id: resolvedTenantId,
@@ -830,8 +832,6 @@ export default function GISMap({
                        status: 'ACTIVE'
                    };
                    
-                   console.log("SALE INSERT", salePayload);
-                   
                    const { data: saleData, error: saleError } = await supabase
                        .from('sales')
                        .insert([salePayload])
@@ -839,14 +839,17 @@ export default function GISMap({
                        .single();
 
                    if (saleError) {
-                       alert("ERRO SALES: " + JSON.stringify(saleError));
+                       alert("ERRO SALES: " + saleError.message + " | " + saleError.details + " | " + saleError.hint);
                        console.error("ERRO SALES: ", saleError);
                        throw saleError;
                    }
                    
                    if (!saleData || !saleData.id) {
+                       alert("ERRO SALES: ID não retornado");
                        throw new Error("sale.id não retornado");
                    }
+                   
+                   alert("SALES INSERIDO. ID=" + saleData.id + " | INICIANDO FINANCE. Parcelas=" + customerData.installments_count);
                    
                    const saleId = saleData.id;
                    const financePayloads: any[] = [];
@@ -905,16 +908,18 @@ export default function GISMap({
                        }
                    }
                    
-                   console.log("FINANCE INSERT", financePayloads);
-                   
                    if (financePayloads.length > 0) {
                        const { error: financeError } = await supabase.from('finance_receipts').insert(financePayloads);
                        if (financeError) {
-                           alert("ERRO FINANCE: " + JSON.stringify(financeError));
+                           alert("ERRO FINANCE: " + financeError.message + " | " + financeError.details);
                            console.error("ERRO FINANCE", financeError);
                            throw financeError;
                        }
+                   } else {
+                       alert("AVISO: Nenhum payload de finance gerado");
                    }
+                   
+                   alert("FINANCE INSERIDO. INICIANDO CONTRACTS");
                    
                    const cName = nameUpper || customerData.name || 'Cliente';
                    const lName = lot.block_name || lot.name || String(lot.id);
@@ -938,11 +943,9 @@ export default function GISMap({
                        status: 'ativo'
                    };
                    
-                   console.log("CONTRACT INSERT", contractPayload);
-
                    const { error: contractError } = await supabase.from('contracts').insert([contractPayload]);
                    if (contractError) {
-                       alert("ERRO CONTRACT: " + JSON.stringify(contractError));
+                       alert("ERRO CONTRACT: " + contractError.message + " | " + contractError.details);
                        console.error("ERRO CONTRACT", contractError);
                        throw contractError;
                    }
@@ -951,7 +954,7 @@ export default function GISMap({
                    
                } catch (err: any) {
                    console.error("Erro no pós-venda:", err);
-                   alert("Exceção Pós Venda: " + JSON.stringify(err));
+                   alert("Exceção Pós Venda: " + (err.message || JSON.stringify(err)));
                }
            };
 
