@@ -805,159 +805,147 @@ export default function GISMap({
        if (newStatus === 'Vendido' || newStatus === 'vendido') {
            alert("LOTE VENDIDO, CHAMANDO PÓS-VENDA");
            
-           const processarPosVenda = async (params: {
-               tenant_id: string | null;
-               project_id: string | null;
-               block_id: string;
-               customer_id: string | null;
-               client_id: string | null;
-               user_id: string | null;
-               lot_price: number;
-               payment_type: string;
-               discount: number;
-               final_value: number;
-               due_date: string | null;
-               installments_count: number;
-               down_payment: number;
-               first_installment_due_date: string | null;
-               customer_name: string;
-               lot_name: string;
-               project_name: string;
-           }) => {
+           const processarPosVenda = async () => {
                try {
-                   const saleInsert = {
-                       ...(params.tenant_id ? { tenant_id: params.tenant_id } : {}),
-                       project_id: params.project_id,
-                       block_id: params.block_id,
-                       customer_id: params.customer_id,
-                       client_id: params.client_id, // include client_id for strict schema
-                       user_id: params.user_id,
-                       agreed_price: params.final_value,
-                       lot_price: params.lot_price,
-                       payment_type: params.payment_type,
-                       discount: params.discount,
-                       total_value: params.final_value,
-                       down_payment: params.down_payment,
-                       installments_count: params.installments_count,
+                   const salePayload = {
+                       ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                       project_id: lot.project_id || null,
+                       block_id: lot.id,
+                       customer_id: customerId,
+                       client_id: clientId,
+                       user_id: user.id || null,
+                       agreed_price: customerData.final_value || finalPrice,
+                       lot_price: finalPrice,
+                       payment_type: customerData.payment_type || 'À vista',
+                       discount: customerData.discount_value || 0,
+                       total_value: customerData.final_value || finalPrice,
+                       down_payment: customerData.down_payment || 0,
+                       installments_count: Math.max(1, customerData.installments_count || 1),
                        status: 'ACTIVE'
                    };
                    
-                   console.log("Inserindo Sale:", saleInsert);
-                   const { data: saleData, error: saleErr } = await supabase.from('sales').insert([saleInsert]).select('id').single();
+                   console.log("SALE PAYLOAD", salePayload);
+                   
+                   const { data: saleData, error: saleError } = await supabase
+                       .from('sales')
+                       .insert([salePayload])
+                       .select('id')
+                       .single();
 
-                   if (saleErr || !saleData?.id) {
-                       console.error("Erro sales:", saleErr);
-                       alert("Erro ao gerar venda (sales)");
-                       return;
+                   if (saleError) {
+                       alert("ERRO SALES: " + JSON.stringify(saleError));
+                       throw saleError;
                    }
+                   
+                   if (!saleData || !saleData.id) {
+                       throw new Error("sale.id não retornado");
+                   }
+                   
+                   const saleId = saleData.id;
+                   const financePayloads: any[] = [];
+                   
+                   const pmtType = customerData.payment_type || 'À vista';
+                   const downPayment = customerData.down_payment || 0;
+                   const instCount = Math.max(1, customerData.installments_count || 1);
+                   const fValue = customerData.final_value || finalPrice;
 
-                   const financeReceiptsInsert: any[] = [];
-                   if (params.payment_type === 'À vista') {
-                       financeReceiptsInsert.push({
-                           ...(params.tenant_id ? { tenant_id: params.tenant_id } : {}),
-                           sale_id: saleData.id,
-                           customer_id: params.customer_id,
-                           project_id: params.project_id,
-                           block_id: params.block_id,
+                   if (pmtType === 'À vista') {
+                       financePayloads.push({
+                           ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                           sale_id: saleId,
+                           customer_id: customerId,
+                           project_id: lot.project_id || null,
+                           block_id: lot.id,
                            installment_number: 1,
-                           amount: params.final_value,
-                           due_date: params.due_date || new Date().toISOString().split('T')[0],
+                           amount: fValue,
+                           due_date: customerData.down_payment_due_date || new Date().toISOString().split('T')[0],
                            status: 'pago',
                            paid_at: new Date().toISOString()
                        });
-                   } else if (params.payment_type === 'Parcelado') {
-                       let currentInstallment = 1;
-                       if (params.down_payment > 0 && params.due_date) {
-                           financeReceiptsInsert.push({
-                               ...(params.tenant_id ? { tenant_id: params.tenant_id } : {}),
-                               sale_id: saleData.id,
-                               customer_id: params.customer_id,
-                               project_id: params.project_id,
-                               block_id: params.block_id,
-                               installment_number: currentInstallment++,
-                               amount: params.down_payment,
-                               due_date: params.due_date,
+                   } else if (pmtType === 'Parcelado') {
+                       let currentInst = 1;
+                       if (downPayment > 0 && customerData.down_payment_due_date) {
+                           financePayloads.push({
+                               ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                               sale_id: saleId,
+                               customer_id: customerId,
+                               project_id: lot.project_id || null,
+                               block_id: lot.id,
+                               installment_number: currentInst++,
+                               amount: downPayment,
+                               due_date: customerData.down_payment_due_date,
                                status: 'pendente'
                            });
                        }
-                       if (params.first_installment_due_date) {
-                           const parcValue = Math.max(0, (params.final_value - params.down_payment) / params.installments_count);
-                           let currDate = new Date(params.first_installment_due_date + 'T12:00:00Z');
-                           for (let i = 0; i < params.installments_count; i++) {
-                               financeReceiptsInsert.push({
-                                   ...(params.tenant_id ? { tenant_id: params.tenant_id } : {}),
-                                   sale_id: saleData.id,
-                                   customer_id: params.customer_id,
-                                   project_id: params.project_id,
-                                   block_id: params.block_id,
-                                   installment_number: currentInstallment++,
-                                   amount: parcValue,
-                                   due_date: currDate.toISOString().split('T')[0],
+                       
+                       if (customerData.first_installment_due_date) {
+                           const parValue = Math.max(0, (fValue - downPayment) / instCount);
+                           let cDate = new Date(customerData.first_installment_due_date + 'T12:00:00Z');
+                           for (let i = 0; i < instCount; i++) {
+                               financePayloads.push({
+                                   ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                                   sale_id: saleId,
+                                   customer_id: customerId,
+                                   project_id: lot.project_id || null,
+                                   block_id: lot.id,
+                                   installment_number: currentInst++,
+                                   amount: parValue,
+                                   due_date: cDate.toISOString().split('T')[0],
                                    status: 'pendente'
                                });
-                               currDate.setMonth(currDate.getMonth() + 1);
+                               cDate.setMonth(cDate.getMonth() + 1);
                            }
                        }
                    }
 
-                   if (financeReceiptsInsert.length > 0) {
-                       console.log("Inserindo FinanceReceipts:", financeReceiptsInsert);
-                       const { error: finError } = await supabase.from('finance_receipts').insert(financeReceiptsInsert);
-                       if (finError) {
-                           console.error("Erro finance_receipts:", finError);
-                           alert("Erro ao gerar parcelas");
+                   console.log("FINANCE PAYLOAD", financePayloads);
+                   
+                   if (financePayloads.length > 0) {
+                       const { error: financeError } = await supabase.from('finance_receipts').insert(financePayloads);
+                       if (financeError) {
+                           alert("ERRO FINANCE: " + JSON.stringify(financeError));
+                           throw financeError;
                        }
                    }
-
+                   
+                   const cName = nameUpper || customerData.name || 'Cliente';
+                   const lName = lot.block_name || lot.name || String(lot.id);
                    const contractHtml = `
-                        <div style="font-family: sans-serif; padding: 20px;">
-                            <h2>Contrato de Compra e Venda</h2>
-                            <p><strong>Cliente:</strong> ${params.customer_name}</p>
-                            <p><strong>Lote:</strong> ${params.lot_name}</p>
-                            <p><strong>Valor:</strong> ${params.final_value}</p>
-                            <p><strong>Parcelas:</strong> ${params.payment_type === 'À vista' ? 1 : Math.max(1, params.installments_count)}</p>
-                        </div>
+                       <div style="font-family: sans-serif; padding: 20px;">
+                           <h2>Contrato de Compra e Venda</h2>
+                           <p><strong>Cliente:</strong> ${cName}</p>
+                           <p><strong>Lote:</strong> ${lName}</p>
+                           <p><strong>Valor Final:</strong> R$ ${fValue}</p>
+                       </div>
                    `;
-                   const contractInsert = {
-                       ...(params.tenant_id ? { tenant_id: params.tenant_id } : {}),
-                       sale_id: saleData.id,
-                       customer_id: params.customer_id,
-                       project_id: params.project_id,
-                       block_id: params.block_id,
+
+                   const contractPayload = {
+                       ...(user.tenant_id || lot.tenant_id ? { tenant_id: user.tenant_id || lot.tenant_id } : {}),
+                       sale_id: saleId,
+                       customer_id: customerId,
+                       project_id: lot.project_id || null,
+                       block_id: lot.id,
                        contract_number: `CTR-${Date.now()}`,
                        generated_html: contractHtml,
                        status: 'ativo'
                    };
-                   console.log("Inserindo Contracts:", contractInsert);
-                   const { error: contractErr } = await supabase.from('contracts').insert([contractInsert]);
-                   if (contractErr) console.error("Erro contracts:", contractErr);
+                   
+                   console.log("CONTRACT PAYLOAD", contractPayload);
 
-                   alert("Pós-venda gerado com sucesso (Sales, Finance, Contracts)");
+                   const { error: contractError } = await supabase.from('contracts').insert([contractPayload]);
+                   if (contractError) {
+                       alert("ERRO CONTRACT: " + JSON.stringify(contractError));
+                       throw contractError;
+                   }
+                   
+                   alert("Pós-venda gerado com sucesso");
+                   
                } catch (err: any) {
-                   console.error("Exceção processarPosVenda:", err);
-                   alert("Exceção ao gerar Pós-Venda");
+                   console.error("Erro no pós-venda:", err);
                }
            };
 
-           await processarPosVenda({
-              tenant_id: user.tenant_id || lot.tenant_id || null,
-              project_id: lot.project_id || null,
-              block_id: lot.id,
-              customer_id: customerId,
-              client_id: clientId,
-              user_id: user.id || null,
-              lot_price: finalPrice,
-              payment_type: customerData.payment_type || 'À vista',
-              discount: customerData.discount_value || 0,
-              final_value: customerData.final_value || finalPrice,
-              due_date: customerData.down_payment_due_date || null,
-              installments_count: Math.max(1, customerData.installments_count || 1),
-              down_payment: customerData.down_payment || 0,
-              first_installment_due_date: customerData.first_installment_due_date || null,
-              customer_name: nameUpper || customerData.name || 'Cliente',
-              lot_name: lot.block_name || lot.name || String(lot.id),
-              project_name: lot.projects?.name || 'Projeto'
-           });
+           await processarPosVenda();
        }
        
        // Optimistic UI updates
