@@ -6,6 +6,9 @@ import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCirc
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
@@ -44,6 +47,19 @@ export default function FinancePage() {
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showNotifications, setShowNotifications] = useState(false);
+
+  const [hiddenNotifications, setHiddenNotifications] = useState(false);
+  const [tenantData, setTenantData] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadTenant() {
+      if (user?.tenant_id) {
+         const { data } = await supabase.from('companies').select('*').eq('id', user.tenant_id).single();
+         if (data) setTenantData(data);
+      }
+    }
+    loadTenant();
+  }, [user]);
 
   const loadFinance = async () => {
       if (!user) return;
@@ -305,10 +321,8 @@ export default function FinancePage() {
     window.open(`https://wa.me/55${phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  const handleExportCSV = () => {
-    let csv = 'Contrato,Cliente,CPF/CNPJ,Projeto,Quadra,Lote,Parcela,Vencimento,Valor Parcela,Valor Pago,Status,Data Pagamento,Total Vendido,Total Recebido,Total a Receber,Total Vencido,Data da Emissão\n';
-    
-    filteredPayments.forEach(p => {
+  const prepareExportData = () => {
+    return filteredPayments.map(p => {
        const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
        const client = p.customers?.name || 'Desconhecido';
        const doc = p.customers?.document || '-';
@@ -328,22 +342,164 @@ export default function FinancePage() {
        const valorPago = isPaid ? (Number(p.paid_amount) || valor) : 0;
        const dataPgto = isPaid && p.paid_at ? new Date(p.paid_at).toLocaleDateString('pt-BR') : '-';
        
-       csv += `"${contractNo}","${client}","${doc}","${projName}","${quadra}","${lote}","${parcela}","${vencimento}",${valor},${valorPago},"${status}","${dataPgto}","","","","",""\n`;
+       return {
+          'Contrato': contractNo,
+          'Cliente': client,
+          'CPF/CNPJ': doc,
+          'Projeto': projName,
+          'Quadra': quadra,
+          'Lote': lote,
+          'Parcela': parcela,
+          'Vencimento': vencimento,
+          'Valor Parcela': formatCurrency(valor),
+          'Valor Pago': formatCurrency(valorPago),
+          'Status': status.toUpperCase(),
+          'Data Pagamento': dataPgto
+       };
     });
-    
-    csv += `\nTotal Recebido,${stats.recebidoMes}\n`;
-    csv += `Total a Receber,${stats.aReceber}\n`;
-    csv += `Total Vencido,${stats.vencidas}\n`;
-    csv += `Gerado em,${new Date().toLocaleString('pt-BR')}\n`;
-    
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `relatorio_financeiro_${new Date().getTime()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  };
+
+  const getSummaryData = () => {
+     let qtyPaid = 0;
+     let qtyPending = 0;
+     let qtyLate = 0;
+     let totalVendido = 0;
+     let totalRecebido = 0;
+     let totalAReceber = 0;
+     let totalVencido = 0;
+
+     filteredPayments.forEach(p => {
+         const valor = Number(p.amount) || 0;
+         const pStatusRaw = p.status?.toLowerCase() || 'pendente';
+         const todayStr = new Date().toISOString().split('T')[0];
+         let status = pStatusRaw;
+         if ((status === 'pendente' || status === 'pending') && p.due_date && p.due_date.split('T')[0] < todayStr) status = 'atrasado';
+         
+         const isPaid = status === 'pago' || status === 'paid';
+         const isLate = status === 'atrasado';
+         const valorPago = isPaid ? (Number(p.paid_amount) || valor) : 0;
+
+         totalVendido += valor;
+         
+         if (isPaid) {
+            qtyPaid++;
+            totalRecebido += valorPago;
+         }
+         else if (isLate) {
+            qtyLate++;
+            totalVencido += valor;
+            totalAReceber += valor;
+         }
+         else {
+            qtyPending++;
+            totalAReceber += valor;
+         }
+     });
+
+     return [
+       { Descricao: 'Total Filtro', Valor: formatCurrency(totalVendido) },
+       { Descricao: 'Total Recebido', Valor: formatCurrency(totalRecebido) },
+       { Descricao: 'Total a Receber', Valor: formatCurrency(totalAReceber) },
+       { Descricao: 'Total Vencido', Valor: formatCurrency(totalVencido) },
+       { Descricao: 'Qtd Parcelas Pagas', Valor: qtyPaid.toString() },
+       { Descricao: 'Qtd Parcelas Pendentes', Valor: qtyPending.toString() },
+       { Descricao: 'Qtd Parcelas Vencidas', Valor: qtyLate.toString() },
+     ];
+  };
+
+  const handleExportExcel = () => {
+     const data = prepareExportData();
+     const summary = getSummaryData();
+     const wb = XLSX.utils.book_new();
+
+     // Company Info Config
+     const companyName = tenantData ? tenantData.trade_name || tenantData.company_name : 'Empresa não informada';
+     const companyDoc = tenantData?.document || 'CNPJ não informado';
+     const infoLine = [
+         tenantData?.email ? `Email: ${tenantData.email}` : null,
+         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
+         tenantData?.address ? `Endereço: ${tenantData.address}` : null
+     ].filter(Boolean).join(' | ');
+     
+     const headerData = [
+         [`RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`],
+         [`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`],
+         [`Data de emissão: ${new Date().toLocaleString('pt-BR')}`],
+         [`Filtros: Status = ${statusFilter} | Projeto = ${projectFilter}`],
+         []
+     ];
+
+     const ws = XLSX.utils.aoa_to_sheet(headerData);
+     XLSX.utils.sheet_add_json(ws, data, { origin: 'A6' });
+     XLSX.utils.sheet_add_json(ws, summary, { origin: `A${data.length + 8}` });
+     
+     // Columns auto-width
+     const colWidths = [
+        {wch: 15}, {wch: 30}, {wch: 18}, {wch: 25}, {wch: 10}, {wch: 10},
+        {wch: 10}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15},
+     ];
+     ws['!cols'] = colWidths;
+
+     XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+     XLSX.writeFile(wb, `relatorio_financeiro_${new Date().getTime()}.xlsx`);
+  };
+
+  const handleExportPDF = () => {
+      const data = prepareExportData();
+      const summary = getSummaryData();
+      const doc = new jsPDF('landscape');
+      
+      const companyName = tenantData ? tenantData.trade_name || tenantData.company_name : 'Empresa não informada';
+      const companyDoc = tenantData?.document || 'CNPJ não informado';
+      const infoLine = [
+         tenantData?.email ? `Email: ${tenantData.email}` : null,
+         tenantData?.phone ? `Tel: ${tenantData.phone}` : null,
+         tenantData?.address ? `Endereço: ${tenantData.address}` : null
+      ].filter(Boolean).join(' | ');
+
+      const title = `RELATÓRIO FINANCEIRO - ${companyName.toUpperCase()}`;
+      
+      doc.setFontSize(14);
+      doc.text(title, 14, 15);
+      doc.setFontSize(9);
+      doc.setTextColor(80);
+      doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 21);
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 26);
+
+      autoTable(doc, {
+          startY: 30,
+          head: [['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento']],
+          body: data.map(d => [d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]),
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [41, 128, 185] },
+          didDrawPage: (dataObj) => {
+              // Footer
+              let str = 'Página ' + (doc.internal as any).getNumberOfPages();
+              doc.setFontSize(8);
+              let pageSize = doc.internal.pageSize;
+              let pageHeight = pageSize.height ? pageSize.height : (pageSize as any).getHeight();
+              doc.text(str, dataObj.settings.margin.left, pageHeight - 10);
+          }
+      });
+      
+      // Calculate summary StartY
+      let finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.text('RESUMO FINANCEIRO', 14, finalY);
+
+      autoTable(doc, {
+          startY: finalY + 5,
+          head: [['Descrição', 'Valor']],
+          body: summary.map(s => [s.Descricao, s.Valor]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [52, 73, 94] },
+          margin: { right: 150 } // prevent taking full width
+      });
+
+      doc.save(`relatorio_financeiro_${new Date().getTime()}.pdf`);
   };
 
   const toggleSelection = (id: string) => {
@@ -368,10 +524,10 @@ export default function FinancePage() {
           
           <div className="relative">
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => { setShowNotifications(!showNotifications); setHiddenNotifications(false); }}
               className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 w-10 h-[38px] rounded-lg flex items-center justify-center transition-colors shadow-sm relative">
               <Bell className="w-5 h-5" />
-              {(stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)) > 0 && (
+              {!hiddenNotifications && (stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)) > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#f04449] text-[10px] font-bold text-white shadow-sm ring-2 ring-[#0b0e14]">
                   {stats.qtyLate + stats.qtyDueToday + (stats.qtyNext7Days || 0) + (stats.qtyNoPaymentContracts || 0)}
                 </span>
@@ -437,6 +593,14 @@ export default function FinancePage() {
                       </div>
                     )}
                  </div>
+                 <div className="p-4 border-t border-[#1f232b] flex flex-col gap-2">
+                    <button onClick={() => setShowNotifications(false)} className="w-full py-2 bg-[#4999e9] hover:bg-[#4999e9]/90 text-white rounded font-medium transition-colors text-sm">
+                       Ver financeiro
+                    </button>
+                    <button onClick={() => { setHiddenNotifications(true); setShowNotifications(false); }} className="w-full py-2 bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 rounded font-medium transition-colors text-sm">
+                       Limpar notificações visuais
+                    </button>
+                 </div>
               </div>
             )}
           </div>
@@ -445,9 +609,13 @@ export default function FinancePage() {
             <Trash2 className="w-4 h-4" />
             Limpar recebimentos de teste
           </button>
-          <button onClick={handleExportCSV} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+            <FileText className="w-4 h-4" />
+            Exportar PDF
+          </button>
+          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <Download className="w-4 h-4" />
-            Exportar Relatório
+            Exportar Excel
           </button>
         </div>
       </header>
