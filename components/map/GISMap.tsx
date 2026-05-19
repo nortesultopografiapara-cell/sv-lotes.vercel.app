@@ -812,28 +812,28 @@ export default function GISMap({
                agreed_price: customerData.final_value || finalPrice,
                lot_price: finalPrice,
                payment_type: customerData.payment_type || 'À vista',
-               discount_value: customerData.discount_value || 0,
                discount: customerData.discount_value || 0,
-               final_value: customerData.final_value || finalPrice,
                total_value: customerData.final_value || finalPrice,
                down_payment: customerData.down_payment || 0,
-               down_payment_due_date: customerData.down_payment_due_date || null,
                installments_count: customerData.installments_count || 1,
-               first_installment_due_date: customerData.first_installment_due_date || null,
-               installment_value: customerData.installment_value || 0,
                status: 'ACTIVE'
            };
            
+           console.log("INSERT SALE", saleInsert);
+
            const { data: saleData, error: saleErr } = await supabase.from('sales').insert([saleInsert]).select('id').single();
 
-            if (saleErr || !saleData) {
-                console.error("erro ao criar venda", saleErr);
-                alert("Erro ao confirmar venda no sistema: " + (saleErr?.message || "Desconhecido"));
-                throw new Error("Erro ao criar venda: " + (saleErr?.message || "Desconhecido"));
-            }
+           console.log("SALE RESULT", saleData);
+           console.log("SALE ERROR", saleErr);
 
-            console.log("venda criada", saleData);
-            alert("Venda criada no sales");
+           if (saleErr || !saleData?.id) {
+               console.error("erro ao criar venda", saleErr);
+               alert("Erro ao confirmar venda no sistema: " + JSON.stringify(saleErr));
+               throw new Error("sale.id não retornado");
+           }
+
+           console.log("venda criada", saleData);
+           alert("Venda criada no sales");
 
                const financeReceiptsInsert: any[] = [];
                
@@ -889,10 +889,12 @@ export default function GISMap({
                }
                
                if (financeReceiptsInsert.length > 0) {
+                   console.log("INSERT FINANCE", financeReceiptsInsert);
                    const { error: finError } = await supabase.from('finance_receipts').insert(financeReceiptsInsert);
+                   console.log("FINANCE ERROR", finError);
                    if (finError) {
                        console.error("erro ao criar financeiro", finError);
-                       alert("Erro ao criar parcelas: " + finError.message);
+                       alert("Erro ao criar parcelas: " + JSON.stringify(finError));
                    } else {
                        console.log("financeiro criado", financeReceiptsInsert.length);
                        alert("Financeiro criado");
@@ -924,10 +926,13 @@ export default function GISMap({
                    status: 'ativo'
                };
 
+               console.log("INSERT CONTRACT", contractInsert);
                const { error: contractErr } = await supabase.from('contracts').insert([contractInsert]);
+               console.log("CONTRACT ERROR", contractErr);
+
                if (contractErr) {
                    console.error("erro ao criar contrato", contractErr);
-                   alert("Erro ao criar contrato: " + contractErr.message);
+                   alert("Erro ao criar contrato: " + JSON.stringify(contractErr));
                } else {
                    console.log("contrato criado", contractInsert);
                    alert("Contrato criado");
