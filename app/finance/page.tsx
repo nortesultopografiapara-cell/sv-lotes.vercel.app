@@ -24,8 +24,9 @@ export default function FinancePage() {
       if (!user) return;
       try {
         let query = supabase
-           .from('finance_receipts').select('*, blocks(name, block_name, number, projects(name)), customers(name)')
-           .order('vencimento', { ascending: true });
+           .from('payments')
+           .select('*, sales(*, blocks(name, block_name, number, projects(name)), clients(full_name))')
+           .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
            query = query.eq('tenant_id', user.tenant_id);
@@ -41,10 +42,10 @@ export default function FinancePage() {
 
          if (data) {
            data.forEach(p => {
-              if (p.status === 'pago') received += Number(p.valor);
-              if (p.status === 'pendente') pending += Number(p.valor);
-              if (p.status === 'vencido') {
-                 overdue += Number(p.valor);
+              if (p.status === 'PAID') received += Number(p.amount);
+              if (p.status === 'PENDING') pending += Number(p.amount);
+              if (p.status === 'OVERDUE') {
+                 overdue += Number(p.amount);
                  overdueCount++;
               }
            });
@@ -66,8 +67,8 @@ export default function FinancePage() {
   }, [user, authLoading]);
 
   const filteredPayments = payments.filter(p => 
-     p.id?.toLowerCase().includes(search.toLowerCase()) || 
-     p.customers?.name?.toLowerCase().includes(search.toLowerCase())
+     p.sales?.contract_url?.toLowerCase().includes(search.toLowerCase()) || 
+     p.sales?.clients?.full_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const formatCurrency = (val: number) => {
@@ -170,19 +171,19 @@ export default function FinancePage() {
                 </tr>
               ) : filteredPayments.length > 0 ? (
                 filteredPayments.map(p => {
-                   const projectName = p.blocks?.projects?.name || 'Projeto?';
-                   const blockName = p.blocks?.block_name || p.blocks?.name || 'Quadra?';
-                   const lotNumber = p.blocks?.number || 'Lote?';
+                   const projectName = p.sales?.blocks?.projects?.name || 'Projeto?';
+                   const blockName = p.sales?.blocks?.block_name || p.sales?.blocks?.name || 'Quadra?';
+                   const lotNumber = p.sales?.blocks?.number || 'Lote?';
                    const loteDesc = `${projectName} - ${blockName}, ${lotNumber}`;
                    
                    return (
                       <FinanceRow 
                         key={p.id}
-                        contract={p.contract_id?.split('-')[0].toUpperCase() || p.id?.split('-')[0].toUpperCase()}
+                        contract={p.sales?.contract_url || p.sales?.id?.split('-')[0].toUpperCase()}
                         lote={loteDesc}
-                        client={p.customers?.name || 'Desconhecido'}
-                        dueDate={new Date(p.vencimento).toLocaleDateString()}
-                        value={formatCurrency(Number(p.valor))}
+                        client={p.sales?.clients?.full_name || 'Desconhecido'}
+                        dueDate={new Date(p.due_date).toLocaleDateString()}
+                        value={formatCurrency(Number(p.amount))}
                         status={p.status}
                       />
                    );
@@ -205,14 +206,14 @@ export default function FinancePage() {
 function FinanceRow({ contract, lote, client, dueDate, value, status }: any) {
   const getStatusStyle = (s: string) => {
     switch(s) {
-      case 'pago': return 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/20';
-      case 'pendente': return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/20';
-      case 'vencido': return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/20';
+      case 'PAID': return 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/20';
+      case 'PENDING': return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/20';
+      case 'OVERDUE': return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/20';
       default: return 'bg-[var(--color-surface-dim)] text-[var(--color-text-muted)] border-[var(--color-border)]';
     }
   };
 
-  const statusLabel = status === 'pago' ? 'PAGO' : status === 'pendente' ? 'A VENCER' : 'EM ATRASO';
+  const statusLabel = status === 'PAID' ? 'PAGO' : status === 'PENDING' ? 'A VENCER' : 'EM ATRASO';
 
   return (
     <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group cursor-pointer">

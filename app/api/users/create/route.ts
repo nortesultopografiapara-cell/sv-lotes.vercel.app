@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { fullName, email, phone, tenantId, role } = body;
+    const { fullName, email, phone, tenantId, role, password } = body;
 
     // Verify calling user is ADMIN or SUPER_ADMIN
     // For now we trust the payload but ideally extract from token
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       throw new Error("O tenantId é obrigatório para cadastrar um corretor.");
     }
 
-    const temporaryPassword = generateTempPassword(8);
+    const temporaryPassword = password || generateTempPassword(8);
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: email,

@@ -19,7 +19,9 @@ export default function CorretoresPage() {
     email: '',
     phone: '',
     cpf: '',
-    creci: ''
+    creci: '',
+    password: '',
+    confirmPassword: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -67,6 +69,14 @@ export default function CorretoresPage() {
         setError('Limite de corretores do plano atingido.');
         return;
     }
+    if (formData.password.length < 6) {
+        setError('A senha deve ter no mínimo 6 caracteres.');
+        return;
+    }
+    if (formData.password !== formData.confirmPassword) {
+        setError('As senhas não coincidem.');
+        return;
+    }
     setError('');
     setIsSubmitting(true);
 
@@ -79,7 +89,8 @@ export default function CorretoresPage() {
            email: formData.email,
            phone: formData.phone,
            tenantId: user?.tenant_id,
-           role: 'CORRETOR'
+           role: 'CORRETOR',
+           password: formData.password
         })
       });
       
@@ -321,6 +332,37 @@ export default function CorretoresPage() {
                           onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
                           className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
                         />
+                     </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                        <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Senha de acesso</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                          <input 
+                            type="password" 
+                            required
+                            minLength={6}
+                            value={formData.password}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
+                          />
+                        </div>
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-wider">Confirmar senha</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                          <input 
+                            type="password" 
+                            required
+                            minLength={6}
+                            value={formData.confirmPassword}
+                            onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#14b8a6]"
+                          />
+                        </div>
                      </div>
                    </div>
 

@@ -82,7 +82,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
            
            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-           pdf.save(`Contrato_${(sale.customers?.name || sale.clients?.full_name) || 'Venda'}.pdf`);
+           pdf.save(`Contrato_${sale.clients?.full_name || 'Venda'}.pdf`);
        } catch(e) {
            alert("Erro ao gerar PDF.");
        }
@@ -105,8 +105,8 @@ export function ContractGenerator({ sale }: { sale: any }) {
                         new Paragraph({ text: `Endereço: ${company?.address || ''}, ${company?.city || ''} - ${company?.state || ''}, CEP: ${company?.zip_code || ''}` }),
                         new Paragraph({ text: "" }),
                         new Paragraph({ text: "COMPRADOR", heading: HeadingLevel.HEADING_2 }),
-                        new Paragraph({ text: `Nome: ${(sale.customers?.name || sale.clients?.full_name)}` }),
-                        new Paragraph({ text: `CPF/CNPJ: ${(sale.customers?.cpf_cnpj || sale.clients?.cpf_cnpj) || 'Não informado'}` }),
+                        new Paragraph({ text: `Nome: ${sale.clients?.full_name}` }),
+                        new Paragraph({ text: `CPF/CNPJ: ${sale.clients?.cpf_cnpj || 'Não informado'}` }),
                         new Paragraph({ text: `Endereço: ${sale.clients?.address || 'Não informado'}` }),
                         new Paragraph({ text: `Telefone: ${sale.clients?.phone || 'Não informado'} | E-mail: ${sale.clients?.email || 'Não informado'}` }),
                         new Paragraph({ text: "" }),
@@ -137,7 +137,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
        });
 
        const blob = await Packer.toBlob(doc);
-       saveAs(blob, `Contrato_${(sale.customers?.name || sale.clients?.full_name) || 'Venda'}.docx`);
+       saveAs(blob, `Contrato_${sale.clients?.full_name || 'Venda'}.docx`);
    };
 
    const replaceVariables = (html: string) => {
@@ -148,8 +148,8 @@ export function ContractGenerator({ sale }: { sale: any }) {
        const cAddress = company?.address ? `${company?.address}, ${company?.zip_code}` : '';
        const cCityState = company?.city ? `${company?.city} - ${company?.state}` : '';
        
-       const clName = (sale.customers?.name || sale.clients?.full_name) || '';
-       const clCpf = (sale.customers?.cpf_cnpj || sale.clients?.cpf_cnpj) || '';
+       const clName = sale.clients?.full_name || '';
+       const clCpf = sale.clients?.cpf_cnpj || '';
        const clRg = sale.clients?.rg || '';
        const clEmail = sale.clients?.email || '';
        const clPhone = sale.clients?.phone || '';
@@ -220,9 +220,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center bg-[var(--color-background)]">
                <div className="bg-white shadow-2xl border border-gray-200 p-8 md:p-12 max-w-3xl w-full text-black font-serif text-sm leading-relaxed" ref={printRef} style={{ minHeight: '1056px' }}>
                    
-                   {sale.generated_html ? (
-                        <div dangerouslySetInnerHTML={{ __html: sale.generated_html }} />
-                    ) : selectedTemplate ? (
+                   {selectedTemplate ? (
                        <div dangerouslySetInnerHTML={{ __html: replaceVariables(selectedTemplate.content) }} />
                    ) : (
                        <>
@@ -236,7 +234,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                                <strong>VENDEDOR(A):</strong> {company?.razao_social || company?.fantasy_name || company?.name || '__________'}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº {company?.cnpj || '__________'}, com sede na {company?.address || '__________'}, CEP: {company?.zip_code || '__________'}, na cidade de {company?.city || '__________'} - {company?.state || '___'}, neste ato representado por seu responsável legal {company?.legal_representative || company?.responsible_name || '__________'} (CPF: {company?.representative_cpf || company?.responsible_cpf || '__________'}).
                            </p>
                            <p className="mb-2 text-justify">
-                               <strong>COMPRADOR(A):</strong> {(sale.customers?.name || sale.clients?.full_name)}, inscrito(a) no CPF/CNPJ sob o nº {(sale.customers?.cpf_cnpj || sale.clients?.cpf_cnpj) || '__________'}, RG nº {sale.clients?.rg || '__________'}, profissão: {sale.clients?.profession || '__________'}, estado civil: {sale.clients?.marital_status || '__________'}, residente e domiciliado(a) na {sale.clients?.address || '__________'}, telefone {sale.clients?.phone || '__________'}, e-mail {sale.clients?.email || '__________'}.
+                               <strong>COMPRADOR(A):</strong> {sale.clients?.full_name}, inscrito(a) no CPF/CNPJ sob o nº {sale.clients?.cpf_cnpj || '__________'}, RG nº {sale.clients?.rg || '__________'}, profissão: {sale.clients?.profession || '__________'}, estado civil: {sale.clients?.marital_status || '__________'}, residente e domiciliado(a) na {sale.clients?.address || '__________'}, telefone {sale.clients?.phone || '__________'}, e-mail {sale.clients?.email || '__________'}.
                            </p>
 
                            <h2 className="font-bold border-b border-black pb-1 mb-3 uppercase text-xs mt-6">2. Do Imóvel (Objeto do Contrato)</h2>
@@ -277,8 +275,8 @@ export function ContractGenerator({ sale }: { sale: any }) {
                                </div>
                                <div>
                                    <div className="h-16 border-b border-black mx-4 mb-2"></div>
-                                   <p className="font-bold">{(sale.customers?.name || sale.clients?.full_name)}</p>
-                                   <p className="text-xs">CPF/CNPJ: {(sale.customers?.cpf_cnpj || sale.clients?.cpf_cnpj)}</p>
+                                   <p className="font-bold">{sale.clients?.full_name}</p>
+                                   <p className="text-xs">CPF/CNPJ: {sale.clients?.cpf_cnpj}</p>
                                </div>
                            </div>
                        </>

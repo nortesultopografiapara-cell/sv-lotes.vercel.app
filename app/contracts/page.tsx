@@ -20,8 +20,8 @@ export default function ContractsPage() {
           return;
        }
 
-       let query = supabase.from('contracts')
-           .select('*, customers(name), blocks(number, block_name, name, projects(name, city, state))')
+       let query = supabase.from('sales')
+           .select('*, clients(*), blocks(number, block_name, name, projects(name, city, state))')
            .order('created_at', { ascending: false });
            
        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
@@ -41,7 +41,7 @@ export default function ContractsPage() {
   }, [user, authLoading]);
 
   const filteredSales = sales.filter(s => {
-      const p = s.customers?.name?.toLowerCase() || '';
+      const p = s.clients?.full_name?.toLowerCase() || '';
       const c = s.blocks?.projects?.name?.toLowerCase() || '';
       return p.includes(search.toLowerCase()) || c.includes(search.toLowerCase());
   });
@@ -87,12 +87,12 @@ export default function ContractsPage() {
                          onClick={() => setSelectedSale(sale)}
                          className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedSale?.id === sale.id ? 'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20' : 'hover:bg-[var(--color-surface)] border border-transparent'}`}
                      >
-                         <h3 className="text-sm font-semibold text-white">{sale.customers?.name || 'Cliente Desconhecido'}</h3>
+                         <h3 className="text-sm font-semibold text-white">{sale.clients?.full_name || 'Cliente Desconhecido'}</h3>
                          <div className="text-xs text-gray-400 mt-1">
                              {sale.blocks?.projects?.name} - {sale.blocks?.block_name || sale.blocks?.name} / Lote {sale.blocks?.number}
                          </div>
                          <div className="text-xs font-semibold text-[var(--color-primary)] mt-1">
-                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.valor_total)}
+                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.final_value || sale.agreed_price)}
                          </div>
                      </div>
                  ))
