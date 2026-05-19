@@ -1,4 +1,4 @@
-// FINANCE PAGE PREMIUM UPDATED
+// VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
 import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
