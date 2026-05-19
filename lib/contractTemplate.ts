@@ -29,13 +29,16 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
     const empresaEmail = tenant?.email || 'EMAIL NÃO INFORMADO';
     const empresaLogo = tenant?.logo_url ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>` : '';
 
-    const clienteNome = customer?.name || 'CLIENTE NÃO INFORMADO';
-    const clienteCpfCnpj = customer?.document || customer?.cpf || 'CPF/CNPJ NÃO INFORMADO';
-    const clienteRg = customer?.rg || 'RG NÃO INFORMADO';
-    const clienteProfissao = customer?.profession || 'PROFISSÃO NÃO INFORMADA';
-    const clienteEstadoCivil = customer?.civil_state || customer?.marital_status || 'ESTADO CIVIL NÃO INFORMADO';
-    const clienteEndereco = customer?.address || customer?.street || 'ENDEREÇO NÃO INFORMADO';
-    const clienteCidade = customer?.city || 'CIDADE NÃO INFORMADA';
+    const clienteNome = customer?.name || 'cliente não informado';
+    const clienteCpfCnpj = customer?.document || customer?.cpf || 'cpf/cnpj não informado';
+    const clienteRg = customer?.rg || 'rg não informado';
+    const clienteProfissao = customer?.profession || 'profissão não informada';
+    const clienteEstadoCivil = customer?.civil_state || 'estado civil não informado';
+    const clienteEndereco = customer?.address || customer?.street || 'endereço não informado';
+    const clienteBairro = customer?.neighborhood || 'bairro não informado';
+    const clienteCidade = customer?.city || 'cidade não informada';
+    const clienteUf = customer?.state_uf || 'UF não informada';
+    const clienteCep = customer?.zip_code || 'cep não informado';
 
     const projetoNome = project?.name || 'PROJETO NÃO INFORMADO';
     const quadra = block?.block_name || block?.name || 'QUADRA NÃO INFORMADA';
@@ -122,7 +125,7 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
             </p>
 
             <p style="text-align: justify; margin-bottom: 20px;">
-                De outro lado, como <strong>PROMITENTE COMPRADOR</strong>, <strong>${clienteNome}</strong>, portador do RG n° ${clienteRg}, e inscrito no CPF/CNPJ sob o n° ${clienteCpfCnpj}, profissão: ${clienteProfissao}, estado civil: ${clienteEstadoCivil}, residente e domiciliado à ${clienteEndereco}, ${clienteCidade}.
+                De outro lado, como <strong>PROMITENTE COMPRADOR</strong>, <strong>${clienteNome}</strong>, portador do RG n° ${clienteRg}, e inscrito no CPF/CNPJ sob o n° ${clienteCpfCnpj}, profissão: ${clienteProfissao}, estado civil: ${clienteEstadoCivil}, residente e domiciliado à ${clienteEndereco}, Bairro ${clienteBairro}, ${clienteCidade}-${clienteUf}, CEP: ${clienteCep}.
             </p>
 
             <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA PRIMEIRA - DO IMÓVEL</h3>
