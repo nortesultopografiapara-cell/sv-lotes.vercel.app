@@ -802,10 +802,11 @@ export default function GISMap({
        if (updateError) throw updateError;
        
        if (newStatus.toLowerCase().trim() === 'vendido') {
-           alert("UPDATE DO BLOCK VENDIDO CONCLUÍDO - INICIANDO PÓS-VENDA");
+           console.log("INICIO POS VENDA");
+           alert("INICIO POS VENDA");
+
            const processarPosVenda = async () => {
                try {
-                   alert("INICIANDO processarPosVenda");
                    const resolvedTenantId = user?.company_id || lot?.projects?.company_id || user?.tenant_id || lot?.tenant_id;
                    
                    if (!resolvedTenantId) {
@@ -813,7 +814,7 @@ export default function GISMap({
                        return;
                    }
 
-                   alert("INICIANDO SALES INSERT. Cliente: " + customerId + " ClientId: " + clientId);
+                   alert("INSERINDO SALES");
 
                    const salePayload = {
                        tenant_id: resolvedTenantId,
@@ -839,7 +840,7 @@ export default function GISMap({
                        .single();
 
                    if (saleError) {
-                       alert("ERRO SALES: " + saleError.message + " | " + saleError.details + " | " + saleError.hint);
+                       alert("ERRO SALES: " + JSON.stringify(saleError));
                        console.error("ERRO SALES: ", saleError);
                        throw saleError;
                    }
@@ -849,7 +850,8 @@ export default function GISMap({
                        throw new Error("sale.id não retornado");
                    }
                    
-                   alert("SALES INSERIDO. ID=" + saleData.id + " | INICIANDO FINANCE. Parcelas=" + customerData.installments_count);
+                   alert("SALES CRIADO");
+                   alert("INSERINDO FINANCEIRO");
                    
                    const saleId = saleData.id;
                    const financePayloads: any[] = [];
@@ -911,15 +913,14 @@ export default function GISMap({
                    if (financePayloads.length > 0) {
                        const { error: financeError } = await supabase.from('finance_receipts').insert(financePayloads);
                        if (financeError) {
-                           alert("ERRO FINANCE: " + financeError.message + " | " + financeError.details);
+                           alert("ERRO FINANCEIRO: " + JSON.stringify(financeError));
                            console.error("ERRO FINANCE", financeError);
                            throw financeError;
                        }
-                   } else {
-                       alert("AVISO: Nenhum payload de finance gerado");
                    }
                    
-                   alert("FINANCE INSERIDO. INICIANDO CONTRACTS");
+                   alert("FINANCEIRO CRIADO");
+                   alert("INSERINDO CONTRATO");
                    
                    const cName = nameUpper || customerData.name || 'Cliente';
                    const lName = lot.block_name || lot.name || String(lot.id);
@@ -945,12 +946,13 @@ export default function GISMap({
                    
                    const { error: contractError } = await supabase.from('contracts').insert([contractPayload]);
                    if (contractError) {
-                       alert("ERRO CONTRACT: " + contractError.message + " | " + contractError.details);
+                       alert("ERRO CONTRATO: " + JSON.stringify(contractError));
                        console.error("ERRO CONTRACT", contractError);
                        throw contractError;
                    }
                    
-                   alert("Pós-venda gerado com sucesso (Sales, Finance, Contracts)");
+                   alert("CONTRATO CRIADO");
+                   alert("PÓS-VENDA FINALIZADO");
                    
                } catch (err: any) {
                    console.error("Erro no pós-venda:", err);
