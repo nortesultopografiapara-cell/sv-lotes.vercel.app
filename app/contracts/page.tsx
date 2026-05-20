@@ -248,43 +248,49 @@ export default function ContractsPage() {
           }
 
           const ids = Array.from(selectedContractIds);
-          console.log("CONTRATOS SELECIONADOS:", ids);
+          console.log("IDS SELECIONADOS PARA DELETE:", ids);
 
           const { data, error } = await supabase
               .from("contracts")
               .delete()
               .in("id", ids)
-              .select();
+              .select("id");
 
-          console.log("RESULTADO DELETE:", data, error);
+          console.log("DELETE CONTRATOS RESULT:", data, error);
 
           if (error) {
-              alert("Erro ao excluir contratos: " + JSON.stringify(error));
-          } else {
-              const excluidos = data || [];
-              alert(`${excluidos.length} contrato(s) excluído(s) com sucesso.`);
-              
-              setContracts(prev => prev.filter(c => !ids.includes(c.id)));
-              if (selectedContract && ids.includes(selectedContract.id)) {
-                  setSelectedContract(null);
-              }
-              setSelectedContractIds(new Set());
-              
-              // Re-calculate stats
-              setStats(prevStats => {
-                  const remaining = contracts.filter(c => !ids.includes(c.id));
-                  let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
-                  remaining.forEach(c => {
-                      const st = String(c.status || '').toLowerCase().trim();
-                      const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
-                      valorTotal += val;
-                      if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
-                      else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
-                      else { pendentes++; ativos++; }
-                  });
-                  return { ativos, assinados, pendentes, cancelados, valorTotal };
-              });
+              alert("ERRO AO EXCLUIR CONTRATOS: " + JSON.stringify(error));
+              return;
           }
+
+          if (!data || data.length === 0) {
+              alert("Nenhum contrato foi excluído no banco. Verifique RLS/policies ou IDs.");
+              return;
+          }
+
+          const deletedIds = data.map(d => d.id);
+          alert(`${deletedIds.length} contrato(s) excluído(s) com sucesso.`);
+          
+          setContracts(prev => prev.filter(c => !deletedIds.includes(c.id)));
+          if (selectedContract && deletedIds.includes(selectedContract.id)) {
+              setSelectedContract(null);
+          }
+          setSelectedContractIds(new Set());
+          
+          // Re-calculate stats
+          setStats(prevStats => {
+              const remaining = contracts.filter(c => !deletedIds.includes(c.id));
+              let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+              remaining.forEach(c => {
+                  const st = String(c.status || '').toLowerCase().trim();
+                  const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+                  valorTotal += val;
+                  if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
+                  else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
+                  else { pendentes++; ativos++; }
+              });
+              return { ativos, assinados, pendentes, cancelados, valorTotal };
+          });
       } catch (err) {
           console.error("ERRO EXCLUSÃO:", err);
           alert("Erro inexperado ao excluir contratos.");
