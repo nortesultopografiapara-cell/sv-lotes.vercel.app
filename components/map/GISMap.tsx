@@ -1610,7 +1610,7 @@ export default function GISMap({
                 projDataSnapshot?.name || lot?.projects?.name || null,
               project_city_snapshot: projDataSnapshot?.city || null,
               project_uf_snapshot: projDataSnapshot?.uf || null,
-              forum_city_snapshot: projDataSnapshot?.forum_city || null,
+              forum_city_snapshot: projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
             };
 
             const contractHtml = generateContractHTML({

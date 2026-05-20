@@ -158,16 +158,21 @@ export default function ContractsPage() {
   }, [user, authLoading]);
 
   useEffect(() => {
-    if (selectedContract?.sale_id) {
-      supabase
-        .from("finance_receipts")
-        .select("*")
-        .eq("sale_id", selectedContract.sale_id)
-        .order("due_date", { ascending: true })
-        .then(({ data }) => setReceipts(data || []));
-    } else {
-      setReceipts([]);
-    }
+    let active = true;
+    const fetchReceipts = async () => {
+      if (selectedContract?.sale_id) {
+        const { data } = await supabase
+          .from("finance_receipts")
+          .select("*")
+          .eq("sale_id", selectedContract.sale_id)
+          .order("due_date", { ascending: true });
+        if (active) setReceipts(data || []);
+      } else {
+        if (active) setReceipts([]);
+      }
+    };
+    fetchReceipts();
+    return () => { active = false; };
   }, [selectedContract]);
 
   const filteredContracts = contracts.filter((c) => {
@@ -617,13 +622,21 @@ export default function ContractsPage() {
         receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
     }
 
-    const projData = selectedContract.projects || selectedContract.sales?.projects || selectedContract.blocks?.projects || {};
+    let fetchedProject = selectedContract.projects;
+    const pid = selectedContract.project_id || selectedContract.sales?.project_id || selectedContract.blocks?.project_id;
+    
+    if (pid) {
+       const { data: pj } = await supabase.from('projects').select('*').eq('id', pid).maybeSingle();
+       if (pj) fetchedProject = pj;
+    }
+
+    const projData = fetchedProject || selectedContract.sales?.projects || selectedContract.blocks?.projects || {};
 
     const contractPayloadPartial = {
       project_name_snapshot: selectedContract.project_name_snapshot || projData.name || null,
       project_city_snapshot: selectedContract.project_city_snapshot || projData.city || null,
       project_uf_snapshot: selectedContract.project_uf_snapshot || projData.uf || null,
-      forum_city_snapshot: selectedContract.forum_city_snapshot || projData.forum_city || null,
+      forum_city_snapshot: selectedContract.forum_city_snapshot || projData.forum_city || projData.city || null,
     };
     
     const updatedContract = { ...selectedContract, ...contractPayloadPartial };
