@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -16,7 +16,7 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Layers, Map as MapIcon, Loader2, X, Trash2 } from "lucide-react";
+import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { generateContractHTML } from "@/lib/contractTemplate";
@@ -1096,8 +1096,15 @@ function ClearConfirmModal({
   onConfirm: (password: string) => void;
 }) {
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setPassword("");
+    setTimeout(() => passwordInputRef.current?.focus(), 100);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1140,8 +1147,13 @@ function ClearConfirmModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans pointer-events-auto">
-      <div className="bg-white w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+    <div 
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans pointer-events-auto"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <div className="bg-white w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 z-[10000]">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-bold text-lg text-gray-900">Confirmar limpeza do lote</h3>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
@@ -1186,17 +1198,28 @@ function ClearConfirmModal({
           </div>
 
           <form onSubmit={handleSubmit}>
-            <div className="mb-1">
+            <div className="mb-1 relative">
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 Digite sua senha de administrador para confirmar:
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                placeholder="Senha de acesso"
-              />
+              <div className="relative">
+                <input
+                  ref={passwordInputRef}
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="Senha de acesso"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
             </div>
             {error && <p className="text-red-500 text-sm mt-1 mb-2 font-medium">{error}</p>}
 
@@ -1210,8 +1233,8 @@ function ClearConfirmModal({
               </button>
               <button
                 type="submit"
-                disabled={loading}
-                className="flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 font-semibold rounded-lg transition-colors text-sm flex justify-center items-center gap-2"
+                disabled={loading || password.trim().length === 0}
+                className={`flex-1 px-4 py-2 font-semibold rounded-lg transition-colors text-sm flex justify-center items-center gap-2 ${loading || password.trim().length === 0 ? 'bg-red-400 cursor-not-allowed text-white' : 'bg-red-600 text-white hover:bg-red-700'}`}
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar Limpeza"}
               </button>
