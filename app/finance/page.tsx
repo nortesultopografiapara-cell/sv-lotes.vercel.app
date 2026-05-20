@@ -64,17 +64,45 @@ export default function FinancePage() {
   const loadFinance = async () => {
       if (!user) return;
       try {
+        const resolvedTenantId = user.tenant_id || (user as any).company_id;
+        
         let query = supabase
            .from('finance_receipts')
-           .select('*, customers(name, phone, document), blocks(name, block_name, number, projects(name)), projects(name), sales(id, installments_count, projects(name), contracts(contract_number))')
+           .select(`
+              *,
+              customers:customer_id(*),
+              sales:sale_id(id, installments_count, projects(name), contracts(contract_number)),
+              projects:project_id(*),
+              blocks:block_id(*)
+           `)
            .order('due_date', { ascending: true });
            
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+           query = query.eq('tenant_id', resolvedTenantId);
         }
         
-        const { data, error } = await query;
+        let { data, error } = await query;
+        console.log("FINANCE TENANT:", resolvedTenantId);
         console.log("FINANCE FETCH RESULT", data, error);
+        
+        if (error) {
+            console.warn("ERRO JOIN FINANCE_RECEIPTS:", error);
+            // Fallback to raw finance_receipts
+            let fallbackQuery = supabase
+                .from('finance_receipts')
+                .select('*')
+                .order('due_date', { ascending: true });
+            
+            if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+                fallbackQuery = fallbackQuery.eq('tenant_id', resolvedTenantId);
+            }
+            
+            const fallbackRes = await fallbackQuery;
+            data = fallbackRes.data;
+            error = fallbackRes.error;
+            console.log("FINANCE RAW FALLBACK:", data, error);
+        }
+        
         if (error) throw error;
         
         let localRecebido = 0;

@@ -80,40 +80,41 @@ export default function ContractsPage() {
 
       let query = supabase
         .from("contracts")
-        .select(
-          `
-             *,
-             customers:customer_id(*),
-             sales:sale_id(*, projects:project_id(*), blocks:block_id(*)),
-             projects:project_id(*),
-             blocks:block_id(*, projects:project_id(*))
-           `,
-        )
+        .select(`
+          *,
+          customers:customer_id(*),
+          sales:sale_id(*, projects:project_id(*), blocks:block_id(*)),
+          projects:project_id(*),
+          blocks:block_id(*, projects:project_id(*))
+        `)
         .order("created_at", { ascending: false });
 
       if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
         query = query.eq("tenant_id", resolvedTenantId);
       }
 
-      const { data, error } = await query;
+      let { data, error } = await query;
+      console.log("CONTRACTS FETCH ENRICHED:", data, error);
 
       if (error) {
-        console.error("ERRO JOIN CONTRACTS:", error);
+        console.warn("ERRO JOIN CONTRACTS. Buscando raw fallback...", error);
         let fallbackQuery = supabase
           .from("contracts")
           .select("*")
           .order("created_at", { ascending: false });
-        if (user?.role !== "SUPER_ADMIN" && resolvedTenantId)
+          
+        if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
           fallbackQuery = fallbackQuery.eq("tenant_id", resolvedTenantId);
-        const fallbackRes = await fallbackQuery;
-        if (!fallbackRes.error && fallbackRes.data) {
-          console.log("CONTRACTS RAW FALLBACK:", fallbackRes.data);
-          processContracts(fallbackRes.data);
         }
-      } else {
-        console.log("CONTRACTS RAW:", data, error);
-        if (data) processContracts(data);
+        
+        const fallbackRes = await fallbackQuery;
+        console.log("CONTRACTS RAW FALLBACK:", fallbackRes.data, fallbackRes.error);
+        data = fallbackRes.data;
+        error = fallbackRes.error;
       }
+
+      console.log("CONTRACTS FINAL DATA:", data, error);
+      if (data) processContracts(data);
       setLoading(false);
     }
 
@@ -532,19 +533,19 @@ export default function ContractsPage() {
       }
 
       let html = `
-              <div style="font-family: sans-serif; padding: 20px;">
+              <div style="font-family: sans-serif; padding: 20px; background: #ffffff; color: #111827;">
                   <div style="text-align: center; margin-bottom: 20px;">
-                      <h2>CARNÊ DE PAGAMENTO</h2>
-                      <p>CONTRATO: ${selectedContract.contract_number}</p>
-                      <p>CLIENTE: ${selectedContract.customers?.name || "Cliente"}</p>
+                      <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 10px 0;">CARNÊ DE PAGAMENTO</h2>
+                      <p style="font-size: 12px; font-weight: 600; color: #111827; margin: 2px 0;">CONTRATO: ${selectedContract.contract_number}</p>
+                      <p style="font-size: 12px; font-weight: 600; color: #111827; margin: 2px 0;">CLIENTE: ${selectedContract.customers?.name || "Cliente"}</p>
                   </div>
                   <table style="width: 100%; border-collapse: collapse;">
                       <thead>
-                          <tr>
-                              <th style="border: 1px solid #ccc; padding: 8px;">Parcela</th>
-                              <th style="border: 1px solid #ccc; padding: 8px;">Vencimento</th>
-                              <th style="border: 1px solid #ccc; padding: 8px;">Valor</th>
-                              <th style="border: 1px solid #ccc; padding: 8px;">Status</th>
+                          <tr style="background: #f3f4f6; color: #111827; font-weight: 700;">
+                              <th style="border: 1px solid #9ca3af; padding: 8px;">Parcela</th>
+                              <th style="border: 1px solid #9ca3af; padding: 8px;">Vencimento</th>
+                              <th style="border: 1px solid #9ca3af; padding: 8px;">Valor</th>
+                              <th style="border: 1px solid #9ca3af; padding: 8px;">Status</th>
                           </tr>
                       </thead>
                       <tbody>
@@ -559,11 +560,11 @@ export default function ContractsPage() {
           currency: "BRL",
         }).format(Number(r.amount));
         html += `
-                  <tr>
-                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
-                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${dataFmt}</td>
-                      <td style="border: 1px solid #ccc; padding: 8px; text-align: right;">${valFmt}</td>
-                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${r.status}</td>
+                  <tr style="color: #111827; font-size: 11px;">
+                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
+                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${dataFmt}</td>
+                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right;">${valFmt}</td>
+                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${r.status}</td>
                   </tr>
               `;
       });
@@ -571,7 +572,7 @@ export default function ContractsPage() {
       html += `
                       </tbody>
                   </table>
-                  <div style="margin-top: 30px; font-size: 12px; text-align: center; color: #666;">
+                  <div style="margin-top: 30px; font-size: 10px; text-align: center; color: #374151;">
                       Este é um documento auxiliar de controle de parcelas.
                   </div>
               </div>
