@@ -1475,11 +1475,6 @@ export default function GISMap({
                 1,
                 customerData.installments_count || 1,
               ),
-              project_name_snapshot:
-                projDataSnapshot?.name || lot?.projects?.name || null,
-              project_city_snapshot: projDataSnapshot?.city || null,
-              project_uf_snapshot: projDataSnapshot?.uf || null,
-              forum_city_snapshot: projDataSnapshot?.forum_city || null,
               status: "ACTIVE",
             };
 
