@@ -177,27 +177,54 @@ export default function ContractsPage() {
   const handleAlertDev = () => alert('Função em desenvolvimento');
 
   const handleLimparTestes = async () => {
-      const confirmLimpar = confirm('AVISO: Isso excluirá DE DEFINITIVO os contratos (Pendente/Cancelado) e suas vendas relacionadas deste Tenant. Deseja continuar?');
+      const confirmLimpar = confirm('Deseja excluir os contratos de teste pendentes/cancelados desta empresa? Esta ação não pode ser desfeita.');
       if (!confirmLimpar) return;
 
-      if (!tenantData?.id && user?.role !== 'SUPER_ADMIN') {
+      const resolvedTenantId = tenantData?.id || (user as any)?.company_id || user?.tenant_id;
+
+      if (!resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
           alert('ID do locatário não identificado para exclusão segura.');
           return;
       }
 
-      let q = supabase.from('contracts').delete().neq('status', 'assinados'); // Apagar o que não for assinado
-      if (tenantData?.id && user?.role !== 'SUPER_ADMIN') {
-          q = q.eq('tenant_id', tenantData.id);
+      console.log("TENANT LIMPEZA CONTRATOS:", resolvedTenantId);
+
+      let q = supabase.from('contracts')
+          .delete()
+          .in('status', ['pendente', 'pending', 'cancelado', 'canceled']);
+
+      if (resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
+          q = q.eq('tenant_id', resolvedTenantId);
       }
 
-      const { error } = await q;
+      const { data, error } = await q.select();
+
+      console.log("CONTRATOS EXCLUÍDOS:", data);
+      console.log("ERRO LIMPEZA CONTRATOS:", error);
+
       if (error) {
-          console.error(error);
-          alert('Erro ao excluir contratos de teste.');
+          alert("ERRO AO EXCLUIR CONTRATOS: " + JSON.stringify(error));
+      } else if (!data || data.length === 0) {
+          alert("Nenhum contrato de teste foi excluído.");
       } else {
-          alert('Contratos limpos.');
-          // fetchContracts() happens because we can reset state or trigger reload
-          window.location.reload();
+          alert(`${data.length} contrato(s) de teste excluído(s) com sucesso.`);
+          // Remove deleted from state
+          const excluidosIds = data.map((c: any) => c.id);
+          const remaining = contracts.filter((c: any) => !excluidosIds.includes(c.id));
+          setContracts(remaining);
+          setSelectedContract(null);
+          
+          // Re-calculate stats
+          let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+          remaining.forEach(c => {
+              const st = c.status?.toLowerCase() || 'pendente';
+              const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+              valorTotal += val;
+              if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
+              else if (st === 'cancelado' || st === 'canceled') cancelados++;
+              else { pendentes++; ativos++; }
+          });
+          setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
       }
   };
 
