@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical, RefreshCw } from 'lucide-react';
+import { FileText, Loader2, Search, CheckCircle2, Clock, XCircle, SearchIcon, Download, Printer, Send, Edit, X, Receipt, Wallet, ChevronDown, MoreVertical, RefreshCw, Trash2 } from 'lucide-react';
 import { ContractGenerator } from '@/components/contracts/ContractGenerator';
 import jsPDF from 'jspdf';
 import { generateContractHTML } from '@/lib/contractTemplate';
@@ -51,10 +51,10 @@ export default function ContractsPage() {
        let query = supabase.from('contracts')
            .select(`
              *,
-             customers:customer_id(name, document, cpf, email, phone, address),
-             sales:sale_id(id, total_value, final_value, agreed_price, payment_type, status, created_at),
-             projects:project_id(name, city, state),
-             blocks:block_id(block_name, name, number)
+             customers:customer_id(*),
+             sales:sale_id(*),
+             projects:project_id(*),
+             blocks:block_id(*)
            `)
            .order('created_at', { ascending: false });
            
@@ -140,14 +140,7 @@ export default function ContractsPage() {
       const { default: html2pdf } = await import('html2pdf.js');
       const element = document.createElement('div');
       
-      const headerHtml = `
-          <div style="text-align: center; margin-bottom: 20px;">
-             ${tenantData?.logo_url ? `<img src="${tenantData.logo_url}" style="max-height: 80px;" />` : ''}
-             <h2>${tenantData?.name || tenantData?.razao_social || 'Empresa'}</h2>
-             <p>CNPJ: ${tenantData?.cnpj || ''} | Tel: ${tenantData?.phone || ''}</p>
-          </div>
-      `;
-      element.innerHTML = headerHtml + (selectedContract.generated_html || '<p>Contrato sem conteúdo.</p>');
+      element.innerHTML = selectedContract.generated_html || '<p>Contrato sem conteúdo.</p>';
       
       const opt = {
         margin: 10,
@@ -182,6 +175,140 @@ export default function ContractsPage() {
   };
 
   const handleAlertDev = () => alert('Função em desenvolvimento');
+
+  const handleLimparTestes = async () => {
+      const confirmLimpar = confirm('AVISO: Isso excluirá DE DEFINITIVO os contratos (Pendente/Cancelado) e suas vendas relacionadas deste Tenant. Deseja continuar?');
+      if (!confirmLimpar) return;
+
+      if (!tenantData?.id && user?.role !== 'SUPER_ADMIN') {
+          alert('ID do locatário não identificado para exclusão segura.');
+          return;
+      }
+
+      let q = supabase.from('contracts').delete().neq('status', 'assinados'); // Apagar o que não for assinado
+      if (tenantData?.id && user?.role !== 'SUPER_ADMIN') {
+          q = q.eq('tenant_id', tenantData.id);
+      }
+
+      const { error } = await q;
+      if (error) {
+          console.error(error);
+          alert('Erro ao excluir contratos de teste.');
+      } else {
+          alert('Contratos limpos.');
+          // fetchContracts() happens because we can reset state or trigger reload
+          window.location.reload();
+      }
+  };
+
+  const handleReenviar = () => {
+      if (!selectedContract) return;
+      let phone = selectedContract.customers?.phone || '';
+      if (!phone) {
+          alert("Cliente não possui telefone cadastrado.");
+          return;
+      }
+      phone = phone.replace(/\\D/g, '');
+      const msg = encodeURIComponent(`Olá ${selectedContract.customers?.name || 'Cliente'}, segue atualizações sobre seu contrato de venda do lote. Por favor, qualquer dúvida entre em contato.`);
+      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+  };
+
+  const handleCancelar = async () => {
+      if (!selectedContract) return;
+      if (!confirm("Deseja realmente cancelar este contrato? Essa ação também cancelará a Venda relacionada.")) return;
+      
+      const { error } = await supabase.from('contracts').update({ status: 'cancelado' }).eq('id', selectedContract.id);
+      
+      if (!error && selectedContract.sale_id) {
+          await supabase.from('sales').update({ status: 'CANCELLED' }).eq('id', selectedContract.sale_id);
+      }
+
+      if (error) {
+          alert("Erro ao cancelar contrato");
+      } else {
+          alert("Contrato cancelado com sucesso!");
+          setSelectedContract({ ...selectedContract, status: 'cancelado' });
+          setContracts(contracts.map(c => c.id === selectedContract.id ? { ...c, status: 'cancelado' } : c));
+      }
+  };
+
+  const handleGerarCarne = async () => {
+      if (!selectedContract?.sale_id) return;
+      try {
+          const { data: receipts, error } = await supabase.from('finance_receipts')
+              .select('*')
+              .eq('sale_id', selectedContract.sale_id)
+              .order('due_date', { ascending: true });
+
+          if (error) throw error;
+          
+          if (!receipts || receipts.length === 0) {
+              alert("Nenhuma parcela encontrada para esta venda.");
+              return;
+          }
+
+          let html = `
+              <div style="font-family: sans-serif; padding: 20px;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                      <h2>CARNÊ DE PAGAMENTO</h2>
+                      <p>CONTRATO: ${selectedContract.contract_number}</p>
+                      <p>CLIENTE: ${selectedContract.customers?.name || 'Cliente'}</p>
+                  </div>
+                  <table style="width: 100%; border-collapse: collapse;">
+                      <thead>
+                          <tr>
+                              <th style="border: 1px solid #ccc; padding: 8px;">Parcela</th>
+                              <th style="border: 1px solid #ccc; padding: 8px;">Vencimento</th>
+                              <th style="border: 1px solid #ccc; padding: 8px;">Valor</th>
+                              <th style="border: 1px solid #ccc; padding: 8px;">Status</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+          `;
+
+          receipts.forEach((r, idx) => {
+              const d = new Date(r.due_date);
+              d.setUTCHours(12);
+              const dataFmt = d.toLocaleDateString('pt-BR');
+              const valFmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(r.amount));
+              html += `
+                  <tr>
+                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
+                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${dataFmt}</td>
+                      <td style="border: 1px solid #ccc; padding: 8px; text-align: right;">${valFmt}</td>
+                      <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${r.status}</td>
+                  </tr>
+              `;
+          });
+
+          html += `
+                      </tbody>
+                  </table>
+                  <div style="margin-top: 30px; font-size: 12px; text-align: center; color: #666;">
+                      Este é um documento auxiliar de controle de parcelas.
+                  </div>
+              </div>
+          `;
+
+          const { default: html2pdf } = await import('html2pdf.js');
+          const element = document.createElement('div');
+          element.innerHTML = html;
+          
+          const opt = {
+            margin: 10,
+            filename: `carne_${selectedContract.contract_number || selectedContract.id}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+          
+          html2pdf().from(element).set(opt).save();
+
+      } catch (e) {
+          console.error(e);
+          alert("Erro ao gerar carnê.");
+      }
+  };
 
   const handleRegenerarContrato = async () => {
       if (!selectedContract) return;
@@ -271,7 +398,7 @@ export default function ContractsPage() {
           {/* SIDEBAR LIST */}
           <div className="w-1/3 min-w-[350px] max-w-[450px] flex flex-col border-r border-[#1f232b] bg-[#0b0e14]">
              <div className="p-4 border-b border-[#1f232b]">
-                <div className="relative">
+                <div className="relative mb-2">
                    <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
                    <input
                       type="text"
@@ -280,6 +407,11 @@ export default function ContractsPage() {
                       value={search}
                       onChange={e => setSearch(e.target.value)}
                    />
+                </div>
+                <div className="flex justify-end">
+                   <button onClick={handleLimparTestes} className="text-xs text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1">
+                      <Trash2 className="w-3 h-3" /> Limpar Contratos de Teste
+                   </button>
                 </div>
              </div>
 
@@ -472,13 +604,13 @@ export default function ContractsPage() {
                   <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
                        <ActionBtn onClick={handleBaixarPDF} icon={<Download />} label="Baixar PDF" color="primary" />
                        <ActionBtn onClick={handleImprimir} icon={<Printer />} label="Imprimir" color="info" />
-                       <ActionBtn onClick={handleAlertDev} icon={<Send />} label="Reenviar" color="purple" />
-                       <ActionBtn onClick={handleAlertDev} icon={<Edit />} label="Editar" color="warning" />
-                       <ActionBtn onClick={handleAlertDev} icon={<X />} label="Cancelar" color="danger" />
+                       <ActionBtn onClick={handleReenviar} icon={<Send />} label="Reenviar" color="purple" />
+                       <ActionBtn onClick={() => setActiveTab('Templates')} icon={<Edit />} label="Editar Modelo" color="warning" />
+                       <ActionBtn onClick={handleCancelar} icon={<X />} label="Cancelar" color="danger" />
                        
                        <div className="h-8 w-[1px] bg-[#2d3340] mx-2 hidden sm:block"></div>
                        
-                       <button onClick={handleAlertDev} className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors">
+                       <button onClick={handleGerarCarne} className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors">
                            <Receipt className="w-4 h-4" />
                            Gerar Carnê
                            <ChevronDown className="w-4 h-4 text-gray-500" />
