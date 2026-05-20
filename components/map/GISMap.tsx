@@ -1129,7 +1129,7 @@ export default function GISMap({
       try {
         let blocksQuery = supabase
           .from("blocks")
-          .select("*, projects(id, name, city, uf, forum_city), customers(name, document, cpf, rg)");
+          .select("*, projects(name), customers(name)");
 
         if (projectId) {
           blocksQuery = blocksQuery.eq("project_id", projectId);
@@ -1608,9 +1608,9 @@ export default function GISMap({
             const contractPayloadPartial = {
               project_name_snapshot:
                 projDataSnapshot?.name || lot?.projects?.name || null,
-              project_city_snapshot: projDataSnapshot?.city || lot?.projects?.city || null,
-              project_uf_snapshot: projDataSnapshot?.uf || lot?.projects?.uf || null,
-              forum_city_snapshot: projDataSnapshot?.forum_city || lot?.projects?.forum_city || projDataSnapshot?.city || lot?.projects?.city || null,
+              project_city_snapshot: projDataSnapshot?.city || null,
+              project_uf_snapshot: projDataSnapshot?.uf || null,
+              forum_city_snapshot: projDataSnapshot?.forum_city || null,
             };
 
             const contractHtml = generateContractHTML({

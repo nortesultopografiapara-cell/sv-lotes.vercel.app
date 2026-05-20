@@ -625,7 +625,7 @@ export default function ContractsPage() {
           ? { id: selectedContract.customer_id }
           : {}),
       project:
-        selectedContract.projects || selectedContract.sales?.projects || selectedContract.blocks?.projects || {},
+        selectedContract.projects || selectedContract.sales?.projects || {},
       block: selectedContract.blocks || selectedContract.sales?.blocks || {},
       sale: { ...(selectedContract.sales || {}), receipts_sum },
       contractSnapshot: selectedContract,
