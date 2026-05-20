@@ -290,7 +290,7 @@ export default function ContractsPage() {
       }
 
       const opt = {
-        margin: [40, 15, 25, 15],
+        margin: [35, 15, 25, 15],
         filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
         image: { type: "jpeg", quality: 1 },
         html2canvas: { scale: 2, useCORS: true },
@@ -308,21 +308,21 @@ export default function ContractsPage() {
           
           let titleX = 14;
           if (logoBase64) {
-             pdf.addImage(logoBase64, 'PNG', 14, 10, 25, 15, undefined, 'FAST');
-             titleX = 42;
+             pdf.addImage(logoBase64, 'PNG', 14, 10, 22, 12, undefined, 'FAST');
+             titleX = 39;
           }
 
           pdf.setFontSize(11);
           pdf.setTextColor(20);
           pdf.setFont("times", "bold");
-          const splitName = pdf.splitTextToSize(tenantName.toUpperCase(), 140);
-          pdf.text(splitName, titleX, 15);
+          const splitName = pdf.splitTextToSize(tenantName.toUpperCase(), 100); // reduced width to not overlap ctr number
+          pdf.text(splitName, titleX, 13);
           
           pdf.setFontSize(9);
           pdf.setFont("times", "normal");
           pdf.setTextColor(50);
           
-          let yPos = 15 + (splitName.length * 4);
+          let yPos = 13 + (splitName.length * 3.5);
           
           let infoArray = [];
           if (tenantCnpj) infoArray.push(`CNPJ: ${tenantCnpj}`);
@@ -333,31 +333,37 @@ export default function ContractsPage() {
           
           if (infoArray.length > 0) {
               pdf.text(infoArray.join(' | '), titleX, yPos);
-              yPos += 4;
+              yPos += 3.5;
           }
           
           if (tenantAddress) {
               const splitAddr = pdf.splitTextToSize(`${tenantAddress}`, 140);
               pdf.text(splitAddr, titleX, yPos);
-              yPos += (splitAddr.length * 4);
+              yPos += (splitAddr.length * 3.5);
           }
 
           const rightX = pageWidth - 14;
-          const finalY = Math.max(yPos, 28) + 2;
+          const finalY = Math.max(yPos, 22) + 2;
+
+          // Contract number top right
+          pdf.setFontSize(8);
+          pdf.setTextColor(100);
+          pdf.text(`Contrato nº CTR-${selectedContract.contract_number || selectedContract.id.substring(0,6).toUpperCase()}`, rightX, 13, { align: 'right' });
 
           pdf.setDrawColor(150);
           pdf.setLineWidth(0.3);
           pdf.line(14, finalY, rightX, finalY);
           
           // RODAPÉ
-          pdf.line(14, pageHeight - 15, rightX, pageHeight - 15);
+          pdf.setLineWidth(0.2);
+          pdf.line(14, pageHeight - 12, rightX, pageHeight - 12);
           
-          pdf.setFontSize(8);
-          pdf.setTextColor(100);
+          pdf.setFontSize(7);
+          pdf.setTextColor(150);
           pdf.setFont("times", "italic");
-          pdf.text(`Documento emitido digitalmente pelo SV LOTES GIS`, 14, pageHeight - 10);
+          pdf.text(`Documento emitido digitalmente pelo SV LOTES GIS`, 14, pageHeight - 8);
           
-          pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 10, { align: 'right' });
+          pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 8, { align: 'right' });
         }
       }).save();
     } catch (e) {
