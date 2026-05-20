@@ -87,9 +87,11 @@ export function generateContractHTML({
 
   const empreendimentoNome = toTitleCase(
     (isValid(contractSnapshot?.project_name_snapshot) ? contractSnapshot.project_name_snapshot : null) ||
-    (isValid(project?.name) ? project.name : null) ||
+    (isValid(sale?.project?.name) ? sale.project.name : null) ||
     (isValid(sale?.projects?.name) ? sale.projects.name : null) ||
+    (isValid(block?.project?.name) ? block.project.name : null) ||
     (isValid(block?.projects?.name) ? block.projects.name : null) ||
+    (isValid(project?.name) ? project.name : null) ||
     ""
   );
 
@@ -118,17 +120,21 @@ export function generateContractHTML({
   // Cidade, UF e Foro hierarquia correta
   const empreendimentoCidade = toTitleCase(
     (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
-    (isValid(project?.city) ? project.city : null) ||
+    (isValid(sale?.project?.city) ? sale.project.city : null) ||
     (isValid(sale?.projects?.city) ? sale.projects.city : null) ||
+    (isValid(block?.project?.city) ? block.project.city : null) ||
     (isValid(block?.projects?.city) ? block.projects.city : null) ||
+    (isValid(project?.city) ? project.city : null) ||
     ""
   );
 
   const empreendimentoUf = (
     (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
-    (isValid(project?.uf) ? project.uf : null) ||
+    (isValid(sale?.project?.uf) ? sale.project.uf : null) ||
     (isValid(sale?.projects?.uf) ? sale.projects.uf : null) ||
+    (isValid(block?.project?.uf) ? block.project.uf : null) ||
     (isValid(block?.projects?.uf) ? block.projects.uf : null) ||
+    (isValid(project?.uf) ? project.uf : null) ||
     ""
   ).toUpperCase();
 
@@ -255,9 +261,9 @@ export function generateContractHTML({
 
   // Build the locality string according to the requested hierarchy and fields
   let projectDescParts = [];
-  if (empreendimentoNome) projectDescParts.push(`localizado no empreendimento <strong>${empreendimentoNome.toUpperCase()}</strong>`);
-  if (empreendimentoCidade && empreendimentoUf) {
-      projectDescParts.push(`município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>`);
+  if (empreendimentoNome) projectDescParts.push(`integrante do empreendimento <strong>${empreendimentoNome.toUpperCase()}</strong>`);
+  if (empreendimentoCidade && empreendimentoUf && empreendimentoCidade !== "Cidade Não Informada") {
+      projectDescParts.push(`localizado no município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>`);
   }
 
   const projectDescString = projectDescParts.length > 0 ? `, ${projectDescParts.join(', ')}` : '';
@@ -286,7 +292,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>${projectDescString}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>.
                 </p>
             </div>
 
