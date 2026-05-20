@@ -217,12 +217,31 @@ export function generateContractHTML({
         `;
   }
 
-  const localityStr = empreendimentoCidade && empreendimentoUf 
-    ? `, localizado no município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>`
-    : '';
+  const projectNeighborhood = 
+    (isValid(project?.neighborhood) ? project.neighborhood : null) ||
+    (isValid(sale?.projects?.neighborhood) ? sale.projects.neighborhood : null) ||
+    (isValid(block?.projects?.neighborhood) ? block.projects.neighborhood : null) ||
+    "";
+    
+  const projectAddressRef = 
+    (isValid(project?.address_reference) ? project.address_reference : null) ||
+    (isValid(sale?.projects?.address_reference) ? sale.projects.address_reference : null) ||
+    (isValid(block?.projects?.address_reference) ? block.projects.address_reference : null) ||
+    "";
+
+  // Build the locality string according to the requested hierarchy and fields
+  let projectDescParts = [];
+  if (empreendimentoNome) projectDescParts.push(`do empreendimento <strong>${empreendimentoNome}</strong>`);
+  if (projectNeighborhood) projectDescParts.push(`localizado em <strong>${projectNeighborhood}</strong>`);
+  if (projectAddressRef) projectDescParts.push(`<strong>${projectAddressRef}</strong>`);
+  if (empreendimentoCidade && empreendimentoUf) {
+      projectDescParts.push(`município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>`);
+  }
+
+  const projectDescString = projectDescParts.length > 0 ? `, ${projectDescParts.join(', ')}` : '';
 
   return `
-        <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; color: #111; background: #fff; padding: 10px; text-align: justify;">
+        <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
             <div style="page-break-inside: avoid; margin-bottom: 25px;">
                 <p style="margin-bottom: 10px;">
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, Empresa Constituída e Instalada na ${empresaEndereco}, ${empresaCidade} - PA.
@@ -240,7 +259,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>, do empreendimento <strong>${empreendimentoNome}</strong>${localityStr}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>${projectDescString}.
                 </p>
             </div>
 
@@ -255,7 +274,7 @@ export function generateContractHTML({
                     <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>${tipoVenda.toUpperCase()}</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR no ato da assinatura do presente contrato, outorgando assim o PROMISSÁRIO VENDEDOR a mais ampla, geral e irrevogável quitação mediante emissão do termo de quitação pelo PROMITENTE VENDEDOR.
                 </p>
                 <p style="margin-bottom: 0;">
-                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO VENDEDOR fica limitado na posse do imóvel a partir da presente data.
+                    <strong>Parágrafo Único:</strong> O PROMISSÁRIO VENDEDOR fica limitado na posse do imóvel a partir da assinatura do presente contrato.
                 </p>
             </div>
 
@@ -320,32 +339,28 @@ export function generateContractHTML({
             </div>
 
             <div style="page-break-inside: avoid; margin-top: 50px; text-align: center;">
-                <div style="display: inline-block; width: 45%; margin-bottom: 40px; vertical-align: top;">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 10px auto; width: 90%;"></div>
-                    <p style="margin: 0; font-weight: bold; font-size: 11pt;">PROMITENTE VENDEDOR</p>
+                <div style="margin-bottom: 40px;">
+                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
-                    <p style="margin: 0; font-size: 10pt;">CNPJ: ${empresaCnpj}</p>
+                    <p style="margin: 0; font-size: 10pt;">PROMITENTE VENDEDOR - CNPJ: ${empresaCnpj}</p>
                 </div>
 
-                <div style="display: inline-block; width: 45%; margin-bottom: 40px; vertical-align: top;">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 10px auto; width: 90%;"></div>
-                    <p style="margin: 0; font-weight: bold; font-size: 11pt;">PROMISSÁRIO COMPRADOR</p>
+                <div style="margin-bottom: 40px;">
+                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
-                    <p style="margin: 0; font-size: 10pt;">CPF: ${clienteCpfCnpj}</p>
+                    <p style="margin: 0; font-size: 10pt;">PROMISSÁRIO COMPRADOR - CPF: ${clienteCpfCnpj}</p>
                 </div>
 
-                <div style="display: inline-block; width: 45%; margin-bottom: 20px; vertical-align: top;">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 10px auto; width: 90%;"></div>
-                    <p style="margin: 0; font-weight: bold; font-size: 11pt;">TESTEMUNHA 1</p>
-                    <p style="margin: 0; font-size: 10pt;">Nome: __________________________</p>
-                    <p style="margin: 0; font-size: 10pt;">CPF: ___________________________</p>
+                <div style="margin-bottom: 40px;">
+                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
+                    <p style="margin: 0; font-weight: bold;">TESTEMUNHA 1</p>
+                    <p style="margin: 0; font-size: 10pt;">Nome: ________________________________ | CPF: ________________________</p>
                 </div>
 
-                <div style="display: inline-block; width: 45%; margin-bottom: 20px; vertical-align: top;">
-                    <div style="border-top: 1px solid #111; margin: 0 auto 10px auto; width: 90%;"></div>
-                    <p style="margin: 0; font-weight: bold; font-size: 11pt;">TESTEMUNHA 2</p>
-                    <p style="margin: 0; font-size: 10pt;">Nome: __________________________</p>
-                    <p style="margin: 0; font-size: 10pt;">CPF: ___________________________</p>
+                <div style="margin-bottom: 20px;">
+                    <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
+                    <p style="margin: 0; font-weight: bold;">TESTEMUNHA 2</p>
+                    <p style="margin: 0; font-size: 10pt;">Nome: ________________________________ | CPF: ________________________</p>
                 </div>
             </div>
         </div>
