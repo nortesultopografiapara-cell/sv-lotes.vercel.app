@@ -1,127 +1,199 @@
-const extenso = require('extenso');
+const extenso = require("extenso");
 
 interface GenerateContractParams {
-    tenant: any;
-    customer: any;
-    project: any;
-    block: any;
-    sale: any;
-    contractDate?: string;
+  tenant: any;
+  customer: any;
+  project: any;
+  block: any;
+  sale: any;
+  contractSnapshot?: any;
+  contractDate?: string;
 }
 
-export function generateContractHTML({ tenant, customer, project, block, sale, contractDate }: GenerateContractParams) {
-    const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-    const formatDate = (dateStr: string) => {
-        if (!dateStr) return '';
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return dateStr;
-        return date.toLocaleDateString('pt-BR');
-    };
-    
-    // Extenso support for currency
-    const extensoOptions = { mode: 'currency', currency: { type: 'BRL' } };
-    
-    const empresaNome = tenant?.razao_social || tenant?.name || 'empresa não informada';
-    const empresaCnpj = tenant?.cnpj || 'CNPJ não informado';
-    const empresaEndereco = tenant?.address || 'endereço não informado';
-    const empresaCidade = tenant?.city || 'cidade não informada';
-    const empresaTelefone = tenant?.phone || 'telefone não informado';
-    const empresaEmail = tenant?.email || 'email não informado';
-    const empresaLogo = tenant?.logo_url ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>` : '';
+export function generateContractHTML({
+  tenant,
+  customer,
+  project,
+  block,
+  sale,
+  contractSnapshot,
+  contractDate,
+}: GenerateContractParams) {
+  const formatBRL = (val: number) =>
+    new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(val);
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    return date.toLocaleDateString("pt-BR");
+  };
 
-    const clienteNome = customer?.name || 'cliente não informado';
-    const clienteCpfCnpj = customer?.document || customer?.cpf || 'cpf/cnpj não informado';
-    const clienteRg = customer?.rg || 'rg não informado';
-    const clienteProfissao = customer?.profession || 'profissão não informada';
-    const clienteEstadoCivil = customer?.civil_state || 'estado civil não informado';
-    const clienteEndereco = customer?.address || customer?.street || 'endereço não informado';
-    const clienteBairro = customer?.neighborhood || 'bairro não informado';
-    const clienteCidade = customer?.city || 'cidade não informada';
-    const clienteUf = customer?.state_uf || 'UF não informada';
-    const clienteCep = customer?.zip_code || 'cep não informado';
+  // Extenso support for currency
+  const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
 
-    const projetoNome = project?.name || sale?.projects?.name || block?.projects?.name || sale?.project_name_snapshot || 'Projeto não informado';
-    
-    // quadra fallback: 1. block.number (user specifically wrote "1. block.number" in prompt but wait! prompt says: "1. block.number 2. block.name ...", wait, lot is usually block.number in this schema? let's look at prompt again:
-    // "1. block.number 2. block.name 3. lot.block_number 4. sale.block_number"
-    // Let's implement what they requested:
-    const quadraRaw = block?.number || block?.name || block?.block_name || block?.block_number || sale?.block_number || sale?.blocks?.block_name || sale?.blocks?.name || 'Quadra não informada';
-    // wait, if block.number is usually the lot! No, in prompt:
-    const quadra = quadraRaw;
+  const empresaNome =
+    tenant?.razao_social || tenant?.name || "empresa não informada";
+  const empresaCnpj = tenant?.cnpj || "CNPJ não informado";
+  const empresaEndereco = tenant?.address || "endereço não informado";
+  const empresaCidade = tenant?.city || "cidade não informada";
+  const empresaTelefone = tenant?.phone || "telefone não informado";
+  const empresaEmail = tenant?.email || "email não informado";
+  const empresaLogo = tenant?.logo_url
+    ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>`
+    : "";
 
-    // Lote:
-    const lote = block?.number || sale?.blocks?.number || 'Lote não informado';
+  const clienteNome = customer?.name || "cliente não informado";
+  const clienteCpfCnpj =
+    customer?.document || customer?.cpf || "cpf/cnpj não informado";
+  const clienteRg = customer?.rg || "rg não informado";
+  const clienteProfissao = customer?.profession || "profissão não informada";
+  const clienteEstadoCivil =
+    customer?.civil_state || "estado civil não informado";
+  const clienteEndereco =
+    customer?.address || customer?.street || "endereço não informado";
+  const clienteBairro = customer?.neighborhood || "bairro não informado";
+  const clienteCidade = customer?.city || "cidade não informada";
+  const clienteUf = customer?.state_uf || "UF não informada";
+  const clienteCep = customer?.zip_code || "cep não informado";
 
-    const areaM2 = block?.area || 'Área não informada';
-    const frente = block?.frente || 'Frente não informada';
-    const fundo = block?.fundo || 'Fundo não informado';
-    const lateralDireita = block?.lado_direito || 'Lateral dir. não informada';
-    const lateralEsquerda = block?.lado_esquerdo || 'Lateral esq. não informada';
-    
-    // Cidade, UF e Foro
-    const cidadeImovel = project?.city || block?.projects?.city || sale?.projects?.city || sale?.project_city_snapshot || 'Cidade não informada';
-    const ufImovel = project?.uf || block?.projects?.uf || sale?.projects?.uf || sale?.project_uf_snapshot || 'UF não informada';
-    const foroCidade = project?.forum_city || block?.projects?.forum_city || sale?.projects?.forum_city || sale?.forum_city_snapshot || cidadeImovel;
-    const foroUf = ufImovel;
+  const projetoNome =
+    contractSnapshot?.project_name_snapshot ||
+    contractSnapshot?.project_name ||
+    sale?.project_name_snapshot ||
+    sale?.projects?.name ||
+    block?.projects?.name ||
+    project?.name ||
+    "Projeto não informado";
 
-    let valTotal = Number(sale?.total_value) || Number(sale?.agreed_price) || Number(sale?.sale_price) || Number(block?.price) || 0;
-    
-    // Se ainda for zero e houver recibos (finance_receipts não é passado no escopo atual, mas podemos somar receipts_sum se injetado)
-    if (valTotal <= 0 && sale?.receipts_sum) {
-       valTotal = Number(sale.receipts_sum);
-    }
-    
-    if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
+  const quadra =
+    block?.block_name ||
+    block?.name ||
+    block?.number ||
+    sale?.blocks?.block_name ||
+    sale?.blocks?.name ||
+    "Quadra não informada";
+  const lote = block?.number || sale?.blocks?.number || "Lote não informado";
 
-    const valEntrada = Number(sale?.down_payment || 0);
+  const areaM2 = block?.area || "Área não informada";
+  const frente = block?.frente || "Frente não informada";
+  const fundo = block?.fundo || "Fundo não informado";
+  const lateralDireita = block?.lado_direito || "Lateral dir. não informada";
+  const lateralEsquerda = block?.lado_esquerdo || "Lateral esq. não informada";
 
-    const valorTotalFmt = formatBRL(valTotal);
-    
-    let valorTotalExtenso = '';
-    try { 
-        // @ts-ignore
-        valorTotalExtenso = extenso(valTotal.toFixed(2).replace('.', ','), { mode: 'currency' }); 
-    } catch(e) {}
+  // Cidade, UF e Foro hierarquia correta
+  const snapshotCity =
+    contractSnapshot?.project_city_snapshot ||
+    contractSnapshot?.project_city ||
+    sale?.project_city_snapshot;
+  const cidadeImovel =
+    snapshotCity ||
+    project?.city ||
+    block?.projects?.city ||
+    sale?.projects?.city ||
+    "Cidade não informada";
 
-    const tipoVenda = sale?.payment_type?.toLowerCase() === 'à vista' || sale?.payment_type === 'A vista' ? 'À Vista' : 'Parcelada';
-    const valorEntradaFmt = formatBRL(valEntrada);
-    
-    let valorEntradaExtenso = '';
-    try { 
-        // @ts-ignore
-        if (valEntrada > 0) valorEntradaExtenso = extenso(valEntrada.toFixed(2).replace('.', ','), { mode: 'currency' }); 
-    } catch(e) {}
+  const snapshotUf =
+    contractSnapshot?.project_uf_snapshot ||
+    contractSnapshot?.project_uf ||
+    sale?.project_uf_snapshot;
+  const ufImovel =
+    snapshotUf ||
+    project?.uf ||
+    block?.projects?.uf ||
+    sale?.projects?.uf ||
+    "UF não informada";
 
-    const qtdParcelas = sale?.installments_count || 1;
-    let valorParcela = 0;
-    if (qtdParcelas > 0) {
-        valorParcela = (valTotal - valEntrada) / qtdParcelas;
-    }
-    const valorParcelaFmt = formatBRL(valorParcela);
-    let valorParcelaExtenso = '';
-    try { 
-        // @ts-ignore
-        if (valorParcela > 0) valorParcelaExtenso = extenso(valorParcela.toFixed(2).replace('.', ','), { mode: 'currency' }); 
-    } catch(e) {}
+  const snapshotForum =
+    contractSnapshot?.forum_city_snapshot ||
+    contractSnapshot?.forum_city ||
+    sale?.forum_city_snapshot;
+  const foroCidade =
+    snapshotForum ||
+    project?.forum_city ||
+    block?.projects?.forum_city ||
+    sale?.projects?.forum_city ||
+    project?.city ||
+    cidadeImovel;
+  const foroUf = ufImovel;
 
-    // Tentativa de calcular primeira parcela
-    // Vence 30 dias após data de criação da venda ou entrada
-    const dContrato = new Date(contractDate || sale?.created_at || new Date());
-    const dataContratoFmt = dContrato.toLocaleDateString('pt-BR');
-    
-    const dPrimeira = new Date(dContrato);
-    dPrimeira.setMonth(dPrimeira.getMonth() + 1);
-    const dataPrimeiraParcelaFmt = dPrimeira.toLocaleDateString('pt-BR');
+  let valTotal =
+    Number(sale?.total_value) ||
+    Number(sale?.agreed_price) ||
+    Number(sale?.sale_price) ||
+    Number(block?.price) ||
+    0;
 
-    const dUltima = new Date(dPrimeira);
-    dUltima.setMonth(dUltima.getMonth() + (qtdParcelas - 1));
-    const dataUltimaParcelaFmt = dUltima.toLocaleDateString('pt-BR');
+  // Se ainda for zero e houver recibos (finance_receipts não é passado no escopo atual, mas podemos somar receipts_sum se injetado)
+  if (valTotal <= 0 && sale?.receipts_sum) {
+    valTotal = Number(sale.receipts_sum);
+  }
 
-    let clPagamento = '';
-    if (tipoVenda === 'À Vista') {
-        clPagamento = `<p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR neste ato, valendo este contrato como recibo.</p>`;
-    } else {
-         clPagamento = `
+  if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
+
+  const valEntrada = Number(sale?.down_payment || 0);
+
+  const valorTotalFmt = formatBRL(valTotal);
+
+  let valorTotalExtenso = "";
+  try {
+    // @ts-ignore
+    valorTotalExtenso = extenso(valTotal.toFixed(2).replace(".", ","), {
+      mode: "currency",
+    });
+  } catch (e) {}
+
+  const tipoVenda =
+    sale?.payment_type?.toLowerCase() === "à vista" ||
+    sale?.payment_type === "A vista"
+      ? "À Vista"
+      : "Parcelada";
+  const valorEntradaFmt = formatBRL(valEntrada);
+
+  let valorEntradaExtenso = "";
+  try {
+    // @ts-ignore
+    if (valEntrada > 0)
+      valorEntradaExtenso = extenso(valEntrada.toFixed(2).replace(".", ","), {
+        mode: "currency",
+      });
+  } catch (e) {}
+
+  const qtdParcelas = sale?.installments_count || 1;
+  let valorParcela = 0;
+  if (qtdParcelas > 0) {
+    valorParcela = (valTotal - valEntrada) / qtdParcelas;
+  }
+  const valorParcelaFmt = formatBRL(valorParcela);
+  let valorParcelaExtenso = "";
+  try {
+    // @ts-ignore
+    if (valorParcela > 0)
+      valorParcelaExtenso = extenso(valorParcela.toFixed(2).replace(".", ","), {
+        mode: "currency",
+      });
+  } catch (e) {}
+
+  // Tentativa de calcular primeira parcela
+  // Vence 30 dias após data de criação da venda ou entrada
+  const dContrato = new Date(contractDate || sale?.created_at || new Date());
+  const dataContratoFmt = dContrato.toLocaleDateString("pt-BR");
+
+  const dPrimeira = new Date(dContrato);
+  dPrimeira.setMonth(dPrimeira.getMonth() + 1);
+  const dataPrimeiraParcelaFmt = dPrimeira.toLocaleDateString("pt-BR");
+
+  const dUltima = new Date(dPrimeira);
+  dUltima.setMonth(dUltima.getMonth() + (qtdParcelas - 1));
+  const dataUltimaParcelaFmt = dUltima.toLocaleDateString("pt-BR");
+
+  let clPagamento = "";
+  if (tipoVenda === "À Vista") {
+    clPagamento = `<p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR neste ato, valendo este contrato como recibo.</p>`;
+  } else {
+    clPagamento = `
             <p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR da seguinte forma:</p>
             <ul>
                 <li>Entrada: <strong>${valorEntradaFmt}</strong> (${valorEntradaExtenso}), paga no ato da assinatura.</li>
@@ -130,9 +202,9 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
                 <li>Vencimento da última parcela: <strong>${dataUltimaParcelaFmt}</strong></li>
             </ul>
         `;
-    }
+  }
 
-    return `
+  return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.5; color: #000; background: #fff; padding: 40px; text-align: justify;">
             <div style="text-align: left; margin-bottom: 20px;">
                 ${empresaLogo}
