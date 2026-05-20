@@ -617,24 +617,34 @@ export default function ContractsPage() {
         receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
     }
 
+    const projData = selectedContract.projects || selectedContract.sales?.projects || selectedContract.blocks?.projects || {};
+
+    const contractPayloadPartial = {
+      project_name_snapshot: selectedContract.project_name_snapshot || projData.name || null,
+      project_city_snapshot: selectedContract.project_city_snapshot || projData.city || null,
+      project_uf_snapshot: selectedContract.project_uf_snapshot || projData.uf || null,
+      forum_city_snapshot: selectedContract.forum_city_snapshot || projData.forum_city || null,
+    };
+    
+    const updatedContract = { ...selectedContract, ...contractPayloadPartial };
+
     const newHtml = generateContractHTML({
       tenant: tenantData || {},
       customer:
-        selectedContract.customers ||
-        (selectedContract.customer_id
-          ? { id: selectedContract.customer_id }
+        updatedContract.customers ||
+        (updatedContract.customer_id
+          ? { id: updatedContract.customer_id }
           : {}),
-      project:
-        selectedContract.projects || selectedContract.sales?.projects || {},
-      block: selectedContract.blocks || selectedContract.sales?.blocks || {},
-      sale: { ...(selectedContract.sales || {}), receipts_sum },
-      contractSnapshot: selectedContract,
-      contractDate: selectedContract.created_at,
+      project: projData,
+      block: updatedContract.blocks || updatedContract.sales?.blocks || {},
+      sale: { ...(updatedContract.sales || {}), receipts_sum },
+      contractSnapshot: updatedContract,
+      contractDate: updatedContract.created_at,
     });
 
     const { data, error } = await supabase
       .from("contracts")
-      .update({ generated_html: newHtml })
+      .update({ generated_html: newHtml, ...contractPayloadPartial })
       .eq("id", selectedContract.id)
       .select()
       .single();
