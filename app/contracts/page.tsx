@@ -223,11 +223,28 @@ export default function ContractsPage() {
       element.innerHTML =
         selectedContract.generated_html || "<p>Contrato sem conteúdo.</p>";
 
+      const formatCNPJCPF = (val: string) => {
+        if (!val) return "";
+        const numeric = val.replace(/\D/g, "");
+        if (numeric.length === 14) {
+          return numeric.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+        }
+        if (numeric.length === 11) {
+          return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+        }
+        return val;
+      };
+
+      const toTitleCase = (str: string) => {
+        if (!str) return "";
+        return str.toLowerCase().replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+      };
+
       const tenantName = tenantData?.name || tenantData?.razao_social || "Imobiliária";
-      const tenantCnpj = tenantData?.cnpj || tenantData?.document || "";
+      const tenantCnpj = formatCNPJCPF(tenantData?.cnpj || tenantData?.document || "");
       const tenantEmail = tenantData?.email || "";
       const tenantPhone = tenantData?.phone || "";
-      const tenantAddress = tenantData?.address || "";
+      const tenantAddress = toTitleCase(tenantData?.address || "");
       
       const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad') && val.toUpperCase() !== 'N/A';
 
