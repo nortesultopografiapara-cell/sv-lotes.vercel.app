@@ -177,74 +177,56 @@ export default function ContractsPage() {
   const handleAlertDev = () => alert('Função em desenvolvimento');
 
   const handleLimparTestes = async () => {
-      const confirmLimpar = confirm('Deseja excluir os contratos de teste pendentes/cancelados desta empresa? Esta ação não pode ser desfeita.');
+      const confirmLimpar = confirm('Deseja excluir os contratos de teste pendentes/cancelados listados aqui? Esta ação não pode ser desfeita.');
       if (!confirmLimpar) return;
 
-      const resolvedTenantId = tenantData?.id || (user as any)?.company_id || user?.tenant_id;
+      console.log("CONTRATOS NA TELA:", contracts);
 
-      if (!resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
-          alert('ID do locatário não identificado para exclusão segura.');
+      const testContractIds = contracts
+        .filter(c => {
+          const s = String(c.status || "").toLowerCase().trim();
+          return ["pendente", "pending", "cancelado", "cancelled", "canceled"].includes(s);
+        })
+        .map(c => c.id);
+
+      console.log("IDS PARA EXCLUIR:", testContractIds);
+
+      if (!testContractIds || testContractIds.length === 0) {
+          alert("Nenhum contrato de teste encontrado na lista atual.");
           return;
       }
 
-      console.log("TENANT LIMPEZA CONTRATOS:", resolvedTenantId);
-
-      const { data: contractsBeforeDelete } = await supabase
+      const { data, error } = await supabase
         .from("contracts")
-        .select("id, status")
-        .eq("tenant_id", resolvedTenantId);
+        .delete()
+        .in("id", testContractIds)
+        .select();
 
-      console.log("CONTRATOS ENCONTRADOS:", contractsBeforeDelete);
-
-      const statusesToDelete = [
-        "pendente",
-        "PENDENTE",
-        "pending",
-        "PENDING",
-        "cancelado",
-        "CANCELADO",
-        "canceled",
-        "CANCELED",
-        "cancelled",
-        "CANCELLED"
-      ];
-
-      let q = supabase.from('contracts')
-          .delete()
-          .in('status', statusesToDelete);
-
-      if (resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
-          q = q.eq('tenant_id', resolvedTenantId);
-      }
-
-      const { data, error } = await q.select();
-
-      console.log("CONTRATOS EXCLUÍDOS:", data);
-      console.log("ERRO LIMPEZA CONTRATOS:", error);
+      console.log("RESULTADO DELETE:", data, error);
 
       if (error) {
-          alert("ERRO AO EXCLUIR: " + JSON.stringify(error));
-      } else if (!data || data.length === 0) {
-          alert("Nenhum contrato encontrado para exclusão.");
+          alert("ERRO AO EXCLUIR CONTRATOS: " + JSON.stringify(error));
       } else {
-          alert(`${data.length} contrato(s) removido(s).`);
-          // Remove deleted from state
-          const excluidosIds = data.map((c: any) => c.id);
-          const remaining = contracts.filter((c: any) => !excluidosIds.includes(c.id));
-          setContracts(remaining);
+          const excluidos = data || [];
+          alert(`${excluidos.length} contrato(s) de teste excluído(s).`);
+          
+          setContracts(prev => prev.filter(c => !testContractIds.includes(c.id)));
           setSelectedContract(null);
           
           // Re-calculate stats
-          let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
-          remaining.forEach(c => {
-              const st = c.status?.toLowerCase() || 'pendente';
-              const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
-              valorTotal += val;
-              if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
-              else if (st === 'cancelado' || st === 'canceled') cancelados++;
-              else { pendentes++; ativos++; }
+          setStats(prevStats => {
+              const remaining = contracts.filter(c => !testContractIds.includes(c.id));
+              let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+              remaining.forEach(c => {
+                  const st = String(c.status || '').toLowerCase().trim();
+                  const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+                  valorTotal += val;
+                  if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
+                  else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
+                  else { pendentes++; ativos++; }
+              });
+              return { ativos, assinados, pendentes, cancelados, valorTotal };
           });
-          setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
       }
   };
 
