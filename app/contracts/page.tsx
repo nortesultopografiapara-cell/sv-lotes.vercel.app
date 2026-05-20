@@ -223,15 +223,70 @@ export default function ContractsPage() {
       element.innerHTML =
         selectedContract.generated_html || "<p>Contrato sem conteúdo.</p>";
 
+      const tenantName = selectedContract.tenant?.name || selectedContract.tenant?.razao_social || "Imobiliária";
+      const tenantCnpj = selectedContract.tenant?.cnpj || selectedContract.tenant?.document || "N/A";
+      
+      const projName = selectedContract.project_name_snapshot || 
+            selectedContract.sales?.projects?.name || 
+            selectedContract.blocks?.projects?.name || 
+            selectedContract.projects?.name || "Projeto";
+            
+      const city = selectedContract.project_city_snapshot || "Cidade";
+      const uf = selectedContract.project_uf_snapshot || "UF";
+
       const opt = {
-        margin: 10,
+        margin: [30, 20, 30, 20],
         filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
+        image: { type: "jpeg", quality: 1 },
+        html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "avoid-all"] }
       };
 
-      html2pdf().from(element).set(opt).save();
+      html2pdf().from(element).set(opt).toPdf().get('pdf').then((pdf: any) => {
+        const totalPages = pdf.internal.getNumberOfPages();
+        const pageWidth = pdf.internal.pageSize.width;
+        const pageHeight = pdf.internal.pageSize.height;
+
+        for (let i = 1; i <= totalPages; i++) {
+          pdf.setPage(i);
+          
+          pdf.setTextColor(80);
+          pdf.setDrawColor(200);
+          pdf.setLineWidth(0.5);
+
+          // CABEÇALHO
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(tenantName.toUpperCase(), 20, 15);
+          
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "normal");
+          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, 20, 20);
+          
+          pdf.text(`Empreendimento: ${projName}`, pageWidth - 20, 15, { align: 'right' });
+          pdf.text(`${city} - ${uf}`, pageWidth - 20, 20, { align: 'right' });
+          
+          pdf.line(20, 24, pageWidth - 20, 24); // linha separadora topo
+
+          // RODAPÉ
+          pdf.line(20, pageHeight - 24, pageWidth - 20, pageHeight - 24); // linha separadora base
+          
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(tenantName.toUpperCase(), 20, pageHeight - 18);
+          
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(8);
+          pdf.text(`CNPJ: ${tenantCnpj}`, 20, pageHeight - 14);
+          
+          pdf.setFont("helvetica", "italic");
+          pdf.text(`Documento emitido digitalmente`, pageWidth / 2, pageHeight - 16, { align: 'center' });
+          
+          pdf.setFont("helvetica", "normal");
+          pdf.text(`Página ${i} de ${totalPages}`, pageWidth - 20, pageHeight - 16, { align: 'right' });
+        }
+      }).save();
     } catch (e) {
       alert(
         "Erro ao tentar baixar PDF. Certifique-se que html2pdf.js está instalado.",
