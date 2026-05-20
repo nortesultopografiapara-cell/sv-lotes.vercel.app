@@ -14,6 +14,10 @@ export default function ContractsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedContract, setSelectedContract] = useState<any>(null);
+  const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(new Set());
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('Visualização');
 
   const [stats, setStats] = useState({
@@ -176,57 +180,118 @@ export default function ContractsPage() {
 
   const handleAlertDev = () => alert('Função em desenvolvimento');
 
+  const toggleContractSelection = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newMap = new Set(selectedContractIds);
+      if (newMap.has(id)) {
+          newMap.delete(id);
+      } else {
+          newMap.add(id);
+      }
+      setSelectedContractIds(newMap);
+  };
+
+  const handleSelectAll = () => {
+      if (selectedContractIds.size === filteredContracts.length && filteredContracts.length > 0) {
+          setSelectedContractIds(new Set());
+      } else {
+          setSelectedContractIds(new Set(filteredContracts.map(c => c.id)));
+      }
+  };
+
   const handleLimparTestes = async () => {
-      const confirmLimpar = confirm('Deseja excluir os contratos de teste pendentes/cancelados listados aqui? Esta ação não pode ser desfeita.');
-      if (!confirmLimpar) return;
+      if (selectedContractIds.size === 0) return;
 
-      console.log("CONTRATOS NA TELA:", contracts);
-
-      const testContractIds = contracts
-        .filter(c => {
+      const ids = Array.from(selectedContractIds);
+      const testContractIds = contracts.filter(c => ids.includes(c.id));
+      
+      const hasBlocked = testContractIds.some(c => {
           const s = String(c.status || "").toLowerCase().trim();
-          return ["pendente", "pending", "cancelado", "cancelled", "canceled"].includes(s);
-        })
-        .map(c => c.id);
+          return ["assinado", "signed", "ativo", "active"].includes(s);
+      });
 
-      console.log("IDS PARA EXCLUIR:", testContractIds);
-
-      if (!testContractIds || testContractIds.length === 0) {
-          alert("Nenhum contrato de teste encontrado na lista atual.");
+      if (hasBlocked) {
+          alert("Existem contratos assinados/ativos selecionados. Eles não podem ser excluídos.");
           return;
       }
 
-      const { data, error } = await supabase
-        .from("contracts")
-        .delete()
-        .in("id", testContractIds)
-        .select();
+      setShowPasswordModal(true);
+  };
 
-      console.log("RESULTADO DELETE:", data, error);
+  const executeDelete = async () => {
+      if (!passwordInput) {
+          alert("Por favor, digite sua senha.");
+          return;
+      }
 
-      if (error) {
-          alert("ERRO AO EXCLUIR CONTRATOS: " + JSON.stringify(error));
-      } else {
-          const excluidos = data || [];
-          alert(`${excluidos.length} contrato(s) de teste excluído(s).`);
+      setIsDeleting(true);
+
+      try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (!userData?.user?.email) {
+              alert("Usuário não encontrado.");
+              setShowPasswordModal(false);
+              return;
+          }
+
+          console.log("VALIDANDO SENHA DO USUÁRIO:", userData.user.email);
           
-          setContracts(prev => prev.filter(c => !testContractIds.includes(c.id)));
-          setSelectedContract(null);
-          
-          // Re-calculate stats
-          setStats(prevStats => {
-              const remaining = contracts.filter(c => !testContractIds.includes(c.id));
-              let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
-              remaining.forEach(c => {
-                  const st = String(c.status || '').toLowerCase().trim();
-                  const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
-                  valorTotal += val;
-                  if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
-                  else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
-                  else { pendentes++; ativos++; }
-              });
-              return { ativos, assinados, pendentes, cancelados, valorTotal };
+          const { error: authError } = await supabase.auth.signInWithPassword({
+              email: userData.user.email,
+              password: passwordInput
           });
+
+          if (authError) {
+              alert("Senha incorreta. Exclusão cancelada.");
+              setIsDeleting(false);
+              return;
+          }
+
+          const ids = Array.from(selectedContractIds);
+          console.log("CONTRATOS SELECIONADOS:", ids);
+
+          const { data, error } = await supabase
+              .from("contracts")
+              .delete()
+              .in("id", ids)
+              .select();
+
+          console.log("RESULTADO DELETE:", data, error);
+
+          if (error) {
+              alert("Erro ao excluir contratos: " + JSON.stringify(error));
+          } else {
+              const excluidos = data || [];
+              alert(`${excluidos.length} contrato(s) excluído(s) com sucesso.`);
+              
+              setContracts(prev => prev.filter(c => !ids.includes(c.id)));
+              if (selectedContract && ids.includes(selectedContract.id)) {
+                  setSelectedContract(null);
+              }
+              setSelectedContractIds(new Set());
+              
+              // Re-calculate stats
+              setStats(prevStats => {
+                  const remaining = contracts.filter(c => !ids.includes(c.id));
+                  let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+                  remaining.forEach(c => {
+                      const st = String(c.status || '').toLowerCase().trim();
+                      const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+                      valorTotal += val;
+                      if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
+                      else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
+                      else { pendentes++; ativos++; }
+                  });
+                  return { ativos, assinados, pendentes, cancelados, valorTotal };
+              });
+          }
+      } catch (err) {
+          console.error("ERRO EXCLUSÃO:", err);
+          alert("Erro inexperado ao excluir contratos.");
+      } finally {
+          setIsDeleting(false);
+          setShowPasswordModal(false);
+          setPasswordInput('');
       }
   };
 
@@ -443,9 +508,22 @@ export default function ContractsPage() {
                       onChange={e => setSearch(e.target.value)}
                    />
                 </div>
-                <div className="flex justify-end">
-                   <button onClick={handleLimparTestes} className="text-xs text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1">
-                      <Trash2 className="w-3 h-3" /> Limpar Contratos de Teste
+                <div className="flex justify-between items-center mt-3">
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                         type="checkbox"
+                         className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                         checked={selectedContractIds.size > 0 && selectedContractIds.size === filteredContracts.length}
+                         onChange={handleSelectAll}
+                      />
+                      <span className="text-xs text-gray-400">Selecionar todos</span>
+                   </label>
+                   <button 
+                      onClick={handleLimparTestes} 
+                      disabled={selectedContractIds.size === 0}
+                      className={`text-xs transition-colors flex items-center gap-1 ${selectedContractIds.size > 0 ? 'text-red-400 hover:text-red-300' : 'text-gray-600 cursor-not-allowed'}`}
+                   >
+                      <Trash2 className="w-3 h-3" /> Excluir selecionados {selectedContractIds.size > 0 ? `(${selectedContractIds.size})` : ''}
                    </button>
                 </div>
              </div>
@@ -476,6 +554,13 @@ export default function ContractsPage() {
                            >
                               <div className="flex justify-between items-start mb-1.5">
                                   <div className="flex items-center gap-2">
+                                      <input
+                                         type="checkbox"
+                                         checked={selectedContractIds.has(c.id)}
+                                         onChange={(e) => toggleContractSelection(c.id, e as any)}
+                                         onClick={(e) => e.stopPropagation()}
+                                         className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-0.5"
+                                      />
                                       <FileText className={`w-4 h-4 ${isSelected ? 'text-[var(--color-primary)]' : 'text-gray-400'}`} />
                                       <span className="font-mono text-sm font-bold text-white">{cnum}</span>
                                   </div>
@@ -663,6 +748,53 @@ export default function ContractsPage() {
              )}
           </div>
       </div>
+
+      {/* Modal de Senha para Exclusão */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4">
+            <div className="bg-[#1a1f2b] border border-[#2d3340] rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Trash2 className="w-5 h-5 text-red-500" />
+                        Confirmar Exclusão
+                    </h3>
+                    <button onClick={() => setShowPasswordModal(false)} className="text-gray-400 hover:text-white">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                <p className="text-sm text-gray-300 mb-4">
+                    Digite sua senha para confirmar a exclusão de {selectedContractIds.size} contrato(s).
+                </p>
+                <input
+                    type="password"
+                    placeholder="Sua senha"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className="w-full px-4 py-2 bg-[#11151c] border border-[#2d3340] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500 mb-6"
+                    autoFocus
+                />
+                <div className="flex justify-end gap-3">
+                    <button 
+                        onClick={() => setShowPasswordModal(false)}
+                        className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                        disabled={isDeleting}
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={executeDelete}
+                        disabled={isDeleting || !passwordInput}
+                        className={`px-4 py-2 text-sm font-bold text-white rounded-lg transition-colors flex items-center gap-2 ${
+                            (isDeleting || !passwordInput) ? 'bg-red-500/50 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'
+                        }`}
+                    >
+                        {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
