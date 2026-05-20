@@ -189,9 +189,29 @@ export default function ContractsPage() {
 
       console.log("TENANT LIMPEZA CONTRATOS:", resolvedTenantId);
 
+      const { data: contractsBeforeDelete } = await supabase
+        .from("contracts")
+        .select("id, status")
+        .eq("tenant_id", resolvedTenantId);
+
+      console.log("CONTRATOS ENCONTRADOS:", contractsBeforeDelete);
+
+      const statusesToDelete = [
+        "pendente",
+        "PENDENTE",
+        "pending",
+        "PENDING",
+        "cancelado",
+        "CANCELADO",
+        "canceled",
+        "CANCELED",
+        "cancelled",
+        "CANCELLED"
+      ];
+
       let q = supabase.from('contracts')
           .delete()
-          .in('status', ['pendente', 'pending', 'cancelado', 'canceled']);
+          .in('status', statusesToDelete);
 
       if (resolvedTenantId && user?.role !== 'SUPER_ADMIN') {
           q = q.eq('tenant_id', resolvedTenantId);
@@ -203,11 +223,11 @@ export default function ContractsPage() {
       console.log("ERRO LIMPEZA CONTRATOS:", error);
 
       if (error) {
-          alert("ERRO AO EXCLUIR CONTRATOS: " + JSON.stringify(error));
+          alert("ERRO AO EXCLUIR: " + JSON.stringify(error));
       } else if (!data || data.length === 0) {
-          alert("Nenhum contrato de teste foi excluído.");
+          alert("Nenhum contrato encontrado para exclusão.");
       } else {
-          alert(`${data.length} contrato(s) de teste excluído(s) com sucesso.`);
+          alert(`${data.length} contrato(s) removido(s).`);
           // Remove deleted from state
           const excluidosIds = data.map((c: any) => c.id);
           const remaining = contracts.filter((c: any) => !excluidosIds.includes(c.id));
