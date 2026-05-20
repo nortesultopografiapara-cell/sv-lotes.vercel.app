@@ -223,19 +223,53 @@ export default function ContractsPage() {
       element.innerHTML =
         selectedContract.generated_html || "<p>Contrato sem conteúdo.</p>";
 
-      const tenantName = selectedContract.tenant?.name || selectedContract.tenant?.razao_social || "Imobiliária";
-      const tenantCnpj = selectedContract.tenant?.cnpj || selectedContract.tenant?.document || "N/A";
+      const tenantName = tenantData?.name || tenantData?.razao_social || "Imobiliária";
+      const tenantCnpj = tenantData?.cnpj || tenantData?.document || "";
+      const tenantEmail = tenantData?.email || "";
+      const tenantPhone = tenantData?.phone || "";
+      const tenantAddress = tenantData?.address || "";
       
-      const projName = selectedContract.project_name_snapshot || 
-            selectedContract.sales?.projects?.name || 
-            selectedContract.blocks?.projects?.name || 
-            selectedContract.projects?.name || "Projeto";
+      const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad') && val.toUpperCase() !== 'N/A';
+
+      const projName = 
+          (isValid(selectedContract.project_name_snapshot) ? selectedContract.project_name_snapshot : null) || 
+          (isValid(selectedContract.sales?.projects?.name) ? selectedContract.sales.projects.name : null) || 
+          (isValid(selectedContract.blocks?.projects?.name) ? selectedContract.blocks.projects.name : null) || 
+          (isValid(selectedContract.projects?.name) ? selectedContract.projects.name : null) || 
+          "Empreendimento/Projeto";
             
-      const city = selectedContract.project_city_snapshot || "Cidade";
-      const uf = selectedContract.project_uf_snapshot || "UF";
+      const city = 
+          (isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : null) || 
+          (isValid(selectedContract.projects?.city) ? selectedContract.projects.city : null) || 
+          "Cidade";
+      const uf = 
+          (isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : null) || 
+          (isValid(selectedContract.projects?.uf) ? selectedContract.projects.uf : null) || 
+          "UF";
+
+      const clientName = selectedContract.customers?.name || "Cliente não informado";
+      const blockName = selectedContract.blocks?.block || selectedContract.blocks?.block_name || selectedContract.blocks?.quadra || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || selectedContract.sales?.blocks?.name || "?";
+      const lotNumber = selectedContract.blocks?.lot || selectedContract.blocks?.number || selectedContract.sales?.lot_number || selectedContract.sales?.blocks?.number || "?";
+
+      let logoBase64: string | null = null;
+      if (tenantData?.logo_url) {
+          try {
+              logoBase64 = await new Promise<string>((resolve, reject) => {
+                  const img = new Image();
+                  img.crossOrigin = 'Anonymous';
+                  img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.width; canvas.height = img.height;
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
+                  };
+                  img.onerror = reject; img.src = tenantData.logo_url;
+              });
+          } catch (err) {}
+      }
 
       const opt = {
-        margin: [30, 20, 30, 20],
+        margin: [40, 15, 25, 15],
         filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
         image: { type: "jpeg", quality: 1 },
         html2canvas: { scale: 2, useCORS: true },
@@ -251,40 +285,55 @@ export default function ContractsPage() {
         for (let i = 1; i <= totalPages; i++) {
           pdf.setPage(i);
           
-          pdf.setTextColor(80);
+          let titleX = 14;
+          if (logoBase64) {
+             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
+             titleX = 50;
+          }
+
+          pdf.setFontSize(14);
+          pdf.setTextColor(40);
+          pdf.setFont("helvetica", "bold");
+          pdf.text("CONTRATO DE COMPRA E VENDA", titleX, 15);
+          
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(60);
+          pdf.text(tenantName.toUpperCase(), titleX, 20);
+          
+          pdf.setFontSize(8);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(100);
+          let infoLine = "";
+          if (tenantEmail) infoLine += `Email: ${tenantEmail} | `;
+          if (tenantPhone) infoLine += `Tel: ${tenantPhone} | `;
+          if (tenantAddress) infoLine += `Endereço: ${tenantAddress}`;
+          infoLine = infoLine.replace(/ \| $/, '');
+          
+          pdf.text(`CNPJ: ${tenantCnpj}${infoLine ? ' | ' + infoLine : ''}`, titleX, 24);
+
+          const rightX = pageWidth - 14;
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(60);
+          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(100);
+          pdf.text(`Emp: ${projName} (${city} - ${uf})`, rightX, 20, { align: 'right' });
+          pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
+
           pdf.setDrawColor(200);
           pdf.setLineWidth(0.5);
-
-          // CABEÇALHO
-          pdf.setFontSize(10);
-          pdf.setFont("helvetica", "bold");
-          pdf.text(tenantName.toUpperCase(), 20, 15);
+          pdf.line(14, 28, rightX, 28);
           
-          pdf.setFontSize(9);
-          pdf.setFont("helvetica", "normal");
-          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, 20, 20);
-          
-          pdf.text(`Empreendimento: ${projName}`, pageWidth - 20, 15, { align: 'right' });
-          pdf.text(`${city} - ${uf}`, pageWidth - 20, 20, { align: 'right' });
-          
-          pdf.line(20, 24, pageWidth - 20, 24); // linha separadora topo
-
           // RODAPÉ
-          pdf.line(20, pageHeight - 24, pageWidth - 20, pageHeight - 24); // linha separadora base
+          pdf.line(14, pageHeight - 20, rightX, pageHeight - 20);
           
-          pdf.setFontSize(9);
-          pdf.setFont("helvetica", "bold");
-          pdf.text(tenantName.toUpperCase(), 20, pageHeight - 18);
-          
-          pdf.setFont("helvetica", "normal");
           pdf.setFontSize(8);
-          pdf.text(`CNPJ: ${tenantCnpj}`, 20, pageHeight - 14);
+          pdf.setTextColor(150);
+          pdf.text(`Documento emitido digitalmente pelo SV LOTES GIS | Emitido em: ${new Date().toLocaleString('pt-BR')}`, 14, pageHeight - 14);
+          pdf.text(`Emissor: ${user?.name || "Admin"}`, 14, pageHeight - 10);
           
-          pdf.setFont("helvetica", "italic");
-          pdf.text(`Documento emitido digitalmente`, pageWidth / 2, pageHeight - 16, { align: 'center' });
-          
-          pdf.setFont("helvetica", "normal");
-          pdf.text(`Página ${i} de ${totalPages}`, pageWidth - 20, pageHeight - 16, { align: 'right' });
+          pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 14, { align: 'right' });
         }
       }).save();
     } catch (e) {
@@ -593,19 +642,14 @@ export default function ContractsPage() {
       }
 
       let html = `
-              <div style="font-family: sans-serif; padding: 20px; background: #ffffff; color: #111827;">
-                  <div style="text-align: center; margin-bottom: 20px;">
-                      <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 10px 0;">CARNÊ DE PAGAMENTO</h2>
-                      <p style="font-size: 12px; font-weight: 600; color: #111827; margin: 2px 0;">CONTRATO: ${selectedContract.contract_number}</p>
-                      <p style="font-size: 12px; font-weight: 600; color: #111827; margin: 2px 0;">CLIENTE: ${selectedContract.customers?.name || "Cliente"}</p>
-                  </div>
-                  <table style="width: 100%; border-collapse: collapse;">
+              <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 10px; background: #ffffff; color: #111;">
+                  <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
                       <thead>
-                          <tr style="background: #f3f4f6; color: #111827; font-weight: 700;">
-                              <th style="border: 1px solid #9ca3af; padding: 8px;">Parcela</th>
-                              <th style="border: 1px solid #9ca3af; padding: 8px;">Vencimento</th>
-                              <th style="border: 1px solid #9ca3af; padding: 8px;">Valor</th>
-                              <th style="border: 1px solid #9ca3af; padding: 8px;">Status</th>
+                          <tr style="background: #f1f3f5; color: #333; font-weight: bold; font-size: 11px;">
+                              <th style="border-bottom: 2px solid #ccc; padding: 10px 8px; text-align: center;">Parcela</th>
+                              <th style="border-bottom: 2px solid #ccc; padding: 10px 8px; text-align: center;">Vencimento</th>
+                              <th style="border-bottom: 2px solid #ccc; padding: 10px 8px; text-align: right;">Valor</th>
+                              <th style="border-bottom: 2px solid #ccc; padding: 10px 8px; text-align: center;">Status</th>
                           </tr>
                       </thead>
                       <tbody>
@@ -619,12 +663,13 @@ export default function ContractsPage() {
           style: "currency",
           currency: "BRL",
         }).format(Number(r.amount));
+        const bg = idx % 2 === 0 ? "#ffffff" : "#f8f9fa";
         html += `
-                  <tr style="color: #111827; font-size: 11px;">
-                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
-                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${dataFmt}</td>
-                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right;">${valFmt}</td>
-                      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${r.status}</td>
+                  <tr style="color: #333; font-size: 11px; background: ${bg}; border-bottom: 1px solid #eee;">
+                      <td style="padding: 10px 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
+                      <td style="padding: 10px 8px; text-align: center;">${dataFmt}</td>
+                      <td style="padding: 10px 8px; text-align: right;">${valFmt}</td>
+                      <td style="padding: 10px 8px; text-align: center; font-weight: bold;">${r.status}</td>
                   </tr>
               `;
       });
@@ -632,25 +677,129 @@ export default function ContractsPage() {
       html += `
                       </tbody>
                   </table>
-                  <div style="margin-top: 30px; font-size: 10px; text-align: center; color: #374151;">
+                  <div style="margin-top: 30px; font-size: 10px; text-align: center; color: #777;">
                       Este é um documento auxiliar de controle de parcelas.
                   </div>
               </div>
           `;
+
+      const tenantName = tenantData?.name || tenantData?.razao_social || "Imobiliária";
+      const tenantCnpj = tenantData?.cnpj || tenantData?.document || "";
+      const tenantEmail = tenantData?.email || "";
+      const tenantPhone = tenantData?.phone || "";
+      const tenantAddress = tenantData?.address || "";
+      
+      const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad') && val.toUpperCase() !== 'N/A';
+
+      const projName = 
+          (isValid(selectedContract.project_name_snapshot) ? selectedContract.project_name_snapshot : null) || 
+          (isValid(selectedContract.sales?.projects?.name) ? selectedContract.sales.projects.name : null) || 
+          (isValid(selectedContract.blocks?.projects?.name) ? selectedContract.blocks.projects.name : null) || 
+          (isValid(selectedContract.projects?.name) ? selectedContract.projects.name : null) || 
+          "Empreendimento/Projeto";
+            
+      const city = 
+          (isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : null) || 
+          (isValid(selectedContract.projects?.city) ? selectedContract.projects.city : null) || 
+          "Cidade";
+      const uf = 
+          (isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : null) || 
+          (isValid(selectedContract.projects?.uf) ? selectedContract.projects.uf : null) || 
+          "UF";
+
+      const clientName = selectedContract.customers?.name || "Cliente não informado";
+      const blockName = selectedContract.blocks?.block || selectedContract.blocks?.block_name || selectedContract.blocks?.quadra || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || selectedContract.sales?.blocks?.name || "?";
+      const lotNumber = selectedContract.blocks?.lot || selectedContract.blocks?.number || selectedContract.sales?.lot_number || selectedContract.sales?.blocks?.number || "?";
+
+      let logoBase64: string | null = null;
+      if (tenantData?.logo_url) {
+          try {
+              logoBase64 = await new Promise<string>((resolve, reject) => {
+                  const img = new Image();
+                  img.crossOrigin = 'Anonymous';
+                  img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.width; canvas.height = img.height;
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
+                  };
+                  img.onerror = reject; img.src = tenantData.logo_url;
+              });
+          } catch (err) {}
+      }
 
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
       element.innerHTML = html;
 
       const opt = {
-        margin: 10,
+        margin: [40, 15, 25, 15],
         filename: `carne_${selectedContract.contract_number || selectedContract.id}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
+        image: { type: "jpeg", quality: 1 },
+        html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "avoid-all"] }
       };
 
-      html2pdf().from(element).set(opt).save();
+      html2pdf().from(element).set(opt).toPdf().get('pdf').then((pdf: any) => {
+        const totalPages = pdf.internal.getNumberOfPages();
+        const pageWidth = pdf.internal.pageSize.width;
+        const pageHeight = pdf.internal.pageSize.height;
+
+        for (let i = 1; i <= totalPages; i++) {
+          pdf.setPage(i);
+          
+          let titleX = 14;
+          if (logoBase64) {
+             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
+             titleX = 50;
+          }
+
+          pdf.setFontSize(14);
+          pdf.setTextColor(40);
+          pdf.setFont("helvetica", "bold");
+          pdf.text("CARNÊ DE PAGAMENTO", titleX, 15);
+          
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(60);
+          pdf.text(tenantName.toUpperCase(), titleX, 20);
+          
+          pdf.setFontSize(8);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(100);
+          let infoLine = "";
+          if (tenantEmail) infoLine += `Email: ${tenantEmail} | `;
+          if (tenantPhone) infoLine += `Tel: ${tenantPhone} | `;
+          if (tenantAddress) infoLine += `Endereço: ${tenantAddress}`;
+          infoLine = infoLine.replace(/ \| $/, '');
+          
+          pdf.text(`CNPJ: ${tenantCnpj}${infoLine ? ' | ' + infoLine : ''}`, titleX, 24);
+
+          const rightX = pageWidth - 14;
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(60);
+          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(100);
+          pdf.text(`Emp: ${projName} (${city} - ${uf})`, rightX, 20, { align: 'right' });
+          pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
+
+          pdf.setDrawColor(200);
+          pdf.setLineWidth(0.5);
+          pdf.line(14, 28, rightX, 28);
+          
+          // RODAPÉ
+          pdf.line(14, pageHeight - 20, rightX, pageHeight - 20);
+          
+          pdf.setFontSize(8);
+          pdf.setTextColor(150);
+          pdf.text(`Documento emitido digitalmente pelo SV LOTES GIS | Emitido em: ${new Date().toLocaleString('pt-BR')}`, 14, pageHeight - 14);
+          pdf.text(`Emissor: ${user?.name || "Admin"}`, 14, pageHeight - 10);
+          
+          pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 14, { align: 'right' });
+        }
+      }).save();
     } catch (e) {
       console.error(e);
       alert("Erro ao gerar carnê.");

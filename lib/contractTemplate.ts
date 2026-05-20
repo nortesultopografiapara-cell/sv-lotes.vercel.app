@@ -31,16 +31,20 @@ export function generateContractHTML({
     return date.toLocaleDateString("pt-BR");
   };
 
+  const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad');
+
   // Extenso support for currency
   const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
 
   const empresaNome =
-    tenant?.razao_social || tenant?.name || "empresa não informada";
-  const empresaCnpj = tenant?.cnpj || "CNPJ não informado";
-  const empresaEndereco = tenant?.address || "endereço não informado";
-  const empresaCidade = tenant?.city || "cidade não informada";
-  const empresaTelefone = tenant?.phone || "telefone não informado";
-  const empresaEmail = tenant?.email || "email não informado";
+    (isValid(tenant?.razao_social) ? tenant?.razao_social : null) || 
+    (isValid(tenant?.name) ? tenant?.name : null) || 
+    "";
+  const empresaCnpj = (isValid(tenant?.cnpj) ? tenant?.cnpj : null) || (isValid(tenant?.document) ? tenant?.document : null) || "";
+  const empresaEndereco = (isValid(tenant?.address) ? tenant?.address : null) || "";
+  const empresaCidade = (isValid(tenant?.city) ? tenant?.city : null) || "";
+  const empresaTelefone = (isValid(tenant?.phone) ? tenant?.phone : null) || "";
+  const empresaEmail = (isValid(tenant?.email) ? tenant?.email : null) || "";
   const empresaLogo = tenant?.logo_url
     ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>`
     : "";
@@ -59,12 +63,10 @@ export function generateContractHTML({
   const clienteUf = customer?.state_uf || "UF não informada";
   const clienteCep = customer?.zip_code || "cep não informado";
 
-  const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad');
-
   const projetoNome =
     (isValid(contractSnapshot?.project_name_snapshot) ? contractSnapshot.project_name_snapshot : null) ||
     (isValid(project?.name) ? project.name : null) ||
-    "Projeto não informado";
+    "";
 
   const quadra =
     (isValid(block?.block) ? block.block : null) ||
@@ -73,37 +75,37 @@ export function generateContractHTML({
     (isValid(sale?.blocks?.block_name) ? sale.blocks.block_name : null) ||
     (isValid(sale?.blocks?.name) ? sale.blocks.name : null) ||
     (isValid(block?.name) ? block.name : null) ||
-    "Quadra não informada";
+    "";
 
   const lote = 
     (isValid(block?.lot) ? block.lot : null) ||
     (isValid(block?.number) ? block.number : null) ||
     (isValid(sale?.lot_number) ? sale.lot_number : null) ||
     (isValid(sale?.blocks?.number) ? sale.blocks.number : null) ||
-    "Lote não informado";
+    "";
 
-  const areaM2 = block?.area || "Área não informada";
-  const frente = block?.frente || "Frente não informada";
-  const fundo = block?.fundo || "Fundo não informado";
-  const lateralDireita = block?.lado_direito || "Lateral dir. não informada";
-  const lateralEsquerda = block?.lado_esquerdo || "Lateral esq. não informada";
+  const areaM2 = block?.area || "";
+  const frente = block?.frente || "";
+  const fundo = block?.fundo || "";
+  const lateralDireita = block?.lado_direito || "";
+  const lateralEsquerda = block?.lado_esquerdo || "";
 
   // Cidade, UF e Foro hierarquia correta
   const cidadeImovel =
     (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
     (isValid(project?.city) ? project.city : null) ||
-    "Cidade não informada";
+    "";
 
   const ufImovel =
     (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
     (isValid(project?.uf) ? project.uf : null) ||
-    "UF não informada";
+    "";
 
   const foroCidade =
     (isValid(contractSnapshot?.forum_city_snapshot) ? contractSnapshot.forum_city_snapshot : null) ||
     (isValid(project?.forum_city) ? project.forum_city : null) ||
     (isValid(project?.city) ? project.city : null) ||
-    "Cidade não informada";
+    "";
   const foroUf = ufImovel;
 
   let valTotal =
@@ -193,11 +195,6 @@ export function generateContractHTML({
 
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; color: #111; background: #fff; padding: 10px; text-align: justify;">
-            
-            <div style="text-align: center; margin-bottom: 40px;">
-                <h1 style="font-size: 16pt; margin: 0; font-weight: bold; text-transform: uppercase;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h1>
-            </div>
-
             <div style="page-break-inside: avoid; margin-bottom: 25px;">
                 <p style="margin-bottom: 10px;">
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, Empresa Constituída e Instalada na ${empresaEndereco}, ${empresaCidade} - PA.
