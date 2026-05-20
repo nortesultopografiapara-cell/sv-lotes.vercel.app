@@ -94,19 +94,34 @@ export function generateContractHTML({
   const cidadeImovel =
     (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
     (isValid(project?.city) ? project.city : null) ||
+    (isValid(block?.projects?.city) ? block?.projects?.city : null) ||
     "";
 
   const ufImovel =
     (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
     (isValid(project?.uf) ? project.uf : null) ||
+    (isValid(block?.projects?.uf) ? block?.projects?.uf : null) ||
     "";
 
   const foroCidade =
-    (isValid(contractSnapshot?.forum_city_snapshot) ? contractSnapshot.forum_city_snapshot : null) ||
-    (isValid(project?.forum_city) ? project.forum_city : null) ||
-    (isValid(project?.city) ? project.city : null) ||
+    (isValid(tenant?.city) ? tenant?.city : null) ||
     "";
-  const foroUf = ufImovel;
+  
+  const foroUf = 
+    (isValid(tenant?.uf) ? tenant?.uf : null) || 
+    (isValid(tenant?.state) ? tenant?.state : null) || 
+    "";
+
+  let foroText = "";
+  if (foroCidade && foroUf) {
+      foroText = `da Comarca de <strong>${foroCidade} - ${foroUf}</strong>`;
+  } else if (foroCidade) {
+      foroText = `da Comarca de <strong>${foroCidade}</strong>`;
+  } else {
+      foroText = "competente";
+  }
+
+  const empresaUf = foroUf;
 
   let valTotal =
     Number(sale?.total_value) ||
@@ -278,7 +293,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Décima Primeira:</strong> Fica eleito o foro da Comarca de <strong>${foroCidade} – ${foroUf}</strong> para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes a qualquer outro, por mais especial que seja.
+                    <strong>Cláusula Décima Primeira:</strong> Fica eleito o foro ${foroText} para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes a qualquer outro, por mais especial que seja.
                 </p>
             </div>
 
@@ -287,7 +302,7 @@ export function generateContractHTML({
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
                 <div style="text-align: right; margin-bottom: 50px;">
-                    <p style="margin: 0;">${empresaCidade} - ${clienteUf}, ${dataContratoFmt}</p>
+                    <p style="margin: 0;">${empresaCidade}${empresaUf ? ' - ' + empresaUf : ''}, ${dataContratoFmt}</p>
                 </div>
             </div>
 
