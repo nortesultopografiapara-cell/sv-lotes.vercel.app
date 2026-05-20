@@ -394,7 +394,7 @@ export default function MapPage() {
           createTenantId = null;
       }
       
-      const { error } = await supabase.from('projects').insert([{ 
+      let insertData: any = {
         name: projectNameStr,
         city: newProjectCity.trim() || null,
         uf: newProjectUf.trim().toUpperCase() || null,
@@ -402,7 +402,25 @@ export default function MapPage() {
         address: newProjectAddr.trim() || null,
         forum_city: newProjectForum.trim() || null,
         tenant_id: createTenantId 
-      }]);
+      };
+
+      let { error } = await supabase.from('projects').insert([insertData]);
+
+      if (error && error.message && error.message.includes('schema cache')) {
+          console.warn('Schema cache error detected, retrying without address...', error.message);
+          delete insertData.address;
+          const fallback = await supabase.from('projects').insert([insertData]);
+          error = fallback.error;
+          
+          if (error && error.message && error.message.includes('schema cache')) {
+              console.warn('Schema cache error persists, retrying with minimal fields...');
+              const minimalFallback = await supabase.from('projects').insert([{
+                  name: projectNameStr,
+                  tenant_id: createTenantId
+              }]);
+              error = minimalFallback.error;
+          }
+      }
 
       if (error) {
          throw error;
