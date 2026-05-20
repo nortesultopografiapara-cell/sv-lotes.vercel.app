@@ -273,7 +273,7 @@ export default function ContractsPage() {
       }
 
       const opt = {
-        margin: [40, 15, 25, 15],
+        margin: [45, 15, 25, 15],
         filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
         image: { type: "jpeg", quality: 1 },
         html2canvas: { scale: 2, useCORS: true },
@@ -291,49 +291,70 @@ export default function ContractsPage() {
           
           let titleX = 14;
           if (logoBase64) {
-             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
-             titleX = 50;
+             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 20, undefined, 'FAST');
+             titleX = 48;
           }
 
-          pdf.setFontSize(14);
+          pdf.setFontSize(12);
           pdf.setTextColor(40);
           pdf.setFont("helvetica", "bold");
-          pdf.text("CONTRATO DE COMPRA E VENDA", titleX, 15);
+          pdf.text("CONTRATO DE COMPRA E VENDA", titleX, 14);
           
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
-          pdf.text(tenantName.toUpperCase(), titleX, 20);
+          const splitName = pdf.splitTextToSize(tenantName.toUpperCase(), 80);
+          pdf.text(splitName, titleX, 19);
           
-          pdf.setFontSize(8);
+          pdf.setFontSize(7);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
           let infoArray = [];
           if (tenantCnpj) infoArray.push(`CNPJ: ${tenantCnpj}`);
           if (tenantEmail) infoArray.push(`Email: ${tenantEmail}`);
           if (tenantPhone) infoArray.push(`Tel: ${tenantPhone}`);
-          if (tenantAddress) infoArray.push(`Endereço: ${tenantAddress}`);
-          const infoStr = infoArray.join(' | ');
           
-          pdf.text(infoStr, titleX, 24);
+          let yPos = 19 + (splitName.length * 4);
+          pdf.text(infoArray.join(' | '), titleX, yPos);
+          yPos += 3.5;
+          
+          if (tenantAddress) {
+              const splitAddr = pdf.splitTextToSize(`Endereço: ${tenantAddress}`, 80);
+              pdf.text(splitAddr, titleX, yPos);
+              yPos += (splitAddr.length * 3.5);
+          }
 
           const rightX = pageWidth - 14;
+          let ryPos = 14;
+          
+          pdf.setFontSize(8);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
-          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
+          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, ryPos, { align: 'right' });
+          ryPos += 4;
+          
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
           
           let empText = `Emp: ${projName}`;
-          if (city && uf) {
-              empText += ` - ${city}/${uf}`;
-          }
-          pdf.text(empText, rightX, 20, { align: 'right' });
-          pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
+          if (city && uf) empText += ` - ${city}/${uf}`;
+          
+          const splitEmp = pdf.splitTextToSize(empText, 70);
+          pdf.text(splitEmp, rightX, ryPos, { align: 'right' });
+          ryPos += (splitEmp.length * 3.5);
+          
+          const splitClient = pdf.splitTextToSize(`Cliente: ${clientName}`, 70);
+          pdf.text(splitClient, rightX, ryPos, { align: 'right' });
+          ryPos += (splitClient.length * 3.5);
+          
+          pdf.text(`QD: ${blockName} | LT: ${lotNumber}`, rightX, ryPos, { align: 'right' });
+          ryPos += 4;
+
+          const finalY = Math.max(yPos, ryPos) + 2;
 
           pdf.setDrawColor(200);
           pdf.setLineWidth(0.5);
-          pdf.line(14, 28, rightX, 28);
+          pdf.line(14, finalY, rightX, finalY);
           
           // RODAPÉ
           pdf.line(14, pageHeight - 20, rightX, pageHeight - 20);
@@ -747,7 +768,7 @@ export default function ContractsPage() {
       element.innerHTML = html;
 
       const opt = {
-        margin: [40, 15, 25, 15],
+        margin: [45, 15, 25, 15],
         filename: `carne_${selectedContract.contract_number || selectedContract.id}.pdf`,
         image: { type: "jpeg", quality: 1 },
         html2canvas: { scale: 2, useCORS: true },
@@ -765,49 +786,70 @@ export default function ContractsPage() {
           
           let titleX = 14;
           if (logoBase64) {
-             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
-             titleX = 50;
+             pdf.addImage(logoBase64, 'PNG', 14, 10, 30, 20, undefined, 'FAST');
+             titleX = 48;
           }
 
-          pdf.setFontSize(14);
+          pdf.setFontSize(12);
           pdf.setTextColor(40);
           pdf.setFont("helvetica", "bold");
-          pdf.text("CARNÊ DE PAGAMENTO", titleX, 15);
+          pdf.text("CARNÊ DE PAGAMENTO", titleX, 14);
           
           pdf.setFontSize(9);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
-          pdf.text(tenantName.toUpperCase(), titleX, 20);
+          const splitName = pdf.splitTextToSize(tenantName.toUpperCase(), 80);
+          pdf.text(splitName, titleX, 19);
           
-          pdf.setFontSize(8);
+          pdf.setFontSize(7);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
           let infoArray2 = [];
           if (tenantCnpj) infoArray2.push(`CNPJ: ${tenantCnpj}`);
           if (tenantEmail) infoArray2.push(`Email: ${tenantEmail}`);
           if (tenantPhone) infoArray2.push(`Tel: ${tenantPhone}`);
-          if (tenantAddress) infoArray2.push(`Endereço: ${tenantAddress}`);
-          const infoStr2 = infoArray2.join(' | ');
           
-          pdf.text(infoStr2, titleX, 24);
+          let yPos = 19 + (splitName.length * 4);
+          pdf.text(infoArray2.join(' | '), titleX, yPos);
+          yPos += 3.5;
+          
+          if (tenantAddress) {
+              const splitAddr = pdf.splitTextToSize(`Endereço: ${tenantAddress}`, 80);
+              pdf.text(splitAddr, titleX, yPos);
+              yPos += (splitAddr.length * 3.5);
+          }
 
           const rightX = pageWidth - 14;
+          let ryPos = 14;
+          
+          pdf.setFontSize(8);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
-          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
+          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, ryPos, { align: 'right' });
+          ryPos += 4;
+          
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
           
           let empText2 = `Emp: ${projName}`;
-          if (city && uf) {
-              empText2 += ` - ${city}/${uf}`;
-          }
-          pdf.text(empText2, rightX, 20, { align: 'right' });
-          pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
+          if (city && uf) empText2 += ` - ${city}/${uf}`;
+          
+          const splitEmp2 = pdf.splitTextToSize(empText2, 70);
+          pdf.text(splitEmp2, rightX, ryPos, { align: 'right' });
+          ryPos += (splitEmp2.length * 3.5);
+          
+          const splitClient2 = pdf.splitTextToSize(`Cliente: ${clientName}`, 70);
+          pdf.text(splitClient2, rightX, ryPos, { align: 'right' });
+          ryPos += (splitClient2.length * 3.5);
+          
+          pdf.text(`QD: ${blockName} | LT: ${lotNumber}`, rightX, ryPos, { align: 'right' });
+          ryPos += 4;
+
+          const finalY = Math.max(yPos, ryPos) + 2;
 
           pdf.setDrawColor(200);
           pdf.setLineWidth(0.5);
-          pdf.line(14, 28, rightX, 28);
+          pdf.line(14, finalY, rightX, finalY);
           
           // RODAPÉ
           pdf.line(14, pageHeight - 20, rightX, pageHeight - 20);

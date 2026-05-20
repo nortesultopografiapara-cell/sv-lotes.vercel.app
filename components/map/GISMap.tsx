@@ -1534,14 +1534,20 @@ export default function GISMap({
               }
 
               if (customerData.first_installment_due_date) {
-                const parValue = Math.max(
-                  0,
-                  (fValue - downPayment) / instCount,
-                );
+                const totalRestante = Math.max(0, fValue - downPayment);
+                const parValue = Math.round((totalRestante / instCount) * 100) / 100;
+                let accumulated = 0;
+                
                 let cDate = new Date(
                   customerData.first_installment_due_date + "T12:00:00Z",
                 );
                 for (let i = 0; i < instCount; i++) {
+                  const isLast = i === instCount - 1;
+                  const currentAmount = isLast 
+                      ? Number((totalRestante - accumulated).toFixed(2)) 
+                      : parValue;
+                  accumulated += currentAmount;
+
                   financePayloads.push({
                     tenant_id: resolvedTenantId,
                     sale_id: saleId,
@@ -1549,7 +1555,7 @@ export default function GISMap({
                     project_id: lot.project_id || null,
                     block_id: lot.id,
                     installment_number: currentInst++,
-                    amount: parValue,
+                    amount: currentAmount,
                     due_date: cDate.toISOString().split("T")[0],
                     status: "pendente",
                   });

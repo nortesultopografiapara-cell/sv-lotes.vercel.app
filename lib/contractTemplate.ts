@@ -217,6 +217,10 @@ export function generateContractHTML({
         `;
   }
 
+  const localityStr = empreendimentoCidade && empreendimentoUf 
+    ? `, localizado no município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>`
+    : '';
+
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; color: #111; background: #fff; padding: 10px; text-align: justify;">
             <div style="page-break-inside: avoid; margin-bottom: 25px;">
@@ -236,7 +240,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>, do empreendimento <strong>${empreendimentoNome}</strong>, localizado no município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>, do empreendimento <strong>${empreendimentoNome}</strong>${localityStr}.
                 </p>
             </div>
 
