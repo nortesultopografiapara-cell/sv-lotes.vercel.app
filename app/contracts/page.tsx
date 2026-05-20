@@ -304,13 +304,14 @@ export default function ContractsPage() {
           pdf.setFontSize(8);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
-          let infoLine = "";
-          if (tenantEmail) infoLine += `Email: ${tenantEmail} | `;
-          if (tenantPhone) infoLine += `Tel: ${tenantPhone} | `;
-          if (tenantAddress) infoLine += `Endereço: ${tenantAddress}`;
-          infoLine = infoLine.replace(/ \| $/, '');
+          let infoArray = [];
+          if (tenantCnpj) infoArray.push(`CNPJ: ${tenantCnpj}`);
+          if (tenantEmail) infoArray.push(`Email: ${tenantEmail}`);
+          if (tenantPhone) infoArray.push(`Tel: ${tenantPhone}`);
+          if (tenantAddress) infoArray.push(`Endereço: ${tenantAddress}`);
+          const infoStr = infoArray.join(' | ');
           
-          pdf.text(`CNPJ: ${tenantCnpj}${infoLine ? ' | ' + infoLine : ''}`, titleX, 24);
+          pdf.text(infoStr, titleX, 24);
 
           const rightX = pageWidth - 14;
           pdf.setFont("helvetica", "bold");
@@ -768,13 +769,14 @@ export default function ContractsPage() {
           pdf.setFontSize(8);
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
-          let infoLine = "";
-          if (tenantEmail) infoLine += `Email: ${tenantEmail} | `;
-          if (tenantPhone) infoLine += `Tel: ${tenantPhone} | `;
-          if (tenantAddress) infoLine += `Endereço: ${tenantAddress}`;
-          infoLine = infoLine.replace(/ \| $/, '');
+          let infoArray2 = [];
+          if (tenantCnpj) infoArray2.push(`CNPJ: ${tenantCnpj}`);
+          if (tenantEmail) infoArray2.push(`Email: ${tenantEmail}`);
+          if (tenantPhone) infoArray2.push(`Tel: ${tenantPhone}`);
+          if (tenantAddress) infoArray2.push(`Endereço: ${tenantAddress}`);
+          const infoStr2 = infoArray2.join(' | ');
           
-          pdf.text(`CNPJ: ${tenantCnpj}${infoLine ? ' | ' + infoLine : ''}`, titleX, 24);
+          pdf.text(infoStr2, titleX, 24);
 
           const rightX = pageWidth - 14;
           pdf.setFont("helvetica", "bold");
