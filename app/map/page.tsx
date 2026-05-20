@@ -176,6 +176,11 @@ export default function MapPage() {
   // New Project States
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectCity, setNewProjectCity] = useState('');
+  const [newProjectUf, setNewProjectUf] = useState('');
+  const [newProjectNbhd, setNewProjectNbhd] = useState('');
+  const [newProjectAddr, setNewProjectAddr] = useState('');
+  const [newProjectForum, setNewProjectForum] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
@@ -389,7 +394,15 @@ export default function MapPage() {
           createTenantId = null;
       }
       
-      const { error } = await supabase.from('projects').insert([{ name: projectNameStr, tenant_id: createTenantId }]);
+      const { error } = await supabase.from('projects').insert([{ 
+        name: projectNameStr,
+        city: newProjectCity.trim() || null,
+        uf: newProjectUf.trim().toUpperCase() || null,
+        neighborhood: newProjectNbhd.trim() || null,
+        address: newProjectAddr.trim() || null,
+        forum_city: newProjectForum.trim() || null,
+        tenant_id: createTenantId 
+      }]);
 
       if (error) {
          throw error;
@@ -402,6 +415,11 @@ export default function MapPage() {
       
       setIsNewProjectModalOpen(false);
       setNewProjectName('');
+      setNewProjectCity('');
+      setNewProjectUf('');
+      setNewProjectNbhd('');
+      setNewProjectAddr('');
+      setNewProjectForum('');
       
     } catch (err: any) {
       console.error(err);
@@ -883,21 +901,67 @@ export default function MapPage() {
       {/* Modal Novo Projeto */}
       {isNewProjectModalOpen && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-sm overflow-hidden shadow-2xl fade-in-up">
-               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
+               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
                   <h3 className="font-bold text-white text-lg">Novo Projeto</h3>
                   <button onClick={() => setIsNewProjectModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
                      <X className="w-5 h-5" />
                   </button>
                </div>
-               <div className="p-6 flex flex-col gap-4">
+               <div className="p-6 flex flex-col gap-4 overflow-y-auto">
                   <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto</label>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto *</label>
                      <input 
                        type="text" required
                        value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
-                       onKeyDown={(e) => { if(e.key === 'Enter') handleCreateProject(e as any) }}
                        placeholder="Ex: Loteamento Bosque das Árvores"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Cidade *</label>
+                       <input 
+                         type="text" required
+                         value={newProjectCity} onChange={e => setNewProjectCity(e.target.value)}
+                         placeholder="Ex: Parauapebas"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">UF *</label>
+                       <input 
+                         type="text" required maxLength={2}
+                         value={newProjectUf} onChange={e => setNewProjectUf(e.target.value.toUpperCase())}
+                         placeholder="Ex: PA"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                       />
+                    </div>
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Bairro/Localidade</label>
+                     <input 
+                       type="text"
+                       value={newProjectNbhd} onChange={e => setNewProjectNbhd(e.target.value)}
+                       placeholder="Ex: Centro"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Endereço/Referência</label>
+                     <input 
+                       type="text"
+                       value={newProjectAddr} onChange={e => setNewProjectAddr(e.target.value)}
+                       placeholder="Endereço principal da área"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Município / Foro do Contrato</label>
+                     <input 
+                       type="text"
+                       value={newProjectForum} onChange={e => setNewProjectForum(e.target.value)}
+                       placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
                        className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
                      />
                   </div>
@@ -905,8 +969,8 @@ export default function MapPage() {
                   <button 
                      type="button" 
                      onClick={handleCreateProject}
-                     disabled={creatingProject}
-                     className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-4 rounded-lg transition-colors flex justify-center items-center gap-2"
+                     disabled={creatingProject || !newProjectName.trim() || !newProjectCity.trim() || !newProjectUf.trim()}
+                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                   >
                      {creatingProject ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Criar Projeto'}
                   </button>

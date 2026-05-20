@@ -19,6 +19,7 @@ export default function ContractsPage() {
   const [passwordInput, setPasswordInput] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('Visualização');
+  const [receipts, setReceipts] = useState<any[]>([]);
 
   const [stats, setStats] = useState({
     ativos: 0,
@@ -56,9 +57,9 @@ export default function ContractsPage() {
            .select(`
              *,
              customers:customer_id(*),
-             sales:sale_id(*),
+             sales:sale_id(*, projects:project_id(*), blocks:block_id(*)),
              projects:project_id(*),
-             blocks:block_id(*)
+             blocks:block_id(*, projects:project_id(*))
            `)
            .order('created_at', { ascending: false });
            
@@ -114,9 +115,21 @@ export default function ContractsPage() {
     }
   }, [user, authLoading]);
 
+  useEffect(() => {
+     if (selectedContract?.sale_id) {
+         supabase.from('finance_receipts')
+            .select('*')
+            .eq('sale_id', selectedContract.sale_id)
+            .order('due_date', { ascending: true })
+            .then(({ data }) => setReceipts(data || []));
+     } else {
+         setReceipts([]);
+     }
+  }, [selectedContract]);
+
   const filteredContracts = contracts.filter(c => {
       const p = c.customers?.name?.toLowerCase() || '';
-      const proj = c.projects?.name?.toLowerCase() || c.sales?.projects?.name?.toLowerCase() || '';
+      const proj = c.project_name_snapshot?.toLowerCase() || c.sales?.projects?.name?.toLowerCase() || c.blocks?.projects?.name?.toLowerCase() || c.projects?.name?.toLowerCase() || '';
       const doc = c.customers?.document?.toLowerCase() || c.customers?.cpf?.toLowerCase() || '';
       const cnum = c.contract_number?.toLowerCase() || '';
       const term = search.toLowerCase();
@@ -175,6 +188,39 @@ export default function ContractsPage() {
               </html>
           `);
           printWindow.document.close();
+      }
+  };
+
+  const handleAtivarContrato = async () => {
+      if (!selectedContract) return;
+      if (!confirm("Tem certeza que deseja marcar este contrato como assinado e ativá-lo?")) return;
+      
+      const { error } = await supabase.from('contracts').update({ status: 'assinado' }).eq('id', selectedContract.id);
+      
+      if (!error && selectedContract.sale_id) {
+          await supabase.from('sales').update({ status: 'ativo' }).eq('id', selectedContract.sale_id);
+      }
+
+      if (error) {
+          alert("Erro ao ativar contrato");
+      } else {
+          alert("Contrato ativado com sucesso!");
+          setSelectedContract({ ...selectedContract, status: 'assinado' });
+          setContracts(contracts.map(c => c.id === selectedContract.id ? { ...c, status: 'assinado' } : c));
+          
+          setStats(prevStats => {
+              const remaining = contracts.map(c => c.id === selectedContract.id ? { ...c, status: 'assinado' } : c);
+              let ativos = 0, assinados = 0, pendentes = 0, cancelados = 0, valorTotal = 0;
+              remaining.forEach(c => {
+                  const st = String(c.status || '').toLowerCase().trim();
+                  const val = Number(c.sales?.total_value || c.sales?.final_value || c.sales?.agreed_price || 0);
+                  valorTotal += val;
+                  if (st === 'assinado' || st === 'signed') { assinados++; ativos++; }
+                  else if (['cancelado', 'cancelled', 'canceled'].includes(st)) cancelados++;
+                  else { pendentes++; ativos++; }
+              });
+              return { ativos, assinados, pendentes, cancelados, valorTotal };
+          });
       }
   };
 
@@ -543,7 +589,7 @@ export default function ContractsPage() {
                     filteredContracts.map(c => {
                        const isSelected = selectedContract?.id === c.id;
                        const cnum = c.contract_number || (c.id ? `CTR-${c.id.slice(-6).toUpperCase()}` : 'CTR-NOID');
-                       const projName = c.projects?.name || c.sales?.projects?.name || 'Projeto não informado';
+                       const projName = c.project_name_snapshot || c.sales?.projects?.name || c.blocks?.projects?.name || c.projects?.name || 'Projeto não informado';
                        const quad = c.blocks?.block_name || c.blocks?.name || c.sales?.blocks?.block_name || '?';
                        const lote = c.blocks?.number || c.sales?.blocks?.number || '?';
                        const loc = `QD ${quad} • LT ${lote}`;
@@ -620,6 +666,12 @@ export default function ContractsPage() {
                               </div>
                           </div>
                           <div className="flex items-center gap-2">
+                              {getStatusLabel(selectedContract.status) === 'Pendente' && (
+                                  <button onClick={handleAtivarContrato} className="flex items-center gap-2 px-4 py-2 bg-[var(--color-success)] text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium shadow-sm">
+                                     <CheckCircle2 className="w-4 h-4" />
+                                     Ativar Contrato
+                                  </button>
+                              )}
                               {/* Botão Dropdown "Modelos" */}
                               <div className="relative group">
                                   <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-gray-300 border border-[#2d3340] rounded-lg hover:bg-[#1a1f2b] transition-colors text-sm font-medium">
@@ -650,7 +702,7 @@ export default function ContractsPage() {
                           </div>
                           <div>
                               <p className="text-gray-500 text-xs mb-1">Projeto</p>
-                              <p className="font-semibold text-gray-200">{selectedContract.projects?.name || selectedContract.sales?.projects?.name || 'Projeto não informado'}</p>
+                              <p className="font-semibold text-gray-200">{selectedContract.project_name_snapshot || selectedContract.sales?.projects?.name || selectedContract.blocks?.projects?.name || selectedContract.projects?.name || 'Projeto não informado'}</p>
                           </div>
                           <div>
                               <p className="text-gray-500 text-xs mb-1">Localização</p>
@@ -718,10 +770,154 @@ export default function ContractsPage() {
                          </>
                       )}
 
-                      {activeTab !== 'Visualização' && (
-                         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50 p-6 text-center">
-                            <Clock className="w-12 h-12 mb-3" />
-                            <p>Aba <strong>{activeTab}</strong> em desenvolvimento para a próxima atualização.</p>
+                      {activeTab === 'Dados do Contrato' && (
+                         <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                                <h3 className="text-lg font-bold text-white mb-6">Dados Principais do Contrato</h3>
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Número do Contrato</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.contract_number}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Status</p>
+                                        <p className="font-semibold text-gray-200">{getStatusLabel(selectedContract.status)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Cliente</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.customers?.name}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">CPF/CNPJ</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.customers?.document || selectedContract.customers?.cpf}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">RG</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.customers?.rg || '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Projeto</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.projects?.name || selectedContract.sales?.projects?.name || selectedContract.project_name_snapshot}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Quadra</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.blocks?.block_name || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Lote</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.blocks?.number || selectedContract.sales?.blocks?.number}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Valor Total</p>
+                                        <p className="font-semibold text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(selectedContract.sales?.total_value || selectedContract.sales?.final_value || selectedContract.sales?.agreed_price || 0))}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Entrada</p>
+                                        <p className="font-semibold text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(selectedContract.sales?.down_payment || 0))}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Quantidade de Parcelas</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.sales?.installments || '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Valor da Parcela</p>
+                                        <p className="font-semibold text-gray-200">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(selectedContract.sales?.installment_value || 0))}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500 text-xs mb-1">Data da Venda</p>
+                                        <p className="font-semibold text-gray-200">{selectedContract.sales?.created_at ? new Date(selectedContract.sales.created_at).toLocaleDateString('pt-BR') : new Date(selectedContract.created_at).toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                </div>
+                            </div>
+                         </div>
+                      )}
+                      
+                      {activeTab === 'Parcelas' && (
+                         <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                                <h3 className="text-lg font-bold text-white mb-6">Parcelas do Contrato</h3>
+                                {receipts.length > 0 ? (
+                                    <table className="w-full text-left text-sm text-gray-300">
+                                        <thead>
+                                            <tr className="border-b border-[#2d3340] text-gray-500">
+                                                <th className="py-2">Parcela</th>
+                                                <th className="py-2">Vencimento</th>
+                                                <th className="py-2">Valor</th>
+                                                <th className="py-2">Recebido</th>
+                                                <th className="py-2">Status</th>
+                                                <th className="py-2">Data Pgto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {receipts.map((r, idx) => (
+                                                <tr key={r.id} className="border-b border-[#2d3340]/50 last:border-0 border-t-transparent hover:bg-[#2d3340]/20 transition-colors">
+                                                    <td className="py-3 font-mono">{r.installment_number || (idx + 1)}</td>
+                                                    <td className="py-3">{r.due_date ? new Date(r.due_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>
+                                                    <td className="py-3">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(r.amount))}</td>
+                                                    <td className="py-3 text-green-400">{r.amount_paid ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(r.amount_paid)) : '-'}</td>
+                                                    <td className="py-3">
+                                                        <span className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${r.status === 'paid' ? 'bg-green-500/10 text-[var(--color-success)] border border-[var(--color-success)]/20' : (r.status === 'overdue' || (r.status === 'pending' && new Date(r.due_date) < new Date())) ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
+                                                            {r.status === 'paid' ? 'Pago' : (r.status === 'overdue' || (r.status === 'pending' && new Date(r.due_date) < new Date())) ? 'Vencido' : 'Pendente'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3">{r.payment_date ? new Date(r.payment_date).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <div className="text-center py-10 text-gray-500">
+                                        <Wallet className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                        <p>Nenhuma parcela encontrada para este contrato.</p>
+                                    </div>
+                                )}
+                            </div>
+                         </div>
+                      )}
+                      
+                      {activeTab === 'Arquivos' && (
+                         <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                                <h3 className="text-lg font-bold text-white mb-6">Arquivos Anexados</h3>
+                                
+                                <div className="flex gap-4 mb-8">
+                                    <button onClick={handleBaixarPDF} className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-[var(--color-primary)] transition-colors w-32">
+                                        <Download className="w-8 h-8 text-[var(--color-primary)] mb-2" />
+                                        <span className="text-sm font-medium text-white">Baixar PDF</span>
+                                    </button>
+                                    <button onClick={handleImprimir} className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-info transition-colors w-32">
+                                        <Printer className="w-8 h-8 text-info mb-2" />
+                                        <span className="text-sm font-medium text-white">Imprimir</span>
+                                    </button>
+                                    <button onClick={handleGerarCarne} className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-warning transition-colors w-32">
+                                        <Receipt className="w-8 h-8 text-warning mb-2" />
+                                        <span className="text-sm font-medium text-white">Gerar Carnê</span>
+                                    </button>
+                                </div>
+                                
+                                <div className="text-center py-10 border-2 border-dashed border-[#2d3340] rounded-xl text-gray-500">
+                                    <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                    <p>Nenhum arquivo anexado ainda.</p>
+                                    <p className="text-xs mt-1">Espaço futuro para anexos.</p>
+                                </div>
+                            </div>
+                         </div>
+                      )}
+                      
+                      {activeTab === 'Histórico' && (
+                         <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                                <h3 className="text-lg font-bold text-white mb-6">Linha do Tempo</h3>
+                                <div className="space-y-6 ml-4">
+                                   <TimelineItem icon={<FileText />} color="success" title="Contrato criado" date={new Date(selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />
+                                   {selectedContract.customers && <TimelineItem icon={<CheckCircle2 />} color="success" title="Cliente cadastrado" date={new Date(selectedContract.customers.created_at || selectedContract.created_at).toLocaleString('pt-BR')} author="Admin" active />}
+                                   <TimelineItem icon={<Wallet />} color="info" title="Entrada registrada" subtitle="No momento da venda" active={Number(selectedContract.sales?.down_payment) > 0} />
+                                   <TimelineItem icon={<FileText />} color="purple" title="PDF gerado" subtitle="Sistema" active={!!selectedContract.generated_html} />
+                                   {selectedContract.status === 'assinado' && <TimelineItem icon={<CheckCircle2 />} color="success" title="Contrato Assinado" date={new Date(selectedContract.updated_at || selectedContract.created_at).toLocaleString('pt-BR')} author="Sistema" active />}
+                                   {selectedContract.status === 'cancelado' && <TimelineItem icon={<X />} color="danger" title="Contrato Cancelado" date={new Date(selectedContract.updated_at || selectedContract.created_at).toLocaleString('pt-BR')} author="Sistema" active />}
+                                   {getStatusLabel(selectedContract.status) === 'Pendente' && <TimelineItem icon={<Clock />} color="warning" title="Assinatura pendente" subtitle="Aguardando assinatura do cliente" active />}
+                                </div>
+                            </div>
                          </div>
                       )}
                   </div>

@@ -40,15 +40,29 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
     const clienteUf = customer?.state_uf || 'UF não informada';
     const clienteCep = customer?.zip_code || 'cep não informado';
 
-    const projetoNome = project?.name || 'Projeto não informado';
-    const quadra = block?.block_name || block?.name || 'Quadra não informada';
-    const lote = block?.number || 'Lote não informado';
+    const projetoNome = project?.name || sale?.projects?.name || block?.projects?.name || sale?.project_name_snapshot || 'Projeto não informado';
+    
+    // quadra fallback: 1. block.number (user specifically wrote "1. block.number" in prompt but wait! prompt says: "1. block.number 2. block.name ...", wait, lot is usually block.number in this schema? let's look at prompt again:
+    // "1. block.number 2. block.name 3. lot.block_number 4. sale.block_number"
+    // Let's implement what they requested:
+    const quadraRaw = block?.number || block?.name || block?.block_name || block?.block_number || sale?.block_number || sale?.blocks?.block_name || sale?.blocks?.name || 'Quadra não informada';
+    // wait, if block.number is usually the lot! No, in prompt:
+    const quadra = quadraRaw;
+
+    // Lote:
+    const lote = block?.number || sale?.blocks?.number || 'Lote não informado';
+
     const areaM2 = block?.area || 'Área não informada';
     const frente = block?.frente || 'Frente não informada';
     const fundo = block?.fundo || 'Fundo não informado';
     const lateralDireita = block?.lado_direito || 'Lateral dir. não informada';
     const lateralEsquerda = block?.lado_esquerdo || 'Lateral esq. não informada';
-    const cidadeImovel = project?.city || 'Cidade não informada';
+    
+    // Cidade, UF e Foro
+    const cidadeImovel = project?.city || block?.projects?.city || sale?.projects?.city || sale?.project_city_snapshot || 'Cidade não informada';
+    const ufImovel = project?.uf || block?.projects?.uf || sale?.projects?.uf || sale?.project_uf_snapshot || 'UF não informada';
+    const foroCidade = project?.forum_city || block?.projects?.forum_city || sale?.projects?.forum_city || sale?.forum_city_snapshot || cidadeImovel;
+    const foroUf = ufImovel;
 
     let valTotal = Number(sale?.total_value) || Number(sale?.agreed_price) || Number(sale?.sale_price) || Number(block?.price) || 0;
     
@@ -141,7 +155,7 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
             </p>
 
             <p style="margin-bottom: 15px;">
-                <strong>Cláusula Primeira -:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legitimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chacara, Sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>; fundo <strong>${fundo}m</strong> Lateral Esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>; ${projetoNome}, localizado no município de ${cidadeImovel} – PA.
+                <strong>Cláusula Primeira -:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legitimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chacara, Sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>; fundo <strong>${fundo}m</strong> Lateral Esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>; ${projetoNome}, localizado no município de ${cidadeImovel} – ${ufImovel}.
             </p>
 
             <p style="margin-bottom: 15px;">
@@ -187,7 +201,7 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
             </p>
 
             <p style="margin-bottom: 15px;">
-                <strong>Cláusula Décima Primeira -:</strong> Fica eleito o foro da Comarca de ${cidadeImovel} – ${clienteUf}, para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes e qualquer outro, por mais especial que seja.
+                <strong>Cláusula Décima Primeira -:</strong> Fica eleito o foro da Comarca de ${foroCidade} – ${foroUf}, para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes e qualquer outro, por mais especial que seja.
             </p>
 
             <p style="margin-bottom: 30px;">
