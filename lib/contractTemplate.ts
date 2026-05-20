@@ -31,7 +31,12 @@ export function generateContractHTML({
     return date.toLocaleDateString("pt-BR");
   };
 
-  const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad');
+  const isValid = (v: any) =>
+    !!v &&
+    typeof v === "string" &&
+    !v.toLowerCase().includes("não informad") &&
+    !v.toLowerCase().includes("cidade - uf") &&
+    !v.toLowerCase().includes("n/a");
 
   // Extenso support for currency
   const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
@@ -63,9 +68,11 @@ export function generateContractHTML({
   const clienteUf = customer?.state_uf || "UF não informada";
   const clienteCep = customer?.zip_code || "cep não informado";
 
-  const projetoNome =
+  const empreendimentoNome =
     (isValid(contractSnapshot?.project_name_snapshot) ? contractSnapshot.project_name_snapshot : null) ||
     (isValid(project?.name) ? project.name : null) ||
+    (isValid(sale?.projects?.name) ? sale.projects.name : null) ||
+    (isValid(block?.projects?.name) ? block.projects.name : null) ||
     "";
 
   const quadra =
@@ -91,16 +98,18 @@ export function generateContractHTML({
   const lateralEsquerda = block?.lado_esquerdo || "";
 
   // Cidade, UF e Foro hierarquia correta
-  const cidadeImovel =
+  const empreendimentoCidade =
     (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
     (isValid(project?.city) ? project.city : null) ||
-    (isValid(block?.projects?.city) ? block?.projects?.city : null) ||
+    (isValid(sale?.projects?.city) ? sale.projects.city : null) ||
+    (isValid(block?.projects?.city) ? block.projects.city : null) ||
     "";
 
-  const ufImovel =
+  const empreendimentoUf =
     (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
     (isValid(project?.uf) ? project.uf : null) ||
-    (isValid(block?.projects?.uf) ? block?.projects?.uf : null) ||
+    (isValid(sale?.projects?.uf) ? sale.projects.uf : null) ||
+    (isValid(block?.projects?.uf) ? block.projects.uf : null) ||
     "";
 
   const foroCidade =
@@ -227,7 +236,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>, do empreendimento <strong>${projetoNome}</strong>, localizado no município de ${cidadeImovel} – ${ufImovel}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>, do empreendimento <strong>${empreendimentoNome}</strong>, localizado no município de <strong>${empreendimentoCidade} - ${empreendimentoUf}</strong>.
                 </p>
             </div>
 

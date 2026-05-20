@@ -241,11 +241,15 @@ export default function ContractsPage() {
       const city = 
           (isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : null) || 
           (isValid(selectedContract.projects?.city) ? selectedContract.projects.city : null) || 
-          "Cidade";
+          (isValid(selectedContract.sales?.projects?.city) ? selectedContract.sales.projects.city : null) || 
+          (isValid(selectedContract.blocks?.projects?.city) ? selectedContract.blocks.projects.city : null) || 
+          "";
       const uf = 
           (isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : null) || 
           (isValid(selectedContract.projects?.uf) ? selectedContract.projects.uf : null) || 
-          "UF";
+          (isValid(selectedContract.sales?.projects?.uf) ? selectedContract.sales.projects.uf : null) || 
+          (isValid(selectedContract.blocks?.projects?.uf) ? selectedContract.blocks.projects.uf : null) || 
+          "";
 
       const clientName = selectedContract.customers?.name || "Cliente não informado";
       const blockName = selectedContract.blocks?.block || selectedContract.blocks?.block_name || selectedContract.blocks?.quadra || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || selectedContract.sales?.blocks?.name || "?";
@@ -319,7 +323,12 @@ export default function ContractsPage() {
           pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
-          pdf.text(`Emp: ${projName} (${city} - ${uf})`, rightX, 20, { align: 'right' });
+          
+          let empText = `Emp: ${projName}`;
+          if (city && uf) {
+              empText += ` - ${city}/${uf}`;
+          }
+          pdf.text(empText, rightX, 20, { align: 'right' });
           pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
 
           pdf.setDrawColor(200);
@@ -702,11 +711,15 @@ export default function ContractsPage() {
       const city = 
           (isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : null) || 
           (isValid(selectedContract.projects?.city) ? selectedContract.projects.city : null) || 
-          "Cidade";
+          (isValid(selectedContract.sales?.projects?.city) ? selectedContract.sales.projects.city : null) || 
+          (isValid(selectedContract.blocks?.projects?.city) ? selectedContract.blocks.projects.city : null) || 
+          "";
       const uf = 
           (isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : null) || 
           (isValid(selectedContract.projects?.uf) ? selectedContract.projects.uf : null) || 
-          "UF";
+          (isValid(selectedContract.sales?.projects?.uf) ? selectedContract.sales.projects.uf : null) || 
+          (isValid(selectedContract.blocks?.projects?.uf) ? selectedContract.blocks.projects.uf : null) || 
+          "";
 
       const clientName = selectedContract.customers?.name || "Cliente não informado";
       const blockName = selectedContract.blocks?.block || selectedContract.blocks?.block_name || selectedContract.blocks?.quadra || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || selectedContract.sales?.blocks?.name || "?";
@@ -784,7 +797,12 @@ export default function ContractsPage() {
           pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, 15, { align: 'right' });
           pdf.setFont("helvetica", "normal");
           pdf.setTextColor(100);
-          pdf.text(`Emp: ${projName} (${city} - ${uf})`, rightX, 20, { align: 'right' });
+          
+          let empText2 = `Emp: ${projName}`;
+          if (city && uf) {
+              empText2 += ` - ${city}/${uf}`;
+          }
+          pdf.text(empText2, rightX, 20, { align: 'right' });
           pdf.text(`Cliente: ${clientName} | QD: ${blockName} LT: ${lotNumber}`, rightX, 24, { align: 'right' });
 
           pdf.setDrawColor(200);
