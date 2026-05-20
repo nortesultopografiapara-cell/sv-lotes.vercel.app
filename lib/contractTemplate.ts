@@ -21,12 +21,12 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
     // Extenso support for currency
     const extensoOptions = { mode: 'currency', currency: { type: 'BRL' } };
     
-    const empresaNome = tenant?.razao_social || tenant?.name || 'EMPRESA NÃO INFORMADA';
-    const empresaCnpj = tenant?.cnpj || 'CNPJ NÃO INFORMADO';
-    const empresaEndereco = tenant?.address || 'ENDEREÇO NÃO INFORMADO';
-    const empresaCidade = 'CIDADE NÃO INFORMADA';
-    const empresaTelefone = tenant?.phone || 'TELEFONE NÃO INFORMADO';
-    const empresaEmail = tenant?.email || 'EMAIL NÃO INFORMADO';
+    const empresaNome = tenant?.razao_social || tenant?.name || 'empresa não informada';
+    const empresaCnpj = tenant?.cnpj || 'CNPJ não informado';
+    const empresaEndereco = tenant?.address || 'endereço não informado';
+    const empresaCidade = tenant?.city || 'cidade não informada';
+    const empresaTelefone = tenant?.phone || 'telefone não informado';
+    const empresaEmail = tenant?.email || 'email não informado';
     const empresaLogo = tenant?.logo_url ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>` : '';
 
     const clienteNome = customer?.name || 'cliente não informado';
@@ -40,21 +40,26 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
     const clienteUf = customer?.state_uf || 'UF não informada';
     const clienteCep = customer?.zip_code || 'cep não informado';
 
-    const projetoNome = project?.name || 'PROJETO NÃO INFORMADO';
-    const quadra = block?.block_name || block?.name || 'QUADRA NÃO INFORMADA';
-    const lote = block?.number || 'LOTE NÃO INFORMADO';
-    const areaM2 = block?.area || 'ÁREA NÃO INFORMADA';
-    const frente = block?.front_size || 'FRENTE NÃO INFORMADA';
-    const fundo = block?.back_size || 'FUNDO NÃO INFORMADO';
-    const lateralDireita = block?.right_side || 'LATERAL DIR. NÃO INFORMADA';
-    const lateralEsquerda = block?.left_side || 'LATERAL ESQ. NÃO INFORMADA';
-    const cidadeImovel = project?.city || 'CIDADE NÃO INFORMADA';
+    const projetoNome = project?.name || 'Projeto não informado';
+    const quadra = block?.block_name || block?.name || 'Quadra não informada';
+    const lote = block?.number || 'Lote não informado';
+    const areaM2 = block?.area || 'Área não informada';
+    const frente = block?.frente || 'Frente não informada';
+    const fundo = block?.fundo || 'Fundo não informado';
+    const lateralDireita = block?.lado_direito || 'Lateral dir. não informada';
+    const lateralEsquerda = block?.lado_esquerdo || 'Lateral esq. não informada';
+    const cidadeImovel = project?.city || 'Cidade não informada';
 
-    let valTotal = Number(sale?.final_value || sale?.total_value || sale?.agreed_price || block?.price || 0);
-    const valEntrada = Number(sale?.down_payment || 0);
+    let valTotal = Number(sale?.total_value) || Number(sale?.agreed_price) || Number(sale?.sale_price) || Number(block?.price) || 0;
     
-    // Fallback if somehow value logic misses something
+    // Se ainda for zero e houver recibos (finance_receipts não é passado no escopo atual, mas podemos somar receipts_sum se injetado)
+    if (valTotal <= 0 && sale?.receipts_sum) {
+       valTotal = Number(sale.receipts_sum);
+    }
+    
     if (valTotal <= 0 && block?.price) valTotal = Number(block.price);
+
+    const valEntrada = Number(sale?.down_payment || 0);
 
     const valorTotalFmt = formatBRL(valTotal);
     

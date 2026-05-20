@@ -314,12 +314,18 @@ export default function ContractsPage() {
       if (!selectedContract) return;
       if (!confirm("Isso irá recriar o visual do contrato com os dados atuais. Deseja continuar?")) return;
       
+      let receipts_sum = 0;
+      if (selectedContract.sale_id) {
+          const { data: recs } = await supabase.from('finance_receipts').select('amount').eq('sale_id', selectedContract.sale_id).neq('status', 'cancelled');
+          if (recs && recs.length) receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
+      }
+      
       const newHtml = generateContractHTML({
           tenant: tenantData || {},
           customer: selectedContract.customers || (selectedContract.customer_id ? { id: selectedContract.customer_id } : {}),
           project: selectedContract.projects || selectedContract.sales?.projects || {},
           block: selectedContract.blocks || selectedContract.sales?.blocks || {},
-          sale: selectedContract.sales || {},
+          sale: { ...(selectedContract.sales || {}), receipts_sum },
           contractDate: selectedContract.created_at
       });
 

@@ -1019,12 +1019,15 @@ export default function GISMap({
                        if (custDb) fullCustomer = { ...custDb, ...customerData };
                    }
 
+                   const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);
+                   const enrichedSaleData = { ...saleData, receipts_sum: receiptsSum };
+
                    const contractHtml = generateContractHTML({
                        tenant: tenantData || {},
                        customer: fullCustomer || {},
                        project: projData || lot.projects || {},
                        block: lot,
-                       sale: saleData
+                       sale: enrichedSaleData
                    });
 
                    const contractPayload = {
