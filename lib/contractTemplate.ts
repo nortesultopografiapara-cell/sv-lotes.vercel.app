@@ -61,10 +61,9 @@ export function generateContractHTML({
 
   const projetoNome =
     contractSnapshot?.project_name_snapshot ||
-    contractSnapshot?.project_name ||
+    project?.name ||
     sale?.projects?.name ||
     block?.projects?.name ||
-    project?.name ||
     "Projeto não informado";
 
   const quadra =
@@ -83,31 +82,26 @@ export function generateContractHTML({
   const lateralEsquerda = block?.lado_esquerdo || "Lateral esq. não informada";
 
   // Cidade, UF e Foro hierarquia correta
-  const snapshotCity =
-    contractSnapshot?.project_city_snapshot || contractSnapshot?.project_city;
   const cidadeImovel =
-    snapshotCity ||
+    contractSnapshot?.project_city_snapshot ||
     project?.city ||
     block?.projects?.city ||
     sale?.projects?.city ||
     "Cidade não informada";
 
-  const snapshotUf =
-    contractSnapshot?.project_uf_snapshot || contractSnapshot?.project_uf;
   const ufImovel =
-    snapshotUf ||
+    contractSnapshot?.project_uf_snapshot ||
     project?.uf ||
     block?.projects?.uf ||
     sale?.projects?.uf ||
     "UF não informada";
 
-  const snapshotForum =
-    contractSnapshot?.forum_city_snapshot || contractSnapshot?.forum_city;
   const foroCidade =
-    snapshotForum ||
+    contractSnapshot?.forum_city_snapshot ||
     project?.forum_city ||
     block?.projects?.forum_city ||
     sale?.projects?.forum_city ||
+    contractSnapshot?.project_city_snapshot ||
     project?.city ||
     cidadeImovel;
   const foroUf = ufImovel;
