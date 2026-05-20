@@ -842,11 +842,13 @@ function LotPopupContent({
   lot,
   onAction,
   onRequestCustomerForm,
+  onRequestClear,
   actionLoading,
 }: {
   lot: any;
   onAction: (lot: any, action: string, newPrice?: number) => void;
   onRequestCustomerForm: (lot: any, action: string, newPrice: number) => void;
+  onRequestClear: (lot: any, newPrice: number) => void;
   actionLoading: string | null;
 }) {
   const [editedPrice, setEditedPrice] = useState(lot.price.toString());
@@ -999,7 +1001,7 @@ function LotPopupContent({
             Vender
           </button>
           <button
-            onClick={() => onAction(lot, "Disponível", Number(editedPrice))}
+            onClick={() => onRequestClear(lot, Number(editedPrice))}
             disabled={actionLoading === lot.id}
             className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
           >
@@ -1048,7 +1050,7 @@ function DrawStreetInteraction({
   });
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     if (!active) setPoints([]);
     if (active) {
       map.getContainer().style.cursor = "crosshair";
@@ -1075,6 +1077,149 @@ function DrawStreetInteraction({
         />
       ))}
     </>
+  );
+}
+
+function ClearConfirmModal({
+  lot,
+  price,
+  userEmail,
+  userRole,
+  onClose,
+  onConfirm,
+}: {
+  lot: any;
+  price: number;
+  userEmail: string | undefined;
+  userRole: string | undefined;
+  onClose: () => void;
+  onConfirm: (password: string) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password) {
+      setError("Informe sua senha para continuar.");
+      return;
+    }
+
+    if (!userRole || !userRole.toUpperCase().includes("ADMIN")) {
+      setError("Apenas administradores podem limpar lotes vendidos ou reservados.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: userEmail || "",
+        password: password,
+      });
+
+      if (signInError) {
+        setError("Senha inválida. A limpeza foi bloqueada.");
+        return;
+      }
+      
+      // If signed in but no user or session
+      if (!data.user) {
+        setError("Erro de autenticação.");
+        return;
+      }
+
+      onConfirm(password);
+    } catch (err) {
+      setError("Erro ao validar senha.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans pointer-events-auto">
+      <div className="bg-white w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-lg text-gray-900">Confirmar limpeza do lote</h3>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="p-5">
+          <p className="text-sm text-gray-600 leading-relaxed mb-4">
+            Esta ação irá remover o cliente vinculado, limpar o status de venda/reserva e devolver o lote para <strong>DISPONÍVEL</strong>. Esta ação não pode ser desfeita.
+          </p>
+          
+          <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-1 mb-5 text-sm">
+            <div className="flex justify-between blur-0">
+              <span className="text-gray-500">Projeto:</span>
+              <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.projectName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Quadra / Lote:</span>
+              <span className="font-medium text-gray-900">{lot.block} / {lot.number}</span>
+            </div>
+            {lot.customerName && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Cliente atual:</span>
+                <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.customerName}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-500">Status atual:</span>
+              <span className="font-medium text-gray-900">{lot.status}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Valor:</span>
+              <span className="font-medium text-gray-900">
+                {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(price)}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs mb-5">
+            <strong>Aviso:</strong> Este lote possui venda/contrato/financeiro vinculado. A limpeza do lote <strong>não</strong> apaga esses registros. Para cancelar oficialmente, use o módulo Contratos ou Financeiro.
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="mb-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Digite sua senha de administrador para confirmar:
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Senha de acesso"
+              />
+            </div>
+            {error && <p className="text-red-500 text-sm mt-1 mb-2 font-medium">{error}</p>}
+
+            <div className="flex gap-3 pt-4 mt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 font-semibold rounded-lg transition-colors text-sm flex justify-center items-center gap-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar Limpeza"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1117,6 +1262,12 @@ export default function GISMap({
   const [customerForm, setCustomerForm] = useState<{
     lot: any;
     action: string;
+    price: number;
+  } | null>(null);
+
+  // Clear Confirm Modal
+  const [clearConfirmModal, setClearConfirmModal] = useState<{
+    lot: any;
     price: number;
   } | null>(null);
 
@@ -1798,6 +1949,7 @@ export default function GISMap({
                     onRequestCustomerForm={(l, a, p) =>
                       setCustomerForm({ lot: l, action: a, price: p })
                     }
+                    onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                     actionLoading={actionLoading}
                   />
                 </Popup>
@@ -1863,6 +2015,7 @@ export default function GISMap({
                   onRequestCustomerForm={(l, a, p) =>
                     setCustomerForm({ lot: l, action: a, price: p })
                   }
+                  onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                   actionLoading={actionLoading}
                 />
               </Popup>
@@ -1974,6 +2127,20 @@ export default function GISMap({
               data,
             );
             setCustomerForm(null);
+          }}
+        />
+      )}
+
+      {clearConfirmModal && (
+        <ClearConfirmModal
+          lot={clearConfirmModal.lot}
+          price={clearConfirmModal.price}
+          userEmail={user?.email}
+          userRole={user?.role}
+          onClose={() => setClearConfirmModal(null)}
+          onConfirm={async () => {
+            await handleLotAction(clearConfirmModal.lot, "Disponível", clearConfirmModal.price);
+            setClearConfirmModal(null);
           }}
         />
       )}
