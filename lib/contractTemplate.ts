@@ -119,86 +119,105 @@ export function generateContractHTML({ tenant, customer, project, block, sale, c
     }
 
     return `
-        <div style="font-family: 'Times New Roman', Times, serif; font-size: 14px; line-height: 1.6; color: #000; background: #fff; padding: 40px;">
-            <div style="text-align: center; margin-bottom: 30px;">
+        <div style="font-family: 'Times New Roman', Times, serif; font-size: 14pt; line-height: 1.5; color: #000; background: #fff; padding: 40px; text-align: justify;">
+            <div style="text-align: left; margin-bottom: 20px;">
                 ${empresaLogo}
-                <h1 style="font-size: 18px; margin: 0; text-transform: uppercase;">INSTRUMENTO PARTICULAR DE COMPRA E VENDA</h1>
             </div>
-
-            <p style="text-align: justify; margin-bottom: 20px;">
-                Pelo presente instrumento particular de compra e venda, de um lado, como <strong>PROMITENTE VENDEDOR</strong>, a empresa <strong>${empresaNome}</strong>, inscrita no CNPJ sob o n° ${empresaCnpj}, com sede à ${empresaEndereco}, ${empresaCidade}, telefone ${empresaTelefone}, e-mail ${empresaEmail}.
-            </p>
-
-            <p style="text-align: justify; margin-bottom: 20px;">
-                De outro lado, como <strong>PROMITENTE COMPRADOR</strong>, <strong>${clienteNome}</strong>, portador do RG n° ${clienteRg}, e inscrito no CPF/CNPJ sob o n° ${clienteCpfCnpj}, profissão: ${clienteProfissao}, estado civil: ${clienteEstadoCivil}, residente e domiciliado à ${clienteEndereco}, Bairro ${clienteBairro}, ${clienteCidade}-${clienteUf}, CEP: ${clienteCep}.
-            </p>
-
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA PRIMEIRA - DO IMÓVEL</h3>
-            <p style="text-align: justify; margin-bottom: 20px;">
-                O VENDEDOR é legítimo possuidor e proprietário do imóvel designado por: Lote <strong>${lote}</strong>, da Quadra <strong>${quadra}</strong>, do loteamento denominado <strong>${projetoNome}</strong>, localizado na cidade de ${cidadeImovel}, com área total de <strong>${areaM2} m²</strong>, com as seguintes confrontações: Frente: ${frente}, Fundo: ${fundo}, Lateral Direita: ${lateralDireita} e Lateral Esquerda: ${lateralEsquerda}.
-            </p>
-
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA SEGUNDA - DO PREÇO E DA CONDIÇÃO DE PAGAMENTO</h3>
-            <div style="text-align: justify; margin-bottom: 20px;">
-                ${clPagamento}
-            </div>
-
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA TERCEIRA - DA POSSE</h3>
-            <p style="text-align: justify; margin-bottom: 20px;">
-                O COMPRADOR será imitido na posse do imóvel a partir da assinatura do presente contrato, podendo assim edificar, desde que obedeça aos critérios exigidos pelos órgãos públicos (Prefeitura).
-            </p>
-
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA QUARTA - DAS DESPESAS</h3>
-            <p style="text-align: justify; margin-bottom: 20px;">
-                Correrão por conta exclusiva do COMPRADOR, a partir desta data, todos os impostos, taxas, contribuições de melhoria e demais tributos que incidam ou venham a incidir sobre o referido lote.
-            </p>
-
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA QUINTA - DA TRANSFERÊNCIA E ESCRITURA</h3>
-            <p style="text-align: justify; margin-bottom: 20px;">
-                A escritura pública definitiva será outorgada ao COMPRADOR somente após a liquidação total e irrevogável do preço estipulado, bem como das demais obrigações contratuais, correndo todas as despesas decorrentes da transmissão e escrituração (ITBI, custas cartoriais, etc.) por sua conta.
-            </p>
             
-            <h3 style="margin-top: 30px; margin-bottom: 15px;">CLÁUSULA SEXTA - INADIMPLEMENTO E RESCISÃO</h3>
-             <p style="text-align: justify; margin-bottom: 20px;">
-                O descumprimento de qualquer cláusula acarretará a rescisão deste contrato, sujeitando a parte infratora ao pagamento de multa penal. No caso de atraso na parcela, incidirá juros e correção firmados nos moldes da Lei.
-            </p>
-
-            <p style="text-align: justify; margin-bottom: 40px; margin-top: 40px;">
-                E por estarem justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma, na presença de 2 (duas) testemunhas.
-            </p>
-
-            <div style="text-align: right; margin-bottom: 60px;">
-                <p>${empresaCidade}, ${dataContratoFmt}</p>
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 14pt; margin: 0; font-weight: normal;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h1>
             </div>
 
-            <table style="width: 100%; text-align: center; margin-top: 40px; border-collapse: collapse;">
-                <tr>
-                    <td style="width: 45%; padding-bottom: 20px;">
-                        <div style="border-bottom: 1px solid #000; width: 100%; height: 50px;"></div>
-                        <p style="margin-top: 5px; font-weight: bold;">${empresaNome}</p>
-                        <p style="margin-top: 0; font-size: 12px;">PROMITENTE VENDEDOR</p>
-                    </td>
-                    <td style="width: 10%;"></td>
-                    <td style="width: 45%; padding-bottom: 20px;">
-                        <div style="border-bottom: 1px solid #000; width: 100%; height: 50px;"></div>
-                        <p style="margin-top: 5px; font-weight: bold;">${clienteNome}</p>
-                        <p style="margin-top: 0; font-size: 12px;">PROMITENTE COMPRADOR</p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="width: 45%;">
-                        <div style="border-bottom: 1px solid #000; width: 100%; height: 50px;"></div>
-                        <p style="margin-top: 5px; font-weight: bold;">Testemunha 1</p>
-                        <p style="margin-top: 0; font-size: 12px;">CPF:</p>
-                    </td>
-                    <td style="width: 10%;"></td>
-                    <td style="width: 45%;">
-                        <div style="border-bottom: 1px solid #000; width: 100%; height: 50px;"></div>
-                        <p style="margin-top: 5px; font-weight: bold;">Testemunha 2</p>
-                        <p style="margin-top: 0; font-size: 12px;">CPF:</p>
-                    </td>
-                </tr>
-            </table>
+            <p style="margin-bottom: 15px;">
+                <strong>Promitente Proprietário Vendedor: ${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, Empresa Constituída e Instalada na ${empresaEndereco}, ${empresaCidade} - PA.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Promitente Comprador: ${clienteNome}</strong> CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão; ${clienteProfissao}, ${clienteEstadoCivil}, Portador cédula de identidade n° ${clienteRg}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro} Cep: ${clienteCep} Nesta Cidade de, ${clienteCidade} – ${clienteUf}.
+            </p>
+
+            <p style="margin-bottom: 20px;">
+                Pelo presente instrumento particular, partes acima qualificadas têm entre si justo e acertado a celebração do presente compromisso de compra e venda que se regerá pelas cláusulas, termos e condições, estipuladas a seguir, que as partes mutuamente outorgam e aceitam, as quais comprometem cumprir e respeitar, por si, seus herdeiros e sucessores, na forma da lei:
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Primeira -:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legitimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chacara, Sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>; fundo <strong>${fundo}m</strong> Lateral Esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>; ${projetoNome}, localizado no município de ${cidadeImovel} – PA.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Segunda -:</strong> Pelo presente instrumento e na melhor forma de direito, o PROMITENTE VENDEDOR promete vender ao PROMISSÁRIO COMPRADOR, que promete comprar, o imóvel descrito na cláusula primeira, pelo preço e condições descritas nas cláusulas seguintes;
+            </p>
+
+            <p style="margin-bottom: 10px;">
+                <strong>Cláusula Terceira -:</strong> O Valor total do contrato e de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>${tipoVenda.toUpperCase()}</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR no ato da assinatura do presente contrato, outorgando assim o PROMISSÁRIO VENDEDOR a mais ampla, geral e irrevogável quitação mediante emissão do termo de quitação pelo PROMITENTE VENDEDOR.
+            </p>
+            <p style="margin-bottom: 15px;">
+                <strong>Parágrafo Único -:</strong> O PROMISSÁRIO VENDEDOR fica limitado na posse do imóvel a partir da presente data.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Quarta -:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR(A), Fica Com o Valor de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, com entrada de <strong>${valorEntradaFmt} (${valorEntradaExtenso})</strong>, e o restante parcelados via boletos bancário em <strong>${qtdParcelas} parcelas iguais no valor de ${valorParcelaFmt} (${valorParcelaExtenso})</strong>. Sendo a primeira parcela para o dia <strong>${dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${dataUltimaParcelaFmt}</strong>. Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, e respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel, a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Quinta -:</strong> A não quitação das cláusulas penais ou resolutórias, previstas neste contrato por parte de seus beneficiários, será sempre havida como mera tolerância, não importando nunca em novação das obrigações descumpridas, podendo ser aplicada a qualquer tempo, enquanto subsistir o inadimplemento. Em caso de desistência será ressarcido somente 40% do valor pago.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Sexta -:</strong> Fica estabelecido a irretratabilidade e irrevogabilidade do presente contrato, podendo, se necessário, o PROMITENTE COMPRADOR ou seus eventuais sucessores, requerer adjudicação compulsória dos imóveis, nos termos da legislação vigente.
+            </p>
+
+            <p style="margin-bottom: 10px;">
+                <strong>Cláusula Sétima -:</strong> Fica estabelecido que a escritura definitiva de compra e venda, somente será outorgada pelo PROMITENTE VENDEDOR ao PROMISSÁRIO COMPRADOR no prazo de seis (6) meses contados da data em que for expedido o decreto aprovando o loteamento.
+            </p>
+            <p style="margin-bottom: 15px;">
+                <strong>Parágrafo Único -:</strong> O prazo previsto no “caput” da presente cláusula será automaticamente prorrogado, se a Prefeitura Municipal não aprovar o loteamento ate tal data, ou qualquer outro motivo de força maior.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Oitava -:</strong> O presente contrato obriga aos contratantes, seus herdeiros e sucessores, os quais deverão igualmente observar e cumprir todos os termos, condições e cláusulas deste instrumento.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Nona -:</strong> Fica estipulado que, a parte que descumprir quaisquer das cláusulas, termos ou condições do presente instrumento, incorrerá na multa penal de dois (2%) por cento do valor total do contrato, atualiza monetariamente de acordo com índice oficial vigente, sem prejuízo das outras penalidades também previstas neste instrumento.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Décima -:</strong> Fica estabelecido que, em havendo necessidade de se recorrer as vias judiciais, para solucionar qualquer controvérsia, a parte vencida arcara, além das despesas e custas processuais, com os honorários advocatícios de vinte (20 %) por cento, em favor da parte vencedora.
+            </p>
+
+            <p style="margin-bottom: 15px;">
+                <strong>Cláusula Décima Primeira -:</strong> Fica eleito o foro da Comarca de ${cidadeImovel} – ${clienteUf}, para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes e qualquer outro, por mais especial que seja.
+            </p>
+
+            <p style="margin-bottom: 30px;">
+                E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
+            </p>
+
+            <div style="text-align: left; margin-bottom: 40px;">
+                <p>${empresaCidade}-${clienteUf} ${dataContratoFmt}</p>
+            </div>
+
+            <div style="margin-top: 50px;">
+                <div style="border-bottom: 1px dashed #000; width: 400px; margin-bottom: 5px;"></div>
+                <p style="margin: 0; font-weight: bold;">Proprietário Vendedor</p>
+                <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
+                <p style="margin: 0;">CNPJ n° ${empresaCnpj}</p>
+            </div>
+
+            <div style="margin-top: 50px;">
+                <div style="border-bottom: 1px dashed #000; width: 400px; margin-bottom: 5px;"></div>
+                <p style="margin: 0; font-weight: bold;">COMPRADOR</p>
+                <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
+                <p style="margin: 0;">CPF n° ${clienteCpfCnpj} RG n° ${clienteRg}</p>
+            </div>
+
+            <div style="margin-top: 50px;">
+                <div style="border-bottom: 1px dashed #000; width: 400px; margin-bottom: 5px;"></div>
+                <p style="margin: 0; font-weight: bold;">TESTEMUNHA</p>
+                <p style="margin: 0;">NOME:</p>
+                <p style="margin: 0;">RG: _______________ CPF: _______________</p>
+            </div>
         </div>
     `;
 }
