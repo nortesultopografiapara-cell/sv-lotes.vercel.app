@@ -687,11 +687,13 @@ export default function ContractsPage() {
 
     const projData = fetchedProject || selectedContract.sales?.projects || selectedContract.blocks?.projects || {};
 
+    const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.includes('não informad');
+    
     const contractPayloadPartial = {
-      project_name_snapshot: selectedContract.project_name_snapshot || projData.name || null,
-      project_city_snapshot: selectedContract.project_city_snapshot || projData.city || null,
-      project_uf_snapshot: selectedContract.project_uf_snapshot || projData.uf || null,
-      forum_city_snapshot: selectedContract.forum_city_snapshot || projData.forum_city || projData.city || null,
+      project_name_snapshot: isValid(selectedContract.project_name_snapshot) ? selectedContract.project_name_snapshot : (projData.name || null),
+      project_city_snapshot: isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : (projData.city || null),
+      project_uf_snapshot: isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : (projData.uf || null),
+      forum_city_snapshot: isValid(selectedContract.forum_city_snapshot) ? selectedContract.forum_city_snapshot : (projData.forum_city || projData.city || null),
     };
     
     const updatedContract = { ...selectedContract, ...contractPayloadPartial };

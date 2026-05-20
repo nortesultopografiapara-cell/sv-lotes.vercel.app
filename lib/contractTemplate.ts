@@ -59,19 +59,28 @@ export function generateContractHTML({
   const clienteUf = customer?.state_uf || "UF não informada";
   const clienteCep = customer?.zip_code || "cep não informado";
 
+  const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad');
+
   const projetoNome =
-    contractSnapshot?.project_name_snapshot ||
-    project?.name ||
+    (isValid(contractSnapshot?.project_name_snapshot) ? contractSnapshot.project_name_snapshot : null) ||
+    (isValid(project?.name) ? project.name : null) ||
     "Projeto não informado";
 
   const quadra =
-    block?.block_name ||
-    block?.name ||
-    block?.number ||
-    sale?.blocks?.block_name ||
-    sale?.blocks?.name ||
+    (isValid(block?.block) ? block.block : null) ||
+    (isValid(block?.block_name) ? block.block_name : null) ||
+    (isValid(block?.quadra) ? block.quadra : null) ||
+    (isValid(sale?.blocks?.block_name) ? sale.blocks.block_name : null) ||
+    (isValid(sale?.blocks?.name) ? sale.blocks.name : null) ||
+    (isValid(block?.name) ? block.name : null) ||
     "Quadra não informada";
-  const lote = block?.number || sale?.blocks?.number || "Lote não informado";
+
+  const lote = 
+    (isValid(block?.lot) ? block.lot : null) ||
+    (isValid(block?.number) ? block.number : null) ||
+    (isValid(sale?.lot_number) ? sale.lot_number : null) ||
+    (isValid(sale?.blocks?.number) ? sale.blocks.number : null) ||
+    "Lote não informado";
 
   const areaM2 = block?.area || "Área não informada";
   const frente = block?.frente || "Frente não informada";
@@ -81,19 +90,19 @@ export function generateContractHTML({
 
   // Cidade, UF e Foro hierarquia correta
   const cidadeImovel =
-    contractSnapshot?.project_city_snapshot ||
-    project?.city ||
+    (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
+    (isValid(project?.city) ? project.city : null) ||
     "Cidade não informada";
 
   const ufImovel =
-    contractSnapshot?.project_uf_snapshot ||
-    project?.uf ||
+    (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
+    (isValid(project?.uf) ? project.uf : null) ||
     "UF não informada";
 
   const foroCidade =
-    contractSnapshot?.forum_city_snapshot ||
-    project?.forum_city ||
-    project?.city ||
+    (isValid(contractSnapshot?.forum_city_snapshot) ? contractSnapshot.forum_city_snapshot : null) ||
+    (isValid(project?.forum_city) ? project.forum_city : null) ||
+    (isValid(project?.city) ? project.city : null) ||
     "Cidade não informada";
   const foroUf = ufImovel;
 
