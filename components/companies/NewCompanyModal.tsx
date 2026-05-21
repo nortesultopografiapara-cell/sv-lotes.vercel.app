@@ -105,26 +105,32 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
 
       if (initialData) {
-         const { error: updateError } = await supabase.from('companies').update({
+         const updatePayload: any = {
             name: formData.name,
             cnpj: formData.cnpj,
             phone: formData.phone,
             email: formData.email,
-            address: formData.address,
-            city: formData.city,
-            state: formData.state,
-            cep: formData.cep,
             status_operacional: formData.status_operacional,
             slug: slug,
             plan_type: formData.plan,
-            is_test_company: formData.is_test_company,
             ...limits
-         }).eq('id', initialData.id);
+         };
+
+         // Apenas envia campos novos se estiverem preenchidos, minimizando erro de schema cache se a tabela estiver desatualizada, mas enviamos se tiver valor
+         if (formData.address) updatePayload.address = formData.address;
+         if (formData.city) updatePayload.city = formData.city;
+         if (formData.state) updatePayload.state = formData.state;
+         if (formData.cep) updatePayload.cep = formData.cep;
+         
+         // Importante: is_test_company precisa ser forçado via boolean
+         updatePayload.is_test_company = formData.is_test_company === true;
+
+         const { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
          
          if (updateError) {
              if (updateError.message.includes('unique')) throw new Error('E-mail ou CNPJ já cadastrado.');
              if (updateError.code === 'PGRST204' || updateError.message.includes('schema cache') || updateError.message.includes('Could not find')) {
-                 throw new Error('Banco precisa atualizar colunas da tabela companies. Execute a migration SQL.');
+                 throw new Error('Banco precisa atualizar colunas da tabela companies.');
              }
              throw new Error(updateError.message);
          }

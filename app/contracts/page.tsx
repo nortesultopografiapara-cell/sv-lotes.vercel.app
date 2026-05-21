@@ -334,7 +334,7 @@ export default function ContractsPage() {
           if (tenantCnpj) infoArray.push(`CNPJ: ${tenantCnpj}`);
           let cityUf = [];
           if (tenantData?.city) cityUf.push(tenantData.city);
-          if (tenantData?.uf) cityUf.push(tenantData.uf);
+          if (tenantData?.state) cityUf.push(tenantData.state);
           if (cityUf.length > 0) infoArray.push(cityUf.join(' - '));
           
           if (infoArray.length > 0) {

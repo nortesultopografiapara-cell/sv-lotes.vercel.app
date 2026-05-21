@@ -57,27 +57,31 @@ export async function POST(req: Request) {
     };
     const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
 
+    const companyPayload: any = {
+      name,
+      slug,
+      cnpj,
+      email: email || adminEmail,
+      phone: phone || adminPhone,
+      plan: plan || body.plan_type,
+      plan_type: body.plan_type || plan,
+      module: plan ? plan.toLowerCase() : 'básico',
+      status_operacional: body.status_operacional || 'Ativa',
+      status: 'active',
+      active: true,
+      ...limits
+    };
+
+    if (body.address) companyPayload.address = body.address;
+    if (body.city) companyPayload.city = body.city;
+    if (body.state) companyPayload.state = body.state;
+    if (body.cep) companyPayload.cep = body.cep;
+    
+    companyPayload.is_test_company = body.is_test_company === true;
+
     const { data: newCompany, error: companyError } = await supabaseAdmin
       .from('companies')
-      .insert({
-        name,
-        slug,
-        cnpj,
-        email: email || adminEmail,
-        phone: phone || adminPhone,
-        address: body.address || null,
-        city: body.city || null,
-        state: body.state || null,
-        cep: body.cep || null,
-        plan: plan || body.plan_type,
-        plan_type: body.plan_type || plan,
-        module: plan ? plan.toLowerCase() : 'básico',
-        status_operacional: body.status_operacional || 'Ativa',
-        is_test_company: body.is_test_company === true,
-        status: 'active',
-        active: true,
-        ...limits
-      })
+      .insert(companyPayload)
       .select()
       .single();
 
@@ -85,7 +89,7 @@ export async function POST(req: Request) {
       console.error('[ERRO] Falha ao criar empresa em public.companies:', companyError.message, 'Código:', companyError.code, companyError);
       
       if (companyError.code === 'PGRST204' || companyError.message.includes('Could not find') || companyError.message.includes('schema cache')) {
-        throw new Error(`Banco precisa atualizar colunas da tabela companies. Execute a migration SQL. Detalhe: ${companyError.message}`);
+        throw new Error(`Banco precisa atualizar colunas da tabela companies.`);
       }
 
       if (companyError.code === '23505' || companyError.message.includes('unique')) {
