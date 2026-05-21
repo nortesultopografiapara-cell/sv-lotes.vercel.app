@@ -25,7 +25,7 @@ export default function CustomersPage() {
         `).order('created_at', { ascending: false });
         
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+           query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
         }
         
         const { data, error } = await query;
@@ -61,7 +61,7 @@ export default function CustomersPage() {
            blocks (id, block_name, name, number, status, projects(name))
        `).order('created_at', { ascending: false });
        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.eq('tenant_id', user.tenant_id);
+          query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
        }
        const { data, error } = await query;
        if (error) {
@@ -91,7 +91,7 @@ export default function CustomersPage() {
       if (cpfCnpjValue) {
           let checkQuery = supabase.from('customers').select('id').eq('document', cpfCnpjValue);
           if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-              checkQuery = checkQuery.eq('tenant_id', user.tenant_id);
+              checkQuery = checkQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
           }
           const { data: existingCustomer } = await checkQuery.maybeSingle();
           if (existingCustomer) {
@@ -188,7 +188,7 @@ export default function CustomersPage() {
                     <CustomerRow 
                       key={c.id}
                       name={c.name}
-                      cpf_cnpj={c.cpf_cnpj}
+                      cpf_cnpj={c.cpf_cnpj || c.document || '—'}
                       email={c.email || '—'}
                       phone={c.phone || '—'}
                       blocks={(c.blocks || []).filter((b: any) => b.status && b.status !== 'Disponível')}

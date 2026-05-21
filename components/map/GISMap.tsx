@@ -1574,15 +1574,22 @@ export default function GISMap({
         email: emailUpper,
         rg: customerData.rg?.trim() || null,
         profession: customerData.profession?.trim() || null,
+        marital_status: customerData.civil_state?.trim() || null,
         civil_state: customerData.civil_state?.trim() || null,
         address: addressUpper,
         neighborhood: customerData.neighborhood?.trim().toUpperCase() || null,
         city: customerData.city?.trim().toUpperCase() || null,
+        state: customerData.state_uf?.trim().toUpperCase() || null,
         state_uf: customerData.state_uf?.trim().toUpperCase() || null,
+        cep: customerData.zip_code?.trim() || null,
         zip_code: customerData.zip_code?.trim() || null,
+        status: 'ativo',
+        company_id: finalTenantId,
+        project_id: finalProjectId,
       };
 
       if (!customerId) {
+        console.log("CUSTOMER_CREATED_OR_FOUND: Creating new");
         const { data: newCustomer, error: custError } = await supabase
           .from("customers")
           .insert([
@@ -1596,12 +1603,54 @@ export default function GISMap({
           .select("id")
           .single();
 
-        if (!custError && newCustomer) customerId = newCustomer.id;
+        if (custError) {
+           console.error("Error creating customer:", custError);
+           // Fallback to minimal payload if schema complains
+           const minimalPayload = {
+              name: nameUpper,
+              cpf_cnpj: cpfCnpjValue,
+              document: cpfCnpjValue,
+              phone: phoneClean,
+              email: emailUpper,
+              address: addressUpper,
+              tenant_id: user.tenant_id || lot.tenant_id,
+              company_id: finalTenantId,
+              project_id: finalProjectId,
+              status: 'ativo'
+           };
+           const { data: fbCustomer, error: fbErr } = await supabase.from("customers").insert([minimalPayload]).select('id').single();
+           if(fbCustomer) customerId = fbCustomer.id;
+        }
+        else if (newCustomer) {
+            customerId = newCustomer.id;
+        }
       } else {
-        await supabase
+        console.log("CUSTOMER_CREATED_OR_FOUND: Found existing", customerId);
+        const { error: updErr } = await supabase
           .from("customers")
           .update(customerPayload)
           .eq("id", customerId);
+          
+        if(updErr) {
+           console.error("Error updating existing customer:", updErr);
+           const minimalPayload = {
+              name: nameUpper,
+              cpf_cnpj: cpfCnpjValue,
+              document: cpfCnpjValue,
+              phone: phoneClean,
+              email: emailUpper,
+              address: addressUpper,
+              company_id: finalTenantId,
+              project_id: finalProjectId,
+              status: 'ativo'
+           };
+           await supabase.from("customers").update(minimalPayload).eq("id", customerId);
+        }
+      }
+
+      if(!customerId) {
+        alert("Erro fatal: Cliente não pôde ser criado nem localizado. A venda será abortada.");
+        return;
       }
 
       if (!clientId) {
@@ -1696,6 +1745,7 @@ export default function GISMap({
             console.error("ERRO SALES: ", saleError);
             throw saleError || new Error("Falha ao criar venda");
           }
+          console.log("CUSTOMER_ID_LINKED_TO_SALE");
           newSaleData = saleData;
           const saleId = saleData.id;
 
@@ -1832,6 +1882,7 @@ export default function GISMap({
             console.error("ERRO CONTRACT", contractError);
             throw contractError || new Error("Falha ao criar contrato");
           }
+          console.log("CUSTOMER_ID_LINKED_TO_CONTRACT");
           newContractData = contractData;
 
         } catch (err: any) {
@@ -1855,6 +1906,7 @@ export default function GISMap({
         .eq("project_id", lot.project_id || finalProjectId);
 
       if (updateError) throw updateError;
+      console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
       
       await supabase.from("logs").insert({
         ...(user.tenant_id || lot.tenant_id
