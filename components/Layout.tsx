@@ -265,7 +265,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function fetchCompany() {
       if (user?.tenant_id) {
-        const { data } = await supabase.from('companies').select('logo_url, name, fantasy_name').eq('id', user.tenant_id).single();
+        const { data } = await supabase.from('companies').select('logo_url, name, fantasy_name, status_operacional').eq('id', user.tenant_id).single();
         if (data) setCompany(data);
       }
     }
@@ -303,6 +303,27 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const isPublicStandalone = ['/login', '/onboarding', '/verify-email', '/auth/callback'].some(route => pathname.startsWith(route));
   if (isPublicStandalone) return <>{children}</>;
+
+  // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
+  if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inadimplente'].includes(company.status_operacional)) {
+    return (
+      <div className="h-screen w-full bg-[#0b1111] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
+           <AlertCircle className="w-10 h-10 text-red-500" />
+        </div>
+        <h1 className="text-2xl font-bold text-white mb-2">Empresa Temporariamente Indisponível</h1>
+        <p className="text-gray-400 max-w-md mb-8">
+           O acesso ao sistema para a empresa <strong>{company.name}</strong> encontra-se restrito no momento (Status: {company.status_operacional}). Por favor, entre em contato com o administrador da plataforma ou verifique sua situação financeira.
+        </p>
+        <button 
+           onClick={handleLogout}
+           className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium border border-[#2d3340]"
+        >
+           Sair e voltar ao Login
+        </button>
+      </div>
+    );
+  }
 
   const menuItems = getMenuItems(user?.role || '');
 

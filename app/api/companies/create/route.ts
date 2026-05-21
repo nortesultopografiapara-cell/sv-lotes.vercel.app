@@ -65,8 +65,10 @@ export async function POST(req: Request) {
         cnpj,
         email: email || adminEmail,
         phone: phone || adminPhone,
-        plan: plan,
-        module: plan.toLowerCase(),
+        plan: plan || body.plan_type,
+        plan_type: body.plan_type || plan,
+        module: plan ? plan.toLowerCase() : 'básico',
+        status_operacional: body.status_operacional || 'Ativa',
         status: 'active',
         active: true,
         ...limits

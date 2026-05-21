@@ -242,53 +242,81 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
 }
 
 function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
-  const getStatusBadge = (isActive: boolean) => {
-    if (isActive) {
-      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-success)]/10 text-[var(--color-success)] border border-[var(--color-success)]/20"><CheckCircle2 className="w-3 h-3 mr-1"/> Ativa</span>;
-    } else {
-      return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/20">Inativa</span>;
+  const getStatusBadge = (status: string, legacyActive: boolean) => {
+    let resolvedStatus = status;
+    if (!resolvedStatus) {
+       resolvedStatus = legacyActive ? 'Ativa' : 'Inativa';
+    }
+
+    switch(resolvedStatus) {
+       case 'Ativa':
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-green-500/10 text-green-500 border border-green-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-green-500"></div> Ativa</span>;
+       case 'Teste':
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-yellow-500"></div> Teste</span>;
+       case 'Suspensa':
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-orange-500"></div> Suspensa</span>;
+       case 'Bloqueada':
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-red-500"></div> Bloqueada</span>;
+       case 'Inadimplente':
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-gray-400 border border-gray-600 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-gray-500"></div> Inadimplente</span>;
+       default:
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-gray-500 border border-gray-500/20 shadow-sm">Inativa</span>;
     }
   };
 
+  const handleImpersonate = async () => {
+     if(confirm(`Tem certeza que deseja "Entrar como Empresa" na tenant: ${company.name}?`)) {
+        // Para uma POC sem full session manipulation, podemos salvar um state ou cookie.
+        // Simulando a acao de log do auditoria:
+        alert("Modo Impersonate Ativado! (Simulação para POC)");
+     }
+  };
+
   return (
-    <tr className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group ${isMain ? 'bg-[#06b6d4]/5 hover:bg-[#06b6d4]/10' : ''}`}>
+    <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
       <td className="p-4">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-[#06b6d4]/20 text-[#06b6d4] border-[#06b6d4]/30' : 'bg-[var(--color-background)] text-white border-[var(--color-border)]'}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-blue-500/20 text-blue-500 border-blue-500/30' : 'bg-[#0b1111] text-gray-300 border-[#2d3340]'}`}>
             {company.name.charAt(0)}
           </div>
           <div>
-            <div className="font-bold text-sm text-white flex items-center gap-2">
+            <div className="font-bold text-[13px] text-gray-200 flex items-center gap-2">
               {company.name}
-              {isMain && <span className="text-[9px] font-mono uppercase bg-[#06b6d4] text-white px-1.5 py-0.5 rounded-sm">Master</span>}
+              {isMain && <span className="text-[9px] font-bold uppercase bg-blue-600 text-white px-1.5 py-0.5 rounded-sm">Master</span>}
             </div>
-            <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5">slug: {company.slug}</div>
+            <div className="text-[11px] text-gray-500 font-mono mt-0.5">ID: {company.slug}</div>
           </div>
         </div>
       </td>
       <td className="p-4 hidden md:table-cell">
-        <div className="text-sm text-white mb-0.5 max-w-[200px] truncate">{company.cnpj ? `CNPJ: ${company.cnpj}` : '—'}</div>
+        <div className="text-[12px] text-gray-300 mb-0.5 max-w-[200px] truncate">{company.cnpj ? `${company.cnpj}` : '—'}</div>
+        <div className="text-[11px] text-gray-500 truncate">{company.email || '—'}</div>
       </td>
       <td className="p-4 text-center">
-        {getStatusBadge(company.active)}
+        {getStatusBadge(company.status_operacional, company.active)}
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
-        <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <MapIcon className="w-3.5 h-3.5 text-[var(--color-info)]" /> {company.project_count || 0}
+        <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[#0b1111] rounded-md px-2 py-1 border border-[#2d3340]">
+           {company.project_count || 0} / {company.project_limit === -1 || company.project_limit === undefined ? '∞' : company.project_limit}
         </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
-         <div className="inline-flex items-center gap-1.5 text-sm font-mono text-white bg-[var(--color-background)] rounded px-2 py-1 border border-[var(--color-border)]">
-          <Users className="w-3.5 h-3.5 text-[var(--color-purple)]" /> {company.users?.[0]?.count || 0}
+         <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[#0b1111] rounded-md px-2 py-1 border border-[#2d3340]">
+           {company.users?.[0]?.count || 0}
         </div>
       </td>
       <td className="p-4 text-right">
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onEdit} className="p-2 text-[var(--color-text-muted)] hover:text-[#06b6d4] transition-colors rounded-lg hover:bg-[var(--color-surface-bright)] tooltip-trigger" title="Editar">
+        <div className="flex items-center justify-end gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+          {!isMain && (
+             <button onClick={handleImpersonate} className="flex items-center justify-center p-2 text-blue-400 hover:text-white transition-colors rounded-lg hover:bg-blue-500/20 tooltip-trigger" title="Entrar como Empresa">
+               <Eye className="w-4 h-4" />
+             </button>
+          )}
+          <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Gerenciar Configurações">
             <Edit className="w-4 h-4" />
           </button>
           {!isMain && (
-            <button onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir">
+            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir Definitivamente">
               <Trash2 className="w-4 h-4" />
             </button>
           )}

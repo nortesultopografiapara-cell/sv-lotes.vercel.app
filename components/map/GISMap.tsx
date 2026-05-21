@@ -1102,7 +1102,6 @@ function ClearConfirmModal({
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setPassword("");
     setTimeout(() => passwordInputRef.current?.focus(), 100);
   }, []);
 
