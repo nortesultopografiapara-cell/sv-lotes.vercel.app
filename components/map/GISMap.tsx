@@ -1779,7 +1779,7 @@ export default function GISMap({
                 customer_id: customerId,
                 project_id: lot.project_id || null,
                 block_id: lot.id,
-                installment_number: currentInst++,
+                installment_number: 0, // 0 signifies "Entry" (Entrada)
                 amount: downPayment,
                 due_date: customerData.down_payment_due_date,
                 status: "pendente",

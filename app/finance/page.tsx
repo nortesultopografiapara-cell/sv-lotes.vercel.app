@@ -160,20 +160,22 @@ export default function FinancePage() {
                  }
              }
              
+             const isEntry = p.installment_number === 0 || p.installment_number === '0';
+             
              if (computedStatus === 'pendente' || computedStatus === 'pending') {
                  localAReceber += amt;
-                 qtyPending++;
+                 if (!isEntry) qtyPending++;
                  if (dueStr === todayStr) {
                      localVencendoHoje += amt;
-                     qtyDueToday++;
+                     if (!isEntry) qtyDueToday++;
                  } else if (dueDate.getTime() > todayTime && dueDate.getTime() <= todayTime + 7*24*60*60*1000) {
-                     qtyNext7Days++;
+                     if (!isEntry) qtyNext7Days++;
                  }
              }
              
              if (computedStatus === 'atrasado' || computedStatus === 'overdue') {
                  localVencidas += amt;
-                 qtyLate++;
+                 if (!isEntry) qtyLate++;
              }
           });
           
@@ -1368,8 +1370,9 @@ export default function FinancePage() {
                    const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
                    
                    const clientName = p.customers?.name || 'Desconhecido';
-                   const parcelInfo = `${p.installment_number || 1}`;
-                   const maxParcel = p.sales?.installments_count ? ` / ${p.sales.installments_count}` : '';
+                   const isEntry = p.installment_number === 0 || p.installment_number === '0';
+                   const parcelInfo = isEntry ? 'ENTRADA' : `${p.installment_number || 1}`;
+                   const maxParcel = p.sales?.installments_count && !isEntry ? ` / ${p.sales.installments_count}` : '';
                    
                    const pStatusRaw = p.status?.toLowerCase() || 'pendente';
                    const dueStr = p.due_date?.split('T')[0];
@@ -1400,8 +1403,12 @@ export default function FinancePage() {
                         <td className="px-6 py-4 text-sm text-gray-400">
                           {projectName}
                         </td>
-                        <td className="px-6 py-4 text-center text-sm font-mono text-gray-400">
-                          {parcelInfo}{maxParcel}
+                        <td className="px-6 py-4 text-center">
+                          {isEntry ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
+                          ) : (
+                            <span className="text-sm font-mono text-gray-400">{parcelInfo}{maxParcel}</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-300">
                           {dueStr ? new Date(dueStr + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
@@ -1570,7 +1577,13 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <span className="block text-xs font-semibold text-gray-500 mb-1">Parcela</span>
-                  <div>{selectedPayment.installment_number || 1}</div>
+                  <div>
+                    {selectedPayment.installment_number === 0 || selectedPayment.installment_number === '0' ? (
+                       <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
+                    ) : (
+                       `${selectedPayment.installment_number || 1}${selectedPayment.sales?.installments_count ? ` / ${selectedPayment.sales.installments_count}` : ''}`
+                    )}
+                  </div>
                 </div>
                 <div>
                   <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Parcela</span>

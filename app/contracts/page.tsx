@@ -700,6 +700,7 @@ export default function ContractsPage() {
                       <tbody>
           `;
 
+      const maxParcelas = receipts.filter(x => x.installment_number !== 0 && x.installment_number !== '0').length || 1;
       receipts.forEach((r, idx) => {
         const d = new Date(r.due_date);
         d.setUTCHours(12);
@@ -709,9 +710,13 @@ export default function ContractsPage() {
           currency: "BRL",
         }).format(Number(r.amount));
         const bg = idx % 2 === 0 ? "#ffffff" : "#f8f9fa";
+        
+        const isEntry = r.installment_number === 0 || r.installment_number === '0';
+        const parcelLabel = isEntry ? "ENTRADA" : `${r.installment_number || 1}/${maxParcelas}`;
+
         html += `
                   <tr style="color: #333; font-size: 11px; background: ${bg}; border-bottom: 1px solid #eee;">
-                      <td style="padding: 10px 8px; text-align: center;">${idx + 1}/${receipts.length}</td>
+                      <td style="padding: 10px 8px; text-align: center;">${parcelLabel}</td>
                       <td style="padding: 10px 8px; text-align: center;">${dataFmt}</td>
                       <td style="padding: 10px 8px; text-align: right;">${valFmt}</td>
                       <td style="padding: 10px 8px; text-align: center; font-weight: bold;">${r.status}</td>
