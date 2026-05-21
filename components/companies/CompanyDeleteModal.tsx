@@ -57,17 +57,17 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
   if (!isOpen || !company) return null;
 
   const handleDelete = async () => {
-    if (confirmName !== company.name) {
+    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) {
       setErrorMsg('Nome da empresa digitado incorretamente.');
       return;
     }
     
-    if (!adminPassword.trim()) {
-      setErrorMsg('Senha do administrador é obrigatória.');
+    if (adminPassword.length < 6) {
+      setErrorMsg('Senha do administrador é obrigatória (mín. 6 caracteres).');
       return;
     }
 
-    if (hasOperationalData && destructiveConfirmation !== 'APAGAR DEFINITIVAMENTE') {
+    if (hasOperationalData && destructiveConfirmation.trim().toUpperCase() !== 'APAGAR DEFINITIVAMENTE') {
       setErrorMsg('Confirmação destrutiva incorreta.');
       return;
     }
@@ -80,11 +80,11 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: company.id,
-          confirmationName: confirmName,
+          confirmationName: confirmName.trim().toUpperCase(),
           adminEmail: user?.email,
           adminUserId: user?.id,
           adminPassword,
-          destructiveConfirmation 
+          destructiveConfirmation: destructiveConfirmation.trim().toUpperCase() 
         }),
       });
       
@@ -104,10 +104,18 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
   };
 
   const isFormValid = () => {
-    if (confirmName !== company.name) return false;
-    if (!adminPassword.trim()) return false;
-    if (hasOperationalData && destructiveConfirmation !== 'APAGAR DEFINITIVAMENTE') return false;
+    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) return false;
+    if (adminPassword.length < 6) return false;
+    if (hasOperationalData && destructiveConfirmation.trim().toUpperCase() !== 'APAGAR DEFINITIVAMENTE') return false;
     return true;
+  };
+
+  const getMissingRequirements = () => {
+    const missing = [];
+    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) missing.push('Nome da empresa não confere');
+    if (adminPassword.length < 6) missing.push('Senha do Super Admin obrigatória');
+    if (hasOperationalData && destructiveConfirmation.trim().toUpperCase() !== 'APAGAR DEFINITIVAMENTE') missing.push('Confirmação destrutiva obrigatória');
+    return missing;
   };
 
   return (
@@ -168,11 +176,12 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
                   </label>
                   <input 
                     type="text" 
-                    placeholder={company.name}
+                    placeholder={`Digite exatamente: ${company.name}`}
                     value={confirmName}
                     onChange={(e) => setConfirmName(e.target.value)}
                     className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
                   />
+                  <p className="text-[10px] text-gray-500 mt-1">Você precisa digitar o nome exato da empresa, não o e-mail.</p>
                 </div>
                 
                 <div>
@@ -206,22 +215,31 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
           </div>
         ) : null}
 
-        <div className="mt-8 flex justify-end gap-3 border-t border-[#2d3340] pt-4">
-           <button 
-             onClick={onClose}
-             className="px-4 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white transition-colors"
-             disabled={loading}
-           >
-             Cancelar
-           </button>
-           <button 
-             onClick={handleDelete}
-             disabled={loading || !isFormValid()}
-             className="bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
-           >
-             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-             Excluir Definitivamente
-           </button>
+        <div className="mt-8 flex flex-col gap-3 border-t border-[#2d3340] pt-4">
+           <div className="flex justify-end gap-3">
+              <button 
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white transition-colors"
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleDelete}
+                disabled={loading || !isFormValid()}
+                className="bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Excluir Definitivamente
+              </button>
+           </div>
+           {!isFormValid() && confirmName.length > 0 && (
+              <div className="text-xs text-red-400 text-right">
+                 {getMissingRequirements().map((req, i) => (
+                    <div key={i}>• {req}</div>
+                 ))}
+              </div>
+           )}
         </div>
       </div>
     </div>

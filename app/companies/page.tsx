@@ -78,9 +78,13 @@ export default function CompaniesPage() {
   const handleUpdateStatus = async (company: any, newStatus: string) => {
     const isActivating = newStatus === 'Ativa';
     const actionText = isActivating ? 'ativar' : 'desativar';
-    const confirmMsg = isActivating 
+    let confirmMsg = isActivating 
       ? `Ativar empresa?\nOs usuários desta empresa voltarão a acessar o sistema.`
       : `Desativar empresa?\nOs usuários desta empresa não conseguirão acessar o sistema, mas nenhum dado será apagado.`;
+
+    if (!isActivating && (company.id === user?.tenant_id || company.is_master || company.slug?.toLowerCase() === 'master' || company.name.toLowerCase().includes('master'))) {
+        confirmMsg = `⚠️ ATENÇÃO: Esta é uma empresa Master ou a sua empresa atual.\nDesativar esta empresa pode impossibilitar o seu próprio acesso!\n\nTem certeza absoluta que deseja desativar?`;
+    }
 
     if (confirm(confirmMsg)) {
        try {
@@ -392,8 +396,10 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
     }
   };
 
-  const showSuspend = !isMain && ['Ativa', 'Teste'].includes(company.status_operacional);
-  const showReactivate = !isMain && !showSuspend;
+  const normalizedStatus = (company.status_operacional || (company.active ? 'Ativa' : 'Inativa')).toLowerCase();
+  const isActive = ['active', 'ativa'].includes(normalizedStatus);
+  const showSuspend = isActive;
+  const showReactivate = !isActive;
 
   return (
     <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
@@ -453,7 +459,11 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
           <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Editar empresa">
             <Edit className="w-4 h-4" />
           </button>
-          {!isMain && company.id !== user?.tenant_id && (
+          {isMain || company.id === user?.tenant_id ? (
+             <button disabled className="flex items-center justify-center p-2 text-gray-600 transition-colors rounded-lg cursor-not-allowed tooltip-trigger" title="Empresa protegida. Não pode ser excluída.">
+               <Trash2 className="w-4 h-4 opacity-50" />
+             </button>
+          ) : (
              <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa definitivamente">
                <Trash2 className="w-4 h-4" />
              </button>
