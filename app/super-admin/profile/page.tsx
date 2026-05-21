@@ -45,8 +45,8 @@ export default function MasterProfilePage() {
        setErrorMsg('As senhas não coincidem.');
        return;
     }
-    if (passwordForm.newPassword.length < 6) {
-       setErrorMsg('A senha deve ter pelo menos 6 caracteres.');
+    if (passwordForm.newPassword.length < 8) {
+       setErrorMsg('A senha deve ter pelo menos 8 caracteres.');
        return;
     }
 
@@ -55,19 +55,27 @@ export default function MasterProfilePage() {
     setSuccessMsg('');
 
     try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+         setErrorMsg("Sessão expirada. Faça login novamente para alterar sua senha.");
+         setLoading(false);
+         return;
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: passwordForm.newPassword
       });
 
       if (error) throw error;
       
-      setSuccessMsg('Senha alterada com sucesso! Utilize-a no próximo login.');
+      setSuccessMsg('Senha alterada com sucesso. Use a nova senha no próximo login.');
       setPasswordForm({ newPassword: '', confirmPassword: '' });
       
       // Registrar log (simulado front-end pro MODO DEUS, mas ideal no backend secure context)
       await supabase.from('audit_logs').insert({
          admin_id: user.id,
-         action: 'UPDATE_MASTER_PASSWORD',
+         action: 'MASTER_PASSWORD_UPDATED',
          ip: '127.0.0.1'
       });
       
