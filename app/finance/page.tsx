@@ -70,7 +70,7 @@ export default function FinancePage() {
            .from('finance_receipts')
            .select(`
               *,
-              customers:customer_id(*),
+              customers!finance_receipts_customer_id_fkey(*),
               sales:sale_id(id, installments_count, projects(name), contracts(contract_number)),
               projects:project_id(*),
               blocks:block_id(*)
@@ -93,7 +93,7 @@ export default function FinancePage() {
             // Fallback to raw finance_receipts
             let fallbackQuery = supabase
                 .from('finance_receipts')
-                .select('*, customers:customer_id(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
+                .select('*, customers!finance_receipts_customer_id_fkey(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
                 .order('due_date', { ascending: true });
             
             if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
