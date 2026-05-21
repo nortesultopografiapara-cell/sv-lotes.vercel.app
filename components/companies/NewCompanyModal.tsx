@@ -98,9 +98,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
       const planLimits = {
-          'Básico': { broker_limit: 5, project_limit: 5, admin_limit: 1 },
-          'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
-          'Profissional': { broker_limit: null, project_limit: null, admin_limit: null }
+          'Básico': { broker_limit: 5, project_limit: 5 },
+          'Standard': { broker_limit: 10, project_limit: 10 },
+          'Profissional': { broker_limit: null, project_limit: null }
       };
       const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
 
@@ -125,14 +125,22 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          // Importante: is_test_company precisa ser forçado via boolean
          updatePayload.is_test_company = formData.is_test_company === true;
 
-         const { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
+         let { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
          
+         if (updateError && (updateError.code === 'PGRST204' || updateError.message.includes('schema cache'))) {
+             console.warn("Retrying minimal payload due to structure mismatch", updateError);
+             const minimalPayload = {
+                 is_test_company: formData.is_test_company === true,
+                 status_operacional: formData.status_operacional
+             };
+             const { error: retryError } = await supabase.from('companies').update(minimalPayload).eq('id', initialData.id);
+             updateError = retryError as any;
+         }
+
          if (updateError) {
-             if (updateError.message.includes('unique')) throw new Error('E-mail ou CNPJ já cadastrado.');
-             if (updateError.code === 'PGRST204' || updateError.message.includes('schema cache') || updateError.message.includes('Could not find')) {
-                 throw new Error('Banco precisa atualizar colunas da tabela companies.');
-             }
-             throw new Error(updateError.message);
+             console.error("ERRO SUPABASE: ", updateError);
+             console.log("PAYLOAD_COMPANY_UPDATE", updatePayload);
+             throw new Error(`Erro: ${updateError.code} - ${updateError.message}`);
          }
       } else {
          if (!formData.email) {

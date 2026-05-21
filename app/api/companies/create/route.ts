@@ -51,9 +51,9 @@ export async function POST(req: Request) {
     
     // Calcular limites do plano
     const planLimits = {
-        'Básico': { broker_limit: 5, project_limit: 5, admin_limit: 1 },
-        'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
-        'Profissional': { broker_limit: null, project_limit: null, admin_limit: null }
+        'Básico': { broker_limit: 5, project_limit: 5 },
+        'Standard': { broker_limit: 10, project_limit: 10 },
+        'Profissional': { broker_limit: null, project_limit: null }
     };
     const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
 
@@ -63,12 +63,8 @@ export async function POST(req: Request) {
       cnpj,
       email: email || adminEmail,
       phone: phone || adminPhone,
-      plan: plan || body.plan_type,
       plan_type: body.plan_type || plan,
-      module: plan ? plan.toLowerCase() : 'básico',
       status_operacional: body.status_operacional || 'Ativa',
-      status: 'active',
-      active: true,
       ...limits
     };
 
@@ -79,28 +75,29 @@ export async function POST(req: Request) {
     
     companyPayload.is_test_company = body.is_test_company === true;
 
-    const { data: newCompany, error: companyError } = await supabaseAdmin
+    let { data: newCompany, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert(companyPayload)
       .select()
       .single();
 
+    if (companyError && (companyError.code === 'PGRST204' || companyError.message.includes('schema cache'))) {
+        console.warn("Retrying minimal payload due to structure mismatch", companyError);
+        const minimalPayload = {
+            name,
+            cnpj,
+            status_operacional: body.status_operacional || 'Ativa',
+            is_test_company: body.is_test_company === true
+        };
+        const retryResult = await supabaseAdmin.from('companies').insert(minimalPayload).select().single();
+        newCompany = retryResult.data;
+        companyError = retryResult.error;
+    }
+
     if (companyError) {
       console.error('[ERRO] Falha ao criar empresa em public.companies:', companyError.message, 'Código:', companyError.code, companyError);
-      
-      if (companyError.code === 'PGRST204' || companyError.message.includes('Could not find') || companyError.message.includes('schema cache')) {
-        throw new Error(`Banco precisa atualizar colunas da tabela companies.`);
-      }
-
-      if (companyError.code === '23505' || companyError.message.includes('unique')) {
-         if (companyError.message.includes('cnpj')) {
-           throw new Error('Falha ao criar empresa: CNPJ já possui cadastro no sistema.');
-         }
-         if (companyError.message.includes('slug')) {
-           throw new Error('Falha ao criar empresa: O nome da empresa gerou um identificador único já existente. Tente modificar um pouco o nome.');
-         }
-      }
-      throw new Error(`Falha ao criar empresa: ${companyError.message}`);
+      console.error("PAYLOAD_COMPANY_CREATE", companyPayload);
+      throw new Error(`Erro Real no Create: ${companyError.code} - ${companyError.message}`);
     }
 
     newCompanyId = newCompany.id;
