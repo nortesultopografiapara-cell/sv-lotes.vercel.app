@@ -22,29 +22,6 @@ export function useAuth() {
     
     async function getUser() {
       try {
-        // First check for contingency bypass (user requested emergency access)
-        const contingencyAuth = localStorage.getItem('contingency_auth');
-        if (contingencyAuth) {
-          try {
-            const parsed = JSON.parse(contingencyAuth);
-            if (mounted) {
-              setUser({
-                id: parsed.id,
-                tenant_id: parsed.tenant_id,
-                role: parsed.role,
-                email: parsed.email,
-                name: parsed.name,
-                force_password_change: false,
-                onboarding_completed: true,
-              });
-              setLoading(false);
-            }
-            return;
-          } catch (e) {
-            localStorage.removeItem('contingency_auth');
-          }
-        }
-
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError || !session) {
           if (mounted) {

@@ -63,21 +63,26 @@ export default function MasterProfilePage() {
          return;
       }
 
-      const { error } = await supabase.auth.updateUser({
-        password: passwordForm.newPassword
+      const resp = await fetch('/api/super-admin/change-password', {
+         method: 'POST',
+         headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+         },
+         body: JSON.stringify({
+            email: user.email,
+            newPassword: passwordForm.newPassword
+         })
       });
 
-      if (error) throw error;
+      const data = await resp.json();
+
+      if (!resp.ok) {
+         throw new Error(data.error || 'Não foi possível alterar a senha. Verifique sua sessão ou tente novamente.');
+      }
       
       setSuccessMsg('Senha alterada com sucesso. Use a nova senha no próximo login.');
       setPasswordForm({ newPassword: '', confirmPassword: '' });
-      
-      // Registrar log (simulado front-end pro MODO DEUS, mas ideal no backend secure context)
-      await supabase.from('audit_logs').insert({
-         admin_id: user.id,
-         action: 'MASTER_PASSWORD_UPDATED',
-         ip: '127.0.0.1'
-      });
       
     } catch (e: any) {
       setErrorMsg(e.message);
