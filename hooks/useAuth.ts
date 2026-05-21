@@ -75,7 +75,7 @@ export function useAuth() {
            localStorage.removeItem('contingency_auth');
            sessionStorage.clear();
            if (window.location.pathname !== '/login') {
-             window.location.href = '/login';
+             window.location.assign('/login');
            }
          }
        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {

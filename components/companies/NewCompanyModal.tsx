@@ -24,6 +24,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     cnpj: initialData?.cnpj || '',
     phone: initialData?.phone || '',
     email: initialData?.email || '',
+    address: initialData?.address || '',
+    city: initialData?.city || '',
+    state: initialData?.state || '',
+    cep: initialData?.cep || '',
     status_operacional: initialData?.status_operacional || 'Ativa',
     plan: initialData?.plan_type || initialData?.plan || 'Básico',
     is_test_company: initialData?.is_test_company || false,
@@ -94,9 +98,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
       const planLimits = {
-          'Básico': { broker_limit: 5, project_limit: 3 },
-          'Standard': { broker_limit: 10, project_limit: 10 },
-          'Profissional': { broker_limit: 100, project_limit: 9999 }
+          'Básico': { broker_limit: 5, project_limit: 5, admin_limit: 1 },
+          'Standard': { broker_limit: 10, project_limit: 10, admin_limit: 3 },
+          'Profissional': { broker_limit: null, project_limit: null, admin_limit: null }
       };
       const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
 
@@ -106,6 +110,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             cnpj: formData.cnpj,
             phone: formData.phone,
             email: formData.email,
+            address: formData.address,
+            city: formData.city,
+            state: formData.state,
+            cep: formData.cep,
             status_operacional: formData.status_operacional,
             slug: slug,
             plan_type: formData.plan,
@@ -133,6 +141,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  cnpj: formData.cnpj,
                  phone: formData.phone,
                  email: formData.email,
+                 address: formData.address,
+                 city: formData.city,
+                 state: formData.state,
+                 cep: formData.cep,
                  active: true, // legacy
                  status_operacional: formData.status_operacional,
                  plan_type: formData.plan,
@@ -263,6 +275,52 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   placeholder="(11) 90000-0000"
                   className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Endereço Completo</label>
+                <input 
+                  type="text" 
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder="Rua, Número, Bairro"
+                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Cidade</label>
+                <input 
+                  type="text" 
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  placeholder="Ex: São Paulo"
+                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">UF</label>
+                  <input 
+                    type="text" 
+                    maxLength={2}
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
+                    placeholder="SP"
+                    className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">CEP</label>
+                  <input 
+                    type="text" 
+                    value={formData.cep}
+                    onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                    placeholder="00000-000"
+                    className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
               </div>
 
               {!initialData && (

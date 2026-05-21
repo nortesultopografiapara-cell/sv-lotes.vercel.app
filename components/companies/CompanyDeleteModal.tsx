@@ -10,39 +10,33 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
 
   useEffect(() => {
     if (isOpen && company) {
-      setLoading(true);
-      setReport(null);
-      setErrorMsg('');
-      setHasOperationalData(false);
-      setConfirmName('');
-      
-      fetch(`/api/companies/dependency-report?companyId=${company.id}`)
-        .then((res) => res.json())
-        .then((data) => {
+      // Fix eslint warning about synchronous setState in effect
+      const startLoad = async () => {
+        await Promise.resolve(); // push to next microtask
+        setLoading(true);
+        setReport(null);
+        setErrorMsg('');
+        setHasOperationalData(false);
+        setConfirmName('');
+        
+        try {
+          const res = await fetch(`/api/companies/dependency-report?companyId=${company.id}`);
+          const data = await res.json();
           if (data.success) {
             setReport(data.report);
-            console.log('--- RELATÓRIO DE DELETAR EMPRESA ---');
-            console.log('Empresa:', company.name);
-            console.log('tenant_id:', company.id);
-            console.log('company_id:', company.id);
-            console.log('users:', data.report.users);
-            console.log('projects:', data.report.projects);
-            console.log('blocks:', data.report.blocks);
-            console.log('customers:', data.report.customers);
-            console.log('brokers:', data.report.brokers);
-            console.log('sales:', data.report.sales);
-            console.log('contracts:', data.report.contracts);
-            console.log('finance_receipts:', data.report.finance_receipts);
-            console.log('------------------------------------');
-
             const operational = (data.report.contracts > 0 || data.report.finance_receipts > 0 || data.report.sales > 0);
             setHasOperationalData(operational);
           } else {
             setErrorMsg(data.error);
           }
-        })
-        .catch((err) => setErrorMsg(err.message))
-        .finally(() => setLoading(false));
+        } catch (err: any) {
+          setErrorMsg(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      startLoad();
     }
   }, [isOpen, company]);
 

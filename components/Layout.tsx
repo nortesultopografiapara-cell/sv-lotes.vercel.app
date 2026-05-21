@@ -294,7 +294,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     localStorage.removeItem('contingency_auth');
     document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    window.location.href = '/login';
+    window.location.assign('/login');
   };
 
   if (isCheckingAuth) {
@@ -455,6 +455,32 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${isMobile ? 'pt-16 pb-20' : ''}`}>
         
+        {typeof window !== 'undefined' && localStorage.getItem('impersonating_tenant_id') && (
+          <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-bold uppercase tracking-wider text-sm">
+                Você está acessando como: {localStorage.getItem('impersonating_company_name')} — MODO DEUS ATIVO
+              </span>
+            </div>
+            <button
+               onClick={async () => {
+                   try {
+                       await supabase.from('users').update({ tenant_id: null }).eq('id', user?.id).eq('role', 'SUPER_ADMIN');
+                       localStorage.removeItem('impersonating_tenant_id');
+                       localStorage.removeItem('impersonating_company_name');
+                       window.location.assign('/companies');
+                   } catch(e) {
+                       console.error(e);
+                   }
+               }}
+               className="bg-white text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-50 transition-colors"
+            >
+               Sair do modo empresa
+            </button>
+          </div>
+        )}
+
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (
           <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">

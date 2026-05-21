@@ -18,6 +18,7 @@ export default function CompaniesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   const [companyToDelete, setCompanyToDelete] = useState<any>(null);
+  const [companyToView, setCompanyToView] = useState<any>(null);
   
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -72,6 +73,59 @@ export default function CompaniesPage() {
 
   const handleDelete = async (company: any) => {
     setCompanyToDelete(company);
+  };
+
+  const handleUpdateStatus = async (company: any, newStatus: string) => {
+    if (confirm(`Tem certeza que deseja mudar o status de ${company.name} para ${newStatus}?`)) {
+       try {
+           const { error } = await supabase.from('companies').update({
+               status_operacional: newStatus
+           }).eq('id', company.id);
+           
+           if (error) throw error;
+           
+           // Log audition if table exists (will gracefully fail if not)
+           supabase.from('audit_logs').insert({
+              tenant_id: company.id,
+              user_id: user?.id,
+              action: newStatus === 'Suspensa' ? 'COMPANY_SUSPENDED' : 'COMPANY_REACTIVATED',
+              details: JSON.stringify({ old: company.status_operacional, new: newStatus })
+           }).then();
+
+           loadCompanies();
+       } catch (err: any) {
+           alert(err.message);
+       }
+    }
+  };
+
+  const handleImpersonate = async (company: any) => {
+      if(confirm(`Tem certeza que deseja "Entrar como Empresa" na tenant: ${company.name}?`)) {
+          try {
+             // We update the super admin's tenant_id temporarily!
+             const { error } = await supabase.from('users').update({
+                 tenant_id: company.id
+             }).eq('id', user?.id).eq('role', 'SUPER_ADMIN');
+
+             if (error) throw error;
+             
+             // set local impersonation flag
+             localStorage.setItem('impersonating_tenant_id', company.id);
+             localStorage.setItem('impersonating_company_name', company.name);
+             
+             supabase.from('audit_logs').insert({
+                tenant_id: company.id,
+                user_id: user?.id,
+                action: 'COMPANY_IMPERSONATED',
+                details: JSON.stringify({ company_name: company.name })
+             }).then();
+             
+             // Reload page so sessionGuard and contexts refresh with the new tenant
+             window.location.assign('/dashboard');
+          } catch(err: any) {
+             alert('Erro ao personificar empresa: ' + err.message);
+          }
+      }
   };
 
   // Verification if user is SUPER_ADMIN
@@ -193,7 +247,10 @@ export default function CompaniesPage() {
                   company={c}
                   isMain={idx === 0} // just for highlight
                   onEdit={() => handleEdit(c)}
+                  onView={() => setCompanyToView(c)}
                   onDelete={() => handleDelete(c)}
+                  onUpdateStatus={handleUpdateStatus}
+                  onImpersonate={() => handleImpersonate(c)}
                 />
               ))}
               {filteredCompanies.length === 0 && (
@@ -221,6 +278,66 @@ export default function CompaniesPage() {
          onClose={() => setCompanyToDelete(null)}
          onSuccess={() => { setCompanyToDelete(null); loadCompanies(); }}
       />
+      {companyToView && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-6 border-b border-[#1f232b]">
+                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-purple-400" /> Detalhes da Empresa
+                 </h2>
+                 <button onClick={() => setCompanyToView(null)} className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-gray-800 rounded-lg">
+                    <span className="sr-only">Fechar</span>
+                    ✕
+                 </button>
+              </div>
+              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+                 <div>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Nome</p>
+                    <p className="text-sm font-semibold text-white">{companyToView.name}</p>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">CNPJ</p>
+                       <p className="text-sm font-semibold text-gray-300">{companyToView.cnpj || '—'}</p>
+                    </div>
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Telefone</p>
+                       <p className="text-sm font-semibold text-gray-300">{companyToView.phone || '—'}</p>
+                    </div>
+                 </div>
+                 <div>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Endereço</p>
+                    <p className="text-sm font-semibold text-gray-300">{companyToView.address || '—'}</p>
+                    <p className="text-sm font-semibold text-gray-300">{companyToView.city} {companyToView.state ? `- ${companyToView.state}` : ''} {companyToView.cep}</p>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4 border-t border-[#1f232b] pt-4">
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Plano</p>
+                       <p className="text-sm font-semibold text-blue-400">{companyToView.plan_type || 'Básico'}</p>
+                    </div>
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Status</p>
+                       <p className="text-sm font-semibold text-gray-300">{companyToView.status_operacional || 'Inativa'}</p>
+                    </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Projetos/Lotes</p>
+                       <p className="text-sm font-semibold text-gray-300">{companyToView.project_count || 0}</p>
+                    </div>
+                    <div>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Usuários (Auth)</p>
+                       <p className="text-sm font-semibold text-gray-300">{companyToView.users?.[0]?.count || 0}</p>
+                    </div>
+                 </div>
+                 <div>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Criação</p>
+                    <p className="text-sm font-semibold text-gray-300">{new Date(companyToView.created_at).toLocaleString('pt-BR')}</p>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -241,7 +358,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
+function CompanyRow({ company, onEdit, onView, onDelete, onUpdateStatus, onImpersonate, isMain }: any) {
   const getStatusBadge = (status: string, legacyActive: boolean) => {
     let resolvedStatus = status;
     if (!resolvedStatus) {
@@ -264,13 +381,8 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
     }
   };
 
-  const handleImpersonate = async () => {
-     if(confirm(`Tem certeza que deseja "Entrar como Empresa" na tenant: ${company.name}?`)) {
-        // Para uma POC sem full session manipulation, podemos salvar um state ou cookie.
-        // Simulando a acao de log do auditoria:
-        alert("Modo Impersonate Ativado! (Simulação para POC)");
-     }
-  };
+  const showSuspend = !isMain && (company.status_operacional === 'Ativa' || company.status_operacional === 'Teste');
+  const showReactivate = !isMain && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional);
 
   return (
     <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
@@ -307,11 +419,26 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
       </td>
       <td className="p-4 text-right">
         <div className="flex items-center justify-end gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+          <button onClick={onView} className="flex items-center justify-center p-2 text-cyan-400 hover:text-white transition-colors rounded-lg hover:bg-cyan-500/20 tooltip-trigger" title="Visualizar Detalhes">
+             <Eye className="w-4 h-4" />
+          </button>
           {!isMain && (
-             <button onClick={handleImpersonate} className="flex items-center justify-center p-2 text-blue-400 hover:text-white transition-colors rounded-lg hover:bg-blue-500/20 tooltip-trigger" title="Entrar como Empresa">
-               <Eye className="w-4 h-4" />
+             <button onClick={onImpersonate} className="flex items-center justify-center p-2 text-blue-400 hover:text-white transition-colors rounded-lg hover:bg-blue-500/20 tooltip-trigger" title="Entrar como Empresa">
+               <Users className="w-4 h-4" />
              </button>
           )}
+          
+          {showSuspend && (
+            <button onClick={() => onUpdateStatus(company, 'Suspensa')} className="flex items-center justify-center p-2 text-orange-400 hover:text-white transition-colors rounded-lg hover:bg-orange-500/20 tooltip-trigger" title="Suspender Empresa">
+              <AlertCircle className="w-4 h-4" />
+            </button>
+          )}
+          {showReactivate && (
+            <button onClick={() => onUpdateStatus(company, 'Ativa')} className="flex items-center justify-center p-2 text-green-400 hover:text-white transition-colors rounded-lg hover:bg-green-500/20 tooltip-trigger" title="Reativar Empresa">
+              <CheckCircle2 className="w-4 h-4" />
+            </button>
+          )}
+
           <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Gerenciar Configurações">
             <Edit className="w-4 h-4" />
           </button>
