@@ -123,6 +123,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          
          if (updateError) {
              if (updateError.message.includes('unique')) throw new Error('E-mail ou CNPJ já cadastrado.');
+             if (updateError.code === 'PGRST204' || updateError.message.includes('schema cache') || updateError.message.includes('Could not find')) {
+                 throw new Error('Banco precisa atualizar colunas da tabela companies. Execute a migration SQL.');
+             }
              throw new Error(updateError.message);
          }
       } else {

@@ -84,8 +84,8 @@ export async function POST(req: Request) {
     if (companyError) {
       console.error('[ERRO] Falha ao criar empresa em public.companies:', companyError.message, 'Código:', companyError.code, companyError);
       
-      if (companyError.code === 'PGRST204' || companyError.message.includes('Could not find')) {
-        throw new Error(`Erro na estrutura do banco: O banco de dados ainda não possui as colunas módulo/limites. Por favor, execute a migration no SQL Editor. Detalhe: ${companyError.message}`);
+      if (companyError.code === 'PGRST204' || companyError.message.includes('Could not find') || companyError.message.includes('schema cache')) {
+        throw new Error(`Banco precisa atualizar colunas da tabela companies. Execute a migration SQL. Detalhe: ${companyError.message}`);
       }
 
       if (companyError.code === '23505' || companyError.message.includes('unique')) {
