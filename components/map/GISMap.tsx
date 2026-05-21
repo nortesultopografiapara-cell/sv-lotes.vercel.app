@@ -1625,251 +1625,210 @@ export default function GISMap({
           .eq("id", clientId);
       }
 
+      let newSaleData: any = null;
+      let newContractData: any = null;
+
+      if (newStatus.toLowerCase().trim() === "vendido") {
+        console.log("INICIO POS VENDA COMPLETAMENTE TRANSACIONAL");
+
+        try {
+          const { data: projDataSnapshot } = await supabase
+            .from("projects")
+            .select("*")
+            .eq("id", finalProjectId)
+            .maybeSingle();
+
+          const salePayload: any = {
+            tenant_id: finalTenantId,
+            company_id: finalTenantId,
+            project_id: finalProjectId,
+            block_id: lot.id,
+            block_number: lot.block || lot.block_name || lot.lot_block || null,
+            lot_number: lot.number || lot.lot_number || null,
+            lot_id: lot.id,
+            customer_id: customerId,
+            client_id: clientId,
+            user_id: user.id || null,
+            agreed_price: customerData.final_value || finalPrice,
+            lot_price: finalPrice,
+            payment_type: customerData.payment_type || "À vista",
+            discount: customerData.discount_value || 0,
+            total_value: customerData.final_value || finalPrice,
+            down_payment: customerData.down_payment || 0,
+            installments_count: Math.max(1, customerData.installments_count || 1),
+            status: "ACTIVE",
+          };
+
+          const { data: saleData, error: saleError } = await supabase
+            .from("sales")
+            .insert([salePayload])
+            .select()
+            .single();
+
+          if (saleError || !saleData) {
+            console.error("ERRO SALES: ", saleError);
+            throw saleError || new Error("Falha ao criar venda");
+          }
+          newSaleData = saleData;
+          const saleId = saleData.id;
+
+          const financePayloads: any[] = [];
+          const pmtType = customerData.payment_type || "À vista";
+          const downPayment = customerData.down_payment || 0;
+          const instCount = Math.max(1, customerData.installments_count || 1);
+          const fValue = customerData.final_value || finalPrice;
+
+          if (pmtType === "À vista") {
+            financePayloads.push({
+              tenant_id: finalTenantId,
+              company_id: finalTenantId,
+              sale_id: saleId,
+              customer_id: customerId,
+              project_id: lot.project_id || null,
+              block_id: lot.id,
+              installment_number: 1,
+              amount: fValue,
+              due_date: customerData.down_payment_due_date || new Date().toISOString().split("T")[0],
+              status: "pago",
+              paid_at: new Date().toISOString(),
+            });
+          } else if (pmtType === "Parcelado") {
+            let currentInst = 1;
+            if (downPayment > 0 && customerData.down_payment_due_date) {
+              financePayloads.push({
+                tenant_id: finalTenantId,
+                company_id: finalTenantId,
+                sale_id: saleId,
+                customer_id: customerId,
+                project_id: lot.project_id || null,
+                block_id: lot.id,
+                installment_number: currentInst++,
+                amount: downPayment,
+                due_date: customerData.down_payment_due_date,
+                status: "pendente",
+              });
+            }
+
+            if (customerData.first_installment_due_date) {
+              const totalRestante = Math.max(0, fValue - downPayment);
+              const parValue = Math.round((totalRestante / instCount) * 100) / 100;
+              let accumulated = 0;
+              
+              let cDate = new Date(customerData.first_installment_due_date + "T12:00:00Z");
+              for (let i = 0; i < instCount; i++) {
+                const isLast = i === instCount - 1;
+                const currentAmount = isLast ? Number((totalRestante - accumulated).toFixed(2)) : parValue;
+                accumulated += currentAmount;
+
+                financePayloads.push({
+                  tenant_id: finalTenantId,
+                  company_id: finalTenantId,
+                  sale_id: saleId,
+                  customer_id: customerId,
+                  project_id: lot.project_id || null,
+                  block_id: lot.id,
+                  installment_number: currentInst++,
+                  amount: currentAmount,
+                  due_date: cDate.toISOString().split("T")[0],
+                  status: "pendente",
+                });
+                cDate.setMonth(cDate.getMonth() + 1);
+              }
+            }
+          }
+
+          let financeData = [];
+          if (financePayloads.length > 0) {
+            const { data: fData, error: financeError } = await supabase
+              .from("finance_receipts")
+              .insert(financePayloads)
+              .select();
+
+            if (financeError || !fData) {
+              console.error("ERRO FINANCE", financeError);
+              throw financeError || new Error("Falha ao criar financeiro");
+            }
+            financeData = fData;
+          }
+
+          const { data: tenantData } = await supabase
+            .from("companies")
+            .select("*")
+            .eq("id", finalTenantId)
+            .single();
+
+          let fullCustomer = customerData;
+          if (customerId) {
+            const { data: custDb } = await supabase.from("customers").select("*").eq("id", customerId).single();
+            if (custDb) fullCustomer = { ...custDb, ...customerData };
+          }
+
+          const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);
+          const enrichedSaleData = { ...saleData, receipts_sum: receiptsSum };
+
+          const contractPayloadPartial = {
+            project_name_snapshot: projDataSnapshot?.name || lot?.projects?.name || null,
+            project_city_snapshot: projDataSnapshot?.city || null,
+            project_uf_snapshot: projDataSnapshot?.uf || null,
+            forum_city_snapshot: projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
+          };
+
+          const contractHtml = generateContractHTML({
+            tenant: tenantData || {},
+            customer: fullCustomer || {},
+            project: projDataSnapshot || lot.projects || {},
+            block: lot,
+            sale: enrichedSaleData,
+            contractSnapshot: contractPayloadPartial,
+          });
+
+          const contractPayload = {
+            tenant_id: finalTenantId,
+            company_id: finalTenantId,
+            sale_id: saleId,
+            customer_id: customerId,
+            project_id: lot.project_id || null,
+            block_id: lot.id,
+            contract_number: `CTR-${Date.now()}`,
+            generated_html: contractHtml,
+            ...contractPayloadPartial,
+            status: "ativo",
+          };
+
+          const { data: contractData, error: contractError } = await supabase
+            .from("contracts")
+            .insert([contractPayload])
+            .select()
+            .single();
+
+          if (contractError || !contractData) {
+            console.error("ERRO CONTRACT", contractError);
+            throw contractError || new Error("Falha ao criar contrato");
+          }
+          newContractData = contractData;
+
+        } catch (err: any) {
+           console.error("Erro no fluxo de venda:", err);
+           throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
+        }
+      }
+
+      // Final block update - now it happens after sale and everything else, or immediately if just Reserving
       const { error: updateError } = await supabase
         .from("blocks")
         .update({
           status: newStatus,
           price: finalPrice,
           customer_id: customerId,
+          ...(newSaleData ? { sale_id: newSaleData.id } : {}),
+          ...(newContractData ? { contract_id: newContractData.id } : {})
         })
-        .eq("id", lot.id);
+        .eq("id", lot.id)
+        .eq("tenant_id", finalTenantId)
+        .eq("project_id", lot.project_id || finalProjectId);
 
       if (updateError) throw updateError;
-
-      if (newStatus.toLowerCase().trim() === "vendido") {
-        console.log("INICIO POS VENDA");
-        alert("INICIO POS VENDA");
-
-        const processarPosVenda = async () => {
-          try {
-            console.log("INSERINDO SALES...");
-
-            const { data: projDataSnapshot } = await supabase
-              .from("projects")
-              .select("*")
-              .eq("id", finalProjectId)
-              .maybeSingle();
-
-            const salePayload: any = {
-              tenant_id: finalTenantId,
-              company_id: finalTenantId,
-              project_id: finalProjectId,
-              block_id: lot.id,
-              block_number: lot.block || lot.block_name || lot.lot_block || null,
-              lot_number: lot.number || lot.lot_number || null,
-              lot_id: lot.id,
-              customer_id: customerId,
-              client_id: clientId,
-              user_id: user.id || null,
-              agreed_price: customerData.final_value || finalPrice,
-              lot_price: finalPrice,
-              payment_type: customerData.payment_type || "À vista",
-              discount: customerData.discount_value || 0,
-              total_value: customerData.final_value || finalPrice,
-              down_payment: customerData.down_payment || 0,
-              installments_count: Math.max(
-                1,
-                customerData.installments_count || 1,
-              ),
-              status: "ACTIVE",
-            };
-
-            const { data: saleData, error: saleError } = await supabase
-              .from("sales")
-              .insert([salePayload])
-              .select()
-              .single();
-
-            if (saleError || !saleData) {
-              alert("ERRO SALES: " + JSON.stringify(saleError));
-              console.error("ERRO SALES: ", saleError);
-              throw saleError || new Error("saleData not returned");
-            }
-
-            console.log("SALES DATA:", saleData);
-            alert("SALES ID CRIADO: " + saleData.id);
-
-            console.log("INSERINDO FINANCEIRO...");
-            const saleId = saleData.id;
-            const financePayloads: any[] = [];
-
-            const pmtType = customerData.payment_type || "À vista";
-            const downPayment = customerData.down_payment || 0;
-            const instCount = Math.max(1, customerData.installments_count || 1);
-            const fValue = customerData.final_value || finalPrice;
-
-            if (pmtType === "À vista") {
-              financePayloads.push({
-                tenant_id: resolvedTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                project_id: lot.project_id || null,
-                block_id: lot.id,
-                installment_number: 1,
-                amount: fValue,
-                due_date:
-                  customerData.down_payment_due_date ||
-                  new Date().toISOString().split("T")[0],
-                status: "pago",
-                paid_at: new Date().toISOString(),
-              });
-            } else if (pmtType === "Parcelado") {
-              let currentInst = 1;
-              if (downPayment > 0 && customerData.down_payment_due_date) {
-                financePayloads.push({
-                  tenant_id: resolvedTenantId,
-                  sale_id: saleId,
-                  customer_id: customerId,
-                  project_id: lot.project_id || null,
-                  block_id: lot.id,
-                  installment_number: currentInst++,
-                  amount: downPayment,
-                  due_date: customerData.down_payment_due_date,
-                  status: "pendente",
-                });
-              }
-
-              if (customerData.first_installment_due_date) {
-                const totalRestante = Math.max(0, fValue - downPayment);
-                const parValue = Math.round((totalRestante / instCount) * 100) / 100;
-                let accumulated = 0;
-                
-                let cDate = new Date(
-                  customerData.first_installment_due_date + "T12:00:00Z",
-                );
-                for (let i = 0; i < instCount; i++) {
-                  const isLast = i === instCount - 1;
-                  const currentAmount = isLast 
-                      ? Number((totalRestante - accumulated).toFixed(2)) 
-                      : parValue;
-                  accumulated += currentAmount;
-
-                  financePayloads.push({
-                    tenant_id: resolvedTenantId,
-                    sale_id: saleId,
-                    customer_id: customerId,
-                    project_id: lot.project_id || null,
-                    block_id: lot.id,
-                    installment_number: currentInst++,
-                    amount: currentAmount,
-                    due_date: cDate.toISOString().split("T")[0],
-                    status: "pendente",
-                  });
-                  cDate.setMonth(cDate.getMonth() + 1);
-                }
-              }
-            }
-
-            let financeData = [];
-            if (financePayloads.length > 0) {
-              const { data: fData, error: financeError } = await supabase
-                .from("finance_receipts")
-                .insert(financePayloads)
-                .select();
-
-              if (financeError || !fData) {
-                alert("ERRO FINANCEIRO: " + JSON.stringify(financeError));
-                console.error("ERRO FINANCE", financeError);
-                throw financeError || new Error("financeData not returned");
-              }
-              financeData = fData;
-            }
-
-            console.log("FINANCE INSERT RESULT:", financeData);
-            alert("FINANCEIRO CRIADO: " + financeData.length + " parcelas");
-
-            console.log("INSERINDO CONTRATO...");
-
-            const { data: tenantData } = await supabase
-              .from("companies")
-              .select("*")
-              .eq("id", resolvedTenantId)
-              .single();
-            const { data: projData } = await supabase
-              .from("projects")
-              .select("*")
-              .eq("id", lot.project_id)
-              .maybeSingle();
-
-            let fullCustomer = customerData;
-            if (customerId) {
-              const { data: custDb } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("id", customerId)
-                .single();
-              if (custDb) fullCustomer = { ...custDb, ...customerData };
-            }
-
-            const receiptsSum = financeData.reduce(
-              (acc: any, curr: any) => acc + Number(curr.amount || 0),
-              0,
-            );
-            const enrichedSaleData = { ...saleData, receipts_sum: receiptsSum };
-
-            const contractPayloadPartial = {
-              project_name_snapshot:
-                projDataSnapshot?.name || lot?.projects?.name || null,
-              project_city_snapshot: projDataSnapshot?.city || null,
-              project_uf_snapshot: projDataSnapshot?.uf || null,
-              forum_city_snapshot: projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
-            };
-
-            const contractHtml = generateContractHTML({
-              tenant: tenantData || {},
-              customer: fullCustomer || {},
-              project: projDataSnapshot || lot.projects || {},
-              block: lot,
-              sale: enrichedSaleData,
-              contractSnapshot: contractPayloadPartial,
-            });
-
-            const contractPayload = {
-              tenant_id: resolvedTenantId,
-              sale_id: saleId,
-              customer_id: customerId,
-              project_id: lot.project_id || null,
-              block_id: lot.id,
-              contract_number: `CTR-${Date.now()}`,
-              generated_html: contractHtml,
-              ...contractPayloadPartial,
-              status: "ativo",
-            };
-
-            const { data: contractData, error: contractError } = await supabase
-              .from("contracts")
-              .insert([contractPayload])
-              .select()
-              .single();
-
-            if (contractError || !contractData) {
-              alert("ERRO CONTRATO: " + JSON.stringify(contractError));
-              console.error("ERRO CONTRACT", contractError);
-              throw contractError || new Error("contractData not returned");
-            }
-
-            console.log("CONTRACT INSERT RESULT:", contractData);
-            alert("CONTRATO CRIADO: " + contractData.id);
-
-            alert(
-              "PÓS-VENDA FINALIZADO\n" +
-                "Sale ID: " +
-                saleData.id +
-                "\n" +
-                "Parcelas: " +
-                financeData.length +
-                "\n" +
-                "Contrato ID: " +
-                contractData.id,
-            );
-          } catch (err: any) {
-            console.error("Erro no pós-venda:", err);
-            alert("Exceção Pós Venda: " + (err.message || JSON.stringify(err)));
-          }
-        };
-
-        await processarPosVenda();
-      }
+      
       await supabase.from("logs").insert({
         ...(user.tenant_id || lot.tenant_id
           ? { tenant_id: user.tenant_id || lot.tenant_id }
@@ -1881,9 +1840,11 @@ export default function GISMap({
           subtitle: `Ação comercial concluída por ${user.name}`,
         },
       });
+
+      alert(`Lote Quadra ${lot.block} Lote ${lot.number} atualizado com sucesso!`);
     } catch (e: any) {
       console.error("Error saving customer and lot:", e);
-      alert("Erro ao salvar cliente/venda: " + e.message);
+      alert("Erro ao salvar dados (Venda interrompida): " + e.message);
     }
   };
 
