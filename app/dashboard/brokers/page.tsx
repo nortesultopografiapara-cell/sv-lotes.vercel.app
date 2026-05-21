@@ -11,8 +11,9 @@ export default function CorretoresPage() {
   const [search, setSearch] = useState('');
   const [corretores, setCorretores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [brokerLimit, setBrokerLimit] = useState(0);
-  
+  const [brokerLimit, setBrokerLimit] = useState<number | null>(10);
+  const [companyPlan, setCompanyPlan] = useState<string>('Standard');
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -37,14 +38,26 @@ export default function CorretoresPage() {
     async function loadCorretores() {
       if (!user) return;
       try {
-        let limit = 10;
+        let limit: number | null = 10;
+        let pName = 'Standard';
         if (user.tenant_id) {
-           const { data: companyData } = await supabase.from('companies').select('broker_limit').eq('id', user.tenant_id).single();
-           if (companyData && companyData.broker_limit) {
-              limit = companyData.broker_limit;
+           const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
+           if (!error && companyData?.plan) {
+              const plan = companyData.plan.toLowerCase();
+              if (plan.includes('basic') || plan.includes('básico')) {
+                 limit = 5;
+                 pName = 'Básico';
+              } else if (plan.includes('professional') || plan.includes('profissional')) {
+                 limit = null; // null means unlimited
+                 pName = 'Profissional';
+              } else {
+                 limit = 10;
+                 pName = 'Standard';
+              }
            }
         }
         setBrokerLimit(limit);
+        setCompanyPlan(pName);
 
         let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
         
@@ -87,8 +100,9 @@ export default function CorretoresPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (corretores.length >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
-        setError('Limite de corretores do plano atingido.');
+    const activeBrokersCount = corretores.filter(c => c.active).length;
+    if (brokerLimit !== null && activeBrokersCount >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
+        setError(`Limite do plano ${companyPlan} atingido. Faça upgrade para cadastrar mais corretores.`);
         return;
     }
     if (formData.password.length < 6) {
@@ -134,9 +148,15 @@ export default function CorretoresPage() {
       };
       
       // Checa a estrutura primeiro
-      const { data: schemaCheck } = await supabase.from('brokers').select('tenant_id').limit(1).catch(() => ({data: null}));
+      let hasTenantId = false;
+      try {
+         const { error: schemaError } = await supabase.from('brokers').select('tenant_id').limit(1);
+         if (!schemaError) hasTenantId = true;
+      } catch (err) {
+         hasTenantId = false;
+      }
       
-      if (schemaCheck !== null) { // Tabela nova
+      if (hasTenantId) { // Tabela nova
          payload.tenant_id = user?.tenant_id;
          payload.name = formData.fullName;
          payload.active = true;
@@ -255,12 +275,16 @@ export default function CorretoresPage() {
                  <Users className="w-6 h-6" />
                </div>
                <div>
-                  <div className="text-3xl font-bold text-white">{corretores.length}</div>
+                  <div className="text-3xl font-bold text-white">
+                    {corretores.filter(c => c.active).length} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
+                  </div>
                   <div className="text-sm font-medium text-gray-400">Corretores ativos</div>
                </div>
              </div>
              <div className="text-xs text-emerald-500 font-medium">
-               {Math.round((corretores.length / (brokerLimit||1))*100)}% da licença utilizada
+               {brokerLimit === null 
+                 ? 'Plano ilimitado' 
+                 : `${Math.round((corretores.filter(c => c.active).length / brokerLimit) * 100)}% da licença utilizada`}
              </div>
          </div>
 
@@ -777,7 +801,7 @@ export default function CorretoresPage() {
                        >
                          Cancelar
                        </button>
-                       {corretores.length >= brokerLimit && user?.role !== 'SUPER_ADMIN' ? (
+                       {brokerLimit !== null && corretores.filter(c => c.active).length >= brokerLimit && user?.role !== 'SUPER_ADMIN' ? (
                           <div className="flex items-center ml-4 px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
                              <p className="text-red-400 text-xs font-bold uppercase tracking-widest">Plano Atingido</p>
                           </div>
