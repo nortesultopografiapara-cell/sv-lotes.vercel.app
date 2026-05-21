@@ -62,12 +62,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    // Registrar log
+    // Registrar log (ignorando erros se a tabela não existir)
     await supabaseAdmin.from('audit_logs').insert({
       admin_id: userAuth.user.id,
+      admin_email: userAuth.user.email,
       action: 'MASTER_PASSWORD_UPDATED',
+      timestamp: new Date().toISOString(),
       ip: req.headers.get('x-forwarded-for') || 'desconhecido'
-    });
+    }).catch(console.error);
 
     return NextResponse.json({ success: true, message: 'Senha atualizada com sucesso.' });
 
