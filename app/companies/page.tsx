@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Building2, Search, Plus, CheckCircle2, 
+  Building2, Search, Plus, CheckCircle2, Power, PowerOff,
   Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
@@ -76,22 +76,31 @@ export default function CompaniesPage() {
   };
 
   const handleUpdateStatus = async (company: any, newStatus: string) => {
-    if (confirm(`Tem certeza que deseja mudar o status de ${company.name} para ${newStatus}?`)) {
-       try {
-           const { error } = await supabase.from('companies').update({
-               status_operacional: newStatus
-           }).eq('id', company.id);
-           
-           if (error) throw error;
-           
-           // Log audition if table exists (will gracefully fail if not)
-           supabase.from('audit_logs').insert({
-              tenant_id: company.id,
-              user_id: user?.id,
-              action: newStatus === 'Suspensa' ? 'COMPANY_SUSPENDED' : 'COMPANY_REACTIVATED',
-              details: JSON.stringify({ old: company.status_operacional, new: newStatus })
-           }).then();
+    const isActivating = newStatus === 'Ativa';
+    const actionText = isActivating ? 'ativar' : 'desativar';
+    const confirmMsg = isActivating 
+      ? `Ativar empresa?\nOs usuários desta empresa voltarão a acessar o sistema.`
+      : `Desativar empresa?\nOs usuários desta empresa não conseguirão acessar o sistema, mas nenhum dado será apagado.`;
 
+    if (confirm(confirmMsg)) {
+       try {
+           const res = await fetch('/api/companies/status', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                 companyId: company.id,
+                 status_operacional: newStatus,
+                 userId: user?.id
+              })
+           });
+           
+           const data = await res.json();
+           
+           if (!res.ok) {
+              throw new Error(data.error || 'Erro ao atualizar status');
+           }
+
+           alert(`Empresa ${isActivating ? 'ativada' : 'desativada'} com sucesso.`);
            loadCompanies();
        } catch (err: any) {
            alert(err.message);
@@ -276,7 +285,7 @@ export default function CompaniesPage() {
          isOpen={!!companyToDelete}
          company={companyToDelete}
          onClose={() => setCompanyToDelete(null)}
-         onSuccess={() => { setCompanyToDelete(null); loadCompanies(); }}
+         onSuccess={() => { alert('Empresa excluída com sucesso.'); setCompanyToDelete(null); loadCompanies(); }}
       />
       {companyToView && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -381,8 +390,8 @@ function CompanyRow({ company, onEdit, onView, onDelete, onUpdateStatus, onImper
     }
   };
 
-  const showSuspend = !isMain && (company.status_operacional === 'Ativa' || company.status_operacional === 'Teste');
-  const showReactivate = !isMain && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional);
+  const showSuspend = !isMain && ['Ativa', 'Teste'].includes(company.status_operacional);
+  const showReactivate = !isMain && !showSuspend;
 
   return (
     <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
@@ -429,22 +438,27 @@ function CompanyRow({ company, onEdit, onView, onDelete, onUpdateStatus, onImper
           )}
           
           {showSuspend && (
-            <button onClick={() => onUpdateStatus(company, 'Suspensa')} className="flex items-center justify-center p-2 text-orange-400 hover:text-white transition-colors rounded-lg hover:bg-orange-500/20 tooltip-trigger" title="Suspender Empresa">
-              <AlertCircle className="w-4 h-4" />
+            <button onClick={() => onUpdateStatus(company, 'Inativa')} className="flex items-center justify-center p-2 text-orange-400 hover:text-white transition-colors rounded-lg hover:bg-orange-500/20 tooltip-trigger" title="Desativar empresa">
+              <PowerOff className="w-4 h-4" />
             </button>
           )}
           {showReactivate && (
-            <button onClick={() => onUpdateStatus(company, 'Ativa')} className="flex items-center justify-center p-2 text-green-400 hover:text-white transition-colors rounded-lg hover:bg-green-500/20 tooltip-trigger" title="Reativar Empresa">
-              <CheckCircle2 className="w-4 h-4" />
+            <button onClick={() => onUpdateStatus(company, 'Ativa')} className="flex items-center justify-center p-2 text-green-400 hover:text-white transition-colors rounded-lg hover:bg-green-500/20 tooltip-trigger" title="Ativar empresa">
+              <Power className="w-4 h-4" />
             </button>
           )}
 
-          <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Gerenciar Configurações">
+          <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Editar empresa">
             <Edit className="w-4 h-4" />
           </button>
           {!isMain && company.is_test_company === true && (
-            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir Teste Definitivamente">
+            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa teste">
               <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          {!isMain && company.is_test_company !== true && (
+            <button onClick={() => alert('Esta empresa não está marcada como teste.\n\nPara excluir definitivamente, marque como Empresa de Teste, e então tente novamente (caso não possua dados reais).\n\nVocê também pode apenas Desativar a empresa.')} className="flex items-center justify-center p-2 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/5 cursor-not-allowed tooltip-trigger" title="Exclusão não permitida">
+              <Trash2 className="w-4 h-4 opacity-50" />
             </button>
           )}
         </div>

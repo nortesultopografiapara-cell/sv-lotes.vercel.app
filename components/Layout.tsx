@@ -305,7 +305,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   if (isPublicStandalone) return <>{children}</>;
 
   // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
-  if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inadimplente'].includes(company.status_operacional)) {
+  if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional)) {
     return (
       <div className="h-screen w-full bg-[#0b1111] flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
