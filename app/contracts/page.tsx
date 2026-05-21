@@ -90,7 +90,10 @@ export default function ContractsPage() {
         .order("created_at", { ascending: false });
 
       if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
-        query = query.eq("tenant_id", resolvedTenantId);
+        query = query.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+      } else if (user?.role !== "SUPER_ADMIN" && !resolvedTenantId) {
+        setLoading(false);
+        return;
       }
 
       let { data, error } = await query;
@@ -100,11 +103,14 @@ export default function ContractsPage() {
         console.warn("ERRO JOIN CONTRACTS. Buscando raw fallback...", error);
         let fallbackQuery = supabase
           .from("contracts")
-          .select("*")
+          .select("*, customers:customer_id(*), projects:project_id(*), blocks:block_id(*)")
           .order("created_at", { ascending: false });
           
         if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
-          fallbackQuery = fallbackQuery.eq("tenant_id", resolvedTenantId);
+          fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+        } else if (user?.role !== "SUPER_ADMIN" && !resolvedTenantId) {
+          setLoading(false);
+          return;
         }
         
         const fallbackRes = await fallbackQuery;
@@ -537,11 +543,20 @@ export default function ContractsPage() {
       const ids = Array.from(selectedContractIds);
       console.log("IDS SELECIONADOS PARA DELETE:", ids);
 
-      const { data, error } = await supabase
+      const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
+      let deleteQuery = supabase
         .from("contracts")
         .delete()
-        .in("id", ids)
-        .select("id");
+        .in("id", ids);
+
+      if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
+        deleteQuery = deleteQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+      } else if (user?.role !== "SUPER_ADMIN" && !resolvedTenantId) {
+        alert("Erro de segurança: Empresa não identificada.");
+        return;
+      }
+
+      const { data, error } = await deleteQuery.select("id");
 
       console.log("DELETE CONTRATOS RESULT:", data, error);
 

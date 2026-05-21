@@ -89,7 +89,11 @@ export default function CustomersPage() {
       let customerId = null;
 
       if (cpfCnpjValue) {
-          const { data: existingCustomer } = await supabase.from('customers').select('id').eq('document', cpfCnpjValue).maybeSingle();
+          let checkQuery = supabase.from('customers').select('id').eq('document', cpfCnpjValue);
+          if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+              checkQuery = checkQuery.eq('tenant_id', user.tenant_id);
+          }
+          const { data: existingCustomer } = await checkQuery.maybeSingle();
           if (existingCustomer) {
               customerId = existingCustomer.id;
           }

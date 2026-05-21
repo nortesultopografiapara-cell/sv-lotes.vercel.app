@@ -78,7 +78,10 @@ export default function FinancePage() {
            .order('due_date', { ascending: true });
            
         if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-           query = query.eq('tenant_id', resolvedTenantId);
+           query = query.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+        } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+           setLoading(false);
+           return;
         }
         
         let { data, error } = await query;
@@ -90,11 +93,14 @@ export default function FinancePage() {
             // Fallback to raw finance_receipts
             let fallbackQuery = supabase
                 .from('finance_receipts')
-                .select('*')
+                .select('*, customers:customer_id(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
                 .order('due_date', { ascending: true });
             
             if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-                fallbackQuery = fallbackQuery.eq('tenant_id', resolvedTenantId);
+                fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+            } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+                setLoading(false);
+                return;
             }
             
             const fallbackRes = await fallbackQuery;
@@ -283,7 +289,17 @@ export default function FinancePage() {
     console.log('FINANCE DELETE RECEIPT', p);
     if (!window.confirm("Tem certeza que deseja excluir esta parcela? Essa ação não pode ser desfeita.")) return;
     try {
-      const { data, error } = await supabase.from('finance_receipts').delete().eq('id', p.id).select().single();
+      let deleteQuery = supabase.from('finance_receipts').delete().eq('id', p.id);
+      
+      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+      if (user?.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+        deleteQuery = deleteQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+      } else if (user?.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+        alert('Erro de segurança: Empresa não identificada.');
+        return;
+      }
+      
+      const { data, error } = await deleteQuery.select().single();
       if (error) {
         console.error('ERRO DELETE FINANCE_RECEIPTS:', error);
         alert('Erro ao excluir recebimento: ' + JSON.stringify(error));
@@ -313,7 +329,18 @@ export default function FinancePage() {
     if (!window.confirm("Deseja excluir todos os recebimentos pendentes deste cliente/lote usados em teste?")) return;
     try {
       const idsToDelete = Array.from(selectedIds);
-      const { data, error } = await supabase.from('finance_receipts').delete().in('id', idsToDelete).select();
+      
+      let deleteQuery = supabase.from('finance_receipts').delete().in('id', idsToDelete);
+      
+      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+      if (user?.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+        deleteQuery = deleteQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+      } else if (user?.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+        alert('Erro de segurança: Empresa não identificada.');
+        return;
+      }
+
+      const { data, error } = await deleteQuery.select();
       if (error) {
         console.error('ERRO DELETE FINANCE_RECEIPTS:', error);
         alert('Erro ao excluir recebimentos: ' + JSON.stringify(error));

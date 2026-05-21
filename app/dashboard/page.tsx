@@ -48,10 +48,12 @@ export default function DashboardPage() {
         let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
         let projectsQuery = supabase.from('projects').select('id, name');
         
-        // Se não for super admin, limita por tenant
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.eq('tenant_id', user.tenant_id);
-          projectsQuery = projectsQuery.eq('tenant_id', user.tenant_id);
+          query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+          projectsQuery = projectsQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+        } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
+          setLoading(false);
+          return;
         }
 
         const { data, error } = await query;

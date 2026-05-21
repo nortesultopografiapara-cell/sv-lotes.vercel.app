@@ -61,9 +61,11 @@ export default function CorretoresPage() {
 
         let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
         
-        if (user.role === 'ADMIN' || user.role === 'COMPANY_ADMIN') {
-           // Fallback for both old (company_id) and new (tenant_id) column structures during migration 
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
            query = query.or(`company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id}`);
+        } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
+           setLoading(false);
+           return;
         }
         
         const { data, error } = await query;
@@ -185,7 +187,15 @@ export default function CorretoresPage() {
   const handleDelete = async (id: string) => {
     try {
       setLoading(true);
-      const { error } = await supabase.from('brokers').delete().eq('id', id);
+      let query = supabase.from('brokers').delete().eq('id', id);
+      
+      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+         query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+      } else if (user?.role !== 'SUPER_ADMIN' && !user?.tenant_id) {
+         throw new Error("Usuário não tem empresa associada.");
+      }
+
+      const { error } = await query;
       if (error) throw error;
       setCorretores(corretores.filter(c => c.id !== id));
       setDeleteModal(null);

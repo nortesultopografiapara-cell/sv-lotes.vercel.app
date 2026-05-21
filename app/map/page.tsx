@@ -513,20 +513,54 @@ export default function MapPage() {
       }
 
       // If tenantId is not null, ensure it's not a generic string.
-      if (tenantId === 'MASTER-ADMIN') {
-        tenantId = null;
-      }
-      
-      const text = await importFile.text();
-      const geometries = parseKML(text);
-      
-      if (geometries.length === 0) {
-         alert('Nenhum polígono ou linha encontrado no arquivo KML.');
+      if (!selectedProject.id) {
+         alert('Erro: Projeto não identificado. Atualize a página e tente novamente.');
          setImporting(false);
          return;
       }
 
       let finalTenantId = tenantId;
+      if (finalTenantId === 'MASTER-ADMIN') finalTenantId = null;
+
+      if (!finalTenantId && !isMasterAdmin) {
+         alert('Erro: Empresa não identificada. Faça login novamente.');
+         setImporting(false);
+         return;
+      }
+
+      // Evitar quadra duplicada no frontend
+      if (!importQuadra.trim()) {
+         alert('Erro: Informe a Quadra para importação.');
+         setImporting(false);
+         return;
+      }
+
+      const text = await importFile.text();
+      let geometries = parseKML(text);
+      
+      // Filtrar apenas geometrias válidas
+      geometries = geometries.filter((g: any) => g.type === 'Polygon' && g.coordinates && g.coordinates[0]);
+
+      if (geometries.length === 0) {
+         alert('Erro: Nenhum lote válido (polígono fechado) encontrado no KML.');
+         setImporting(false);
+         return;
+      }
+
+      // Check duplicados no banco
+      const { data: blockCheck } = await supabase
+         .from('blocks')
+         .select('id')
+         .eq('project_id', selectedProject.id)
+         .eq('block_name', importQuadra.toUpperCase().trim())
+         .limit(1);
+
+      if (blockCheck && blockCheck.length > 0) {
+         alert(`Erro: A Quadra "${importQuadra.toUpperCase()}" já existe neste projeto. Para atualizar, exclua os lotes antigos primeiro.`);
+         setImporting(false);
+         return;
+      }
+
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
           
       // Utility to calculate distance between coords in meters

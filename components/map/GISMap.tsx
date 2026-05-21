@@ -1318,6 +1318,13 @@ export default function GISMap({
         const blocksRes = await blocksQuery;
         if (blocksRes.error) throw blocksRes.error;
 
+        console.group('[SECURITY] GISMap Load');
+        console.log('Empresa logada:', user?.company_id || user?.tenant_id);
+        console.log('Tenant ativo:', user?.tenant_id);
+        console.log('Project ID carregado:', projectId);
+        console.log('Total de lotes carregados:', blocksRes.data?.length || 0);
+        console.groupEnd();
+
         if (blocksRes.data) {
           const parsedBlocks = blocksRes.data
             .map((b) => {
@@ -1506,18 +1513,30 @@ export default function GISMap({
       let clientId = null;
 
       if (cpfCnpjValue) {
-        const { data: existingCustomer } = await supabase
+        let customerCheckQuery = supabase
           .from("customers")
           .select("id")
-          .eq("document", cpfCnpjValue)
-          .maybeSingle();
+          .eq("document", cpfCnpjValue);
+
+        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
+          customerCheckQuery = customerCheckQuery.eq("tenant_id", user.tenant_id);
+        }
+
+        const { data: existingCustomer } = await customerCheckQuery.maybeSingle();
+
         if (existingCustomer) customerId = existingCustomer.id;
 
-        const { data: existingClient } = await supabase
+        let clientCheckQuery = supabase
           .from("clients")
           .select("id")
-          .eq("cpf_cnpj", cpfCnpjValue)
-          .maybeSingle();
+          .eq("cpf_cnpj", cpfCnpjValue);
+
+        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
+          clientCheckQuery = clientCheckQuery.eq("tenant_id", user.tenant_id);
+        }
+
+        const { data: existingClient } = await clientCheckQuery.maybeSingle();
+
         if (existingClient) clientId = existingClient.id;
       }
 
