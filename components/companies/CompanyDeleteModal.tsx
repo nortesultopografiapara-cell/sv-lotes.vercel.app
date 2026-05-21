@@ -24,16 +24,27 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
         
         try {
           const res = await fetch(`/api/companies/dependency-report?companyId=${company.id}`);
-          const data = await res.json();
-          if (data.success) {
+          let data;
+          try {
+            data = await res.json();
+          } catch(e) {
+            data = null;
+          }
+          if (res.ok && data?.success) {
             setReport(data.report);
             const operational = (data.report.contracts > 0 || data.report.finance_receipts > 0 || (data.report.sales && data.report.sales > 0));
             setHasOperationalData(operational);
           } else {
-            setErrorMsg(data.error);
+            console.warn("Falha no report, assumindo dados padrão:", data?.error);
+            const fallbackReport = { users: '?', projects: '?', blocks: '?', contracts: '?', finance_receipts: '?' };
+            setReport(fallbackReport);
+            setHasOperationalData(true); // safer to ask for explicit confirmation if unknown
           }
         } catch (err: any) {
-          setErrorMsg(err.message);
+          console.warn("Erro no fetch de report, assumindo padrão:", err.message);
+          const fallbackReport = { users: '?', projects: '?', blocks: '?', contracts: '?', finance_receipts: '?' };
+          setReport(fallbackReport);
+          setHasOperationalData(true);
         } finally {
           setLoading(false);
         }

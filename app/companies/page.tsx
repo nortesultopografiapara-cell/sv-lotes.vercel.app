@@ -254,6 +254,7 @@ export default function CompaniesPage() {
                 <CompanyRow 
                   key={c.id}
                   company={c}
+                  user={user}
                   isMain={idx === 0} // just for highlight
                   onEdit={() => handleEdit(c)}
                   onView={() => setCompanyToView(c)}
@@ -368,7 +369,7 @@ function StatCard({ title, value, icon: Icon, iconColor, bg, border }: any) {
   );
 }
 
-function CompanyRow({ company, onEdit, onView, onDelete, onUpdateStatus, onImpersonate, isMain }: any) {
+function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, onImpersonate, isMain }: any) {
   const getStatusBadge = (status: string, legacyActive: boolean) => {
     let resolvedStatus = status;
     if (!resolvedStatus) {
