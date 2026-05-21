@@ -1,30 +1,33 @@
 import { useState, useEffect } from 'react';
 import { Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 
-export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess }: any) {
+export default function CompanyDeleteModal({ isOpen, onClose, company, user, onSuccess }: any) {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
   const [confirmName, setConfirmName] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [destructiveConfirmation, setDestructiveConfirmation] = useState('');
   const [hasOperationalData, setHasOperationalData] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (isOpen && company) {
-      // Fix eslint warning about synchronous setState in effect
       const startLoad = async () => {
-        await Promise.resolve(); // push to next microtask
+        await Promise.resolve();
         setLoading(true);
         setReport(null);
         setErrorMsg('');
         setHasOperationalData(false);
         setConfirmName('');
+        setAdminPassword('');
+        setDestructiveConfirmation('');
         
         try {
           const res = await fetch(`/api/companies/dependency-report?companyId=${company.id}`);
           const data = await res.json();
           if (data.success) {
             setReport(data.report);
-            const operational = (data.report.contracts > 0 || data.report.finance_receipts > 0 || data.report.sales > 0);
+            const operational = (data.report.contracts > 0 || data.report.finance_receipts > 0 || (data.report.sales && data.report.sales > 0));
             setHasOperationalData(operational);
           } else {
             setErrorMsg(data.error);
@@ -47,13 +50,31 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
       setErrorMsg('Nome da empresa digitado incorretamente.');
       return;
     }
+    
+    if (!adminPassword.trim()) {
+      setErrorMsg('Senha do administrador é obrigatória.');
+      return;
+    }
+
+    if (hasOperationalData && destructiveConfirmation !== 'APAGAR DEFINITIVAMENTE') {
+      setErrorMsg('Confirmação destrutiva incorreta.');
+      return;
+    }
 
     setLoading(true);
+    setErrorMsg('');
     try {
-      const res = await fetch('/api/companies/delete-test', {
-        method: 'POST',
+      const res = await fetch('/api/companies/delete', {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: company.id }),
+        body: JSON.stringify({ 
+          companyId: company.id,
+          confirmationName: confirmName,
+          adminEmail: user?.email,
+          adminUserId: user?.id,
+          adminPassword,
+          destructiveConfirmation 
+        }),
       });
       
       const data = await res.json();
@@ -71,17 +92,24 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
     }
   };
 
+  const isFormValid = () => {
+    if (confirmName !== company.name) return false;
+    if (!adminPassword.trim()) return false;
+    if (hasOperationalData && destructiveConfirmation !== 'APAGAR DEFINITIVAMENTE') return false;
+    return true;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-[#111111] border border-[#333] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-start gap-4 mb-6">
            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 shrink-0">
              <AlertTriangle className="w-6 h-6" />
            </div>
            <div>
-              <h2 className="text-xl font-bold text-white mb-1">Excluir Empresa de Teste</h2>
+              <h2 className="text-xl font-bold text-white mb-1">Excluir Empresa Definitivamente</h2>
               <p className="text-sm text-gray-400">
-                Esta ação é irreversível e excluirá todos os dados vinculados em cascata.
+                Esta ação apagará a empresa e seus dados vinculados. Não poderá ser desfeita.
               </p>
            </div>
         </div>
@@ -94,10 +122,10 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
 
         {loading && !report ? (
           <div className="flex justify-center p-8">
-            <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+             <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
           </div>
         ) : report ? (
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
              <div className="bg-[#1a1f29] rounded-xl p-4 border border-[#2d3340]">
                 <h3 className="text-sm font-bold text-white mb-3 flex justify-between">
                    <span>{company.name}</span>
@@ -115,25 +143,55 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
                 </div>
              </div>
 
-             {hasOperationalData ? (
+             {hasOperationalData && (
                 <div className="p-3 border border-orange-500/30 bg-orange-500/10 text-orange-400 text-sm rounded-lg leading-relaxed">
-                   <strong>Esta empresa possui dados operacionais vinculados.</strong><br/>
-                   Use as opções de Desativar ou Suspender em vez de Excluir fisiscamente (Cascade).
-                </div>
-             ) : (
-                <div className="space-y-2">
-                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                     Digite o nome exato da empresa para confirmar
-                   </label>
-                   <input 
-                     type="text" 
-                     placeholder={company.name}
-                     value={confirmName}
-                     onChange={(e) => setConfirmName(e.target.value)}
-                     className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
-                   />
+                   <strong>Esta empresa possui dados operacionais.</strong><br/>
+                   Confirme que deseja apagar em modo destrutivo.
                 </div>
              )}
+
+             <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    Digite o nome da empresa
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder={company.name}
+                    value={confirmName}
+                    onChange={(e) => setConfirmName(e.target.value)}
+                    className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                    Senha do Super Admin
+                  </label>
+                  <input 
+                    type="password" 
+                    placeholder="Sua senha para confirmar..."
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                  />
+                </div>
+
+                {hasOperationalData && (
+                  <div>
+                    <label className="block text-xs font-bold text-orange-400 uppercase tracking-wider mb-1">
+                      Confirmação Destrutiva
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="Digite: APAGAR DEFINITIVAMENTE"
+                      value={destructiveConfirmation}
+                      onChange={(e) => setDestructiveConfirmation(e.target.value)}
+                      className="w-full bg-[#1a1f29] border border-orange-500/50 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                    />
+                  </div>
+                )}
+             </div>
           </div>
         ) : null}
 
@@ -147,11 +205,11 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, onSuccess
            </button>
            <button 
              onClick={handleDelete}
-             disabled={loading || hasOperationalData || confirmName !== company?.name}
+             disabled={loading || !isFormValid()}
              className="bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
            >
-             {loading && !!report ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-             Excluir Empresa
+             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+             Excluir Definitivamente
            </button>
         </div>
       </div>

@@ -284,6 +284,7 @@ export default function CompaniesPage() {
       <CompanyDeleteModal
          isOpen={!!companyToDelete}
          company={companyToDelete}
+         user={user}
          onClose={() => setCompanyToDelete(null)}
          onSuccess={() => { alert('Empresa excluída com sucesso.'); setCompanyToDelete(null); loadCompanies(); }}
       />
@@ -451,15 +452,10 @@ function CompanyRow({ company, onEdit, onView, onDelete, onUpdateStatus, onImper
           <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Editar empresa">
             <Edit className="w-4 h-4" />
           </button>
-          {!isMain && company.is_test_company === true && (
-            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa teste">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-          {!isMain && company.is_test_company !== true && (
-            <button onClick={() => alert('Esta empresa não está marcada como teste.\n\nPara excluir definitivamente, marque como Empresa de Teste, e então tente novamente (caso não possua dados reais).\n\nVocê também pode apenas Desativar a empresa.')} className="flex items-center justify-center p-2 text-gray-600 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/5 cursor-not-allowed tooltip-trigger" title="Exclusão não permitida">
-              <Trash2 className="w-4 h-4 opacity-50" />
-            </button>
+          {!isMain && company.id !== user?.tenant_id && (
+             <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa definitivamente">
+               <Trash2 className="w-4 h-4" />
+             </button>
           )}
         </div>
       </td>
