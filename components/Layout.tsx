@@ -473,11 +473,31 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
               <NotificationBell user={user} />
               
-              <div className="flex items-center gap-3 cursor-pointer group" onClick={handleLogout} title="Clique para sair">
-                <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg uppercase">
-                  {user?.name?.charAt(0) || 'U'}
+              {/* Profile Dropdown */}
+              <div className="relative group cursor-pointer">
+                <div className="flex items-center gap-3" title="Opções de Perfil">
+                  <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg uppercase">
+                    {user?.name?.charAt(0) || 'U'}
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
                 </div>
-                <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
+                
+                <div className="absolute right-0 mt-2 w-56 bg-[#1a1f29] border border-[#2d3340] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
+                  <div className="p-4 border-b border-[#2d3340] bg-[#151a23]">
+                    <p className="font-semibold text-white truncate">{user?.name}</p>
+                    <p className="text-xs text-gray-400 mt-1 truncate">{user?.email}</p>
+                  </div>
+                  <div className="p-2">
+                    {user?.role === 'SUPER_ADMIN' && (
+                      <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                        <User className="w-4 h-4" /> Meu Perfil Master
+                      </Link>
+                    )}
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left mt-1">
+                       <LogOut className="w-4 h-4" /> Sair do Sistema
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </header>
