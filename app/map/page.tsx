@@ -340,7 +340,18 @@ export default function MapPage() {
     async function loadProjects() {
       if (!user) return;
       try {
-        const { data, error } = await supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
+        let query = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
+        
+        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+            query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+        } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
+            // Block access
+            setProjects([]);
+            setLoading(false);
+            return;
+        }
+
+        const { data, error } = await query;
         
         if (error) {
            console.warn("Error fetching projects:", error);
@@ -401,7 +412,8 @@ export default function MapPage() {
         neighborhood: newProjectNbhd.trim() || null,
         address: newProjectAddr.trim() || null,
         forum_city: newProjectForum.trim() || null,
-        tenant_id: createTenantId 
+        tenant_id: createTenantId,
+        company_id: createTenantId
       };
 
       let { error } = await supabase.from('projects').insert([insertData]);
@@ -416,7 +428,8 @@ export default function MapPage() {
               console.warn('Schema cache error persists, retrying with minimal fields...');
               const minimalFallback = await supabase.from('projects').insert([{
                   name: projectNameStr,
-                  tenant_id: createTenantId
+                  tenant_id: createTenantId,
+                  company_id: createTenantId
               }]);
               error = minimalFallback.error;
           }
@@ -426,7 +439,12 @@ export default function MapPage() {
          throw error;
       }
       
-      const { data: updatedProjects } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      let fetchQuery = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
+      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+          fetchQuery = fetchQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+      }
+      const { data: updatedProjects } = await fetchQuery;
+      
       if (updatedProjects) {
          setProjects(updatedProjects);
       }
@@ -450,8 +468,18 @@ export default function MapPage() {
   const handleDeleteProject = async (projectId: string) => {
     if (!confirm("Tem certeza que deseja excluir este projeto?")) return;
     try {
-      const { error } = await supabase.from('projects').delete().eq('id', projectId);
+      let query = supabase.from('projects').delete().eq('id', projectId);
+      
+      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+         query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+      } else if (user?.role !== 'SUPER_ADMIN' && !user?.tenant_id) {
+         throw new Error("Usuário não tem empresa associada.");
+      }
+
+      const { error } = await query;
       if (error) throw error;
+      
+      // Also verify if the project is actually deleted from local state
       setProjects(projects.filter(p => p.id !== projectId));
     } catch (err: any) {
       console.error(err);
