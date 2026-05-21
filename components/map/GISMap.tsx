@@ -47,6 +47,11 @@ const getStatusLabel = (status: string) => {
   }
 };
 
+const isLotSold = (status?: string) => {
+  const normalized = String(status || "").toLowerCase().trim();
+  return ["vendido", "sold", "venda", "sold_out"].includes(normalized);
+};
+
 function MapController({
   lots,
   blocksData,
@@ -853,6 +858,7 @@ function LotPopupContent({
 }) {
   const [editedPrice, setEditedPrice] = useState(lot.price.toString());
   const color = getStatusColor(lot.status);
+  const isSold = isLotSold(lot.status);
 
   const area = lot.area || 0;
   const currentPrice = Number(editedPrice) || 0;
@@ -976,27 +982,43 @@ function LotPopupContent({
         </span>
         <div className="flex gap-1 mt-1">
           <button
-            onClick={() => onAction(lot, "Disponível", Number(editedPrice))}
+            onClick={() => {
+               if (isSold) {
+                 onRequestClear(lot, Number(editedPrice));
+               } else {
+                 onAction(lot, "Disponível", Number(editedPrice));
+               }
+            }}
             disabled={actionLoading === lot.id}
             className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-2 rounded"
           >
             Disponibilizar
           </button>
           <button
-            onClick={() =>
-              onRequestCustomerForm(lot, "Reservado", Number(editedPrice))
-            }
-            disabled={actionLoading === lot.id}
-            className="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 text-[10px] font-bold py-2 rounded"
+            onClick={() => {
+              if (isSold) {
+                alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
+                return;
+              }
+              onRequestCustomerForm(lot, "Reservado", Number(editedPrice));
+            }}
+            disabled={actionLoading === lot.id || isSold}
+            title={isSold ? "Este lote já está vendido" : "Reservar lote"}
+            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
           >
             Reservar
           </button>
           <button
-            onClick={() =>
+            onClick={() => {
+              if (isSold) {
+                alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
+                return;
+              }
               onRequestCustomerForm(lot, "Vendido", Number(editedPrice))
-            }
-            disabled={actionLoading === lot.id}
-            className="flex-1 bg-red-600 text-white hover:bg-red-700 text-[10px] font-bold py-2 rounded"
+            }}
+            disabled={actionLoading === lot.id || isSold}
+            title={isSold ? "Este lote já está vendido" : "Vender lote"}
+            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
           >
             Vender
           </button>
@@ -1483,6 +1505,11 @@ export default function GISMap({
   ) => {
     alert("FUNÇÃO REAL DE VENDA CHAMADA");
     if (!user) return;
+
+    if (isLotSold(lot.status) && (newStatus === "Vendido" || newStatus === "Reservado")) {
+      alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
+      return;
+    }
 
     let finalProjectId = lot.project_id;
     if (!finalProjectId && projectId) finalProjectId = projectId;
