@@ -1299,22 +1299,20 @@ export default function GISMap({
 
   useEffect(() => {
     async function loadLots() {
-      if (!user) return;
+      if (!user || !projectId) return;
       try {
         let blocksQuery = supabase
           .from("blocks")
-          .select("*, projects(name), customers(name)");
+          .select("*, projects(name), customers(name)")
+          .eq("project_id", projectId);
 
-        if (projectId) {
-          blocksQuery = blocksQuery.eq("project_id", projectId);
-        }
-
-        if (
-          user.role !== "SUPER_ADMIN" &&
-          user.email !== "severino@nortesultopografia.com.br" &&
-          user.tenant_id
-        ) {
-          blocksQuery = blocksQuery.eq("tenant_id", user.tenant_id);
+        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
+          blocksQuery = blocksQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+        } else if (user.role !== "SUPER_ADMIN" && !user.tenant_id) {
+          // Bloquear se não tiver tenant
+          setLots([]);
+          setLoading(false);
+          return;
         }
 
         const blocksRes = await blocksQuery;
@@ -1864,6 +1862,14 @@ export default function GISMap({
       alert("Erro ao salvar cliente/venda: " + e.message);
     }
   };
+
+  if (!projectId) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[var(--color-background)]">
+        <p className="text-gray-500 font-medium">Projeto não identificado.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

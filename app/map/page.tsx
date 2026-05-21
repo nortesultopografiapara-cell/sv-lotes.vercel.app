@@ -223,7 +223,11 @@ export default function MapPage() {
        const { extractSegments, detectSides, normalizeDimensions } = await import('@/utils/calculateLotDimensions');
 
        // 1. Load all blocks from this project
-       const { data: blocks, error } = await supabase.from('blocks').select('*').eq('project_id', selectedProject.id);
+       let blocksQuery = supabase.from('blocks').select('*').eq('project_id', selectedProject.id);
+       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+           blocksQuery = blocksQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+       }
+       const { data: blocks, error } = await blocksQuery;
        if (error) throw error;
        if (!blocks || blocks.length === 0) return;
 
@@ -585,6 +589,7 @@ export default function MapPage() {
              price: finalPrice,
              geometry: geom,
              tenant_id: finalTenantId,
+             company_id: finalTenantId,
              frente: dims.frente,
              fundo: dims.fundo,
              lado_direito: dims.ladoD,
