@@ -111,10 +111,13 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             phone: formData.phone,
             email: formData.email,
             status_operacional: formData.status_operacional,
-            slug: slug,
             plan_type: formData.plan,
             ...limits
          };
+
+         if (!initialData.slug) {
+             updatePayload.slug = slug;
+         }
 
          // Apenas envia campos novos se estiverem preenchidos, minimizando erro de schema cache se a tabela estiver desatualizada, mas enviamos se tiver valor
          if (formData.address) updatePayload.address = formData.address;

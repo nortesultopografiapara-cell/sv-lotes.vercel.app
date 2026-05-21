@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 
+function generateSlug(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
 export async function POST(req: Request) {
   console.log('[PROVISIONAMENTO MULTI-TENANT] Iniciando criação de empresa...');
   
@@ -28,8 +39,21 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, cnpj, phone, email, plan, adminName, adminEmail, adminPhone, sendEmail } = body;
 
-    // 0. Pre-validar se o CNPJ, Slug ou Email já existem na tabela public.companies ou public.users
-    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
+    // 0. Pre-validar se o CNPJ ou Email já existem na tabela public.companies ou public.users
+    const baseSlug = generateSlug(name);
+    let uniqueSlug = baseSlug;
+    let isSlugUnique = false;
+    let suffix = 0;
+
+    while (!isSlugUnique) {
+      const { data: existingSlug } = await supabaseAdmin.from('companies').select('id').eq('slug', uniqueSlug).maybeSingle();
+      if (!existingSlug) {
+        isSlugUnique = true;
+      } else {
+        suffix = Math.floor(Math.random() * 10000);
+        uniqueSlug = `${baseSlug}-${suffix}`;
+      }
+    }
     
     const [ { data: existingUser }, { data: existingCnpj } ] = await Promise.all([
        supabaseAdmin.from('users').select('id').eq('email', adminEmail).maybeSingle(),
@@ -59,7 +83,7 @@ export async function POST(req: Request) {
 
     const companyPayload: any = {
       name,
-      slug,
+      slug: uniqueSlug,
       cnpj,
       email: email || adminEmail,
       phone: phone || adminPhone,
@@ -85,6 +109,7 @@ export async function POST(req: Request) {
         console.warn("Retrying minimal payload due to structure mismatch", companyError);
         const minimalPayload = {
             name,
+            slug: uniqueSlug,
             cnpj,
             status_operacional: body.status_operacional || 'Ativa',
             is_test_company: body.is_test_company === true
