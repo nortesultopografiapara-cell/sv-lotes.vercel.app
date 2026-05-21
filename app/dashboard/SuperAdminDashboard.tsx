@@ -43,51 +43,145 @@ import {
   Pie,
   Cell
 } from 'recharts';
+import { useRouter } from 'next/navigation';
 
 export default function SuperAdminDashboard({ user }: { user: any }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
-    totalCompanies: 14,
-    activeCompanies: 11,
-    suspendedCompanies: 2,
-    inactiveCompanies: 1,
-    mrr: 12450.00,
-    totalUsers: 37,
-    totalBrokers: 56,
-    totalProjects: 28,
-    totalContracts: 156,
-    totalLots: 1248
+    totalCompanies: 0,
+    activeCompanies: 0,
+    suspendedCompanies: 0,
+    inactiveCompanies: 0,
+    mrr: 0,
+    totalUsers: 0,
+    totalBrokers: 0,
+    totalProjects: 0,
+    totalContracts: 0,
+    totalLots: 0
   });
   const [recentCompanies, setRecentCompanies] = useState<any[]>([]);
+  const [planDistribution, setPlanDistribution] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
   useEffect(() => {
+    if (user?.role !== 'SUPER_ADMIN') {
+       router.push('/dashboard/operational');
+       return;
+    }
+
     async function loadData() {
-      // In a real scenario we'd fetch real data here
-      // Mocking some data for the UI
-      setRecentCompanies([
-        { id: 1, name: 'MENESES IMOBILIARIA LTDA', slug: 'meneses-imobiliaria-ltda-4625', plan: 'Profissional', status: 'Ativa', projects: [12, Infinity], users: [8, Infinity], brokers: [15, Infinity], mrr: 5990 },
-        { id: 2, name: 'NORTE & SUL TOPOGRAFIA E SERVIÇOS LTDA', slug: 'norte-sul-topografia-e-servicos-ltda-9431', plan: 'Básico', status: 'Suspensa', projects: [2, 5], users: [2, 3], brokers: [1, 5], mrr: 0 },
-        { id: 3, name: 'CONSTRUTORA NOVO HORIZONTE LTDA', slug: 'construtora-novo-horizonte-ltda-7823', plan: 'Standard', status: 'Ativa', projects: [6, 10], users: [4, 5], brokers: [8, 10], mrr: 2490 },
-        { id: 4, name: 'LOTEADORA BOA VISTA LTDA', slug: 'loteadora-boa-vista-ltda-5589', plan: 'Básico', status: 'Ativa', projects: [3, 5], users: [2, 3], brokers: [2, 5], mrr: 790 },
+      setLoading(true);
+
+      const [
+         { data: companies, count: totalCompanies },
+         { count: totalUsers },
+         { count: totalBrokers },
+         { count: totalProjects },
+         { count: totalContracts },
+         { count: totalLots }
+      ] = await Promise.all([
+         supabase.from('companies').select('*', { count: 'exact' }),
+         supabase.from('users').select('*', { count: 'exact', head: true }),
+         supabase.from('brokers').select('*', { count: 'exact', head: true }),
+         supabase.from('projects').select('*', { count: 'exact', head: true }),
+         supabase.from('contracts').select('*', { count: 'exact', head: true }),
+         supabase.from('blocks').select('*', { count: 'exact', head: true })
       ]);
+
+      const comps = companies || [];
+      
+      const active = comps.filter(c => c.status_operacional === 'Ativa').length || comps.filter(c => c.active === true).length;
+      const suspended = comps.filter(c => c.status_operacional === 'Suspensa').length;
+      const inactive = comps.filter(c => c.status_operacional === 'Inativa' || c.status_operacional === 'Inadimplente' || c.status_operacional === 'Bloqueada').length || comps.filter(c => c.active === false).length;
+      
+      setStats({
+        totalCompanies: totalCompanies || 0,
+        activeCompanies: active,
+        suspendedCompanies: suspended,
+        inactiveCompanies: inactive,
+        mrr: 0,
+        totalUsers: totalUsers || 0,
+        totalBrokers: totalBrokers || 0,
+        totalProjects: totalProjects || 0,
+        totalContracts: totalContracts || 0,
+        totalLots: totalLots || 0
+      });
+
+      const plans = comps.reduce((acc, current) => {
+         const plan = current.plan_type || current.plan || 'Sem plano';
+         acc[plan] = (acc[plan] || 0) + 1;
+         return acc;
+      }, {} as any);
+
+      const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6b7280'];
+      const pd = Object.keys(plans).map((key, i) => ({
+         name: key.charAt(0).toUpperCase() + key.slice(1),
+         value: plans[key],
+         color: colors[i % colors.length]
+      }));
+      setPlanDistribution(pd);
+
+      const computedAlerts = [];
+      const badStatusComps = comps.filter(c => ['Suspensa', 'Bloqueada', 'Inadimplente'].includes(c.status_operacional));
+      if (badStatusComps.length > 0) {
+         computedAlerts.push({
+            id: 'bad-status',
+            icon: <Lock className="w-4 h-4" />,
+            colorClass: 'text-red-500',
+            bgClass: 'bg-red-500/10',
+            title: `${badStatusComps.length} empresas restritas`,
+            desc: badStatusComps.map(c => c.name).join(', '),
+            time: 'Agora'
+         });
+      }
+      const noEmailComps = comps.filter(c => !c.email);
+      if (noEmailComps.length > 0) {
+         computedAlerts.push({
+            id: 'no-email',
+            icon: <AlertTriangle className="w-4 h-4" />,
+            colorClass: 'text-orange-500',
+            bgClass: 'bg-orange-500/10',
+            title: `${noEmailComps.length} empresas sem e-mail`,
+            desc: 'Verifique no cadastro',
+            time: 'Agora'
+         });
+      }
+      setAlerts(computedAlerts);
+
+      // Load recent companies with detailed counts
+      const { data: recent } = await supabase
+         .from('companies')
+         .select(`*, users(count), brokers(count), projects(count)`)
+         .order('created_at', { ascending: false })
+         .limit(5);
+
+      if (recent) {
+         const formattedRecent = recent.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            slug: r.slug,
+            plan: r.plan_type || r.plan || 'Sem plano',
+            status: r.status_operacional || 'Ativa',
+            projects: [r.projects?.[0]?.count || 0, r.project_limit === -1 ? Infinity : r.project_limit || Infinity],
+            users: [r.users?.[0]?.count || 0, Infinity], // assuming infinite users limit for now
+            brokers: [r.brokers?.[0]?.count || 0, r.broker_limit === -1 ? Infinity : r.broker_limit || Infinity],
+            mrr: 0 // real MRR goes here when billing is ready
+         }));
+         setRecentCompanies(formattedRecent);
+      }
+
       setLoading(false);
     }
     loadData();
-  }, []);
+  }, [user]);
+
+  const handleMissingFeature = () => {
+    alert('Módulo em preparação.');
+  };
 
   const revenueData = [
-    { name: 'Dez/25', value: 0 },
-    { name: 'Jan/26', value: 6000 },
-    { name: 'Fev/26', value: 8000 },
-    { name: 'Mar/26', value: 8500 },
-    { name: 'Abr/26', value: 7500 },
-    { name: 'Mai/26', value: 12450 },
-  ];
-
-  const planDistribution = [
-    { name: 'Básico', value: 5, color: '#3b82f6' }, // blue
-    { name: 'Standard', value: 6, color: '#10b981' }, // green
-    { name: 'Profissional', value: 3, color: '#8b5cf6' }, // purple
+    { name: 'Receitas', value: 0 },
   ];
 
   const formatCurrency = (val: number) => {
@@ -246,7 +340,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                  <option>Últimos 6 meses</option>
                </select>
             </div>
-            <div className="h-64 w-full">
+            <div className="h-64 w-full relative">
                <ResponsiveContainer width="100%" height="100%">
                  <LineChart data={revenueData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
                    <CartesianGrid strokeDasharray="3 3" stroke="#2d3340" vertical={false} />
@@ -260,6 +354,9 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', stroke: '#151a23', strokeWidth: 2 }} activeDot={{ r: 6 }} />
                  </LineChart>
                </ResponsiveContainer>
+               <div className="absolute inset-0 flex items-center justify-center bg-[#151a23]/60 backdrop-blur-sm text-gray-400 font-medium rounded-lg">
+                  Financeiro SaaS ainda não configurado.
+               </div>
             </div>
          </div>
 
@@ -287,7 +384,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                      </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                     <span className="text-2xl font-bold text-white">14</span>
+                     <span className="text-2xl font-bold text-white">{stats.totalCompanies}</span>
                      <span className="text-[10px] text-gray-400 uppercase tracking-widest">Total</span>
                   </div>
                 </div>
@@ -298,7 +395,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: plan.color }} />
                          <span className="text-sm font-medium text-gray-200">{plan.name}</span>
                        </div>
-                       <span className="text-xs text-gray-500 ml-5">{plan.value} empresas ({(plan.value / 14 * 100).toFixed(1)}%)</span>
+                       <span className="text-xs text-gray-500 ml-5">{plan.value} empresas {stats.totalCompanies > 0 && `(${(plan.value / stats.totalCompanies * 100).toFixed(1)}%)`}</span>
                      </div>
                    ))}
                 </div>
@@ -312,49 +409,25 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                <button className="text-xs font-semibold text-blue-500 hover:text-blue-400">Ver todos</button>
             </div>
             <div className="flex-1 flex flex-col gap-5 overflow-y-auto">
-               <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-full bg-orange-500/10 text-orange-500 shrink-0">
-                     <AlertTriangle className="w-4 h-4" />
+               {alerts.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+                     <CheckCircle className="w-10 h-10 text-gray-600 mb-2" />
+                     <p className="text-gray-400 text-sm font-medium">Nenhum alerta no momento.</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                     <p className="text-[13px] font-medium text-orange-500 truncate">2 empresas com pagamento em atraso</p>
-                     <p className="text-[11px] text-gray-500 mt-1">Última cobrança falhou</p>
-                  </div>
-                  <span className="text-[11px] text-gray-500 shrink-0">Há 2 horas</span>
-               </div>
-               
-               <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-full bg-red-500/10 text-red-500 shrink-0">
-                     <Lock className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                     <p className="text-[13px] font-medium text-red-500 truncate">1 empresa suspensa</p>
-                     <p className="text-[11px] text-gray-500 mt-1">Por falta de pagamento</p>
-                  </div>
-                  <span className="text-[11px] text-gray-500 shrink-0">Há 5 horas</span>
-               </div>
-
-               <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-full bg-blue-500/10 text-blue-500 shrink-0">
-                     <Activity className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                     <p className="text-[13px] font-medium text-blue-500 truncate">3 empresas próximas do limite de projetos</p>
-                     <p className="text-[11px] text-gray-500 mt-1">80% do limite utilizado</p>
-                  </div>
-                  <span className="text-[11px] text-gray-500 shrink-0">Há 1 dia</span>
-               </div>
-
-               <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-full bg-green-500/10 text-green-500 shrink-0">
-                     <CheckCircle className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                     <p className="text-[13px] font-medium text-green-500 truncate">Sistema operacional</p>
-                     <p className="text-[11px] text-gray-500 mt-1">Todos os serviços funcionando</p>
-                  </div>
-                  <span className="text-[11px] text-gray-500 shrink-0">Agora</span>
-               </div>
+               ) : (
+                  alerts.map(a => (
+                   <div key={a.id} className="flex items-start gap-4">
+                      <div className={`p-2 rounded-full shrink-0 ${a.bgClass} ${a.colorClass}`}>
+                         {a.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                         <p className={`text-[13px] font-medium truncate ${a.colorClass}`}>{a.title}</p>
+                         <p className="text-[11px] text-gray-500 mt-1">{a.desc}</p>
+                      </div>
+                      <span className="text-[11px] text-gray-500 shrink-0">{a.time}</span>
+                   </div>
+                  ))
+               )}
             </div>
          </div>
       </div>
@@ -382,8 +455,13 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                      </tr>
                   </thead>
                   <tbody className="text-sm">
-                     {recentCompanies.map((c) => (
-                        <tr key={c.id} className="border-b border-[#1f232b]/50 hover:bg-[#1a1f29] transition-colors group">
+                     {recentCompanies.length === 0 ? (
+                        <tr>
+                           <td colSpan={8} className="p-8 text-center text-gray-500 font-medium">Nenhuma empresa cadastrada.</td>
+                        </tr>
+                     ) : (
+                      recentCompanies.map((c) => (
+                         <tr key={c.id} className="border-b border-[#1f232b]/50 hover:bg-[#1a1f29] transition-colors group">
                            <td className="p-4 pl-6">
                               <div className="flex items-center gap-3">
                                  <div className="w-8 h-8 rounded-lg bg-gray-800 text-gray-300 flex items-center justify-center font-bold text-xs border border-gray-700">
@@ -402,18 +480,18 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                            </td>
                            <td className="p-4">
                               <div className={`flex items-center gap-1.5 text-[11px] font-bold ${c.status === 'Ativa' ? 'text-green-500' : 'text-red-500'}`}>
-                                 <div className={`w-1.5 h-1.5 rounded-full ${c.status === 'Ativa' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                  <div className={`w-1.5 h-1.5 rounded-full ${c.status === 'Ativa' ? 'bg-green-500' : 'bg-red-500'}`} />
                                  {c.status}
                               </div>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.projects[0]} / {c.projects[1] === Infinity ? '∞' : c.projects[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.projects[0]} / {c.projects[1] === Infinity ? 'Ilimitado' : c.projects[1]}</span>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.users[0]} / {c.users[1] === Infinity ? '∞' : c.users[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.users[0]} / {c.users[1] === Infinity ? 'Ilimitado' : c.users[1]}</span>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.brokers[0]} / {c.brokers[1] === Infinity ? '∞' : c.brokers[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.brokers[0]} / {c.brokers[1] === Infinity ? 'Ilimitado' : c.brokers[1]}</span>
                            </td>
                            <td className="p-4">
                               <span className="text-gray-200 font-medium text-[13px]">{formatCurrency(c.mrr)}</span>
@@ -430,7 +508,8 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                               </button>
                            </td>
                         </tr>
-                     ))}
+                      ))
+                     )}
                   </tbody>
                </table>
             </div>
@@ -440,42 +519,42 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
          <div className="bg-transparent flex flex-col gap-4">
             <h3 className="text-[15px] font-semibold text-gray-200 px-1">Ações Rápidas</h3>
             <div className="grid grid-cols-2 gap-4">
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               <Link href="/companies" className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
                      <Building2 className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px]">Nova Empresa</span>
-               </button>
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-purple-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               </Link>
+               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-purple-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-purple-500/10 text-purple-400 group-hover:scale-110 transition-transform">
                      <Banknote className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px]">Novo Plano</span>
                </button>
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-green-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-green-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-green-500/10 text-green-400 group-hover:scale-110 transition-transform">
                      <Wallet className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px] leading-tight">Ver<br/>Assinaturas</span>
                </button>
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-yellow-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-yellow-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-yellow-500/10 text-yellow-500 group-hover:scale-110 transition-transform">
                      <DollarSign className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px] leading-tight">Relatório<br/>Financeiro</span>
                </button>
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform">
                      <AlertTriangle className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px] leading-tight">Logs de<br/>Auditoria</span>
                </button>
-               <button className="bg-[#151a23] border border-[#1f232b] hover:border-gray-400/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
+               <Link href="/settings/global" className="bg-[#151a23] border border-[#1f232b] hover:border-gray-400/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
                   <div className="p-3 rounded-full bg-gray-500/10 text-gray-400 group-hover:scale-110 transition-transform">
                      <Settings className="w-6 h-6" />
                   </div>
                   <span className="text-gray-300 font-medium text-[13px]">Configurações</span>
-               </button>
+               </Link>
             </div>
          </div>
       </div>
