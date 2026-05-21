@@ -7,6 +7,7 @@ import {
   Map as MapIcon, Database, Users, Eye, Edit, Trash2, Loader2, AlertCircle
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
+import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 
@@ -16,6 +17,7 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
+  const [companyToDelete, setCompanyToDelete] = useState<any>(null);
   
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -69,15 +71,7 @@ export default function CompaniesPage() {
   };
 
   const handleDelete = async (company: any) => {
-    if (confirm(`Tem certeza que deseja excluir a empresa ${company.name}? Isso pode afetar dados vinculados.`)) {
-      try {
-        const { error } = await supabase.from('companies').delete().eq('id', company.id);
-        if (error) throw error;
-        loadCompanies();
-      } catch (err: any) {
-        alert('Erro ao excluir empresa: ' + err.message);
-      }
-    }
+    setCompanyToDelete(company);
   };
 
   // Verification if user is SUPER_ADMIN
@@ -221,6 +215,12 @@ export default function CompaniesPage() {
          onClose={() => setIsModalOpen(false)} 
          onSuccess={loadCompanies}
       />
+      <CompanyDeleteModal
+         isOpen={!!companyToDelete}
+         company={companyToDelete}
+         onClose={() => setCompanyToDelete(null)}
+         onSuccess={() => { setCompanyToDelete(null); loadCompanies(); }}
+      />
     </div>
   );
 }
@@ -315,8 +315,8 @@ function CompanyRow({ company, onEdit, onDelete, isMain }: any) {
           <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Gerenciar Configurações">
             <Edit className="w-4 h-4" />
           </button>
-          {!isMain && (
-            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir Definitivamente">
+          {!isMain && company.is_test_company === true && (
+            <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10" title="Excluir Teste Definitivamente">
               <Trash2 className="w-4 h-4" />
             </button>
           )}

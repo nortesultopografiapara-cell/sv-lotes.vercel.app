@@ -26,6 +26,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     email: initialData?.email || '',
     status_operacional: initialData?.status_operacional || 'Ativa',
     plan: initialData?.plan_type || initialData?.plan || 'Básico',
+    is_test_company: initialData?.is_test_company || false,
     password: '' // Only used for creation now, not update.
   });
 
@@ -108,6 +109,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             status_operacional: formData.status_operacional,
             slug: slug,
             plan_type: formData.plan,
+            is_test_company: formData.is_test_company,
             ...limits
          }).eq('id', initialData.id);
          
@@ -134,6 +136,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  active: true, // legacy
                  status_operacional: formData.status_operacional,
                  plan_type: formData.plan,
+                 is_test_company: formData.is_test_company,
                  password: formData.password,
                  adminName: `Admin - ${formData.name}`,
                  adminEmail: formData.email,
@@ -304,6 +307,22 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   <option value="Bloqueada">🔴 Bloqueada</option>
                   <option value="Inadimplente">⚫ Inadimplente</option>
                 </select>
+              </div>
+
+              <div className="md:col-span-2 flex items-center justify-between p-4 mt-2 bg-[#1a1f29] border border-[#2d3340] rounded-lg">
+                 <div>
+                   <h3 className="text-sm font-semibold text-white">Empresa de Teste (Sandbox)</h3>
+                   <p className="text-xs text-gray-500 mt-0.5">Se marcado, será possível excluir esta empresa e todos os dados em cascata.</p>
+                 </div>
+                 <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={formData.is_test_company}
+                      onChange={(e) => setFormData({ ...formData, is_test_company: e.target.checked })}
+                    />
+                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+                 </label>
               </div>
             </div>
           </form>

@@ -69,6 +69,7 @@ export async function POST(req: Request) {
         plan_type: body.plan_type || plan,
         module: plan ? plan.toLowerCase() : 'básico',
         status_operacional: body.status_operacional || 'Ativa',
+        is_test_company: body.is_test_company === true,
         status: 'active',
         active: true,
         ...limits
