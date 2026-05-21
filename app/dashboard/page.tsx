@@ -24,11 +24,21 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
+import SuperAdminDashboard from './SuperAdminDashboard';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { ssr: false });
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  
+  if (user?.role === 'SUPER_ADMIN') {
+    return <SuperAdminDashboard user={user} />;
+  }
+  
+  return <OperationalDashboard user={user} />;
+}
+
+function OperationalDashboard({ user }: { user: any }) {
   const [stats, setStats] = useState({
     available: 0,
     reserved: 0,

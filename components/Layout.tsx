@@ -18,7 +18,8 @@ import {
   FileText,
   TrendingDown,
   AlertCircle,
-  Banknote
+  Banknote,
+  Plus
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -209,14 +210,24 @@ function NotificationBell({ user }: { user: any }) {
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
     return [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-      { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-[#06b6d4]' },
-      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
-      { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
-      { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
-      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
-      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
-      { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
+      { name: 'GESTÃO DA PLATAFORMA', isSection: true },
+      { name: 'Dashboard SaaS', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-gray-300' },
+      { name: 'Planos & Assinaturas', href: '/plans', icon: Banknote, color: 'text-gray-300' },
+      { name: 'Usuários', href: '/users', icon: Users, color: 'text-gray-300' },
+      { name: 'Financeiro SaaS', href: '/saas-finance', icon: Wallet, color: 'text-gray-300' },
+      { name: 'Relatórios Globais', href: '/reports', icon: TrendingDown, color: 'text-gray-300' },
+      { name: 'SEGURANÇA E SUPORTE', isSection: true },
+      { name: 'Logs de Auditoria', href: '/logs', icon: AlertCircle, color: 'text-gray-300' },
+      { name: 'Monitoramento', href: '/monitoring', icon: TrendingDown, color: 'text-gray-300' },
+      { name: 'Suporte', href: '/support', icon: User, color: 'text-gray-300' },
+      { name: 'Configurações Globais', href: '/settings/global', icon: Settings, color: 'text-gray-300' },
+      { name: 'Integrações', href: '/integrations', icon: Settings, color: 'text-gray-300' },
+      { name: 'ACESSO RÁPIDO', isSection: true },
+      { name: 'Acessar como Empresa', href: '/companies/login-as', icon: Building2, color: 'text-gray-300' },
+      { name: 'Nova Empresa', href: '/companies/new', icon: Plus, color: 'text-gray-300' },
+      { name: 'Nova Assinatura', href: '/plans/new', icon: Banknote, color: 'text-gray-300' },
+      { name: 'Ver Tickets de Suporte', href: '/support/tickets', icon: User, color: 'text-gray-300' },
     ];
   }
 
@@ -338,21 +349,28 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
           </div>
 
-          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-2">
-            {menuItems.map((item) => {
+          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-1">
+            {menuItems.map((item, idx) => {
+              if (item.isSection) {
+                return (
+                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-gray-500 tracking-wider">
+                    {item.name}
+                  </div>
+                );
+              }
               const isActive = pathname === item.href;
               return (
                 <Link 
                   key={item.href} 
-                  href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                  href={item.href!}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
                     isActive 
-                      ? 'bg-[var(--color-surface)] text-white border border-[var(--color-border)]' 
+                      ? 'bg-[var(--color-primary)]/10 text-white border border-[var(--color-primary)]/20 shadow-sm' 
                       : 'text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)]/50 border border-transparent'
                   }`}
                 >
-                  <item.icon className={`w-5 h-5 ${item.color}`} />
-                  <span className="text-[15px]">{item.name}</span>
+                  {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
+                  <span className="text-[14px]">{item.name}</span>
                 </Link>
               );
             })}
@@ -378,12 +396,19 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
-            {menuItems.map((item) => {
+            {menuItems.map((item, idx) => {
+              if (item.isSection) {
+                return (
+                  <div key={`section-${idx}`} className="px-3 pt-4 pb-2 text-[10px] font-bold text-gray-500 tracking-wider">
+                    {item.name}
+                  </div>
+                );
+              }
               const isActive = pathname === item.href;
               return (
                 <Link 
                   key={item.href} 
-                  href={item.href}
+                  href={item.href!}
                   onClick={() => isMobile && setIsOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
                     isActive 
@@ -391,7 +416,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                       : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-white border border-transparent'
                   }`}
                 >
-                  <item.icon className={`w-5 h-5 ${item.color}`} />
+                  {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
                   <span className="font-sans font-medium text-sm">{item.name}</span>
                 </Link>
               );
@@ -414,9 +439,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">
             <div>
               <h1 className="text-xl font-medium text-white flex items-center gap-1">
-                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'}</strong>
+                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'} {user?.role === 'SUPER_ADMIN' && '(Super Admin)'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)]">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Empresa'}</p>
+              <p className="text-sm text-[var(--color-text-muted)]">{user?.role === 'SUPER_ADMIN' ? 'Painel de Controle da Plataforma' : 'Admin Empresa'}</p>
             </div>
 
             <div className="flex items-center gap-6">
