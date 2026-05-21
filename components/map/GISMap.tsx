@@ -1478,6 +1478,20 @@ export default function GISMap({
     alert("FUNÇÃO REAL DE VENDA CHAMADA");
     if (!user) return;
 
+    let finalProjectId = lot.project_id;
+    if (!finalProjectId && projectId) finalProjectId = projectId;
+
+    if (!finalProjectId) {
+      alert("Projeto do lote não identificado.");
+      return;
+    }
+
+    let finalTenantId = user.tenant_id;
+    if (!finalTenantId) {
+      alert("Empresa não identificada. Faça login novamente.");
+      return;
+    }
+
     try {
       // Upsert Customer (verify by cpf_cnpj)
       const cpfCnpjValue = customerData.cpf_cnpj?.trim()
@@ -1610,29 +1624,21 @@ export default function GISMap({
 
         const processarPosVenda = async () => {
           try {
-            const resolvedTenantId =
-              (user as any)?.company_id ||
-              lot?.projects?.company_id ||
-              user?.tenant_id ||
-              lot?.tenant_id;
-
-            if (!resolvedTenantId) {
-              alert("ERRO PÓS-VENDA: tenant_id não encontrado");
-              return;
-            }
-
             console.log("INSERINDO SALES...");
 
             const { data: projDataSnapshot } = await supabase
               .from("projects")
               .select("*")
-              .eq("id", lot.project_id)
+              .eq("id", finalProjectId)
               .maybeSingle();
 
-            const salePayload = {
-              tenant_id: resolvedTenantId,
-              project_id: lot.project_id || null,
+            const salePayload: any = {
+              tenant_id: finalTenantId,
+              company_id: finalTenantId,
+              project_id: finalProjectId,
               block_id: lot.id,
+              block_number: lot.block || lot.block_name || lot.lot_block || null,
+              lot_number: lot.number || lot.lot_number || null,
               lot_id: lot.id,
               customer_id: customerId,
               client_id: clientId,
