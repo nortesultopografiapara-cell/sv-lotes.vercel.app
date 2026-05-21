@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
@@ -731,116 +731,114 @@ export default function MapPage() {
   if (selectedProject) {
     return (
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
-        {/* Top Floating Header inside Map */}
-        <div className="absolute top-2 left-2 right-2 md:top-4 md:left-24 md:right-auto md:w-96 z-[400] pointer-events-none flex flex-col gap-1.5 md:gap-2">
-          
-          <div className="flex items-center justify-between pointer-events-auto bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded-lg p-2 shadow-sm">
+        {/* LEGENDA - BOTTOM LEFT */}
+        <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
+           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+                <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+                <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+                <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
+              </div>
+           </div>
+        </div>
+
+        {/* TOP FLOATING HEADER - TOP LEFT */}
+        <div className="absolute top-2 left-2 md:top-4 md:left-24 z-[400] pointer-events-auto">
+          <div className="flex items-center bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg p-2 max-w-[250px]">
              <div className="flex items-center gap-2 overflow-hidden">
-                <button onClick={handleBack} className="flex-shrink-0 p-1.5 hover:bg-[var(--color-border)] rounded-md text-[var(--color-text-muted)] hover:text-white transition-colors">
+                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-gray-400 hover:text-white transition-colors" title="Voltar">
                    <ArrowLeft className="w-4 h-4" />
                 </button>
                 <h2 className="text-sm font-bold text-white truncate">{selectedProject.name}</h2>
              </div>
-             <button 
-                onClick={() => setIsMobilePanelOpen(!isMobilePanelOpen)}
-                className="flex-shrink-0 p-1.5 hover:bg-[var(--color-border)] rounded-md text-[var(--color-text-muted)] hover:text-white transition-colors"
-                title={isMobilePanelOpen ? "Recolher painel" : "Expandir painel"}
-             >
-                {isMobilePanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-             </button>
           </div>
+        </div>
 
-          <div className={`bg-[var(--color-surface)]/95 backdrop-blur-md rounded-lg shadow-lg pointer-events-auto transition-all duration-300 md:border md:border-[var(--color-border)] md:overflow-y-auto ${isMobilePanelOpen ? 'p-3 border border-[var(--color-border)]' : 'max-h-0 opacity-0 overflow-hidden border-transparent md:max-h-[800px] md:opacity-100 md:p-3'}`}>
-             <div className="flex flex-row justify-between items-start mb-3 hidden md:flex">
-               <div>
-                  <h2 className="text-sm font-bold text-white mb-0.5">Painel Operacional</h2>
-                  <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">Ferramentas GIS</p>
-               </div>
-             </div>
-            
-            <div className="flex flex-row md:grid md:grid-cols-2 gap-2 flex-wrap pb-1">
-              <button 
+        {/* GIS TOOLS VERTICAL BAR - RIGHT */}
+        <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
+           {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
+           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
+             
+             {/* Import */}
+             <button 
                 onClick={() => setIsImportModalOpen(true)} 
-                className="flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] text-[var(--color-text-muted)] transition-colors"
-                title="Importar Quadras"
-              >
-                <Upload className="w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">Importar</span>
-              </button>
-              
-              <button 
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+             >
+                <Upload className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
+             </button>
+             
+             <hr className="w-2/3 border-[#2d3340]" />
+             
+             {/* GPS */}
+             <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${gpsActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
-                title="Navegação GPS"
-              >
-                <Navigation className="w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">GPS</span>
-              </button>
-              
-              <button 
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+             >
+                <Navigation className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
+             </button>
+             
+             {/* Medição */}
+             <button 
                 onClick={() => setMeasureActive(!measureActive)} 
-                className={`flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${measureActive ? 'bg-[var(--color-info)]/10 border-[var(--color-info)] text-[var(--color-info)]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-info)] hover:text-[var(--color-info)]'}`}
-                title="Medição"
-              >
-                <Ruler className="w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">Medição</span>
-              </button>
-
-              <button 
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9]'}`}
+             >
+                <Ruler className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
+             </button>
+             
+             {/* Map Style */}
+             <button 
                 onClick={() => {
                    if (activeLayer === 'satellite') setActiveLayer('streets');
                    else if (activeLayer === 'streets') setActiveLayer('dark');
                    else setActiveLayer('satellite');
                 }} 
-                className="flex-1 min-w-[30%] md:min-w-0 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
-                title={`Estilo atual: ${activeLayer}`}
-              >
-                <MapIcon className="w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:block">
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
+             >
+                <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                    {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
                 </span>
-              </button>
-            </div>
-
-            <div className="hidden lg:flex flex-col gap-2 pt-3 mt-3 border-t border-[var(--color-border)]">
-              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">Ruas & Frentes</span>
-              <div className="grid grid-cols-2 gap-2">
-                 <button 
-                   onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                   className={`flex items-center justify-center gap-2 p-2.5 border rounded-lg transition-colors ${drawStreetActive ? 'bg-[#10b981]/10 border-[#10b981] text-[#10b981]' : 'bg-[var(--color-background)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[#10b981] hover:text-[#10b981]'}`}
-                   title="Linha de Rua"
-                 >
-                   <span className="text-[10px] font-bold uppercase tracking-wider">Linha de Rua</span>
-                 </button>
-                 <button 
-                   onClick={handleIdentifyFronts} 
-                   className="flex items-center justify-center gap-2 p-2.5 bg-[var(--color-primary)]/10 border border-[var(--color-primary)] rounded-lg hover:bg-[var(--color-primary)] text-[var(--color-primary)] hover:text-white transition-colors"
-                   title="Identificar Frentes"
-                 >
-                   <span className="text-[10px] font-bold uppercase tracking-wider">Identificar Frentes</span>
-                 </button>
-                 <button 
-                   onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                   className="col-span-2 flex items-center justify-center gap-2 p-2.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg hover:border-[#f59e0b] hover:text-[#f59e0b] text-[var(--color-text-muted)] transition-colors"
-                   title={streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
-                 >
-                   <span className="text-[10px] font-bold uppercase tracking-wider">{streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}</span>
-                 </button>
-              </div>
-            </div>
-
-            <div className="flex flex-row md:flex-col gap-3 md:gap-2 pt-3 mt-3 md:pt-4 md:mt-4 border-t border-[var(--color-border)] overflow-x-auto">
-              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
-                <div className="w-2.5 h-2.5 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
-                <div className="w-2.5 h-2.5 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap">
-                <div className="w-2.5 h-2.5 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
-              </div>
-            </div>
-          </div>
+             </button>
+             
+             <hr className="w-2/3 border-[#2d3340]" />
+             
+             {/* Linha de Rua */}
+             <button 
+                onClick={() => setDrawStreetActive(!drawStreetActive)} 
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+             >
+                <PenTool className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
+             </button>
+             
+             {/* Identificar Frentes */}
+             <button 
+                onClick={handleIdentifyFronts} 
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+             >
+                <Scan className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
+             </button>
+             
+             {/* Visibility Toggle */}
+             <button 
+                onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
+             >
+                {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                   {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
+                </span>
+             </button>
+             
+           </div>
         </div>
         
         {/* Map Container */}
