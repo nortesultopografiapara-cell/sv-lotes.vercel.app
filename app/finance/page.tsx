@@ -23,6 +23,7 @@ export default function FinancePage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectsList, setProjectsList] = useState<string[]>([]);
+  const [financeProjects, setFinanceProjects] = useState<any[]>([]);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -135,6 +136,16 @@ export default function FinancePage() {
         
         if (error) throw error;
         
+        let pQuery = supabase.from('projects').select('id, name');
+        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+            pQuery = pQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+        }
+        const { data: projData } = await pQuery;
+        if (projData) {
+            console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', projData.length);
+            setFinanceProjects(projData);
+        }
+        
         let localRecebido = 0;
         let localAReceber = 0;
         let localVencidas = 0;
@@ -204,7 +215,7 @@ export default function FinancePage() {
           });
           
           setPayments(data);
-          setProjectsList(Array.from(pList));
+          setProjectsList(projData ? projData.map((p: any) => p.name) : Array.from(pList));
         }
         
         let qtyNoPaymentContracts = 0;
@@ -573,7 +584,7 @@ export default function FinancePage() {
     try {
       const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
       
-      const { error } = await supabase.from('cash_movements').insert({
+      const payload: any = {
           tenant_id: resolvedTenantId,
           company_id: resolvedTenantId,
           type: 'saida',
@@ -582,7 +593,20 @@ export default function FinancePage() {
           amount: parseFloat(saidaForm.amount),
           movement_date: saidaForm.movement_date,
           created_by: user?.id
-      });
+      };
+      
+      if (saidaForm.project_id) {
+          payload.project_id = saidaForm.project_id;
+          const pName = financeProjects.find((p: any) => p.id === saidaForm.project_id)?.name;
+          if (pName) payload.project_name = pName;
+          console.log('EXPENSE_PROJECT_SELECTED', saidaForm.project_id);
+      }
+      
+      const { error } = await supabase.from('cash_movements').insert(payload);
+      
+      if (saidaForm.project_id) {
+          console.log('CASH_MOVEMENT_PROJECT_LINKED', saidaForm.project_id);
+      }
       
       if (error) throw error;
       
@@ -2430,8 +2454,15 @@ export default function FinancePage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Loteamento / Projeto (Opcional)</label>
-                  <select disabled className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed opacity-50">
-                     <option value="">-- Indisponível nesta versão rápida --</option>
+                  <select 
+                     value={saidaForm.project_id} 
+                     onChange={e => setSaidaForm({...saidaForm, project_id: e.target.value})} 
+                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                  >
+                     <option value="">Geral / Sem vínculo específico</option>
+                     {financeProjects.map(proj => (
+                       <option key={proj.id} value={proj.id}>{proj.name}</option>
+                     ))}
                   </select>
                 </div>
               </div>
