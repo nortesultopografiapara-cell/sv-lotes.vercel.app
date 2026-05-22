@@ -1482,6 +1482,7 @@ export default function FinancePage() {
   const handleGenerateProjectReport = async (format: 'pdf'|'excel') => {
       setIsGeneratingPr(true);
       try {
+          console.log("FLOW_PROJECT_SELECTED", prFilterProject);
           const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
           
           let startDate = prStartDate ? new Date(prStartDate + 'T00:00:00Z') : null;
@@ -1492,7 +1493,7 @@ export default function FinancePage() {
           // 1. Fetch Receipts (ENTRADAS)
           if (prType === 'Todos' || prType === 'Entradas') {
               let recQuery = supabase.from('finance_receipts')
-                  .select('*, customers!finance_receipts_customer_id_fkey(full_name, name), sales:sale_id(*), projects:project_id(name), blocks:block_id(name, number, block_name, project_id, projects(name)), brokers:broker_id(name)')
+                  .select('*, customers!finance_receipts_customer_id_fkey(full_name, name), contracts:contract_id(contract_number, project_id, projects(name)), sales:sale_id(id, project_id, contracts(contract_number), projects(name)), projects:project_id(name), blocks:block_id(name, number, block_name, project_id, projects(name)), brokers:broker_id(name)')
                   .order('due_date', { ascending: true });
               
               if (resolvedTenantId) {
@@ -1500,9 +1501,10 @@ export default function FinancePage() {
               }
               
               const { data: recData, error: recErr } = await recQuery;
+              console.log("FLOW_RECEIPTS_FOUND", recData);
               if (recData) {
                   recData.forEach((r: any) => {
-                      const projName = r.projects?.name || r.sales?.projects?.name || r.blocks?.projects?.name || 'Geral/Outros';
+                      const projName = r.contracts?.projects?.name || r.projects?.name || r.sales?.projects?.name || r.blocks?.projects?.name || 'Geral/Outros';
                       
                       if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
                       
@@ -1518,13 +1520,14 @@ export default function FinancePage() {
                       if (prStatus !== 'Todos' && status !== prStatus) return;
 
                       movements.push({
+                          id_check: `rec_${r.id}`,
                           data: r.paid_at ? new Date(r.paid_at) : dDate,
                           projeto: projName,
                           tipo: 'Entrada',
                           categoria: r.installment_number === 0 || r.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
                           cliente: r.customers?.name || r.customers?.full_name || 'NI',
                           corretor: r.brokers?.name || 'NI',
-                          contrato: r.sales?.contracts?.contract_number || '-',
+                          contrato: r.contracts?.contract_number || r.sales?.contracts?.contract_number || '-',
                           quadra: r.blocks?.block_name || r.blocks?.name || '-',
                           lote: r.blocks?.number || '-',
                           descricao: r.description || `Parcela ${r.installment_number || '1'}`,
@@ -1536,48 +1539,101 @@ export default function FinancePage() {
           }
 
           // 2. Fetch Cash Movements (ENTRADAS / SAÍDAS)
-          let cashQuery = supabase.from('cash_movements')
-              .select('*, projects:project_id(name), brokers:broker_id(name), customers:customer_id(name)');
-          
-          if (resolvedTenantId) {
-              cashQuery = cashQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-          }
-          
-          const { data: cashData, error: cashErr } = await cashQuery;
-          if (cashData) {
-              cashData.forEach((c: any) => {
-                  const projName = c.projects?.name || 'Geral/Outros';
-                  
-                  if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
+          if (prType === 'Todos' || prType === 'Saídas' || prType === 'Entradas') {
+              let cashQuery = supabase.from('cash_movements')
+                  .select('*, projects:project_id(name), brokers:broker_id(name), customers:customer_id(name), sales:sale_id(projects(name)), contracts:contract_id(projects(name))');
+              
+              if (resolvedTenantId) {
+                  cashQuery = cashQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+              }
+              
+              const { data: cashData, error: cashErr } = await cashQuery;
+              console.log("FLOW_CASH_MOVEMENTS_FOUND", cashData);
+              if (cashData) {
+                  cashData.forEach((c: any) => {
+                      // Skip commission category in cash_movements because we handle them securely via broker_commissions with exact sales links
+                      if (c.category === 'Comissão' || c.category === 'Comissao') return;
 
-                  const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
-                  if (prType !== 'Todos' && prType !== type + 's') return;
+                      const projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name || 'Geral/Outros';
+                      
+                      const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
+                      if (prType !== 'Todos' && prType !== type + 's') return;
 
-                  const mDate = new Date(c.movement_date || c.created_at);
-                  if (startDate && mDate < startDate) return;
-                  if (endDate && mDate > endDate) return;
+                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) {
+                           return;
+                      }
 
-                  let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
-                  if (prStatus !== 'Todos' && status !== prStatus) return;
+                      const mDate = new Date(c.movement_date || c.created_at);
+                      if (startDate && mDate < startDate) return;
+                      if (endDate && mDate > endDate) return;
 
-                  // Exclude movements already counted in finance_receipts to avoid double counting
-                  if (c.finance_receipt_id) return;
+                      let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
+                      if (prStatus !== 'Todos' && status !== prStatus) return;
 
-                  movements.push({
-                      data: mDate,
-                      projeto: projName,
-                      tipo: type,
-                      categoria: c.category || '-',
-                      cliente: c.customers?.name || '-',
-                      corretor: c.brokers?.name || '-',
-                      contrato: '-',
-                      quadra: '-',
-                      lote: '-',
-                      descricao: c.description || '-',
-                      valor: Number(c.amount) || 0,
-                      status: status
+                      // Exclude movements already counted in finance_receipts to avoid double counting
+                      if (c.finance_receipt_id) return;
+
+                      movements.push({
+                          id_check: `cash_${c.id}`,
+                          data: mDate,
+                          projeto: projName,
+                          tipo: type,
+                          categoria: c.category || '-',
+                          cliente: c.customers?.name || '-',
+                          corretor: c.brokers?.name || '-',
+                          contrato: '-',
+                          quadra: '-',
+                          lote: '-',
+                          descricao: c.description || '-',
+                          valor: Number(c.amount) || 0,
+                          status: status
+                      });
                   });
-              });
+              }
+          }
+
+          // 3. Fetch Broker Commissions (SAÍDAS) that are paid
+          if (prType === 'Todos' || prType === 'Saídas') {
+              let commQuery = supabase.from('broker_commissions')
+                  .select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number), projects(name)), contracts:contract_id(contract_number, projects(name))')
+                  .in('status', ['pago', 'paga']);
+              
+              if (resolvedTenantId) {
+                  commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+              }
+              
+              const { data: commData, error: commErr } = await commQuery;
+              console.log("FLOW_COMMISSIONS_FOUND", commData);
+              if (commData) {
+                  commData.forEach((cm: any) => {
+                      const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
+                      
+                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
+
+                      const mDate = new Date(cm.paid_at || cm.created_at);
+                      if (startDate && mDate < startDate) return;
+                      if (endDate && mDate > endDate) return;
+
+                      if (prStatus === 'Pendente') return; // because we only fetched paid
+                      if (prStatus === 'Estornado') return;
+
+                      movements.push({
+                          id_check: `comm_${cm.id}`,
+                          data: mDate,
+                          projeto: projName,
+                          tipo: 'Saída',
+                          categoria: 'Comissão',
+                          cliente: '-',
+                          corretor: cm.brokers?.name || '-',
+                          contrato: cm.sales?.contracts?.contract_number || cm.contracts?.contract_number || '-',
+                          quadra: '-',
+                          lote: '-',
+                          descricao: `Pagamento de comissão ao corretor ${cm.brokers?.name || 'NI'}`,
+                          valor: Number(cm.amount) || 0,
+                          status: 'Pago'
+                      });
+                  });
+              }
           }
 
           // Sort by date
@@ -1590,6 +1646,8 @@ export default function FinancePage() {
               if (m.tipo === 'Saída') totalSaidas += m.valor;
           });
           const saldo = totalEntradas - totalSaidas;
+          
+          console.log("FLOW_FINAL_TOTALS", {totalEntradas, totalSaidas, saldo});
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
