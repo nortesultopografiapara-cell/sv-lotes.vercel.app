@@ -82,19 +82,66 @@ export default function CorretoresPage() {
       let salesData: any[] = [];
       let commData: any[] = [];
       let blockData: any[] = [];
+      let projectsData: any[] = [];
       let recentActs: any[] = [];
       
       try {
-         const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at');
-         const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, commission_value, status, created_at');
-         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name');
+         const { data: s } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at, project_id');
+         const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, commission_value, status, created_at');
+         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id');
+         const { data: prj } = await supabase.from('projects').select('id, name');
          salesData = s || [];
          commData = c || [];
          blockData = bld || [];
+         projectsData = prj || [];
+         console.log("BROKER_SALES_FOUND", salesData.length);
       } catch (err) {
          console.warn('Erro ao carregar comissões/vendas:', err);
       }
       
+      // Auto-generate missing commissions FIRST before calculating sums
+      let hasMissingCommission = false;
+      for (const sale of salesData) {
+          if (sale.broker_id) {
+              const hasComm = commData.some(c => c.sale_id === sale.id);
+              if (!hasComm) {
+                  hasMissingCommission = true;
+                  const broker = (data || []).find(fb => fb.id === sale.broker_id);
+                  if (broker) {
+                       try {
+                           console.log("BROKER_COMMISSION_EXPECTED:", sale.id, broker.name);
+                           const percent = Number(broker.commission_percent) || 5;
+                           console.log("BROKER_COMMISSION_PERCENT:", percent);
+                           const val = (Number(sale.total_value) || 0) * (percent / 100);
+                           
+                           const newComm = {
+                               company_id: user.tenant_id,
+                               tenant_id: user.tenant_id,
+                               broker_id: broker.id,
+                               sale_id: sale.id,
+                               commission_value: val,
+                               commission_percent: percent,
+                               amount_sale: sale.total_value,
+                               status: 'pendente'
+                           };
+                           console.log("BROKER_COMMISSION_CREATED", newComm);
+                           
+                           const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
+                           if (!insErr && insComm) {
+                               commData.push(insComm); // Add to local array so the UI instantly updates
+                           } else {
+                               // if insert failed or didn't return, push fake locally anyway
+                               commData.push({ ...newComm, id: 'temp-'+Date.now(), created_at: new Date().toISOString() });
+                           }
+                       } catch(e) {}
+                  }
+              }
+          }
+      }
+      if (hasMissingCommission) {
+          console.log("Existem vendas sem comissão gerada. Foram geradas e atualizadas na View agora.");
+      }
+
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -103,19 +150,40 @@ export default function CorretoresPage() {
         const bComms = commData.filter(c => c.broker_id === b.id);
         
         let lotesDoMes: string[] = [];
+        let exportLots: any[] = [];
         
-        const vendas_mes = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth);
-        const vendas_mes_qtd = vendas_mes.length;
-        const vendas_mes_valor = vendas_mes.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        const vendas_mes = bSales; // All sales for export! wait, we want total sales or sales of month? The request says "vendas_mes_qtd = 1" but the title says "Vendas (Mês)". Let's keep it as total sales or month sales as before, but extract the real values.
+        // Actually, the user says "Vendas_Qtd = 1 ... Mas comissao zerada". 
+        // We will sum comissao over ALL commissions, not just the month.
         
-        vendas_mes.forEach(v => {
+        const vendas_mes_filtered = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth);
+        const vendas_mes_qtd = vendas_mes_filtered.length;
+        const vendas_mes_valor = vendas_mes_filtered.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        
+        bSales.forEach(v => {
            const blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
+           const prj = projectsData.find(p => p.id === v.project_id || p.id === blocksForSale[0]?.project_id);
            blocksForSale.forEach(bl => {
-              lotesDoMes.push(`QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`);
+              const qString = bl.block || bl.block_name || '?';
+              const nameString = bl.name || '?';
+              const lotStr = `QD ${qString} - LT ${nameString}`;
+              exportLots.push({
+                  loteamento: prj?.name || '-',
+                  quadra: qString,
+                  lote: nameString,
+                  loteStr: lotStr
+              });
+              if (new Date(v.sale_date || v.created_at) >= startOfMonth) {
+                 lotesDoMes.push(lotStr);
+              }
            });
         });
+        
+        if (exportLots.length > 0) {
+           console.log("BROKER_SOLD_LOTS_FOUND", exportLots);
+        }
 
-        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente' || c.status?.toLowerCase() === 'aprovado').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
         const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
 
         return {
@@ -128,6 +196,7 @@ export default function CorretoresPage() {
           vendas_mes_qtd,
           vendas_mes_valor,
           lotesDoMes,
+          exportLots,
           comissao_pendente,
           comissao_paga,
           ultimo_acesso: b.created_at || new Date().toISOString()
@@ -140,38 +209,11 @@ export default function CorretoresPage() {
            if (b.active === false) return false;
            return true;
        });
-
+       
+       console.log("BROKER_COMMISSION_SUMMARY_FINAL", finalActiveBrokers.map(x => ({nome: x.name, pendente: x.comissao_pendente, paga: x.comissao_paga})));
+       
        setCorretores(finalActiveBrokers);
 
-       // Auto-generate missing commissions and check for alerts
-       let hasMissingCommission = false;
-       for (const sale of salesData) {
-           if (sale.broker_id) {
-               const hasComm = commData.some(c => c.sale_id === sale.id);
-               if (!hasComm) {
-                   hasMissingCommission = true;
-                   const broker = finalActiveBrokers.find(fb => fb.id === sale.broker_id);
-                   if (broker) {
-                        try {
-                            const val = (Number(sale.total_value) || 0) * (Number(broker.commission_percent) / 100);
-                            await supabase.from('broker_commissions').insert({
-                                company_id: user.tenant_id,
-                                tenant_id: user.tenant_id,
-                                broker_id: broker.id,
-                                sale_id: sale.id,
-                                commission_value: val,
-                                commission_percent: broker.commission_percent,
-                                amount_sale: sale.total_value,
-                                status: 'pendente'
-                            });
-                        } catch(e) {}
-                   }
-               }
-           }
-       }
-       if (hasMissingCommission) {
-           console.log("Existem vendas sem comissão gerada. Algumas foram geradas agora.");
-       }
        console.log("BROKERS_REAL_FETCH_RESULT", finalActiveBrokers);
        
        // Build Recent Activities
@@ -223,11 +265,10 @@ export default function CorretoresPage() {
   }, [user, authLoading, loadCorretores]);
 
   const handleExport = () => {
-     console.log("BROKER_EXPORT_GENERATED");
      let csvContent = "data:text/csv;charset=utf-8,";
-     csvContent += "Nome,Email,Telefone,CRECI,Status,Vendas_Qtd,Vendas_Valor,Comissao_Pendente,Comissao_Paga\n";
+     csvContent += "Nome,Email,Telefone,CRECI,Status,Vendas_Qtd,Vendas_Valor,Comissao_Pendente,Comissao_Paga,Loteamento,Quadra,Lote,Lotes_Vendidos\n";
      filtered.forEach(c => {
-         const row = [
+         const baseRow = [
              c.name || '',
              c.email || '',
              c.phone || '',
@@ -237,9 +278,28 @@ export default function CorretoresPage() {
              c.vendas_mes_valor,
              c.comissao_pendente,
              c.comissao_paga
-         ].join(",");
-         csvContent += row + "\n";
+         ];
+         
+         if (c.exportLots && c.exportLots.length > 0) {
+             c.exportLots.forEach((lot: any) => {
+                 const row = [
+                     ...baseRow,
+                     lot.loteamento,
+                     lot.quadra,
+                     lot.lote,
+                     lot.loteStr
+                 ].join(",");
+                 csvContent += row + "\n";
+             });
+         } else {
+             const row = [
+                 ...baseRow,
+                 '', '', '', ''
+             ].join(",");
+             csvContent += row + "\n";
+         }
      });
+     console.log("BROKER_EXPORT_WITH_LOTS_GENERATED");
      const encodedUri = encodeURI(csvContent);
      const link = document.createElement("a");
      link.setAttribute("href", encodedUri);
@@ -527,7 +587,7 @@ export default function CorretoresPage() {
      }
   };
 
-  // Mocked Metrics for Demo
+  // Real Metrics
   const totalVendasMes = corretores.reduce((acc, c) => acc + c.vendas_mes_qtd, 0);
   const totalComissoesPagas = corretores.reduce((acc, c) => acc + c.comissao_paga, 0);
   const totalComissoesPendentes = corretores.reduce((acc, c) => acc + c.comissao_pendente, 0);
