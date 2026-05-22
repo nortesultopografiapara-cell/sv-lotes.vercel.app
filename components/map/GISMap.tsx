@@ -1949,7 +1949,6 @@ export default function GISMap({
                     sale_id: saleId,
                     contract_id: contractData.id,
                     customer_id: customerId || clientId,
-                    amount_sale: saleVal,
                     commission_percent: pct,
                     amount: cv,
                     status: 'pendente'

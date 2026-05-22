@@ -121,7 +121,6 @@ export default function CorretoresPage() {
                                sale_id: sale.id,
                                amount: val,
                                commission_percent: percent,
-                               amount_sale: sale.total_value,
                                status: 'pendente'
                            };
                            console.log("BROKER_COMMISSION_CREATED", newComm);
@@ -635,7 +634,6 @@ export default function CorretoresPage() {
                        sale_id: sale.id,
                        amount: val,
                        commission_percent: percent,
-                       amount_sale: valor_venda,
                        status: 'pendente'
                    };
                    
