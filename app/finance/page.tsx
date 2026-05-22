@@ -1504,6 +1504,9 @@ export default function FinancePage() {
               const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
               const dDate = new Date(p.paid_at || p.due_date || p.created_at);
               
+              const contratoNum = p.contracts?.contract_number || p.contracts?.number || p.contracts?.code || p.contracts?.id || 
+                                  p.sales?.contracts?.contract_number || p.sales?.contracts?.number || p.sales?.contracts?.code || p.sales?.contracts?.id || '-';
+
               return {
                   id_check: `rec_${p.id}`,
                   data: dDate,
@@ -1512,7 +1515,7 @@ export default function FinancePage() {
                   categoria: p.installment_number === 0 || p.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
                   cliente: p.customers?.name || p.customers?.full_name || 'NI',
                   corretor: p.brokers?.name || 'NI',
-                  contrato: p.contracts?.contract_number || p.sales?.contracts?.contract_number || '-',
+                  contrato: contratoNum,
                   quadra: p.blocks?.block_name || p.blocks?.name || '-',
                   lote: p.blocks?.number || '-',
                   descricao: p.description || `Parcela ${p.installment_number || '1'}`,
@@ -1522,7 +1525,7 @@ export default function FinancePage() {
           });
           
           // Fetch comissoes beforehand to cross reference cash movements
-          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number), projects(name)), contracts:contract_id(contract_number, projects(name))');
+          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number, number, code, id), projects(name)), contracts:contract_id(contract_number, number, code, id, projects(name))');
           if (resolvedTenantId) {
              commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
           }
@@ -1533,19 +1536,23 @@ export default function FinancePage() {
           
           const mappedCashMovements = cashMovements.filter(c => !c.finance_receipt_id).map(c => {
               let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
-              // Check if actual type is "saida" from DB, uppercase first letter
+              
               const tipoStr = (c.type || '').toLowerCase();
-              const type = tipoStr === 'saida' ? 'Saída' : (tipoStr === 'entrada' ? 'Entrada' : 'Saída');
+              const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(val => tipoStr.includes(val));
+              const type = isSaidaStr ? 'Saída' : (tipoStr.includes('entrada') ? 'Entrada' : 'Saída');
               
               let projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name;
-              let contractName = '-';
+              
+              let contractName = c.contracts?.contract_number || c.contracts?.number || c.contracts?.code || c.contracts?.id || 
+                                 c.sales?.contracts?.contract_number || c.sales?.contracts?.number || c.sales?.contracts?.code || c.sales?.contracts?.id || '-';
               
               // Cross-reference with broker_commissions to find the project if missing
-              if (!projName && (c.category === 'Comissão' || c.category === 'Comissao') && comms) {
+              if (!projName && (c.category === 'Comissão' || c.category === 'Comissao' || isSaidaStr) && comms) {
                   const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && Math.abs(c.amount - cm.amount) < 1);
                   if (matchingComm) {
                       projName = matchingComm.sales?.projects?.name || matchingComm.contracts?.projects?.name;
-                      contractName = matchingComm.sales?.contracts?.contract_number || matchingComm.contracts?.contract_number || '-';
+                      contractName = matchingComm.sales?.contracts?.contract_number || matchingComm.sales?.contracts?.number || matchingComm.sales?.contracts?.code || matchingComm.sales?.contracts?.id ||
+                                     matchingComm.contracts?.contract_number || matchingComm.contracts?.number || matchingComm.contracts?.code || matchingComm.contracts?.id || contractName;
                   }
               }
               
@@ -1571,19 +1578,25 @@ export default function FinancePage() {
           });
           
           let movements = [...mappedPayments, ...mappedCashMovements];
-          console.log('FLOW_PAYMENTS', mappedPayments);
-          console.log('FLOW_CASH_MOVEMENTS', mappedCashMovements);
-          console.log('FLOW_FINAL_ROWS', movements);
+          console.log('FLOW_REPORT_ENTRIES_ROWS', mappedPayments.length, mappedPayments);
+          console.log('FLOW_REPORT_CASH_MOVEMENT_ROWS', mappedCashMovements.length, mappedCashMovements);
 
           // 3. Comissões pagas (legacy or missing in cash_movements)
           if (comms) {
-              const mappedComms = [];
+              const mappedComms: any[] = [];
               comms.forEach(cm => {
                   let status = 'Pendente';
                   if (cm.status === 'pago' || cm.status === 'paga') status = 'Pago';
                   else if (cm.status === 'pendente') status = 'Pendente';
                   
-                  const hasCash = mappedCashMovements.some(c => c.tipo === 'Saída' && (c.categoria === 'Comissão' || c.categoria === 'Comissao') && c.valor === cm.amount && (c.contrato === cm.sales?.contracts?.contract_number || c.corretor === cm.brokers?.name));
+                  const commContrato = cm.sales?.contracts?.contract_number || cm.sales?.contracts?.number || cm.sales?.contracts?.code || cm.sales?.contracts?.id || 
+                                       cm.contracts?.contract_number || cm.contracts?.number || cm.contracts?.code || cm.contracts?.id || '-';
+                  
+                  const hasCash = mappedCashMovements.some(c => c.tipo === 'Saída' && 
+                      (c.categoria === 'Comissão' || c.categoria === 'Comissao') && 
+                      c.valor === cm.amount && 
+                      (c.contrato === commContrato || c.corretor === cm.brokers?.name)
+                  );
                   if (status === 'Pago' && hasCash) return; // avoid duplicate
                   
                   const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
@@ -1597,7 +1610,7 @@ export default function FinancePage() {
                       categoria: 'Comissão',
                       cliente: '-',
                       corretor: cm.brokers?.name || '-',
-                      contrato: cm.sales?.contracts?.contract_number || cm.contracts?.contract_number || '-',
+                      contrato: commContrato,
                       quadra: '-',
                       lote: '-',
                       descricao: `Pagamento de comissão ao corretor ${cm.brokers?.name || 'NI'}`,
@@ -1606,9 +1619,10 @@ export default function FinancePage() {
                   });
               });
               movements = [...movements, ...mappedComms];
+              console.log('FLOW_REPORT_COMMISSION_ROWS', mappedComms.length, mappedComms);
           }
 
-          console.log("FLOW_REPORT_ROWS_BEFORE_FILTER", movements);
+          console.log('FLOW_REPORT_FINAL_ROWS', movements);
 
           // FILTER
           const flowRows = movements.filter(m => {
