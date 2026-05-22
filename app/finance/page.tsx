@@ -239,10 +239,18 @@ export default function FinancePage() {
                cashData = cData;
                setCashMovements(cData);
                
+               console.log("FINANCE_CASH_MOVEMENTS_RAW", cData);
                cData.forEach(c => {
-                   if (c.status === 'ativo') {
-                       if (c.type === 'entrada') totalEntradasCaixa += Number(c.amount);
-                       if (c.type === 'saida') totalSaidasCaixa += Number(c.amount);
+                   const status = c.status?.toLowerCase() || 'ativo';
+                   if (status !== 'estornado' && status !== 'cancelado' && status !== 'deleted') {
+                       const typeStr = (c.type || '').toLowerCase();
+                       const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
+                       const isEntradaStr = typeStr.includes('entrada');
+                       if (isEntradaStr && !isSaidaStr) totalEntradasCaixa += Number(c.amount);
+                       if (isSaidaStr) {
+                           totalSaidasCaixa += Number(c.amount);
+                           console.log("FINANCE_MANUAL_EXPENSES_INCLUDED", c);
+                       }
                    }
                });
            }
@@ -270,7 +278,15 @@ export default function FinancePage() {
            const { data: comms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
            if (comms) {
                comms.forEach(cm => {
-                   const hasCash = cashData.some(c => c.type === 'saida' && c.category === 'Comissão' && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.amount);
+                   const hasCash = cashData.some(c => {
+                       const status = c.status?.toLowerCase() || 'ativo';
+                       if (status === 'estornado' || status === 'cancelado' || status === 'deleted') return false;
+                       const typeStr = (c.type || '').toLowerCase();
+                       const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
+                       return isSaidaStr && (c.category === 'Comissão' || c.category === 'Comissao') && 
+                              (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && 
+                              Math.abs(Number(c.amount) - Number(cm.amount)) < 1;
+                   });
                    if (!hasCash) {
                        totalComissaoHistorico += Number(cm.amount);
                    }
@@ -280,6 +296,7 @@ export default function FinancePage() {
 
         totalEntradasCaixa += totalRecebidoHistorico;
         totalSaidasCaixa += totalComissaoHistorico;
+        console.log("FINANCE_TOTAL_OUTCOMES_FINAL", totalSaidasCaixa);
 
         setStats({ 
             recebidoMes: localRecebido, 
