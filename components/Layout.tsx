@@ -507,7 +507,13 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <h1 className="text-xl font-medium text-white flex items-center gap-1">
                 <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'} {user?.role === 'SUPER_ADMIN' && '(Super Admin)'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)]">{user?.role === 'SUPER_ADMIN' ? 'Painel de Controle da Plataforma' : 'Admin Empresa'}</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {user?.role === 'SUPER_ADMIN' 
+                  ? 'Painel de Controle da Plataforma' 
+                  : user?.role === 'BROKER' 
+                    ? 'Corretor / Vendedor' 
+                    : 'Admin Empresa'}
+              </p>
             </div>
 
             <div className="flex items-center gap-6">

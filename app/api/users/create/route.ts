@@ -86,7 +86,8 @@ export async function POST(req: Request) {
         const { error: userError } = await supabaseAdmin.from('users').update({
             role: role || 'BROKER',
             full_name: fullName,
-            phone: phone
+            phone: phone,
+            tenant_id: tenantId
         }).eq('id', authUserId);
         if (userError) throw new Error(`Erro ao atualizar perfil de sistema: ${userError.message}`);
     } else {

@@ -76,9 +76,19 @@ export default function LoginPage() {
 
       // 73: Check result for redirection
       if (data?.user) {
-        console.log('LOGIN SUCCESS. Redirecting to dashboard...');
-        // Success redirect immediately using native href for reliability
-        window.location.href = '/dashboard';
+        console.log('LOGIN SUCCESS. Checking role for redirection...');
+        // Need to check the role
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', data.user.id)
+          .single();
+          
+        if (userData?.role === 'BROKER') {
+           window.location.href = '/map';
+        } else {
+           window.location.href = '/dashboard';
+        }
       }
     } catch (err: any) {
       console.error('LOGIN EXCEPTION:', err);

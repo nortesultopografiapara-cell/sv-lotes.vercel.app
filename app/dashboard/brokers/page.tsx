@@ -70,22 +70,47 @@ export default function CorretoresPage() {
         
         const { data, error } = await query;
         if (error) throw error;
+
+        // Fetch sales and commissions for this tenant
+        let salesData: any[] = [];
+        let commData: any[] = [];
         
-        const enhancedData = (data || []).map(b => ({
-          ...b,
-          // Mapeamento seguro p/ schema antigo e novo
-          tenant_id: b.tenant_id || b.company_id,
-          name: b.name || b.full_name || 'Sem nome',
-          role: b.role || 'BROKER',
-          commission_percent: b.commission_percent || 5,
-          active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
-          // Dados simulados para estruturação visual do módulo premium
-          vendas_mes_qtd: Math.floor(Math.random() * 5),
-          vendas_mes_valor: Math.floor(Math.random() * 250000),
-          comissao_pendente: Math.floor(Math.random() * 15000),
-          comissao_paga: Math.floor(Math.random() * 30000),
-          ultimo_acesso: new Date(Date.now() - Math.floor(Math.random() * 10000000000)).toISOString()
-        }));
+        try {
+           const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date');
+           const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, commission_value, status, created_at');
+           salesData = s || [];
+           commData = c || [];
+        } catch (err) {
+           console.warn('Erro ao carregar comissões (migration pendente?):', err);
+        }
+        
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const enhancedData = (data || []).map(b => {
+          const bSales = salesData.filter(s => s.broker_id === b.id);
+          const bComms = commData.filter(c => c.broker_id === b.id);
+          
+          const vendas_mes_qtd = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).length;
+          const vendas_mes_valor = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+          
+          const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+          const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+
+          return {
+            ...b,
+            tenant_id: b.tenant_id || b.company_id,
+            name: b.name || b.full_name || 'Sem nome',
+            role: b.role || 'BROKER',
+            commission_percent: b.commission_percent || 5,
+            active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
+            vendas_mes_qtd,
+            vendas_mes_valor,
+            comissao_pendente,
+            comissao_paga,
+            ultimo_acesso: b.created_at || new Date().toISOString()
+          };
+        });
 
         setCorretores(enhancedData);
       } catch(err) {
@@ -249,7 +274,7 @@ export default function CorretoresPage() {
     { name: 'Pendentes', value: totalComissoesPendentes, color: '#f59e0b' },
   ];
 
-  const topCorretores = [...corretores].sort((a,b) => b.vendas_mes_valor - a.vendas_mes_valor).slice(0, 3);
+  const topCorretores = [...corretores].filter(c => c.vendas_mes_valor > 0).sort((a,b) => b.vendas_mes_valor - a.vendas_mes_valor).slice(0, 3);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309']; // Ouro, Prata, Bronze
 
   return (
@@ -332,8 +357,8 @@ export default function CorretoresPage() {
                   <div className="text-sm font-medium text-gray-400">Comissões pagas</div>
                </div>
              </div>
-             <div className="text-xs text-purple-400 font-medium relative z-10">
-               +15% em relação ao mês anterior
+             <div className="text-xs text-purple-400 font-medium relative z-10 opacity-0">
+               .
              </div>
          </div>
 
@@ -349,8 +374,8 @@ export default function CorretoresPage() {
                   <div className="text-sm font-medium text-gray-400">Comissões pendentes</div>
                </div>
              </div>
-             <div className="text-xs text-amber-400 font-medium relative z-10">
-               ${Math.floor(totalComissoesPendentes / 3000)} comissões aguardando
+             <div className="text-xs text-amber-400 font-medium relative z-10 opacity-0">
+               .
              </div>
          </div>
 
@@ -360,12 +385,12 @@ export default function CorretoresPage() {
                  <Users2 className="w-6 h-6" />
                </div>
                <div>
-                  <div className="text-3xl font-bold text-white">{corretores.length * 2}</div>
+                  <div className="text-2xl font-bold text-white tracking-tight">0</div>
                   <div className="text-sm font-medium text-gray-400">Leads em atendimento</div>
                </div>
              </div>
-             <div className="text-xs text-teal-500 font-medium">
-               +6 novos esta semana
+             <div className="text-xs text-teal-500 font-medium opacity-0">
+               .
              </div>
          </div>
       </div>
@@ -514,7 +539,7 @@ export default function CorretoresPage() {
                        </div>
                     </div>
                  ))}
-                 {topCorretores.length === 0 && <div className="text-xs text-gray-500">Nenhum dado</div>}
+                 {topCorretores.length === 0 && <div className="text-xs text-gray-500 text-center py-4">Nenhuma venda registrada.</div>}
               </div>
            </div>
 
