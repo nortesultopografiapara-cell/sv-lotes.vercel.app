@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Edit, Trash2, Eye } from 'lucide-react';
+import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Edit, Trash2, Eye, Lock } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -16,6 +16,11 @@ export default function CustomersPage() {
   const [formData, setFormData] = useState<any>({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' });
   const [submitting, setSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteModalCustomer, setDeleteModalCustomer] = useState<any>(null);
+  const [deleteModalStats, setDeleteModalStats] = useState<any>({});
+  const [deleteModalPassword, setDeleteModalPassword] = useState('');
+  const [deleteModalConfirmText, setDeleteModalConfirmText] = useState('');
+  const [isDeletingWithLinks, setIsDeletingWithLinks] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -172,39 +177,31 @@ export default function CustomersPage() {
   const handleDeleteClick = async (customer: any) => {
     try {
       setIsDeleting(true);
-      // Check for links
-      const [{ count: blockCount }, { count: saleCount }, { count: contractCount }, { count: receiptCount }] = await Promise.all([
-        supabase.from('blocks').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id),
-        supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id),
-        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id),
-        supabase.from('finance_receipts').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id)
-      ]);
+      
+      const hasLots = customer.blocks && customer.blocks.filter((b: any) => b.status && b.status !== 'Disponível').length > 0;
 
-      const hasLinks = (blockCount || 0) > 0 || (saleCount || 0) > 0 || (contractCount || 0) > 0 || (receiptCount || 0) > 0;
-
-      if (hasLinks) {
-        if (confirm('Este cliente possui lote, venda, contrato ou financeiro vinculado. Para preservar o histórico, ele não pode ser excluído. Deseja INATIVAR o cliente em vez disso?')) {
-          let updateQuery = supabase.from('customers').update({ status: 'inativo' }).eq('id', customer.id);
-          if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-              updateQuery = updateQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-          }
-          const { error } = await updateQuery;
-          if (error) throw error;
-          alert('Cliente inativado com sucesso.');
-          await loadCustomers();
-        }
+      if (hasLots) {
+        setDeleteModalCustomer(customer);
+        const [{ count: contractCount }, { count: receiptCount }, { count: saleCount }] = await Promise.all([
+          supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id),
+          supabase.from('finance_receipts').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id),
+          supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customer.id)
+        ]);
+        setDeleteModalStats({
+          contractCount: contractCount || 0,
+          receiptCount: receiptCount || 0,
+          saleCount: saleCount || 0
+        });
         return;
       }
 
-      const confirmText = prompt('Digite EXCLUIR para apagar este cliente definitivamente.');
-      if (confirmText === 'EXCLUIR') {
+      if (confirm('Tem certeza que deseja apagar este cliente definitivamente? Ação irreversível.')) {
         let deleteQuery = supabase.from('customers').delete().eq('id', customer.id);
         if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
             deleteQuery = deleteQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
         }
         const { error } = await deleteQuery;
         if (error) throw error;
-        alert('Cliente excluído com sucesso.');
         await loadCustomers();
       }
     } catch (err: any) {
@@ -212,6 +209,55 @@ export default function CustomersPage() {
       alert('Erro ao excluir cliente: ' + err.message);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const confirmDeleteLinkedCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (deleteModalConfirmText !== 'EXCLUIR CLIENTE') {
+       alert('Digite "EXCLUIR CLIENTE" exatamente como solicitado para confirmar.');
+       return;
+    }
+    setIsDeletingWithLinks(true);
+    try {
+       const userEmail = user?.email;
+       if (!userEmail) throw new Error("Email do administrador não encontrado.");
+       
+       const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: userEmail,
+          password: deleteModalPassword
+       });
+       
+       if (signInError) {
+          throw new Error("Senha de administrador inválida.");
+       }
+
+       const cid = deleteModalCustomer.id;
+       
+       await Promise.all([
+         supabase.from('blocks').update({ customer_id: null }).eq('customer_id', cid),
+         supabase.from('contracts').update({ customer_id: null }).eq('customer_id', cid),
+         supabase.from('finance_receipts').update({ customer_id: null }).eq('customer_id', cid),
+         supabase.from('sales').update({ customer_id: null }).eq('customer_id', cid)
+       ]);
+
+       let deleteQuery = supabase.from('customers').delete().eq('id', cid);
+       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+           deleteQuery = deleteQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
+       }
+       const { error: delError } = await deleteQuery;
+       if (delError) throw delError;
+
+       setDeleteModalCustomer(null);
+       setDeleteModalPassword('');
+       setDeleteModalConfirmText('');
+       await loadCustomers();
+
+    } catch (err: any) {
+       console.error(err);
+       alert('Erro ao processar exclusão protegida: ' + err.message);
+    } finally {
+       setIsDeletingWithLinks(false);
     }
   };
 
@@ -429,11 +475,63 @@ export default function CustomersPage() {
            </div>
          </div>
       )}
+      {deleteModalCustomer && (
+         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+             <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-red-500/10">
+               <div className="flex items-center gap-2">
+                 <Lock className="w-5 h-5 text-red-500" />
+                 <h3 className="font-bold text-lg text-red-500">Atenção: Exclusão Protegida</h3>
+               </div>
+               <button onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="p-2 text-[var(--color-text-muted)] hover:text-white rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+                 <X className="w-5 h-5" />
+               </button>
+             </div>
+             <form onSubmit={confirmDeleteLinkedCustomer} className="p-5 space-y-4">
+               
+               <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-4 space-y-2 text-sm text-[var(--color-text-muted)]">
+                 <p className="text-white font-medium mb-2">Este cliente possui vínculos importantes:</p>
+                 <div className="grid grid-cols-2 gap-2">
+                    <div><span className="font-medium text-gray-400">Cliente:</span> <br/><span className="text-white truncate block" title={deleteModalCustomer.name}>{deleteModalCustomer.name}</span></div>
+                    <div><span className="font-medium text-gray-400">CPF/CNPJ:</span> <br/><span className="text-white">{deleteModalCustomer.cpf_cnpj || deleteModalCustomer.document || '-'}</span></div>
+                    <div><span className="font-medium text-gray-400">Lotes vinculados:</span> <br/><span className="text-white">{deleteModalCustomer.blocks?.length || 0}</span></div>
+                    <div><span className="font-medium text-gray-400">Contratos:</span> <br/><span className="text-white">{deleteModalStats.contractCount || 0}</span></div>
+                    <div className="col-span-2"><span className="font-medium text-gray-400">Registros financeiros:</span> <span className="text-white">{deleteModalStats.receiptCount || 0}</span></div>
+                 </div>
+                 <p className="mt-4 pt-4 border-t border-[var(--color-border)] text-xs text-amber-500 font-medium">
+                   A exclusão irá desvincular este cliente de todos os lotes, contratos e compras acima informadas. Os registros não serão apagados, constarão sem cliente atrelado.
+                 </p>
+               </div>
+
+               <div>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Senha do Administrador *</label>
+                 <input required type="password" value={deleteModalPassword} onChange={e => setDeleteModalPassword(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-red-500" placeholder="Digite sua senha" />
+               </div>
+
+               <div>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Para confirmar, digite EXCLUIR CLIENTE abaixo *</label>
+                 <input required type="text" value={deleteModalConfirmText} onChange={e => setDeleteModalConfirmText(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-red-500" placeholder="EXCLUIR CLIENTE" />
+               </div>
+
+               <div className="pt-4 flex gap-3">
+                  <button type="button" disabled={isDeletingWithLinks} onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-white hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={isDeletingWithLinks || deleteModalConfirmText !== 'EXCLUIR CLIENTE' || !deleteModalPassword} className={`flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50`}>
+                    {isDeletingWithLinks ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar Exclusão'}
+                  </button>
+               </div>
+             </form>
+           </div>
+         </div>
+      )}
     </div>
   );
 }
 
 function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, onEdit, onView, onDelete }: any) {
+  const hasLots = blocks && blocks.length > 0;
+
   return (
     <tr className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group ${status === 'inativo' ? 'opacity-60 grayscale' : ''}`}>
       <td className="p-4">
@@ -488,8 +586,21 @@ function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, 
             <button onClick={onEdit} title="Editar" className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors">
                <Edit className="w-4 h-4" />
             </button>
-            <button onClick={onDelete} title="Excluir" className="p-1.5 text-red-500 hover:bg-red-500/10 rounded transition-colors">
-               <Trash2 className="w-4 h-4" />
+            <button 
+              onClick={onDelete} 
+              title={hasLots ? "Cliente possui vínculos. Exclusão requer senha." : "Excluir"} 
+              className={`p-1.5 rounded transition-colors ${hasLots ? 'text-red-400 hover:bg-red-400/10 relative cursor-pointer' : 'text-red-500 hover:bg-red-500/10'}`}
+            >
+               {hasLots ? (
+                 <>
+                   <Trash2 className="w-4 h-4" />
+                   <div className="absolute -bottom-1 -right-1 bg-[var(--color-surface)] rounded-full p-[1px]">
+                     <Lock className="w-2.5 h-2.5 text-red-500 fill-current" />
+                   </div>
+                 </>
+               ) : (
+                 <Trash2 className="w-4 h-4" />
+               )}
             </button>
          </div>
       </td>
