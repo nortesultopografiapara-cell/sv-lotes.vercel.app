@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key } from 'lucide-react';
+import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -112,7 +112,14 @@ export default function CorretoresPage() {
           };
         });
 
-        setCorretores(enhancedData);
+        const finalActiveBrokers = enhancedData.filter(b => {
+             if (b.deleted_at !== null && b.deleted_at !== undefined) return false;
+             if (b.status === 'inativo') return false;
+             if (b.active === false) return false;
+             return true;
+         });
+
+         setCorretores(finalActiveBrokers);
       } catch(err) {
         console.error(err);
       } finally {
@@ -218,18 +225,46 @@ export default function CorretoresPage() {
   const handleDelete = async (id: string) => {
     try {
       setLoading(true);
-      let query = supabase.from('brokers').delete().eq('id', id);
-      
-      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-         query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-      } else if (user?.role !== 'SUPER_ADMIN' && !user?.tenant_id) {
+
+      if (user?.role !== 'SUPER_ADMIN' && !user?.tenant_id) {
          throw new Error("Usuário não tem empresa associada.");
       }
 
-      const { error } = await query;
-      if (error) throw error;
-      setCorretores(corretores.filter(c => c.id !== id));
+      // Check if there are sales or commissions
+      let hasSalesOrCommissions = false;
+      const { count: salesCount } = await supabase.from('sales').select('id', { count: 'exact', head: true }).eq('broker_id', id);
+      const { count: commCount } = await supabase.from('broker_commissions').select('id', { count: 'exact', head: true }).eq('broker_id', id);
+
+      if ((salesCount && salesCount > 0) || (commCount && commCount > 0)) {
+         hasSalesOrCommissions = true;
+      }
+
+      if (hasSalesOrCommissions) {
+          // Soft delete
+          let upQuery = supabase.from('brokers').update({
+             active: false,
+             status: 'inativo',
+             deleted_at: new Date().toISOString()
+          }).eq('id', id);
+          
+          if (user?.role !== 'SUPER_ADMIN') {
+              upQuery = upQuery.or(`tenant_id.eq.${user?.tenant_id},company_id.eq.${user?.tenant_id}`);
+          }
+          
+          const { error: upErr } = await upQuery;
+          if (upErr) throw upErr;
+      } else {
+          // Hard delete
+          let delQuery = supabase.from('brokers').delete().eq('id', id);
+          if (user?.role !== 'SUPER_ADMIN') {
+              delQuery = delQuery.or(`tenant_id.eq.${user?.tenant_id},company_id.eq.${user?.tenant_id}`);
+          }
+          const { error: delErr } = await delQuery;
+          if (delErr) throw delErr;
+      }
+
       setDeleteModal(null);
+      await loadCorretores();
     } catch(e:any) {
       console.error(e);
       alert('Erro ao excluir: ' + e.message);
@@ -642,10 +677,12 @@ export default function CorretoresPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-[#121318] border border-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md">
               <h2 className="text-xl font-bold text-white mb-2">Excluir Corretor?</h2>
-              <p className="text-gray-400 text-sm mb-6">Esta ação é irreversível. O acesso ao sistema será imediatamente revogado para este usuário.</p>
+              <p className="text-gray-400 text-sm mb-6">Esta ação removerá o acesso deste corretor à empresa e o ocultará da lista. O histórico de vendas e comissões do corretor será preservado por motivo de auditoria e relatórios financeiros.</p>
               <div className="flex justify-end gap-3">
                  <button onClick={() => setDeleteModal(null)} className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors">Cancelar</button>
-                 <button onClick={() => handleDelete(deleteModal)} className="px-5 py-2 text-sm bg-red-500 hover:bg-red-600 font-bold text-white rounded-lg transition-colors">Sim, Excluir</button>
+                 <button onClick={() => handleDelete(deleteModal)} disabled={loading} className="px-5 py-2 text-sm bg-red-500 hover:bg-red-600 font-bold text-white rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 min-w-[120px]">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sim, Excluir"}
+                 </button>
               </div>
            </div>
         </div>
