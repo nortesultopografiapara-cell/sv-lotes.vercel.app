@@ -273,8 +273,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     }
     if (user) fetchCompany();
 
-    setImpersonatingTenantId(typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null);
-    setImpersonatingCompanyName(typeof window !== 'undefined' ? localStorage.getItem('impersonating_company_name') : null);
+    try {
+      setImpersonatingTenantId(typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null);
+      setImpersonatingCompanyName(typeof window !== 'undefined' ? localStorage.getItem('impersonating_company_name') : null);
+    } catch(e) {}
 
     const handleCompanyUpdate = () => { if (user) fetchCompany(); };
     window.addEventListener('company_updated', handleCompanyUpdate);
@@ -296,9 +298,13 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const toggleSidebar = () => setIsOpen(!isOpen);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('contingency_auth');
-    document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    try {
+      await supabase.auth.signOut();
+      try {
+        localStorage.removeItem('contingency_auth');
+      } catch(e) {}
+      document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    } catch(e) {}
     window.location.assign('/login');
   };
 
@@ -472,8 +478,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                onClick={async () => {
                    try {
                        await supabase.from('users').update({ tenant_id: null }).eq('id', user?.id).eq('role', 'SUPER_ADMIN');
-                       localStorage.removeItem('impersonating_tenant_id');
-                       localStorage.removeItem('impersonating_company_name');
+                       try {
+                         localStorage.removeItem('impersonating_tenant_id');
+                         localStorage.removeItem('impersonating_company_name');
+                       } catch(e) {}
                        window.location.assign('/companies');
                    } catch(e) {
                        console.error(e);

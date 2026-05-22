@@ -24,8 +24,10 @@ export default function LoginPage() {
         // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
         await supabase.auth.signOut();
         // Also clear our manual caches just in case
-        localStorage.removeItem('active_tenant');
-        sessionStorage.clear();
+        try {
+           localStorage.removeItem('active_tenant');
+           sessionStorage.clear();
+        } catch (e) {}
       }
     };
     initializeAuth();
@@ -51,8 +53,10 @@ export default function LoginPage() {
     try {
       // 1. Force Clean Authentication: Clear everything before attempt
       await supabase.auth.signOut();
-      localStorage.clear(); // Complete wipe
-      sessionStorage.clear();
+      try {
+         localStorage.clear(); // Complete wipe
+         sessionStorage.clear();
+      } catch (e) {}
 
       const cleanEmail = email.trim().toLowerCase();
       console.log('LOGIN ATTEMPT - User:', cleanEmail);

@@ -71,9 +71,11 @@ export function useAuth() {
          if (mounted) {
            setUser(null);
            // Clear sensitive tenant cache on logout
-           localStorage.removeItem('active_tenant');
-           localStorage.removeItem('contingency_auth');
-           sessionStorage.clear();
+           try {
+             localStorage.removeItem('active_tenant');
+             localStorage.removeItem('contingency_auth');
+             sessionStorage.clear();
+           } catch(e) {}
            if (window.location.pathname !== '/login') {
              window.location.assign('/login');
            }
