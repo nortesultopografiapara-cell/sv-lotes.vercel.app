@@ -470,8 +470,8 @@ export default function CorretoresPage() {
       console.log("BROKER_CREATED_RESULT", brokerData, brokerError);
       
       if (brokerError) {
-         if (brokerError.message?.includes("schema cache") || brokerError.code === 'PGRST204' || brokerError.code === 'PGRST205') {
-            throw new Error("Execute a migration setup_brokers.sql no Supabase e recarregue o schema.");
+         if (brokerError.code === 'PGRST204' || brokerError.code === 'PGRST205') {
+            throw new Error(`Erro de schema (Supabase): ${brokerError.message}`);
          }
          throw brokerError;
       }
