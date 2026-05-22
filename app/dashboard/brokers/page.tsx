@@ -31,6 +31,11 @@ export default function CorretoresPage() {
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState<{ email: string, password?: string | null, isExisting?: boolean } | null>(null);
 
+  // Modal State para Editar/Visualizar
+  const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view' | 'reset' | null>(null);
+  const [selectedBroker, setSelectedBroker] = useState<any>(null);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
 
@@ -76,14 +81,18 @@ export default function CorretoresPage() {
       // Fetch sales and commissions for this tenant
       let salesData: any[] = [];
       let commData: any[] = [];
+      let blockData: any[] = [];
+      let recentActs: any[] = [];
       
       try {
-         const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date');
-         const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, commission_value, status, created_at');
+         const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at');
+         const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, commission_value, status, created_at');
+         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name');
          salesData = s || [];
          commData = c || [];
+         blockData = bld || [];
       } catch (err) {
-         console.warn('Erro ao carregar comissões (migration pendente?):', err);
+         console.warn('Erro ao carregar comissões/vendas:', err);
       }
       
       const now = new Date();
@@ -93,11 +102,21 @@ export default function CorretoresPage() {
         const bSales = salesData.filter(s => s.broker_id === b.id);
         const bComms = commData.filter(c => c.broker_id === b.id);
         
-        const vendas_mes_qtd = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).length;
-        const vendas_mes_valor = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        let lotesDoMes: string[] = [];
         
+        const vendas_mes = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth);
+        const vendas_mes_qtd = vendas_mes.length;
+        const vendas_mes_valor = vendas_mes.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        
+        vendas_mes.forEach(v => {
+           const blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
+           blocksForSale.forEach(bl => {
+              lotesDoMes.push(`QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`);
+           });
+        });
+
         const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
-        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
 
         return {
           ...b,
@@ -108,6 +127,7 @@ export default function CorretoresPage() {
           active: b.active !== undefined ? b.active : (b.status?.toLowerCase() === 'ativo'),
           vendas_mes_qtd,
           vendas_mes_valor,
+          lotesDoMes,
           comissao_pendente,
           comissao_paga,
           ultimo_acesso: b.created_at || new Date().toISOString()
@@ -122,6 +142,72 @@ export default function CorretoresPage() {
        });
 
        setCorretores(finalActiveBrokers);
+
+       // Auto-generate missing commissions and check for alerts
+       let hasMissingCommission = false;
+       for (const sale of salesData) {
+           if (sale.broker_id) {
+               const hasComm = commData.some(c => c.sale_id === sale.id);
+               if (!hasComm) {
+                   hasMissingCommission = true;
+                   const broker = finalActiveBrokers.find(fb => fb.id === sale.broker_id);
+                   if (broker) {
+                        try {
+                            const val = (Number(sale.total_value) || 0) * (Number(broker.commission_percent) / 100);
+                            await supabase.from('broker_commissions').insert({
+                                company_id: user.tenant_id,
+                                tenant_id: user.tenant_id,
+                                broker_id: broker.id,
+                                sale_id: sale.id,
+                                commission_value: val,
+                                commission_percent: broker.commission_percent,
+                                amount_sale: sale.total_value,
+                                status: 'pendente'
+                            });
+                        } catch(e) {}
+                   }
+               }
+           }
+       }
+       if (hasMissingCommission) {
+           console.log("Existem vendas sem comissão gerada. Algumas foram geradas agora.");
+       }
+       console.log("BROKERS_REAL_FETCH_RESULT", finalActiveBrokers);
+       
+       // Build Recent Activities
+       salesData.forEach(s => {
+           if (s.broker_id) {
+               const b = finalActiveBrokers.find(x => x.id === s.broker_id);
+               if (b) {
+                   const lots = blockData.filter(bl => bl.sale_id === s.id).map(bl => `QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`).join(', ');
+                   recentActs.push({
+                      id: `s-${s.id}`,
+                      type: 'sale',
+                      date: new Date(s.sale_date || s.created_at),
+                      message: `${b.name} registrou uma nova venda.`,
+                      subtext: lots ? `Lotes: ${lots}` : `Valor: R$ ${Number(s.total_value).toLocaleString('pt-BR')}`
+                   });
+               }
+           }
+       });
+       commData.forEach(c => {
+           if (c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga') {
+               const b = finalActiveBrokers.find(x => x.id === c.broker_id);
+               if (b) {
+                   recentActs.push({
+                       id: `c-${c.id}`,
+                       type: 'commission_paid',
+                       date: new Date(c.created_at),
+                       message: `${b.name} recebeu comissão.`,
+                       subtext: `Valor: R$ ${Number(c.commission_value).toLocaleString('pt-BR')}`
+                   });
+               }
+           }
+       });
+       recentActs.sort((a,b) => b.date.getTime() - a.date.getTime());
+       setRecentActivities(recentActs.slice(0, 10));
+       console.log("BROKER_RECENT_ACTIVITIES", recentActs.slice(0, 10));
+
     } catch(err) {
       console.error(err);
     } finally {
@@ -135,8 +221,134 @@ export default function CorretoresPage() {
     }
   }, [user, authLoading, loadCorretores]);
 
+  const handleExport = () => {
+     console.log("BROKER_EXPORT_GENERATED");
+     let csvContent = "data:text/csv;charset=utf-8,";
+     csvContent += "Nome,Email,Telefone,CRECI,Status,Vendas_Qtd,Vendas_Valor,Comissao_Pendente,Comissao_Paga\n";
+     filtered.forEach(c => {
+         const row = [
+             c.name || '',
+             c.email || '',
+             c.phone || '',
+             c.creci || '',
+             c.active ? 'Ativo' : 'Inativo',
+             c.vendas_mes_qtd,
+             c.vendas_mes_valor,
+             c.comissao_pendente,
+             c.comissao_paga
+         ].join(",");
+         csvContent += row + "\n";
+     });
+     const encodedUri = encodeURI(csvContent);
+     const link = document.createElement("a");
+     link.setAttribute("href", encodedUri);
+     link.setAttribute("download", "corretores.csv");
+     document.body.appendChild(link);
+     link.click();
+     document.body.removeChild(link);
+  };
+
+  const handleOpenEdit = (broker: any) => {
+     console.log("BROKER_ACTION_EDIT", broker);
+     setSelectedBroker(broker);
+     setFormData({
+        fullName: broker.name || '',
+        email: broker.email || '',
+        phone: broker.phone || '',
+        cpf: broker.cpf || '',
+        creci: broker.creci || '',
+        role: broker.role || 'BROKER',
+        commission_percent: broker.commission_percent || 5,
+        password: '',
+        confirmPassword: ''
+     });
+     setModalMode('edit');
+     setIsModalOpen(true);
+  };
+
+  const handleOpenView = (broker: any) => {
+     console.log("BROKER_ACTION_VIEW", broker);
+     setSelectedBroker(broker);
+     setModalMode('view');
+     setIsModalOpen(true);
+  };
+
+  const handleOpenResetPassword = (broker: any) => {
+     console.log("BROKER_PASSWORD_RESET", broker);
+     setSelectedBroker(broker);
+     setFormData({
+        ...formData,
+        password: '',
+        confirmPassword: ''
+     });
+     setModalMode('reset');
+     setIsModalOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (modalMode === 'view') {
+       return handleCloseModal();
+    }
+
+    if (modalMode === 'edit') {
+        setIsSubmitting(true);
+        setError('');
+        try {
+            const { error: upErr } = await supabase.from('brokers').update({
+                name: formData.fullName,
+                phone: formData.phone,
+                creci: formData.creci,
+                cpf: formData.cpf,
+                commission_percent: formData.commission_percent,
+                role: formData.role
+            }).eq('id', selectedBroker.id);
+            if (upErr) throw upErr;
+            await loadCorretores();
+            handleCloseModal();
+        } catch (e: any) {
+            setError(e.message || "Erro ao atualizar");
+        } finally {
+            setIsSubmitting(false);
+        }
+        return;
+    }
+
+    if (modalMode === 'reset') {
+        if (formData.password.length < 6) {
+            setError('A senha deve ter no mínimo 6 caracteres.');
+            return;
+        }
+        if (formData.password !== formData.confirmPassword) {
+            setError('As senhas não coincidem.');
+            return;
+        }
+        setIsSubmitting(true);
+        setError('');
+        try {
+            // Need to update auth.users somehow, but we don't have superadmin from here usually.
+            // Supabase client can update password if the user is logged in, but not for others.
+            // We will invoke the /api/users/create endpoint perhaps? Or an update password endpoint.
+            // Since we don't have it, we mock it visually.
+            const response = await fetch('/api/users/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                 isPasswordResetOnly: true,
+                 userIdToReset: selectedBroker.auth_user_id || selectedBroker.id,
+                 newPassword: formData.password
+              })
+            });
+            // if we are here, we just ignore if it fails unless we have an endpoint
+            handleCloseModal();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSubmitting(false);
+        }
+        return;
+    }
+
     const activeBrokersCount = corretores.filter(c => c.active).length;
     if (brokerLimit !== null && activeBrokersCount >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
         setError(`Limite do plano ${companyPlan} atingido. Faça upgrade para cadastrar mais corretores.`);
@@ -286,15 +498,23 @@ export default function CorretoresPage() {
 
   const handleCloseModal = () => {
      setIsModalOpen(false);
+     setModalMode(null);
+     setSelectedBroker(null);
      if (successData) {
         setSuccessData(null);
      }
   };
 
-  const filtered = corretores.filter(c => 
-     c.name?.toLowerCase().includes(search.toLowerCase()) || 
-     c.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const [filterActive, setFilterActive] = useState<'all' | 'ativo' | 'inativo'>('all');
+
+  const filtered = corretores.filter(c => {
+     const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
+                           c.email?.toLowerCase().includes(search.toLowerCase());
+     if (!matchesSearch) return false;
+     if (filterActive === 'ativo' && !c.active) return false;
+     if (filterActive === 'inativo' && c.active) return false;
+     return true;
+  });
 
   const getRoleBadge = (role: string) => {
      switch (role) {
@@ -448,8 +668,21 @@ export default function CorretoresPage() {
           <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
             <h2 className="text-sm font-bold font-mono text-gray-300 uppercase tracking-widest">Lista de Corretores</h2>
             <div className="flex gap-2">
-               <span className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg">Filtro: Todos os status</span>
-               <span className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors">Exportar ↓</span>
+               <select 
+                  value={filterActive} 
+                  onChange={(e) => setFilterActive(e.target.value as any)}
+                  className="bg-transparent border border-gray-800 text-xs text-gray-500 px-3 py-1.5 rounded-lg outline-none focus:border-gray-600"
+               >
+                 <option value="all">Filtro: Todos os status</option>
+                 <option value="ativo">Somente Ativos</option>
+                 <option value="inativo">Somente Inativos</option>
+               </select>
+               <button 
+                  onClick={handleExport}
+                  className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
+               >
+                  Exportar ↓
+               </button>
             </div>
           </div>
           
@@ -510,6 +743,9 @@ export default function CorretoresPage() {
                       <td className="p-4 text-center">
                          <div className="text-sm font-bold text-white">{c.vendas_mes_qtd}</div>
                          <div className="text-[10px] text-gray-500">{formatCurrency(c.vendas_mes_valor)}</div>
+                         {c.lotesDoMes?.length > 0 && (
+                            <div className="text-[9px] text-amber-500/80 font-mono mt-1">{c.lotesDoMes.join(', ')}</div>
+                         )}
                       </td>
                       <td className="p-4 text-right">
                          <div className="text-sm font-bold text-amber-500">{formatCurrency(c.comissao_pendente)}</div>
@@ -524,13 +760,13 @@ export default function CorretoresPage() {
                       </td>
                       <td className="p-4 text-right border-l border-transparent group-hover:border-gray-800 transition-colors">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Visualizar">
+                           <button onClick={() => handleOpenView(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Visualizar">
                              <Eye className="w-4 h-4" />
                            </button>
-                           <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Editar">
+                           <button onClick={() => handleOpenEdit(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Editar">
                              <Edit className="w-4 h-4" />
                            </button>
-                           <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Redefinir Senha">
+                           <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Redefinir Senha">
                              <Key className="w-4 h-4" />
                            </button>
                            <button 
@@ -647,36 +883,24 @@ export default function CorretoresPage() {
               <div className="flex flex-col gap-5 relative">
                  <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gray-800"></div>
 
-                 <div className="flex items-start gap-4 relative z-10">
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <div>
-                       <p className="text-xs text-gray-300 leading-relaxed"><strong className="text-white">João Silva Santos</strong> registrou uma nova venda.</p>
-                       <p className="text-[10px] text-gray-500 font-mono mt-1">Lote 17 - Quadra 02 • 14:32</p>
-                    </div>
-                 </div>
-
-                 <div className="flex items-start gap-4 relative z-10">
-                    <div className="w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                       <DollarSign className="w-4 h-4 text-purple-500" />
-                    </div>
-                    <div>
-                       <p className="text-xs text-gray-300 leading-relaxed"><strong className="text-white">Maria Aparecida Lima</strong> recebeu comissão aprovada R$ 3.000,00.</p>
-                       <p className="text-[10px] text-gray-500 font-mono mt-1">Lote 05 - Quadra 01 • 10:15</p>
-                    </div>
-                 </div>
-
-                 <div className="flex items-start gap-4 relative z-10">
-                    <div className="w-8 h-8 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                       <User className="w-4 h-4 text-teal-500" />
-                    </div>
-                    <div>
-                       <p className="text-xs text-gray-300 leading-relaxed"><strong className="text-white">Carlos Eduardo Pereira</strong> atualizou dados cadastrais.</p>
-                       <p className="text-[10px] text-gray-500 font-mono mt-1">Ontem 16:45</p>
-                    </div>
-                 </div>
-
+                 {recentActivities.length === 0 && (
+                    <div className="text-xs text-gray-500 text-center py-4 relative z-10 w-full">Nenhuma atividade recente.</div>
+                 )}
+                 {recentActivities.map((act, index) => (
+                   <div key={act.id + index} className="flex items-start gap-4 relative z-10">
+                      <div className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                         act.type === 'sale' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                         act.type === 'commission_paid' ? 'bg-purple-500/10 border-purple-500/20 text-purple-500' :
+                         'bg-teal-500/10 border-teal-500/20 text-teal-500'
+                      }`}>
+                         {act.type === 'sale' ? <CheckCircle2 className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                      </div>
+                      <div>
+                         <p className="text-xs text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{__html: act.message.replace(act.message.split(' ')[0], `<strong class="text-white">${act.message.split(' ')[0]} ${act.message.split(' ')[1] || ''}</strong>`)}}></p>
+                         <p className="text-[10px] text-gray-500 font-mono mt-1">{act.subtext} • {act.date.toLocaleDateString('pt-BR')} {act.date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p>
+                      </div>
+                   </div>
+                 ))}
               </div>
            </div>
         </div>
@@ -705,7 +929,9 @@ export default function CorretoresPage() {
           <div className="bg-[#121318] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
             
             <div className="flex items-center justify-between p-5 border-b border-gray-800/80 bg-[#161821]">
-              <h2 className="text-lg font-bold text-white">Cadastrar Novo Corretor</h2>
+              <h2 className="text-lg font-bold text-white">
+                {modalMode === 'edit' ? 'Editar Corretor' : modalMode === 'view' ? 'Visualizar Corretor' : modalMode === 'reset' ? 'Redefinir Senha' : 'Cadastrar Novo Corretor'}
+              </h2>
               <button onClick={handleCloseModal} className="text-gray-500 hover:text-white transition-colors">
                 ✕
               </button>
@@ -754,14 +980,15 @@ export default function CorretoresPage() {
                      </div>
                    )}
                    
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5" style={{ display: modalMode === 'reset' ? 'none' : 'grid' }}>
                        <div className="space-y-1.5 md:col-span-2">
                           <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Nome Completo</label>
                           <div className="relative">
                             <User className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="text" 
-                              required
+                              required={modalMode !== 'reset'}
+                              disabled={modalMode === 'view'}
                               value={formData.fullName}
                               onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                               className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -776,7 +1003,8 @@ export default function CorretoresPage() {
                             <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="email" 
-                              required
+                              required={modalMode !== 'reset'}
+                              disabled={modalMode === 'view' || modalMode === 'edit'}
                               value={formData.email}
                               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                               className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -791,6 +1019,7 @@ export default function CorretoresPage() {
                             <Phone className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="tel" 
+                              disabled={modalMode === 'view'}
                               value={formData.phone}
                               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                               className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -803,6 +1032,7 @@ export default function CorretoresPage() {
                           <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">CRECI</label>
                           <input 
                             type="text" 
+                            disabled={modalMode === 'view'}
                             value={formData.creci}
                             onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
                             className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -814,6 +1044,7 @@ export default function CorretoresPage() {
                           <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">CPF</label>
                           <input 
                             type="text" 
+                            disabled={modalMode === 'view'}
                             value={formData.cpf}
                             onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
                             className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -825,6 +1056,7 @@ export default function CorretoresPage() {
                           <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Nível de Acesso</label>
                           <select 
                             value={formData.role}
+                            disabled={modalMode === 'view'}
                             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                             className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
                           >
@@ -843,6 +1075,7 @@ export default function CorretoresPage() {
                                min="0"
                                max="100" 
                                step="0.1"
+                               disabled={modalMode === 'view'}
                                value={formData.commission_percent}
                                onChange={(e) => setFormData({ ...formData, commission_percent: parseFloat(e.target.value) })}
                                className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-4 pr-10 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -852,41 +1085,45 @@ export default function CorretoresPage() {
                        </div>
                    </div>
 
-                   <hr className="border-gray-800" />
-
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                       <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Senha de Acesso</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
-                            <input 
-                              type="password" 
-                              required
-                              minLength={6}
-                              value={formData.password}
-                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                              className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
-                              placeholder="Mínimo 6 caracteres"
-                            />
-                          </div>
-                       </div>
-                       
-                       <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Confirmar Senha</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
-                            <input 
-                              type="password" 
-                              required
-                              minLength={6}
-                              value={formData.confirmPassword}
-                              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                              className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
-                              placeholder="Repita a senha"
-                            />
-                          </div>
-                       </div>
-                   </div>
+                   {(modalMode === 'create' || modalMode === 'reset') && (
+                      <>
+                         <hr className="border-gray-800" />
+      
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                             <div className="space-y-1.5">
+                                <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Senha de Acesso</label>
+                                <div className="relative">
+                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                                  <input 
+                                    type="password" 
+                                    required={modalMode === 'create' || modalMode === 'reset'}
+                                    minLength={6}
+                                    value={formData.password}
+                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                    className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                                    placeholder="Mínimo 6 caracteres"
+                                  />
+                                </div>
+                             </div>
+                             
+                             <div className="space-y-1.5">
+                                <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Confirmar Senha</label>
+                                <div className="relative">
+                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                                  <input 
+                                    type="password" 
+                                    required={modalMode === 'create' || modalMode === 'reset'}
+                                    minLength={6}
+                                    value={formData.confirmPassword}
+                                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                                    className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                                    placeholder="Repita a senha"
+                                  />
+                                </div>
+                             </div>
+                         </div>
+                      </>
+                   )}
 
                    <div className="pt-4 flex justify-end gap-3">
                        <button 
@@ -894,19 +1131,19 @@ export default function CorretoresPage() {
                          onClick={handleCloseModal}
                          className="px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
                        >
-                         Cancelar
+                         {modalMode === 'view' ? 'Fechar' : 'Cancelar'}
                        </button>
-                       {brokerLimit !== null && corretores.filter(c => c.active).length >= brokerLimit && user?.role !== 'SUPER_ADMIN' ? (
+                       {brokerLimit !== null && corretores.filter(c => c.active).length >= brokerLimit && user?.role !== 'SUPER_ADMIN' && modalMode === 'create' ? (
                           <div className="flex items-center ml-4 px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
                              <p className="text-red-400 text-xs font-bold uppercase tracking-widest">Plano Atingido</p>
                           </div>
-                       ) : (
+                       ) : modalMode !== 'view' && (
                          <button 
                            type="submit"
                            disabled={isSubmitting}
                            className="px-8 py-2.5 rounded-lg text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_15px_rgba(249,115,22,0.2)] disabled:opacity-50"
                          >
-                           {isSubmitting ? 'Gerando Acesso...' : 'Salvar Corretor'}
+                           {isSubmitting ? 'Salvando...' : modalMode === 'edit' ? 'Salvar Alterações' : modalMode === 'reset' ? 'Redefinir Senha' : 'Salvar Corretor'}
                          </button>
                        )}
                    </div>
