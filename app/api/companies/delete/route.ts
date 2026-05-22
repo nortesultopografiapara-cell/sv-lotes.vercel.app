@@ -59,7 +59,17 @@ export async function DELETE(request: Request) {
     }
 
     // 4. Validate name confirmation
-    if (company.name !== confirmationName) {
+    const normalizedInput = confirmationName.trim().toLowerCase();
+    const normalizedCompany = company.name.trim().toLowerCase();
+    
+    console.log('DELETE_COMPANY_COMPARE', {
+      input: confirmationName,
+      companyName: company.name,
+      normalizedInput,
+      normalizedCompany
+    });
+
+    if (normalizedInput !== normalizedCompany) {
       return NextResponse.json({ error: 'Nome de confirmação não confere.' }, { status: 400 });
     }
 

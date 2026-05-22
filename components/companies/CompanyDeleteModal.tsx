@@ -57,7 +57,10 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
   if (!isOpen || !company) return null;
 
   const handleDelete = async () => {
-    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) {
+    const normalizedInput = confirmName.trim().toLowerCase();
+    const normalizedCompany = company.name.trim().toLowerCase();
+    
+    if (normalizedInput !== normalizedCompany) {
       setErrorMsg('Nome da empresa digitado incorretamente.');
       return;
     }
@@ -80,7 +83,7 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: company.id,
-          confirmationName: confirmName.trim().toUpperCase(),
+          confirmationName: confirmName.trim(),
           adminEmail: user?.email,
           adminUserId: user?.id,
           adminPassword,
@@ -104,7 +107,9 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
   };
 
   const isFormValid = () => {
-    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) return false;
+    const normalizedInput = confirmName.trim().toLowerCase();
+    const normalizedCompany = company.name.trim().toLowerCase();
+    if (normalizedInput !== normalizedCompany) return false;
     if (adminPassword.length < 6) return false;
     if (hasOperationalData && destructiveConfirmation.trim().toUpperCase() !== 'APAGAR DEFINITIVAMENTE') return false;
     return true;
@@ -112,7 +117,9 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
 
   const getMissingRequirements = () => {
     const missing = [];
-    if (confirmName.trim().toUpperCase() !== company.name.trim().toUpperCase()) missing.push('Nome da empresa não confere');
+    const normalizedInput = confirmName.trim().toLowerCase();
+    const normalizedCompany = company.name.trim().toLowerCase();
+    if (normalizedInput !== normalizedCompany) missing.push('Nome da empresa não confere');
     if (adminPassword.length < 6) missing.push('Senha do Super Admin obrigatória');
     if (hasOperationalData && destructiveConfirmation.trim().toUpperCase() !== 'APAGAR DEFINITIVAMENTE') missing.push('Confirmação destrutiva obrigatória');
     return missing;
