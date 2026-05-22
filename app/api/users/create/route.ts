@@ -30,7 +30,13 @@ export async function POST(req: Request) {
       throw new Error("O tenantId é obrigatório para cadastrar um corretor.");
     }
 
-    const temporaryPassword = password || generateTempPassword(8);
+    let temporaryPassword = password;
+    let authUserId: string | null = null;
+    let isExisting = false;
+
+    if (!temporaryPassword) {
+      temporaryPassword = generateTempPassword(8);
+    }
 
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: email,
@@ -44,36 +50,68 @@ export async function POST(req: Request) {
     });
 
     if (authError) {
-      throw new Error(`Erro ao criar conta: ${authError.message}`);
+       if (authError.message.includes('already been registered') || (authError as any).status === 422) {
+           isExisting = true;
+           // Try to find by iterating
+           let page = 1;
+           while(true) {
+              const { data } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+              if (!data?.users || data.users.length === 0) break;
+              const f = data.users.find((u: any) => u.email === email);
+              if (f) {
+                 authUserId = f.id;
+                 break;
+              }
+              if (data.users.length < 1000) break;
+              page++;
+           }
+           if (!authUserId) {
+              throw new Error("Erro ao localizar ID de e-mail já registrado (Não encontrado).");
+           }
+       } else {
+         throw new Error(`Erro ao criar conta: ${authError.message}`);
+       }
+    } else {
+       authUserId = authUser.user.id;
     }
 
-    authUserId = authUser.user.id;
+    // Now update or insert public.users
+    const { data: existingUser } = await supabaseAdmin.from('users').select('*').eq('id', authUserId).maybeSingle();
 
-    const { error: userError } = await supabaseAdmin
-      .from('users')
-      .upsert({
-        id: authUserId,
-        tenant_id: tenantId,
-        full_name: fullName,
-        email: email,
-        role: role || 'BROKER',
-        status: 'ACTIVE',
-        phone: phone,
-        force_password_change: true
-      }, { onConflict: 'id' });
-
-    if (userError) {
-      throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);
+    if (existingUser) {
+        if (existingUser.tenant_id && existingUser.tenant_id !== tenantId) {
+            throw new Error("Este e-mail já está vinculado a outra empresa. Use outro e-mail ou solicite transferência.");
+        }
+        // update role and details
+        const { error: userError } = await supabaseAdmin.from('users').update({
+            role: role || 'BROKER',
+            full_name: fullName,
+            phone: phone
+        }).eq('id', authUserId);
+        if (userError) throw new Error(`Erro ao atualizar perfil de sistema: ${userError.message}`);
+    } else {
+        const { error: userError } = await supabaseAdmin.from('users').insert({
+            id: authUserId,
+            tenant_id: tenantId,
+            full_name: fullName,
+            email: email,
+            role: role || 'BROKER',
+            status: 'ACTIVE',
+            phone: phone,
+            force_password_change: !isExisting // force password change only if new
+        });
+        if (userError) throw new Error(`Erro ao criar perfil de sistema: ${userError.message}`);
     }
 
     return NextResponse.json({ 
       success: true, 
-      temporaryPassword,
-      userId: authUserId
+      temporaryPassword: isExisting ? null : temporaryPassword,
+      userId: authUserId,
+      isExisting
     });
 
   } catch (error: any) {
-    if (authUserId) {
+    if (authUserId && !isExisting) {
       await supabaseAdmin.auth.admin.deleteUser(authUserId);
     }
     return NextResponse.json({ error: error.message || 'Erro interno no servidor' }, { status: 500 });

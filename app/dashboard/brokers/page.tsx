@@ -29,7 +29,7 @@ export default function CorretoresPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [successData, setSuccessData] = useState<{ email: string, password: string } | null>(null);
+  const [successData, setSuccessData] = useState<{ email: string, password?: string | null, isExisting?: boolean } | null>(null);
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
@@ -168,7 +168,7 @@ export default function CorretoresPage() {
          payload.status = 'Ativo';
       }
 
-      const { error: brokerError } = await supabase.from('brokers').insert([payload]);
+      const { error: brokerError } = await supabase.from('brokers').upsert([payload], { onConflict: 'id' });
       if (brokerError) {
          if (brokerError.message?.includes("schema cache") || brokerError.code === 'PGRST204' || brokerError.code === 'PGRST205') {
             throw new Error("Execute a migration setup_brokers.sql no Supabase e recarregue o schema.");
@@ -178,7 +178,8 @@ export default function CorretoresPage() {
 
       setSuccessData({
         email: formData.email,
-        password: result.temporaryPassword
+        password: result.temporaryPassword,
+        isExisting: result.isExisting
       });
 
     } catch (err: any) {
@@ -643,9 +644,9 @@ export default function CorretoresPage() {
                    <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
                      <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                    </div>
-                   <h3 className="text-xl font-bold text-white mb-2">Corretor Cadastrado!</h3>
-                   <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-                     Acesso gerado com sucesso. Envie as credenciais abaixo para o corretor fazer login no CRM.
+                   <h3 className="text-xl font-bold text-white mb-2">{successData.isExisting ? 'Corretor Atualizado!' : 'Corretor Cadastrado!'}</h3>
+                   <p className="text-sm text-gray-400 max-w-sm mx-auto mb-6">
+                     {successData.isExisting ? 'O corretor já possuía cadastro no sistema e foi vinculado a esta empresa.' : 'Acesso gerado com sucesso. Envie as credenciais abaixo para o corretor fazer login no CRM.'}
                    </p>
                    
                    <div className="bg-[#0b0c10] border border-gray-800 rounded-xl w-full max-w-md mx-auto overflow-hidden text-left mb-8 shadow-inner">
@@ -653,10 +654,16 @@ export default function CorretoresPage() {
                         <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest w-16">LOGIN</span>
                         <span className="text-sm text-gray-200 select-all font-medium">{successData.email}</span>
                       </div>
-                      <div className="px-5 py-4 flex items-center gap-4 bg-[#0a0b0e]">
-                        <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest w-16">SENHA</span>
-                        <span className="text-sm font-mono text-emerald-400 font-bold select-all tracking-wider">{successData.password}</span>
-                      </div>
+                      {successData.password ? (
+                        <div className="px-5 py-4 flex items-center gap-4 bg-[#0a0b0e]">
+                          <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest w-16">SENHA</span>
+                          <span className="text-sm font-mono text-emerald-400 font-bold select-all tracking-wider">{successData.password}</span>
+                        </div>
+                      ) : (
+                        <div className="px-5 py-4 flex items-center gap-4 bg-[#0a0b0e]">
+                           <span className="text-sm text-emerald-500 font-medium italic w-full text-center">O corretor utilizará sua senha de acesso já existente.</span>
+                        </div>
+                      )}
                    </div>
                    <button 
                      onClick={handleCloseModal}
