@@ -662,20 +662,33 @@ export default function CorretoresPage() {
              status: 'pago',
              paid_at: new Date().toISOString()
           }).eq('id', comm.id);
-       }
-
-       if (totalPago > 0) {
-           await supabase.from('cash_movements').insert({
-               tenant_id: resolvedTenantId,
-               company_id: resolvedTenantId,
-               type: 'saida',
-               category: 'Comissão',
-               description: `Pagamento de comissão ao corretor ${c.name}`,
-               amount: totalPago,
-               broker_id: c.id,
-               movement_date: new Date().toISOString().split('T')[0],
-               created_by: user.id
-           });
+          
+          let projId = null;
+          if (comm.sale_id) {
+              const { data: saleData } = await supabase.from('sales').select('project_id').eq('id', comm.sale_id).single();
+              projId = saleData?.project_id || null;
+          }
+          
+          const cashPayload = {
+              tenant_id: resolvedTenantId,
+              company_id: resolvedTenantId,
+              type: 'saida',
+              category: 'Comissão',
+              description: `Pagamento de comissão ao corretor ${c.name}`,
+              amount: Number(comm.amount || 0),
+              broker_id: c.id,
+              sale_id: comm.sale_id || null,
+              project_id: projId,
+              broker_commission_id: comm.id,
+              movement_date: new Date().toISOString().split('T')[0],
+              status: 'ativo',
+              created_by: user.id
+          };
+          
+          await supabase.from('cash_movements').insert(cashPayload);
+          
+          console.log("COMMISSION_CASH_MOVEMENT_INSERT", cashPayload);
+          console.log("COMMISSION_PROJECT_ID", projId);
        }
 
        try {

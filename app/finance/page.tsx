@@ -221,7 +221,7 @@ export default function FinancePage() {
         
         try {
            const { data: cData, error: cErr } = await supabase.from('cash_movements')
-               .select(`*, projects(name)`)
+               .select(`*, projects(name), sales(projects(name), contracts(contract_number)), contracts(projects(name), contract_number)`)
                .or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`)
                .order('movement_date', { ascending: false });
            if (!cErr && cData) {
@@ -1488,13 +1488,11 @@ export default function FinancePage() {
           let startDate = prStartDate ? new Date(prStartDate + 'T00:00:00Z') : null;
           let endDate = prEndDate ? new Date(prEndDate + 'T23:59:59Z') : null;
 
-          let movements: any[] = [];
-          
           console.log("FLOW_CARD_SOURCE_ENTRIES", payments);
           console.log("FLOW_CARD_SOURCE_OUTCOMES", cashMovements);
 
           // 1. Entradas (finance_receipts)
-          payments.forEach(p => {
+          const mappedPayments = payments.map(p => {
               const pStatus = p.status?.toLowerCase() || 'pendente';
               const amt = Number(p.paid_amount) || Number(p.amount) || 0;
               
@@ -1504,10 +1502,9 @@ export default function FinancePage() {
               else status = 'Estornado';
               
               const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
-              
               const dDate = new Date(p.paid_at || p.due_date || p.created_at);
               
-              movements.push({
+              return {
                   id_check: `rec_${p.id}`,
                   data: dDate,
                   projeto: projName,
@@ -1521,7 +1518,7 @@ export default function FinancePage() {
                   descricao: p.description || `Parcela ${p.installment_number || '1'}`,
                   valor: amt,
                   status: status
-              });
+              };
           });
           
           // Fetch comissoes beforehand to cross reference cash movements
@@ -1532,18 +1529,20 @@ export default function FinancePage() {
           const { data: comms } = await commQuery;
 
           // 2. Caixas (cash_movements)
-          cashMovements.forEach(c => {
-              if (c.finance_receipt_id) return;
-              
+          console.log("FLOW_OUTCOMES_FOUND", cashMovements.filter(c => c.type === 'saida'));
+          
+          const mappedCashMovements = cashMovements.filter(c => !c.finance_receipt_id).map(c => {
               let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
-              const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
+              // Check if actual type is "saida" from DB, uppercase first letter
+              const tipoStr = (c.type || '').toLowerCase();
+              const type = tipoStr === 'saida' ? 'Saída' : (tipoStr === 'entrada' ? 'Entrada' : 'Saída');
               
               let projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name;
               let contractName = '-';
               
               // Cross-reference with broker_commissions to find the project if missing
               if (!projName && (c.category === 'Comissão' || c.category === 'Comissao') && comms) {
-                  const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.amount);
+                  const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && Math.abs(c.amount - cm.amount) < 1);
                   if (matchingComm) {
                       projName = matchingComm.sales?.projects?.name || matchingComm.contracts?.projects?.name;
                       contractName = matchingComm.sales?.contracts?.contract_number || matchingComm.contracts?.contract_number || '-';
@@ -1554,7 +1553,7 @@ export default function FinancePage() {
 
               const mDate = new Date(c.movement_date || c.created_at);
               
-              movements.push({
+              return {
                   id_check: `cash_${c.id}`,
                   data: mDate,
                   projeto: projName,
@@ -1568,23 +1567,29 @@ export default function FinancePage() {
                   descricao: c.description || '-',
                   valor: Number(c.amount) || 0,
                   status: status
-              });
+              };
           });
           
-          // 3. Comissões pagas
+          let movements = [...mappedPayments, ...mappedCashMovements];
+          console.log('FLOW_PAYMENTS', mappedPayments);
+          console.log('FLOW_CASH_MOVEMENTS', mappedCashMovements);
+          console.log('FLOW_FINAL_ROWS', movements);
+
+          // 3. Comissões pagas (legacy or missing in cash_movements)
           if (comms) {
+              const mappedComms = [];
               comms.forEach(cm => {
                   let status = 'Pendente';
                   if (cm.status === 'pago' || cm.status === 'paga') status = 'Pago';
                   else if (cm.status === 'pendente') status = 'Pendente';
                   
-                  const hasCash = cashMovements.some(c => c.type === 'saida' && (c.category === 'Comissão' || c.category === 'Comissao') && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.amount);
+                  const hasCash = mappedCashMovements.some(c => c.tipo === 'Saída' && (c.categoria === 'Comissão' || c.categoria === 'Comissao') && c.valor === cm.amount && (c.contrato === cm.sales?.contracts?.contract_number || c.corretor === cm.brokers?.name));
                   if (status === 'Pago' && hasCash) return; // avoid duplicate
                   
                   const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
                   const mDate = new Date(cm.paid_at || cm.created_at);
                   
-                  movements.push({
+                  mappedComms.push({
                       id_check: `comm_${cm.id}`,
                       data: mDate,
                       projeto: projName,
@@ -1600,12 +1605,13 @@ export default function FinancePage() {
                       status: status
                   });
               });
+              movements = [...movements, ...mappedComms];
           }
 
           console.log("FLOW_REPORT_ROWS_BEFORE_FILTER", movements);
 
           // FILTER
-          movements = movements.filter(m => {
+          const flowRows = movements.filter(m => {
               if (prFilterProject !== 'Todos' && m.projeto !== prFilterProject) return false;
               if (prType !== 'Todos' && prType !== m.tipo + 's') return false; 
               
@@ -1625,20 +1631,21 @@ export default function FinancePage() {
               return true;
           });
           
-          console.log("FLOW_REPORT_ROWS_AFTER_FILTER", movements);
+          console.log("FLOW_REPORT_ROWS_AFTER_FILTER", flowRows);
 
           // Sort by date
-          movements.sort((a, b) => a.data.getTime() - b.data.getTime());
+          flowRows.sort((a, b) => a.data.getTime() - b.data.getTime());
 
           let totalEntradas = 0;
           let totalSaidas = 0;
-          movements.forEach(m => {
+          flowRows.forEach(m => {
               if (m.tipo === 'Entrada') totalEntradas += m.valor;
               if (m.tipo === 'Saída') totalSaidas += m.valor;
           });
           const saldo = totalEntradas - totalSaidas;
           
           console.log("FLOW_REPORT_TOTALS", {totalEntradas, totalSaidas, saldo});
+          console.log("FLOW_OUTCOMES_TOTAL", totalSaidas);
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
@@ -1659,7 +1666,7 @@ export default function FinancePage() {
               const headers = ['Data', 'Projeto/Loteamento', 'Tipo', 'Categoria', 'Cliente', 'Corretor', 'Contrato', 'Quadra', 'Lote', 'Descrição', 'Valor', 'Status'];
               ws.addRow(headers);
               
-              movements.forEach(m => {
+              flowRows.forEach(m => {
                   ws.addRow([
                       m.data.toLocaleDateString('pt-BR'),
                       m.projeto,
@@ -1703,7 +1710,7 @@ export default function FinancePage() {
               doc.setTextColor(saldo >= 0 ? 39 : 231, saldo >= 0 ? 174 : 76, saldo >= 0 ? 96 : 60);
               doc.text(`Saldo: ${formatCurrency(saldo)}`, 130, 36);
               
-              const tableBody = movements.map(m => [
+              const tableBody = flowRows.map(m => [
                   m.data.toLocaleDateString('pt-BR'),
                   m.projeto,
                   m.tipo,
