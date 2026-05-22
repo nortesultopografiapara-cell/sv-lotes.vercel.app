@@ -259,6 +259,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [company, setCompany] = useState<any>(null);
+  const [impersonatingTenantId, setImpersonatingTenantId] = useState<string | null>(null);
+  const [impersonatingCompanyName, setImpersonatingCompanyName] = useState<string | null>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
 
@@ -270,6 +272,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       }
     }
     if (user) fetchCompany();
+
+    setImpersonatingTenantId(typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null);
+    setImpersonatingCompanyName(typeof window !== 'undefined' ? localStorage.getItem('impersonating_company_name') : null);
 
     const handleCompanyUpdate = () => { if (user) fetchCompany(); };
     window.addEventListener('company_updated', handleCompanyUpdate);
@@ -455,12 +460,12 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${isMobile ? 'pt-16 pb-20' : ''}`}>
         
-        {typeof window !== 'undefined' && localStorage.getItem('impersonating_tenant_id') && (
+        {impersonatingTenantId && (
           <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5" />
               <span className="font-bold uppercase tracking-wider text-sm">
-                Você está acessando como: {localStorage.getItem('impersonating_company_name')} — MODO DEUS ATIVO
+                Você está acessando como: {impersonatingCompanyName} — MODO DEUS ATIVO
               </span>
             </div>
             <button
@@ -536,17 +541,17 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Bottom Navigation Menu */}
       {isMobile && (
-        <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe">
-          {menuItems.map((item) => {
+        <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe overflow-x-auto">
+          {menuItems.filter(item => !item.isSection).slice(0, 5).map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link 
-                key={item.href} 
-                href={item.href}
-                className="flex flex-col items-center justify-center gap-1 w-full h-full"
+                key={item.href || item.name} 
+                href={item.href || '#'}
+                className="flex flex-col items-center justify-center gap-1 w-full h-full min-w-[64px]"
               >
-                <item.icon className={`w-6 h-6 ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`} />
-                <span className={`text-[10px] font-medium leading-none ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`}>
+                {item.icon && <item.icon className={`w-6 h-6 ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`} />}
+                <span className={`text-[10px] font-medium leading-none truncate w-full text-center px-1 ${isActive ? item.color : 'text-[var(--color-text-muted)]'}`}>
                   {item.name}
                 </span>
               </Link>
