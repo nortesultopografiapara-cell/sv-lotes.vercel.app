@@ -1519,6 +1519,22 @@ export default function GISMap({
     alert("FUNÇÃO REAL DE VENDA CHAMADA");
     if (!user) return;
 
+    let finalBrokerId = null;
+    if (user?.role === 'BROKER') {
+      const { data: brokerData } = await supabase
+        .from('brokers')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      console.log('BROKER_AUTH_USER_ID:', user.id);
+      if (brokerData) {
+        finalBrokerId = brokerData.id;
+        console.log('BROKER_DB_RECORD_FOUND:', finalBrokerId);
+      }
+    }
+    console.log('FINAL_BROKER_ID_USED_IN_SALE:', finalBrokerId);
+
     if (isLotSold(lot.status) && (newStatus === "Vendido" || newStatus === "Reservado")) {
       alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
       return;
@@ -1746,7 +1762,7 @@ export default function GISMap({
             user_id: user.id || null,
             agreed_price: customerData.final_value || finalPrice,
             lot_price: finalPrice,
-            broker_id: user?.role === 'BROKER' ? user.id : null,
+            broker_id: finalBrokerId,
             payment_type: customerData.payment_type || "À vista",
             discount: customerData.discount_value || 0,
             total_value: customerData.final_value || finalPrice,
@@ -1782,7 +1798,7 @@ export default function GISMap({
               company_id: finalTenantId,
               sale_id: saleId,
               customer_id: customerId,
-              broker_id: user?.role === 'BROKER' ? user.id : null,
+              broker_id: finalBrokerId,
               project_id: lot.project_id || null,
               block_id: lot.id,
               installment_number: 1,
@@ -1799,7 +1815,7 @@ export default function GISMap({
                 company_id: finalTenantId,
                 sale_id: saleId,
                 customer_id: customerId,
-                broker_id: user?.role === 'BROKER' ? user.id : null,
+                broker_id: finalBrokerId,
                 project_id: lot.project_id || null,
                 block_id: lot.id,
                 installment_number: 0, // 0 signifies "Entry" (Entrada)
@@ -1825,7 +1841,7 @@ export default function GISMap({
                   company_id: finalTenantId,
                   sale_id: saleId,
                   customer_id: customerId,
-                  broker_id: user?.role === 'BROKER' ? user.id : null,
+                  broker_id: finalBrokerId,
                   project_id: lot.project_id || null,
                   block_id: lot.id,
                   installment_number: currentInst++,
@@ -1889,7 +1905,7 @@ export default function GISMap({
             company_id: finalTenantId,
             sale_id: saleId,
             customer_id: customerId,
-            broker_id: user?.role === 'BROKER' ? user.id : null,
+            broker_id: finalBrokerId,
             project_id: lot.project_id || null,
             block_id: lot.id,
             contract_number: `CTR-${Date.now()}`,
@@ -1922,7 +1938,7 @@ export default function GISMap({
               customer_id: customerId,
               sale_id: saleId,
               contract_id: contractData.id,
-              broker_id: user?.role === 'BROKER' ? user.id : null
+              broker_id: finalBrokerId
             })
             .eq("id", lot.id);
             
@@ -1945,7 +1961,7 @@ export default function GISMap({
                  const { error: commErr } = await supabase.from('broker_commissions').insert([{
                     company_id: finalTenantId,
                     tenant_id: finalTenantId,
-                    broker_id: user.id,
+                    broker_id: finalBrokerId,
                     sale_id: saleId,
                     contract_id: contractData.id,
                     customer_id: customerId || clientId,
@@ -2006,7 +2022,7 @@ export default function GISMap({
             status: newStatus,
             price: finalPrice,
             customer_id: customerId,
-            broker_id: user?.role === 'BROKER' ? user.id : null,
+            broker_id: finalBrokerId,
             reservation_expires_at: expirationTime,
             reservation_date: newStatus === "Reservado" ? new Date().toISOString() : null,
           })
@@ -2022,7 +2038,7 @@ export default function GISMap({
             await supabase.from("reservation_logs").insert({
                company_id: finalTenantId,
                tenant_id: finalTenantId,
-               broker_id: user?.role === 'BROKER' ? user.id : null,
+               broker_id: finalBrokerId,
                block_id: lot.id,
                customer_id: customerId,
                expiration_time: expirationTime,
