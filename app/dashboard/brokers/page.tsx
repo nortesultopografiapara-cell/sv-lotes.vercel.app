@@ -587,6 +587,66 @@ export default function CorretoresPage() {
      }
   };
 
+  const handlePayCommission = async (c: any) => {
+     if (!c.comissao_pendente || c.comissao_pendente <= 0) {
+       alert("Corretor não possui comissão pendente para pagamento.");
+       return;
+     }
+
+     if (!window.confirm(`Deseja registrar o pagamento de ${formatCurrency(c.comissao_pendente)} de comissão para ${c.name}? Isso criará uma saída no fluxo de caixa.`)) {
+       return;
+     }
+
+     try {
+       const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
+
+       const { data: pendentes, error: errC } = await supabase.from('broker_commissions')
+         .select('id, sale_id, commission_value')
+         .eq('broker_id', c.id)
+         .in('status', ['pendente', 'aprovado']);
+
+       if (errC) throw errC;
+       if (!pendentes || pendentes.length === 0) throw new Error("Comissões não encontradas.");
+
+       for (const comm of pendentes) {
+          await supabase.from('broker_commissions').update({
+             status: 'pago',
+             paid_at: new Date().toISOString()
+          }).eq('id', comm.id);
+
+          await supabase.from('cash_movements').insert({
+              tenant_id: resolvedTenantId,
+              company_id: resolvedTenantId,
+              type: 'saida',
+              category: 'Comissão',
+              description: `Pagamento de comissão ao corretor ${c.name}`,
+              amount: comm.commission_value,
+              broker_id: c.id,
+              sale_id: comm.sale_id,
+              movement_date: new Date().toISOString().split('T')[0],
+              created_by: user.id
+          });
+       }
+
+       try {
+           await supabase.from('audit_logs').insert([{
+               tenant_id: resolvedTenantId,
+               company_id: resolvedTenantId,
+               user_id: user.id,
+               action: 'COMMISSION_PAID',
+               module: 'FINANCE',
+               description: `Pagamento total de ${formatCurrency(c.comissao_pendente)} para corretor ${c.name}`
+           }]);
+       } catch(logE) {}
+
+       await loadCorretores();
+       alert("Comissão paga e saída registrada com sucesso!");
+     } catch(e: any) {
+        console.error(e);
+        alert("Erro ao pagar comissão: " + (e.message || JSON.stringify(e)));
+     }
+  };
+
   // Real Metrics
   const totalVendasMes = corretores.reduce((acc, c) => acc + c.vendas_mes_qtd, 0);
   const totalComissoesPagas = corretores.reduce((acc, c) => acc + c.comissao_paga, 0);
@@ -836,6 +896,14 @@ export default function CorretoresPage() {
                            >
                              <Trash2 className="w-4 h-4" />
                            </button>
+                           {c.comissao_pendente > 0 && (
+                               <button 
+                                 onClick={() => handlePayCommission(c)}
+                                 className="p-1.5 text-emerald-500 hover:text-white hover:bg-emerald-500/80 rounded transition-colors" title="Pagar Comissão"
+                               >
+                                 <DollarSign className="w-4 h-4" />
+                               </button>
+                           )}
                         </div>
                       </td>
                     </tr>

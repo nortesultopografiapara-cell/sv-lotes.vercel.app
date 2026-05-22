@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -41,7 +41,22 @@ export default function FinancePage() {
      qtyDueToday: 0,
      qtyContracts: 0,
      qtyNext7Days: 0,
-     qtyNoPaymentContracts: 0
+     qtyNoPaymentContracts: 0,
+     entradasCaixa: 0,
+     saidasCaixa: 0,
+     saldoCaixa: 0
+  });
+
+  const [cashMovements, setCashMovements] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'parcelas'|'caixa'>('parcelas');
+  const [showSaidaModal, setShowSaidaModal] = useState(false);
+  const [saidaForm, setSaidaForm] = useState({
+      category: 'Outros',
+      description: '',
+      amount: '',
+      project_id: '',
+      movement_date: new Date().toISOString().split('T')[0],
+      comments: ''
   });
 
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
@@ -190,6 +205,62 @@ export default function FinancePage() {
         
         const inadimplencia = localTotal > 0 ? (localVencidas / localTotal) * 100 : 0;
         
+        // Fetch Cash Movements
+        let totalEntradasCaixa = 0;
+        let totalSaidasCaixa = 0;
+        let cashData: any[] = [];
+        
+        try {
+           const { data: cData, error: cErr } = await supabase.from('cash_movements')
+               .select(`*, projects(name)`)
+               .or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`)
+               .order('movement_date', { ascending: false });
+           if (!cErr && cData) {
+               cashData = cData;
+               setCashMovements(cData);
+               
+               cData.forEach(c => {
+                   if (c.status === 'ativo') {
+                       if (c.type === 'entrada') totalEntradasCaixa += Number(c.amount);
+                       if (c.type === 'saida') totalSaidasCaixa += Number(c.amount);
+                   }
+               });
+           }
+        } catch(eee) { console.error('Cash movements error', eee); }
+
+        // Fetch historically paid receipts
+        let totalRecebidoHistorico = 0;
+        if (data) {
+           data.forEach(p => {
+              const pStatus = p.status?.toLowerCase() || 'pendente';
+              if (pStatus === 'pago' || pStatus === 'paid') {
+                  const amt = Number(p.paid_amount) || Number(p.amount) || 0;
+                  // check if it's already in cashData
+                  const hasCash = cashData.some(c => c.finance_receipt_id === p.id);
+                  if (!hasCash) {
+                      totalRecebidoHistorico += amt;
+                  }
+              }
+           });
+        }
+        
+        // Fetch historically paid commissions (not strictly necessary if we generate them dynamically, but let's query just in case)
+        let totalComissaoHistorico = 0;
+        try {
+           const { data: comms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+           if (comms) {
+               comms.forEach(cm => {
+                   const hasCash = cashData.some(c => c.type === 'saida' && c.category === 'Comissão' && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.commission_value);
+                   if (!hasCash) {
+                       totalComissaoHistorico += Number(cm.commission_value);
+                   }
+               });
+           }
+        } catch(e){}
+
+        totalEntradasCaixa += totalRecebidoHistorico;
+        totalSaidasCaixa += totalComissaoHistorico;
+
         setStats({ 
             recebidoMes: localRecebido, 
             aReceber: localAReceber, 
@@ -202,7 +273,10 @@ export default function FinancePage() {
             qtyDueToday,
             qtyContracts: contractSet.size,
             qtyNext7Days,
-            qtyNoPaymentContracts
+            qtyNoPaymentContracts,
+            entradasCaixa: totalEntradasCaixa,
+            saidasCaixa: totalSaidasCaixa,
+            saldoCaixa: totalEntradasCaixa - totalSaidasCaixa
         } as any);
 
       } catch(err) {
@@ -278,6 +352,22 @@ export default function FinancePage() {
         })
         .eq('id', p.id);
       if (error) throw error;
+      
+      const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
+      await supabase.from('cash_movements').insert({
+          tenant_id: resolvedTenantId,
+          company_id: resolvedTenantId,
+          type: 'entrada',
+          category: 'Venda de Lote',
+          description: `Pagamento de Parcela ${p.installment_number || '1'} - CT ${p.sales?.contracts?.[0]?.contract_number || 'S/N'}`,
+          amount: p.amount,
+          customer_id: p.customer_id,
+          sale_id: p.sale_id,
+          finance_receipt_id: p.id,
+          movement_date: new Date().toISOString().split('T')[0],
+          created_by: user.id
+      });
+      
       await loadFinance();
       window.dispatchEvent(new Event('finance_updated'));
       alert("Pagamento registrado com sucesso!");
@@ -465,6 +555,47 @@ export default function FinancePage() {
        { Descricao: 'Qtd Parcelas Pendentes', Valor: qtyPending.toString() },
        { Descricao: 'Qtd Parcelas Vencidas', Valor: qtyLate.toString() },
      ];
+  };
+
+  const handleRegistrarSaida = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saidaForm.amount || Number(saidaForm.amount) <= 0) return alert('Valor inválido');
+    
+    try {
+      const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
+      
+      const { error } = await supabase.from('cash_movements').insert({
+          tenant_id: resolvedTenantId,
+          company_id: resolvedTenantId,
+          type: 'saida',
+          category: saidaForm.category,
+          description: saidaForm.description,
+          amount: parseFloat(saidaForm.amount),
+          movement_date: saidaForm.movement_date,
+          created_by: user?.id
+      });
+      
+      if (error) throw error;
+      
+      try {
+         await supabase.from('audit_logs').insert([{
+             tenant_id: resolvedTenantId,
+             company_id: resolvedTenantId,
+             user_id: user?.id,
+             action: 'CASH_OUT_CREATED',
+             module: 'FINANCE',
+             description: `Saída de ${saidaForm.amount} - ${saidaForm.category}`
+         }]);
+      } catch(e) {}
+      
+      setShowSaidaModal(false);
+      setSaidaForm({ category: 'Outros', description: '', amount: '', project_id: '', movement_date: new Date().toISOString().split('T')[0], comments: '' });
+      await loadFinance();
+      alert('Saída registrada com sucesso.');
+    } catch(e: any) {
+       console.error(e);
+       alert('Erro ao registrar saída: ' + e.message);
+    }
   };
 
   const handleGenerateCarne = async (p: any) => {
@@ -763,6 +894,39 @@ export default function FinancePage() {
      });
 
      wsInd.columns = [{ width: 40 }, { width: 20 }];
+
+     // === ABA 4: Fluxo de Caixa ===
+     const wsCash = workbook.addWorksheet('Fluxo de Caixa');
+     wsCash.mergeCells('A1:G1');
+     wsCash.getCell('A1').value = 'HISTÓRICO FLUXO DE CAIXA';
+     wsCash.getCell('A1').font = { size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+     wsCash.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+     
+     wsCash.addRow([]);
+     const cashHeaders = ['Data', 'Tipo', 'Categoria', 'Loteamento', 'Descrição', 'Valor', 'Status'];
+     const cashHeaderRow = wsCash.addRow(cashHeaders);
+     cashHeaderRow.eachCell(cell => {
+         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF34495E' } };
+         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+     });
+     
+     cashMovements.forEach(c => {
+        const row = wsCash.addRow([
+           c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-',
+           (c.type || '').toUpperCase(),
+           c.category || '-',
+           c.projects?.name || '-',
+           c.description || '-',
+           formatCurrency(c.amount),
+           c.status || 'ativo'
+        ]);
+        
+        const typeCell = row.getCell(2);
+        if (c.type === 'entrada') typeCell.font = { color: { argb: 'FF27AE60' }, bold: true };
+        if (c.type === 'saida') typeCell.font = { color: { argb: 'FFE74C3C' }, bold: true };
+     });
+     
+     wsCash.columns = [{ width: 15 }, { width: 12 }, { width: 25 }, { width: 25 }, { width: 40 }, { width: 15 }, { width: 10 }];
 
      // Exportar
      const buffer = await workbook.xlsx.writeBuffer();
@@ -1270,6 +1434,38 @@ export default function FinancePage() {
           alternateRowStyles: { fillColor: [245, 247, 250] },
           margin: { right: 150 } // prevent taking full width
       });
+      
+      // AutoTable 3: Fluxo de Caixa
+      if (cashMovements && cashMovements.length > 0) {
+          doc.addPage();
+          doc.setFontSize(14);
+          doc.setTextColor(40);
+          doc.text("HISTÓRICO DE CAIXA", 14, 20);
+          
+          autoTable(doc, {
+              startY: 30,
+              head: [['Data', 'Tipo', 'Categoria', 'Loteamento', 'Descrição', 'Valor', 'Status']],
+              body: cashMovements.map(c => [
+                  c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-',
+                  (c.type || '').toUpperCase(),
+                  c.category || '-',
+                  c.projects?.name || '-',
+                  c.description || '-',
+                  formatCurrency(c.amount),
+                  c.status || 'Ativo'
+              ]),
+              styles: { fontSize: 8, cellPadding: 2 },
+              headStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
+              didParseCell: function(dataObj) {
+                  if (dataObj.section === 'body' && dataObj.column.index === 1) {
+                     const type = dataObj.cell.raw as string;
+                     if (type === 'ENTRADA') dataObj.cell.styles.textColor = [39, 174, 96];
+                     if (type === 'SAÍDA' || type === 'SAIDA') dataObj.cell.styles.textColor = [231, 76, 60];
+                     dataObj.cell.styles.fontStyle = 'bold';
+                  }
+              }
+          });
+      }
 
       doc.save(`relatorio_financeiro_${new Date().getTime()}.pdf`);
   };
@@ -1312,6 +1508,13 @@ export default function FinancePage() {
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
+          <button onClick={() => setShowSaidaModal(true)} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm">
+            <TrendingDown className="w-4 h-4" />
+            Registrar Saída
+          </button>
+
+          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+
           <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <FileText className="w-4 h-4" />
             PDF Completo
@@ -1323,6 +1526,36 @@ export default function FinancePage() {
         </div>
       </header>
 
+      {/* CAIXA CARDS */}
+      <h2 className="text-xl font-bold text-white mb-4">Controle de Caixa Geral</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-3 gap-4 mb-8">
+        <StatCard 
+            title="Entradas (Total)" 
+            value={formatCurrency(stats.entradasCaixa)} 
+            subtitle="Recebimentos de vendas e manuais"
+            subtitleColor="text-gray-500"
+            icon={<TrendingUp className="w-5 h-5" />} 
+            iconBg="bg-[#2ad271]/10" 
+        />
+        <StatCard 
+            title="Saídas (Total)" 
+            value={formatCurrency(stats.saidasCaixa)} 
+            subtitle="Comissões e despesas"
+            subtitleColor="text-gray-500"
+            icon={<TrendingDown className="w-5 h-5" />} 
+            iconBg="bg-[#f04449]/10" 
+        />
+        <StatCard 
+            title="Saldo Atual" 
+            value={formatCurrency(stats.saldoCaixa)} 
+            subtitle="Entradas - Saídas"
+            subtitleColor="text-gray-500"
+            icon={<Wallet className="w-5 h-5" />} 
+            iconBg={stats.saldoCaixa >= 0 ? "bg-emerald-500/10" : "bg-[#f04449]/10"} 
+        />
+      </div>
+
+      <h2 className="text-xl font-bold text-white mb-4">Métricas de Parcelas</h2>
       {/* STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 mb-8">
         <StatCard 
@@ -1387,6 +1620,23 @@ export default function FinancePage() {
         />
       </div>
 
+      <div className="flex items-center gap-4 border-b border-[#1f232b] mb-6 mt-4">
+        <button 
+           onClick={() => setActiveTab('parcelas')}
+           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'parcelas' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
+        >
+          Parcelas
+        </button>
+        <button 
+           onClick={() => setActiveTab('caixa')}
+           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'caixa' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
+        >
+          Fluxo de Caixa
+        </button>
+      </div>
+
+      {activeTab === 'parcelas' && (
+      <>
       {/* FILTERS */}
       <div className="flex flex-wrap gap-4 items-end mb-6">
         <div className="flex-1 min-w-[250px]">
@@ -1641,7 +1891,7 @@ export default function FinancePage() {
       </div>
 
       {/* FOOTER INFO PANEL */}
-      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl flex flex-col md:flex-row shadow-xl overflow-hidden">
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl flex flex-col md:flex-row shadow-xl overflow-hidden mb-6">
         <div className="flex-1 p-6 md:p-8 flex gap-5 items-start border-b md:border-b-0 md:border-r border-[#1f232b]">
            <div className="w-14 h-14 rounded-xl bg-[#1c212a] flex items-center justify-center shrink-0">
               <Banknote className="w-7 h-7 text-gray-400" />
@@ -1683,6 +1933,77 @@ export default function FinancePage() {
            </div>
         </div>
       </div>
+      </>
+      )}
+
+      {activeTab === 'caixa' && (
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl overflow-x-auto shadow-md min-h-[400px]">
+         <div className="p-4 border-b border-[#1f232b] bg-[#1a1e27] flex items-center gap-2">
+            <h3 className="text-white font-bold tracking-wider text-sm flex items-center gap-2">
+               <Wallet className="w-4 h-4" /> HISTÓRICO DE FLUXO DE CAIXA
+            </h3>
+         </div>
+         {cashMovements.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+               Nenhuma movimentação de caixa registrada ainda.
+            </div>
+         ) : (
+            <table className="w-full text-left text-sm whitespace-nowrap">
+               <thead className="bg-[#1a1e27] text-gray-400 uppercase text-[10px] font-bold tracking-wider">
+                  <tr>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Data</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Tipo</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Categoria</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Descrição</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Valor</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Status</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b] text-right">Ação</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-[#1f232b]">
+                  {cashMovements.map((c) => (
+                      <tr key={c.id} className="hover:bg-[#1a1e27] transition-colors group">
+                         <td className="px-5 py-4 text-gray-300 font-medium">
+                            {c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
+                         </td>
+                         <td className="px-5 py-4 font-bold">
+                            {c.type === 'entrada' ? <span className="text-emerald-500 flex items-center gap-1"><TrendingUp className="w-3 h-3"/> ENTRADA</span> : <span className="text-red-500 flex items-center gap-1"><TrendingDown className="w-3 h-3"/> SAÍDA</span>}
+                         </td>
+                         <td className="px-5 py-4 text-gray-300">
+                            {c.category}
+                         </td>
+                         <td className="px-5 py-4 text-gray-400">
+                            {c.description || '-'}
+                            {c.projects?.name && <span className="block text-xs mt-0.5 text-gray-500">Proj: {c.projects?.name}</span>}
+                         </td>
+                         <td className="px-5 py-4 text-white font-mono">
+                            {formatCurrency(c.amount)}
+                         </td>
+                         <td className="px-5 py-4">
+                            {c.status === 'estornado' ? <span className="text-xs text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded">ESTORNADO</span> : <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>}
+                         </td>
+                         <td className="px-5 py-4 text-right">
+                            {c.status === 'ativo' && (
+                               <button 
+                                 onClick={async () => {
+                                    if(window.confirm('Atenção, deseja marcar esta movimentação como ESTORNADA? Isso impactará o saldo.')) {
+                                       await supabase.from('cash_movements').update({status:'estornado'}).eq('id', c.id);
+                                       try { await supabase.from('audit_logs').insert({action:'CASH_MOVEMENT_REVERSED', user_id: user?.id, tenant_id: user?.tenant_id||((user as any)?.company_id)}); } catch(e){}
+                                       await loadFinance();
+                                    }
+                                 }}
+                                 className="opacity-0 group-hover:opacity-100 p-1.5 text-orange-500 hover:text-white hover:bg-orange-500/80 rounded transition-all text-xs border border-orange-500/30" title="Estornar">
+                                 Estornar
+                               </button>
+                            )}
+                         </td>
+                      </tr>
+                  ))}
+               </tbody>
+            </table>
+         )}
+      </div>
+      )}
 
       {selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1745,6 +2066,77 @@ export default function FinancePage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showSaidaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <form onSubmit={handleRegistrarSaida}>
+              <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <TrendingDown className="w-5 h-5 text-red-500" />
+                  Registrar Saída (Despesa / Saque)
+                </h3>
+                <button type="button" onClick={() => setShowSaidaModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4 text-sm text-gray-300">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
+                    <input type="text" value="SAÍDA" disabled className="w-full bg-[#1c212a] text-red-400 font-bold border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Categoria</label>
+                    <select required value={saidaForm.category} onChange={e => setSaidaForm({...saidaForm, category: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors">
+                        <option value="Roço do chacreamento">Roço do chacreamento</option>
+                        <option value="Compra de postes">Compra de postes</option>
+                        <option value="Terraplanagem">Terraplanagem</option>
+                        <option value="Escritório">Escritório</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Comissão">Comissão</option>
+                        <option value="Serviços Terceirizados">Serviços Terceirizados</option>
+                        <option value="Infraestrutura">Infraestrutura</option>
+                        <option value="Outros">Outros</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Destino / Descrição (Opcional)</label>
+                  <input type="text" value={saidaForm.description} onChange={e => setSaidaForm({...saidaForm, description: e.target.value})} placeholder="Para onde foi o dinheiro ou do que se trata..." className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$)*</label>
+                    <input required type="number" step="0.01" min="0.01" value={saidaForm.amount} onChange={e => setSaidaForm({...saidaForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Data*</label>
+                    <input required type="date" value={saidaForm.movement_date} onChange={e => setSaidaForm({...saidaForm, movement_date: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Loteamento / Projeto (Opcional)</label>
+                  <select disabled className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed opacity-50">
+                     <option value="">-- Indisponível nesta versão rápida --</option>
+                  </select>
+                </div>
+              </div>
+              <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
+                 <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
+                   Cancelar
+                 </button>
+                 <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded shadow transition-colors">
+                   Confirmar Saída
+                 </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
