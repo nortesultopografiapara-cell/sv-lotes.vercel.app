@@ -20,6 +20,7 @@ import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { generateContractHTML } from "@/lib/contractTemplate";
+import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -1347,9 +1348,15 @@ export default function GISMap({
         console.groupEnd();
 
         if (blocksRes.data) {
+          const allPolygons = blocksRes.data
+            .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
+            .map((b: any) => b.geometry.coordinates[0]);
+
           const parsedBlocks = blocksRes.data
             .map((b) => {
               let bounds: [number, number][] = [];
+              let dimsFromGeo: any = null;
+
               if (
                 b.geometry &&
                 b.geometry.type === "LineString" &&
@@ -1368,7 +1375,13 @@ export default function GISMap({
                   c[1],
                   c[0],
                 ]);
+                try {
+                  dimsFromGeo = calculateLotDimensions(b.geometry.coordinates[0], allPolygons, b.properties || {});
+                } catch(err) {
+                  console.error("Erro recálculo dimensões GISMap", err);
+                }
               }
+
               return {
                 id: b.id,
                 block: b.block_name || b.name || "?",
@@ -1385,10 +1398,10 @@ export default function GISMap({
                     : 0,
                 geometryType: b.geometry?.type,
                 bounds,
-                frente: b.frente || null,
-                fundo: b.fundo || null,
-                lado_direito: b.lado_direito || null,
-                lado_esquerdo: b.lado_esquerdo || null,
+                frente: dimsFromGeo ? dimsFromGeo.frente : (b.frente || null),
+                fundo: dimsFromGeo ? dimsFromGeo.fundo : (b.fundo || null),
+                lado_direito: dimsFromGeo ? dimsFromGeo.ladoDireito : (b.lado_direito || null),
+                lado_esquerdo: dimsFromGeo ? dimsFromGeo.ladoEsquerdo : (b.lado_esquerdo || null),
               };
             })
             .filter((b) => b.bounds.length > 0);

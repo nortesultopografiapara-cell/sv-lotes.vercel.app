@@ -97,7 +97,7 @@ export function extractSegments(coords: number[][], allPolys: number[][][]): Seg
 /**
  * Agrupar segmentos com base em curvas e polígonos complexos
  */
-export function mergeCurvedSegments(segments: Segment[], tolerance: number = 20): Segment[] {
+export function mergeCurvedSegments(segments: Segment[], tolerance: number = 5): Segment[] {
     if (segments.length <= 1) return segments;
     const merged: Segment[] = [];
     
@@ -105,11 +105,13 @@ export function mergeCurvedSegments(segments: Segment[], tolerance: number = 20)
     
     for (let i = 1; i < segments.length; i++) {
         const seg = segments[i];
-        const lastInGroup = currentGroup[currentGroup.length - 1];
+        const refAzimuth = currentGroup[0].azimuth;
         
-        if (diffAngle(seg.azimuth, lastInGroup.azimuth) <= tolerance && 
-            (seg.originalIndex === lastInGroup.originalIndex + 1 ||
-             seg.originalIndex === 0 && lastInGroup.originalIndex > 1)) {
+        let diff = diffAngle(seg.azimuth, refAzimuth);
+        let diffRev = Math.abs(diff - 180);
+        let isCollinear = Math.min(diff, diffRev) <= tolerance;
+        
+        if (isCollinear && seg.originalIndex === currentGroup[currentGroup.length - 1].originalIndex + 1) {
             currentGroup.push(seg);
         } else {
             merged.push(createMergedSegment(currentGroup));
@@ -118,7 +120,21 @@ export function mergeCurvedSegments(segments: Segment[], tolerance: number = 20)
     }
     
     if (currentGroup.length > 0) {
-        merged.push(createMergedSegment(currentGroup));
+        if (merged.length > 0) {
+            const firstGroup = merged[0];
+            const refAzimuth = currentGroup[0].azimuth;
+            let diff = diffAngle(firstGroup.azimuth, refAzimuth);
+            let diffRev = Math.abs(diff - 180);
+            let isCollinear = Math.min(diff, diffRev) <= tolerance;
+
+            if (isCollinear && currentGroup[currentGroup.length - 1].originalIndex === segments[segments.length - 1].originalIndex) {
+                merged[0] = createMergedSegment([...currentGroup, ...firstGroup]);
+            } else {
+                merged.push(createMergedSegment(currentGroup));
+            }
+        } else {
+            merged.push(createMergedSegment(currentGroup));
+        }
     }
     
     return merged;
@@ -132,7 +148,8 @@ function createMergedSegment(group: Segment[]): Segment {
         ...group[0],
         p2: group[group.length - 1].p2,
         length: totalLength,
-        azimuth: dominant.azimuth
+        azimuth: dominant.azimuth,
+        isExternal: group.some(g => g.isExternal)
     };
 }
 
@@ -250,7 +267,11 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
 
     // Calcular via geometria
     const rawSegments = extractSegments(coords, allPolys);
-    const segments = mergeCurvedSegments(rawSegments, 20); // 20° tolerância
+    console.log("LOT_DIMENSION_SEGMENTS", rawSegments.length, "segments extracted");
+    
+    // 5° tolerância como padrão, ou extraída
+    const segments = mergeCurvedSegments(rawSegments, 5); 
+    console.log("LOT_DIMENSION_GROUPED_BY_DIRECTION", segments.length, "groups");
     
     let result = { 
         frente: propFrente || 0, 
@@ -285,6 +306,13 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     const finalFundo = normalizeDimensions(result.fundo, finalFrente);
     const finalDir = normalizeDimensions(result.ladoDireito, finalFrente * 2);
     const finalEsq = normalizeDimensions(result.ladoEsquerdo, finalDir);
+
+    console.log("LOT_DIMENSION_FINAL_RESULT", {
+        frente: finalFrente,
+        fundo: finalFundo,
+        ladoDireito: finalDir,
+        ladoEsquerdo: finalEsq
+    });
 
     return {
         frente: finalFrente,
