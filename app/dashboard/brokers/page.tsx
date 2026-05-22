@@ -60,6 +60,8 @@ export default function CorretoresPage() {
 
       let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
       
+      console.log("BROKERS_FETCH_QUERY: Init using tenant", user.tenant_id);
+      
       if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
          query = query.or(`company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id}`);
       } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
@@ -68,6 +70,7 @@ export default function CorretoresPage() {
       }
       
       const { data, error } = await query;
+      console.log("BROKERS_FETCH_RESULT", data, error);
       if (error) throw error;
 
       // Fetch sales and commissions for this tenant
@@ -102,7 +105,7 @@ export default function CorretoresPage() {
           name: b.name || b.full_name || 'Sem nome',
           role: b.role || 'BROKER',
           commission_percent: b.commission_percent || 5,
-          active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
+          active: b.active !== undefined ? b.active : (b.status?.toLowerCase() === 'ativo'),
           vendas_mes_qtd,
           vendas_mes_valor,
           comissao_pendente,
@@ -113,7 +116,7 @@ export default function CorretoresPage() {
 
       const finalActiveBrokers = enhancedData.filter(b => {
            if (b.deleted_at !== null && b.deleted_at !== undefined) return false;
-           if (b.status === 'inativo') return false;
+           if (b.status?.toLowerCase() === 'inativo') return false;
            if (b.active === false) return false;
            return true;
        });
@@ -173,34 +176,27 @@ export default function CorretoresPage() {
       // Neste caso, se a migration já passou, tenant_id e name serão os corretos
       let payload: any = {
          id: result.userId,
+         auth_user_id: result.userId,
          cpf: formData.cpf,
          creci: formData.creci,
          phone: formData.phone,
          email: formData.email,
-         role: formData.role,
-         commission_percent: formData.commission_percent
+         role: 'BROKER',
+         level: 'broker',
+         commission_percent: formData.commission_percent,
+         company_id: user?.tenant_id,
+         tenant_id: user?.tenant_id,
+         name: formData.fullName,
+         full_name: formData.fullName,
+         active: true,
+         status: 'ativo',
+         deleted_at: null
       };
-      
-      // Checa a estrutura primeiro
-      let hasTenantId = false;
-      try {
-         const { error: schemaError } = await supabase.from('brokers').select('tenant_id').limit(1);
-         if (!schemaError) hasTenantId = true;
-      } catch (err) {
-         hasTenantId = false;
-      }
-      
-      if (hasTenantId) { // Tabela nova
-         payload.tenant_id = user?.tenant_id;
-         payload.name = formData.fullName;
-         payload.active = true;
-      } else { // Tabela antiga
-         payload.company_id = user?.tenant_id;
-         payload.full_name = formData.fullName;
-         payload.status = 'Ativo';
-      }
 
-      const { error: brokerError } = await supabase.from('brokers').upsert([payload], { onConflict: 'id' });
+      console.log("BROKER_PAYLOAD_TO_SAVE", payload);
+      const { data: brokerData, error: brokerError } = await supabase.from('brokers').upsert([payload], { onConflict: 'id' }).select();
+      console.log("BROKER_CREATED_RESULT", brokerData, brokerError);
+      
       if (brokerError) {
          if (brokerError.message?.includes("schema cache") || brokerError.code === 'PGRST204' || brokerError.code === 'PGRST205') {
             throw new Error("Execute a migration setup_brokers.sql no Supabase e recarregue o schema.");
@@ -213,6 +209,21 @@ export default function CorretoresPage() {
         password: result.temporaryPassword,
         isExisting: result.isExisting
       });
+
+      setFormData({
+        fullName: '',
+        email: '',
+        phone: '',
+        creci: '',
+        cpf: '',
+        role: 'BROKER',
+        password: '',
+        confirmPassword: '',
+        commission_percent: 5
+      });
+
+      await loadCorretores();
+
 
     } catch (err: any) {
       console.error(err);
@@ -276,7 +287,7 @@ export default function CorretoresPage() {
   const handleCloseModal = () => {
      setIsModalOpen(false);
      if (successData) {
-        window.location.reload();
+        setSuccessData(null);
      }
   };
 
