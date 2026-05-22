@@ -10,6 +10,64 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms: any[]) {
+    let totalEntradas = 0;
+    let totalSaidas = 0;
+
+    const safeReceipts = receipts || [];
+    const safeCash = cashMvs || [];
+    const safeComms = comms || [];
+
+    // Recebimentos (Entradas)
+    safeReceipts.forEach(r => {
+        const status = r.status?.toLowerCase() || 'pendente';
+        if (status === 'pago') {
+           totalEntradas += Number(r.paid_amount) || Number(r.amount) || 0;
+        }
+    });
+
+    // Movimentações Caixa (Entradas e Saídas)
+    safeCash.forEach(c => {
+        const status = c.status?.toLowerCase() || 'ativo';
+        if (status !== 'estornado' && status !== 'cancelado' && status !== 'deleted') {
+            const typeStr = (c.type || '').toLowerCase();
+            const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
+            const isEntradaStr = typeStr.includes('entrada');
+            
+            if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) totalEntradas += Number(c.amount || 0);
+            if (isSaidaStr) {
+                totalSaidas += Number(c.amount || 0);
+                console.log("FINANCE_MANUAL_EXPENSES_INCLUDED", c);
+            }
+        }
+    });
+
+    // Comissões (Saídas)
+    safeComms.forEach(cm => {
+        const cmStatus = cm.status?.toLowerCase() || 'pendente';
+        if (cmStatus === 'pago' || cmStatus === 'paga') {
+            const hasCash = safeCash.some(c => {
+                const status = c.status?.toLowerCase() || 'ativo';
+                if (status === 'estornado' || status === 'cancelado' || status === 'deleted') return false;
+                
+                const typeStr = (c.type || '').toLowerCase();
+                const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
+                
+                return isSaidaStr && 
+                       (c.category === 'Comissão' || c.category === 'Comissao') && 
+                       (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && 
+                       Math.abs(Number(c.amount) - Number(cm.amount)) < 1;
+            });
+
+            if (!hasCash) {
+                totalSaidas += Number(cm.amount || 0);
+            }
+        }
+    });
+
+    return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
+}
+
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
   
@@ -49,6 +107,7 @@ export default function FinancePage() {
   });
 
   const [cashMovements, setCashMovements] = useState<any[]>([]);
+  const [brokerCommissions, setBrokerCommissions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'parcelas'|'caixa'>('parcelas');
   const [showSaidaModal, setShowSaidaModal] = useState(false);
   const [saidaForm, setSaidaForm] = useState({
@@ -225,78 +284,31 @@ export default function FinancePage() {
         
         const inadimplencia = localTotal > 0 ? (localVencidas / localTotal) * 100 : 0;
         
-        // Fetch Cash Movements
-        let totalEntradasCaixa = 0;
-        let totalSaidasCaixa = 0;
+        // Fetch Cash Movements & Comissões to compute global stats
         let cashData: any[] = [];
-        
         try {
            const { data: cData, error: cErr } = await supabase.from('cash_movements')
-               .select(`*, projects(name), sales(projects(name), contracts(contract_number)), contracts(projects(name), contract_number)`)
+               .select(`*`)
                .or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`)
                .order('movement_date', { ascending: false });
            if (!cErr && cData) {
+               console.log("FINANCE_CASH_MOVEMENTS_RAW", cData);
                cashData = cData;
                setCashMovements(cData);
-               
-               console.log("FINANCE_CASH_MOVEMENTS_RAW", cData);
-               cData.forEach(c => {
-                   const status = c.status?.toLowerCase() || 'ativo';
-                   if (status !== 'estornado' && status !== 'cancelado' && status !== 'deleted') {
-                       const typeStr = (c.type || '').toLowerCase();
-                       const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
-                       const isEntradaStr = typeStr.includes('entrada');
-                       if (isEntradaStr && !isSaidaStr) totalEntradasCaixa += Number(c.amount);
-                       if (isSaidaStr) {
-                           totalSaidasCaixa += Number(c.amount);
-                           console.log("FINANCE_MANUAL_EXPENSES_INCLUDED", c);
-                       }
-                   }
-               });
            }
         } catch(eee) { console.error('Cash movements error', eee); }
 
-        // Fetch historically paid receipts
-        let totalRecebidoHistorico = 0;
-        if (data) {
-           data.forEach(p => {
-              const pStatus = p.status?.toLowerCase() || 'pendente';
-              if (pStatus === 'pago' || pStatus === 'paid') {
-                  const amt = Number(p.paid_amount) || Number(p.amount) || 0;
-                  // check if it's already in cashData
-                  const hasCash = cashData.some(c => c.finance_receipt_id === p.id);
-                  if (!hasCash) {
-                      totalRecebidoHistorico += amt;
-                  }
-              }
-           });
-        }
-        
-        // Fetch historically paid commissions (not strictly necessary if we generate them dynamically, but let's query just in case)
-        let totalComissaoHistorico = 0;
+        let commsData: any[] = [];
         try {
            const { data: comms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
            if (comms) {
-               comms.forEach(cm => {
-                   const hasCash = cashData.some(c => {
-                       const status = c.status?.toLowerCase() || 'ativo';
-                       if (status === 'estornado' || status === 'cancelado' || status === 'deleted') return false;
-                       const typeStr = (c.type || '').toLowerCase();
-                       const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
-                       return isSaidaStr && (c.category === 'Comissão' || c.category === 'Comissao') && 
-                              (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && 
-                              Math.abs(Number(c.amount) - Number(cm.amount)) < 1;
-                   });
-                   if (!hasCash) {
-                       totalComissaoHistorico += Number(cm.amount);
-                   }
-               });
+               commsData = comms;
+               setBrokerCommissions(comms);
            }
         } catch(e){}
 
-        totalEntradasCaixa += totalRecebidoHistorico;
-        totalSaidasCaixa += totalComissaoHistorico;
-        console.log("FINANCE_TOTAL_OUTCOMES_FINAL", totalSaidasCaixa);
+        const totals = calculateFinancialTotals(data || [], cashData, commsData);
+        console.log("FINANCE_TOTAL_OUTCOMES_FINAL", totals.totalSaidas);
 
         setStats({ 
             recebidoMes: localRecebido, 
@@ -311,9 +323,9 @@ export default function FinancePage() {
             qtyContracts: contractSet.size,
             qtyNext7Days,
             qtyNoPaymentContracts,
-            entradasCaixa: totalEntradasCaixa,
-            saidasCaixa: totalSaidasCaixa,
-            saldoCaixa: totalEntradasCaixa - totalSaidasCaixa
+            entradasCaixa: totals.totalEntradas,
+            saidasCaixa: totals.totalSaidas,
+            saldoCaixa: totals.saldoFinal
         } as any);
 
       } catch(err) {
@@ -583,9 +595,35 @@ export default function FinancePage() {
          }
      });
 
+     const filteredCash = cashMovements.filter(c => {
+         const mDateStr = (c.movement_date || c.created_at || '').split('T')[0];
+         const cProjName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name || 'Projeto Desconhecido';
+         
+         const matchProject = projectFilter !== 'Todos os projetos' ? (cProjName === projectFilter) : true;
+         const matchStartDate = startDate ? (mDateStr >= startDate) : true;
+         const matchEndDate = endDate ? (mDateStr <= endDate) : true;
+         
+         return matchProject && matchStartDate && matchEndDate;
+     });
+
+     const filteredComms = brokerCommissions.filter(c => {
+         const cmProjName = c.sales?.projects?.name || c.contracts?.projects?.name || 'Projeto Desconhecido';
+         const cDateStr = (c.paid_at || c.created_at || '').split('T')[0];
+         
+         const matchProject = projectFilter !== 'Todos os projetos' ? (cmProjName === projectFilter) : true;
+         const matchStartDate = startDate ? (cDateStr >= startDate) : true;
+         const matchEndDate = endDate ? (cDateStr <= endDate) : true;
+         
+         return matchProject && matchStartDate && matchEndDate;
+     });
+
+     const totals = calculateFinancialTotals(filteredPayments, filteredCash, filteredComms);
+
      return [
-       { Descricao: 'Total Filtro', Valor: formatCurrency(totalVendido) },
-       { Descricao: 'Total Recebido', Valor: formatCurrency(totalRecebido) },
+       { Descricao: 'Total Lançado (Previsto)', Valor: formatCurrency(totalVendido) },
+       { Descricao: 'Total Entradas', Valor: formatCurrency(totals.totalEntradas) },
+       { Descricao: 'Total Saídas', Valor: formatCurrency(totals.totalSaidas) },
+       { Descricao: 'Saldo Final', Valor: formatCurrency(totals.saldoFinal) },
        { Descricao: 'Total a Receber', Valor: formatCurrency(totalAReceber) },
        { Descricao: 'Total Vencido', Valor: formatCurrency(totalVencido) },
        { Descricao: 'Qtd Parcelas Pagas', Valor: qtyPaid.toString() },
@@ -1691,16 +1729,53 @@ export default function FinancePage() {
           // Sort by date
           flowRows.sort((a, b) => a.data.getTime() - b.data.getTime());
 
-          let totalEntradas = 0;
-          let totalSaidas = 0;
-          flowRows.forEach(m => {
-              if (m.tipo === 'Entrada') totalEntradas += m.valor;
-              if (m.tipo === 'Saída') totalSaidas += m.valor;
+          // Using global unification function
+          const rawReportPayments = payments.filter(p => {
+              const dDate = new Date(p.paid_at || p.due_date || p.created_at);
+              const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
+              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
+              if (prType !== 'Todos' && prType !== 'Entradas') return false;
+              if (startDate && dDate < startDate) return false;
+              if (endDate && dDate > endDate) return false;
+              return true;
           });
-          const saldo = totalEntradas - totalSaidas;
+
+          const rawReportCash = cashMovements.filter(c => {
+              const mDate = new Date(c.movement_date || c.created_at);
+              let projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name;
+              if (!projName && (c.category === 'Comissão' || c.category === 'Comissao') && comms) {
+                  const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && Math.abs(c.amount - cm.amount) < 1);
+                  if (matchingComm) projName = matchingComm.sales?.projects?.name || matchingComm.contracts?.projects?.name;
+              }
+              if (!projName) projName = 'Geral/Outros';
+              
+              const tipoStr = (c.type || '').toLowerCase();
+              const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(val => tipoStr.includes(val));
+              const mTipo = isSaidaStr ? 'Saídas' : (tipoStr.includes('entrada') ? 'Entradas' : 'Saídas');
+              
+              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
+              if (prType !== 'Todos' && prType !== mTipo) return false;
+              if (startDate && mDate < startDate) return false;
+              if (endDate && mDate > endDate) return false;
+              return true;
+          });
+
+          const rawReportComms = (comms || []).filter(cm => {
+              const mDate = new Date(cm.paid_at || cm.created_at);
+              const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
+              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
+              if (prType !== 'Todos' && prType !== 'Saídas') return false;
+              if (startDate && mDate < startDate) return false;
+              if (endDate && mDate > endDate) return false;
+              return true;
+          });
+
+          const totals = calculateFinancialTotals(rawReportPayments, rawReportCash, rawReportComms);
+          const totalEntradas = totals.totalEntradas;
+          const totalSaidas = totals.totalSaidas;
+          const saldo = totals.saldoFinal;
           
-          console.log("FLOW_REPORT_TOTALS", {totalEntradas, totalSaidas, saldo});
-          console.log("FLOW_OUTCOMES_TOTAL", totalSaidas);
+          console.log("FLOW_REPORT_TOTALS_UNIFIED", totals);
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
