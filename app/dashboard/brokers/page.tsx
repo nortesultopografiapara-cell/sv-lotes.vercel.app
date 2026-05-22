@@ -87,7 +87,7 @@ export default function CorretoresPage() {
       
       try {
          const { data: s } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at, project_id');
-         const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, commission_value, status, created_at');
+         const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, amount, status, created_at');
          const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id');
          const { data: prj } = await supabase.from('projects').select('id, name');
          salesData = s || [];
@@ -119,7 +119,7 @@ export default function CorretoresPage() {
                                tenant_id: user.tenant_id,
                                broker_id: broker.id,
                                sale_id: sale.id,
-                               commission_value: val,
+                               amount: val,
                                commission_percent: percent,
                                amount_sale: sale.total_value,
                                status: 'pendente'
@@ -183,8 +183,8 @@ export default function CorretoresPage() {
            console.log("BROKER_SOLD_LOTS_FOUND", exportLots);
         }
 
-        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente' || c.status?.toLowerCase() === 'aprovado').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
-        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente' || c.status?.toLowerCase() === 'aprovado').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
         return {
           ...b,
@@ -241,7 +241,7 @@ export default function CorretoresPage() {
                        type: 'commission_paid',
                        date: new Date(c.created_at),
                        message: `${b.name} recebeu comissão.`,
-                       subtext: `Valor: R$ ${Number(c.commission_value).toLocaleString('pt-BR')}`
+                       subtext: `Valor: R$ ${Number(c.amount).toLocaleString('pt-BR')}`
                    });
                }
            }
@@ -601,7 +601,7 @@ export default function CorretoresPage() {
        const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
 
        const { data: pendentes, error: errC } = await supabase.from('broker_commissions')
-         .select('id, sale_id, commission_value')
+         .select('id, sale_id, amount')
          .eq('broker_id', c.id)
          .in('status', ['pendente', 'aprovado']);
 
@@ -620,7 +620,7 @@ export default function CorretoresPage() {
               type: 'saida',
               category: 'Comissão',
               description: `Pagamento de comissão ao corretor ${c.name}`,
-              amount: comm.commission_value,
+              amount: comm.amount,
               broker_id: c.id,
               sale_id: comm.sale_id,
               movement_date: new Date().toISOString().split('T')[0],

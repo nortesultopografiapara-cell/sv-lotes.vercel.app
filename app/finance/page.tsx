@@ -250,9 +250,9 @@ export default function FinancePage() {
            const { data: comms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
            if (comms) {
                comms.forEach(cm => {
-                   const hasCash = cashData.some(c => c.type === 'saida' && c.category === 'Comissão' && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.commission_value);
+                   const hasCash = cashData.some(c => c.type === 'saida' && c.category === 'Comissão' && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.amount);
                    if (!hasCash) {
-                       totalComissaoHistorico += Number(cm.commission_value);
+                       totalComissaoHistorico += Number(cm.amount);
                    }
                });
            }

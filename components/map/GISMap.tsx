@@ -1951,7 +1951,7 @@ export default function GISMap({
                     customer_id: customerId || clientId,
                     amount_sale: saleVal,
                     commission_percent: pct,
-                    commission_value: cv,
+                    amount: cv,
                     status: 'pendente'
                  }]);
                  
