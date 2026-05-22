@@ -17,6 +17,10 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
     const safeReceipts = receipts || [];
     const safeCash = cashMvs || [];
     const safeComms = comms || [];
+    
+    console.log("FINANCE_TOTALS_PAYMENTS_SOURCE", safeReceipts);
+    console.log("FINANCE_TOTALS_CASH_MOVEMENTS_SOURCE", safeCash);
+    console.log("FINANCE_TOTALS_COMMISSIONS_SOURCE", safeComms);
 
     // Recebimentos (Entradas)
     safeReceipts.forEach(r => {
@@ -37,7 +41,6 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
             if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) totalEntradas += Number(c.amount || 0);
             if (isSaidaStr) {
                 totalSaidas += Number(c.amount || 0);
-                console.log("FINANCE_MANUAL_EXPENSES_INCLUDED", c);
             }
         }
     });
@@ -55,9 +58,17 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
                 const typeStr = (c.type || '').toLowerCase();
                 const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
                 
+                const commDescMatch = Boolean(c.description?.toLowerCase().includes('comissão') || c.description?.toLowerCase().includes('comissao') || c.source === 'broker_commission');
+                
+                // Only consider it a duplicate if it matches the EXACT ids, OR if it has a matching reference, or matches sale/broker context
+                const isMatchingContext = (c.sale_id && c.sale_id === cm.sale_id) || 
+                                          (c.broker_id && c.broker_id === cm.broker_id) || 
+                                          (c.reference_id && c.reference_id === cm.id) ||
+                                          (c.finance_receipt_id === cm.id); // some edge cases 
+
                 return isSaidaStr && 
-                       (c.category === 'Comissão' || c.category === 'Comissao') && 
-                       (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && 
+                       ((c.category === 'Comissão' || c.category === 'Comissao') || commDescMatch) && 
+                       (isMatchingContext || commDescMatch) && 
                        Math.abs(Number(c.amount) - Number(cm.amount)) < 1;
             });
 
@@ -66,6 +77,8 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
             }
         }
     });
+    
+    console.log("FINANCE_TOTALS_RESULT", { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas });
 
     return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
 }
@@ -289,13 +302,29 @@ export default function FinancePage() {
         // Fetch Cash Movements & Comissões to compute global stats
         let cashData: any[] = [];
         try {
-           const { data: cData, error: cErr } = await supabase.from('cash_movements')
+           let queryCash = supabase.from('cash_movements')
                .select(`*, projects(name), sales(projects(name), contracts(contract_number)), contracts(projects(name), contract_number)`)
-               .or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`)
                .order('movement_date', { ascending: false });
-           if (cErr) console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
-           if (!cErr && cData) {
-               console.log("FINANCE_CASH_MOVEMENTS_RAW", cData);
+               
+           if (resolvedTenantId) {
+               queryCash = queryCash.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+           }
+           
+           const { data: cData, error: cErr } = await queryCash;
+           
+           if (cErr) {
+               console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
+               
+               let fallbackQuery = supabase.from('cash_movements').select('*').order('movement_date', { ascending: false });
+               if (resolvedTenantId) {
+                   fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+               }
+               const { data: fallbackData } = await fallbackQuery;
+               if (fallbackData) {
+                   cashData = fallbackData;
+                   setCashMovements(fallbackData);
+               }
+           } else if (cData) {
                cashData = cData;
                setCashMovements(cData);
            }
