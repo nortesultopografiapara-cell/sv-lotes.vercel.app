@@ -600,12 +600,49 @@ export default function CorretoresPage() {
      try {
        const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
 
-       const { data: pendentes, error: errC } = await supabase.from('broker_commissions')
+       let { data: pendentes, error: errC } = await supabase.from('broker_commissions')
          .select('id, sale_id, amount')
          .eq('broker_id', c.id)
          .in('status', ['pendente', 'aprovado']);
 
        if (errC) throw errC;
+       
+       if (!pendentes || pendentes.length === 0) {
+           console.log("Comissões não encontradas, procurando vendas atreladas ao corretor...");
+           const { data: brokerSales, error: errSales } = await supabase.from('sales')
+             .select('*')
+             .eq('broker_id', c.id);
+           
+           if (!errSales && brokerSales && brokerSales.length > 0) {
+               const { data: allComms } = await supabase.from('broker_commissions').select('sale_id').eq('broker_id', c.id);
+               const exSalesIds = allComms ? allComms.map((cc) => cc.sale_id) : [];
+               
+               pendentes = [];
+               for (const sale of brokerSales) {
+                   if (!exSalesIds.includes(sale.id)) {
+                       const percent = Number(c.commission_percent) || 5;
+                       const valor_venda = Number(sale.total_value) || Number(sale.total_amount) || Number(sale.sale_value) || Number(sale.sale_price) || Number(sale.final_value) || Number(sale.final_price) || Number(sale.agreed_price) || Number(sale.amount) || Number(sale.price) || 0;
+                       const val = valor_venda * (percent / 100);
+                       
+                       const newComm = {
+                           company_id: resolvedTenantId,
+                           tenant_id: resolvedTenantId,
+                           broker_id: c.id,
+                           sale_id: sale.id,
+                           amount: val,
+                           commission_percent: percent,
+                           amount_sale: valor_venda,
+                           status: 'pendente'
+                       };
+                       const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
+                       if (!insErr && insComm) {
+                           pendentes.push(insComm);
+                       }
+                   }
+               }
+           }
+       }
+
        if (!pendentes || pendentes.length === 0) throw new Error("Comissões não encontradas.");
 
        for (const comm of pendentes) {
