@@ -1736,6 +1736,7 @@ export default function GISMap({
             status: "ACTIVE",
           };
 
+          console.log("SALE_CREATED");
           const { data: saleData, error: saleError } = await supabase
             .from("sales")
             .insert([salePayload])
@@ -1820,6 +1821,7 @@ export default function GISMap({
 
           let financeData = [];
           if (financePayloads.length > 0) {
+            console.log("FINANCE_RECEIPTS_CREATED");
             const { data: fData, error: financeError } = await supabase
               .from("finance_receipts")
               .insert(financePayloads)
@@ -1877,6 +1879,7 @@ export default function GISMap({
             status: "ativo",
           };
 
+          console.log("CONTRACT_CREATED");
           const { data: contractData, error: contractError } = await supabase
             .from("contracts")
             .insert([contractPayload])
@@ -1890,15 +1893,37 @@ export default function GISMap({
           console.log("CUSTOMER_ID_LINKED_TO_CONTRACT");
           newContractData = contractData;
 
+          // Atualizar BLOCO imediatamente antes da comissão garantindo atomicidade logica da venda
+          console.log("BLOCK_MARKED_SOLD");
+          const { error: blockUpdErr } = await supabase
+            .from("blocks")
+            .update({
+              status: "Vendido",
+              price: finalPrice,
+              customer_id: customerId,
+              sale_id: saleId,
+              contract_id: contractData.id,
+              broker_id: user?.role === 'BROKER' ? user.id : null
+            })
+            .eq("id", lot.id);
+            
+          if (blockUpdErr) {
+             console.error("ERRO AO ATUALIZAR STATUS DO LOTE", blockUpdErr);
+             throw blockUpdErr;
+          }
+
           // COMISSÃO DO CORRETOR AUTOMÁTICA
           if (user?.role === 'BROKER') {
+            console.log("BROKER_FOUND");
             try {
                const { data: brokerData } = await supabase.from('brokers').select('commission_percent').eq('id', user.id).single();
                const pct = brokerData?.commission_percent || 0;
                if (pct > 0) {
                  const saleVal = customerData.final_value || finalPrice;
                  const cv = (saleVal * pct) / 100;
-                 await supabase.from('broker_commissions').insert([{
+                 
+                 console.log("BROKER_COMMISSION_CREATED");
+                 const { error: commErr } = await supabase.from('broker_commissions').insert([{
                     company_id: finalTenantId,
                     tenant_id: finalTenantId,
                     broker_id: user.id,
@@ -1910,8 +1935,14 @@ export default function GISMap({
                     commission_value: cv,
                     status: 'pendente'
                  }]);
-                 console.log("COMISSÃO GRAVADA: ", cv);
+                 
+                 if (commErr) {
+                    console.error("Erro insert broker_commissions:", commErr.message);
+                 } else {
+                    console.log("COMISSÃO GRAVADA: ", cv);
+                 }
                }
+               console.log("BROKER_SALE_FLOW_SUCCESS");
             } catch (err) {
                console.error("Erro ao gerar comissão:", err);
             }
@@ -1921,33 +1952,33 @@ export default function GISMap({
            console.error("Erro no fluxo de venda:", err);
            throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
         }
-      }
+      } else {
+        // Reservas e Disponível
+        let expirationTime = null;
+        if (newStatus === "Reservado") {
+           const d = new Date();
+           d.setHours(d.getHours() + 48); // Reserva válida por 48h
+           expirationTime = d.toISOString();
+        }
 
-      // Final block update - now it happens after sale and everything else, or immediately if just Reserving
-      // Para Reservas: gravar broker_id e tempo de validade
-      let expirationTime = null;
-      if (newStatus === "Reservado") {
-         const d = new Date();
-         d.setHours(d.getHours() + 48); // Reserva válida por 48h
-         expirationTime = d.toISOString();
-      }
+        console.log("BLOCK_MARKED_RESERVED_OR_AVAILABLE");
+        const { error: updateError } = await supabase
+          .from("blocks")
+          .update({
+            status: newStatus,
+            price: finalPrice,
+            customer_id: customerId,
+            broker_id: user?.role === 'BROKER' ? user.id : null,
+            reservation_expires_at: expirationTime,
+            reservation_date: newStatus === "Reservado" ? new Date().toISOString() : null,
+          })
+          .eq("id", lot.id)
+          .eq("tenant_id", finalTenantId)
+          .eq("project_id", lot.project_id || finalProjectId);
 
-      const { error: updateError } = await supabase
-        .from("blocks")
-        .update({
-          status: newStatus,
-          price: finalPrice,
-          customer_id: customerId,
-          ...(newSaleData ? { sale_id: newSaleData.id } : {}),
-          ...(newContractData ? { contract_id: newContractData.id } : {})
-        })
-        .eq("id", lot.id)
-        .eq("tenant_id", finalTenantId)
-        .eq("project_id", lot.project_id || finalProjectId);
-
-      if (updateError) throw updateError;
-      console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
-      
+        if (updateError) throw updateError;
+        console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
+      }      
       try {
          if (newStatus === "Reservado") {
             await supabase.from("reservation_logs").insert({
