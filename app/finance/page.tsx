@@ -1489,152 +1489,127 @@ export default function FinancePage() {
           let endDate = prEndDate ? new Date(prEndDate + 'T23:59:59Z') : null;
 
           let movements: any[] = [];
+          
+          console.log("FLOW_CARD_SOURCE_ENTRIES", payments);
+          console.log("FLOW_CARD_SOURCE_OUTCOMES", cashMovements);
 
-          // 1. Fetch Receipts (ENTRADAS)
-          if (prType === 'Todos' || prType === 'Entradas') {
-              let recQuery = supabase.from('finance_receipts')
-                  .select('*, customers!finance_receipts_customer_id_fkey(full_name, name), contracts:contract_id(contract_number, project_id, projects(name)), sales:sale_id(id, project_id, contracts(contract_number), projects(name)), projects:project_id(name), blocks:block_id(name, number, block_name, project_id, projects(name)), brokers:broker_id(name)')
-                  .order('due_date', { ascending: true });
+          // 1. Entradas (finance_receipts)
+          payments.forEach(p => {
+              const pStatus = p.status?.toLowerCase() || 'pendente';
+              const amt = Number(p.paid_amount) || Number(p.amount) || 0;
               
-              if (resolvedTenantId) {
-                  recQuery = recQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-              }
+              let status = pStatus;
+              if (status === 'pago' || status === 'paid') status = 'Pago';
+              else if (status === 'pendente' || status === 'pending') status = 'Pendente';
+              else status = 'Estornado';
               
-              const { data: recData, error: recErr } = await recQuery;
-              console.log("FLOW_RECEIPTS_FOUND", recData);
-              if (recData) {
-                  recData.forEach((r: any) => {
-                      const projName = r.contracts?.projects?.name || r.projects?.name || r.sales?.projects?.name || r.blocks?.projects?.name || 'Geral/Outros';
-                      
-                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
-                      
-                      const dDate = new Date(r.due_date || r.created_at);
-                      if (startDate && dDate < startDate) return;
-                      if (endDate && dDate > endDate) return;
-
-                      let status = r.status?.toLowerCase() || 'pendente';
-                      if (status === 'pago' || status === 'paid') status = 'Pago';
-                      else if (status === 'pendente' || status === 'pending') status = 'Pendente';
-                      else status = 'Estornado';
-
-                      if (prStatus !== 'Todos' && status !== prStatus) return;
-
-                      movements.push({
-                          id_check: `rec_${r.id}`,
-                          data: r.paid_at ? new Date(r.paid_at) : dDate,
-                          projeto: projName,
-                          tipo: 'Entrada',
-                          categoria: r.installment_number === 0 || r.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
-                          cliente: r.customers?.name || r.customers?.full_name || 'NI',
-                          corretor: r.brokers?.name || 'NI',
-                          contrato: r.contracts?.contract_number || r.sales?.contracts?.contract_number || '-',
-                          quadra: r.blocks?.block_name || r.blocks?.name || '-',
-                          lote: r.blocks?.number || '-',
-                          descricao: r.description || `Parcela ${r.installment_number || '1'}`,
-                          valor: Number(r.paid_amount) || Number(r.amount) || 0,
-                          status: status
-                      });
+              const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
+              
+              const dDate = new Date(p.paid_at || p.due_date || p.created_at);
+              
+              movements.push({
+                  id_check: `rec_${p.id}`,
+                  data: dDate,
+                  projeto: projName,
+                  tipo: 'Entrada', // finance receipts are Entradas
+                  categoria: p.installment_number === 0 || p.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
+                  cliente: p.customers?.name || p.customers?.full_name || 'NI',
+                  corretor: p.brokers?.name || 'NI',
+                  contrato: p.contracts?.contract_number || p.sales?.contracts?.contract_number || '-',
+                  quadra: p.blocks?.block_name || p.blocks?.name || '-',
+                  lote: p.blocks?.number || '-',
+                  descricao: p.description || `Parcela ${p.installment_number || '1'}`,
+                  valor: amt,
+                  status: status
+              });
+          });
+          
+          // 2. Caixas (cash_movements)
+          cashMovements.forEach(c => {
+              if (c.finance_receipt_id) return;
+              
+              let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
+              const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
+              const projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name || 'Geral/Outros';
+              const mDate = new Date(c.movement_date || c.created_at);
+              
+              movements.push({
+                  id_check: `cash_${c.id}`,
+                  data: mDate,
+                  projeto: projName,
+                  tipo: type,
+                  categoria: c.category || '-',
+                  cliente: c.customers?.name || '-',
+                  corretor: c.brokers?.name || '-',
+                  contrato: '-',
+                  quadra: '-',
+                  lote: '-',
+                  descricao: c.description || '-',
+                  valor: Number(c.amount) || 0,
+                  status: status
+              });
+          });
+          
+          // 3. Comissões pagas
+          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number), projects(name)), contracts:contract_id(contract_number, projects(name))');
+          if (resolvedTenantId) {
+             commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+          }
+          const { data: comms } = await commQuery;
+          if (comms) {
+              comms.forEach(cm => {
+                  let status = 'Pendente';
+                  if (cm.status === 'pago' || cm.status === 'paga') status = 'Pago';
+                  else if (cm.status === 'pendente') status = 'Pendente';
+                  
+                  const hasCash = cashMovements.some(c => c.type === 'saida' && c.category === 'Comissão' && (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && c.amount === cm.amount);
+                  if (status === 'Pago' && hasCash) return; // avoid duplicate
+                  
+                  const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
+                  const mDate = new Date(cm.paid_at || cm.created_at);
+                  
+                  movements.push({
+                      id_check: `comm_${cm.id}`,
+                      data: mDate,
+                      projeto: projName,
+                      tipo: 'Saída',
+                      categoria: 'Comissão',
+                      cliente: '-',
+                      corretor: cm.brokers?.name || '-',
+                      contrato: cm.sales?.contracts?.contract_number || cm.contracts?.contract_number || '-',
+                      quadra: '-',
+                      lote: '-',
+                      descricao: `Pagamento de comissão ao corretor ${cm.brokers?.name || 'NI'}`,
+                      valor: Number(cm.amount) || 0,
+                      status: status
                   });
-              }
+              });
           }
 
-          // 2. Fetch Cash Movements (ENTRADAS / SAÍDAS)
-          if (prType === 'Todos' || prType === 'Saídas' || prType === 'Entradas') {
-              let cashQuery = supabase.from('cash_movements')
-                  .select('*, projects:project_id(name), brokers:broker_id(name), customers:customer_id(name), sales:sale_id(projects(name)), contracts:contract_id(projects(name))');
+          console.log("FLOW_REPORT_ROWS_BEFORE_FILTER", movements);
+
+          // FILTER
+          movements = movements.filter(m => {
+              if (prFilterProject !== 'Todos' && m.projeto !== prFilterProject) return false;
+              if (prType !== 'Todos' && prType !== m.tipo + 's') return false; 
               
-              if (resolvedTenantId) {
-                  cashQuery = cashQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+              if (prStatus === 'Todos') {
+                  // If it's a cash flow report, "Todos" should still logically focus on REALIZED money (Pago),
+                  // since the user explicitly requested "finance_receipts pagos", "comissão paga", etc.
+                  // But to avoid blocking "Estornado" if it is actually useful, let's just make sure "Pendente" is excluded 
+                  // to keep the totals matching the actual cash balance of 10k/2.1k
+                  if (m.status === 'Pendente') return false;
+              } else {
+                  if (m.status !== prStatus) return false;
               }
               
-              const { data: cashData, error: cashErr } = await cashQuery;
-              console.log("FLOW_CASH_MOVEMENTS_FOUND", cashData);
-              if (cashData) {
-                  cashData.forEach((c: any) => {
-                      // Skip commission category in cash_movements because we handle them securely via broker_commissions with exact sales links
-                      if (c.category === 'Comissão' || c.category === 'Comissao') return;
-
-                      const projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name || 'Geral/Outros';
-                      
-                      const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
-                      if (prType !== 'Todos' && prType !== type + 's') return;
-
-                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) {
-                           return;
-                      }
-
-                      const mDate = new Date(c.movement_date || c.created_at);
-                      if (startDate && mDate < startDate) return;
-                      if (endDate && mDate > endDate) return;
-
-                      let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
-                      if (prStatus !== 'Todos' && status !== prStatus) return;
-
-                      // Exclude movements already counted in finance_receipts to avoid double counting
-                      if (c.finance_receipt_id) return;
-
-                      movements.push({
-                          id_check: `cash_${c.id}`,
-                          data: mDate,
-                          projeto: projName,
-                          tipo: type,
-                          categoria: c.category || '-',
-                          cliente: c.customers?.name || '-',
-                          corretor: c.brokers?.name || '-',
-                          contrato: '-',
-                          quadra: '-',
-                          lote: '-',
-                          descricao: c.description || '-',
-                          valor: Number(c.amount) || 0,
-                          status: status
-                      });
-                  });
-              }
-          }
-
-          // 3. Fetch Broker Commissions (SAÍDAS) that are paid
-          if (prType === 'Todos' || prType === 'Saídas') {
-              let commQuery = supabase.from('broker_commissions')
-                  .select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number), projects(name)), contracts:contract_id(contract_number, projects(name))')
-                  .in('status', ['pago', 'paga']);
+              if (startDate && m.data < startDate) return false;
+              if (endDate && m.data > endDate) return false;
               
-              if (resolvedTenantId) {
-                  commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-              }
-              
-              const { data: commData, error: commErr } = await commQuery;
-              console.log("FLOW_COMMISSIONS_FOUND", commData);
-              if (commData) {
-                  commData.forEach((cm: any) => {
-                      const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
-                      
-                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
-
-                      const mDate = new Date(cm.paid_at || cm.created_at);
-                      if (startDate && mDate < startDate) return;
-                      if (endDate && mDate > endDate) return;
-
-                      if (prStatus === 'Pendente') return; // because we only fetched paid
-                      if (prStatus === 'Estornado') return;
-
-                      movements.push({
-                          id_check: `comm_${cm.id}`,
-                          data: mDate,
-                          projeto: projName,
-                          tipo: 'Saída',
-                          categoria: 'Comissão',
-                          cliente: '-',
-                          corretor: cm.brokers?.name || '-',
-                          contrato: cm.sales?.contracts?.contract_number || cm.contracts?.contract_number || '-',
-                          quadra: '-',
-                          lote: '-',
-                          descricao: `Pagamento de comissão ao corretor ${cm.brokers?.name || 'NI'}`,
-                          valor: Number(cm.amount) || 0,
-                          status: 'Pago'
-                      });
-                  });
-              }
-          }
+              return true;
+          });
+          
+          console.log("FLOW_REPORT_ROWS_AFTER_FILTER", movements);
 
           // Sort by date
           movements.sort((a, b) => a.data.getTime() - b.data.getTime());
@@ -1647,7 +1622,7 @@ export default function FinancePage() {
           });
           const saldo = totalEntradas - totalSaidas;
           
-          console.log("FLOW_FINAL_TOTALS", {totalEntradas, totalSaidas, saldo});
+          console.log("FLOW_REPORT_TOTALS", {totalEntradas, totalSaidas, saldo});
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
