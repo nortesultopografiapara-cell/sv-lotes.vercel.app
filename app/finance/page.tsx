@@ -320,7 +320,7 @@ export default function FinancePage() {
 
         let commsData: any[] = [];
         try {
-           let queryComms = supabase.from('broker_commissions').select('*, brokers:broker_id(*), sales:sale_id(*, projects(*), contracts(*)), contracts:contract_id(*, projects(*))');
+           let queryComms = supabase.from('broker_commissions').select('*, brokers(*), sales(projects(*), contracts(*), customers(*), blocks(*)), contracts(projects(*))');
            if (resolvedTenantId) {
                queryComms = queryComms.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
            }
@@ -1638,15 +1638,8 @@ export default function FinancePage() {
               };
           });
           
-          // Fetch comissoes beforehand to cross reference cash movements
-          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(*), sales:sale_id(*, contracts(*), projects(*)), contracts:contract_id(*, projects(*))');
-          if (resolvedTenantId) {
-             commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-          }
-          const { data: comms, error: commsErr } = await commQuery;
-          if (commsErr) {
-              console.error("FLOW_REPORT_COMMS_ERROR", commsErr);
-          }
+          // Use comissoes fetched globally
+          let comms = brokerCommissions;
 
           // 2. Caixas (cash_movements)
           console.log("FLOW_OUTCOMES_FOUND", cashMovements.filter(c => c.type === 'saida'));
@@ -1696,7 +1689,9 @@ export default function FinancePage() {
           
           let movements = [...mappedPayments, ...mappedCashMovements];
           console.log('FLOW_REPORT_ENTRIES_ROWS', mappedPayments.length, mappedPayments);
-          console.log('FLOW_REPORT_CASH_MOVEMENT_ROWS', mappedCashMovements.length, mappedCashMovements);
+          console.log('PDF_CASH_MOVEMENTS_ROWS', mappedCashMovements.length, mappedCashMovements);
+
+          console.log("PDF_BROKER_COMMISSIONS_RAW", comms);
 
           // 3. Comissões pagas (legacy or missing in cash_movements)
           if (comms) {
@@ -1715,17 +1710,21 @@ export default function FinancePage() {
                       const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
                       const mDate = new Date(cm.paid_at || cm.created_at);
                       
+                      const customerName = cm.sales?.customers?.name || cm.sales?.customers?.full_name || '-';
+                      const quadraName = cm.sales?.blocks?.block_name || cm.sales?.blocks?.quadra || cm.sales?.blocks?.name || '-';
+                      const loteName = cm.sales?.blocks?.number || cm.sales?.blocks?.lote || '-';
+                      
                       mappedComms.push({
                           id_check: `comm_${cm.id}`,
                           data: mDate,
                           projeto: projName,
                           tipo: 'Saída',
                           categoria: 'Comissão',
-                          cliente: '-',
-                          corretor: cm.brokers?.name || '-',
+                          cliente: customerName,
+                          corretor: cm.brokers?.name || cm.brokers?.full_name || '-',
                           contrato: commContrato,
-                          quadra: '-',
-                          lote: '-',
+                          quadra: quadraName,
+                          lote: loteName,
                           descricao: `Pagamento de comissão ao corretor`,
                           valor: Number(cm.amount) || 0,
                           status: status
@@ -1733,10 +1732,10 @@ export default function FinancePage() {
                   }
               });
               movements = [...movements, ...mappedComms];
-              console.log('FLOW_REPORT_COMMISSION_ROWS_ADDED', mappedComms.length, mappedComms);
+              console.log('PDF_BROKER_COMMISSIONS_ROWS', mappedComms.length, mappedComms);
           }
 
-          console.log('FLOW_REPORT_FINAL_ROWS', movements);
+          console.log('PDF_FINAL_ROWS', movements);
 
           // FILTER
           const flowRows = movements.filter(m => {
@@ -1814,7 +1813,7 @@ export default function FinancePage() {
           const totalSaidas = totals.totalSaidas;
           const saldo = totals.saldoFinal;
           
-          console.log("FLOW_REPORT_FINAL_TOTALS", totals);
+          console.log("PDF_FINAL_TOTALS", totals);
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
