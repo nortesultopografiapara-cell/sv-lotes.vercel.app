@@ -1853,19 +1853,57 @@ export default function FinancePage() {
               const autoTable = (await import('jspdf-autotable')).default;
               const doc = new jsPDF('landscape');
               
-              doc.setFontSize(16);
-              doc.text(`FLUXO DE CAIXA - ${companyName}`, 14, 15);
-              doc.setFontSize(10);
-              doc.text(`Projeto/Loteamento: ${prFilterProject}`, 14, 22);
-              doc.text(`Período: ${prStartDate ? new Date(prStartDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Início'} a ${prEndDate ? new Date(prEndDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Fim'}`, 14, 28);
+              const renderHeader = (isOffset: boolean) => {
+                  const titleX = isOffset ? 48 : 14;
+                  const titleY = isOffset ? 20 : 15;
+                  const textY1 = isOffset ? 28 : 22;
+                  const textY2 = isOffset ? 33 : 28;
+                  
+                  doc.setFontSize(16);
+                  doc.text(`FLUXO DE CAIXA - ${companyName}`, titleX, titleY);
+                  doc.setFontSize(10);
+                  doc.text(`Projeto/Loteamento: ${prFilterProject}`, titleX, textY1);
+                  doc.text(`Período: ${prStartDate ? new Date(prStartDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Início'} a ${prEndDate ? new Date(prEndDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Fim'}`, titleX, textY2);
+              };
+
+              let yOffset = 42;
+              
+              if (tenantData?.logo_url) {
+                  try {
+                      const imgBase64 = await new Promise<string>((resolve, reject) => {
+                          const img = new Image();
+                          img.crossOrigin = 'Anonymous';
+                          img.onload = () => {
+                              const canvas = document.createElement('canvas');
+                              canvas.width = img.width;
+                              canvas.height = img.height;
+                              const ctx = canvas.getContext('2d');
+                              if (ctx) {
+                                  ctx.drawImage(img, 0, 0);
+                                  resolve(canvas.toDataURL('image/png'));
+                              } else reject();
+                          };
+                          img.onerror = reject;
+                          img.src = tenantData.logo_url;
+                      });
+                      doc.addImage(imgBase64, 'PNG', 14, 12, 28, 14, undefined, 'FAST');
+                      renderHeader(true);
+                  } catch(e) {
+                      renderHeader(false);
+                      yOffset = 36;
+                  }
+              } else {
+                  renderHeader(false);
+                  yOffset = 36;
+              }
               
               doc.setFontSize(11);
               doc.setTextColor(39, 174, 96);
-              doc.text(`Total Entradas: ${formatCurrency(totalEntradas)}`, 14, 36);
+              doc.text(`Total Entradas: ${formatCurrency(totalEntradas)}`, 14, yOffset);
               doc.setTextColor(231, 76, 60);
-              doc.text(`Total Saídas: ${formatCurrency(totalSaidas)}`, 70, 36);
+              doc.text(`Total Saídas: ${formatCurrency(totalSaidas)}`, 70, yOffset);
               doc.setTextColor(saldo >= 0 ? 39 : 231, saldo >= 0 ? 174 : 76, saldo >= 0 ? 96 : 60);
-              doc.text(`Saldo: ${formatCurrency(saldo)}`, 130, 36);
+              doc.text(`Saldo: ${formatCurrency(saldo)}`, 130, yOffset);
               
               const tableBody = flowRows.map(m => [
                   m.data.toLocaleDateString('pt-BR'),
@@ -1883,7 +1921,7 @@ export default function FinancePage() {
               ]);
               
               autoTable(doc, {
-                  startY: 42,
+                  startY: yOffset + 6,
                   head: [['Data', 'Projeto/Loteamento', 'Tipo', 'Categoria', 'Cliente', 'Corretor', 'Contrato', 'Quadra', 'Lote', 'Descrição', 'Valor', 'Status']],
                   body: tableBody,
                   styles: { fontSize: 8 },
