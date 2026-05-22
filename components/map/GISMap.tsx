@@ -1962,6 +1962,11 @@ export default function GISMap({
           }
 
         } catch (err: any) {
+           console.log("TRANSACTION_ROLLBACK");
+           if (newSaleData?.id) await supabase.from('sales').delete().eq('id', newSaleData.id);
+           if (newContractData?.id) await supabase.from('contracts').delete().eq('id', newContractData.id);
+           await supabase.from('blocks').update({ status: 'Disponível', customer_id: null, sale_id: null, contract_id: null, broker_id: null }).eq('id', lot.id);
+
            console.error("Erro no fluxo de venda:", err);
            throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
         }

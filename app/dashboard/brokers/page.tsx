@@ -1,7 +1,7 @@
 'use client';
 
 import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
@@ -34,103 +34,103 @@ export default function CorretoresPage() {
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadCorretores() {
-      if (!user) return;
-      try {
-        let limit: number | null = 10;
-        let pName = 'Standard';
-        if (user.tenant_id) {
-           const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
-           if (!error && companyData?.plan) {
-              const plan = companyData.plan.toLowerCase();
-              if (plan.includes('basic') || plan.includes('básico')) {
-                 limit = 5;
-                 pName = 'Básico';
-              } else if (plan.includes('professional') || plan.includes('profissional')) {
-                 limit = null; // null means unlimited
-                 pName = 'Profissional';
-              } else {
-                 limit = 10;
-                 pName = 'Standard';
-              }
-           }
-        }
-        setBrokerLimit(limit);
-        setCompanyPlan(pName);
-
-        let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
-        
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.or(`company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id}`);
-        } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
-           setLoading(false);
-           return;
-        }
-        
-        const { data, error } = await query;
-        if (error) throw error;
-
-        // Fetch sales and commissions for this tenant
-        let salesData: any[] = [];
-        let commData: any[] = [];
-        
-        try {
-           const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date');
-           const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, commission_value, status, created_at');
-           salesData = s || [];
-           commData = c || [];
-        } catch (err) {
-           console.warn('Erro ao carregar comissões (migration pendente?):', err);
-        }
-        
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const enhancedData = (data || []).map(b => {
-          const bSales = salesData.filter(s => s.broker_id === b.id);
-          const bComms = commData.filter(c => c.broker_id === b.id);
-          
-          const vendas_mes_qtd = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).length;
-          const vendas_mes_valor = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
-          
-          const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
-          const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
-
-          return {
-            ...b,
-            tenant_id: b.tenant_id || b.company_id,
-            name: b.name || b.full_name || 'Sem nome',
-            role: b.role || 'BROKER',
-            commission_percent: b.commission_percent || 5,
-            active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
-            vendas_mes_qtd,
-            vendas_mes_valor,
-            comissao_pendente,
-            comissao_paga,
-            ultimo_acesso: b.created_at || new Date().toISOString()
-          };
-        });
-
-        const finalActiveBrokers = enhancedData.filter(b => {
-             if (b.deleted_at !== null && b.deleted_at !== undefined) return false;
-             if (b.status === 'inativo') return false;
-             if (b.active === false) return false;
-             return true;
-         });
-
-         setCorretores(finalActiveBrokers);
-      } catch(err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+  const loadCorretores = useCallback(async () => {
+    if (!user) return;
+    try {
+      let limit: number | null = 10;
+      let pName = 'Standard';
+      if (user.tenant_id) {
+         const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
+         if (!error && companyData?.plan) {
+            const plan = companyData.plan.toLowerCase();
+            if (plan.includes('basic') || plan.includes('básico')) {
+               limit = 5;
+               pName = 'Básico';
+            } else if (plan.includes('professional') || plan.includes('profissional')) {
+               limit = null; // null means unlimited
+               pName = 'Profissional';
+            } else {
+               limit = 10;
+               pName = 'Standard';
+            }
+         }
       }
-    }
+      setBrokerLimit(limit);
+      setCompanyPlan(pName);
 
+      let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
+      
+      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+         query = query.or(`company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id}`);
+      } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
+         setLoading(false);
+         return;
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Fetch sales and commissions for this tenant
+      let salesData: any[] = [];
+      let commData: any[] = [];
+      
+      try {
+         const { data: s, error: errS } = await supabase.from('sales').select('id, broker_id, total_value, sale_date');
+         const { data: c, error: errC } = await supabase.from('broker_commissions').select('id, broker_id, commission_value, status, created_at');
+         salesData = s || [];
+         commData = c || [];
+      } catch (err) {
+         console.warn('Erro ao carregar comissões (migration pendente?):', err);
+      }
+      
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const enhancedData = (data || []).map(b => {
+        const bSales = salesData.filter(s => s.broker_id === b.id);
+        const bComms = commData.filter(c => c.broker_id === b.id);
+        
+        const vendas_mes_qtd = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).length;
+        const vendas_mes_valor = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth).reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        
+        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago').reduce((acc, curr) => acc + (Number(curr.commission_value) || 0), 0);
+
+        return {
+          ...b,
+          tenant_id: b.tenant_id || b.company_id,
+          name: b.name || b.full_name || 'Sem nome',
+          role: b.role || 'BROKER',
+          commission_percent: b.commission_percent || 5,
+          active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
+          vendas_mes_qtd,
+          vendas_mes_valor,
+          comissao_pendente,
+          comissao_paga,
+          ultimo_acesso: b.created_at || new Date().toISOString()
+        };
+      });
+
+      const finalActiveBrokers = enhancedData.filter(b => {
+           if (b.deleted_at !== null && b.deleted_at !== undefined) return false;
+           if (b.status === 'inativo') return false;
+           if (b.active === false) return false;
+           return true;
+       });
+
+       setCorretores(finalActiveBrokers);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (!authLoading) {
       loadCorretores();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, loadCorretores]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
