@@ -13,6 +13,17 @@ export default function CorretoresPage() {
   const [loading, setLoading] = useState(true);
   const [brokerLimit, setBrokerLimit] = useState<number | null>(10);
   const [companyPlan, setCompanyPlan] = useState<string>('Standard');
+  const [tenantData, setTenantData] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadTenant() {
+      if (user?.tenant_id) {
+         const { data } = await supabase.from('companies').select('*').eq('id', user.tenant_id).maybeSingle();
+         setTenantData(data);
+      }
+    }
+    loadTenant();
+  }, [user]);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,15 +103,21 @@ export default function CorretoresPage() {
       let recentActs: any[] = [];
       
       try {
-         const { data: s } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at, project_id');
+         const { data: s } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at, project_id, block_id, lot_id, contract_id');
          const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, amount, status, created_at');
-         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id');
+         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id, quadra, quadra_number, block_number, lote, lot_number, number');
          const { data: prj } = await supabase.from('projects').select('id, name');
+         const { data: ctr } = await supabase.from('contracts').select('id, sale_id, contract_number, number, code');
          salesData = s || [];
          commData = c || [];
          blockData = bld || [];
          projectsData = prj || [];
-         console.log("BROKER_SALES_FOUND", salesData.length);
+         const contractsData = ctr || [];
+         
+         console.log("BROKER_EXPORT_SALES_RAW", salesData.length);
+         console.log("BROKER_EXPORT_PROJECTS_RAW", projectsData.length);
+         console.log("BROKER_EXPORT_BLOCKS_RAW", blockData.length);
+         console.log("BROKER_EXPORT_CONTRACTS_RAW", contractsData.length);
       } catch (err) {
          console.warn('Erro ao carregar comissões/vendas:', err);
       }
@@ -166,19 +183,41 @@ export default function CorretoresPage() {
         const vendas_mes_valor = vendas_mes_filtered.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
         
         bSales.forEach(v => {
-           const blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
+           let blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
+           
+           if (blocksForSale.length === 0 && (v.block_id || v.lot_id)) {
+               const directBlock = blockData.find(bl => bl.id === v.block_id || bl.id === v.lot_id);
+               if (directBlock) {
+                   blocksForSale = [directBlock];
+               }
+           }
+           
+           if (blocksForSale.length === 0) {
+               // Push at least one row per sale with empty block
+               blocksForSale = [{} as any];
+           }
+
            const prj = projectsData.find(p => p.id === v.project_id || p.id === blocksForSale[0]?.project_id);
+           const contract = contractsData.find((c: any) => c.sale_id === v.id || c.id === v.contract_id);
+           
            blocksForSale.forEach(bl => {
-              const qString = bl.block || bl.block_name || '?';
-              const nameString = bl.name || '?';
-              const lotStr = `QD ${qString} - LT ${nameString}`;
+              const qString = bl?.quadra || bl?.quadra_number || bl?.block_number || bl?.block || bl?.block_name || '';
+              const nameString = bl?.lote || bl?.lot_number || bl?.number || bl?.name || '';
+              const lotStr = qString || nameString ? `QD ${qString || '?'} - LT ${nameString || '?'}` : '';
+              const contractNo = contract?.contract_number || contract?.number || contract?.code || contract?.id || '';
+              
               exportLots.push({
-                  loteamento: prj?.name || '-',
+                  loteamento: prj?.name || '',
                   quadra: qString,
                   lote: nameString,
-                  loteStr: lotStr
+                  loteStr: lotStr,
+                  contrato: contractNo,
+                  venda_id: v.id,
+                  valor_venda: v.total_value,
+                  data_venda: v.sale_date || v.created_at
               });
-              if (new Date(v.sale_date || v.created_at) >= startOfMonth) {
+              
+              if (lotStr && new Date(v.sale_date || v.created_at) >= startOfMonth) {
                  lotesDoMes.push(lotStr);
               }
            });
@@ -269,49 +308,196 @@ export default function CorretoresPage() {
     }
   }, [user, authLoading, loadCorretores]);
 
-  const handleExport = () => {
-     let csvContent = "data:text/csv;charset=utf-8,";
-     csvContent += "Nome,Email,Telefone,CRECI,Status,Vendas_Qtd,Vendas_Valor,Comissao_Pendente,Comissao_Paga,Loteamento,Quadra,Lote,Lotes_Vendidos\n";
+  const getExportRows = () => {
+     let rows: any[] = [];
      filtered.forEach(c => {
-         const baseRow = [
-             c.name || '',
-             c.email || '',
-             c.phone || '',
-             c.creci || '',
-             c.active ? 'Ativo' : 'Inativo',
-             c.vendas_mes_qtd,
-             c.vendas_mes_valor,
-             c.comissao_pendente,
-             c.comissao_paga
-         ];
+         const baseRow = {
+             Nome: c.name || '',
+             Email: c.email || '',
+             Telefone: c.phone || '',
+             CRECI: c.creci || '',
+             Status: c.active ? 'Ativo' : 'Inativo',
+             Vendas_Qtd: c.vendas_mes_qtd,
+             Vendas_Valor: c.vendas_mes_valor,
+             Comissao_Pendente: c.comissao_pendente,
+             Comissao_Paga: c.comissao_paga,
+         };
          
          if (c.exportLots && c.exportLots.length > 0) {
              c.exportLots.forEach((lot: any) => {
-                 const row = [
+                 rows.push({
                      ...baseRow,
-                     lot.loteamento,
-                     lot.quadra,
-                     lot.lote,
-                     lot.loteStr
-                 ].join(",");
-                 csvContent += row + "\n";
+                     Loteamento: lot.loteamento || '',
+                     Quadra: lot.quadra || '',
+                     Lote: lot.lote || '',
+                     Contrato: lot.contrato || '',
+                     Lotes_Vendidos: lot.loteStr || ''
+                 });
              });
          } else {
-             const row = [
+             rows.push({
                  ...baseRow,
-                 '', '', '', ''
-             ].join(",");
-             csvContent += row + "\n";
+                 Loteamento: '',
+                 Quadra: '',
+                 Lote: '',
+                 Contrato: '',
+                 Lotes_Vendidos: ''
+             });
          }
      });
-     console.log("BROKER_EXPORT_WITH_LOTS_GENERATED");
-     const encodedUri = encodeURI(csvContent);
-     const link = document.createElement("a");
-     link.setAttribute("href", encodedUri);
-     link.setAttribute("download", "corretores.csv");
-     document.body.appendChild(link);
-     link.click();
-     document.body.removeChild(link);
+     console.log("BROKER_EXPORT_ROWS_FINAL", rows);
+     return rows;
+  };
+
+  const handleExportExcel = async () => {
+      const rows = getExportRows();
+      try {
+          const ExcelJS = (await import('exceljs')).default;
+          const workbook = new ExcelJS.Workbook();
+          const ws = workbook.addWorksheet('Corretores');
+          
+          ws.columns = [
+              { header: 'Nome', key: 'Nome', width: 25 },
+              { header: 'Email', key: 'Email', width: 25 },
+              { header: 'Telefone', key: 'Telefone', width: 15 },
+              { header: 'CRECI', key: 'CRECI', width: 15 },
+              { header: 'Status', key: 'Status', width: 15 },
+              { header: 'Vendas_Qtd', key: 'Vendas_Qtd', width: 15 },
+              { header: 'Vendas_Valor', key: 'Vendas_Valor', width: 20 },
+              { header: 'Comissao_Pendente', key: 'Comissao_Pendente', width: 20 },
+              { header: 'Comissao_Paga', key: 'Comissao_Paga', width: 20 },
+              { header: 'Loteamento', key: 'Loteamento', width: 20 },
+              { header: 'Quadra', key: 'Quadra', width: 15 },
+              { header: 'Lote', key: 'Lote', width: 15 },
+              { header: 'Contrato', key: 'Contrato', width: 20 },
+              { header: 'Lotes_Vendidos', key: 'Lotes_Vendidos', width: 25 },
+          ];
+          
+          ws.addRows(rows);
+          
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `corretores_${new Date().getTime()}.xlsx`;
+          link.click();
+          console.log("BROKER_EXCEL_GENERATED");
+      } catch (err) {
+          console.error("Erro excel", err);
+      }
+  };
+
+  const handleExportPDF = async () => {
+      try {
+          const { default: jsPDF } = await import('jspdf');
+          const { default: autoTable } = await import('jspdf-autotable');
+          const rows = getExportRows();
+          const doc = new jsPDF('landscape');
+          const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
+          const title = `RELATÓRIO DE CORRETORES`;
+          let startY = 35;
+          
+          if (tenantData?.logo_url) {
+             try {
+                 const imgBase64 = await new Promise<string>((resolve, reject) => {
+                     const img = new Image();
+                     img.crossOrigin = 'Anonymous';
+                     img.onload = () => {
+                         const canvas = document.createElement('canvas');
+                         canvas.width = img.width; canvas.height = img.height;
+                         const ctx = canvas.getContext('2d');
+                         if (ctx) {
+                             ctx.drawImage(img, 0, 0);
+                             resolve(canvas.toDataURL('image/png'));
+                         } else reject();
+                     };
+                     img.onerror = reject;
+                     img.src = tenantData.logo_url;
+                 });
+                 doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
+                 
+                 doc.setFontSize(14);
+                 doc.setTextColor(40);
+                 doc.text(title, 50, 15);
+                 doc.setFontSize(9);
+                 doc.setFont('helvetica', 'bold');
+                 doc.setTextColor(60);
+                 doc.text(companyName.toUpperCase(), 50, 20);
+                 
+                 doc.setFontSize(8);
+                 doc.setFont('helvetica', 'normal');
+                 doc.setTextColor(100);
+                 doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 50, 25);
+             } catch(e) {
+                 doc.setFontSize(14);
+                 doc.setFont('helvetica', 'bold');
+                 doc.setTextColor(40);
+                 doc.text(title, 14, 15);
+                 doc.setFontSize(10);
+                 doc.setFont('helvetica', 'normal');
+                 doc.text(companyName.toUpperCase(), 14, 22);
+                 doc.setFontSize(8);
+                 doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 27);
+                 startY = 35;
+             }
+          } else {
+             doc.setFontSize(14);
+             doc.setFont('helvetica', 'bold');
+             doc.setTextColor(40);
+             doc.text(title, 14, 15);
+             doc.setFontSize(10);
+             doc.setFont('helvetica', 'normal');
+             doc.text(companyName.toUpperCase(), 14, 22);
+             doc.setFontSize(8);
+             doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 27);
+             startY = 35;
+          }
+          
+          doc.setFontSize(10);
+          doc.setTextColor(0);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`Total de Corretores Ativos: ${corretores.filter(c => c.active).length}`, 14, startY);
+          startY += 6;
+          doc.text(`Total de Vendas no Mês: ${totalVendasMes}`, 14, startY);
+          startY += 6;
+          doc.text(`Total Vendido (Geral): R$ ${corretores.reduce((acc, c) => acc + c.vendas_mes_valor, 0).toLocaleString('pt-BR')}`, 14, startY);
+          startY += 6;
+          doc.text(`Total Comissão Paga: R$ ${totalComissoesPagas.toLocaleString('pt-BR')}`, 14, startY);
+          startY += 6;
+          doc.text(`Total Comissão Pendente: R$ ${totalComissoesPendentes.toLocaleString('pt-BR')}`, 14, startY);
+          startY += 10;
+          
+          const formatCurrency = (val: number) => {
+              return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          };
+          
+          autoTable(doc, {
+             startY: startY,
+             headStyles: { fillColor: [41, 128, 185], fontSize: 7, halign: 'center' },
+             bodyStyles: { fontSize: 7, textColor: 50 },
+             alternateRowStyles: { fillColor: [245, 245, 245] },
+             head: [['Corretor', 'Contato', 'CRECI', 'Vendas', 'Valor Vendido', 'Comissão Paga', 'Comissão Pendente', 'Loteamento', 'Quadra', 'Lote', 'Contrato', 'Status']],
+             body: rows.map(r => [
+                r.Nome,
+                r.Telefone || r.Email,
+                r.CRECI,
+                r.Vendas_Qtd,
+                formatCurrency(Number(r.Vendas_Valor || 0)),
+                formatCurrency(Number(r.Comissao_Paga || 0)),
+                formatCurrency(Number(r.Comissao_Pendente || 0)),
+                r.Loteamento,
+                r.Quadra,
+                r.Lote,
+                r.Contrato,
+                r.Status
+             ]),
+          });
+          
+          doc.save(`relatorio_corretores_${new Date().getTime()}.pdf`);
+          console.log("BROKER_PDF_GENERATED");
+      } catch (err) {
+          console.error("Erro pdf", err);
+      }
   };
 
   const handleOpenEdit = (broker: any) => {
@@ -882,12 +1068,17 @@ export default function CorretoresPage() {
                  <option value="ativo">Somente Ativos</option>
                  <option value="inativo">Somente Inativos</option>
                </select>
-               <button 
-                  onClick={handleExport}
-                  className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
-               >
-                  Exportar ↓
-               </button>
+               <div className="relative group">
+                   <button 
+                      className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
+                   >
+                      Exportar ↓
+                   </button>
+                   <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[#121318] border border-gray-800 rounded-lg shadow-lg overflow-hidden z-20 whitespace-nowrap">
+                       <button onClick={handleExportExcel} className="block w-full text-left px-4 py-2 hover:bg-gray-800 text-xs text-gray-300">Planilha (Excel)</button>
+                       <button onClick={handleExportPDF} className="block w-full text-left px-4 py-2 hover:bg-gray-800 text-xs text-gray-300">Relatório (PDF)</button>
+                   </div>
+               </div>
             </div>
           </div>
           
