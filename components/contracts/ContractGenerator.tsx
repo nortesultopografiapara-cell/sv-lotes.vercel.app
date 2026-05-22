@@ -82,6 +82,10 @@ export function ContractGenerator({ sale }: { sale: any }) {
            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
            
            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+           
+           const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+           await addProfessionalFooterAndSignature(pdf, company?.razao_social || company?.name || 'Empresa não informada', 'Contrato');
+           
            pdf.save(`Contrato_${sale.clients?.full_name || 'Venda'}.pdf`);
        } catch(e) {
            alert("Erro ao gerar PDF.");

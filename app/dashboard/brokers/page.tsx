@@ -453,6 +453,8 @@ export default function CorretoresPage() {
              startY = 35;
           }
           
+          console.log("PDF_HEADER_RENDERED");
+          
           doc.setFontSize(10);
           doc.setTextColor(0);
           doc.setFont('helvetica', 'bold');
@@ -476,6 +478,11 @@ export default function CorretoresPage() {
              headStyles: { fillColor: [41, 128, 185], fontSize: 7, halign: 'center' },
              bodyStyles: { fontSize: 7, textColor: 50 },
              alternateRowStyles: { fillColor: [245, 245, 245] },
+             styles: { overflow: 'linebreak', cellWidth: 'wrap' },
+             columnStyles: {
+                 7: { cellWidth: 25 }, // Loteamento
+                 10: { cellWidth: 25 } // Contrato/Descrição
+             },
              head: [['Corretor', 'Contato', 'CRECI', 'Vendas', 'Valor Vendido', 'Comissão Paga', 'Comissão Pendente', 'Loteamento', 'Quadra', 'Lote', 'Contrato', 'Status']],
              body: rows.map(r => [
                 r.Nome,
@@ -492,6 +499,11 @@ export default function CorretoresPage() {
                 r.Status
              ]),
           });
+          
+          console.log("PDF_TEXT_WRAP_APPLIED");
+          
+          const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+          await addProfessionalFooterAndSignature(doc, companyName, 'Relatório de Corretores');
           
           doc.save(`relatorio_corretores_${new Date().getTime()}.pdf`);
           console.log("BROKER_PDF_GENERATED");

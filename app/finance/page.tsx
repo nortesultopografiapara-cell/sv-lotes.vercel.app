@@ -850,6 +850,9 @@ export default function FinancePage() {
     doc.line(150, recY + 55, 250, recY + 55);
     doc.line(300, recY + 55, 500, recY + 55);
 
+    const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+    await addProfessionalFooterAndSignature(doc, companyName, 'Recibo/Carnê');
+
     doc.save(`Carne_${contractNo}_${dueDate.replace(/\//g,'')}.pdf`);
   };
 
@@ -1224,6 +1227,8 @@ export default function FinancePage() {
           doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
           doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${projectFilter}`, 14, 28);
        }
+       
+       console.log("PDF_HEADER_RENDERED");
 
        const groupedData: any = {};
        data.forEach(d => {
@@ -1292,6 +1297,9 @@ export default function FinancePage() {
            
            currentY += 10;
        });
+
+       const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+       await addProfessionalFooterAndSignature(doc, companyName, 'Relatório Resumido');
 
        doc.save(`relatorio_resumido_${new Date().getTime()}.pdf`);
   };
@@ -1494,12 +1502,19 @@ export default function FinancePage() {
          doc.text(`CNPJ: ${companyDoc} ${infoLine ? ' | ' + infoLine : ''}`, 14, 24);
          doc.text(`Data de Emissão: ${new Date().toLocaleString('pt-BR')}  |  Filtros: ${statusFilter}, ${projectFilter}`, 14, 28);
       }
+      
+      console.log("PDF_HEADER_RENDERED");
 
       autoTable(doc, {
           startY: startY,
           head: [['Contrato', 'Cliente', 'Documento', 'Projeto', 'Quadra', 'Lote', 'Parcela', 'Vencimento', 'Valor Parcela', 'Valor Pago', 'Status', 'Data Pagamento']],
           body: data.map(d => [d.Contrato, d.Cliente, d['CPF/CNPJ'], d.Projeto, d.Quadra, d.Lote, d.Parcela, d.Vencimento, d['Valor Parcela'], d['Valor Pago'], d.Status, d['Data Pagamento']]),
-          styles: { fontSize: 8, cellPadding: 2 },
+          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', cellWidth: 'wrap' },
+          columnStyles: {
+              1: { cellWidth: 35 }, // Cliente
+              3: { cellWidth: 25 }, // Projeto
+              0: { cellWidth: 30 }  // Contrato
+          },
           headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [245, 247, 250] },
           didParseCell: function(dataObj) {
@@ -1577,7 +1592,10 @@ export default function FinancePage() {
                   formatCurrency(c.amount),
                   c.status || 'Ativo'
               ]),
-              styles: { fontSize: 8, cellPadding: 2 },
+              styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', cellWidth: 'wrap' },
+              columnStyles: {
+                  4: { cellWidth: 80 } // Descrição
+              },
               headStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
               didParseCell: function(dataObj) {
                   if (dataObj.section === 'body' && dataObj.column.index === 1) {
@@ -1589,6 +1607,9 @@ export default function FinancePage() {
               }
           });
       }
+
+      const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+      await addProfessionalFooterAndSignature(doc, companyName, 'Relatório Financeiro Completo');
 
       doc.save(`relatorio_financeiro_${new Date().getTime()}.pdf`);
   };
@@ -1703,16 +1724,25 @@ export default function FinancePage() {
                   if (isCommPaid) status = 'Pago';
                   else if (cm.status === 'pendente') status = 'Pendente';
                   
-                  const commContrato = cm.sales?.contracts?.contract_number || cm.sales?.contracts?.number || cm.sales?.contracts?.code || cm.sales?.contracts?.id || 
-                                       cm.contracts?.contract_number || cm.contracts?.number || cm.contracts?.code || cm.contracts?.id || '-';
+                  const sContracts = Array.isArray(cm.sales?.contracts) ? cm.sales.contracts : [cm.sales?.contracts].filter(Boolean);
+                  const firstContract = sContracts[0] || {};
+                  const commContrato = firstContract.contract_number || firstContract.number || firstContract.code || firstContract.id || 
+                                       cm.contracts?.contract_number || cm.contracts?.number || cm.contracts?.code || cm.contracts?.id || 'Não Informado';
                   
                   if (status === 'Pago') {
                       const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
                       const mDate = new Date(cm.paid_at || cm.created_at);
                       
-                      const customerName = cm.sales?.customers?.name || cm.sales?.customers?.full_name || '-';
-                      const quadraName = cm.sales?.blocks?.block_name || cm.sales?.blocks?.quadra || cm.sales?.blocks?.name || '-';
-                      const loteName = cm.sales?.blocks?.number || cm.sales?.blocks?.lote || '-';
+                      const customerName = cm.sales?.customers?.name || cm.sales?.customers?.full_name || 'Cliente Não Informado';
+                      
+                      const sBlocks = Array.isArray(cm.sales?.blocks) ? cm.sales.blocks : [cm.sales?.blocks].filter(Boolean);
+                      const firstBlock = sBlocks[0] || {};
+                      const quadraName = firstBlock.quadra || firstBlock.quadra_number || firstBlock.block_number || firstBlock.block_name || firstBlock.block || firstBlock.name || 'S/Q';
+                      const loteName = firstBlock.lote || firstBlock.lot_number || firstBlock.number || firstBlock.name || 'S/L';
+                      
+                      const corretorNome = cm.brokers?.name || cm.brokers?.full_name || 'Corretor Não Informado';
+                      
+                      console.log("PDF_COMMISSION_RELATIONS_RESOLVED");
                       
                       mappedComms.push({
                           id_check: `comm_${cm.id}`,
@@ -1721,11 +1751,11 @@ export default function FinancePage() {
                           tipo: 'Saída',
                           categoria: 'Comissão',
                           cliente: customerName,
-                          corretor: cm.brokers?.name || cm.brokers?.full_name || '-',
+                          corretor: corretorNome,
                           contrato: commContrato,
                           quadra: quadraName,
                           lote: loteName,
-                          descricao: `Pagamento de comissão ao corretor`,
+                          descricao: `Pagamento de comissão ao corretor ${corretorNome}`,
                           valor: Number(cm.amount) || 0,
                           status: status
                       });
@@ -1908,6 +1938,8 @@ export default function FinancePage() {
                   yOffset = 36;
               }
               
+              console.log("PDF_HEADER_RENDERED");
+              
               doc.setFontSize(11);
               doc.setTextColor(39, 174, 96);
               doc.text(`Total Entradas: ${formatCurrency(totalEntradas)}`, 14, yOffset);
@@ -1935,7 +1967,12 @@ export default function FinancePage() {
                   startY: yOffset + 6,
                   head: [['Data', 'Projeto/Loteamento', 'Tipo', 'Categoria', 'Cliente', 'Corretor', 'Contrato', 'Quadra', 'Lote', 'Descrição', 'Valor', 'Status']],
                   body: tableBody,
-                  styles: { fontSize: 8 },
+                  styles: { fontSize: 8, overflow: 'linebreak', cellWidth: 'wrap' },
+                  columnStyles: {
+                      9: { cellWidth: 35 }, // Descrição
+                      4: { cellWidth: 25 }, // Cliente
+                      1: { cellWidth: 20 }  // Projeto
+                  },
                   headStyles: { fillColor: [41, 128, 185], textColor: 255 },
                   didParseCell: function(dataObj) {
                       if (dataObj.section === 'body') {
@@ -1952,6 +1989,9 @@ export default function FinancePage() {
                   }
               });
               
+              const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+              await addProfessionalFooterAndSignature(doc, companyName, 'Fluxo de Caixa');
+
               doc.save(`fluxo_caixa_${prFilterProject}_${new Date().getTime()}.pdf`);
           }
       } catch (err: any) {
