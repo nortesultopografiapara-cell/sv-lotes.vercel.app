@@ -18,6 +18,9 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
     const safeCash = cashMvs || [];
     const safeComms = comms || [];
     
+    let cashMovementsTotal = 0;
+    let brokerCommissionsTotal = 0;
+    
     console.log("FINANCE_TOTALS_PAYMENTS_SOURCE", safeReceipts);
     console.log("FINANCE_TOTALS_CASH_MOVEMENTS_SOURCE", safeCash);
     console.log("FINANCE_TOTALS_COMMISSIONS_SOURCE", safeComms);
@@ -38,9 +41,13 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
             const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
             const isEntradaStr = typeStr.includes('entrada');
             
-            if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) totalEntradas += Number(c.amount || 0);
+            if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) {
+                totalEntradas += Number(c.amount || 0);
+            }
+            
             if (isSaidaStr) {
                 totalSaidas += Number(c.amount || 0);
+                cashMovementsTotal += Number(c.amount || 0);
             }
         }
     });
@@ -51,33 +58,14 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
         const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
         
         if (isCommPaid) {
-            const hasCash = safeCash.some(c => {
-                const status = c.status?.toLowerCase() || 'ativo';
-                if (status === 'estornado' || status === 'cancelado' || status === 'deleted') return false;
-                
-                const typeStr = (c.type || '').toLowerCase();
-                const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
-                
-                const commDescMatch = Boolean(c.description?.toLowerCase().includes('comissão') || c.description?.toLowerCase().includes('comissao') || c.source === 'broker_commission');
-                
-                // Only consider it a duplicate if it matches the EXACT ids, OR if it has a matching reference, or matches sale/broker context
-                const isMatchingContext = (c.sale_id && c.sale_id === cm.sale_id) || 
-                                          (c.broker_id && c.broker_id === cm.broker_id) || 
-                                          (c.reference_id && c.reference_id === cm.id) ||
-                                          (c.finance_receipt_id === cm.id); // some edge cases 
-
-                return isSaidaStr && 
-                       ((c.category === 'Comissão' || c.category === 'Comissao') || commDescMatch) && 
-                       (isMatchingContext || commDescMatch) && 
-                       Math.abs(Number(c.amount) - Number(cm.amount)) < 1;
-            });
-
-            if (!hasCash) {
-                totalSaidas += Number(cm.amount || 0);
-            }
+            totalSaidas += Number(cm.amount || 0);
+            brokerCommissionsTotal += Number(cm.amount || 0);
         }
     });
     
+    console.log("CASH_MOVEMENTS_TOTAL", cashMovementsTotal);
+    console.log("BROKER_COMMISSIONS_TOTAL", brokerCommissionsTotal);
+    console.log("TOTAL_SAIDAS_FINAL", totalSaidas);
     console.log("FINANCE_TOTALS_RESULT", { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas });
 
     return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
@@ -1723,31 +1711,26 @@ export default function FinancePage() {
                   const commContrato = cm.sales?.contracts?.contract_number || cm.sales?.contracts?.number || cm.sales?.contracts?.code || cm.sales?.contracts?.id || 
                                        cm.contracts?.contract_number || cm.contracts?.number || cm.contracts?.code || cm.contracts?.id || '-';
                   
-                  const hasCash = mappedCashMovements.some(c => c.tipo === 'Saída' && 
-                      (c.categoria === 'Comissão' || c.categoria === 'Comissao') && 
-                      c.valor === cm.amount && 
-                      (c.contrato === commContrato || c.corretor === cm.brokers?.name)
-                  );
-                  if (status === 'Pago' && hasCash) return; // avoid duplicate
-                  
-                  const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
-                  const mDate = new Date(cm.paid_at || cm.created_at);
-                  
-                  mappedComms.push({
-                      id_check: `comm_${cm.id}`,
-                      data: mDate,
-                      projeto: projName,
-                      tipo: 'Saída',
-                      categoria: 'Comissão',
-                      cliente: '-',
-                      corretor: cm.brokers?.name || '-',
-                      contrato: commContrato,
-                      quadra: '-',
-                      lote: '-',
-                      descricao: `Pagamento de comissão ao corretor ${cm.brokers?.name || 'NI'}`,
-                      valor: Number(cm.amount) || 0,
-                      status: status
-                  });
+                  if (status === 'Pago') {
+                      const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
+                      const mDate = new Date(cm.paid_at || cm.created_at);
+                      
+                      mappedComms.push({
+                          id_check: `comm_${cm.id}`,
+                          data: mDate,
+                          projeto: projName,
+                          tipo: 'Saída',
+                          categoria: 'Comissão',
+                          cliente: '-',
+                          corretor: cm.brokers?.name || '-',
+                          contrato: commContrato,
+                          quadra: '-',
+                          lote: '-',
+                          descricao: `Pagamento de comissão ao corretor`,
+                          valor: Number(cm.amount) || 0,
+                          status: status
+                      });
+                  }
               });
               movements = [...movements, ...mappedComms];
               console.log('FLOW_REPORT_COMMISSION_ROWS_ADDED', mappedComms.length, mappedComms);
