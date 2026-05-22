@@ -100,6 +100,25 @@ export async function middleware(request: NextRequest) {
   }
   */
 
+  // 4. BROKER ROUTE PROTECTION
+  const { data: userData } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (userData?.role === 'BROKER') {
+    const allowedRoutesForBroker = ['/map'];
+    const blockedRoutes = ['/dashboard', '/customers', '/finance', '/contracts', '/settings'];
+    
+    // If exact path is one of the blocked routes, redirect to /map
+    const isBlocked = blockedRoutes.some(r => url.pathname.startsWith(r));
+    if (isBlocked || url.pathname === '/') {
+       url.pathname = '/map';
+       return NextResponse.redirect(url);
+    }
+  }
+
   // 5. HARDENING HEADERS
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('X-Frame-Options', 'DENY');

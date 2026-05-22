@@ -22,7 +22,7 @@ export default function CorretoresPage() {
     phone: '',
     cpf: '',
     creci: '',
-    role: 'CORRETOR',
+    role: 'BROKER',
     commission_percent: 5,
     password: '',
     confirmPassword: ''
@@ -76,7 +76,7 @@ export default function CorretoresPage() {
           // Mapeamento seguro p/ schema antigo e novo
           tenant_id: b.tenant_id || b.company_id,
           name: b.name || b.full_name || 'Sem nome',
-          role: b.role || 'CORRETOR',
+          role: b.role || 'BROKER',
           commission_percent: b.commission_percent || 5,
           active: b.active !== undefined ? b.active : (b.status === 'Ativo'),
           // Dados simulados para estruturação visual do módulo premium
@@ -127,7 +127,7 @@ export default function CorretoresPage() {
            email: formData.email,
            phone: formData.phone,
            tenantId: user?.tenant_id,
-           role: formData.role === 'GERENTE' ? 'COMPANY_ADMIN' : 'CORRETOR',
+           role: formData.role,
            password: formData.password
         })
       });
@@ -223,7 +223,7 @@ export default function CorretoresPage() {
      switch (role) {
        case 'ADMIN_EMPRESA': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
        case 'GERENTE': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
-       case 'CORRETOR': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
+       case 'BROKER': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
        case 'ASSISTENTE': return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
        default: return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
      }
@@ -743,7 +743,7 @@ export default function CorretoresPage() {
                             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                             className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
                           >
-                             <option value="CORRETOR">Corretor / Vendedor</option>
+                             <option value="BROKER">Corretor / Vendedor</option>
                              <option value="GERENTE">Gerente de Vendas</option>
                              <option value="ASSISTENTE">Assistente Comercial</option>
                              <option value="ADMIN_EMPRESA">Administrador (Total)</option>

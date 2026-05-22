@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
-        role: role || 'CORRETOR',
+        role: role || 'BROKER',
         tenant_id: tenantId
       }
     });
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
         tenant_id: tenantId,
         full_name: fullName,
         email: email,
-        role: role || 'CORRETOR',
+        role: role || 'BROKER',
         status: 'ACTIVE',
         phone: phone,
         force_password_change: true

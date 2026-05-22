@@ -243,7 +243,13 @@ const getMenuItems = (role: string) => {
     ];
   }
 
-  // DEFAULT (CORRETOR)
+  if (role === 'BROKER') {
+    return [
+      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+    ];
+  }
+
+  // DEFAULT FALLBACK
   return [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },

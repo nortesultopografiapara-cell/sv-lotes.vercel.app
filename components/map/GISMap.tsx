@@ -1727,6 +1727,7 @@ export default function GISMap({
             user_id: user.id || null,
             agreed_price: customerData.final_value || finalPrice,
             lot_price: finalPrice,
+            broker_id: user?.role === 'BROKER' ? user.id : null,
             payment_type: customerData.payment_type || "À vista",
             discount: customerData.discount_value || 0,
             total_value: customerData.final_value || finalPrice,
@@ -1761,6 +1762,7 @@ export default function GISMap({
               company_id: finalTenantId,
               sale_id: saleId,
               customer_id: customerId,
+              broker_id: user?.role === 'BROKER' ? user.id : null,
               project_id: lot.project_id || null,
               block_id: lot.id,
               installment_number: 1,
@@ -1777,6 +1779,7 @@ export default function GISMap({
                 company_id: finalTenantId,
                 sale_id: saleId,
                 customer_id: customerId,
+                broker_id: user?.role === 'BROKER' ? user.id : null,
                 project_id: lot.project_id || null,
                 block_id: lot.id,
                 installment_number: 0, // 0 signifies "Entry" (Entrada)
@@ -1802,6 +1805,7 @@ export default function GISMap({
                   company_id: finalTenantId,
                   sale_id: saleId,
                   customer_id: customerId,
+                  broker_id: user?.role === 'BROKER' ? user.id : null,
                   project_id: lot.project_id || null,
                   block_id: lot.id,
                   installment_number: currentInst++,
@@ -1864,6 +1868,7 @@ export default function GISMap({
             company_id: finalTenantId,
             sale_id: saleId,
             customer_id: customerId,
+            broker_id: user?.role === 'BROKER' ? user.id : null,
             project_id: lot.project_id || null,
             block_id: lot.id,
             contract_number: `CTR-${Date.now()}`,
@@ -1885,6 +1890,33 @@ export default function GISMap({
           console.log("CUSTOMER_ID_LINKED_TO_CONTRACT");
           newContractData = contractData;
 
+          // COMISSÃO DO CORRETOR AUTOMÁTICA
+          if (user?.role === 'BROKER') {
+            try {
+               const { data: brokerData } = await supabase.from('brokers').select('commission_percent').eq('id', user.id).single();
+               const pct = brokerData?.commission_percent || 0;
+               if (pct > 0) {
+                 const saleVal = customerData.final_value || finalPrice;
+                 const cv = (saleVal * pct) / 100;
+                 await supabase.from('broker_commissions').insert([{
+                    company_id: finalTenantId,
+                    tenant_id: finalTenantId,
+                    broker_id: user.id,
+                    sale_id: saleId,
+                    contract_id: contractData.id,
+                    customer_id: customerId || clientId,
+                    amount_sale: saleVal,
+                    commission_percent: pct,
+                    commission_value: cv,
+                    status: 'pendente'
+                 }]);
+                 console.log("COMISSÃO GRAVADA: ", cv);
+               }
+            } catch (err) {
+               console.error("Erro ao gerar comissão:", err);
+            }
+          }
+
         } catch (err: any) {
            console.error("Erro no fluxo de venda:", err);
            throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
@@ -1892,6 +1924,14 @@ export default function GISMap({
       }
 
       // Final block update - now it happens after sale and everything else, or immediately if just Reserving
+      // Para Reservas: gravar broker_id e tempo de validade
+      let expirationTime = null;
+      if (newStatus === "Reservado") {
+         const d = new Date();
+         d.setHours(d.getHours() + 48); // Reserva válida por 48h
+         expirationTime = d.toISOString();
+      }
+
       const { error: updateError } = await supabase
         .from("blocks")
         .update({
@@ -1908,6 +1948,20 @@ export default function GISMap({
       if (updateError) throw updateError;
       console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
       
+      try {
+         if (newStatus === "Reservado") {
+            await supabase.from("reservation_logs").insert({
+               company_id: finalTenantId,
+               tenant_id: finalTenantId,
+               broker_id: user?.role === 'BROKER' ? user.id : null,
+               block_id: lot.id,
+               customer_id: customerId,
+               expiration_time: expirationTime,
+               status: 'active'
+            });
+         }
+      } catch(e) {}
+
       await supabase.from("logs").insert({
         ...(user.tenant_id || lot.tenant_id
           ? { tenant_id: user.tenant_id || lot.tenant_id }

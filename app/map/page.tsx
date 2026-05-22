@@ -763,16 +763,20 @@ export default function MapPage() {
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
            <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
              
-             {/* Import */}
-             <button 
-                onClick={() => setIsImportModalOpen(true)} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
-             >
-                <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
-             </button>
-             
-             <hr className="w-2/3 border-[#2d3340]" />
+             {user?.role !== 'BROKER' && (
+               <>
+                 {/* Import */}
+                 <button 
+                    onClick={() => setIsImportModalOpen(true)} 
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                 >
+                    <Upload className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
+                 </button>
+                 
+                 <hr className="w-2/3 border-[#2d3340]" />
+               </>
+             )}
              
              {/* GPS */}
              <button 
@@ -807,36 +811,40 @@ export default function MapPage() {
                 </span>
              </button>
              
-             <hr className="w-2/3 border-[#2d3340]" />
-             
-             {/* Linha de Rua */}
-             <button 
-                onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
-             >
-                <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
-             </button>
-             
-             {/* Identificar Frentes */}
-             <button 
-                onClick={handleIdentifyFronts} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
-             >
-                <Scan className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
-             </button>
-             
-             {/* Visibility Toggle */}
-             <button 
-                onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
-             >
-                {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
-                   {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
-                </span>
-             </button>
+             {user?.role !== 'BROKER' && (
+               <>
+                 <hr className="w-2/3 border-[#2d3340]" />
+                 
+                 {/* Linha de Rua */}
+                 <button 
+                    onClick={() => setDrawStreetActive(!drawStreetActive)} 
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+                 >
+                    <PenTool className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
+                 </button>
+                 
+                 {/* Identificar Frentes */}
+                 <button 
+                    onClick={handleIdentifyFronts} 
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                 >
+                    <Scan className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
+                 </button>
+                 
+                 {/* Visibility Toggle */}
+                 <button 
+                    onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
+                 >
+                    {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                       {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
+                    </span>
+                 </button>
+               </>
+             )}
              
            </div>
         </div>
@@ -932,13 +940,15 @@ export default function MapPage() {
             Gestão Unificada de Loteamentos
           </p>
         </div>
-        <button 
-          onClick={() => setIsNewProjectModalOpen(true)}
-          className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Projeto
-        </button>
+        {user?.role !== 'BROKER' && (
+          <button 
+            onClick={() => setIsNewProjectModalOpen(true)}
+            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Novo Projeto
+          </button>
+        )}
       </header>
 
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm">
@@ -968,6 +978,7 @@ export default function MapPage() {
                  <ProjectCard 
                    key={p.id} 
                    project={p} 
+                   user={user}
                    onOpen={() => handleOpenProject(p)} 
                    onDelete={() => handleDeleteProject(p.id)}
                  />
@@ -1065,7 +1076,7 @@ export default function MapPage() {
   );
 }
 
-function ProjectCard({ project, onOpen, onDelete }: { project: any, onOpen: () => void, onDelete: () => void }) {
+function ProjectCard({ project, user, onOpen, onDelete }: { project: any, user: any, onOpen: () => void, onDelete: () => void }) {
   const total = project.blocks?.length || 0;
   const sold = project.blocks?.filter((l: any) => l.status === 'Vendido').length || 0;
   const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
@@ -1083,14 +1094,16 @@ function ProjectCard({ project, onOpen, onDelete }: { project: any, onOpen: () =
                 <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1">{project.location || 'Sem localização'}</p>
              </div>
           </div>
-          <div className="flex items-center gap-1">
-             <button title="Editar" className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors">
-               <Edit2 className="w-4 h-4" />
-             </button>
-             <button title="Excluir" onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
-               <Trash2 className="w-4 h-4" />
-             </button>
-          </div>
+          {user?.role !== 'BROKER' && (
+            <div className="flex items-center gap-1">
+               <button title="Editar" className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors">
+                 <Edit2 className="w-4 h-4" />
+               </button>
+               <button title="Excluir" onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
+                 <Trash2 className="w-4 h-4" />
+               </button>
+            </div>
+          )}
        </div>
 
        <div className="mt-auto">
