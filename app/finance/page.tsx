@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -58,6 +58,15 @@ export default function FinancePage() {
       movement_date: new Date().toISOString().split('T')[0],
       comments: ''
   });
+
+  const [showProjectReportModal, setShowProjectReportModal] = useState(false);
+  const [prFilterProject, setPrFilterProject] = useState('Todos');
+  const [prStartDate, setPrStartDate] = useState('');
+  const [prEndDate, setPrEndDate] = useState('');
+  const [prType, setPrType] = useState('Todos'); // 'Todos', 'Entradas', 'Saídas'
+  const [prStatus, setPrStatus] = useState('Todos'); // 'Todos', 'Pago', 'Pendente', 'Estornado'
+  const [isGeneratingPr, setIsGeneratingPr] = useState(false);
+
 
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1470,6 +1479,227 @@ export default function FinancePage() {
       doc.save(`relatorio_financeiro_${new Date().getTime()}.pdf`);
   };
 
+  const handleGenerateProjectReport = async (format: 'pdf'|'excel') => {
+      setIsGeneratingPr(true);
+      try {
+          const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
+          
+          let startDate = prStartDate ? new Date(prStartDate + 'T00:00:00Z') : null;
+          let endDate = prEndDate ? new Date(prEndDate + 'T23:59:59Z') : null;
+
+          let movements: any[] = [];
+
+          // 1. Fetch Receipts (ENTRADAS)
+          if (prType === 'Todos' || prType === 'Entradas') {
+              let recQuery = supabase.from('finance_receipts')
+                  .select('*, customers!finance_receipts_customer_id_fkey(full_name, name), sales:sale_id(*), projects:project_id(name), blocks:block_id(name, number, block_name, project_id, projects(name)), brokers:broker_id(name)')
+                  .order('due_date', { ascending: true });
+              
+              if (resolvedTenantId) {
+                  recQuery = recQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+              }
+              
+              const { data: recData, error: recErr } = await recQuery;
+              if (recData) {
+                  recData.forEach((r: any) => {
+                      const projName = r.projects?.name || r.sales?.projects?.name || r.blocks?.projects?.name || 'Geral/Outros';
+                      
+                      if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
+                      
+                      const dDate = new Date(r.due_date || r.created_at);
+                      if (startDate && dDate < startDate) return;
+                      if (endDate && dDate > endDate) return;
+
+                      let status = r.status?.toLowerCase() || 'pendente';
+                      if (status === 'pago' || status === 'paid') status = 'Pago';
+                      else if (status === 'pendente' || status === 'pending') status = 'Pendente';
+                      else status = 'Estornado';
+
+                      if (prStatus !== 'Todos' && status !== prStatus) return;
+
+                      movements.push({
+                          data: r.paid_at ? new Date(r.paid_at) : dDate,
+                          projeto: projName,
+                          tipo: 'Entrada',
+                          categoria: r.installment_number === 0 || r.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
+                          cliente: r.customers?.name || r.customers?.full_name || 'NI',
+                          corretor: r.brokers?.name || 'NI',
+                          contrato: r.sales?.contracts?.contract_number || '-',
+                          quadra: r.blocks?.block_name || r.blocks?.name || '-',
+                          lote: r.blocks?.number || '-',
+                          descricao: r.description || `Parcela ${r.installment_number || '1'}`,
+                          valor: Number(r.paid_amount) || Number(r.amount) || 0,
+                          status: status
+                      });
+                  });
+              }
+          }
+
+          // 2. Fetch Cash Movements (ENTRADAS / SAÍDAS)
+          let cashQuery = supabase.from('cash_movements')
+              .select('*, projects:project_id(name), brokers:broker_id(name), customers:customer_id(name)');
+          
+          if (resolvedTenantId) {
+              cashQuery = cashQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+          }
+          
+          const { data: cashData, error: cashErr } = await cashQuery;
+          if (cashData) {
+              cashData.forEach((c: any) => {
+                  const projName = c.projects?.name || 'Geral/Outros';
+                  
+                  if (prFilterProject !== 'Todos' && projName !== prFilterProject) return;
+
+                  const type = c.type === 'entrada' ? 'Entrada' : 'Saída';
+                  if (prType !== 'Todos' && prType !== type + 's') return;
+
+                  const mDate = new Date(c.movement_date || c.created_at);
+                  if (startDate && mDate < startDate) return;
+                  if (endDate && mDate > endDate) return;
+
+                  let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
+                  if (prStatus !== 'Todos' && status !== prStatus) return;
+
+                  // Exclude movements already counted in finance_receipts to avoid double counting
+                  if (c.finance_receipt_id) return;
+
+                  movements.push({
+                      data: mDate,
+                      projeto: projName,
+                      tipo: type,
+                      categoria: c.category || '-',
+                      cliente: c.customers?.name || '-',
+                      corretor: c.brokers?.name || '-',
+                      contrato: '-',
+                      quadra: '-',
+                      lote: '-',
+                      descricao: c.description || '-',
+                      valor: Number(c.amount) || 0,
+                      status: status
+                  });
+              });
+          }
+
+          // Sort by date
+          movements.sort((a, b) => a.data.getTime() - b.data.getTime());
+
+          let totalEntradas = 0;
+          let totalSaidas = 0;
+          movements.forEach(m => {
+              if (m.tipo === 'Entrada') totalEntradas += m.valor;
+              if (m.tipo === 'Saída') totalSaidas += m.valor;
+          });
+          const saldo = totalEntradas - totalSaidas;
+
+          const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
+          
+          if (format === 'excel') {
+              const ExcelJS = (await import('exceljs')).default;
+              const workbook = new ExcelJS.Workbook();
+              const ws = workbook.addWorksheet('Fluxo de Caixa');
+              
+              ws.addRow([`FLUXO DE CAIXA: ${prFilterProject}`]);
+              ws.addRow([`Período: ${prStartDate || 'Início'} a ${prEndDate || 'Fim'}`]);
+              ws.addRow(['']);
+              ws.addRow(['RESUMO']);
+              ws.addRow(['Total Entradas:', formatCurrency(totalEntradas)]);
+              ws.addRow(['Total Saídas:', formatCurrency(totalSaidas)]);
+              ws.addRow(['Saldo:', formatCurrency(saldo)]);
+              ws.addRow(['']);
+              
+              const headers = ['Data', 'Projeto/Loteamento', 'Tipo', 'Categoria', 'Cliente', 'Corretor', 'Contrato', 'Quadra', 'Lote', 'Descrição', 'Valor', 'Status'];
+              ws.addRow(headers);
+              
+              movements.forEach(m => {
+                  ws.addRow([
+                      m.data.toLocaleDateString('pt-BR'),
+                      m.projeto,
+                      m.tipo,
+                      m.categoria,
+                      m.cliente,
+                      m.corretor,
+                      m.contrato,
+                      m.quadra,
+                      m.lote,
+                      m.descricao,
+                      m.valor,
+                      m.status
+                  ]);
+              });
+              
+              const buffer = await workbook.xlsx.writeBuffer();
+              const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              const link = document.createElement('a');
+              link.href = URL.createObjectURL(blob);
+              link.download = `fluxo_caixa_${prFilterProject}_${new Date().getTime()}.xlsx`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+          } else {
+              const jsPDF = (await import('jspdf')).default;
+              const autoTable = (await import('jspdf-autotable')).default;
+              const doc = new jsPDF('landscape');
+              
+              doc.setFontSize(16);
+              doc.text(`FLUXO DE CAIXA - ${companyName}`, 14, 15);
+              doc.setFontSize(10);
+              doc.text(`Projeto/Loteamento: ${prFilterProject}`, 14, 22);
+              doc.text(`Período: ${prStartDate ? new Date(prStartDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Início'} a ${prEndDate ? new Date(prEndDate+'T12:00:00Z').toLocaleDateString('pt-BR') : 'Fim'}`, 14, 28);
+              
+              doc.setFontSize(11);
+              doc.setTextColor(39, 174, 96);
+              doc.text(`Total Entradas: ${formatCurrency(totalEntradas)}`, 14, 36);
+              doc.setTextColor(231, 76, 60);
+              doc.text(`Total Saídas: ${formatCurrency(totalSaidas)}`, 70, 36);
+              doc.setTextColor(saldo >= 0 ? 39 : 231, saldo >= 0 ? 174 : 76, saldo >= 0 ? 96 : 60);
+              doc.text(`Saldo: ${formatCurrency(saldo)}`, 130, 36);
+              
+              const tableBody = movements.map(m => [
+                  m.data.toLocaleDateString('pt-BR'),
+                  m.projeto,
+                  m.tipo,
+                  m.categoria,
+                  m.cliente,
+                  m.corretor,
+                  m.contrato,
+                  m.quadra,
+                  m.lote,
+                  m.descricao,
+                  formatCurrency(m.valor),
+                  m.status
+              ]);
+              
+              autoTable(doc, {
+                  startY: 42,
+                  head: [['Data', 'Projeto/Loteamento', 'Tipo', 'Categoria', 'Cliente', 'Corretor', 'Contrato', 'Quadra', 'Lote', 'Descrição', 'Valor', 'Status']],
+                  body: tableBody,
+                  styles: { fontSize: 8 },
+                  headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                  didParseCell: function(dataObj) {
+                      if (dataObj.section === 'body') {
+                          if (dataObj.column.index === 2) {
+                              if (dataObj.cell.raw === 'Entrada') dataObj.cell.styles.textColor = [39, 174, 96];
+                              if (dataObj.cell.raw === 'Saída') dataObj.cell.styles.textColor = [231, 76, 60];
+                          }
+                          if (dataObj.column.index === 11) {
+                              if (dataObj.cell.raw === 'Pago') dataObj.cell.styles.textColor = [39, 174, 96];
+                              if (dataObj.cell.raw === 'Pendente') dataObj.cell.styles.textColor = [243, 156, 18];
+                              if (dataObj.cell.raw === 'Estornado') dataObj.cell.styles.textColor = [231, 76, 60];
+                          }
+                      }
+                  }
+              });
+              
+              doc.save(`fluxo_caixa_${prFilterProject}_${new Date().getTime()}.pdf`);
+          }
+      } catch (err: any) {
+          console.error("Erro ao gerar relatório:", err);
+          alert("Ocorreu um erro ao gerar. " + err.message);
+      }
+      setIsGeneratingPr(false);
+      setShowProjectReportModal(false);
+  };
+
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) newSet.delete(id);
@@ -1504,6 +1734,13 @@ export default function FinancePage() {
           <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
             <Download className="w-4 h-4 text-[#27ae60]" />
             Excel Resumido
+          </button>
+
+          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+
+          <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm">
+            <PieChart className="w-4 h-4" />
+            Fluxo por Empreendimento
           </button>
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
@@ -2137,6 +2374,76 @@ export default function FinancePage() {
                  </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showProjectReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
+            <div className="px-6 border-b border-[#1f232b] h-16 flex items-center justify-between bg-[#0b0e14]/50">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-indigo-500" />
+                Relatório de Fluxo de Caixa
+              </h2>
+              <button disabled={isGeneratingPr} onClick={() => setShowProjectReportModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Projeto/Loteamento</label>
+                <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                   <option value="Todos">Consolidado (Todos)</option>
+                   {projectsList.map((p, i) => <option key={i} value={p}>{p}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Inicial (Opcional)</label>
+                  <input type="date" value={prStartDate} onChange={e => setPrStartDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Final (Opcional)</label>
+                  <input type="date" value={prEndDate} onChange={e => setPrEndDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo de Movimento</label>
+                    <select value={prType} onChange={e => setPrType(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                       <option value="Todos">Todos</option>
+                       <option value="Entradas">Somente Entradas</option>
+                       <option value="Saídas">Somente Saídas</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Situação</label>
+                    <select value={prStatus} onChange={e => setPrStatus(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                       <option value="Todos">Todas</option>
+                       <option value="Pago">Pgto / Efetivado</option>
+                       <option value="Pendente">Pendente</option>
+                    </select>
+                 </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
+               <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
+                 Cancelar
+               </button>
+               <button disabled={isGeneratingPr} type="button" onClick={() => handleGenerateProjectReport('pdf')} className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 text-sm font-bold rounded shadow flex items-center gap-2 transition-colors">
+                 <FileText className="w-4 h-4" />
+                 Gerar PDF
+               </button>
+               <button disabled={isGeneratingPr} type="button" onClick={() => handleGenerateProjectReport('excel')} className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-400 text-sm font-bold rounded shadow flex items-center gap-2 transition-colors">
+                 <Download className="w-4 h-4" />
+                 Excel
+               </button>
+            </div>
           </div>
         </div>
       )}
