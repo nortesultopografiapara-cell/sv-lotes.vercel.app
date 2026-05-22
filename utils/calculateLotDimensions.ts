@@ -97,7 +97,7 @@ export function extractSegments(coords: number[][], allPolys: number[][][]): Seg
 /**
  * Agrupar segmentos com base em curvas e polígonos complexos
  */
-export function mergeCurvedSegments(segments: Segment[], tolerance: number = 5): Segment[] {
+export function mergeCurvedSegments(segments: Segment[], tolerance: number = 20): Segment[] {
     if (segments.length <= 1) return segments;
     const merged: Segment[] = [];
     
@@ -270,8 +270,9 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     console.log("LOT_DIMENSION_SEGMENTS", rawSegments.length, "segments extracted");
     
     // 5° tolerância como padrão, ou extraída
-    const segments = mergeCurvedSegments(rawSegments, 5); 
-    console.log("LOT_DIMENSION_GROUPED_BY_DIRECTION", segments.length, "groups");
+    console.log(`LOT_DIMENSION_ANGLE_TOLERANCE = 20`);
+    const segments = mergeCurvedSegments(rawSegments, 20); 
+    console.log("LOT_DIMENSION_SEGMENTS_MERGED", segments.length, "groups");
     
     let result = { 
         frente: propFrente || 0, 
@@ -306,6 +307,13 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     const finalFundo = normalizeDimensions(result.fundo, finalFrente);
     const finalDir = normalizeDimensions(result.ladoDireito, finalFrente * 2);
     const finalEsq = normalizeDimensions(result.ladoEsquerdo, finalDir);
+
+    console.log("LOT_DIMENSION_FINAL_WITH_20_DEGREE_TOLERANCE", {
+        frente: finalFrente,
+        fundo: finalFundo,
+        ladoDireito: finalDir,
+        ladoEsquerdo: finalEsq
+    });
 
     console.log("LOT_DIMENSION_FINAL_RESULT", {
         frente: finalFrente,
