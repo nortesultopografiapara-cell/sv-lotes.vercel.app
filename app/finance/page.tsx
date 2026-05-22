@@ -467,6 +467,138 @@ export default function FinancePage() {
      ];
   };
 
+  const handleGenerateCarne = async (p: any) => {
+    console.log("FINANCE GENERATE CARNE", p);
+    const doc = new jsPDF('portrait', 'pt', 'a4');
+    
+    // Set colors
+    const primaryColor = [41, 128, 185];
+    const secondaryColor = [52, 73, 94];
+
+    let headerY = 40;
+
+    // Header Logo/Company
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    const companyName = tenantData ? (tenantData.razao_social || tenantData.name).toUpperCase() : 'EMPRESA';
+    doc.text(companyName, 40, headerY);
+
+    if (tenantData?.cnpj) {
+       doc.setFontSize(9);
+       doc.setFont('helvetica', 'normal');
+       doc.setTextColor(100);
+       doc.text(`CNPJ: ${tenantData.cnpj}`, 40, headerY + 12);
+    }
+
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text('CARNÊ DE PAGAMENTO', 400, headerY);
+
+    doc.setDrawColor(200);
+    doc.setLineWidth(1);
+    doc.line(40, headerY + 30, 555, headerY + 30);
+
+    // Info Sections Box
+    let boxY = headerY + 50;
+
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+
+    const clientName = p.customers?.name || 'Cliente';
+    const clientDoc = p.customers?.document || '-';
+    const contractNo = p.sales?.contracts?.[0]?.contract_number || 'S/N';
+    const blockName = p.blocks?.block_name || p.blocks?.name || '?';
+    const lotNumber = p.blocks?.number || '?';
+    const projectName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || '-';
+
+    const pStatusRaw = p.status?.toLowerCase() || 'pendente';
+    const dueStr = p.due_date?.split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+    let computedStatus = pStatusRaw;
+    if ((pStatusRaw === 'pendente' || pStatusRaw === 'pending') && dueStr && dueStr < todayStr) computedStatus = 'atrasado';
+    
+    const displayStatus = computedStatus === 'pago' || computedStatus === 'paid' ? 'PAGO' : (computedStatus === 'atrasado' ? 'ATRASADO' : 'PENDENTE');
+
+    const amount = Number(p.amount) || 0;
+    const dueDate = dueStr ? new Date(dueStr + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-';
+
+    const drawLabelValue = (x: number, y: number, label: string, value: string) => {
+       doc.setFontSize(8);
+       doc.setFont('helvetica', 'normal');
+       doc.setTextColor(150);
+       doc.text(label, x, y);
+       doc.setFontSize(10);
+       doc.setFont('helvetica', 'bold');
+       doc.setTextColor(50);
+       doc.text(value, x, y + 12);
+    };
+
+    drawLabelValue(40, boxY, "PAGADOR", clientName);
+    drawLabelValue(300, boxY, "CPF/CNPJ", clientDoc);
+
+    drawLabelValue(40, boxY + 35, "PROJETO", projectName);
+    drawLabelValue(300, boxY + 35, "QD / LOTE", `QD ${blockName} - LT ${lotNumber}`);
+    
+    drawLabelValue(40, boxY + 70, "CONTRATO", contractNo);
+    drawLabelValue(150, boxY + 70, "PARCELA", p.installment_number === 0 ? 'ENTRADA' : String(p.installment_number || 1));
+    drawLabelValue(300, boxY + 70, "VENCIMENTO", dueDate);
+    drawLabelValue(450, boxY + 70, "STATUS", displayStatus);
+
+    // Box highlight
+    doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(40, boxY + 110, 515, 60, 5, 5, 'FD');
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text("VALOR DO DOCUMENTO:", 60, boxY + 130);
+    
+    doc.setFontSize(16);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text(formatCurrency(amount), 60, boxY + 152);
+
+    // Linha Digitavel Simulada
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0);
+    const barcode = `34191.09008 10738.905187 40016.908003 1 90000${amount.toFixed(2).replace('.','')}`;
+    doc.text("CÓDIGO DE BARRAS / LINHA DIGITÁVEL PIX", 40, boxY + 210);
+    doc.setFont('helvetica', 'bold');
+    doc.text(barcode, 40, boxY + 225);
+
+    // Barcode Simulado Graphic
+    doc.setFillColor(0);
+    for(let i=0; i<50; i++) {
+       const w = Math.random() > 0.5 ? 2 : 4;
+       doc.rect(40 + (i*6), boxY + 240, w, 30, 'F');
+    }
+
+    // Recibo
+    doc.setLineDashPattern([5, 5], 0);
+    doc.line(20, boxY + 310, 575, boxY + 310);
+    doc.setLineDashPattern([], 0);
+
+    const recY = boxY + 340;
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    doc.text("RECIBO DO PAGADOR", 40, recY);
+
+    drawLabelValue(40, recY + 30, "VALOR PAGO", "");
+    drawLabelValue(150, recY + 30, "DATA PAGAMENTO", "");
+    drawLabelValue(300, recY + 30, "AUTENTICAÇÃO MECÂNICA", "");
+    
+    doc.setDrawColor(200);
+    doc.line(40, recY + 55, 120, recY + 55);
+    doc.line(150, recY + 55, 250, recY + 55);
+    doc.line(300, recY + 55, 500, recY + 55);
+
+    doc.save(`Carne_${contractNo}_${dueDate.replace(/\//g,'')}.pdf`);
+  };
+
   const handleExportExcel = async () => {
      const data = prepareExportData();
      const summary = getSummaryData();
@@ -1434,6 +1566,9 @@ export default function FinancePage() {
                              )}
                              <button onClick={() => handleWhatsApp(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Cobrar no WhatsApp">
                                 <MessageCircle className="w-5 h-5" />
+                             </button>
+                             <button onClick={() => handleGenerateCarne(p)} className="p-1.5 hover:text-[#4999e9] text-gray-500 transition-colors" title="Gerar Carnê/Boleto">
+                                <FileText className="w-5 h-5" />
                              </button>
                              <button onClick={() => handleDeleteReceipt(p)} className="p-1.5 hover:text-[#f04449] text-gray-500 transition-colors" title="Excluir Parcela">
                                 <Trash2 className="w-5 h-5" />

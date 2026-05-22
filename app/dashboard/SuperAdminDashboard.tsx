@@ -174,6 +174,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
       setLoading(false);
     }
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const handleMissingFeature = () => {

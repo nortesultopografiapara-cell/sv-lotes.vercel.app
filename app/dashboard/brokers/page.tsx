@@ -217,6 +217,7 @@ export default function CorretoresPage() {
 
   useEffect(() => {
     if (!authLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadCorretores();
     }
   }, [user, authLoading, loadCorretores]);

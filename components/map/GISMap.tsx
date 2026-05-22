@@ -1718,9 +1718,15 @@ export default function GISMap({
       let newContractData: any = null;
 
       if (newStatus.toLowerCase().trim() === "vendido") {
+        console.log("TRANSACTION_STARTED");
         console.log("INICIO POS VENDA COMPLETAMENTE TRANSACIONAL");
 
         try {
+          // Log start
+          try {
+             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_STARTED', module: 'SALES', description: 'Iniciando venda do lote ' + lot.id }]);
+          } catch(e) {}
+
           const { data: projDataSnapshot } = await supabase
             .from("projects")
             .select("*")
@@ -1960,12 +1966,27 @@ export default function GISMap({
                console.error("Erro ao gerar comissão:", err);
             }
           }
+          
+          console.log("TRANSACTION_SUCCESS");
+          try {
+             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_SUCCESS', module: 'SALES', description: 'Venda concluída com sucesso para o lote ' + lot.id, reference_id: newSaleData?.id }]);
+          } catch(e) {}
 
         } catch (err: any) {
            console.log("TRANSACTION_ROLLBACK");
-           if (newSaleData?.id) await supabase.from('sales').delete().eq('id', newSaleData.id);
-           if (newContractData?.id) await supabase.from('contracts').delete().eq('id', newContractData.id);
-           await supabase.from('blocks').update({ status: 'Disponível', customer_id: null, sale_id: null, contract_id: null, broker_id: null }).eq('id', lot.id);
+           try {
+             if (newSaleData?.id) {
+                await supabase.from('finance_receipts').delete().eq('sale_id', newSaleData.id);
+                await supabase.from('broker_commissions').delete().eq('sale_id', newSaleData.id);
+             }
+             if (newContractData?.id) await supabase.from('contracts').delete().eq('id', newContractData.id);
+             if (newSaleData?.id) await supabase.from('sales').delete().eq('id', newSaleData.id);
+             await supabase.from('blocks').update({ status: 'Disponível', customer_id: null, sale_id: null, contract_id: null, broker_id: null }).eq('id', lot.id);
+
+             await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_ROLLBACK', module: 'SALES', description: 'Rollback executado para o lote ' + lot.id }]);
+           } catch(rollbackErr) {
+             console.error("CRITICAL: Falha no rollback", rollbackErr);
+           }
 
            console.error("Erro no fluxo de venda:", err);
            throw new Error("Erro na venda completa: " + (err.message || JSON.stringify(err)));
