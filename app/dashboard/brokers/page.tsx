@@ -598,6 +598,9 @@ export default function CorretoresPage() {
      }
 
      try {
+       console.log("BROKER_PAY_SOURCE_DATA", c);
+       console.log("BROKER_PENDING_VISUAL_AMOUNT", c.comissao_pendente);
+
        const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
 
        let { data: pendentes, error: errC } = await supabase.from('broker_commissions')
@@ -613,6 +616,8 @@ export default function CorretoresPage() {
        // Buscar vendas para gerar faltantes (como é feito no fluxo visual)
        const { data: brokerSales, error: errSales } = await supabase.from('sales').select('*').eq('broker_id', c.id);
        
+       console.log("BROKER_SALES_USED_FOR_COMMISSION", brokerSales);
+
        if (!errSales && brokerSales && brokerSales.length > 0) {
            const { data: allComms } = await supabase.from('broker_commissions').select('sale_id').eq('broker_id', c.id);
            const exSalesIds = allComms ? allComms.map((cc) => cc.sale_id) : [];
@@ -633,8 +638,15 @@ export default function CorretoresPage() {
                        amount_sale: valor_venda,
                        status: 'pendente'
                    };
+                   
+                   console.log("BROKER_COMMISSION_INSERT_PAYLOAD", newComm);
+                   
                    const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
-                   if (!insErr && insComm) {
+                   if (insErr) {
+                       console.error("Erro ao gerar comissão faltante:", insErr);
+                       throw new Error("Erro DB ao criar comissão: " + insErr.message);
+                   }
+                   if (insComm) {
                        pendentes.push({...insComm, amount: val});
                    }
                }
