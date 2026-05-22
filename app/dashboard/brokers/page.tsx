@@ -750,7 +750,22 @@ export default function CorretoresPage() {
             />
           </div>
           <button 
-            onClick={() => { setSuccessData(null); setIsModalOpen(true); }}
+            onClick={() => { 
+                setFormData({
+                   fullName: '',
+                   email: '',
+                   phone: '',
+                   cpf: '',
+                   creci: '',
+                   role: 'BROKER',
+                   commission_percent: 5,
+                   password: '',
+                   confirmPassword: ''
+                });
+                setSuccessData(null);
+                setModalMode('create');
+                setIsModalOpen(true); 
+            }}
             className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-[0_0_20px_rgba(249,115,22,0.3)] whitespace-nowrap border border-orange-500/50"
           >
             <Plus className="w-4 h-4" /> Novo Corretor
