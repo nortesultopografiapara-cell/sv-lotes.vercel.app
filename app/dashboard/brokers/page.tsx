@@ -169,7 +169,12 @@ export default function CorretoresPage() {
       }
 
       const { error: brokerError } = await supabase.from('brokers').insert([payload]);
-      if (brokerError) throw brokerError;
+      if (brokerError) {
+         if (brokerError.message?.includes("schema cache") || brokerError.code === 'PGRST204' || brokerError.code === 'PGRST205') {
+            throw new Error("Execute a migration setup_brokers.sql no Supabase e recarregue o schema.");
+         }
+         throw brokerError;
+      }
 
       setSuccessData({
         email: formData.email,

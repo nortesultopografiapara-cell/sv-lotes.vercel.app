@@ -530,7 +530,7 @@ export default function CustomersPage() {
 }
 
 function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, onEdit, onView, onDelete }: any) {
-  const hasLots = blocks && blocks.length > 0;
+  const hasLots = blocks && blocks.filter((b: any) => b.status && b.status !== 'Disponível').length > 0;
 
   return (
     <tr className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface-bright)] transition-colors group ${status === 'inativo' ? 'opacity-60 grayscale' : ''}`}>

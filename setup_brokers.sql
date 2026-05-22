@@ -48,3 +48,5 @@ CREATE TABLE IF NOT EXISTS public.broker_commissions (
   paid_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) NOT NULL
 );
+
+NOTIFY pgrst, 'reload schema';
