@@ -106,25 +106,85 @@ export async function DELETE(request: Request) {
        });
     } catch(e) { console.warn('Could not save audit_log pre-delete', e); }
 
-    // 8. EXCLUSÃO CASCATA
     // 1. audit_logs
-    await supabaseAdmin.from('audit_logs').delete().eq('tenant_id', companyId).catch(() => {});
-    // 2. finance_receipts
-    await supabaseAdmin.from('finance_receipts').delete().eq('tenant_id', companyId);
-    // 3. contracts
-    await supabaseAdmin.from('contracts').delete().eq('tenant_id', companyId);
-    // 4. sales
-    await supabaseAdmin.from('sales').delete().eq('tenant_id', companyId).catch(() => {});
-    // 5. customers
-    await supabaseAdmin.from('customers').delete().eq('tenant_id', companyId);
-    // 6. brokers
-    await supabaseAdmin.from('brokers').delete().eq('tenant_id', companyId).catch(() => {});
-    // 7. street_guides
-    await supabaseAdmin.from('street_guides').delete().eq('tenant_id', companyId).catch(() => {});
+    try {
+      const { error: err1 } = await supabaseAdmin.from('audit_logs').delete().eq('tenant_id', companyId);
+      if (err1) throw err1;
+    } catch (e) {
+      console.warn('Silent skip audit_logs delete', e);
+    }
+
+    // 2. broker_commissions
+    try {
+      const { error: err2 } = await supabaseAdmin.from('broker_commissions').delete().eq('tenant_id', companyId);
+      if (err2) throw err2;
+    } catch (e) {
+      console.warn('Silent skip broker_commissions delete', e);
+    }
+
+    // 3. finance_receipts
+    try {
+      const { error: err3 } = await supabaseAdmin.from('finance_receipts').delete().eq('tenant_id', companyId);
+      if (err3) throw err3;
+    } catch (e) {
+      console.warn('Silent skip finance_receipts delete', e);
+    }
+
+    // 4. contracts
+    try {
+      const { error: err4 } = await supabaseAdmin.from('contracts').delete().eq('tenant_id', companyId);
+      if (err4) throw err4;
+    } catch (e) {
+      console.warn('Silent skip contracts delete', e);
+    }
+
+    // 5. sales
+    try {
+      const { error: err5 } = await supabaseAdmin.from('sales').delete().eq('tenant_id', companyId);
+      if (err5) throw err5;
+    } catch (e) {
+      console.warn('Silent skip sales delete', e);
+    }
+
+    // 6. customers
+    try {
+      const { error: err6 } = await supabaseAdmin.from('customers').delete().eq('tenant_id', companyId);
+      if (err6) throw err6;
+    } catch (e) {
+      console.warn('Silent skip customers delete', e);
+    }
+
+    // 7. brokers
+    try {
+      const { error: err7 } = await supabaseAdmin.from('brokers').delete().eq('tenant_id', companyId);
+      if (err7) throw err7;
+    } catch (e) {
+      console.warn('Silent skip brokers delete', e);
+    }
+
+    // 7.5. street_guides
+    try {
+      const { error: err75 } = await supabaseAdmin.from('street_guides').delete().eq('tenant_id', companyId);
+      if (err75) throw err75;
+    } catch (e) {
+      console.warn('Silent skip street_guides delete', e);
+    }
+
     // 8. blocks
-    await supabaseAdmin.from('blocks').delete().eq('tenant_id', companyId);
+    try {
+      const { error: err8 } = await supabaseAdmin.from('blocks').delete().eq('tenant_id', companyId);
+      if (err8) throw err8;
+    } catch (e) {
+      console.warn('Silent skip blocks delete', e);
+    }
+
     // 9. projects
-    await supabaseAdmin.from('projects').delete().eq('tenant_id', companyId);
+    try {
+      const { error: err9 } = await supabaseAdmin.from('projects').delete().eq('tenant_id', companyId);
+      if (err9) throw err9;
+    } catch (e) {
+      console.warn('Silent skip projects delete', e);
+    }
 
     // 10. Users da empresa
     const { data: users } = await supabaseAdmin.from('users').select('id, role, email').eq('tenant_id', companyId);

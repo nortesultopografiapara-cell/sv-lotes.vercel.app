@@ -54,33 +54,35 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // CASCADE DELETION
     // 1. audit_logs
-    await supabase.from('audit_logs').delete().eq('tenant_id', companyId).catch(() => {});
+    try { await supabase.from('audit_logs').delete().eq('tenant_id', companyId); } catch(e) {}
     
-    // 2. finance_receipts (none, or test)
-    await supabase.from('finance_receipts').delete().eq('tenant_id', companyId);
+    // 2. broker_commissions
+    try { await supabase.from('broker_commissions').delete().eq('tenant_id', companyId); } catch(e) {}
+
+    // 3. finance_receipts (none, or test)
+    try { await supabase.from('finance_receipts').delete().eq('tenant_id', companyId); } catch(e) {}
     
-    // 3. contracts (none, or test)
-    await supabase.from('contracts').delete().eq('tenant_id', companyId);
+    // 4. contracts (none, or test)
+    try { await supabase.from('contracts').delete().eq('tenant_id', companyId); } catch(e) {}
 
-    // 4. sales (if exists)
-    await supabase.from('sales').delete().eq('tenant_id', companyId).catch(() => {});
+    // 5. sales (if exists)
+    try { await supabase.from('sales').delete().eq('tenant_id', companyId); } catch(e) {}
 
-    // 5. customers
-    await supabase.from('customers').delete().eq('tenant_id', companyId);
+    // 6. customers
+    try { await supabase.from('customers').delete().eq('tenant_id', companyId); } catch(e) {}
 
-    // 6. brokers
-    await supabase.from('brokers').delete().eq('tenant_id', companyId).catch(() => {});
+    // 7. brokers
+    try { await supabase.from('brokers').delete().eq('tenant_id', companyId); } catch(e) {}
 
-    // 7. blocks
-    await supabase.from('blocks').delete().eq('tenant_id', companyId);
+    // 7.5 street_guides
+    try { await supabase.from('street_guides').delete().eq('tenant_id', companyId); } catch(e) {}
 
-    // 8. street_guides
-    await supabase.from('street_guides').delete().eq('tenant_id', companyId).catch(() => {});
+    // 8. blocks
+    try { await supabase.from('blocks').delete().eq('tenant_id', companyId); } catch(e) {}
 
     // 9. projects
-    await supabase.from('projects').delete().eq('tenant_id', companyId);
+    try { await supabase.from('projects').delete().eq('tenant_id', companyId); } catch(e) {}
 
     // 10. Users
     // Get all users from this tenant
