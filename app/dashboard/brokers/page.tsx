@@ -48,16 +48,22 @@ export default function CorretoresPage() {
          const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
          if (!error && companyData?.plan) {
             const plan = companyData.plan.toLowerCase();
-            if (plan.includes('basic') || plan.includes('básico')) {
-               limit = 5;
-               pName = 'Básico';
-            } else if (plan.includes('professional') || plan.includes('profissional')) {
-               limit = null; // null means unlimited
-               pName = 'Profissional';
-            } else {
-               limit = 10;
-               pName = 'Standard';
-            }
+            
+            console.log('BROKER_LIMITS_RESOLVED', plan);
+            const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
+              basic: { brokers: 5, projects: 3 },
+              standard: { brokers: 10, projects: 5 },
+              professional: { brokers: Infinity, projects: Infinity },
+              premium: { brokers: Infinity, projects: Infinity },
+            };
+
+            const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
+            limit = mappedLimits.brokers === Infinity ? null : mappedLimits.brokers;
+            
+            pName = plan === 'premium' ? 'Premium' : 
+                    plan === 'professional' ? 'Profissional' : 
+                    plan === 'standard' ? 'Standard' : 
+                    'Básico';
          }
       }
       setBrokerLimit(limit);

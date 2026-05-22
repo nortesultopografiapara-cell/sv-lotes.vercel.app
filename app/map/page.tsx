@@ -156,6 +156,8 @@ export default function MapPage() {
   const [search, setSearch] = useState('');
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [projectLimit, setProjectLimit] = useState<number | null>(null);
+  const [companyPlan, setCompanyPlan] = useState<string>('Standard');
   
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
 
@@ -344,6 +346,30 @@ export default function MapPage() {
     async function loadProjects() {
       if (!user) return;
       try {
+        let limit: number | null = 5;
+        let pName = 'Standard';
+        if (user.tenant_id) {
+           const { data: companyData } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
+           if (companyData?.plan) {
+              const plan = companyData.plan.toLowerCase();
+              console.log('PROJECT_LIMITS_RESOLVED', plan);
+              const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
+                basic: { brokers: 5, projects: 3 },
+                standard: { brokers: 10, projects: 5 },
+                professional: { brokers: Infinity, projects: Infinity },
+                premium: { brokers: Infinity, projects: Infinity },
+              };
+              const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
+              limit = mappedLimits.projects === Infinity ? null : mappedLimits.projects;
+              pName = plan === 'premium' ? 'Premium' : 
+                      plan === 'professional' ? 'Profissional' : 
+                      plan === 'standard' ? 'Standard' : 
+                      'Básico';
+           }
+        }
+        setProjectLimit(limit);
+        setCompanyPlan(pName);
+
         let query = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
         
         if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
@@ -393,6 +419,12 @@ export default function MapPage() {
     if (e && e.preventDefault) e.preventDefault();
     const projectNameStr = newProjectName.trim();
     if (!projectNameStr) return;
+
+    if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
+        alert(`O limite do seu plano de ${projectLimit} loteamentos foi atingido. Para cadastrar mais, contate o administrador.`);
+        return;
+    }
+
     setCreatingProject(true);
     
     try {
@@ -936,13 +968,24 @@ export default function MapPage() {
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
-          <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
+          <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider flexitems-center gap-2">
             Gestão Unificada de Loteamentos
+            {user?.role !== 'SUPER_ADMIN' && (
+               <span className="ml-3 px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs border border-blue-500/20">
+                 Projetos: {projects.length} / {projectLimit === null ? 'Ilimitado' : projectLimit}
+               </span>
+            )}
           </p>
         </div>
         {user?.role !== 'BROKER' && (
           <button 
-            onClick={() => setIsNewProjectModalOpen(true)}
+            onClick={() => {
+                if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
+                    alert(`Limite do plano (${projectLimit} loteamentos) atingido.`);
+                    return;
+                }
+                setIsNewProjectModalOpen(true);
+            }}
             className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
           >
             <Plus className="w-5 h-5" />

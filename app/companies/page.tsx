@@ -328,7 +328,7 @@ export default function CompaniesPage() {
                  <div className="grid grid-cols-2 gap-4 border-t border-[#1f232b] pt-4">
                     <div>
                        <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Plano</p>
-                       <p className="text-sm font-semibold text-blue-400">{companyToView.plan_type || 'Básico'}</p>
+                       <p className="text-sm font-semibold text-blue-400">{companyToView.plan === 'premium' ? 'Premium' : companyToView.plan === 'professional' ? 'Profissional' : companyToView.plan === 'standard' ? 'Standard' : 'Básico'}</p>
                     </div>
                     <div>
                        <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Status</p>

@@ -109,7 +109,11 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
       });
 
       const plans = comps.reduce((acc, current) => {
-         const plan = current.plan_type || current.plan || 'Sem plano';
+         const rawPlan = current.plan || 'basic';
+         const plan = rawPlan === 'premium' ? 'Premium' : 
+                      rawPlan === 'professional' ? 'Profissional' : 
+                      rawPlan === 'standard' ? 'Standard' : 
+                      'Básico';
          acc[plan] = (acc[plan] || 0) + 1;
          return acc;
       }, {} as any);
@@ -157,17 +161,33 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
          .limit(5);
 
       if (recent) {
-         const formattedRecent = recent.map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            slug: r.slug,
-            plan: r.plan_type || r.plan || 'Sem plano',
-            status: r.status_operacional || 'Ativa',
-            projects: [r.projects?.[0]?.count || 0, r.project_limit === -1 ? Infinity : r.project_limit || Infinity],
-            users: [r.users?.[0]?.count || 0, Infinity], // assuming infinite users limit for now
-            brokers: [r.brokers?.[0]?.count || 0, r.broker_limit === -1 ? Infinity : r.broker_limit || Infinity],
-            mrr: 0 // real MRR goes here when billing is ready
-         }));
+         const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
+            basic: { brokers: 5, projects: 3 },
+            standard: { brokers: 10, projects: 5 },
+            professional: { brokers: Infinity, projects: Infinity },
+            premium: { brokers: Infinity, projects: Infinity },
+         };
+
+         const formattedRecent = recent.map((r: any) => {
+            const rawPlan = r.plan || 'basic';
+            const mappedLimits = PLAN_LIMITS[rawPlan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
+            const displayPlan = rawPlan === 'premium' ? 'Premium' : 
+                                rawPlan === 'professional' ? 'Profissional' : 
+                                rawPlan === 'standard' ? 'Standard' : 
+                                'Básico';
+
+            return {
+               id: r.id,
+               name: r.name,
+               slug: r.slug,
+               plan: displayPlan,
+               status: r.status_operacional || 'Ativa',
+               projects: [r.projects?.[0]?.count || 0, mappedLimits.projects],
+               users: [r.users?.[0]?.count || 0, Infinity], // assuming infinite users limit for now
+               brokers: [r.brokers?.[0]?.count || 0, mappedLimits.brokers],
+               mrr: 0 // real MRR goes here when billing is ready
+            };
+         });
          setRecentCompanies(formattedRecent);
       }
 

@@ -29,7 +29,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     state: initialData?.state || '',
     cep: initialData?.cep || '',
     status_operacional: initialData?.status_operacional || 'Ativa',
-    plan: initialData?.plan_type || initialData?.plan || 'Básico',
+    plan: initialData?.plan || 'basic',
     is_test_company: initialData?.is_test_company || false,
     password: '' // Only used for creation now, not update.
   });
@@ -97,12 +97,15 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     try {
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
-      const planLimits = {
-          'Básico': { broker_limit: 5, project_limit: 5 },
-          'Standard': { broker_limit: 10, project_limit: 10 },
-          'Profissional': { broker_limit: null, project_limit: null }
+      const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
+        basic: { brokers: 5, projects: 3 },
+        standard: { brokers: 10, projects: 5 },
+        professional: { brokers: Infinity, projects: Infinity },
+        premium: { brokers: Infinity, projects: Infinity },
       };
-      const limits = planLimits[formData.plan as keyof typeof planLimits] || planLimits['Básico'];
+
+      console.log('COMPANY_PLAN_BEFORE_SAVE', initialData?.plan);
+      const limits = PLAN_LIMITS[formData.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
 
       if (initialData) {
          const updatePayload: any = {
@@ -111,8 +114,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             phone: formData.phone,
             email: formData.email,
             status_operacional: formData.status_operacional,
-            plan_type: formData.plan,
-            ...limits
+            plan: formData.plan
          };
 
          if (!initialData.slug) {
@@ -129,6 +131,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          updatePayload.is_test_company = formData.is_test_company === true;
 
          let { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
+         console.log('COMPANY_PLAN_AFTER_SAVE', formData.plan);
          
          if (updateError && (updateError.code === 'PGRST204' || updateError.message.includes('schema cache'))) {
              console.warn("Retrying minimal payload due to structure mismatch", updateError);
@@ -366,9 +369,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
                   className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
                 >
-                  <option value="Básico">Básico</option>
-                  <option value="Standard">Standard</option>
-                  <option value="Profissional">Profissional</option>
+                  <option value="basic">Básico</option>
+                  <option value="standard">Standard</option>
+                  <option value="professional">Profissional</option>
+                  <option value="premium">Premium</option>
                 </select>
               </div>
 
