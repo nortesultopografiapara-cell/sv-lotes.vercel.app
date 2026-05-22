@@ -45,7 +45,9 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
     // Comissões (Saídas)
     safeComms.forEach(cm => {
         const cmStatus = cm.status?.toLowerCase() || 'pendente';
-        if (cmStatus === 'pago' || cmStatus === 'paga') {
+        const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
+        
+        if (isCommPaid) {
             const hasCash = safeCash.some(c => {
                 const status = c.status?.toLowerCase() || 'ativo';
                 if (status === 'estornado' || status === 'cancelado' || status === 'deleted') return false;
@@ -288,9 +290,10 @@ export default function FinancePage() {
         let cashData: any[] = [];
         try {
            const { data: cData, error: cErr } = await supabase.from('cash_movements')
-               .select(`*`)
+               .select(`*, projects(name), sales(projects(name), contracts(contract_number)), contracts(projects(name), contract_number)`)
                .or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`)
                .order('movement_date', { ascending: false });
+           if (cErr) console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
            if (!cErr && cData) {
                console.log("FINANCE_CASH_MOVEMENTS_RAW", cData);
                cashData = cData;
@@ -300,8 +303,23 @@ export default function FinancePage() {
 
         let commsData: any[] = [];
         try {
-           const { data: comms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-           if (comms) {
+           let queryComms = supabase.from('broker_commissions').select('*, brokers:broker_id(*), sales:sale_id(*, projects(*), contracts(*)), contracts:contract_id(*, projects(*))');
+           if (resolvedTenantId) {
+               queryComms = queryComms.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+           }
+           const { data: comms, error: commsErr } = await queryComms;
+           if (commsErr) {
+               console.error("ERRO JOIN BROKER_COMMISSIONS:", commsErr);
+               // fallback to simple
+               const { data: fallbackComms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+               if (fallbackComms) {
+                   commsData = fallbackComms;
+                   setBrokerCommissions(fallbackComms);
+               }
+           } else if (comms) {
+               // Only store paid ones for totals, but we could keep all. Wait, if we keep all, we can filter in calculateFinancialTotals!
+               // Actually calculateFinancialTotals filters by status now. So let's store all.
+               // Wait, the fallback filtered by status. If we store all, it's safer for PDF.
                commsData = comms;
                setBrokerCommissions(comms);
            }
@@ -1604,11 +1622,14 @@ export default function FinancePage() {
           });
           
           // Fetch comissoes beforehand to cross reference cash movements
-          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(name), sales:sale_id(contracts(contract_number, number, code, id), projects(name)), contracts:contract_id(contract_number, number, code, id, projects(name))');
+          let commQuery = supabase.from('broker_commissions').select('*, brokers:broker_id(*), sales:sale_id(*, contracts(*), projects(*)), contracts:contract_id(*, projects(*))');
           if (resolvedTenantId) {
              commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
           }
-          const { data: comms } = await commQuery;
+          const { data: comms, error: commsErr } = await commQuery;
+          if (commsErr) {
+              console.error("FLOW_REPORT_COMMS_ERROR", commsErr);
+          }
 
           // 2. Caixas (cash_movements)
           console.log("FLOW_OUTCOMES_FOUND", cashMovements.filter(c => c.type === 'saida'));
@@ -1665,7 +1686,9 @@ export default function FinancePage() {
               const mappedComms: any[] = [];
               comms.forEach(cm => {
                   let status = 'Pendente';
-                  if (cm.status === 'pago' || cm.status === 'paga') status = 'Pago';
+                  const cmStatus = cm.status?.toLowerCase() || 'pendente';
+                  const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
+                  if (isCommPaid) status = 'Pago';
                   else if (cm.status === 'pendente') status = 'Pendente';
                   
                   const commContrato = cm.sales?.contracts?.contract_number || cm.sales?.contracts?.number || cm.sales?.contracts?.code || cm.sales?.contracts?.id || 
@@ -1698,7 +1721,7 @@ export default function FinancePage() {
                   });
               });
               movements = [...movements, ...mappedComms];
-              console.log('FLOW_REPORT_COMMISSION_ROWS', mappedComms.length, mappedComms);
+              console.log('FLOW_REPORT_COMMISSION_ROWS_ADDED', mappedComms.length, mappedComms);
           }
 
           console.log('FLOW_REPORT_FINAL_ROWS', movements);
@@ -1759,6 +1782,8 @@ export default function FinancePage() {
               if (endDate && mDate > endDate) return false;
               return true;
           });
+          
+          console.log("FLOW_REPORT_MANUAL_EXPENSES", rawReportCash);
 
           const rawReportComms = (comms || []).filter(cm => {
               const mDate = new Date(cm.paid_at || cm.created_at);
@@ -1769,13 +1794,15 @@ export default function FinancePage() {
               if (endDate && mDate > endDate) return false;
               return true;
           });
+          
+          console.log("FLOW_REPORT_PAID_COMMISSIONS", rawReportComms);
 
           const totals = calculateFinancialTotals(rawReportPayments, rawReportCash, rawReportComms);
           const totalEntradas = totals.totalEntradas;
           const totalSaidas = totals.totalSaidas;
           const saldo = totals.saldoFinal;
           
-          console.log("FLOW_REPORT_TOTALS_UNIFIED", totals);
+          console.log("FLOW_REPORT_FINAL_TOTALS", totals);
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
