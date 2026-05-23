@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -1344,6 +1344,9 @@ export default function GISMap({
             .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
             .map((b: any) => b.geometry.coordinates[0]);
 
+          const lineStrings = blocksRes.data
+            .filter((b: any) => b.geometry && b.geometry.type === "LineString") || [];
+
           const parsedBlocks = blocksRes.data
             .map((b) => {
               let bounds: [number, number][] = [];
@@ -1368,7 +1371,12 @@ export default function GISMap({
                   c[0],
                 ]);
                 try {
-                  dimsFromGeo = calculateLotDimensions(b.geometry.coordinates[0], allPolygons, b.properties || {});
+                  dimsFromGeo = calculateLotDimensions(
+                    b.geometry.coordinates[0], 
+                    allPolygons, 
+                    b.properties || {},
+                    { streetGuides, lineStrings }
+                  );
                 } catch(err) {
                   console.error("Erro recálculo dimensões GISMap", err);
                 }
@@ -1394,6 +1402,7 @@ export default function GISMap({
                 fundo: dimsFromGeo ? dimsFromGeo.fundo : (b.fundo || null),
                 lado_direito: dimsFromGeo ? dimsFromGeo.ladoDireito : (b.lado_direito || null),
                 lado_esquerdo: dimsFromGeo ? dimsFromGeo.ladoEsquerdo : (b.lado_esquerdo || null),
+                debugSegments: dimsFromGeo ? dimsFromGeo.debugSegments : null,
               };
             })
             .filter((b) => b.bounds.length > 0);
@@ -2124,60 +2133,95 @@ export default function GISMap({
               String(lot.number).replace(/\D/g, "");
 
             return (
-              <Polygon
-                key={lot.id}
-                positions={lot.bounds}
-                interactive={!(drawStreetActive || measureActive)}
-                pathOptions={{
-                  color: "#000000",
-                  fillColor: getStatusColor(lot.status),
-                  fillOpacity: 0.75,
-                  stroke: true,
-                  weight: 1,
-                }}
-                eventHandlers={{
-                  mouseover: (e) => {
-                    const layer = e.target;
-                    layer.setStyle({
-                      fillOpacity: 1,
-                      weight: 2,
-                    });
-                  },
-                  mouseout: (e) => {
-                    const layer = e.target;
-                    layer.setStyle({
-                      fillOpacity: 0.75,
-                      weight: 1,
-                    });
-                  },
-                }}
-              >
-                {displayNum && displayNum !== "0" && (
-                  <Tooltip
-                    permanent
-                    direction="center"
-                    className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
-                    opacity={1}
-                  >
-                    <div
-                      style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}
+              <Fragment key={lot.id}>
+                <Polygon
+                  positions={lot.bounds}
+                  interactive={!(drawStreetActive || measureActive)}
+                  pathOptions={{
+                    color: "#000000",
+                    fillColor: getStatusColor(lot.status),
+                    fillOpacity: 0.75,
+                    stroke: true,
+                    weight: 1,
+                  }}
+                  eventHandlers={{
+                    mouseover: (e) => {
+                      const layer = e.target;
+                      layer.setStyle({
+                        fillOpacity: 1,
+                        weight: 2,
+                      });
+                    },
+                    mouseout: (e) => {
+                      const layer = e.target;
+                      layer.setStyle({
+                        fillOpacity: 0.75,
+                        weight: 1,
+                      });
+                    },
+                  }}
+                >
+                  {displayNum && displayNum !== "0" && (
+                    <Tooltip
+                      permanent
+                      direction="center"
+                      className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
+                      opacity={1}
                     >
-                      Lote {displayNum}
-                    </div>
-                  </Tooltip>
-                )}
-                <Popup>
-                  <LotPopupContent
-                    lot={lot}
-                    onAction={handleLotAction}
-                    onRequestCustomerForm={(l, a, p) =>
-                      setCustomerForm({ lot: l, action: a, price: p })
-                    }
-                    onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                    actionLoading={actionLoading}
-                  />
-                </Popup>
-              </Polygon>
+                      <div
+                        style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}
+                      >
+                        Lote {displayNum}
+                      </div>
+                    </Tooltip>
+                  )}
+                  <Popup>
+                    <LotPopupContent
+                      lot={lot}
+                      onAction={handleLotAction}
+                      onRequestCustomerForm={(l, a, p) =>
+                        setCustomerForm({ lot: l, action: a, price: p })
+                      }
+                      onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
+                      actionLoading={actionLoading}
+                    />
+                  </Popup>
+                </Polygon>
+
+                {typeof window !== "undefined" && (window as any).DEBUG_LOTES && lot.debugSegments &&
+                  lot.debugSegments.map((seg: any, idx: number) => {
+                    const segColor = seg.classification === "frente" ? "#3b82f6" // Azul
+                                   : seg.classification === "fundo" ? "#eab308"  // Amarelo
+                                   : "#22c55e";                                  // Verde (laterais)
+                    const segPositions: [number, number][] = [
+                      [seg.p1[1], seg.p1[0]],
+                      [seg.p2[1], seg.p2[0]]
+                    ];
+
+                    return (
+                      <Polyline
+                        key={`debug-seg-${lot.id}-${idx}`}
+                        positions={segPositions}
+                        pathOptions={{
+                          color: segColor,
+                          weight: 4,
+                          opacity: 1
+                        }}
+                      >
+                        <Tooltip sticky>
+                          <div className="font-sans text-xs p-1">
+                            <p className="font-bold uppercase text-gray-950 mb-1">{seg.classification}</p>
+                            <p className="m-0 text-gray-700">Comprimento: <strong>{seg.length.toFixed(2)}m</strong></p>
+                            <p className="m-0 text-gray-700">Ângulo: <strong>{seg.azimuth.toFixed(1)}°</strong></p>
+                            <p className="m-0 text-gray-700">Diff p/ Frente: <strong>{seg.angleDiffToFront.toFixed(1)}°</strong></p>
+                            <p className="m-0 text-gray-700">Depth Proj: <strong>{seg.projDepth.toFixed(2)}m</strong></p>
+                          </div>
+                        </Tooltip>
+                      </Polyline>
+                    );
+                  })
+                }
+              </Fragment>
             );
           })}
 

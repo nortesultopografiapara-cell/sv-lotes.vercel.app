@@ -88,6 +88,7 @@ export default function SaaSFinancePage() {
    };
 
    useEffect(() => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
    }, []);
 

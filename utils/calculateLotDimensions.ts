@@ -232,11 +232,40 @@ export function normalizeDimensions(val: number, fallback: number): number {
  * Usa o ALGORITMO INTELIGENTE que agrupa todos os segmentos nas 4 faces principais,
  * resolvendo o problema de fundos ou lados com múltiplos segmentos colineares ou irregulares.
  */
-export function calculateLotDimensions(coords: number[][], allPolys: number[][][], geomProps: any = {}) {
-    return calculateLotDimensionsAdvanced(coords, allPolys, geomProps);
+export function calculateLotDimensions(
+  coords: number[][], 
+  allPolys: number[][][], 
+  geomProps: any = {}, 
+  extra: { streetGuides?: any[]; lineStrings?: any[] } = {}
+) {
+    return calculateLotDimensionsAdvanced(coords, allPolys, geomProps, extra);
 }
 
-export function calculateLotDimensionsAdvanced(coords: number[][], allPolys: number[][][], geomProps: any = {}) {
+function minAngleDiff180(a1: number, a2: number): number {
+    let diff = Math.abs(a1 - a2) % 180;
+    return diff > 90 ? 180 - diff : diff;
+}
+
+function getDistancePointToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) {
+        return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+    }
+    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+}
+
+export function calculateLotDimensionsAdvanced(
+  coords: number[][], 
+  allPolys: number[][][], 
+  geomProps: any = {}, 
+  extra: { streetGuides?: any[]; lineStrings?: any[] } = {}
+) {
     if (!coords || coords.length < 4) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
     
     // 1. Tentar extrair do banco de dados/propriedades primeiro
@@ -276,48 +305,195 @@ export function calculateLotDimensionsAdvanced(coords: number[][], allPolys: num
     const rawSegments = extractSegments(coords, allPolys);
     if (rawSegments.length === 0) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
 
-    // 3. Descobrir o azimute da Frente principal de referência
-    // Agrupamos os segmentos curvos apenas para achar a referência primária com segurança
-    const mergedForReference = mergeCurvedSegments(rawSegments, 20); 
-    const frontRefSegment = detectFront(mergedForReference);
+    // 3. Obter centroid dos lotes para cálculo em cartesiano local (metro)
+    let sumX = 0, sumY = 0;
+    const n = coords.length - 1;
+    for (let i = 0; i < n; i++) {
+        sumX += coords[i][0];
+        sumY += coords[i][1];
+    }
+    const centroid = [sumX / n, sumY / n];
+
+    // Converter para cartesiano local em relação ao centroid para precisão em metros
+    const latRad = (centroid[1] * Math.PI) / 180;
+    const kx = 111320 * Math.cos(latRad);
+    const ky = 111320;
+    const getLocal = (pt: number[]) => {
+        return {
+            x: (pt[0] - centroid[0]) * kx,
+            y: (pt[1] - centroid[1]) * ky
+        };
+    };
+
+    const segmentsCartesian = rawSegments.map((s) => {
+        const p1L = getLocal(s.p1);
+        const p2L = getLocal(s.p2);
+        const mid = { x: (p1L.x + p2L.x) / 2, y: (p1L.y + p2L.y) / 2 };
+        const dx = p2L.x - p1L.x;
+        const dy = p2L.y - p1L.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dx, dy) * 180 / Math.PI;
+        const azimuth = (angle + 360) % 360;
+
+        return {
+            ...s,
+            p1L,
+            p2L,
+            mid,
+            length,
+            azimuth
+        };
+    });
+
+    // 4. Identificar as ruas/vias das camadas recebidas em extra
+    const roadLines: any[] = [];
+    if (extra && extra.streetGuides && Array.isArray(extra.streetGuides)) {
+        for (const r of extra.streetGuides) {
+            if (r.geometry_geojson && r.geometry_geojson.coordinates) {
+                roadLines.push(r.geometry_geojson);
+            } else if (r.geometry && r.geometry.coordinates) {
+                roadLines.push(r.geometry);
+            }
+        }
+    }
+    if (extra && extra.lineStrings && Array.isArray(extra.lineStrings)) {
+        for (const r of extra.lineStrings) {
+            if (r.geometry && r.geometry.coordinates) {
+                roadLines.push(r.geometry);
+            } else if (r.geometry_geojson && r.geometry_geojson.coordinates) {
+                roadLines.push(r.geometry_geojson);
+            }
+        }
+    }
+
+    // Converter as vias para cartesiano
+    const cartesianRoads: { x: number; y: number }[][] = [];
+    for (const rLine of roadLines) {
+        if (rLine && Array.isArray(rLine.coordinates)) {
+            cartesianRoads.push(rLine.coordinates.map((c: number[]) => getLocal(c)));
+        }
+    }
+
+    let frontRefSegment = segmentsCartesian[0];
+    let hasRoads = cartesianRoads.length > 0;
+
+    if (hasRoads) {
+        let bestScore = Infinity;
+        for (const s of segmentsCartesian) {
+            let minDist = Infinity;
+            let closestRoadAzimuth = 0;
+
+            for (const rPoints of cartesianRoads) {
+                for (let j = 0; j < rPoints.length - 1; j++) {
+                    const rA = rPoints[j];
+                    const rB = rPoints[j + 1];
+                    const dist = getDistancePointToSegment(s.mid.x, s.mid.y, rA.x, rA.y, rB.x, rB.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+
+                        const rdx = rB.x - rA.x;
+                        const rdy = rB.y - rA.y;
+                        const rLen = Math.sqrt(rdx * rdx + rdy * rdy);
+                        if (rLen > 0.1) {
+                            const rAngle = Math.atan2(rdx, rdy) * 180 / Math.PI;
+                            closestRoadAzimuth = (rAngle + 360) % 360;
+                        }
+                    }
+                }
+            }
+
+            // Penalizar o desvio angular em relação à rua para priorizar paralelismo
+            const angleDiff = minAngleDiff180(s.azimuth, closestRoadAzimuth);
+            const score = minDist + angleDiff * 1.5;
+
+            if (score < bestScore) {
+                bestScore = score;
+                frontRefSegment = s;
+            }
+        }
+    } else {
+        // Fallback: usar o segmento mais ao Sul (bottom-most)
+        const externalSegs = segmentsCartesian.filter(s => s.isExternal);
+        if (externalSegs.length > 0) {
+            frontRefSegment = externalSegs.reduce((a, b) => b.mid.y < a.mid.y ? b : a);
+        } else {
+            frontRefSegment = segmentsCartesian.reduce((a, b) => a.length < b.length ? a : b);
+        }
+    }
+
+    const frontAngle = frontRefSegment.azimuth;
+    const midFront = frontRefSegment.mid;
+
+    // Vetor apontando da frente para dentro do lote (do midFront para o centroide [0, 0])
+    const vecInward = { x: -midFront.x, y: -midFront.y };
+    const inwardLen = Math.sqrt(vecInward.x * vecInward.x + vecInward.y * vecInward.y);
+    const uInward = inwardLen > 0.1 ? { x: vecInward.x / inwardLen, y: vecInward.y / inwardLen } : { x: 0, y: 1 };
     
-    const refAzimuth = frontRefSegment.azimuth;
-    
+    // Vetor lateral à direita do vetor de entrada (rotacionado 90 graus no sentido horário)
+    const uRight = { x: uInward.y, y: -uInward.x };
+
+    let maxDepth = -Infinity;
+    for (const s of segmentsCartesian) {
+        const vecFromF = { x: s.mid.x - midFront.x, y: s.mid.y - midFront.y };
+        const pDepth = vecFromF.x * uInward.x + vecFromF.y * uInward.y;
+        if (pDepth > maxDepth) maxDepth = pDepth;
+    }
+    if (maxDepth <= 0.1) maxDepth = 10;
+
     let sumFrente = 0;
     let sumFundo = 0;
     let sumDir = 0;
     let sumEsq = 0;
 
-    // 4. ALGORITMO INTELIGENTE: Classificar cada segmento isolado em uma das 4 faces
-    for (let s of rawSegments) {
-        let diff = (s.azimuth - refAzimuth + 360) % 360;
-        let d = diff > 180 ? diff - 360 : diff; // Converter para -180 a +180
+    const debugSegments: any[] = [];
 
-        const absD = Math.abs(d);
-        
-        if (absD <= 45) {
-            // +- 45 graus da frente => FRENTE
-            sumFrente += s.length;
-        } else if (absD >= 135) {
-            // >= 135 graus (oposto) => FUNDO
-            sumFundo += s.length;
-        } else if (d > 45 && d < 135) {
-            // Lado 1
-            sumDir += s.length;
-        } else if (d < -45 && d > -135) {
-            // Lado 2
-            sumEsq += s.length;
+    // Classificar e somar as faces dentro da tolerância angular e posições projetadas
+    for (const s of segmentsCartesian) {
+        const diff = minAngleDiff180(s.azimuth, frontAngle);
+        const vecFromF = { x: s.mid.x - midFront.x, y: s.mid.y - midFront.y };
+        const pDepth = vecFromF.x * uInward.x + vecFromF.y * uInward.y;
+        const pLat = vecFromF.x * uRight.x + vecFromF.y * uRight.y;
+
+        let classification = "";
+
+        if (diff <= 45) { // Tolerância de até 45 graus define a família da face (Frente/Fundo)
+            if (pDepth < maxDepth * 0.35) { // Proximidade à frente determina se é Frente
+                classification = "frente";
+                sumFrente += s.length;
+            } else {
+                classification = "fundo";
+                sumFundo += s.length;
+            }
+        } else { // Laterais
+            if (pLat >= 0) {
+                classification = "ladoDireito";
+                sumDir += s.length;
+            } else {
+                classification = "ladoEsquerdo";
+                sumEsq += s.length;
+            }
         }
+
+        debugSegments.push({
+            p1: s.p1,
+            p2: s.p2,
+            length: s.length,
+            azimuth: s.azimuth,
+            classification,
+            projDepth: pDepth,
+            projLateral: pLat,
+            angleDiffToFront: diff
+        });
     }
 
-    let result = { 
-        frente: propFrente || sumFrente, 
-        fundo: propFundo || sumFundo, 
-        ladoDireito: propDir || sumDir, 
-        ladoEsquerdo: propEsq || sumEsq 
+    const result = {
+        frente: propFrente || sumFrente,
+        fundo: propFundo || sumFundo,
+        ladoDireito: propDir || sumDir,
+        ladoEsquerdo: propEsq || sumEsq
     };
 
-    // 5. Garantir preenchimentos lógicos (fallback para polígonos degenerados)
+    // Garantir preenchimentos lógicos (fallback para polígonos degenerados)
     if (result.frente === 0 && rawSegments.length > 0) {
         result.frente = frontRefSegment.length;
     }
@@ -339,16 +515,26 @@ export function calculateLotDimensionsAdvanced(coords: number[][], allPolys: num
     const finalFundo = normalizeDimensions(result.fundo, finalFrente);
     const finalDir = normalizeDimensions(result.ladoDireito, finalFrente * 2);
     const finalEsq = normalizeDimensions(result.ladoEsquerdo, finalDir);
-    
-    console.log("ALGORITMO GIS INTELIGENTE (Frentes e Fundos Compostos):");
-    console.log(`Ref Azimuth da rua: ${refAzimuth.toFixed(2)}° | Segmentos somados: ${rawSegments.length}`);
+
+    console.log("ALGORITMO GIS INTELIGENTE ROAD-ORIENTED:");
+    console.log(`Ref Azimuth da rua: ${frontAngle.toFixed(2)}° | Segmentos somados: ${rawSegments.length}`);
     console.log(`Frente: ${finalFrente} | Fundo: ${finalFundo} | Dir: ${finalDir} | Esq: ${finalEsq}`);
+
+    if (typeof window !== "undefined") {
+        (window as any)._lastLotDebug = {
+            centroid,
+            frontAngle,
+            maxDepth,
+            debugSegments
+        };
+    }
 
     return {
         frente: finalFrente,
         fundo: finalFundo,
         ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
+        ladoEsquerdo: finalEsq,
+        debugSegments // retornado para o mapa desenhar se debug ativo
     };
 }
 
