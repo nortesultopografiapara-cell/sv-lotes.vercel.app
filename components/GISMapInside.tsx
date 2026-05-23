@@ -233,7 +233,7 @@ export default function GISMapInside({
             fundo: lot.fundo,
             lado_direito: lot.lado_direito,
             lado_esquerdo: lot.lado_esquerdo
-          });
+          }, lot);
 
           return (
             <Polygon

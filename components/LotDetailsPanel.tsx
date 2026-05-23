@@ -27,21 +27,34 @@ export default function LotDetailsPanel({ lot, metrics }: LotDetailsPanelProps) 
     );
   }
 
+  const parseOfficialVal = (val: any): number | null => {
+    if (val === null || val === undefined) return null;
+    const str = String(val).trim();
+    if (str === "" || str.toLowerCase() === "null") return null;
+    const num = parseFloat(str.replace(",", "."));
+    return isNaN(num) ? null : num;
+  };
+
+  const dbFrenteOficial = parseOfficialVal(lot.frente_oficial);
+  const dbFundoOficial = parseOfficialVal(lot.fundo_oficial);
+  const dbDirOficial = parseOfficialVal(lot.dir_oficial);
+  const dbEsqOficial = parseOfficialVal(lot.esq_oficial);
+
   // Set default fallback if metrics was not compiled for selection
   const lotMetrics: CalibratedLotData = metrics || {
     raw: {
-      frente: lot.frente || 0,
-      fundo: lot.fundo || 0,
-      lado_direito: lot.lado_direito || 0,
-      lado_esquerdo: lot.lado_esquerdo || 0,
+      frente: dbFrenteOficial !== null ? dbFrenteOficial : (lot.frente || 0),
+      fundo: dbFundoOficial !== null ? dbFundoOficial : (lot.fundo || 0),
+      lado_direito: dbDirOficial !== null ? dbDirOficial : (lot.lado_direito || 0),
+      lado_esquerdo: dbEsqOficial !== null ? dbEsqOficial : (lot.lado_esquerdo || 0),
       area: lot.area || 0
     },
     calibrated: {
-      frente: calibrateDistance(lot.frente || 0),
-      fundo: calibrateDistance(lot.fundo || 0),
-      lado_direito: calibrateDistance(lot.lado_direito || 0),
-      lado_esquerdo: calibrateDistance(lot.lado_esquerdo || 0),
-      area: calibrateArea(lot.area || 0)
+      frente: dbFrenteOficial !== null ? dbFrenteOficial : calibrateDistance(lot.frente || 0),
+      fundo: dbFundoOficial !== null ? dbFundoOficial : calibrateDistance(lot.fundo || 0),
+      lado_direito: dbDirOficial !== null ? dbDirOficial : calibrateDistance(lot.lado_direito || 0),
+      lado_esquerdo: dbEsqOficial !== null ? dbEsqOficial : calibrateDistance(lot.lado_esquerdo || 0),
+      area: lot.area || 0
     }
   };
 

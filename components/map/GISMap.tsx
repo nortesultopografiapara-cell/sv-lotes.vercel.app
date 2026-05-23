@@ -1374,7 +1374,7 @@ export default function GISMap({
                   dimsFromGeo = calculateLotDimensions(
                     b.geometry.coordinates[0], 
                     allPolygons, 
-                    b.properties || {},
+                    b,
                     { streetGuides, lineStrings, projectId: b.project_id || projectId }
                   );
                 } catch(err) {
@@ -1390,19 +1390,25 @@ export default function GISMap({
                 customerId: b.customer_id || null,
                 number: b.number || "0",
                 status: b.status || "Disponível",
-                area:
-                  b.area !== null && b.area !== undefined ? calculateCorrectedArea(Number(b.area), b.project_id || projectId) : 0,
+                area: dimsFromGeo ? dimsFromGeo.area : (b.area !== null && b.area !== undefined ? Number(b.area) : 0),
                 price:
                   b.price !== null && b.price !== undefined
                     ? Number(b.price)
                     : 0,
                 geometryType: b.geometry?.type,
                 bounds,
-                frente: dimsFromGeo ? dimsFromGeo.frente : (b.frente || null),
-                fundo: dimsFromGeo ? dimsFromGeo.fundo : (b.fundo || null),
-                lado_direito: dimsFromGeo ? dimsFromGeo.ladoDireito : (b.lado_direito || null),
-                lado_esquerdo: dimsFromGeo ? dimsFromGeo.ladoEsquerdo : (b.lado_esquerdo || null),
+                frente: dimsFromGeo ? dimsFromGeo.frente : (b.frente_oficial || b.frente || null),
+                fundo: dimsFromGeo ? dimsFromGeo.fundo : (b.fundo_oficial || b.fundo || null),
+                lado_direito: dimsFromGeo ? (dimsFromGeo.ladoDireito ?? dimsFromGeo.lado_direito) : (b.dir_oficial || b.lado_direito || null),
+                lado_esquerdo: dimsFromGeo ? (dimsFromGeo.ladoEsquerdo ?? dimsFromGeo.lado_esquerdo) : (b.esq_oficial || b.lado_esquerdo || null),
                 debugSegments: dimsFromGeo ? dimsFromGeo.debugSegments : null,
+                frente_oficial: b.frente_oficial,
+                fundo_oficial: b.fundo_oficial,
+                dir_oficial: b.dir_oficial,
+                esq_oficial: b.esq_oficial,
+                lot_number: b.number || "0",
+                block_name: b.block_name || b.name || "?",
+                geometry: b.geometry,
               };
             })
             .filter((b) => b.bounds.length > 0);
