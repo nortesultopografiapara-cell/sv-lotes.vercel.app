@@ -20,7 +20,7 @@ import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { generateContractHTML } from "@/lib/contractTemplate";
-import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
+import { calculateLotDimensions, calculateCorrectedArea } from "@/utils/calculateLotDimensions";
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -1375,7 +1375,7 @@ export default function GISMap({
                     b.geometry.coordinates[0], 
                     allPolygons, 
                     b.properties || {},
-                    { streetGuides, lineStrings }
+                    { streetGuides, lineStrings, projectId: b.project_id || projectId }
                   );
                 } catch(err) {
                   console.error("Erro recálculo dimensões GISMap", err);
@@ -1391,7 +1391,7 @@ export default function GISMap({
                 number: b.number || "0",
                 status: b.status || "Disponível",
                 area:
-                  b.area !== null && b.area !== undefined ? Number(b.area) : 0,
+                  b.area !== null && b.area !== undefined ? calculateCorrectedArea(Number(b.area), b.project_id || projectId) : 0,
                 price:
                   b.price !== null && b.price !== undefined
                     ? Number(b.price)

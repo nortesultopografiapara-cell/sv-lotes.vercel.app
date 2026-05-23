@@ -7,6 +7,78 @@ export interface Segment {
     isExternal: boolean;
 }
 
+// In-memory registry of factors per project for caching and fallbacks
+const projectFactorsMap: Record<string, number> = {
+  '3a75ced0-a36c-448d-bfd7-0f80f5b84b65': 0.99711 // Default calibrated factor for Castanheira
+};
+
+/**
+ * Gets the current project's measurement factor.
+ * Defaults to 1.0 if not loaded or non-existent.
+ */
+export function getProjectMeasurementFactor(projectId?: string): number {
+  if (!projectId) return 1.0;
+  
+  if (projectFactorsMap[projectId] !== undefined) {
+    return projectFactorsMap[projectId];
+  }
+  
+  if (typeof window !== "undefined") {
+    try {
+      const persisted = window.localStorage.getItem(`gis_project_factor_${projectId}`);
+      if (persisted) {
+        const val = parseFloat(persisted);
+        if (!isNaN(val)) {
+          projectFactorsMap[projectId] = val;
+          console.log(`[GIS_PROJECT_MEASUREMENT_FACTOR_LOADED] Loaded factor ${val} for project ${projectId} from localStorage`);
+          return val;
+        }
+      }
+    } catch (e) {
+      console.error("Error reading project factor from localStorage", e);
+    }
+  }
+  
+  return 1.0;
+}
+
+/**
+ * Persists and updates the project measurement factor.
+ */
+export function applyProjectMeasurementFactor(value: number, projectId?: string): void {
+  if (!projectId) return;
+  projectFactorsMap[projectId] = value;
+  
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(`gis_project_factor_${projectId}`, value.toString());
+      console.log(`[GIS_PROJECT_MEASUREMENT_FACTOR_APPLIED] Set and persisted factor ${value} for project ${projectId}`);
+    } catch (e) {
+      console.error("Error persisting project factor to localStorage", e);
+    }
+  }
+}
+
+/**
+ * Scales distance using the project's measurement factor.
+ */
+export function calculateCorrectedDistance(rawDistance: number, projectId?: string): number {
+  const k = getProjectMeasurementFactor(projectId);
+  const corrected = rawDistance * k;
+  console.log(`[GIS_DISTANCE_CORRECTED] Raw distance: ${rawDistance} -> Corrected distance: ${corrected} using factor ${k}`);
+  return parseFloat(corrected.toFixed(2));
+}
+
+/**
+ * Scales area using the square of the project's measurement factor.
+ */
+export function calculateCorrectedArea(rawArea: number, projectId?: string): number {
+  const k = getProjectMeasurementFactor(projectId);
+  const corrected = rawArea * k * k;
+  console.log(`[GIS_AREA_CORRECTED] Raw area: ${rawArea} -> Corrected area: ${corrected} using factor ${k}`);
+  return parseFloat(corrected.toFixed(2));
+}
+
 /**
  * Calcula a distância geodésica (Haversine) entre dois pontos.
  */
@@ -52,8 +124,9 @@ function diffAngle(a1: number, a2: number): number {
 /**
  * 1. Extrair TODOS os segmentos ignorando irrelevantes
  */
-export function extractSegments(coords: number[][], allPolys: number[][][]): Segment[] {
-    const FATOR_CORRECAO = 0.9984089101034208;
+export function extractSegments(coords: number[][], allPolys: number[][][], projectId?: string): Segment[] {
+    const projectFactor = getProjectMeasurementFactor(projectId);
+    const FATOR_CORRECAO = 0.9984089101034208 * projectFactor;
     const segments: Segment[] = [];
     
     for (let i = 0; i < coords.length - 1; i++) {
@@ -236,7 +309,7 @@ export function calculateLotDimensions(
   coords: number[][], 
   allPolys: number[][][], 
   geomProps: any = {}, 
-  extra: { streetGuides?: any[]; lineStrings?: any[] } = {}
+  extra: { streetGuides?: any[]; lineStrings?: any[]; projectId?: string } = {}
 ) {
     return calculateLotDimensionsAdvanced(coords, allPolys, geomProps, extra);
 }
@@ -264,7 +337,7 @@ export function calculateLotDimensionsAdvanced(
   coords: number[][], 
   allPolys: number[][][], 
   geomProps: any = {}, 
-  extra: { streetGuides?: any[]; lineStrings?: any[] } = {}
+  extra: { streetGuides?: any[]; lineStrings?: any[]; projectId?: string } = {}
 ) {
     if (!coords || coords.length < 4) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
     
@@ -302,7 +375,7 @@ export function calculateLotDimensionsAdvanced(
     }
 
     // 2. Extrair TODOS os segmentos do polígono
-    const rawSegments = extractSegments(coords, allPolys);
+    const rawSegments = extractSegments(coords, allPolys, extra.projectId);
     if (rawSegments.length === 0) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
 
     // 3. Obter centroid dos lotes para cálculo em cartesiano local (metro)
