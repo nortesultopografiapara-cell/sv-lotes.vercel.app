@@ -1,20 +1,13 @@
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+let supabaseInstance: SupabaseClient | null = null;
 
-if (typeof window !== 'undefined') {
-  console.log('Verificação de Supabase URL:', supabaseUrl);
+export function getSupabase(): SupabaseClient {
+  if (supabaseInstance) return supabaseInstance;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+
+  supabaseInstance = createClient(url, anonKey);
+  return supabaseInstance;
 }
-
-export const isSupabaseConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-
-export const supabase = createBrowserClient(
-  supabaseUrl || 'https://mock.supabase.co', 
-  supabaseAnonKey || 'mock-key',
-  {
-    auth: {
-      lock: async (name, timeout, fn) => { return await fn(); }
-    }
-  }
-);

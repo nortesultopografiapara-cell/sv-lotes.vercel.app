@@ -1,21 +1,9 @@
-import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
-import { Sidebar } from '@/components/Layout';
+import React from 'react';
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-});
-
-export const metadata: Metadata = {
-  title: 'SV_LOTES | Gestão Imobiliária e GIS',
-  description: 'Plataforma completa de gestão imobiliária, loteamentos e GIS em tempo real.',
+export const metadata = {
+  title: 'SV_LOTES - GIS Digital Twin',
+  description: 'Sistema GIS calibrado para topografia e gestão de loteamentos.',
 };
 
 export default function RootLayout({
@@ -24,9 +12,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body suppressHydrationWarning>
-        <Sidebar>{children}</Sidebar>
+    <html lang="pt-BR">
+      <head>
+        {/* Leaflet CSS CDN to ensure correct map rendering */}
+        <link
+          rel="stylesheet"
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossOrigin=""
+        />
+      </head>
+      <body className="min-h-screen bg-slate-50 text-slate-900 selection:bg-brand-100 antialiased">
+        {children}
       </body>
     </html>
   );
