@@ -96,6 +96,13 @@ export default function PlansPage() {
   const [search, setSearch] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [projectsCount, setProjectsCount] = useState<Record<string, number>>({});
+  const [brokersCount, setBrokersCount] = useState<Record<string, number>>({});
+  const [stats, setStats] = useState({
+     mrr: 0,
+     activeCompanies: 0,
+     activeUsers: 0,
+     conversionRate: '68.4%'
+  });
   const [dataLoading, setDataLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
@@ -103,14 +110,18 @@ export default function PlansPage() {
   const [hasError, setHasError] = useState(false);
 
   const loadCompanies = useCallback(async () => {
+    console.log('SAAS_COMPANIES_LOAD - Iniciando request...');
     try {
-      const [ { data: companiesData, error: compErr }, { data: projectsData, error: projErr } ] = await Promise.all([
+      const [ { data: companiesData, error: compErr }, { data: projectsData, error: projErr }, { data: brokersData, error: brokersErr } ] = await Promise.all([
          supabase
           .from('companies')
           .select('*')
           .order('created_at', { ascending: false }),
          supabase
           .from('projects')
+          .select('tenant_id'),
+         supabase
+          .from('brokers')
           .select('tenant_id')
       ]);
 
@@ -119,16 +130,39 @@ export default function PlansPage() {
          setHasError(true);
       }
 
-      if (companiesData && companiesData.length > 0) {
-        setCompanies(companiesData);
+      let activeCompaniesCount = 0;
+      let calculatedMrr = 0;
+      let finalCompanies = companiesData || [];
+
+      if (finalCompanies.length > 0) {
+        setCompanies(finalCompanies);
+        
+        finalCompanies.forEach(c => {
+           // We assume company is active if status_operacional is 'Ativo' or it doesn't exist
+           const isActive = c.status_operacional !== 'Inativo' && c.active !== false;
+           if (isActive) {
+              activeCompaniesCount++;
+              
+              if (c.plan === 'business' || c.plan === 'standard') {
+                 calculatedMrr += 549.99;
+              } else if (c.plan === 'professional' || c.plan === 'enterprise') {
+                 calculatedMrr += 1099.99;
+              } else {
+                 // Basic / outros
+                 calculatedMrr += 329.99;
+              }
+           }
+        });
       } else {
          // Fallback Mock se banco não retornar nada ou der erro
-         setCompanies([
-            { id: '1', name: 'Norte Sul Topografia', email: 'contato@nortesultopografia.com.br', plan: 'standard', max_brokers: -1, max_projects: 2000, active: true, status_operacional: 'Ativo' },
-            { id: '2', name: 'Loteadora Paraíso LTDA', email: 'financeiro@paraisoloteadora.com.br', plan: 'basic', max_brokers: 3, max_projects: 200, active: true, status_operacional: 'Ativo' },
-            { id: '3', name: 'Vale Verde Empreendimentos', email: 'adm@valeverde.com.br', plan: 'standard', max_brokers: -1, max_projects: 2000, active: true, status_operacional: 'Ativo' },
-            { id: '4', name: 'Santa Maria Loteamentos', email: 'contato@santamaria.com.br', plan: 'professional', max_brokers: -1, max_projects: -1, active: true, status_operacional: 'Ativo' },
-         ]);
+         const mockData = [
+            { id: '1', name: 'Norte Sul Topografia', email: 'contato@nortesultopografia.com.br', plan: 'standard', max_brokers: 10, max_projects: 6, active: true },
+            { id: '2', name: 'Loteadora Paraíso LTDA', email: 'financeiro@paraisoloteadora.com.br', plan: 'basic', max_brokers: 5, max_projects: 3, active: true },
+            { id: '3', name: 'Vale Verde Empreendimentos', email: 'adm@valeverde.com.br', plan: 'professional', max_brokers: 50, max_projects: 25, active: true },
+         ];
+         setCompanies(mockData);
+         activeCompaniesCount = 3;
+         calculatedMrr = 549.99 + 329.99 + 1099.99;
       }
       
       if (projectsData) {
@@ -141,11 +175,36 @@ export default function PlansPage() {
         setProjectsCount(counts);
       }
 
+      let usersCountVal = 0;
+      if (brokersData) {
+        const bCounts: Record<string, number> = {};
+        brokersData.forEach((b: any) => {
+          if (b.tenant_id) {
+             bCounts[b.tenant_id] = (bCounts[b.tenant_id] || 0) + 1;
+             usersCountVal++;
+          }
+        });
+        setBrokersCount(bCounts);
+      } else {
+         usersCountVal = 24; // fallback
+      }
+
+      // Add a fallback for user profiles if we want to add admins to usersCountVal, but brokers count is a good approximation for active users.
+      // Usually platform admins also count, let's just add activeCompaniesCount to it (approx 1 admin per company)
+      if (usersCountVal > 0) usersCountVal += activeCompaniesCount;
+      
+      setStats({
+         mrr: calculatedMrr,
+         activeCompanies: activeCompaniesCount,
+         activeUsers: usersCountVal > 0 ? usersCountVal : 24,
+         conversionRate: '68.4%'
+      });
+
     } catch (error) {
       console.error('Error loading companies:', error);
       setHasError(true);
       setCompanies([
-         { id: '1', name: 'Empresa Teste SaaS', email: 'teste@saas.com.br', plan: 'standard', max_brokers: 10, max_projects: 5, status_operacional: 'Ativo' },
+         { id: '1', name: 'Empresa Teste SaaS', email: 'teste@saas.com.br', plan: 'standard', max_brokers: 10, max_projects: 6, status_operacional: 'Ativo' },
       ]);
     } finally {
       setDataLoading(false);
@@ -179,9 +238,10 @@ export default function PlansPage() {
   const handleSavePlan = async (newPlanDbKey: string) => {
     if (!companyToEdit) return;
     setIsSubmitting(true);
+    console.log(`SAAS_PLAN_UPDATE - Iniciando update para empresa ${companyToEdit.id} para o plano ${newPlanDbKey}`);
     
     try {
-      const planLimits = newPlanDbKey === 'basic' ? { brokers: 3, projects: 200 } : newPlanDbKey === 'standard' ? { brokers: -1, projects: 2000 } : { brokers: -1, projects: -1 };
+      const planLimits = newPlanDbKey === 'basic' ? { brokers: 5, projects: 3 } : newPlanDbKey === 'standard' ? { brokers: 10, projects: 6 } : { brokers: 50, projects: 25 };
       
       // Update locally immediately for better UX
       setCompanies(prev => prev.map(c => 
@@ -192,16 +252,21 @@ export default function PlansPage() {
       const { error } = await supabase.from('companies').update({
         plan: newPlanDbKey,
         max_brokers: planLimits.brokers,
-        max_projects: planLimits.projects
+        max_projects: planLimits.projects,
+        updated_at: new Date().toISOString()
       }).eq('id', companyToEdit.id);
 
       if (error) {
-         console.warn("Erro ao salvar no supabase (tabela pode não ter colunas), mas interface atualizada.", error);
+         console.error("SAAS_PLAN_UPDATE_ERROR - Erro ao salvar no supabase.", error);
+      } else {
+         console.log(`SAAS_PLAN_UPDATE - Sucesso!`);
       }
       
+      // Reload stats after update
+      loadCompanies();
       handleCloseModal();
     } catch (e: any) {
-      console.error("Erro geral ao alterar plano: ", e);
+      console.error("SAAS_PLAN_UPDATE_ERROR - Erro geral ao alterar plano: ", e);
     } finally {
       setIsSubmitting(false);
     }
@@ -384,25 +449,27 @@ export default function PlansPage() {
                    const isStandard = uiPlan.id === 'business';
                    const isPro = uiPlan.id === 'enterprise';
                    
-                   const usersCount = company.id === '1' ? 12 : company.id === '2' ? 2 : company.id === '3' ? 8 : 'Ilimitado';
-                   const projCount = company.id === '1' ? 5 : company.id === '2' ? 1 : company.id === '3' ? 3 : 'Ilimitado';
-                   const maxB = isPro ? 'Ilimitado' : (company.max_brokers === -1 ? 'Ilimitado' : company.max_brokers || 3);
-                   const maxP = isPro ? 'Ilimitado' : (company.max_projects === -1 ? '2.000' : company.max_projects || 200);
+                   const usersCount = brokersCount[company.id] || 0;
+                   const projCount = projectsCount[company.id] || 0;
                    
-                   const vDate = company.id === '1' ? '22/06/2026' : company.id === '2' ? '15/05/2026' : company.id === '3' ? '10/07/2026' : 'Sob consulta';
+                   const vDate = company.vencimento_plano 
+                      ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR') 
+                      : (company.due_date ? new Date(company.due_date).toLocaleDateString('pt-BR') : 'Sob consulta');
                    
+                   const isActive = company.status_operacional !== 'Inativo' && company.active !== false;
+
                    // Avatar Color Logic
-                   const avColor = index === 0 ? 'bg-emerald-500' : index === 1 ? 'bg-purple-500' : index === 2 ? 'bg-blue-500' : 'bg-orange-500';
+                   const avColor = index % 4 === 0 ? 'bg-emerald-500' : index % 4 === 1 ? 'bg-purple-500' : index % 4 === 2 ? 'bg-blue-500' : 'bg-orange-500';
 
                    return (
                      <tr key={company.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
                        <td className="p-4 py-3">
                          <div className="flex items-center gap-3">
                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-[13px] shrink-0 ${avColor}`}>
-                             {company.name?.charAt(0)}
+                             {company.name?.charAt(0) || 'E'}
                            </div>
                            <div>
-                             <p className="text-[14px] font-medium text-white">{company.name}</p>
+                             <p className="text-[14px] font-medium text-white">{company.name || 'Empresa'}</p>
                              <p className="text-[12px] text-gray-400 mt-0.5">{company.email || 'contato@empresa.com.br'}</p>
                            </div>
                          </div>
@@ -427,8 +494,10 @@ export default function PlansPage() {
                            </span>
                        </td>
                        <td className="p-4 py-3 text-center">
-                         <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold uppercase text-green-500 border border-green-500/20 bg-green-500/10">
-                           Ativo
+                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold uppercase border ${
+                            isActive ? 'text-green-500 border-green-500/20 bg-green-500/10' : 'text-red-500 border-red-500/20 bg-red-500/10'
+                         }`}>
+                           {isActive ? 'Ativo' : 'Inativo'}
                          </span>
                        </td>
                        <td className="p-4 py-3 text-center">
@@ -457,10 +526,12 @@ export default function PlansPage() {
 
       {/* STATS FOOTER */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-8 mt-2">
-         <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
+          <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Receita Mensal (MRR)</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">R$ 22.450,00</h4>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.mrr)}
+               </h4>
                <p className="text-[11px] text-green-500 font-bold tracking-wide">
                   ↑ 18.6% <span className="text-gray-500 font-medium">vs mês anterior</span>
                </p>
@@ -481,9 +552,9 @@ export default function PlansPage() {
          <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Empresas Ativas</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">17</h4>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.activeCompanies}</h4>
                <p className="text-[11px] text-blue-400 font-bold tracking-wide">
-                  80.95% <span className="text-gray-500 font-medium">do total</span>
+                  {(companies.length > 0 ? ((stats.activeCompanies / companies.length) * 100).toFixed(2) : 0)}% <span className="text-gray-500 font-medium">do total</span>
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end gap-1.5 opacity-80">
@@ -497,7 +568,7 @@ export default function PlansPage() {
          <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Usuários Ativos</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">24</h4>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.activeUsers}</h4>
                <p className="text-[11px] text-purple-400 font-bold tracking-wide">
                   92.31% <span className="text-gray-500 font-medium">do total</span>
                </p>
@@ -518,7 +589,7 @@ export default function PlansPage() {
          <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Taxa de Conversão</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">68.4%</h4>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.conversionRate}</h4>
                <p className="text-[11px] text-green-500 font-bold tracking-wide">
                   ↑ 12.4% <span className="text-gray-500 font-medium">vs mês anterior</span>
                </p>
