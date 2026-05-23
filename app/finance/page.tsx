@@ -2020,54 +2020,54 @@ export default function FinancePage() {
             CONTRATOS, TÍTULOS E INADIMPLÊNCIA
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center mt-4 md:mt-0">
+        <div className="flex flex-wrap gap-2 items-center mt-4 md:mt-0 w-full md:w-auto">
           
-          <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100">
+          <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Trash2 className="w-4 h-4" />
-            Limpar testes
+            Limpar
           </button>
           
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportResumidoPDF} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportResumidoPDF} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4 text-[#e74c3c]" />
-            PDF Resumido
+            PDF Res.
           </button>
-          <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4 text-[#27ae60]" />
-            Excel Resumido
+            Excel Res.
           </button>
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm">
+          <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm w-full md:w-auto">
             <PieChart className="w-4 h-4" />
             Fluxo por Empreendimento
           </button>
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={() => setShowSaidaModal(true)} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm">
+          <button onClick={() => setShowSaidaModal(true)} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
             <TrendingDown className="w-4 h-4" />
             Registrar Saída
           </button>
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4" />
-            PDF Completo
+            PDF Compl.
           </button>
-          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm">
+          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4" />
-            Excel Completo
+            Excel Compl.
           </button>
         </div>
       </header>
 
       {/* CAIXA CARDS */}
       <h2 className="text-xl font-bold text-white mb-4">Controle de Caixa Geral</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
         <StatCard 
             title="Entradas (Total)" 
             value={formatCurrency(stats.entradasCaixa)} 
@@ -2096,7 +2096,7 @@ export default function FinancePage() {
 
       <h2 className="text-xl font-bold text-white mb-4">Métricas de Parcelas</h2>
       {/* STATS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
         <StatCard 
             title="Recebido no mês" 
             value={formatCurrency(stats.recebidoMes)} 
@@ -2769,7 +2769,7 @@ function StatCard({ title, value, subtitle, subtitleColor, icon, iconBg, iconCol
         </div>
         <div className="flex flex-col min-w-0">
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 truncate">{title}</p>
-          <h3 className="text-lg lg:text-xl font-bold text-white leading-none mb-1.5 truncate">{loading ? '-' : value}</h3>
+          <h3 className="text-lg lg:text-xl font-bold text-white leading-tight mb-1.5 break-words">{loading ? '-' : value}</h3>
           <p className={`text-[10px] font-medium leading-none truncate ${subtitleColor}`}>{subtitle}</p>
         </div>
       </div>

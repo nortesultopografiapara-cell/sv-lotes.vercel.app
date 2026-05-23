@@ -257,8 +257,8 @@ function OperationalDashboard({ user }: { user: any }) {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#0a0d14] relative">
-      <div className="p-4 md:p-8 pb-32">
+    <div className="flex-1 overflow-y-auto bg-[#0a0d14] relative flex flex-col">
+      <div className="p-4 md:p-8 flex-1">
         {/* Header Superior */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 border-b border-white/5 pb-6">
            <div className="flex flex-col gap-2 relative z-10">
@@ -335,7 +335,7 @@ function OperationalDashboard({ user }: { user: any }) {
         </div>
 
         {/* Cards Financeiros */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
            <FinancialCard 
               title="Recebimentos do Mês" 
               value={stats.recebimentos_mes} 
@@ -381,7 +381,7 @@ function OperationalDashboard({ user }: { user: any }) {
 
         {/* Mapa e Atividades */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8">
-          <div className={`xl:col-span-3 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden shadow-2xl flex flex-col transition-all duration-500 ease-in-out ${mapExpanded ? 'fixed inset-4 z-[9999]' : 'h-[500px] relative'}`}>
+          <div className={`xl:col-span-3 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden shadow-2xl flex flex-col transition-all duration-500 ease-in-out ${mapExpanded ? 'fixed inset-4 z-[9999]' : 'h-[320px] md:h-[420px] xl:h-[520px] relative'}`}>
             <div className="p-4 flex justify-between items-center bg-[#151a23] border-b border-white/5">
               <h2 className="text-[16px] font-semibold text-white tracking-wide">Mapa do Empreendimento</h2>
               <div className="flex gap-2">
@@ -436,7 +436,7 @@ function OperationalDashboard({ user }: { user: any }) {
             </div>
           </div>
 
-          <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col h-[500px]">
+          <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col h-[320px] md:h-[420px] xl:h-[520px]">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
               <h2 className="text-[16px] font-semibold text-white tracking-wide">Atividades Recentes</h2>
               <Link href="/" className="text-sm font-medium text-[#2563eb] hover:text-[#60a5fa] transition-colors">
@@ -615,7 +615,7 @@ function OperationalDashboard({ user }: { user: any }) {
       </div>
 
       {/* Footer Profissional */}
-      <footer className="absolute bottom-0 w-full bg-[#11161d]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
+      <footer className="w-full mt-auto bg-[#11161d]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
          <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
             <div>
                <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-gray-500 font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
@@ -644,10 +644,10 @@ function TopCard({ title, value, total, icon: Icon, color, loading, isCurrency, 
       <div className="flex items-start justify-between">
         <div className="flex flex-col">
           <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider mb-2">{title}</p>
-          <h3 className="text-3xl md:text-4xl font-bold text-white tracking-tight tabular-nums">
+          <h3 className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums break-words">
              {loading ? '-' : (
                 isCurrency ? (
-                   <span className="text-2xl">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}</span>
+                   <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}</span>
                 ) : (
                    <CountUp end={value} duration={1.5} />
                 )
@@ -683,7 +683,7 @@ function FinancialCard({ title, value, icon: Icon, color, loading, trend, subtit
           </div>
           <div className="flex flex-col min-w-0">
              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate mb-1">{title}</p>
-             <h4 className="text-[17px] font-bold tracking-tight text-white truncate mb-1">
+             <h4 className="text-[15px] xl:text-[17px] font-bold tracking-tight text-white mb-1 break-words">
                 {loading ? <span className="opacity-0">0</span> : (
                    isPercent ? `${value.toFixed(2)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
                 )}
