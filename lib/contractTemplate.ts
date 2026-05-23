@@ -371,27 +371,27 @@ export function generateContractHTML({
                 </div>
             </div>
 
-            <div style="page-break-inside: avoid; margin-top: 10px; text-align: center;">
-                <div style="margin-bottom: 25px;">
+            <div style="page-break-inside: avoid; margin-top: 40px; text-align: center;">
+                <div style="margin-bottom: 65px;">
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
                 </div>
 
-                <div style="margin-bottom: 30px;">
+                <div style="margin-bottom: 65px;">
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
                 </div>
 
-                <div style="margin-bottom: 25px; padding-top: 10px;">
+                <div style="margin-bottom: 65px;">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 1</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
 
-                <div style="margin-bottom: 10px; padding-top: 10px;">
+                <div style="margin-bottom: 20px;">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 2</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
