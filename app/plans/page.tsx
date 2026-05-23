@@ -16,71 +16,70 @@ const PLANS_UI = {
   starter: {
     id: 'starter',
     dbKey: 'basic',
-    name: 'STARTER',
-    desc: 'Para loteadoras pequenas',
-    price: 'R$ 497',
-    cents: ',00',
+    name: 'BÁSICO',
+    desc: 'Para loteadoras iniciantes',
+    price: 'R$ 329',
+    cents: ',99',
     period: ' /mês',
     theme: 'green',
     icon: Rocket,
+    projectsLimit: 3,
+    brokersLimit: 5,
     features: [
-      'Até 200 lotes',
-      '3 usuários',
       'Mapa GIS Interativo',
       'Contratos Automáticos',
-      'Financeiro Básico',
-      'Relatórios Padrão',
-      'Suporte Padrão'
+      'Controle Financeiro',
+      'Comissão de Corretores',
+      'Relatórios Avançados',
+      'Dashboard Executivo'
     ],
-    buttonText: 'Ver detalhes',
+    buttonText: 'Escolher Básico',
     popular: false
   },
   business: {
     id: 'business',
     dbKey: 'standard',
     name: 'BUSINESS',
-    desc: 'Ideal para loteadoras em crescimento',
-    price: 'R$ 997',
-    cents: ',00',
+    desc: 'Para loteadoras em crescimento',
+    price: 'R$ 549',
+    cents: ',99',
     period: ' /mês',
-    theme: 'orange',
+    theme: 'blue',
     icon: TrendingUp,
+    projectsLimit: 6,
+    brokersLimit: 10,
     features: [
-      'Até 2.000 lotes',
-      'Usuários ilimitados',
-      'CRM de Vendas',
-      'Reservas Online',
+      'Mapa GIS Interativo',
       'Contratos Automáticos',
+      'Controle Financeiro',
       'Comissão de Corretores',
       'Relatórios Avançados',
-      'Dashboard Executivo',
-      'Financeiro Completo',
-      'Suporte Prioritário'
+      'Dashboard Executivo'
     ],
-    buttonText: 'Ver detalhes',
+    buttonText: 'Escolher Business',
     popular: true
   },
   enterprise: {
     id: 'enterprise',
     dbKey: 'professional',
-    name: 'ENTERPRISE',
-    desc: 'Loteadoras grandes',
-    price: 'Sob consulta',
-    cents: '',
-    period: '',
+    name: 'PROFISSIONAL',
+    desc: 'Para loteadoras grandes',
+    price: 'R$ 1.099',
+    cents: ',99',
+    period: ' /mês',
     theme: 'purple',
     icon: Diamond,
+    projectsLimit: 25,
+    brokersLimit: 50,
     features: [
-      'Lotes ilimitados',
-      'Multiempresa',
-      'App Cliente',
-      'Integrações (API)',
-      'Automação WhatsApp',
-      'Servidores Dedicados',
-      'Implantação Personalizada',
-      'Suporte Premium 24/7'
+      'Mapa GIS Interativo',
+      'Contratos Automáticos',
+      'Controle Financeiro',
+      'Comissão de Corretores',
+      'Relatórios Avançados',
+      'Dashboard Executivo'
     ],
-    buttonText: 'Fale com um especialista',
+    buttonText: 'Escolher Profissional',
     popular: false
   }
 };
@@ -226,26 +225,36 @@ export default function PlansPage() {
 
   const getThemeVars = (theme: string) => {
      switch (theme) {
-        case 'green': return { text: 'text-[#22c55e]', border: 'border-[#22c55e]/30', bg: 'bg-[#22c55e]/10', icon: 'text-[#22c55e]', hoverBorder: 'hover:border-[#22c55e]/60' };
-        case 'orange': return { text: 'text-[#f97316]', border: 'border-[#f97316]/50', bg: 'bg-[#f97316]/10', icon: 'text-[#f97316]', hoverBorder: 'hover:border-[#f97316] shadow-[0_0_15px_rgba(249,115,22,0.15)]' };
-        case 'purple': return { text: 'text-[#a855f7]', border: 'border-[#a855f7]/30', bg: 'bg-[#a855f7]/10', icon: 'text-[#a855f7]', hoverBorder: 'hover:border-[#a855f7]/60' };
-        default: return { text: 'text-gray-400', border: 'border-white/10', bg: 'bg-white/5', icon: 'text-gray-400', hoverBorder: 'hover:border-white/20' };
+        case 'green': return { text: 'text-[#22c55e]', border: 'border-[#22c55e]/30', bg: 'bg-[#22c55e]/10', icon: 'text-[#22c55e]', hoverBorder: 'hover:border-[#22c55e] hover:shadow-[0_0_30px_rgba(34,197,94,0.15)]', buttonBg: 'bg-[#22c55e]', badgeBg: 'bg-[#22c55e]' };
+        case 'blue': return { text: 'text-[#3b82f6]', border: 'border-[#3b82f6]/50', bg: 'bg-[#3b82f6]/10', icon: 'text-[#3b82f6]', hoverBorder: 'hover:border-[#3b82f6] hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]', buttonBg: 'bg-[#3b82f6]', badgeBg: 'bg-[#3b82f6]' };
+        case 'purple': return { text: 'text-[#a855f7]', border: 'border-[#a855f7]/30', bg: 'bg-[#a855f7]/10', icon: 'text-[#a855f7]', hoverBorder: 'hover:border-[#a855f7] hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]', buttonBg: 'bg-[#a855f7]', badgeBg: 'bg-[#a855f7]' };
+        default: return { text: 'text-gray-400', border: 'border-white/10', bg: 'bg-white/5', icon: 'text-gray-400', hoverBorder: 'hover:border-white/20', buttonBg: 'bg-gray-500', badgeBg: 'bg-gray-500' };
      }
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0B0E14] min-h-full font-sans text-gray-200">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
         <div>
           <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">
             Planos & Assinaturas
           </h1>
-          <p className="text-gray-400 mt-1 text-[14px]">Gerencie os planos disponíveis e visualize as assinaturas das empresas da plataforma.</p>
+          <p className="text-gray-400 mt-1 text-[14px]">Gerencie seus planos e visualize as assinaturas das empresas da plataforma.</p>
         </div>
-        <div className="flex items-center gap-3">
-           <button className="bg-[#f97316] hover:bg-[#ea580c] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
-              <span className="text-lg leading-none mt-[-2px]">+</span> Novo Plano
-           </button>
+        <div className="flex flex-col gap-4">
+           <div className="flex items-center gap-3 justify-end">
+             <button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_rgba(37,99,235,0.6)]">
+                <span className="text-lg leading-none mt-[-2px]">+</span> Novo Plano
+             </button>
+           </div>
+           {/* Seletor Visão Planto/Assinaturas */}
+           <div className="flex items-center justify-end gap-2 text-sm text-gray-400">
+              <span>Visão:</span>
+              <div className="flex items-center bg-[#11161d] rounded-lg border border-white/10 p-0.5">
+                 <button className="bg-[#1e3a8a]/40 text-[#60a5fa] px-4 py-1.5 rounded-md font-semibold text-xs border border-[#3b82f6]/30">Planos</button>
+                 <button className="text-gray-400 px-4 py-1.5 rounded-md font-medium text-xs hover:text-white transition-colors">Assinaturas</button>
+              </div>
+           </div>
         </div>
       </div>
 
@@ -263,50 +272,66 @@ export default function PlansPage() {
             const Icon = plan.icon;
             
             return (
-               <div key={plan.id} className={`relative flex flex-col p-8 rounded-[20px] transition-all duration-300 ${plan.popular ? `border-[1.5px] border-[#f97316] bg-[#11161d]/80 ${theme.hoverBorder}` : `border border-white/5 bg-[#11161d] hover:bg-[#131923] ${theme.hoverBorder}`}`}>
+               <div key={plan.id} className={`relative flex flex-col p-8 rounded-[20px] transition-all duration-300 ${plan.popular ? `border-[1.5px] border-[#3b82f6] shadow-[0_0_20px_rgba(59,130,246,0.1)] bg-[#0B0E14] ${theme.hoverBorder}` : `border border-white/5 bg-[#0B0E14] hover:bg-[#0d1219] ${theme.hoverBorder}`}`}>
                   {plan.popular && (
-                     <div className="absolute -top-[14px] left-1/2 -translate-x-1/2 bg-[#f97316] text-white text-[10px] font-bold px-4 py-1.5 rounded-md uppercase tracking-wider shadow-lg flex items-center gap-1.5">
+                     <div className={`absolute -top-[14px] left-1/2 -translate-x-1/2 ${theme.badgeBg} text-white text-[10px] font-bold px-4 py-1.5 rounded-md uppercase tracking-wider shadow-[0_0_15px_rgba(59,130,246,0.5)] flex items-center gap-1.5`}>
                         <Star className="w-3 h-3 fill-current" /> MAIS VENDIDO
                      </div>
                   )}
                   
                   <div className="flex items-center justify-between mb-2">
-                     <div>
-                        <h3 className={`text-[20px] font-bold uppercase tracking-wide ${theme.text}`}>
+                     <div className="flex-1 flex flex-col items-center">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                           <Icon className={`w-8 h-8 stroke-[1.5px] ${theme.text} drop-shadow-[0_0_8px_currentColor]`} />
+                        </div>
+                        <h3 className={`text-[22px] font-bold uppercase tracking-wide ${theme.text}`}>
                            {plan.name}
                         </h3>
                         <p className="text-[13px] text-gray-400 mt-1">{plan.desc}</p>
                      </div>
-                     <div className={`w-12 h-12 rounded-full flex items-center justify-center border ${theme.border} ${theme.bg}`}>
-                        <Icon className={`w-6 h-6 stroke-[1.5px] ${theme.icon}`} />
+                  </div>
+                  
+                  <div className="mt-4 mb-6 flex items-baseline justify-center gap-1">
+                     <span className={`text-[36px] font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]`}>{plan.price}</span>
+                     {plan.cents && <span className="text-xl font-bold text-gray-300">{plan.cents}</span>}
+                     {plan.period && <span className="text-[13px] text-gray-400 ml-1">{plan.period}</span>}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-6 bg-[#11161d] p-3 rounded-xl border border-white/5">
+                     <div className="flex flex-col items-center justify-center border-r border-white/5">
+                        <div className="flex items-center gap-2 mb-1">
+                           <MapIcon className={`w-4 h-4 ${theme.text}`} />
+                           <span className="text-xl font-bold text-white">{plan.projectsLimit}</span>
+                        </div>
+                        <span className="text-[11px] text-gray-400 font-medium">Loteamentos</span>
+                     </div>
+                     <div className="flex flex-col items-center justify-center">
+                        <div className="flex items-center gap-2 mb-1">
+                           <UsersIcon className={`w-4 h-4 ${theme.text}`} />
+                           <span className="text-xl font-bold text-white">{plan.brokersLimit}</span>
+                        </div>
+                        <span className="text-[11px] text-gray-400 font-medium">Corretores</span>
                      </div>
                   </div>
                   
-                  <div className="mt-4 mb-6 flex items-baseline gap-1">
-                     <span className={`text-[32px] font-bold ${plan.id === 'enterprise' ? theme.text : 'text-white'}`}>{plan.price}</span>
-                     {plan.cents && <span className="text-lg font-bold text-gray-300">{plan.cents}</span>}
-                     {plan.period && <span className="text-[13px] text-gray-400 ml-1">{plan.period}</span>}
-                  </div>
-                  
-                  <div className="space-y-[14px] mb-8 flex-1">
+                  <div className="space-y-0 grid grid-cols-2 gap-x-2 gap-y-3 mb-8 flex-1">
                      {plan.features.map((feature, i) => (
-                        <div key={i} className="flex items-start gap-3">
-                           <div className={`mt-0.5 rounded-sm p-0.5 ${plan.popular ? 'bg-[#f97316]/20' : 'bg-green-500/10'}`}>
-                              <Check className={`w-3.5 h-3.5 ${plan.popular ? 'text-[#f97316]' : 'text-green-500'}`} />
+                        <div key={i} className="flex items-center gap-2 bg-[#11161d] py-1.5 px-2 rounded-md border border-white/5">
+                           <div className={`rounded-full p-0.5 ${theme.bg}`}>
+                              <Check className={`w-3 h-3 ${theme.text}`} />
                            </div>
-                           <span className="text-[14px] text-gray-300">{feature}</span>
+                           <span className="text-[11px] text-gray-300 leading-tight">{feature}</span>
                         </div>
                      ))}
                   </div>
 
-                  <button className={`w-full py-3 rounded-lg text-[14px] font-semibold transition-all border ${
+                  <button className={`w-full py-3.5 rounded-xl text-[14px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
                      plan.popular 
-                     ? 'border-[#f97316] text-[#f97316] hover:bg-[#f97316] hover:text-white' 
-                     : plan.id === 'enterprise' 
-                        ? 'border-[#a855f7]/50 text-[#a855f7] hover:bg-[#a855f7]/10'
-                        : 'border-green-500/50 text-green-500 hover:bg-green-500/10'
+                     ? 'bg-[#2563eb] hover:bg-[#1d4ed8] text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)]' 
+                     : `bg-[#11161d] border border-white/10 ${theme.text} hover:${theme.bg} hover:border-[currentColor]`
                   }`}>
                      {plan.buttonText}
+                     <ArrowRightLeft className="w-4 h-4 ml-1 opacity-70" />
                   </button>
                </div>
             )
@@ -320,7 +345,7 @@ export default function PlansPage() {
       </div>
 
       <div className="bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden">
-        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-end">
+        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-end bg-[#0B0E14] rounded-t-2xl">
             <div className="relative w-full sm:w-[320px]">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
               <input 
@@ -328,7 +353,7 @@ export default function PlansPage() {
                 placeholder="Buscar empresa..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-[#0B0E14] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[#f97316]/50 text-sm"
+                className="w-full bg-[#070b14] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[#3b82f6]/50 text-sm shadow-inner"
               />
             </div>
             <button className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-sm hover:bg-white/5 transition-colors">
@@ -342,13 +367,13 @@ export default function PlansPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
              <thead>
-                <tr className="bg-[#131923] border-b border-white/5">
+                <tr className="bg-[#11161d] border-b border-white/5 border-t">
                    <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium">Plano Atual</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Corretores</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Projetos</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Vencimento</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Loteamentos</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Corretores</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Vencimento</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-right">Ações</th>
                 </tr>
              </thead>
@@ -384,40 +409,40 @@ export default function PlansPage() {
                        </td>
                        <td className="p-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
-                             isPro ? 'bg-[#a855f7]/10 text-[#a855f7] border-[#a855f7]/20' : 
-                             isStandard ? 'bg-[#f97316]/10 text-[#f97316] border-[#f97316]/20' : 
-                             'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/20'
+                             isPro ? 'bg-[#a855f7]/10 text-[#a855f7] border-[#a855f7]/20 drop-shadow-[0_0_8px_rgba(168,85,247,0.3)]' : 
+                             isStandard ? 'bg-[#3b82f6]/10 text-[#3b82f6] border-[#3b82f6]/20 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 
+                             'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/20 drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]'
                           }`}>
                             {uiPlan.name}
                           </span>
                        </td>
-                       <td className="p-4 py-3">
+                       <td className="p-4 py-3 text-center">
                            <span className="text-[13px] text-gray-300">
-                                {usersCount} <span className="text-gray-500">/ {maxB}</span>
+                                {projCount} <span className="text-gray-500">/ {uiPlan.projectsLimit}</span>
                            </span>
                        </td>
-                       <td className="p-4 py-3">
+                       <td className="p-4 py-3 text-center">
                            <span className="text-[13px] text-gray-300">
-                                {projCount} <span className="text-gray-500">/ {maxP}</span>
+                                {usersCount} <span className="text-gray-500">/ {uiPlan.brokersLimit}</span>
                            </span>
                        </td>
-                       <td className="p-4 py-3">
-                         <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[12px] font-medium text-green-400 border border-green-500/20 bg-green-500/10">
+                       <td className="p-4 py-3 text-center">
+                         <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold uppercase text-green-500 border border-green-500/20 bg-green-500/10">
                            Ativo
                          </span>
                        </td>
-                       <td className="p-4 py-3">
-                          <span className="text-[13px] text-gray-300">{vDate}</span>
+                       <td className="p-4 py-3 text-center">
+                          <span className="text-[12px] font-medium text-gray-300">{vDate}</span>
                        </td>
                        <td className="p-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
-                             <button onClick={() => handleOpenPlanModal(company)} className="w-[30px] h-[30px] rounded-lg border border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors group">
-                                <Edit2 className="w-4 h-4 text-[#3b82f6] group-hover:text-blue-400" />
+                             <button onClick={() => handleOpenPlanModal(company)} className="w-[32px] h-[32px] rounded-lg border border-blue-500/20 flex items-center justify-center hover:bg-blue-500/10 transition-colors group">
+                                <Edit2 className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
                              </button>
-                             <button className="w-[30px] h-[30px] rounded-lg border border-[#f97316]/30 flex items-center justify-center hover:bg-[#f97316]/10 transition-colors group">
-                                <CreditCard className="w-4 h-4 text-[#f97316] group-hover:text-orange-400" />
+                             <button className="w-[32px] h-[32px] rounded-lg border border-yellow-500/20 flex items-center justify-center hover:bg-yellow-500/10 transition-colors group">
+                                <CreditCard className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
                              </button>
-                             <button className="w-[30px] h-[30px] rounded-lg border border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors text-gray-400">
+                             <button className="w-[32px] h-[32px] rounded-lg border border-gray-600/30 flex items-center justify-center hover:bg-white/5 transition-colors text-gray-400">
                                 <MoreVertical className="w-4 h-4" />
                              </button>
                           </div>
@@ -431,53 +456,84 @@ export default function PlansPage() {
       </div>
 
       {/* STATS FOOTER */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-8">
-         <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-center justify-between group hover:border-white/10 transition-colors">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-8 mt-2">
+         <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Receita Mensal (MRR)</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-1">R$ 22.450,00</h4>
-               <p className="text-[12px] text-green-500 font-medium tracking-wide">
-                  ↑ 18.6% <span className="text-gray-500">vs mês anterior</span>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">R$ 22.450,00</h4>
+               <p className="text-[11px] text-green-500 font-bold tracking-wide">
+                  ↑ 18.6% <span className="text-gray-500 font-medium">vs mês anterior</span>
                </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-green-500/10 border border-green-500/20 flex flex-col items-center justify-center">
-               <BarChart3 className="w-6 h-6 text-green-500" />
+            <div className="w-24 h-12 flex items-end justify-end">
+               <svg viewBox="0 0 100 30" className="w-full h-full overflow-visible">
+                  <path d="M0 30 C 20 20, 30 25, 40 10 C 60 20, 70 5, 100 0" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" className="drop-shadow-[0_0_5px_rgba(34,197,94,0.5)]" />
+                  <path d="M0 30 C 20 20, 30 25, 40 10 C 60 20, 70 5, 100 0 L 100 40 L 0 40 Z" fill="url(#grad-green)" opacity="0.2" />
+                  <defs>
+                     <linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#22c55e" />
+                        <stop offset="100%" stopColor="transparent" />
+                     </linearGradient>
+                  </defs>
+               </svg>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-center justify-between group hover:border-white/10 transition-colors">
+         <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Empresas Ativas</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-1">17</h4>
-               <p className="text-[12px] text-gray-400 font-medium tracking-wide">
-                  80.95% do total
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">17</h4>
+               <p className="text-[11px] text-blue-400 font-bold tracking-wide">
+                  80.95% <span className="text-gray-500 font-medium">do total</span>
                </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex flex-col items-center justify-center">
-               <Building2 className="w-6 h-6 text-blue-500" />
+            <div className="w-24 h-12 flex items-end justify-end gap-1.5 opacity-80">
+               <div className="w-2.5 bg-blue-500 rounded-t-sm" style={{height: '40%'}}></div>
+               <div className="w-2.5 bg-blue-500 rounded-t-sm" style={{height: '25%'}}></div>
+               <div className="w-2.5 bg-blue-500 rounded-t-sm shadow-[0_0_8px_rgba(59,130,246,0.6)]" style={{height: '80%'}}></div>
+               <div className="w-2.5 bg-blue-500 rounded-t-sm" style={{height: '50%'}}></div>
+               <div className="w-2.5 bg-blue-500 rounded-t-sm" style={{height: '65%'}}></div>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-center justify-between group hover:border-white/10 transition-colors">
+         <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Usuários Ativos</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-1">24</h4>
-               <p className="text-[12px] text-green-500 font-medium tracking-wide">
-                  92.31% <span className="text-gray-500">do total</span>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">24</h4>
+               <p className="text-[11px] text-purple-400 font-bold tracking-wide">
+                  92.31% <span className="text-gray-500 font-medium">do total</span>
                </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex flex-col items-center justify-center">
-               <UsersIcon className="w-6 h-6 text-purple-500" />
+            <div className="w-24 h-12 flex items-end justify-end">
+               <svg viewBox="0 0 100 30" className="w-full h-full overflow-visible">
+                  <path d="M0 20 C 20 30, 30 15, 40 25 C 60 5, 70 20, 100 2" fill="none" stroke="#a855f7" strokeWidth="2" strokeLinecap="round" className="drop-shadow-[0_0_5px_rgba(168,85,247,0.5)]" />
+                  <path d="M0 20 C 20 30, 30 15, 40 25 C 60 5, 70 20, 100 2 L 100 40 L 0 40 Z" fill="url(#grad-purple)" opacity="0.2" />
+                  <defs>
+                     <linearGradient id="grad-purple" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#a855f7" />
+                        <stop offset="100%" stopColor="transparent" />
+                     </linearGradient>
+                  </defs>
+               </svg>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-center justify-between group hover:border-white/10 transition-colors">
+         <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Taxa de Conversão</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-1">68.4%</h4>
-               <p className="text-[12px] text-green-500 font-medium tracking-wide">
-                  ↑ 12.4% <span className="text-gray-500">vs mês anterior</span>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">68.4%</h4>
+               <p className="text-[11px] text-green-500 font-bold tracking-wide">
+                  ↑ 12.4% <span className="text-gray-500 font-medium">vs mês anterior</span>
                </p>
             </div>
-            <div className="w-12 h-12 rounded-xl bg-[#f97316]/10 border border-[#f97316]/20 flex flex-col items-center justify-center">
-               <TrendingUpIcon className="w-6 h-6 text-[#f97316]" />
+            <div className="w-24 h-12 flex items-end justify-end">
+               <svg viewBox="0 0 100 30" className="w-full h-full overflow-visible">
+                  <path d="M0 25 C 20 25, 40 10, 60 20 C 80 5, 90 15, 100 5" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" className="drop-shadow-[0_0_5px_rgba(249,115,22,0.5)]" />
+                  <path d="M0 25 C 20 25, 40 10, 60 20 C 80 5, 90 15, 100 5 L 100 40 L 0 40 Z" fill="url(#grad-orange)" opacity="0.2" />
+                  <defs>
+                     <linearGradient id="grad-orange" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f97316" />
+                        <stop offset="100%" stopColor="transparent" />
+                     </linearGradient>
+                  </defs>
+               </svg>
             </div>
          </div>
       </div>
@@ -526,18 +582,18 @@ export default function PlansPage() {
                         key={plan.id}
                         onClick={() => !isSubmitting && handleSavePlan(plan.dbKey)}
                         className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all duration-200 group ${
-                          isSelected ? `bg-[#151a23] ${theme.border} ${theme.text} shadow-[0_0_20px_rgba(0,0,0,0.2)] relative overflow-hidden` : 'bg-[#11161d] border-white/5 hover:border-white/20'
+                          isSelected ? `bg-[#151a23] ${theme.border} shadow-[0_0_20px_rgba(0,0,0,0.2)] relative overflow-hidden` : 'bg-[#0B0E14] border-white/5 hover:border-white/20'
                         }`}
                      >
-                        {isSelected && <div className={`absolute left-0 top-0 bottom-0 w-1 ${theme.bg}`}></div>}
-                        <div className="pl-2">
+                        {isSelected && <div className={`absolute left-0 top-0 bottom-0 w-1 ${theme.bg.replace('/10', '')} shadow-[0_0_10px_currentColor] ${theme.text}`}></div>}
+                        <div className="pl-3">
                            <div className="flex items-center gap-2 mb-1">
                              <span className={`text-[14px] font-bold uppercase tracking-wider ${
                                isSelected ? theme.text : 'text-white'
                              }`}>
                                {plan.name}
                              </span>
-                             {isSelected && <span className={`text-[9px] ${theme.bg} ${theme.text} px-2 py-0.5 rounded uppercase font-bold tracking-widest`}>Ativo</span>}
+                             {isSelected && <span className={`text-[9px] ${theme.bg} ${theme.text} px-2 py-0.5 rounded uppercase font-bold tracking-widest border ${theme.border}`}>Ativo</span>}
                            </div>
                            <p className="text-xs text-gray-400 font-medium">
                              {plan.price} &bull; {plan.features[0]}
