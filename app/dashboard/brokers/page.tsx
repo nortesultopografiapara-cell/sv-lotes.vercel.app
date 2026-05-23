@@ -50,16 +50,17 @@ export default function CorretoresPage() {
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
 
-  const loadCorretores = useCallback(async () => {
+  const loadBrokers = useCallback(async () => {
     if (!user) return;
     try {
+      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+      
       let limit: number | null = 10;
       let pName = 'Standard';
-      if (user.tenant_id) {
-         const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
+      if (resolvedTenantId) {
+         const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', resolvedTenantId).maybeSingle();
          if (!error && companyData?.plan) {
             const plan = companyData.plan.toLowerCase();
-            
             console.log('BROKER_LIMITS_RESOLVED', plan);
             const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
               basic: { brokers: 5, projects: 3 },
@@ -67,10 +68,8 @@ export default function CorretoresPage() {
               professional: { brokers: Infinity, projects: Infinity },
               premium: { brokers: Infinity, projects: Infinity },
             };
-
             const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
             limit = mappedLimits.brokers === Infinity ? null : mappedLimits.brokers;
-            
             pName = plan === 'premium' ? 'Premium' : 
                     plan === 'professional' ? 'Profissional' : 
                     plan === 'standard' ? 'Standard' : 
@@ -80,82 +79,73 @@ export default function CorretoresPage() {
       setBrokerLimit(limit);
       setCompanyPlan(pName);
 
-      let query = supabase.from('brokers').select(`*`).order('created_at', { ascending: false });
+      console.log("BROKERS_CURRENT_COMPANY", resolvedTenantId);
+
+      let query = supabase.from('brokers').select('*').is('deleted_at', null).order('created_at', { ascending: false });
       
-      console.log("BROKERS_FETCH_QUERY: Init using tenant", user.tenant_id);
-      
-      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-         query = query.or(`company_id.eq.${user.tenant_id},tenant_id.eq.${user.tenant_id}`);
-      } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
+      if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
+         query = query.or(`company_id.eq.${resolvedTenantId},tenant_id.eq.${resolvedTenantId}`);
+      } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
          setLoading(false);
          return;
       }
       
-      const { data, error } = await query;
-      console.log("BROKERS_FETCH_RESULT", data, error);
+      const { data: rawBrokers, error } = await query;
       if (error) throw error;
-
-      // Fetch sales and commissions for this tenant
-      let salesData: any[] = [];
-      let commData: any[] = [];
-      let blockData: any[] = [];
-      let projectsData: any[] = [];
-      let recentActs: any[] = [];
       
-      try {
-         const { data: s } = await supabase.from('sales').select('*');
-         console.log("BROKER_SALES_COLUMNS_SAFE");
-         const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, amount, status, created_at');
-         const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id, quadra, quadra_number, block_number, lote, lot_number, number');
-         const { data: prj } = await supabase.from('projects').select('id, name');
-         const { data: ctr } = await supabase.from('contracts').select('id, sale_id, contract_number, number, code');
-         salesData = s || [];
-         commData = c || [];
-         blockData = bld || [];
-         projectsData = prj || [];
-         const contractsData = ctr || [];
-         
-         console.log("BROKER_EXPORT_SALES_RAW", salesData.length);
-         console.log("BROKER_EXPORT_PROJECTS_RAW", projectsData.length);
-         console.log("BROKER_EXPORT_BLOCKS_RAW", blockData.length);
-         console.log("BROKER_EXPORT_CONTRACTS_RAW", contractsData.length);
-      } catch (err) {
-         console.warn('Erro ao carregar comissões/vendas:', err);
+      const safeBrokers = rawBrokers || [];
+      console.log("BROKERS_RAW_FROM_DB", safeBrokers.length, safeBrokers);
+      
+      if (safeBrokers.length === 0 && user.role !== 'SUPER_ADMIN') {
+         console.warn("DIAGNÓSTICO: Zero brokers para currentCompany.id =", resolvedTenantId);
+         const { data: allBrokers } = await supabase.from('brokers').select('id, name, company_id, tenant_id');
+         console.warn("DB TOTAL BROKERS (sem filtro):", allBrokers);
       }
+
+      const { data: s } = await supabase.from('sales').select('*');
+      const salesData = s || [];
+      console.log("BROKERS_SALES_RAW", salesData.length);
       
-      // Auto-generate missing commissions FIRST before calculating sums
+      const { data: c } = await supabase.from('broker_commissions').select('*');
+      const commData = c || [];
+      console.log("BROKERS_COMMISSIONS_RAW", commData.length);
+      
+      const { data: bld } = await supabase.from('blocks').select('*');
+      const blockData = bld || [];
+      
+      const { data: prj } = await supabase.from('projects').select('id, name');
+      const projectsData = prj || [];
+      
+      const { data: ctr } = await supabase.from('contracts').select('*');
+      const contractsData = ctr || [];
+      
       let hasMissingCommission = false;
       for (const sale of salesData) {
           if (sale.broker_id) {
-              const hasComm = commData.some(c => c.sale_id === sale.id);
+              const hasComm = commData.some(cc => cc.sale_id === sale.id);
               if (!hasComm) {
                   hasMissingCommission = true;
-                  const broker = (data || []).find(fb => fb.id === sale.broker_id);
+                  const broker = safeBrokers.find(fb => fb.id === sale.broker_id);
                   if (broker) {
                        try {
-                           console.log("BROKER_COMMISSION_EXPECTED:", sale.id, broker.name);
                            const percent = Number(broker.commission_percent) || 5;
-                           console.log("BROKER_COMMISSION_PERCENT:", percent);
                            const saleValue = sale.total_amount ?? sale.amount ?? sale.sale_value ?? sale.valor ?? sale.price ?? sale.total ?? sale.value ?? sale.total_value ?? 0;
-                           console.log("BROKER_SALES_VALUE_RESOLVED", saleValue);
                            const val = (Number(saleValue) || 0) * (percent / 100);
                            
                            const newComm = {
-                               company_id: user.tenant_id,
-                               tenant_id: user.tenant_id,
+                               company_id: resolvedTenantId,
+                               tenant_id: resolvedTenantId,
                                broker_id: broker.id,
                                sale_id: sale.id,
                                amount: val,
                                commission_percent: percent,
                                status: 'pendente'
                            };
-                           console.log("BROKER_COMMISSION_CREATED", newComm);
                            
                            const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
                            if (!insErr && insComm) {
-                               commData.push(insComm); // Add to local array so the UI instantly updates
+                               commData.push(insComm);
                            } else {
-                               // if insert failed or didn't return, push fake locally anyway
                                commData.push({ ...newComm, id: 'temp-'+Date.now(), created_at: new Date().toISOString() });
                            }
                        } catch(e) {}
@@ -163,48 +153,34 @@ export default function CorretoresPage() {
               }
           }
       }
-      if (hasMissingCommission) {
-          console.log("Existem vendas sem comissão gerada. Foram geradas e atualizadas na View agora.");
-      }
 
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      const enhancedData = (data || []).map(b => {
-        const bSales = salesData.filter(s => s.broker_id === b.id);
-        const bComms = commData.filter(c => c.broker_id === b.id);
+      const enhancedData = safeBrokers.map(b => {
+        const bSales = salesData.filter(ss => ss.broker_id === b.id);
+        const bComms = commData.filter(cc => cc.broker_id === b.id);
         
         let lotesDoMes: string[] = [];
         let exportLots: any[] = [];
         
-        const vendas_mes = bSales; // All sales for export! wait, we want total sales or sales of month? The request says "vendas_mes_qtd = 1" but the title says "Vendas (Mês)". Let's keep it as total sales or month sales as before, but extract the real values.
-        // Actually, the user says "Vendas_Qtd = 1 ... Mas comissao zerada". 
-        // We will sum comissao over ALL commissions, not just the month.
-        
-        const vendas_mes_filtered = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth);
-        const vendas_mes_qtd = vendas_mes_filtered.length;
-        const vendas_mes_valor = vendas_mes_filtered.reduce((acc, curr) => {
-            const val = curr.total_amount ?? curr.amount ?? curr.sale_value ?? curr.valor ?? curr.price ?? curr.total ?? curr.value ?? curr.total_value ?? 0;
+        const vendas_mes_filtered = bSales.filter(ss => new Date(ss.sale_date || ss.created_at) >= startOfMonth);
+        const vendas_qtd = vendas_mes_filtered.length;
+        const vendas_valor = vendas_mes_filtered.reduce((acc, curr) => {
+            const val = curr.total_amount ?? curr.agreed_price ?? curr.lot_price ?? curr.price ?? curr.total ?? curr.value ?? curr.sale_value ?? curr.valor ?? curr.total_value ?? 0;
             return acc + (Number(val) || 0);
         }, 0);
         
         bSales.forEach(v => {
            let blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
-           
            if (blocksForSale.length === 0 && (v.block_id || v.lot_id)) {
                const directBlock = blockData.find(bl => bl.id === v.block_id || bl.id === v.lot_id);
-               if (directBlock) {
-                   blocksForSale = [directBlock];
-               }
+               if (directBlock) blocksForSale = [directBlock];
            }
-           
-           if (blocksForSale.length === 0) {
-               // Push at least one row per sale with empty block
-               blocksForSale = [{} as any];
-           }
+           if (blocksForSale.length === 0) blocksForSale = [{} as any];
 
-           const prj = projectsData.find(p => p.id === v.project_id || p.id === blocksForSale[0]?.project_id);
-           const contract = contractsData.find((c: any) => c.sale_id === v.id || c.id === v.contract_id);
+           const prj_match = projectsData.find(p => p.id === v.project_id || p.id === blocksForSale[0]?.project_id);
+           const contract = contractsData.find((cc: any) => cc.sale_id === v.id || cc.id === v.contract_id);
            
            blocksForSale.forEach(bl => {
               const qString = bl?.quadra || bl?.quadra_number || bl?.block_number || bl?.block || bl?.block_name || '';
@@ -212,9 +188,9 @@ export default function CorretoresPage() {
               const lotStr = qString || nameString ? `QD ${qString || '?'} - LT ${nameString || '?'}` : '';
               const contractNo = contract?.contract_number || contract?.number || contract?.code || contract?.id || '';
               
-              const safeSaleValue = v.total_amount ?? v.amount ?? v.sale_value ?? v.valor ?? v.price ?? v.total ?? v.value ?? v.total_value ?? 0;
+              const safeSaleValue = v.total_amount ?? v.agreed_price ?? v.lot_price ?? v.price ?? v.total ?? v.value ?? v.sale_value ?? v.valor ?? v.total_value ?? 0;
               exportLots.push({
-                  loteamento: prj?.name || '',
+                  loteamento: prj_match?.name || '',
                   quadra: qString,
                   lote: nameString,
                   loteStr: lotStr,
@@ -229,13 +205,21 @@ export default function CorretoresPage() {
               }
            });
         });
-        
-        if (exportLots.length > 0) {
-           console.log("BROKER_SOLD_LOTS_FOUND", exportLots);
-        }
 
-        const comissao_pendente = bComms.filter(c => c.status?.toLowerCase() === 'pendente' || c.status?.toLowerCase() === 'aprovado').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-        const comissao_paga = bComms.filter(c => c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        const pendenteStatuses = ['pendente', 'pending', 'PENDENTE', 'PENDING'];
+        const pagoStatuses = ['pago', 'paga', 'paid', 'aprovado', 'aprovada', 'PAGO', 'PAID', 'APROVADO'];
+        const comissao_pendente = bComms.filter(cc => pendenteStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        const comissao_paga = bComms.filter(cc => pagoStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        
+        let isActive = true;
+        if (b.status) {
+           const st = String(b.status).toLowerCase();
+           if (!['ativo', 'active'].includes(st)) {
+               isActive = false;
+           }
+        } else if (b.active === false) {
+           isActive = false;
+        }
 
         return {
           ...b,
@@ -243,9 +227,9 @@ export default function CorretoresPage() {
           name: b.name || b.full_name || 'Sem nome',
           role: b.role || 'BROKER',
           commission_percent: b.commission_percent || 5,
-          active: b.active !== undefined ? b.active : (b.status?.toLowerCase() === 'ativo'),
-          vendas_mes_qtd,
-          vendas_mes_valor,
+          active: isActive,
+          vendas_mes_qtd: vendas_qtd,
+          vendas_mes_valor: vendas_valor,
           lotesDoMes,
           exportLots,
           comissao_pendente,
@@ -254,53 +238,44 @@ export default function CorretoresPage() {
         };
       });
 
-      const finalActiveBrokers = enhancedData.filter(b => {
-           if (b.deleted_at !== null && b.deleted_at !== undefined) return false;
-           if (b.status?.toLowerCase() === 'inativo') return false;
-           if (b.active === false) return false;
-           return true;
-       });
-       
-       console.log("BROKER_COMMISSION_SUMMARY_FINAL", finalActiveBrokers.map(x => ({nome: x.name, pendente: x.comissao_pendente, paga: x.comissao_paga})));
-       
-       setCorretores(finalActiveBrokers);
+      const finalActiveBrokers = enhancedData.filter(b => b.active);
+      setCorretores(finalActiveBrokers);
+      console.log("BROKERS_FINAL_RENDER_LIST", finalActiveBrokers);
 
-       console.log("BROKERS_REAL_FETCH_RESULT", finalActiveBrokers);
-       console.log("BROKERS_FINAL_LIST", finalActiveBrokers);
-       
-       // Build Recent Activities
-       salesData.forEach(s => {
-           if (s.broker_id) {
-               const b = finalActiveBrokers.find(x => x.id === s.broker_id);
-               if (b) {
-                   const lots = blockData.filter(bl => bl.sale_id === s.id).map(bl => `QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`).join(', ');
-                   recentActs.push({
-                      id: `s-${s.id}`,
-                      type: 'sale',
-                      date: new Date(s.sale_date || s.created_at),
-                      message: `${b.name} registrou uma nova venda.`,
-                      subtext: lots ? `Lotes: ${lots}` : `Valor: R$ ${Number(s.total_amount ?? s.amount ?? s.sale_value ?? s.valor ?? s.price ?? s.total ?? s.value ?? s.total_value ?? 0).toLocaleString('pt-BR')}`
-                   });
-               }
-           }
-       });
-       commData.forEach(c => {
-           if (c.status?.toLowerCase() === 'pago' || c.status?.toLowerCase() === 'paga') {
-               const b = finalActiveBrokers.find(x => x.id === c.broker_id);
-               if (b) {
-                   recentActs.push({
-                       id: `c-${c.id}`,
-                       type: 'commission_paid',
-                       date: new Date(c.created_at),
-                       message: `${b.name} recebeu comissão.`,
-                       subtext: `Valor: R$ ${Number(c.amount).toLocaleString('pt-BR')}`
-                   });
-               }
-           }
-       });
-       recentActs.sort((a,b) => b.date.getTime() - a.date.getTime());
-       setRecentActivities(recentActs.slice(0, 10));
-       console.log("BROKER_RECENT_ACTIVITIES", recentActs.slice(0, 10));
+      let rActs: any[] = [];
+      salesData.forEach(s => {
+          if (s.broker_id) {
+              const b = finalActiveBrokers.find(x => x.id === s.broker_id);
+              if (b) {
+                  const lots = blockData.filter(bl => bl.sale_id === s.id).map(bl => `QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`).join(', ');
+                  const safeSaleValue = s.total_amount ?? s.agreed_price ?? s.lot_price ?? s.price ?? s.total ?? s.value ?? s.sale_value ?? s.valor ?? s.total_value ?? 0;
+                  rActs.push({
+                     id: `s-${s.id}`,
+                     type: 'sale',
+                     date: new Date(s.sale_date || s.created_at),
+                     message: `${b.name} registrou uma nova venda.`,
+                     subtext: lots ? `Lotes: ${lots}` : `Valor: R$ ${Number(safeSaleValue).toLocaleString('pt-BR')}`
+                  });
+              }
+          }
+      });
+      commData.forEach(c => {
+          const pagoStatuses = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'];
+          if (pagoStatuses.includes(String(c.status).toLowerCase())) {
+              const b = finalActiveBrokers.find(x => x.id === c.broker_id);
+              if (b) {
+                  rActs.push({
+                      id: `c-${c.id}`,
+                      type: 'commission_paid',
+                      date: new Date(c.created_at),
+                      message: `${b.name} recebeu comissão.`,
+                      subtext: `Valor: R$ ${Number(c.amount).toLocaleString('pt-BR')}`
+                  });
+              }
+          }
+      });
+      rActs.sort((a,b) => b.date.getTime() - a.date.getTime());
+      setRecentActivities(rActs.slice(0, 10));
 
     } catch(err) {
       console.error(err);
@@ -312,9 +287,9 @@ export default function CorretoresPage() {
   useEffect(() => {
     if (!authLoading) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      loadCorretores();
+      loadBrokers();
     }
-  }, [user, authLoading, loadCorretores]);
+  }, [user, authLoading, loadBrokers]);
 
   const getExportRows = () => {
      let rows: any[] = [];
@@ -576,7 +551,7 @@ export default function CorretoresPage() {
                 role: formData.role
             }).eq('id', selectedBroker.id);
             if (upErr) throw upErr;
-            await loadCorretores();
+            await loadBrokers();
             handleCloseModal();
         } catch (e: any) {
             setError(e.message || "Erro ao atualizar");
@@ -638,6 +613,8 @@ export default function CorretoresPage() {
     setIsSubmitting(true);
 
     try {
+      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+
       const response = await fetch('/api/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -645,7 +622,7 @@ export default function CorretoresPage() {
            fullName: formData.fullName,
            email: formData.email,
            phone: formData.phone,
-           tenantId: user?.tenant_id,
+           tenantId: resolvedTenantId,
            role: formData.role,
            password: formData.password
         })
@@ -668,8 +645,8 @@ export default function CorretoresPage() {
          role: 'BROKER',
          level: 'broker',
          commission_percent: formData.commission_percent,
-         company_id: user?.tenant_id,
-         tenant_id: user?.tenant_id,
+         company_id: resolvedTenantId,
+         tenant_id: resolvedTenantId,
          name: formData.fullName,
          full_name: formData.fullName,
          active: true,
@@ -677,7 +654,7 @@ export default function CorretoresPage() {
          deleted_at: null
       };
 
-      console.log("BROKER_PAYLOAD_TO_SAVE", payload);
+      console.log("BROKER_CREATE_PAYLOAD", payload);
       const { data: brokerData, error: brokerError } = await supabase.from('brokers').upsert([payload], { onConflict: 'id' }).select();
       console.log("BROKER_CREATED_RESULT", brokerData, brokerError);
       
@@ -706,8 +683,7 @@ export default function CorretoresPage() {
         commission_percent: 5
       });
 
-      await loadCorretores();
-
+      await loadBrokers();
 
     } catch (err: any) {
       console.error(err);
@@ -759,7 +735,7 @@ export default function CorretoresPage() {
       }
 
       setDeleteModal(null);
-      await loadCorretores();
+      await loadBrokers();
     } catch(e:any) {
       console.error(e);
       alert('Erro ao excluir: ' + e.message);
@@ -915,7 +891,7 @@ export default function CorretoresPage() {
            }]);
        } catch(logE) {}
 
-       await loadCorretores();
+       await loadBrokers();
        alert("Comissão paga e saída registrada com sucesso!");
      } catch(e: any) {
         console.error(e);
