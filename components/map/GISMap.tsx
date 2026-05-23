@@ -924,41 +924,33 @@ function LotPopupContent({
             })}
           </span>
         </div>
-        <div className="border-b pb-2 mb-1 mt-1">
-          <span className="text-gray-600 font-semibold text-xs mb-1 block">
-            Dimensões do Lote
+        <div className="border-b border-gray-100 pb-3 mb-2 mt-2">
+          <span className="text-gray-800 font-semibold text-[11px] uppercase tracking-wider mb-2 block text-center">
+            Dimensões do Lote (m)
           </span>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-gray-50 p-2 rounded w-full border border-gray-100">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Frente:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.frente !== null && lot.frente !== undefined
-                  ? `${Number(lot.frente).toFixed(2)} m`
-                  : "--"}
+          <div className="grid grid-cols-4 gap-1.5 w-full">
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
+              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Frente</span>
+              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+                {lot.frente !== null && lot.frente !== undefined ? Number(lot.frente).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.fundo !== null && lot.fundo !== undefined
-                  ? `${Number(lot.fundo).toFixed(2)} m`
-                  : "--"}
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
+              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Fundo</span>
+              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+                {lot.fundo !== null && lot.fundo !== undefined ? Number(lot.fundo).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.lado_direito !== null && lot.lado_direito !== undefined
-                  ? `${Number(lot.lado_direito).toFixed(2)} m`
-                  : "--"}
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
+              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Dir</span>
+              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+                {lot.lado_direito !== null && lot.lado_direito !== undefined ? Number(lot.lado_direito).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined
-                  ? `${Number(lot.lado_esquerdo).toFixed(2)} m`
-                  : "--"}
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
+              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Esq</span>
+              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+                {lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined ? Number(lot.lado_esquerdo).toFixed(2) : "--"}
               </span>
             </div>
           </div>

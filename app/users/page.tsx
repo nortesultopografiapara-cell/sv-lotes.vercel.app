@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { 
    Users, Shield, UserPlus, Filter, X, Search, 
    Edit2, Lock, Unlock, MoreHorizontal, Download, 
-   Calendar, CheckCircle2, AlertCircle, Loader2 
+   Calendar, CheckCircle2, AlertCircle, Loader2, Activity 
 } from 'lucide-react';
 
 export default function UsersPage() {

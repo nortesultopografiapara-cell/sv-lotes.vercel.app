@@ -228,11 +228,18 @@ export function normalizeDimensions(val: number, fallback: number): number {
 }
 
 /**
- * PRINCIPAL: Resolve e retorna as dimensões completas sem valores vazios
+ * 5. PRINCIPAL: Resolve e retorna as dimensões completas
+ * Usa o ALGORITMO INTELIGENTE que agrupa todos os segmentos nas 4 faces principais,
+ * resolvendo o problema de fundos ou lados com múltiplos segmentos colineares ou irregulares.
  */
 export function calculateLotDimensions(coords: number[][], allPolys: number[][][], geomProps: any = {}) {
+    return calculateLotDimensionsAdvanced(coords, allPolys, geomProps);
+}
+
+export function calculateLotDimensionsAdvanced(coords: number[][], allPolys: number[][][], geomProps: any = {}) {
     if (!coords || coords.length < 4) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
     
+    // 1. Tentar extrair do banco de dados/propriedades primeiro
     const extractProp = (keys: string[]) => {
         for (let key of keys) {
             for (let prop in geomProps) {
@@ -265,36 +272,61 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
         };
     }
 
-    // Calcular via geometria
+    // 2. Extrair TODOS os segmentos do polígono
     const rawSegments = extractSegments(coords, allPolys);
-    console.log("LOT_DIMENSION_SEGMENTS", rawSegments.length, "segments extracted");
-    
-    // 5° tolerância como padrão, ou extraída
-    console.log(`LOT_DIMENSION_ANGLE_TOLERANCE = 20`);
-    const segments = mergeCurvedSegments(rawSegments, 20); 
-    console.log("LOT_DIMENSION_SEGMENTS_MERGED", segments.length, "groups");
-    
-    let result = { 
-        frente: propFrente || 0, 
-        fundo: propFundo || 0, 
-        ladoDireito: propDir || 0, 
-        ladoEsquerdo: propEsq || 0 
-    };
+    if (rawSegments.length === 0) return { frente: 10, fundo: 10, ladoDireito: 25, ladoEsquerdo: 25 };
 
-    if (segments.length > 0) {
-        const frenteRaw = detectFront(segments);
-        const fundoRaw = detectBack(segments, frenteRaw);
-        const calcSides = detectSides(segments, frenteRaw, fundoRaw);
+    // 3. Descobrir o azimute da Frente principal de referência
+    // Agrupamos os segmentos curvos apenas para achar a referência primária com segurança
+    const mergedForReference = mergeCurvedSegments(rawSegments, 20); 
+    const frontRefSegment = detectFront(mergedForReference);
+    
+    const refAzimuth = frontRefSegment.azimuth;
+    
+    let sumFrente = 0;
+    let sumFundo = 0;
+    let sumDir = 0;
+    let sumEsq = 0;
 
-        if (!result.frente) result.frente = frenteRaw ? frenteRaw.length : 0;
-        if (!result.fundo) result.fundo = fundoRaw ? fundoRaw.length : result.frente;
-        if (!result.ladoDireito) result.ladoDireito = calcSides.ladoDireito;
-        if (!result.ladoEsquerdo) result.ladoEsquerdo = calcSides.ladoEsquerdo;
+    // 4. ALGORITMO INTELIGENTE: Classificar cada segmento isolado em uma das 4 faces
+    for (let s of rawSegments) {
+        let diff = (s.azimuth - refAzimuth + 360) % 360;
+        let d = diff > 180 ? diff - 360 : diff; // Converter para -180 a +180
+
+        const absD = Math.abs(d);
+        
+        if (absD <= 45) {
+            // +- 45 graus da frente => FRENTE
+            sumFrente += s.length;
+        } else if (absD >= 135) {
+            // >= 135 graus (oposto) => FUNDO
+            sumFundo += s.length;
+        } else if (d > 45 && d < 135) {
+            // Lado 1
+            sumDir += s.length;
+        } else if (d < -45 && d > -135) {
+            // Lado 2
+            sumEsq += s.length;
+        }
     }
 
-    // Nunca devolver lados vazios, fallback p/ Centroid ou maior lado
-    if (result.ladoDireito === 0 && result.ladoEsquerdo === 0 && segments.length > 0) {
-        const longest = segments.sort((a,b) => b.length - a.length)[0].length;
+    let result = { 
+        frente: propFrente || sumFrente, 
+        fundo: propFundo || sumFundo, 
+        ladoDireito: propDir || sumDir, 
+        ladoEsquerdo: propEsq || sumEsq 
+    };
+
+    // 5. Garantir preenchimentos lógicos (fallback para polígonos degenerados)
+    if (result.frente === 0 && rawSegments.length > 0) {
+        result.frente = frontRefSegment.length;
+    }
+    if (result.fundo === 0) {
+        result.fundo = result.frente;
+    }
+
+    if (result.ladoDireito === 0 && result.ladoEsquerdo === 0 && rawSegments.length > 0) {
+        const longest = Math.max(...rawSegments.map(s => s.length));
         result.ladoDireito = longest;
         result.ladoEsquerdo = longest;
     } else if (result.ladoDireito === 0 && result.ladoEsquerdo > 0) {
@@ -307,20 +339,10 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     const finalFundo = normalizeDimensions(result.fundo, finalFrente);
     const finalDir = normalizeDimensions(result.ladoDireito, finalFrente * 2);
     const finalEsq = normalizeDimensions(result.ladoEsquerdo, finalDir);
-
-    console.log("LOT_DIMENSION_FINAL_WITH_20_DEGREE_TOLERANCE", {
-        frente: finalFrente,
-        fundo: finalFundo,
-        ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
-    });
-
-    console.log("LOT_DIMENSION_FINAL_RESULT", {
-        frente: finalFrente,
-        fundo: finalFundo,
-        ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
-    });
+    
+    console.log("ALGORITMO GIS INTELIGENTE (Frentes e Fundos Compostos):");
+    console.log(`Ref Azimuth da rua: ${refAzimuth.toFixed(2)}° | Segmentos somados: ${rawSegments.length}`);
+    console.log(`Frente: ${finalFrente} | Fundo: ${finalFundo} | Dir: ${finalDir} | Esq: ${finalEsq}`);
 
     return {
         frente: finalFrente,
@@ -329,3 +351,4 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
         ladoEsquerdo: finalEsq
     };
 }
+
