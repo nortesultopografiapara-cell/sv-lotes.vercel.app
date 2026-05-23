@@ -103,7 +103,8 @@ export default function CorretoresPage() {
       let recentActs: any[] = [];
       
       try {
-         const { data: s } = await supabase.from('sales').select('id, broker_id, total_value, sale_date, created_at, project_id, block_id, lot_id, contract_id');
+         const { data: s } = await supabase.from('sales').select('*');
+         console.log("BROKER_SALES_COLUMNS_SAFE");
          const { data: c } = await supabase.from('broker_commissions').select('id, broker_id, sale_id, amount, status, created_at');
          const { data: bld } = await supabase.from('blocks').select('id, sale_id, block, name, block_name, project_id, quadra, quadra_number, block_number, lote, lot_number, number');
          const { data: prj } = await supabase.from('projects').select('id, name');
@@ -135,7 +136,9 @@ export default function CorretoresPage() {
                            console.log("BROKER_COMMISSION_EXPECTED:", sale.id, broker.name);
                            const percent = Number(broker.commission_percent) || 5;
                            console.log("BROKER_COMMISSION_PERCENT:", percent);
-                           const val = (Number(sale.total_value) || 0) * (percent / 100);
+                           const saleValue = sale.total_amount ?? sale.amount ?? sale.sale_value ?? sale.valor ?? sale.price ?? sale.total ?? sale.value ?? sale.total_value ?? 0;
+                           console.log("BROKER_SALES_VALUE_RESOLVED", saleValue);
+                           const val = (Number(saleValue) || 0) * (percent / 100);
                            
                            const newComm = {
                                company_id: user.tenant_id,
@@ -180,7 +183,10 @@ export default function CorretoresPage() {
         
         const vendas_mes_filtered = bSales.filter(s => new Date(s.sale_date || s.created_at) >= startOfMonth);
         const vendas_mes_qtd = vendas_mes_filtered.length;
-        const vendas_mes_valor = vendas_mes_filtered.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0);
+        const vendas_mes_valor = vendas_mes_filtered.reduce((acc, curr) => {
+            const val = curr.total_amount ?? curr.amount ?? curr.sale_value ?? curr.valor ?? curr.price ?? curr.total ?? curr.value ?? curr.total_value ?? 0;
+            return acc + (Number(val) || 0);
+        }, 0);
         
         bSales.forEach(v => {
            let blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
@@ -206,6 +212,7 @@ export default function CorretoresPage() {
               const lotStr = qString || nameString ? `QD ${qString || '?'} - LT ${nameString || '?'}` : '';
               const contractNo = contract?.contract_number || contract?.number || contract?.code || contract?.id || '';
               
+              const safeSaleValue = v.total_amount ?? v.amount ?? v.sale_value ?? v.valor ?? v.price ?? v.total ?? v.value ?? v.total_value ?? 0;
               exportLots.push({
                   loteamento: prj?.name || '',
                   quadra: qString,
@@ -213,7 +220,7 @@ export default function CorretoresPage() {
                   loteStr: lotStr,
                   contrato: contractNo,
                   venda_id: v.id,
-                  valor_venda: v.total_value,
+                  valor_venda: safeSaleValue,
                   data_venda: v.sale_date || v.created_at
               });
               
@@ -259,6 +266,7 @@ export default function CorretoresPage() {
        setCorretores(finalActiveBrokers);
 
        console.log("BROKERS_REAL_FETCH_RESULT", finalActiveBrokers);
+       console.log("BROKERS_FINAL_LIST", finalActiveBrokers);
        
        // Build Recent Activities
        salesData.forEach(s => {
@@ -271,7 +279,7 @@ export default function CorretoresPage() {
                       type: 'sale',
                       date: new Date(s.sale_date || s.created_at),
                       message: `${b.name} registrou uma nova venda.`,
-                      subtext: lots ? `Lotes: ${lots}` : `Valor: R$ ${Number(s.total_value).toLocaleString('pt-BR')}`
+                      subtext: lots ? `Lotes: ${lots}` : `Valor: R$ ${Number(s.total_amount ?? s.amount ?? s.sale_value ?? s.valor ?? s.price ?? s.total ?? s.value ?? s.total_value ?? 0).toLocaleString('pt-BR')}`
                    });
                }
            }
@@ -828,7 +836,8 @@ export default function CorretoresPage() {
            for (const sale of brokerSales) {
                if (!exSalesIds.includes(sale.id)) {
                    const percent = Number(c.commission_percent) || 5;
-                   const valor_venda = Number(sale.total_value) || Number(sale.total_amount) || Number(sale.sale_value) || Number(sale.sale_price) || Number(sale.final_value) || Number(sale.final_price) || Number(sale.agreed_price) || Number(sale.amount) || Number(sale.price) || 0;
+                   const saleValue = sale.total_amount ?? sale.amount ?? sale.sale_value ?? sale.valor ?? sale.price ?? sale.total ?? sale.value ?? sale.total_value ?? 0;
+                   const valor_venda = Number(saleValue) || 0;
                    const val = valor_venda * (percent / 100);
                    
                    const newComm = {
