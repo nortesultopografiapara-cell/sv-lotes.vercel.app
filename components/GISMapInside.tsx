@@ -334,5 +334,5 @@ export default function GISMapInside({
     </div>
   );
 }
-export const GLOBAL_MEASUREMENT_FACTOR = 0.9971090670170828;
+export const GLOBAL_MEASUREMENT_FACTOR = 1.0;
 export { calibrateDistance, calibrateArea };

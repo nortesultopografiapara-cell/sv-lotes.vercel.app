@@ -1,4 +1,4 @@
-export const GLOBAL_MEASUREMENT_FACTOR = 0.9971090670170828;
+export const GLOBAL_MEASUREMENT_FACTOR = 1.0;
 
 export function calibrateDistance(value: number): number {
   const corrected = Number((value * GLOBAL_MEASUREMENT_FACTOR).toFixed(2));
@@ -7,7 +7,7 @@ export function calibrateDistance(value: number): number {
 }
 
 export function calibrateArea(value: number): number {
-  const corrected = Number((value * GLOBAL_MEASUREMENT_FACTOR).toFixed(2));
-  console.log(`[GIS_CALIBRATION] Area - Raw: ${value}, Corrected: ${corrected}, Factor: ${GLOBAL_MEASUREMENT_FACTOR}`);
+  const corrected = Number(value.toFixed(2));
+  console.log(`[GIS_CALIBRATION] Area - Raw: ${value}, Corrected: ${corrected} (Removed calibration factor as requested)`);
   return corrected;
 }
