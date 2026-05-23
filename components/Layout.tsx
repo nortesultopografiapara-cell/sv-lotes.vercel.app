@@ -288,9 +288,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     if (user) fetchCompany();
 
     try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setImpersonatingTenantId(typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setImpersonatingCompanyName(typeof window !== 'undefined' ? localStorage.getItem('impersonating_company_name') : null);
     } catch(e) {}
 
