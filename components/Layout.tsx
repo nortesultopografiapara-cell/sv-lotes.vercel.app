@@ -19,11 +19,18 @@ import {
   TrendingDown,
   AlertCircle,
   Banknote,
-  Plus
+  Plus,
+  Lock,
+  Shield,
+  Eye,
+  EyeOff,
+  Loader2,
+  X
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
+import { UserProfileModals } from './UserProfileModals';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -267,6 +274,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<any>(null);
   const [impersonatingTenantId, setImpersonatingTenantId] = useState<string | null>(null);
   const [impersonatingCompanyName, setImpersonatingCompanyName] = useState<string | null>(null);
+  const [activeProfileModal, setActiveProfileModal] = useState<'profile' | 'password' | 'security' | null>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
 
@@ -541,12 +549,25 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                     <p className="text-xs text-gray-400 mt-1 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
-                    {user?.role === 'SUPER_ADMIN' && (
+                    {user?.role === 'SUPER_ADMIN' ? (
                       <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                         <User className="w-4 h-4" /> Meu Perfil Master
                       </Link>
+                    ) : (
+                      <>
+                        <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left">
+                          <User className="w-4 h-4" /> Meu Perfil
+                        </button>
+                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
+                          <Lock className="w-4 h-4" /> Alterar Senha
+                        </button>
+                        <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
+                          <Shield className="w-4 h-4" /> Segurança
+                        </button>
+                      </>
                     )}
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left mt-1">
+                    <div className="h-px bg-[#2d3340] my-1" />
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left">
                        <LogOut className="w-4 h-4" /> Sair do Sistema
                     </button>
                   </div>
@@ -589,6 +610,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           onClick={() => setIsOpen(false)}
         />
       )}
+
+      {/* User Profile Modals */}
+      <UserProfileModals 
+        user={user} 
+        company={company} 
+        activeModal={activeProfileModal} 
+        setActiveModal={setActiveProfileModal} 
+      />
     </div>
   );
 }
