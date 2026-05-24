@@ -226,6 +226,8 @@ export default function MapPage() {
     }
 
     try {
+       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
+       
        // Only dynamically import turf logic to avoid SSR issues if necessary or just await import
        const turfHelpers = await import('@turf/helpers');
        const turfNearestOnLine = await import('@turf/nearest-point-on-line');
@@ -843,9 +845,9 @@ export default function MapPage() {
              tenant_id: finalTenantId,
              company_id: finalTenantId,
              frente,
-             'Lado Dir.': lado_direito,
-             'Fundo': fundo,
-             'Lado Esq.': lado_esquerdo,
+             fundo,
+             lado_direito,
+             lado_esquerdo,
              segments_json: b.segments,
              coordinates_utm_json: b.coords,
              source_import: 'TXT_CIVIL3D'

@@ -948,24 +948,24 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.Fundo !== null && lot.Fundo !== undefined
-                  ? `${Number(lot.Fundo).toFixed(2)} m`
+                {lot.fundo !== null && lot.fundo !== undefined
+                  ? `${Number(lot.fundo).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot["Lado Dir."] !== null && lot["Lado Dir."] !== undefined
-                  ? `${Number(lot["Lado Dir."]).toFixed(2)} m`
+                {lot.lado_direito !== null && lot.lado_direito !== undefined
+                  ? `${Number(lot.lado_direito).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot["Lado Esq."] !== null && lot["Lado Esq."] !== undefined
-                  ? `${Number(lot["Lado Esq."]).toFixed(2)} m`
+                {lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined
+                  ? `${Number(lot.lado_esquerdo).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
@@ -1410,9 +1410,9 @@ export default function GISMap({
                 geometryType: b.geometry?.type,
                 bounds,
                 frente: b.frente !== null ? b.frente : (dimsFromGeo ? dimsFromGeo.frente : null),
-                Fundo: b.Fundo !== null && b.Fundo !== undefined ? b.Fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
-                'Lado Dir.': b['Lado Dir.'] !== null && b['Lado Dir.'] !== undefined ? b['Lado Dir.'] : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
-                'Lado Esq.': b['Lado Esq.'] !== null && b['Lado Esq.'] !== undefined ? b['Lado Esq.'] : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
+                fundo: b.fundo !== null ? b.fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
+                lado_direito: b.lado_direito !== null ? b.lado_direito : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
+                lado_esquerdo: b.lado_esquerdo !== null ? b.lado_esquerdo : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
               };
             })
             .filter((b) => b.bounds.length > 0);
