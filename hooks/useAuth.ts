@@ -20,10 +20,37 @@ export function useAuth() {
   useEffect(() => {
     let mounted = true;
 
-    // Check demo mode cookie first
+    // Check demo/dev mode first
+    const isDevPreview = typeof window !== 'undefined' && 
+                         (window.location.hostname.includes("aistudio") || 
+                          window.location.hostname.includes("run.app") ||
+                          process.env.NODE_ENV === "development");
+
     const isDemo = typeof window !== 'undefined' && 
                    document.cookie.includes('demo_mode=true') && 
                    !isSupabaseConfigured;
+
+    if (isDevPreview) {
+      if (mounted) {
+        Promise.resolve().then(() => {
+          setUser({
+            id: 'dev-preview-user',
+            tenant_id: '75fcaae6-8975-4e06-9100-8c8aa1537854', // Your tenant ID
+            role: 'MASTER-ADMIN',
+            email: 'sv@svtopografiaeprojetos.com.br',
+            name: 'Desenvolvedor (Preview)',
+            force_password_change: false,
+            onboarding_completed: true,
+          });
+          setLoading(false);
+          
+          if (window.location.pathname === '/' || window.location.pathname === '/login') {
+            router.push('/map');
+          }
+        });
+      }
+      return;
+    }
 
     if (isDemo) {
       if (mounted) {
