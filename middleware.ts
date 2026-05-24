@@ -36,10 +36,10 @@ export async function middleware(request: NextRequest) {
 
   // 1. PUBLIC ROUTES
   const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate'];
-  const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
+  const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route)) || url.pathname === '/';
 
   if (isPublicRoute) {
-    if (user && url.pathname === '/login') {
+    if (user && (url.pathname === '/login' || url.pathname === '/')) {
       url.pathname = '/dashboard';
       return NextResponse.redirect(url);
     }
