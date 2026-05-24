@@ -327,10 +327,10 @@ export default function MapPage() {
            const updatePromises = updates.map(updateObj => {
               if (!updateObj.id) return Promise.resolve({ error: { message: "Mock error for no id" } });
               return supabase.from('blocks').update({
-                  frente: updateObj.frente,
-                  'Fundo': updateObj.fundo,
-                  'Lado Dir.': updateObj.lado_direito,
-                  'Lado Esq.': updateObj.lado_esquerdo,
+                  frente: updateObj.frente !== null ? Number(updateObj.frente) : null,
+                  'Fundo': updateObj.fundo !== null ? String(updateObj.fundo).replace(/[^0-9.]/g, '') : null,
+                  'Lado Dir.': updateObj.lado_direito !== null ? String(updateObj.lado_direito).replace(/[^0-9.]/g, '') : null,
+                  'Lado Esq.': updateObj.lado_esquerdo !== null ? String(updateObj.lado_esquerdo).replace(/[^0-9.]/g, '') : null,
                   updated_at: new Date().toISOString()
               }).eq('id', updateObj.id);
            });
@@ -666,10 +666,10 @@ export default function MapPage() {
              geometry: geom,
              tenant_id: finalTenantId,
              company_id: finalTenantId,
-             frente: dims.frente,
-             fundo: dims.fundo,
-             lado_direito: dims.ladoD,
-             lado_esquerdo: dims.ladoE
+             frente: dims.frente !== null ? Number(dims.frente) : null,
+             'Fundo': dims.fundo !== null ? String(dims.fundo).replace(/[^0-9.]/g, '') : null,
+             'Lado Dir.': dims.ladoD !== null ? String(dims.ladoD).replace(/[^0-9.]/g, '') : null,
+             'Lado Esq.': dims.ladoE !== null ? String(dims.ladoE).replace(/[^0-9.]/g, '') : null
           };
       });
       
@@ -844,10 +844,10 @@ export default function MapPage() {
              geometry: geom,
              tenant_id: finalTenantId,
              company_id: finalTenantId,
-             frente,
-             fundo,
-             lado_direito,
-             lado_esquerdo,
+             frente: frente !== null ? Number(frente) : null,
+             'Fundo': fundo !== null ? String(fundo).replace(/[^0-9.]/g, '') : null,
+             'Lado Dir.': lado_direito !== null ? String(lado_direito).replace(/[^0-9.]/g, '') : null,
+             'Lado Esq.': lado_esquerdo !== null ? String(lado_esquerdo).replace(/[^0-9.]/g, '') : null,
              segments_json: b.segments,
              coordinates_utm_json: b.coords,
              source_import: 'TXT_CIVIL3D'
