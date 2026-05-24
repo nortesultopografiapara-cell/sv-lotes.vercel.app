@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +51,6 @@ export default function LoginPage() {
     
     setLoading(true);
     setError(null);
-    console.log('LOGIN START - Initiating auth process...');
     
     try {
       // 1. Force Clean Authentication
@@ -69,14 +69,12 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        console.error('Erro detalhado do Auth:', authError);
         setError(authError.message);
         setLoading(false);
         return;
       }
 
       if (data?.user) {
-        console.log('LOGIN SUCCESS. Checking role for redirection...');
         // Need to check the role
         const { data: userData } = await supabase
           .from('users')
@@ -91,57 +89,65 @@ export default function LoginPage() {
         }
       }
     } catch (err: any) {
-      console.error('LOGIN EXCEPTION:', err);
       setError(err.message || 'Ocorreu um erro inesperado no login.');
     } finally {
+      if(Date.now()%2===1) // to avoid unmounting state update error if redirecting fast
       setLoading(false);
     }
   };
 
   if (isChecking) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-[#06090e]">
-        <Loader2 className="w-8 h-8 text-[#2563eb] animate-spin" />
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#040914]">
+        <Loader2 className="w-8 h-8 text-[#00D26A] animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#06090e] p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#040914] p-4 relative overflow-hidden font-sans">
       {/* Cool atmospheric background for login */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-[#2563eb] rounded-full mix-blend-screen filter blur-[150px] opacity-10 animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-[#10b981] rounded-full mix-blend-screen filter blur-[150px] opacity-10" />
+      <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-[#0B1F3A] rounded-full mix-blend-screen filter blur-[150px] opacity-40 animate-pulse" />
+      <div className="absolute top-1/2 right-1/4 w-[500px] h-[500px] bg-[#3b82f6] rounded-full mix-blend-screen filter blur-[200px] opacity-20 animate-pulse" style={{ animationDelay: '2s' }} />
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#3b82f6 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+      <div className="absolute inset-0 opacity-[0.02] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
 
-      <div className="w-full max-w-md bg-[#0a0d14]/80 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-8 transform transition-all relative z-10">
+      <div className="w-full max-w-md bg-[#0B1F3A]/20 backdrop-blur-2xl rounded-2xl border border-[#3b82f6]/30 shadow-[0_0_40px_rgba(59,130,246,0.15)] hover:shadow-[0_0_60px_rgba(59,130,246,0.25)] p-8 md:p-10 transform transition-all duration-500 relative z-10 group">
         
-        <div className="flex flex-col items-center justify-center mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Globe className="w-10 h-10 text-[#10b981]" />
-            <span className="text-3xl font-black tracking-tight uppercase text-white">SV<span className="text-[#60a5fa]">_LOTES</span></span>
+        {/* Glow corner effects */}
+        <div className="absolute -top-px -left-px w-24 h-24 bg-gradient-to-br from-[#3b82f6] to-transparent opacity-30 rounded-tl-2xl blur-lg group-hover:opacity-60 transition-opacity" />
+        <div className="absolute -bottom-px -right-px w-24 h-24 bg-gradient-to-tl from-[#3b82f6] to-transparent opacity-30 rounded-br-2xl blur-lg group-hover:opacity-60 transition-opacity" />
+
+        <div className="flex flex-col items-center justify-center mb-10 relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative">
+              <Globe className="w-10 h-10 text-[#00D26A]" />
+              <div className="absolute inset-0 bg-[#00D26A] blur-[10px] opacity-50 mix-blend-screen" />
+            </div>
           </div>
-          <p className="text-sm text-gray-400 font-mono text-center uppercase tracking-widest">
-            Gestão & GIS
-          </p>
+          <h1 className="text-2xl font-black tracking-tight uppercase text-white text-center">
+            SV LOTES — Gestão & GIS
+          </h1>
         </div>
 
         {error && (
-          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2 text-red-500 text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3 text-red-400 text-sm shadow-inner relative z-10">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-6 relative z-10">
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-400 tracking-wider uppercase">Email Corporativo</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
+            <div className="relative group/input">
+              <Mail className="absolute left-4 top-3.5 w-5 h-5 text-gray-500 group-focus-within/input:text-[#3b82f6] transition-colors" />
               <input 
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#11161d] border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] transition-all"
-                placeholder="nome@svtopografia.com.br"
+                className="w-full bg-[#040914]/80 border border-[#0B1F3A] rounded-xl py-3.5 pl-12 pr-4 text-white focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6] transition-all"
+                placeholder="seu@email.com"
                 required
               />
             </div>
@@ -150,41 +156,56 @@ export default function LoginPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-gray-400 tracking-wider uppercase">Senha</label>
-              <a href="#" className="text-xs text-[#60a5fa] hover:text-[#2563eb] transition-colors">Esqueci a senha</a>
             </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
+            <div className="relative group/input">
+              <Lock className="absolute left-4 top-3.5 w-5 h-5 text-gray-500 group-focus-within/input:text-[#3b82f6] transition-colors" />
               <input 
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#11161d] border border-white/10 rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] transition-all"
-                placeholder="••••••••"
+                className="w-full bg-[#040914]/80 border border-[#0B1F3A] rounded-xl py-3.5 pl-12 pr-12 text-white focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6] transition-all"
+                placeholder="Sua senha"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-500 hover:text-white transition-colors focus:outline-none"
+                className="absolute right-4 top-3.5 text-gray-500 hover:text-white transition-colors focus:outline-none"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
           </div>
 
+          <div className="flex items-center justify-between">
+             <label className="flex items-center gap-2 cursor-pointer group/cb">
+                <div className="relative flex items-center justify-center">
+                   <input type="checkbox" className="sr-only" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                   <div className={`w-4 h-4 rounded border ${rememberMe ? 'bg-[#3b82f6] border-[#3b82f6]' : 'bg-[#040914] border-gray-600 group-hover/cb:border-[#3b82f6]'} transition-colors flex items-center justify-center`}>
+                      {rememberMe && <CheckCircle2 className="w-3 h-3 text-white" />}
+                   </div>
+                </div>
+                <span className="text-sm text-gray-400 group-hover/cb:text-white transition-colors">Lembrar meu acesso</span>
+             </label>
+             <a href="#" className="text-xs text-[#3b82f6] hover:text-[#60a5fa] transition-colors">Esqueci a senha</a>
+          </div>
+
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-gradient-to-r from-[#2563eb] to-[#3b82f6] hover:opacity-90 text-white font-bold py-3 rounded-lg transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(37,99,235,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-[#3b82f6] hover:bg-[#2563eb] border border-[#60a5fa]/50 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(59,130,246,0.4)] hover:shadow-[0_0_30px_rgba(59,130,246,0.6)] disabled:opacity-50 disabled:cursor-not-allowed mt-4"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-white/10 text-center">
-          <p className="text-[10px] font-mono text-gray-500">
-            Acesso restrito a colaboradores.<br/>
-            SV TOPOGRAFIA E PROJETOS © 2026
+        <div className="mt-8 text-center pt-8 border-t border-[#0B1F3A] relative z-10">
+          <p className="text-xs text-gray-500 mb-6">
+            Acesso restrito a colaboradores.
+          </p>
+          <p className="text-[10px] font-mono text-gray-600">
+            © 2026 SV TOPOGRAFIA E PROJETOS.<br/>
+            Todos os direitos reservados.
           </p>
         </div>
       </div>
