@@ -328,9 +328,9 @@ export default function MapPage() {
               if (!updateObj.id) return Promise.resolve({ error: { message: "Mock error for no id" } });
               return supabase.from('blocks').update({
                   frente: updateObj.frente,
-                  fundo: updateObj.fundo,
-                  lado_direito: updateObj.lado_direito,
-                  lado_esquerdo: updateObj.lado_esquerdo,
+                  'Fundo': updateObj.fundo,
+                  'Lado Dir.': updateObj.lado_direito,
+                  'Lado Esq.': updateObj.lado_esquerdo,
                   updated_at: new Date().toISOString()
               }).eq('id', updateObj.id);
            });
