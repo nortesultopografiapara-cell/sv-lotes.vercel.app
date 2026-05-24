@@ -1375,10 +1375,14 @@ export default function GISMap({
                   c[1],
                   c[0],
                 ]);
-                try {
-                  dimsFromGeo = calculateLotDimensions(b.geometry.coordinates[0], allPolygons, b.properties || {});
-                } catch(err) {
-                  console.error("Erro recálculo dimensões GISMap", err);
+                
+                // Only calculate from GeoJSON if it's not a TXT import and hasn't been set
+                if (b.source_import !== 'TXT_CIVIL3D') {
+                    try {
+                      dimsFromGeo = calculateLotDimensions(b.geometry.coordinates[0], allPolygons, b.properties || {});
+                    } catch(err) {
+                      console.error("Erro recálculo dimensões GISMap", err);
+                    }
                 }
               }
 
@@ -1398,10 +1402,10 @@ export default function GISMap({
                     : 0,
                 geometryType: b.geometry?.type,
                 bounds,
-                frente: dimsFromGeo ? dimsFromGeo.frente : (b.frente || null),
-                fundo: dimsFromGeo ? dimsFromGeo.fundo : (b.fundo || null),
-                lado_direito: dimsFromGeo ? dimsFromGeo.ladoDireito : (b.lado_direito || null),
-                lado_esquerdo: dimsFromGeo ? dimsFromGeo.ladoEsquerdo : (b.lado_esquerdo || null),
+                frente: b.frente !== null ? b.frente : (dimsFromGeo ? dimsFromGeo.frente : null),
+                fundo: b.fundo !== null ? b.fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
+                lado_direito: b.lado_direito !== null ? b.lado_direito : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
+                lado_esquerdo: b.lado_esquerdo !== null ? b.lado_esquerdo : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
               };
             })
             .filter((b) => b.bounds.length > 0);

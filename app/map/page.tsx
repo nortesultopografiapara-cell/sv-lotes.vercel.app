@@ -169,6 +169,12 @@ export default function MapPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
 
+  // TXT Civil 3D Import States
+  const [isImportTxtModalOpen, setIsImportTxtModalOpen] = useState(false);
+  const [importTxtQuadra, setImportTxtQuadra] = useState('');
+  const [importTxtFile, setImportTxtFile] = useState<File | null>(null);
+  const [importingTxt, setImportingTxt] = useState(false);
+
   // Map Tools States
   const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'|'dark'>('satellite');
   const [gpsActive, setGpsActive] = useState(false);
@@ -682,6 +688,188 @@ export default function MapPage() {
     }
   };
 
+  const handleImportTXT = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importTxtFile || !selectedProject || !user) return;
+    setImportingTxt(true);
+    
+    try {
+      let tenantId = user.tenant_id;
+      if (!tenantId) {
+        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user.id).single();
+        if (userData?.tenant_id) {
+          tenantId = userData.tenant_id;
+        }
+      }
+
+      const isMasterAdmin = user.email === 'severino@nortesultopografia.com.br' || user.email === 'nortesultopografiapara@gmail.com' || user.role === 'SUPER_ADMIN';
+
+      if (!tenantId && isMasterAdmin) {
+        tenantId = null;
+      }
+
+      if (!selectedProject.id) {
+         alert('Erro: Projeto não identificado. Atualize a página e tente novamente.');
+         setImportingTxt(false);
+         return;
+      }
+
+      let finalTenantId = tenantId;
+      if (finalTenantId === 'MASTER-ADMIN') finalTenantId = null;
+
+      if (!finalTenantId && !isMasterAdmin) {
+         alert('Erro: Empresa não identificada. Faça login novamente.');
+         setImportingTxt(false);
+         return;
+      }
+
+      if (!importTxtQuadra.trim()) {
+         alert('Erro: Informe a Quadra para importação TXT.');
+         setImportingTxt(false);
+         return;
+      }
+
+      const text = await importTxtFile.text();
+      const blocksParsed = [];
+      const nameChunks = text.split(/Name:\s*/i).slice(1);
+      
+      for (let chunk of nameChunks) {
+         const lines = chunk.split('\n');
+         const name = lines[0].trim();
+         
+         let area = 0;
+         let perimeter = 0;
+         let segments = [];
+         let currentSeg: any = {};
+         let coords = [];
+         
+         for (let line of lines) {
+            line = line.trim();
+            if (line.match(/^Segment\s*#/i)) {
+                if (Object.keys(currentSeg).length > 0) segments.push(currentSeg);
+                currentSeg = {};
+            } else if (line.match(/^Length:\s*([0-9.]+)/i)) {
+                currentSeg.length = parseFloat(line.match(/^Length:\s*([0-9.]+)/i)![1]);
+            } else if (line.match(/^Northing:\s*([0-9.]+)/i)) {
+                currentSeg.northing = parseFloat(line.match(/^Northing:\s*([0-9.]+)/i)![1]);
+            } else if (line.match(/^Easting:\s*([0-9.]+)/i)) {
+                currentSeg.easting = parseFloat(line.match(/^Easting:\s*([0-9.]+)/i)![1]);
+                coords.push([currentSeg.easting, currentSeg.northing]);
+            } else if (line.match(/^Area:\s*([0-9.]+)/i)) {
+                area = parseFloat(line.match(/^Area:\s*([0-9.]+)/i)![1]);
+            } else if (line.match(/^Perimeter:\s*([0-9.]+)/i)) {
+                perimeter = parseFloat(line.match(/^Perimeter:\s*([0-9.]+)/i)![1]);
+            }
+         }
+         if (Object.keys(currentSeg).length > 0) segments.push(currentSeg);
+         
+         if (coords.length > 2) {
+             const first = coords[0];
+             const last = coords[coords.length - 1];
+             if (first[0] !== last[0] || first[1] !== last[1]) {
+                coords.push([...first]);
+             }
+         }
+         
+         blocksParsed.push({ name, area, perimeter, segments, coords });
+      }
+
+      if (blocksParsed.length === 0) {
+         alert('Erro: Nenhum lote válido encontrado no arquivo TXT.');
+         setImportingTxt(false);
+         return;
+      }
+
+      const { data: blockCheck } = await supabase
+         .from('blocks')
+         .select('id')
+         .eq('project_id', selectedProject.id)
+         .eq('block_name', importTxtQuadra.toUpperCase().trim())
+         .limit(1);
+
+      if (blockCheck && blockCheck.length > 0) {
+         alert(`Erro: A Quadra "${importTxtQuadra.toUpperCase()}" já existe neste projeto.`);
+         setImportingTxt(false);
+         return;
+      }
+
+      try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
+          
+      const PRICE_PER_M2 = 0.0993035247984734; // Placeholder
+      
+      const blocksToInsert = blocksParsed.map((b) => {
+          const finalArea = parseFloat(b.area.toFixed(2));
+          const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
+          
+          let frente = null;
+          let fundo = null;
+          let lado_direito = null;
+          let lado_esquerdo = null;
+          
+          if (b.segments && b.segments.length >= 4) {
+             const sortedByLength = [...b.segments].sort((s1, s2) => s1.length - s2.length);
+             frente = sortedByLength[0].length;
+             fundo = sortedByLength[1].length;
+             lado_direito = sortedByLength[2].length;
+             lado_esquerdo = sortedByLength[3].length;
+             // Attempt to match typical pattern if we had azimuth... but we just use sorted lengths for now 
+             // to ensure they are captured. Or just keep order: seg 0,1,2,3? Usually TXT segments are sequential around the perimeter.
+             // We'll keep them raw in segments_json and make a simple assignment. User requested official Length.
+             frente = b.segments[0]?.length || 0;
+             lado_direito = b.segments[1]?.length || 0;
+             fundo = b.segments[2]?.length || 0;
+             lado_esquerdo = b.segments[3]?.length || 0;
+          }
+
+          let geom = null;
+          if (b.coords.length >= 4) {
+             geom = {
+                 type: "Polygon",
+                 coordinates: [b.coords]
+             };
+          }
+
+          return {
+             project_id: selectedProject.id,
+             name: importTxtQuadra.toUpperCase(),
+             block_name: importTxtQuadra.toUpperCase(),
+             number: b.name,
+             lot_number: b.name,
+             status: 'Disponível',
+             area: finalArea,
+             perimeter: b.perimeter,
+             price: finalPrice,
+             geometry: geom,
+             tenant_id: finalTenantId,
+             company_id: finalTenantId,
+             frente,
+             fundo,
+             lado_direito,
+             lado_esquerdo,
+             segments_json: b.segments,
+             coordinates_utm_json: b.coords,
+             source_import: 'TXT_CIVIL3D'
+          };
+      });
+      
+      if (blocksToInsert.length > 0) {
+          const { error: insertError } = await supabase.from('blocks').insert(blocksToInsert);
+          if (insertError) throw insertError;
+      }
+      
+      alert(`Importados ${blocksToInsert.length} lotes do TXT com sucesso!`);
+      setIsImportTxtModalOpen(false);
+      setImportTxtFile(null);
+      setImportTxtQuadra('');
+      setMapRefreshKey(prev => prev + 1);
+    } catch(err: any) {
+       console.error("Erro no import TXT: ", err);
+       alert("Erro ao importar TXT: " + err.message);
+    } finally {
+       setImportingTxt(false);
+    }
+  };
+
   const handleSaveStreetGuide = async (latlngs: L.LatLng[]) => {
     if (!selectedProject || latlngs.length < 2) return;
     
@@ -803,7 +991,15 @@ export default function MapPage() {
                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
+                 </button>
+
+                 <button 
+                    onClick={() => setIsImportTxtModalOpen(true)} 
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                 >
+                    <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (TXT)</span>
                  </button>
                  
                  <hr className="w-2/3 border-[#2d3340]" />
@@ -953,6 +1149,46 @@ export default function MapPage() {
                        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                     >
                        {importing ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar e Salvar</>}
+                    </button>
+                 </form>
+              </div>
+           </div>
+        )}
+
+        {/* Modal TXT Import */}
+        {isImportTxtModalOpen && (
+           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
+                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+                    <h3 className="font-bold text-white text-lg">Importar Lotes (TXT Civil 3D)</h3>
+                    <button onClick={() => setIsImportTxtModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                       <X className="w-5 h-5" />
+                    </button>
+                 </div>
+                 <form onSubmit={handleImportTXT} className="p-6 flex flex-col gap-4">
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Identificação da Quadra</label>
+                       <input 
+                         type="text" required
+                         value={importTxtQuadra} onChange={e => setImportTxtQuadra(e.target.value)}
+                         placeholder="Ex: A, B, C..."
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Arquivo TXT</label>
+                       <input 
+                         type="file" accept=".txt" required
+                         onChange={e => setImportTxtFile(e.target.files?.[0] || null)}
+                         className="w-full text-sm text-[var(--color-text-muted)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--color-primary)]/10 file:text-[var(--color-primary)] hover:file:bg-[var(--color-primary)]/20 file:transition-colors file:cursor-pointer cursor-pointer border border-[var(--color-border)] bg-[var(--color-background)] rounded-lg p-2"
+                       />
+                    </div>
+
+                    <button 
+                       type="submit" disabled={importingTxt}
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                    >
+                       {importingTxt ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar TXT e Salvar</>}
                     </button>
                  </form>
               </div>
