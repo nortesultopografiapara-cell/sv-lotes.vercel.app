@@ -134,7 +134,7 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
            </div>
            <div>
               <h2 className="text-xl font-bold text-white mb-1">Excluir Empresa Definitivamente</h2>
-              <p className="text-sm text-[var(--color-text-muted)]">
+              <p className="text-sm text-gray-400">
                 Esta ação apagará a empresa e seus dados vinculados. Não poderá ser desfeita.
               </p>
            </div>
@@ -152,25 +152,25 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
           </div>
         ) : report ? (
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-             <div className="bg-[var(--color-surface)] rounded-xl p-4 border border-[var(--color-border)]">
+             <div className="bg-[#1a1f29] rounded-xl p-4 border border-[#2d3340]">
                 <h3 className="text-sm font-bold text-white mb-3 flex justify-between">
                    <span>{company.name}</span>
-                   <span className="text-[var(--color-text-muted)] text-xs font-mono">{company.cnpj || 'Sem CNPJ'}</span>
+                   <span className="text-gray-500 text-xs font-mono">{company.cnpj || 'Sem CNPJ'}</span>
                 </h3>
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[var(--color-text-muted)]">
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-gray-400">
                    <div>Tenant ID:</div><div className="text-right text-white truncate" title={company.id}>{company.id.split('-')[0]}...</div>
                    <div>Usuários:</div><div className="text-right text-white">{report.users}</div>
                    <div>Projetos:</div><div className="text-right text-white">{report.projects}</div>
                    <div>Lotes (Blocks):</div><div className="text-right text-white">{report.blocks}</div>
-                   <div className={report.contracts > 0 ? "text-[var(--color-primary)]" : ""}>Contratos:</div>
-                   <div className={`text-right ${report.contracts > 0 ? "text-[var(--color-primary)] font-bold" : "text-white"}`}>{report.contracts}</div>
-                   <div className={report.finance_receipts > 0 ? "text-[var(--color-primary)]" : ""}>Financeiro:</div>
-                   <div className={`text-right ${report.finance_receipts > 0 ? "text-[var(--color-primary)] font-bold" : "text-white"}`}>{report.finance_receipts}</div>
+                   <div className={report.contracts > 0 ? "text-orange-400" : ""}>Contratos:</div>
+                   <div className={`text-right ${report.contracts > 0 ? "text-orange-400 font-bold" : "text-white"}`}>{report.contracts}</div>
+                   <div className={report.finance_receipts > 0 ? "text-orange-400" : ""}>Financeiro:</div>
+                   <div className={`text-right ${report.finance_receipts > 0 ? "text-orange-400 font-bold" : "text-white"}`}>{report.finance_receipts}</div>
                 </div>
              </div>
 
              {hasOperationalData && (
-                <div className="p-3 border border-orange-500/30 bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-sm rounded-lg leading-relaxed">
+                <div className="p-3 border border-orange-500/30 bg-orange-500/10 text-orange-400 text-sm rounded-lg leading-relaxed">
                    <strong>Esta empresa possui dados operacionais.</strong><br/>
                    Confirme que deseja apagar em modo destrutivo.
                 </div>
@@ -178,7 +178,7 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
 
              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                     Digite o nome da empresa
                   </label>
                   <input 
@@ -186,13 +186,13 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
                     placeholder={`Digite exatamente: ${company.name}`}
                     value={confirmName}
                     onChange={(e) => setConfirmName(e.target.value)}
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                    className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
                   />
-                  <p className="text-[10px] text-[var(--color-text-muted)] mt-1">Você precisa digitar o nome exato da empresa, não o e-mail.</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Você precisa digitar o nome exato da empresa, não o e-mail.</p>
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
                     Senha do Super Admin
                   </label>
                   <input 
@@ -200,13 +200,13 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
                     placeholder="Sua senha para confirmar..."
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                    className="w-full bg-[#1a1f29] border border-[#2d3340] rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
                   />
                 </div>
 
                 {hasOperationalData && (
                   <div>
-                    <label className="block text-xs font-bold text-[var(--color-primary)] uppercase tracking-wider mb-1">
+                    <label className="block text-xs font-bold text-orange-400 uppercase tracking-wider mb-1">
                       Confirmação Destrutiva
                     </label>
                     <input 
@@ -214,7 +214,7 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
                       placeholder="Digite: APAGAR DEFINITIVAMENTE"
                       value={destructiveConfirmation}
                       onChange={(e) => setDestructiveConfirmation(e.target.value)}
-                      className="w-full bg-[var(--color-surface)] border border-orange-500/50 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
+                      className="w-full bg-[#1a1f29] border border-orange-500/50 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-red-500 transition-colors"
                     />
                   </div>
                 )}
@@ -222,11 +222,11 @@ export default function CompanyDeleteModal({ isOpen, onClose, company, user, onS
           </div>
         ) : null}
 
-        <div className="mt-8 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4">
+        <div className="mt-8 flex flex-col gap-3 border-t border-[#2d3340] pt-4">
            <div className="flex justify-end gap-3">
               <button 
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg text-sm font-bold text-[var(--color-text-muted)] hover:text-white transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white transition-colors"
                 disabled={loading}
               >
                 Cancelar

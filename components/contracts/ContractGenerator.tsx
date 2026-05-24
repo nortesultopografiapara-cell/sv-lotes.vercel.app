@@ -214,7 +214,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                        <FileDown className="w-4 h-4" /> PDF
                    </button>
                    {!selectedTemplate && (
-                       <button onClick={handleDownloadDocx} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-medium rounded-lg transition-colors">
+                       <button onClick={handleDownloadDocx} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-primary)] hover:bg-[#8b5cf6] text-white text-sm font-medium rounded-lg transition-colors">
                            <Download className="w-4 h-4" /> DOCX
                        </button>
                    )}
@@ -222,7 +222,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
            </div>
            
            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center bg-[var(--color-background)]">
-               <div className="bg-[var(--color-surface)] shadow-2xl border border-[var(--color-border)] p-8 md:p-12 max-w-3xl w-full text-black font-serif text-sm leading-relaxed" ref={printRef} style={{ minHeight: '1056px' }}>
+               <div className="bg-white shadow-2xl border border-gray-200 p-8 md:p-12 max-w-3xl w-full text-black font-serif text-sm leading-relaxed" ref={printRef} style={{ minHeight: '1056px' }}>
                    
                    {selectedTemplate ? (
                        <div dangerouslySetInnerHTML={{ __html: replaceVariables(selectedTemplate.content) }} />

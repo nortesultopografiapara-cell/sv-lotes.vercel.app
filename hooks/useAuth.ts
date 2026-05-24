@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export interface UserProfile {
@@ -21,23 +21,6 @@ export function useAuth() {
     let mounted = true;
     
     async function getUser() {
-      // --- DEMO PREVIEW MODE ---
-      if (!isSupabaseConfigured && typeof window !== 'undefined' && document.cookie.includes('demo_preview_mode=true')) {
-        if (mounted) {
-          setUser({
-            id: 'demo-user-id',
-            tenant_id: 'demo-tenant-id',
-            role: 'ADMIN', // so we can see regular company screens (contracts, finance, etc)
-            email: 'demo@ai-studio.com',
-            name: 'Usuário de Demonstração',
-            force_password_change: false,
-            onboarding_completed: true,
-          });
-          setLoading(false);
-        }
-        return;
-      }
-
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError || !session) {
@@ -83,10 +66,6 @@ export function useAuth() {
 
     getUser();
 
-    if (!isSupabaseConfigured && typeof window !== 'undefined' && document.cookie.includes('demo_preview_mode=true')) {
-       return () => { mounted = false; };
-    }
-
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
        if (event === 'SIGNED_OUT') {
          if (mounted) {
@@ -95,8 +74,6 @@ export function useAuth() {
            try {
              localStorage.removeItem('active_tenant');
              localStorage.removeItem('contingency_auth');
-             localStorage.removeItem('demo_preview_mode');
-             document.cookie = "demo_preview_mode=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
              sessionStorage.clear();
            } catch(e) {}
            if (window.location.pathname !== '/login') {

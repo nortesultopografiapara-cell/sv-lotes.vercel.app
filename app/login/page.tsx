@@ -33,17 +33,6 @@ export default function LoginPage() {
     initializeAuth();
   }, []);
 
-  const handleDemoMode = () => {
-    // Set a cookie so middleware knows we're in demo mode
-    document.cookie = "demo_preview_mode=true; path=/; max-age=3600";
-    
-    // Set a flag in localStorage for client-side components if they do checks
-    localStorage.setItem('demo_preview_mode', 'true');
-    
-    // Redirect to dashboard
-    window.location.href = '/dashboard';
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('ENV CHECK:', {
@@ -142,71 +131,53 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleLogin} className="space-y-6">
-          {!isSupabaseConfigured ? (
-            <div className="space-y-4">
-               <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400 text-sm mb-4">
-                 <p className="font-bold flex items-center gap-2 mb-2"><AlertCircle className="w-4 h-4"/> Ambiente Google AI Studio Visualizado</p>
-                 <p>O login real foi desabilitado pois as variáveis estão ausentes neste preview.</p>
-               </div>
-               <button 
-                 type="button" 
-                 onClick={handleDemoMode}
-                 className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(37,99,235,0.39)]"
-               >
-                 <Eye className="w-5 h-5" /> Entrar em Modo Demonstração
-               </button>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                placeholder="nome@nortesultopografia.com.br"
+                required
+              />
             </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-                  <input 
-                    type="email" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                    placeholder="nome@nortesultopografia.com.br"
-                    required
-                  />
-                </div>
-              </div>
+          </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
-                  <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-                  <input 
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                    placeholder="••••••••"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
+              <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <input 
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
-            </>
-          )}
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
+          </button>
         </form>
 
         <div className="mt-8 pt-6 border-t border-[var(--color-border)] text-center">

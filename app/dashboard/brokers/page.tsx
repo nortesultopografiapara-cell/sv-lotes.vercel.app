@@ -769,7 +769,7 @@ export default function CorretoresPage() {
        case 'ADMIN_EMPRESA': return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
        case 'GERENTE': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
        case 'BROKER': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
-       case 'ASSISTENTE': return 'bg-gray-500/10 text-[var(--color-text-muted)] border-gray-500/20';
+       case 'ASSISTENTE': return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
        default: return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
      }
   };
@@ -923,19 +923,19 @@ export default function CorretoresPage() {
       <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white mb-1 tracking-tight">Corretores</h1>
-          <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
+          <p className="text-xs font-mono text-gray-400 uppercase tracking-wider">
             GERENCIAMENTO DE EQUIPE DE VENDAS
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
               type="text" 
               placeholder="Buscar corretor..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="bg-[#111217] border border-[var(--color-border)] text-white rounded-lg pl-9 pr-4 py-2 w-full md:w-64 focus:outline-none focus:border-teal-500/50 transition-colors"
+              className="bg-[#111217] border border-gray-800 text-white rounded-lg pl-9 pr-4 py-2 w-full md:w-64 focus:outline-none focus:border-teal-500/50 transition-colors"
             />
           </div>
           <button 
@@ -964,7 +964,7 @@ export default function CorretoresPage() {
 
       {/* Top Cards Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
-         <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
+         <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
              <div className="flex items-center gap-4 mb-4">
                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500">
                  <Users className="w-6 h-6" />
@@ -973,7 +973,7 @@ export default function CorretoresPage() {
                   <div className="text-3xl font-bold text-white">
                     {corretores.filter(c => c.active).length} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
                   </div>
-                  <div className="text-sm font-medium text-[var(--color-text-muted)]">Corretores ativos</div>
+                  <div className="text-sm font-medium text-gray-400">Corretores ativos</div>
                </div>
              </div>
              <div className="text-xs text-emerald-500 font-medium">
@@ -983,14 +983,14 @@ export default function CorretoresPage() {
              </div>
          </div>
 
-         <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl p-5 flex flex-col justify-between shadow-lg">
+         <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg">
              <div className="flex items-center gap-4 mb-4">
                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-500">
                  <TrendingUp className="w-6 h-6" />
                </div>
                <div>
                   <div className="text-3xl font-bold text-white">{totalVendasMes}</div>
-                  <div className="text-sm font-medium text-[var(--color-text-muted)]">Vendas do mês</div>
+                  <div className="text-sm font-medium text-gray-400">Vendas do mês</div>
                </div>
              </div>
              <div className="text-xs text-blue-500 font-medium">
@@ -998,7 +998,7 @@ export default function CorretoresPage() {
              </div>
          </div>
 
-         <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
+         <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
              {/* Glow decorativo */}
              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
              
@@ -1008,7 +1008,7 @@ export default function CorretoresPage() {
                </div>
                <div>
                   <div className="text-2xl font-bold text-white tracking-tight">{formatCurrency(totalComissoesPagas)}</div>
-                  <div className="text-sm font-medium text-[var(--color-text-muted)]">Comissões pagas</div>
+                  <div className="text-sm font-medium text-gray-400">Comissões pagas</div>
                </div>
              </div>
              <div className="text-xs text-purple-400 font-medium relative z-10 opacity-0">
@@ -1016,7 +1016,7 @@ export default function CorretoresPage() {
              </div>
          </div>
 
-         <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
+         <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative">
              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
              
              <div className="flex items-center gap-4 mb-4 relative z-10">
@@ -1025,7 +1025,7 @@ export default function CorretoresPage() {
                </div>
                <div>
                   <div className="text-2xl font-bold text-white tracking-tight">{formatCurrency(totalComissoesPendentes)}</div>
-                  <div className="text-sm font-medium text-[var(--color-text-muted)]">Comissões pendentes</div>
+                  <div className="text-sm font-medium text-gray-400">Comissões pendentes</div>
                </div>
              </div>
              <div className="text-xs text-amber-400 font-medium relative z-10 opacity-0">
@@ -1033,14 +1033,14 @@ export default function CorretoresPage() {
              </div>
          </div>
 
-         <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl p-5 flex flex-col justify-between shadow-lg">
+         <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg">
              <div className="flex items-center gap-4 mb-4">
                <div className="w-12 h-12 rounded-full bg-teal-500/10 flex items-center justify-center border border-teal-500/20 text-teal-500">
                  <Users2 className="w-6 h-6" />
                </div>
                <div>
                   <div className="text-2xl font-bold text-white tracking-tight">0</div>
-                  <div className="text-sm font-medium text-[var(--color-text-muted)]">Leads em atendimento</div>
+                  <div className="text-sm font-medium text-gray-400">Leads em atendimento</div>
                </div>
              </div>
              <div className="text-xs text-teal-500 font-medium opacity-0">
@@ -1052,14 +1052,14 @@ export default function CorretoresPage() {
       <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
         
         {/* Main Table Area */}
-        <div className="flex-1 flex flex-col bg-[#121318] border border-[var(--color-border)]/80 rounded-xl shadow-xl overflow-hidden relative">
-          <div className="p-4 border-b border-[var(--color-border)]/80 flex items-center justify-between">
+        <div className="flex-1 flex flex-col bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl overflow-hidden relative">
+          <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
             <h2 className="text-sm font-bold font-mono text-gray-300 uppercase tracking-widest">Lista de Corretores</h2>
             <div className="flex gap-2">
                <select 
                   value={filterActive} 
                   onChange={(e) => setFilterActive(e.target.value as any)}
-                  className="bg-transparent border border-[var(--color-border)] text-xs text-[var(--color-text-muted)] px-3 py-1.5 rounded-lg outline-none focus:border-[var(--color-border)]"
+                  className="bg-transparent border border-gray-800 text-xs text-gray-500 px-3 py-1.5 rounded-lg outline-none focus:border-gray-600"
                >
                  <option value="all">Filtro: Todos os status</option>
                  <option value="ativo">Somente Ativos</option>
@@ -1067,11 +1067,11 @@ export default function CorretoresPage() {
                </select>
                <div className="relative group">
                    <button 
-                      className="text-xs text-[var(--color-text-muted)] px-3 py-1.5 border border-[var(--color-border)] rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
+                      className="text-xs text-gray-500 px-3 py-1.5 border border-gray-800 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
                    >
                       Exportar ↓
                    </button>
-                   <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[#121318] border border-[var(--color-border)] rounded-lg shadow-lg overflow-hidden z-20 whitespace-nowrap">
+                   <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-[#121318] border border-gray-800 rounded-lg shadow-lg overflow-hidden z-20 whitespace-nowrap">
                        <button onClick={handleExportExcel} className="block w-full text-left px-4 py-2 hover:bg-gray-800 text-xs text-gray-300">Planilha (Excel)</button>
                        <button onClick={handleExportPDF} className="block w-full text-left px-4 py-2 hover:bg-gray-800 text-xs text-gray-300">Relatório (PDF)</button>
                    </div>
@@ -1082,25 +1082,25 @@ export default function CorretoresPage() {
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
-                <tr className="bg-[#0b0c10]/50 border-b border-[var(--color-border)]/80">
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest">Corretor</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest">Contato</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest">CRECI</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest">Nível</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest text-center">Vendas (Mês)</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest text-right">Comissão Pendente</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest text-center">Status</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest text-right">Ações</th>
+                <tr className="bg-[#0b0c10]/50 border-b border-gray-800/80">
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Corretor</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Contato</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">CRECI</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Nível</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest text-center">Vendas (Mês)</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest text-right">Comissão Pendente</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest text-center">Status</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--color-text-muted)] font-mono text-sm">Carregando dados...</td>
+                    <td colSpan={8} className="p-8 text-center text-gray-500 font-mono text-sm">Carregando dados...</td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[var(--color-text-muted)] font-mono text-sm">Nenhum corretor encontrado.</td>
+                    <td colSpan={8} className="p-8 text-center text-gray-500 font-mono text-sm">Nenhum corretor encontrado.</td>
                   </tr>
                 ) : (
                   filtered.map((c) => (
@@ -1108,15 +1108,15 @@ export default function CorretoresPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           {c.avatar_url ? (
-                             <img src={c.avatar_url} alt={c.name} className="w-10 h-10 rounded-full object-cover border border-[var(--color-border)]" />
+                             <img src={c.avatar_url} alt={c.name} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
                           ) : (
-                             <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-[var(--color-border)] text-gray-300 font-bold shrink-0">
+                             <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center border border-gray-700 text-gray-300 font-bold shrink-0">
                                {c.name?.charAt(0).toUpperCase()}
                              </div>
                           )}
                           <div>
                             <div className="text-sm font-bold text-gray-100 mb-0.5">{c.name}</div>
-                            <div className="text-xs text-[var(--color-text-muted)]">{c.email}</div>
+                            <div className="text-xs text-gray-500">{c.email}</div>
                           </div>
                         </div>
                       </td>
@@ -1126,7 +1126,7 @@ export default function CorretoresPage() {
                           </div>
                       </td>
                       <td className="p-4">
-                        <div className="text-xs text-[var(--color-text-muted)] font-mono">{c.creci || '—'}</div>
+                        <div className="text-xs text-gray-400 font-mono">{c.creci || '—'}</div>
                       </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-widest border ${getRoleBadge(c.role)}`}>
@@ -1135,7 +1135,7 @@ export default function CorretoresPage() {
                       </td>
                       <td className="p-4 text-center">
                          <div className="text-sm font-bold text-white">{c.vendas_mes_qtd}</div>
-                         <div className="text-[10px] text-[var(--color-text-muted)]">{formatCurrency(c.vendas_mes_valor)}</div>
+                         <div className="text-[10px] text-gray-500">{formatCurrency(c.vendas_mes_valor)}</div>
                          {c.lotesDoMes?.length > 0 && (
                             <div className="text-[9px] text-amber-500/80 font-mono mt-1">{c.lotesDoMes.join(', ')}</div>
                          )}
@@ -1145,21 +1145,21 @@ export default function CorretoresPage() {
                       </td>
                       <td className="p-4 text-center">
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                           c.active ? 'text-emerald-500 bg-emerald-500/10' : 'text-[var(--color-text-muted)] bg-gray-500/10'
+                           c.active ? 'text-emerald-500 bg-emerald-500/10' : 'text-gray-500 bg-gray-500/10'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${c.active ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
                           {c.active ? 'ATIVO' : 'INATIVO'}
                         </span>
                       </td>
-                      <td className="p-4 text-right border-l border-transparent group-hover:border-[var(--color-border)] transition-colors">
+                      <td className="p-4 text-right border-l border-transparent group-hover:border-gray-800 transition-colors">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button onClick={() => handleOpenView(c)} className="p-1.5 text-[var(--color-text-muted)] hover:text-white hover:bg-gray-800 rounded transition-colors" title="Visualizar">
+                           <button onClick={() => handleOpenView(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Visualizar">
                              <Eye className="w-4 h-4" />
                            </button>
-                           <button onClick={() => handleOpenEdit(c)} className="p-1.5 text-[var(--color-text-muted)] hover:text-white hover:bg-gray-800 rounded transition-colors" title="Editar">
+                           <button onClick={() => handleOpenEdit(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Editar">
                              <Edit className="w-4 h-4" />
                            </button>
-                           <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-[var(--color-text-muted)] hover:text-white hover:bg-gray-800 rounded transition-colors" title="Redefinir Senha">
+                           <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Redefinir Senha">
                              <Key className="w-4 h-4" />
                            </button>
                            <button 
@@ -1185,12 +1185,12 @@ export default function CorretoresPage() {
             </table>
           </div>
           
-          <div className="p-3 border-t border-[var(--color-border)]/80 bg-[#0b0c10]/40 flex items-center justify-between">
-            <span className="text-xs text-[var(--color-text-muted)]">Mostrando {filtered.length} corretor(es)</span>
+          <div className="p-3 border-t border-gray-800/80 bg-[#0b0c10]/40 flex items-center justify-between">
+            <span className="text-xs text-gray-500">Mostrando {filtered.length} corretor(es)</span>
             <div className="flex gap-1">
-               <button className="px-2.5 py-1 text-xs bg-gray-800 text-[var(--color-text-muted)] rounded">Anterior</button>
-               <button className="px-2.5 py-1 text-xs bg-[var(--color-primary)] text-white font-bold rounded">1</button>
-               <button className="px-2.5 py-1 text-xs bg-gray-800 text-[var(--color-text-muted)] rounded">Próximo</button>
+               <button className="px-2.5 py-1 text-xs bg-gray-800 text-gray-400 rounded">Anterior</button>
+               <button className="px-2.5 py-1 text-xs bg-orange-500 text-white font-bold rounded">1</button>
+               <button className="px-2.5 py-1 text-xs bg-gray-800 text-gray-400 rounded">Próximo</button>
             </div>
           </div>
         </div>
@@ -1199,7 +1199,7 @@ export default function CorretoresPage() {
         <div className="w-full lg:w-[350px] flex flex-col gap-6">
            
            {/* Ranking Card */}
-           <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl shadow-xl flex flex-col p-5">
+           <div className="bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl flex flex-col p-5">
               <div className="flex items-center justify-between mb-5">
                  <h3 className="text-sm font-bold text-white tracking-tight">TOP CORRETORES (MÊS)</h3>
                  <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver ranking</span>
@@ -1211,26 +1211,26 @@ export default function CorretoresPage() {
                           <Medal className="w-5 h-5" style={{color: medalColors[idx]}} />
                        </div>
                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center shrink-0 overflow-hidden">
-                          {c.avatar_url ? <img src={c.avatar_url} /> : <span className="text-[10px] font-bold text-[var(--color-text-muted)]">{c.name?.charAt(0)}</span>}
+                          {c.avatar_url ? <img src={c.avatar_url} /> : <span className="text-[10px] font-bold text-gray-400">{c.name?.charAt(0)}</span>}
                        </div>
                        <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold text-gray-200 truncate">{c.name}</div>
-                          <div className="text-xs text-[var(--color-text-muted)]">{c.vendas_mes_qtd} vendas</div>
+                          <div className="text-xs text-gray-500">{c.vendas_mes_qtd} vendas</div>
                        </div>
                        <div className="text-xs font-bold text-emerald-500 font-mono shrink-0">
                           {formatCurrency(c.vendas_mes_valor)}
                        </div>
                     </div>
                  ))}
-                 {topCorretores.length === 0 && <div className="text-xs text-[var(--color-text-muted)] text-center py-4">Nenhuma venda registrada.</div>}
+                 {topCorretores.length === 0 && <div className="text-xs text-gray-500 text-center py-4">Nenhuma venda registrada.</div>}
               </div>
            </div>
 
            {/* Gráfico Dispersão Comissões */}
-           <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl shadow-xl p-5 flex flex-col">
+           <div className="bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl p-5 flex flex-col">
               <div className="flex items-center justify-between mb-4">
                  <h3 className="text-sm font-bold text-white tracking-tight">COMISSÕES (RESUMO)</h3>
-                 <select className="bg-transparent border-none text-xs text-[var(--color-text-muted)] outline-none">
+                 <select className="bg-transparent border-none text-xs text-gray-500 outline-none">
                     <option>Este mês</option>
                  </select>
               </div>
@@ -1256,17 +1256,17 @@ export default function CorretoresPage() {
                     </PieChart>
                  </ResponsiveContainer>
                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Total</span>
+                    <span className="text-xs font-mono text-gray-500 uppercase tracking-widest">Total</span>
                     <span className="text-sm font-bold text-white">{formatCurrency(totalComissoesPagas + totalComissoesPendentes)}</span>
                  </div>
               </div>
               
-              <div className="flex justify-around mt-4 border-t border-[var(--color-border)]/80 pt-4">
+              <div className="flex justify-around mt-4 border-t border-gray-800/80 pt-4">
                  {chartData.map(d => (
                     <div key={d.name} className="flex flex-col items-center">
                        <div className="flex items-center gap-1.5 mb-1">
                           <div className="w-2 h-2 rounded-full" style={{backgroundColor: d.color}}></div>
-                          <span className="text-xs text-[var(--color-text-muted)]">{d.name}</span>
+                          <span className="text-xs text-gray-400">{d.name}</span>
                        </div>
                        <span className="text-sm font-bold text-gray-200">{formatCurrency(d.value)}</span>
                     </div>
@@ -1275,7 +1275,7 @@ export default function CorretoresPage() {
            </div>
 
            {/* Atividades Recentes */}
-           <div className="bg-[#121318] border border-[var(--color-border)]/80 rounded-xl shadow-xl flex flex-col p-5 flex-1 min-h-[250px]">
+           <div className="bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl flex flex-col p-5 flex-1 min-h-[250px]">
               <div className="flex items-center justify-between mb-5">
                  <h3 className="text-sm font-bold text-white tracking-tight">ATIVIDADES RECENTES</h3>
                  <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver todas</span>
@@ -1285,7 +1285,7 @@ export default function CorretoresPage() {
                  <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gray-800"></div>
 
                  {recentActivities.length === 0 && (
-                    <div className="text-xs text-[var(--color-text-muted)] text-center py-4 relative z-10 w-full">Nenhuma atividade recente.</div>
+                    <div className="text-xs text-gray-500 text-center py-4 relative z-10 w-full">Nenhuma atividade recente.</div>
                  )}
                  {recentActivities.map((act, index) => (
                    <div key={act.id + index} className="flex items-start gap-4 relative z-10">
@@ -1298,7 +1298,7 @@ export default function CorretoresPage() {
                       </div>
                       <div>
                          <p className="text-xs text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{__html: act.message.replace(act.message.split(' ')[0], `<strong class="text-white">${act.message.split(' ')[0]} ${act.message.split(' ')[1] || ''}</strong>`)}}></p>
-                         <p className="text-[10px] text-[var(--color-text-muted)] font-mono mt-1">{act.subtext} • {act.date.toLocaleDateString('pt-BR')} {act.date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p>
+                         <p className="text-[10px] text-gray-500 font-mono mt-1">{act.subtext} • {act.date.toLocaleDateString('pt-BR')} {act.date.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</p>
                       </div>
                    </div>
                  ))}
@@ -1311,9 +1311,9 @@ export default function CorretoresPage() {
       {/* Modal Delete */}
       {deleteModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-[#121318] border border-[var(--color-border)] rounded-xl shadow-2xl p-6 w-full max-w-md">
+           <div className="bg-[#121318] border border-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md">
               <h2 className="text-xl font-bold text-white mb-2">Excluir Corretor?</h2>
-              <p className="text-[var(--color-text-muted)] text-sm mb-6">Esta ação removerá o acesso deste corretor à empresa e o ocultará da lista. O histórico de vendas e comissões do corretor será preservado por motivo de auditoria e relatórios financeiros.</p>
+              <p className="text-gray-400 text-sm mb-6">Esta ação removerá o acesso deste corretor à empresa e o ocultará da lista. O histórico de vendas e comissões do corretor será preservado por motivo de auditoria e relatórios financeiros.</p>
               <div className="flex justify-end gap-3">
                  <button onClick={() => setDeleteModal(null)} className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors">Cancelar</button>
                  <button onClick={() => handleDelete(deleteModal)} disabled={loading} className="px-5 py-2 text-sm bg-red-500 hover:bg-red-600 font-bold text-white rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 min-w-[120px]">
@@ -1327,13 +1327,13 @@ export default function CorretoresPage() {
       {/* Modal - Novo Corretor */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#121318] border border-[var(--color-border)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+          <div className="bg-[#121318] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
             
-            <div className="flex items-center justify-between p-5 border-b border-[var(--color-border)]/80 bg-[#161821]">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800/80 bg-[#161821]">
               <h2 className="text-lg font-bold text-white">
                 {modalMode === 'edit' ? 'Editar Corretor' : modalMode === 'view' ? 'Visualizar Corretor' : modalMode === 'reset' ? 'Redefinir Senha' : 'Cadastrar Novo Corretor'}
               </h2>
-              <button onClick={handleCloseModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+              <button onClick={handleCloseModal} className="text-gray-500 hover:text-white transition-colors">
                 ✕
               </button>
             </div>
@@ -1345,18 +1345,18 @@ export default function CorretoresPage() {
                      <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                    </div>
                    <h3 className="text-xl font-bold text-white mb-2">{successData.isExisting ? 'Corretor Atualizado!' : 'Corretor Cadastrado!'}</h3>
-                   <p className="text-sm text-[var(--color-text-muted)] max-w-sm mx-auto mb-6">
+                   <p className="text-sm text-gray-400 max-w-sm mx-auto mb-6">
                      {successData.isExisting ? 'O corretor já possuía cadastro no sistema e foi vinculado a esta empresa.' : 'Acesso gerado com sucesso. Envie as credenciais abaixo para o corretor fazer login no CRM.'}
                    </p>
                    
-                   <div className="bg-[#0b0c10] border border-[var(--color-border)] rounded-xl w-full max-w-md mx-auto overflow-hidden text-left mb-8 shadow-inner">
-                      <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center gap-4">
-                        <span className="text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest w-16">LOGIN</span>
+                   <div className="bg-[#0b0c10] border border-gray-800 rounded-xl w-full max-w-md mx-auto overflow-hidden text-left mb-8 shadow-inner">
+                      <div className="px-5 py-4 border-b border-gray-800 flex items-center gap-4">
+                        <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest w-16">LOGIN</span>
                         <span className="text-sm text-gray-200 select-all font-medium">{successData.email}</span>
                       </div>
                       {successData.password ? (
                         <div className="px-5 py-4 flex items-center gap-4 bg-[#0a0b0e]">
-                          <span className="text-xs font-mono font-bold text-[var(--color-text-muted)] uppercase tracking-widest w-16">SENHA</span>
+                          <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest w-16">SENHA</span>
                           <span className="text-sm font-mono text-emerald-400 font-bold select-all tracking-wider">{successData.password}</span>
                         </div>
                       ) : (
@@ -1383,83 +1383,83 @@ export default function CorretoresPage() {
                    
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5" style={{ display: modalMode === 'reset' ? 'none' : 'grid' }}>
                        <div className="space-y-1.5 md:col-span-2">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Nome Completo</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Nome Completo</label>
                           <div className="relative">
-                            <User className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                            <User className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="text" 
                               required={modalMode !== 'reset'}
                               disabled={modalMode === 'view'}
                               value={formData.fullName}
                               onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                              className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                              className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                               placeholder="Nome do profissional"
                             />
                           </div>
                        </div>
                        
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Email (Login)</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Email (Login)</label>
                           <div className="relative">
-                            <Mail className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                            <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="email" 
                               required={modalMode !== 'reset'}
                               disabled={modalMode === 'view' || modalMode === 'edit'}
                               value={formData.email}
                               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                              className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                              className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                               placeholder="email@empresa.com"
                             />
                           </div>
                        </div>
 
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Telefone (WhatsApp)</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Telefone (WhatsApp)</label>
                           <div className="relative">
-                            <Phone className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                            <Phone className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                             <input 
                               type="tel" 
                               disabled={modalMode === 'view'}
                               value={formData.phone}
                               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                              className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                              className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                               placeholder="(00) 00000-0000"
                             />
                           </div>
                        </div>
 
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">CRECI</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">CRECI</label>
                           <input 
                             type="text" 
                             disabled={modalMode === 'view'}
                             value={formData.creci}
                             onChange={(e) => setFormData({ ...formData, creci: e.target.value })}
-                            className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                            className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                             placeholder="Ex: 12345-F"
                           />
                        </div>
 
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">CPF</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">CPF</label>
                           <input 
                             type="text" 
                             disabled={modalMode === 'view'}
                             value={formData.cpf}
                             onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
-                            className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                            className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                             placeholder="000.000.000-00"
                           />
                        </div>
 
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Nível de Acesso</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Nível de Acesso</label>
                           <select 
                             value={formData.role}
                             disabled={modalMode === 'view'}
                             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                            className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
+                            className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
                           >
                              <option value="BROKER">Corretor / Vendedor</option>
                              <option value="GERENTE">Gerente de Vendas</option>
@@ -1469,7 +1469,7 @@ export default function CorretoresPage() {
                        </div>
 
                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Comissão Padrão (%)</label>
+                          <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Comissão Padrão (%)</label>
                           <div className="relative">
                              <input 
                                type="number"
@@ -1479,45 +1479,45 @@ export default function CorretoresPage() {
                                disabled={modalMode === 'view'}
                                value={formData.commission_percent}
                                onChange={(e) => setFormData({ ...formData, commission_percent: parseFloat(e.target.value) })}
-                               className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-4 pr-10 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                               className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-4 pr-10 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                              />
-                             <span className="absolute right-4 top-2.5 text-[var(--color-text-muted)] text-sm">%</span>
+                             <span className="absolute right-4 top-2.5 text-gray-500 text-sm">%</span>
                           </div>
                        </div>
                    </div>
 
                    {(modalMode === 'create' || modalMode === 'reset') && (
                       <>
-                         <hr className="border-[var(--color-border)]" />
+                         <hr className="border-gray-800" />
       
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                              <div className="space-y-1.5">
-                                <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Senha de Acesso</label>
+                                <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Senha de Acesso</label>
                                 <div className="relative">
-                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                                   <input 
                                     type="password" 
                                     required={modalMode === 'create' || modalMode === 'reset'}
                                     minLength={6}
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                    className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                                    className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                                     placeholder="Mínimo 6 caracteres"
                                   />
                                 </div>
                              </div>
                              
                              <div className="space-y-1.5">
-                                <label className="text-xs font-bold font-mono text-[var(--color-text-muted)] uppercase tracking-widest">Confirmar Senha</label>
+                                <label className="text-xs font-bold font-mono text-gray-400 uppercase tracking-widest">Confirmar Senha</label>
                                 <div className="relative">
-                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-[var(--color-text-muted)]" />
+                                  <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                                   <input 
                                     type="password" 
                                     required={modalMode === 'create' || modalMode === 'reset'}
                                     minLength={6}
                                     value={formData.confirmPassword}
                                     onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                                    className="w-full bg-[#0b0c10] border border-[var(--color-border)] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                                    className="w-full bg-[#0b0c10] border border-gray-800 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                                     placeholder="Repita a senha"
                                   />
                                 </div>
@@ -1530,7 +1530,7 @@ export default function CorretoresPage() {
                        <button 
                          type="button"
                          onClick={handleCloseModal}
-                         className="px-5 py-2.5 rounded-lg text-sm font-medium text-[var(--color-text-muted)] hover:text-white hover:bg-gray-800 transition-colors"
+                         className="px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
                        >
                          {modalMode === 'view' ? 'Fechar' : 'Cancelar'}
                        </button>

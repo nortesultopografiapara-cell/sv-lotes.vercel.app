@@ -229,7 +229,7 @@ function OperationalDashboard({ user }: { user: any }) {
     if (act.includes('VEND')) return { icon: Tag, color: 'bg-red-500/10 text-red-500' };
     if (act.includes('CLIENT')) return { icon: UserPlus, color: 'bg-purple-500/10 text-purple-400' };
     if (act.includes('PAG') || act.includes('COMMISSION')) return { icon: Wallet, color: 'bg-[#a352ff]/10 text-[#a352ff]' };
-    if (act.includes('CONTRACT') || act.includes('CONTRATO')) return { icon: FileText, color: 'bg-[var(--color-primary)]/10 text-[#60a5fa]' };
+    if (act.includes('CONTRACT') || act.includes('CONTRATO')) return { icon: FileText, color: 'bg-[#2563eb]/10 text-[#60a5fa]' };
     return { icon: FileText, color: 'bg-blue-500/10 text-blue-400' };
   };
   
@@ -269,22 +269,22 @@ function OperationalDashboard({ user }: { user: any }) {
               >
                 {getGreeting()}, <span className="font-bold">{user?.name?.split(' ')[0] || 'Admin'}</span> <span className="animate-wave inline-block origin-bottom-right">👋</span>
               </motion.h1>
-              <p className="text-[var(--color-text-muted)] text-sm md:text-base">Bem-vindo ao painel de gestão da sua loteadora</p>
+              <p className="text-gray-400 text-sm md:text-base">Bem-vindo ao painel de gestão da sua loteadora</p>
            </div>
            
            <div className="flex flex-col items-start md:items-end gap-3 relative z-10">
               <div className="text-right hidden md:block">
                  <p className="text-white font-mono text-lg font-medium">{currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
-                 <p className="text-xs text-[var(--color-text-muted)] capitalize">{formatDateBR(currentTime)}</p>
+                 <p className="text-xs text-gray-500 capitalize">{formatDateBR(currentTime)}</p>
               </div>
               
               <div className="flex items-center gap-4 bg-[#121820] border border-white/5 p-2 rounded-xl">
-                 <label htmlFor="project-select" className="text-[var(--color-text-muted)] text-xs font-semibold pl-2 uppercase tracking-wide">Projeto:</label>
+                 <label htmlFor="project-select" className="text-gray-400 text-xs font-semibold pl-2 uppercase tracking-wide">Projeto:</label>
                  <select 
                     id="project-select"
                     value={selectedProjectId}
                     onChange={(e) => setSelectedProjectId(e.target.value)}
-                    className="bg-[#1a232f] border border-white/10 text-white text-sm py-1.5 px-3 rounded-lg focus:outline-none focus:border-[var(--color-primary)] outline-none min-w-[200px]"
+                    className="bg-[#1a232f] border border-white/10 text-white text-sm py-1.5 px-3 rounded-lg focus:outline-none focus:border-[#2563eb] outline-none min-w-[200px]"
                  >
                     {projects.map(p => (
                        <option key={p.id} value={p.id}>{p.name}</option>
@@ -381,22 +381,22 @@ function OperationalDashboard({ user }: { user: any }) {
 
         {/* Mapa e Atividades */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8">
-          <div className={`xl:col-span-3 bg-[var(--color-surface)] border border-white/5 rounded-2xl overflow-hidden shadow-2xl flex flex-col transition-all duration-500 ease-in-out ${mapExpanded ? 'fixed inset-4 z-[9999]' : 'h-[320px] md:h-[420px] xl:h-[520px] relative'}`}>
+          <div className={`xl:col-span-3 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden shadow-2xl flex flex-col transition-all duration-500 ease-in-out ${mapExpanded ? 'fixed inset-4 z-[9999]' : 'h-[320px] md:h-[420px] xl:h-[520px] relative'}`}>
             <div className="p-4 flex justify-between items-center bg-[#151a23] border-b border-white/5">
               <h2 className="text-[16px] font-semibold text-white tracking-wide">Mapa do Empreendimento</h2>
               <div className="flex gap-2">
-                 <Link href="/map" className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-white transition-colors bg-[#1a212b] px-3 py-1.5 rounded-lg border border-white/5">
+                 <Link href="/map" className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-white transition-colors bg-[#1a212b] px-3 py-1.5 rounded-lg border border-white/5">
                    Ver no Mapa <ExternalLink className="w-4 h-4" />
                  </Link>
                  <button 
                    onClick={() => setMapExpanded(!mapExpanded)}
-                   className="flex hidden md:flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-white transition-colors bg-[#1a212b] px-3 py-1.5 rounded-lg border border-white/5"
+                   className="flex hidden md:flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-white transition-colors bg-[#1a212b] px-3 py-1.5 rounded-lg border border-white/5"
                  >
                    {mapExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                  </button>
               </div>
             </div>
-            <div className="flex-1 relative bg-[var(--color-background)] overflow-hidden group">
+            <div className="flex-1 relative bg-[#0b1111] overflow-hidden group">
               {/* Overlay Escuro */}
               <div className="absolute inset-0 bg-black/10 z-[1] pointer-events-none transition-opacity group-hover:opacity-0" />
               
@@ -436,17 +436,17 @@ function OperationalDashboard({ user }: { user: any }) {
             </div>
           </div>
 
-          <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col h-[320px] md:h-[420px] xl:h-[520px]">
+          <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col h-[320px] md:h-[420px] xl:h-[520px]">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
               <h2 className="text-[16px] font-semibold text-white tracking-wide">Atividades Recentes</h2>
-              <Link href="/" className="text-sm font-medium text-[var(--color-primary)] hover:text-[#60a5fa] transition-colors">
+              <Link href="/" className="text-sm font-medium text-[#2563eb] hover:text-[#60a5fa] transition-colors">
                 Ver todas
               </Link>
             </div>
             <div className="space-y-5 flex-1 overflow-y-auto pr-1 pb-2 custom-scrollbar">
               {loading ? (
-                <div className="flex flex-col gap-4 text-[var(--color-text-muted)] text-sm items-center justify-center h-full">
-                  <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)]" />
+                <div className="flex flex-col gap-4 text-gray-500 text-sm items-center justify-center h-full">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#2563eb]" />
                 </div>
               ) : activities.length > 0 ? (
                 <AnimatePresence>
@@ -471,7 +471,7 @@ function OperationalDashboard({ user }: { user: any }) {
                   })}
                 </AnimatePresence>
               ) : (
-                <div className="flex flex-col gap-2 text-[var(--color-text-muted)] text-sm items-center justify-center h-full">
+                <div className="flex flex-col gap-2 text-gray-500 text-sm items-center justify-center h-full">
                   <FileText className="w-8 h-8 opacity-20" />
                   Sem atividades.
                 </div>
@@ -483,10 +483,10 @@ function OperationalDashboard({ user }: { user: any }) {
         {/* Row Módulos */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
            {/* Chart 1: VGV */}
-           <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-1 transition-transform duration-300 hover:-translate-y-1">
+           <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-1 transition-transform duration-300 hover:-translate-y-1">
                <div className="flex items-center justify-between mb-6">
                   <h3 className="text-sm font-bold text-white tracking-wide">Vendas por Mês (VGV)</h3>
-                  <select className="bg-transparent text-[var(--color-text-muted)] text-xs outline-none border border-white/10 rounded px-1 py-0.5">
+                  <select className="bg-transparent text-gray-400 text-xs outline-none border border-white/10 rounded px-1 py-0.5">
                      <option>Este ano</option>
                   </select>
                </div>
@@ -514,7 +514,7 @@ function OperationalDashboard({ user }: { user: any }) {
            </div>
 
            {/* Chart 2: Dist Lotes */}
-           <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 transition-transform duration-300 hover:-translate-y-1">
+           <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 transition-transform duration-300 hover:-translate-y-1">
                <h3 className="text-sm font-bold text-white tracking-wide mb-6">Distribuição de Lotes</h3>
                <div className="flex-1 flex items-center justify-between">
                   <div className="w-1/2 h-[160px] relative">
@@ -540,7 +540,7 @@ function OperationalDashboard({ user }: { user: any }) {
                         </PieChart>
                       </ResponsiveContainer>
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                         <span className="text-[10px] text-[var(--color-text-muted)] font-medium">Total</span>
+                         <span className="text-[10px] text-gray-500 font-medium">Total</span>
                          <span className="text-lg font-bold text-white leading-tight">{totalLotes}</span>
                       </div>
                   </div>
@@ -551,7 +551,7 @@ function OperationalDashboard({ user }: { user: any }) {
                                <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: d.color }} />
                                <span className="text-xs text-gray-300 font-medium">{d.name}</span>
                             </div>
-                            <span className="text-[11px] text-[var(--color-text-muted)] pl-4">
+                            <span className="text-[11px] text-gray-500 pl-4">
                                {d.value} ({totalLotes > 0 ? ((d.value/totalLotes)*100).toFixed(2) : 0}%)
                             </span>
                          </div>
@@ -561,7 +561,7 @@ function OperationalDashboard({ user }: { user: any }) {
            </div>
 
            {/* Chart 3: Recebimentos x Despesas */}
-           <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-2 lg:col-span-1 transition-transform duration-300 hover:-translate-y-1">
+           <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-2 lg:col-span-1 transition-transform duration-300 hover:-translate-y-1">
                <h3 className="text-sm font-bold text-white tracking-wide mb-6">Recebimentos x Despesas</h3>
                <div className="flex-1 min-h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -582,16 +582,16 @@ function OperationalDashboard({ user }: { user: any }) {
            </div>
 
            {/* Resumo Financeiro */}
-           <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-2 lg:col-span-1 transition-transform duration-300 hover:-translate-y-1">
+           <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 shadow-xl flex flex-col col-span-1 md:col-span-2 lg:col-span-1 transition-transform duration-300 hover:-translate-y-1">
                <h3 className="text-sm font-bold text-white tracking-wide mb-6 border-b border-white/5 pb-4">Resumo Financeiro</h3>
                
                <div className="space-y-4 flex-1">
                   <div className="flex justify-between items-center py-1">
-                     <span className="text-sm text-[var(--color-text-muted)]">Total de Entradas</span>
+                     <span className="text-sm text-gray-400">Total de Entradas</span>
                      <span className="text-sm font-bold text-emerald-500">{formatCurrency(stats.recebimentos_mes)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
-                     <span className="text-sm text-[var(--color-text-muted)]">Total de Saídas</span>
+                     <span className="text-sm text-gray-400">Total de Saídas</span>
                      <span className="text-sm font-bold text-red-500">{formatCurrency(stats.comissoes_pagas + mockBarData[1].despesas)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-t border-white/5 pt-3 mt-1">
@@ -601,7 +601,7 @@ function OperationalDashboard({ user }: { user: any }) {
                   
                   <div className="pt-4 mt-2">
                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[11px] text-[var(--color-text-muted)] font-medium uppercase tracking-wider">Margem</span>
+                        <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Margem</span>
                         <span className="text-xs font-bold text-white">41,78%</span>
                      </div>
                      <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
@@ -615,13 +615,13 @@ function OperationalDashboard({ user }: { user: any }) {
       </div>
 
       {/* Footer Profissional */}
-      <footer className="w-full mt-auto bg-[var(--color-surface)]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
+      <footer className="w-full mt-auto bg-[#11161d]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
          <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
             <div>
-               <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-[var(--color-text-muted)] font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
-               <p className="text-[var(--color-text-muted)] text-[11px] mt-0.5">NORTE E SUL TOPOGRAFIA E SERVIÇOS LTDA-ME - CNPJ: 32.123.456/0001-00</p>
+               <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-gray-500 font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
+               <p className="text-gray-500 text-[11px] mt-0.5">NORTE E SUL TOPOGRAFIA E SERVIÇOS LTDA-ME - CNPJ: 32.123.456/0001-00</p>
             </div>
-            <div className="text-[var(--color-text-muted)] text-[11px] font-mono">
+            <div className="text-gray-600 text-[11px] font-mono">
                Versão 2.1.0
             </div>
          </div>
@@ -634,7 +634,7 @@ function TopCard({ title, value, total, icon: Icon, color, loading, isCurrency, 
   const percent = total > 0 && !isCurrency ? ((value / total) * 100).toFixed(2) : 0;
   
   return (
-    <div className="bg-[var(--color-surface)] border border-white/5 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-white/10 transition-colors shadow-[0_8px_30px_rgb(0,0,0,0.12)] isolate">
+    <div className="bg-[#11161d] border border-white/5 p-5 md:p-6 rounded-2xl relative overflow-hidden group hover:border-white/10 transition-colors shadow-[0_8px_30px_rgb(0,0,0,0.12)] isolate">
       {/* Background Glow */}
       <div 
         className="absolute -right-10 -top-10 w-32 h-32 rounded-full opacity-20 blur-3xl pointer-events-none group-hover:opacity-40 transition-opacity duration-700" 
@@ -643,7 +643,7 @@ function TopCard({ title, value, total, icon: Icon, color, loading, isCurrency, 
       
       <div className="flex items-start justify-between">
         <div className="flex flex-col">
-          <p className="text-[11px] text-[var(--color-text-muted)] font-semibold uppercase tracking-wider mb-2">{title}</p>
+          <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider mb-2">{title}</p>
           <h3 className="text-2xl md:text-3xl font-bold text-white tracking-tight tabular-nums break-words">
              {loading ? '-' : (
                 isCurrency ? (
@@ -656,10 +656,10 @@ function TopCard({ title, value, total, icon: Icon, color, loading, isCurrency, 
           
           <div className="mt-2 flex items-center gap-1.5 h-5">
              {!loading && !isCurrency && (
-                <span className="text-xs font-medium" style={{ color }}>{percent}% <span className="text-[var(--color-text-muted)] font-normal">do total</span></span>
+                <span className="text-xs font-medium" style={{ color }}>{percent}% <span className="text-gray-500 font-normal">do total</span></span>
              )}
              {!loading && subtitle && (
-                <span className="text-xs text-[var(--color-text-muted)]">{subtitle}</span>
+                <span className="text-xs text-gray-500">{subtitle}</span>
              )}
           </div>
         </div>
@@ -673,7 +673,7 @@ function TopCard({ title, value, total, icon: Icon, color, loading, isCurrency, 
 
 function FinancialCard({ title, value, icon: Icon, color, loading, trend, subtitle, isPercent }: any) {
   return (
-    <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-4 md:p-5 relative overflow-hidden group hover:bg-[#151a23] transition-colors shadow-lg shadow-black/20">
+    <div className="bg-[#11161d] border border-white/5 rounded-2xl p-4 md:p-5 relative overflow-hidden group hover:bg-[#151a23] transition-colors shadow-lg shadow-black/20">
        {/* Edge Highlight */}
        <div className="absolute top-0 left-0 w-full h-px opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ backgroundImage: `linear-gradient(to right, transparent, ${color}, transparent)` }} />
        
@@ -682,7 +682,7 @@ function FinancialCard({ title, value, icon: Icon, color, loading, trend, subtit
              <Icon className="w-5 h-5" strokeWidth={1.5} />
           </div>
           <div className="flex flex-col min-w-0">
-             <p className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-wider truncate mb-1">{title}</p>
+             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate mb-1">{title}</p>
              <h4 className="text-[15px] xl:text-[17px] font-bold tracking-tight text-white mb-1 break-words">
                 {loading ? <span className="opacity-0">0</span> : (
                    isPercent ? `${value.toFixed(2)}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -690,13 +690,13 @@ function FinancialCard({ title, value, icon: Icon, color, loading, trend, subtit
              </h4>
              <div className="flex items-center gap-1">
                 {trend && <ArrowUpRight className="w-3 h-3 text-emerald-500" />}
-                <span className="text-[11px] text-[var(--color-text-muted)] truncate" dangerouslySetInnerHTML={{ __html: trend || subtitle }} />
+                <span className="text-[11px] text-gray-500 truncate" dangerouslySetInnerHTML={{ __html: trend || subtitle }} />
              </div>
           </div>
        </div>
        
        {loading && (
-          <div className="absolute inset-0 bg-[var(--color-surface)] flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#11161d] flex items-center justify-center">
               <div className="w-full h-full px-5 py-4 flex items-start gap-4">
                  <div className="w-10 h-10 rounded-xl bg-white/5 animate-pulse shrink-0" />
                  <div className="flex-1 space-y-2 mt-1">
@@ -719,9 +719,9 @@ function FeedItem({ time, title, subtitle, iconColor, icon: Icon }: any) {
       <div className="flex-1 min-w-0 flex justify-between gap-2 pt-0.5">
         <div className="flex flex-col gap-0.5">
            <p className="text-[13px] text-gray-200 font-medium group-hover:text-white transition-colors truncate">{title}</p>
-           <p className="text-[11px] text-[var(--color-text-muted)] truncate">{subtitle}</p>
+           <p className="text-[11px] text-gray-500 truncate">{subtitle}</p>
         </div>
-        <p className="text-[11px] font-medium text-[var(--color-text-muted)] whitespace-nowrap mt-0.5">{time}</p>
+        <p className="text-[11px] font-medium text-gray-500 whitespace-nowrap mt-0.5">{time}</p>
       </div>
     </div>
   );

@@ -2010,13 +2010,13 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--color-background)] p-6 md:p-8 text-white h-full font-sans">
+    <div className="flex-1 overflow-y-auto bg-[#0b0e14] p-6 md:p-8 text-white h-full font-sans">
       
       {/* HEADER */}
       <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Módulo Financeiro</h1>
-          <p className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-widest">
+          <p className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
             CONTRATOS, TÍTULOS E INADIMPLÊNCIA
           </p>
         </div>
@@ -2029,11 +2029,11 @@ export default function FinancePage() {
           
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportResumidoPDF} className="bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportResumidoPDF} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4 text-[#e74c3c]" />
             PDF Res.
           </button>
-          <button onClick={handleExportResumidoExcel} className="bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4 text-[#27ae60]" />
             Excel Res.
           </button>
@@ -2054,11 +2054,11 @@ export default function FinancePage() {
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportPDF} className="bg-transparent border border-[var(--color-border)] hover:bg-[var(--color-surface)] text-[var(--color-text-muted)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4" />
             PDF Compl.
           </button>
-          <button onClick={handleExportExcel} className="bg-transparent border border-[var(--color-border)] hover:bg-[var(--color-surface)] text-[var(--color-text-muted)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4" />
             Excel Compl.
           </button>
@@ -2072,7 +2072,7 @@ export default function FinancePage() {
             title="Entradas (Total)" 
             value={formatCurrency(stats.entradasCaixa)} 
             subtitle="Recebimentos de vendas e manuais"
-            subtitleColor="text-[var(--color-text-muted)]"
+            subtitleColor="text-gray-500"
             icon={<TrendingUp className="w-5 h-5" />} 
             iconBg="bg-[#2ad271]/10" 
         />
@@ -2080,7 +2080,7 @@ export default function FinancePage() {
             title="Saídas (Total)" 
             value={formatCurrency(stats.saidasCaixa)} 
             subtitle="Comissões e despesas"
-            subtitleColor="text-[var(--color-text-muted)]"
+            subtitleColor="text-gray-500"
             icon={<TrendingDown className="w-5 h-5" />} 
             iconBg="bg-[#f04449]/10" 
         />
@@ -2088,7 +2088,7 @@ export default function FinancePage() {
             title="Saldo Atual" 
             value={formatCurrency(stats.saldoCaixa)} 
             subtitle="Entradas - Saídas"
-            subtitleColor="text-[var(--color-text-muted)]"
+            subtitleColor="text-gray-500"
             icon={<Wallet className="w-5 h-5" />} 
             iconBg={stats.saldoCaixa >= 0 ? "bg-emerald-500/10" : "bg-[#f04449]/10"} 
         />
@@ -2121,7 +2121,7 @@ export default function FinancePage() {
             title="Parcelas vencidas" 
             value={formatCurrency(stats.vencidas)} 
             subtitle={`${stats.qtyLate} parcelas em atraso`}
-            subtitleColor="text-[var(--color-text-muted)]"
+            subtitleColor="text-gray-500"
             icon={<TrendingDown className="w-5 h-5" />} 
             iconBg="bg-[#f04449]/10" 
             iconColor="text-[#f04449]" 
@@ -2131,17 +2131,17 @@ export default function FinancePage() {
             title="Vencendo hoje" 
             value={formatCurrency(stats.vencendoHoje)} 
             subtitle={`${stats.qtyDueToday} parcelas`}
-            subtitleColor="text-[var(--color-primary)]"
+            subtitleColor="text-[#f8b63a]"
             icon={<AlertCircle className="w-5 h-5" />} 
-            iconBg="bg-[var(--color-primary)]/10" 
-            iconColor="text-[var(--color-primary)]" 
+            iconBg="bg-[#f8b63a]/10" 
+            iconColor="text-[#f8b63a]" 
             loading={loading} 
         />
         <StatCard 
             title="Total em contratos" 
             value={formatCurrency(stats.totalContratosValor)} 
             subtitle={`${stats.qtyContracts} contratos ativos`}
-            subtitleColor="text-[var(--color-text-muted)]"
+            subtitleColor="text-gray-500"
             icon={<Banknote className="w-5 h-5" />} 
             iconBg="bg-[#a855f7]/10" 
             iconColor="text-[#a855f7]" 
@@ -2151,7 +2151,7 @@ export default function FinancePage() {
             title="Inadimplência %" 
             value={`${stats.inadimplencia.toFixed(2)}%`} 
             subtitle={stats.inadimplencia > 5 ? "Acima do ideal (5%)" : "Dentro do ideal"}
-            subtitleColor={stats.inadimplencia > 5 ? "text-[#f04449]" : "text-[var(--color-text-muted)]"}
+            subtitleColor={stats.inadimplencia > 5 ? "text-[#f04449]" : "text-gray-500"}
             icon={<AlertCircle className="w-5 h-5" />} 
             iconBg="bg-[#f04449]/10" 
             iconColor="text-[#f04449]" 
@@ -2159,16 +2159,16 @@ export default function FinancePage() {
         />
       </div>
 
-      <div className="flex items-center gap-4 border-b border-[var(--color-border)] mb-6 mt-4">
+      <div className="flex items-center gap-4 border-b border-[#1f232b] mb-6 mt-4">
         <button 
            onClick={() => setActiveTab('parcelas')}
-           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'parcelas' ? 'border-[#2ad271] text-white' : 'border-transparent text-[var(--color-text-muted)] hover:text-gray-300'}`}
+           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'parcelas' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
         >
           Parcelas
         </button>
         <button 
            onClick={() => setActiveTab('caixa')}
-           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'caixa' ? 'border-[#2ad271] text-white' : 'border-transparent text-[var(--color-text-muted)] hover:text-gray-300'}`}
+           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'caixa' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
         >
           Fluxo de Caixa
         </button>
@@ -2179,25 +2179,25 @@ export default function FinancePage() {
       {/* FILTERS */}
       <div className="flex flex-wrap gap-4 items-end mb-6">
         <div className="flex-1 min-w-[250px]">
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1.5 ml-1">Buscar por cliente, contrato ou lote</label>
+          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Buscar por cliente, contrato ou lote</label>
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-[var(--color-text-muted)]" />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
             <input 
               type="text" 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg py-2 pl-9 pr-4 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors" 
+              className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg py-2 pl-9 pr-4 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors" 
               placeholder="Digite cliente, contrato ou lote..." 
             />
           </div>
         </div>
         
         <div className="w-full sm:w-48">
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1.5 ml-1">Status</label>
+          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Status</label>
           <select 
              value={statusFilter}
              onChange={(e) => setStatusFilter(e.target.value)}
-             className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
+             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
             <option>Todas as Situações</option>
             <option>Pago</option>
             <option>Pendente</option>
@@ -2207,52 +2207,52 @@ export default function FinancePage() {
         </div>
 
         <div className="w-full sm:w-48">
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1.5 ml-1">Projeto</label>
+          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Projeto</label>
           <select 
              value={projectFilter}
              onChange={(e) => setProjectFilter(e.target.value)}
-             className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
+             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
             <option>Todos os projetos</option>
             {projectsList.map((p, i) => <option key={i} value={p}>{p}</option>)}
           </select>
         </div>
 
         <div className="w-full sm:w-36">
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1.5 ml-1">Data inicial</label>
+          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Data inicial</label>
           <input 
              type="date" 
              value={startDate}
              onChange={(e) => setStartDate(e.target.value)}
-             className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] focus:outline-none focus:border-gray-500 transition-colors" 
+             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-400 focus:outline-none focus:border-gray-500 transition-colors" 
              style={{ colorScheme: 'dark' }}
           />
         </div>
 
         <div className="w-full sm:w-36">
-          <label className="block text-xs text-[var(--color-text-muted)] mb-1.5 ml-1">Data final</label>
+          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Data final</label>
           <input 
              type="date" 
              value={endDate}
              onChange={(e) => setEndDate(e.target.value)}
-             className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] focus:outline-none focus:border-gray-500 transition-colors" 
+             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-400 focus:outline-none focus:border-gray-500 transition-colors" 
              style={{ colorScheme: 'dark' }}
           />
         </div>
         
         <button 
            onClick={clearFilters}
-           className="bg-transparent border border-[var(--color-border)] hover:bg-[#1f232b] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center gap-2 h-[38px] transition-colors whitespace-nowrap">
+           className="bg-transparent border border-[#1f232b] hover:bg-[#1f232b] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center gap-2 h-[38px] transition-colors whitespace-nowrap">
           <Filter className="w-4 h-4" />
           Limpar filtros
         </button>
       </div>
 
       {/* TABLE */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden shadow-xl mb-8 flex flex-col">
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl overflow-hidden shadow-xl mb-8 flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left whitespace-nowrap">
             <thead>
-              <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+              <tr className="border-b border-[#1f232b] bg-[#161a22]">
                 <th className="px-4 py-4 w-10">
                    <input type="checkbox" onChange={(e) => {
                      if (e.target.checked) {
@@ -2262,15 +2262,15 @@ export default function FinancePage() {
                      }
                    }} checked={currentPayments.length > 0 && selectedIds.size === currentPayments.length} />
                 </th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold">Contrato / Lote</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold">Cliente</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold">Projeto</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold text-center">Parcela</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold">Vencimento</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold text-right">Valor Parcela</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold text-right">Valor Pago</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold text-center">Status</th>
-                <th className="px-6 py-4 text-[10px] text-[var(--color-text-muted)] uppercase tracking-widest font-semibold text-center">Ações</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Contrato / Lote</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Cliente</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Projeto</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Parcela</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Vencimento</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-right">Valor Parcela</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-right">Valor Pago</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Status</th>
+                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1f232b]">
@@ -2278,7 +2278,7 @@ export default function FinancePage() {
                 <tr>
                    <td colSpan={9} className="text-center p-16">
                       <Loader2 className="w-8 h-8 text-[#4999e9] animate-spin mx-auto mb-4" />
-                      <p className="text-sm font-medium text-[var(--color-text-muted)]">Sincronizando registros financeiros...</p>
+                      <p className="text-sm font-medium text-gray-400">Sincronizando registros financeiros...</p>
                    </td>
                 </tr>
               ) : currentPayments.length > 0 ? (
@@ -2309,26 +2309,26 @@ export default function FinancePage() {
                    const paidAmount = isPaid ? (Number(p.paid_amount) || amount) : 0;
 
                    return (
-                      <tr key={p.id} className="hover:bg-[var(--color-surface)] transition-colors group">
+                      <tr key={p.id} className="hover:bg-[#1a1f29] transition-colors group">
                         <td className="px-4 py-4">
                           <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelection(p.id)} />
                         </td>
                         <td className="px-6 py-4">
                           <div className="font-bold text-gray-200 text-sm mb-0.5">{contractNo}</div>
-                          <div className="text-[11px] text-[var(--color-text-muted)]">{loteDesc}</div>
+                          <div className="text-[11px] text-gray-500">{loteDesc}</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="font-medium text-gray-300 text-sm">{clientName}</div>
                           {/* Em um cenário real adicionar telefone em p.customers.phone */}
                         </td>
-                        <td className="px-6 py-4 text-sm text-[var(--color-text-muted)]">
+                        <td className="px-6 py-4 text-sm text-gray-400">
                           {projectName}
                         </td>
                         <td className="px-6 py-4 text-center">
                           {isEntry ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
                           ) : (
-                            <span className="text-sm font-mono text-[var(--color-text-muted)]">{parcelInfo}{maxParcel}</span>
+                            <span className="text-sm font-mono text-gray-400">{parcelInfo}{maxParcel}</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-300">
@@ -2337,7 +2337,7 @@ export default function FinancePage() {
                         <td className="px-6 py-4 font-medium text-sm text-gray-300 text-right">
                           {formatCurrency(amount)}
                         </td>
-                        <td className="px-6 py-4 font-medium text-sm text-[var(--color-text-muted)] text-right">
+                        <td className="px-6 py-4 font-medium text-sm text-gray-400 text-right">
                           {formatCurrency(paidAmount)}
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -2345,21 +2345,21 @@ export default function FinancePage() {
                         </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex items-center justify-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                             <button onClick={() => { console.log('FINANCE VIEW DETAIL', p); setSelectedPayment(p); }} className="p-1.5 hover:text-white text-[var(--color-text-muted)] transition-colors" title="Visualizar Detalhes">
+                             <button onClick={() => { console.log('FINANCE VIEW DETAIL', p); setSelectedPayment(p); }} className="p-1.5 hover:text-white text-gray-500 transition-colors" title="Visualizar Detalhes">
                                <Eye className="w-5 h-5" />
                              </button>
                              {!isPaid && (
-                               <button onClick={() => handleMarkPaid(p)} className="p-1.5 hover:text-[#2ad271] text-[var(--color-text-muted)] transition-colors" title="Registrar Pagamento">
+                               <button onClick={() => handleMarkPaid(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Registrar Pagamento">
                                   <CheckCircle className="w-5 h-5" />
                                </button>
                              )}
-                             <button onClick={() => handleWhatsApp(p)} className="p-1.5 hover:text-[#2ad271] text-[var(--color-text-muted)] transition-colors" title="Cobrar no WhatsApp">
+                             <button onClick={() => handleWhatsApp(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Cobrar no WhatsApp">
                                 <MessageCircle className="w-5 h-5" />
                              </button>
-                             <button onClick={() => handleGenerateCarne(p)} className="p-1.5 hover:text-[#4999e9] text-[var(--color-text-muted)] transition-colors" title="Gerar Carnê/Boleto">
+                             <button onClick={() => handleGenerateCarne(p)} className="p-1.5 hover:text-[#4999e9] text-gray-500 transition-colors" title="Gerar Carnê/Boleto">
                                 <FileText className="w-5 h-5" />
                              </button>
-                             <button onClick={() => handleDeleteReceipt(p)} className="p-1.5 hover:text-[#f04449] text-[var(--color-text-muted)] transition-colors" title="Excluir Parcela">
+                             <button onClick={() => handleDeleteReceipt(p)} className="p-1.5 hover:text-[#f04449] text-gray-500 transition-colors" title="Excluir Parcela">
                                 <Trash2 className="w-5 h-5" />
                              </button>
                           </div>
@@ -2369,8 +2369,8 @@ export default function FinancePage() {
                 })
               ) : (
                 <tr>
-                   <td colSpan={9} className="py-12 bg-[var(--color-surface)] text-center">
-                      <div className="text-[var(--color-text-muted)] text-sm">Nenhum registro encontrado para os filtros selecionados.</div>
+                   <td colSpan={9} className="py-12 bg-[#0E1116] text-center">
+                      <div className="text-gray-500 text-sm">Nenhum registro encontrado para os filtros selecionados.</div>
                    </td>
                 </tr>
               )}
@@ -2380,7 +2380,7 @@ export default function FinancePage() {
         
         {/* Pagination Footer */}
         {!loading && filteredPayments.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[var(--color-border)] text-sm text-[var(--color-text-muted)] gap-4 bg-[var(--color-surface)]">
+          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[#1f232b] text-sm text-gray-400 gap-4 bg-[#11141a]">
              <div>Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, filteredPayments.length)} de {filteredPayments.length} registros</div>
              <div className="flex items-center gap-1">
                 <button 
@@ -2419,7 +2419,7 @@ export default function FinancePage() {
                <select 
                   value={itemsPerPage}
                   onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                  className="bg-transparent border border-[var(--color-border)] rounded px-2 py-1 outline-none">
+                  className="bg-transparent border border-[#1f232b] rounded px-2 py-1 outline-none">
                  <option value={10}>10</option>
                  <option value={25}>25</option>
                  <option value={50}>50</option>
@@ -2430,17 +2430,17 @@ export default function FinancePage() {
       </div>
 
       {/* FOOTER INFO PANEL */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex flex-col md:flex-row shadow-xl overflow-hidden mb-6">
-        <div className="flex-1 p-6 md:p-8 flex gap-5 items-start border-b md:border-b-0 md:border-r border-[var(--color-border)]">
-           <div className="w-14 h-14 rounded-xl bg-[var(--color-surface)] flex items-center justify-center shrink-0">
-              <Banknote className="w-7 h-7 text-[var(--color-text-muted)]" />
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl flex flex-col md:flex-row shadow-xl overflow-hidden mb-6">
+        <div className="flex-1 p-6 md:p-8 flex gap-5 items-start border-b md:border-b-0 md:border-r border-[#1f232b]">
+           <div className="w-14 h-14 rounded-xl bg-[#1c212a] flex items-center justify-center shrink-0">
+              <Banknote className="w-7 h-7 text-gray-400" />
            </div>
            <div>
              <h3 className="text-white font-semibold text-lg mb-2">Nenhum recebimento encontrado.</h3>
-             <p className="text-[var(--color-text-muted)] text-sm leading-relaxed mb-1">
+             <p className="text-gray-400 text-sm leading-relaxed mb-1">
                As vendas confirmadas e suas parcelas aparecerão aqui automaticamente.
              </p>
-             <p className="text-[var(--color-text-muted)] text-sm leading-relaxed">
+             <p className="text-gray-500 text-sm leading-relaxed">
                Finalize uma venda para começar a acompanhar os recebimentos.
              </p>
            </div>
@@ -2448,7 +2448,7 @@ export default function FinancePage() {
         <div className="flex-1 p-6 md:p-8 flex flex-col justify-between">
            <div>
              <h4 className="text-white font-semibold mb-4 text-sm">Dicas rápidas:</h4>
-             <ul className="space-y-3 text-sm text-[var(--color-text-muted)]">
+             <ul className="space-y-3 text-sm text-gray-400">
                <li className="flex items-center gap-3">
                  <CheckCircle className="w-4 h-4 text-[#2ad271]/70 shrink-0" /> 
                  Use os filtros acima para refinar sua busca
@@ -2463,9 +2463,9 @@ export default function FinancePage() {
                </li>
              </ul>
            </div>
-           <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)]">
-             <span className="text-sm text-[var(--color-text-muted)] font-medium tracking-wide">Precisa de ajuda?</span>
-             <button className="bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[#2d3340] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
+           <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[#1f232b]">
+             <span className="text-sm text-gray-400 font-medium tracking-wide">Precisa de ajuda?</span>
+             <button className="bg-[#1c212a] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
                <BookOpen className="w-4 h-4" /> 
                Ver guia rápido
              </button>
@@ -2476,32 +2476,32 @@ export default function FinancePage() {
       )}
 
       {activeTab === 'caixa' && (
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-x-auto shadow-md min-h-[400px]">
-         <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center gap-2">
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl overflow-x-auto shadow-md min-h-[400px]">
+         <div className="p-4 border-b border-[#1f232b] bg-[#1a1e27] flex items-center gap-2">
             <h3 className="text-white font-bold tracking-wider text-sm flex items-center gap-2">
                <Wallet className="w-4 h-4" /> HISTÓRICO DE FLUXO DE CAIXA
             </h3>
          </div>
          {cashMovements.length === 0 ? (
-            <div className="p-8 text-center text-[var(--color-text-muted)]">
+            <div className="p-8 text-center text-gray-500">
                Nenhuma movimentação de caixa registrada ainda.
             </div>
          ) : (
             <table className="w-full text-left text-sm whitespace-nowrap">
-               <thead className="bg-[var(--color-surface)] text-[var(--color-text-muted)] uppercase text-[10px] font-bold tracking-wider">
+               <thead className="bg-[#1a1e27] text-gray-400 uppercase text-[10px] font-bold tracking-wider">
                   <tr>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Data</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Tipo</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Categoria</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Descrição</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Valor</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)]">Status</th>
-                     <th className="px-5 py-4 border-b border-[var(--color-border)] text-right">Ação</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Data</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Tipo</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Categoria</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Descrição</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Valor</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Status</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b] text-right">Ação</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-[#1f232b]">
                   {cashMovements.map((c) => (
-                      <tr key={c.id} className="hover:bg-[var(--color-surface)] transition-colors group">
+                      <tr key={c.id} className="hover:bg-[#1a1e27] transition-colors group">
                          <td className="px-5 py-4 text-gray-300 font-medium">
                             {c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
                          </td>
@@ -2511,15 +2511,15 @@ export default function FinancePage() {
                          <td className="px-5 py-4 text-gray-300">
                             {c.category}
                          </td>
-                         <td className="px-5 py-4 text-[var(--color-text-muted)]">
+                         <td className="px-5 py-4 text-gray-400">
                             {c.description || '-'}
-                            {c.projects?.name && <span className="block text-xs mt-0.5 text-[var(--color-text-muted)]">Proj: {c.projects?.name}</span>}
+                            {c.projects?.name && <span className="block text-xs mt-0.5 text-gray-500">Proj: {c.projects?.name}</span>}
                          </td>
                          <td className="px-5 py-4 text-white font-mono">
                             {formatCurrency(c.amount)}
                          </td>
                          <td className="px-5 py-4">
-                            {c.status === 'estornado' ? <span className="text-xs text-[var(--color-primary)] font-bold bg-[var(--color-primary)]/10 px-2 py-1 rounded">ESTORNADO</span> : <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>}
+                            {c.status === 'estornado' ? <span className="text-xs text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded">ESTORNADO</span> : <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>}
                          </td>
                          <td className="px-5 py-4 text-right">
                             {c.status === 'ativo' && (
@@ -2531,7 +2531,7 @@ export default function FinancePage() {
                                        await loadFinance();
                                     }
                                  }}
-                                 className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--color-primary)] hover:text-white hover:bg-[var(--color-primary)]/80 rounded transition-all text-xs border border-orange-500/30" title="Estornar">
+                                 className="opacity-0 group-hover:opacity-100 p-1.5 text-orange-500 hover:text-white hover:bg-orange-500/80 rounded transition-all text-xs border border-orange-500/30" title="Estornar">
                                  Estornar
                                </button>
                             )}
@@ -2546,32 +2546,32 @@ export default function FinancePage() {
 
       {selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-[var(--color-border)] flex justify-between items-center">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
               <h3 className="text-lg font-bold text-white">Detalhes do Recebimento</h3>
-              <button onClick={() => setSelectedPayment(null)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+              <button onClick={() => setSelectedPayment(null)} className="text-gray-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-4 text-sm text-gray-300">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Cliente</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Cliente</span>
                   <div className="font-medium text-white">{selectedPayment.customers?.name || 'Não localizado'}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Projeto / Lote / Contrato</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Lote / Contrato</span>
                   <div className="font-medium text-white">
                     {selectedPayment.projects?.name || selectedPayment.sales?.projects?.name || selectedPayment.blocks?.projects?.name || 'Projeto'} - QD {selectedPayment.blocks?.block_name || selectedPayment.blocks?.name} LT {selectedPayment.blocks?.number}
-                    <div className="text-xs text-[var(--color-text-muted)] mt-1 uppercase">CT: {selectedPayment.sales?.contracts?.[0]?.contract_number || (selectedPayment.sales?.id ? 'CT-' + new Date(selectedPayment.created_at || new Date()).getFullYear() + '-' + selectedPayment.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N')}</div>
+                    <div className="text-xs text-gray-400 mt-1 uppercase">CT: {selectedPayment.sales?.contracts?.[0]?.contract_number || (selectedPayment.sales?.id ? 'CT-' + new Date(selectedPayment.created_at || new Date()).getFullYear() + '-' + selectedPayment.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N')}</div>
                   </div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Vencimento</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Vencimento</span>
                   <div>{selectedPayment.due_date ? new Date((selectedPayment.due_date?.split('T')[0]) + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Parcela</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Parcela</span>
                   <div>
                     {selectedPayment.installment_number === 0 || selectedPayment.installment_number === '0' ? (
                        <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
@@ -2581,24 +2581,24 @@ export default function FinancePage() {
                   </div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Valor Parcela</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Parcela</span>
                   <div className="font-medium text-white">{formatCurrency(Number(selectedPayment.amount) || 0)}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Valor Pago</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Pago</span>
                   <div className="font-medium text-white">{formatCurrency(selectedPayment.status === 'pago' || selectedPayment.status === 'PAID' ? (Number(selectedPayment.paid_amount) || Number(selectedPayment.amount)) : 0)}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Status</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Status</span>
                   <StatusBadge status={selectedPayment.status || 'pendente'} />
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Data Criação</span>
+                  <span className="block text-xs font-semibold text-gray-500 mb-1">Data Criação</span>
                   <div>{selectedPayment.created_at ? new Date(selectedPayment.created_at).toLocaleDateString('pt-BR') : '-'}</div>
                 </div>
               </div>
-              <div className="pt-4 border-t border-[var(--color-border)]">
-                <div className="text-[10px] text-[var(--color-text-muted)] font-mono space-y-1">
+              <div className="pt-4 border-t border-[#1f232b]">
+                <div className="text-[10px] text-gray-500 font-mono space-y-1">
                   <div>Sale ID: {selectedPayment.sale_id || '-'}</div>
                   <div>Customer ID: {selectedPayment.customer_id || '-'}</div>
                   <div>Receipt ID: {selectedPayment.id}</div>
@@ -2611,26 +2611,26 @@ export default function FinancePage() {
 
       {showSaidaModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <form onSubmit={handleRegistrarSaida}>
-              <div className="p-6 border-b border-[var(--color-border)] flex justify-between items-center">
+              <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   Registrar Saída (Despesa / Saque)
                 </h3>
-                <button type="button" onClick={() => setShowSaidaModal(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                <button type="button" onClick={() => setShowSaidaModal(false)} className="text-gray-500 hover:text-white transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="p-6 space-y-4 text-sm text-gray-300">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Tipo</label>
-                    <input type="text" value="SAÍDA" disabled className="w-full bg-[var(--color-surface)] text-red-400 font-bold border border-[var(--color-border)] rounded px-3 py-2 cursor-not-allowed" />
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
+                    <input type="text" value="SAÍDA" disabled className="w-full bg-[#1c212a] text-red-400 font-bold border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed" />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Categoria</label>
-                    <select required value={saidaForm.category} onChange={e => setSaidaForm({...saidaForm, category: e.target.value})} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Categoria</label>
+                    <select required value={saidaForm.category} onChange={e => setSaidaForm({...saidaForm, category: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors">
                         <option value="Roço do chacreamento">Roço do chacreamento</option>
                         <option value="Compra de postes">Compra de postes</option>
                         <option value="Terraplanagem">Terraplanagem</option>
@@ -2645,27 +2645,27 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Destino / Descrição (Opcional)</label>
-                  <input type="text" value={saidaForm.description} onChange={e => setSaidaForm({...saidaForm, description: e.target.value})} placeholder="Para onde foi o dinheiro ou do que se trata..." className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Destino / Descrição (Opcional)</label>
+                  <input type="text" value={saidaForm.description} onChange={e => setSaidaForm({...saidaForm, description: e.target.value})} placeholder="Para onde foi o dinheiro ou do que se trata..." className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Valor (R$)*</label>
-                    <input required type="number" step="0.01" min="0.01" value={saidaForm.amount} onChange={e => setSaidaForm({...saidaForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono" />
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$)*</label>
+                    <input required type="number" step="0.01" min="0.01" value={saidaForm.amount} onChange={e => setSaidaForm({...saidaForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono" />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Data*</label>
-                    <input required type="date" value={saidaForm.movement_date} onChange={e => setSaidaForm({...saidaForm, movement_date: e.target.value})} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Data*</label>
+                    <input required type="date" value={saidaForm.movement_date} onChange={e => setSaidaForm({...saidaForm, movement_date: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Loteamento / Projeto (Opcional)</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Loteamento / Projeto (Opcional)</label>
                   <select 
                      value={saidaForm.project_id} 
                      onChange={e => setSaidaForm({...saidaForm, project_id: e.target.value})} 
-                     className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
                   >
                      <option value="">Geral / Sem vínculo específico</option>
                      {financeProjects.map(proj => (
@@ -2674,8 +2674,8 @@ export default function FinancePage() {
                   </select>
                 </div>
               </div>
-              <div className="p-6 border-t border-[var(--color-border)] flex justify-end gap-3">
-                 <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-white transition-colors">
+              <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
+                 <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
                    Cancelar
                  </button>
                  <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded shadow transition-colors">
@@ -2689,21 +2689,21 @@ export default function FinancePage() {
 
       {showProjectReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
-            <div className="px-6 border-b border-[var(--color-border)] h-16 flex items-center justify-between bg-[var(--color-background)]/50">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
+            <div className="px-6 border-b border-[#1f232b] h-16 flex items-center justify-between bg-[#0b0e14]/50">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <PieChart className="w-5 h-5 text-indigo-500" />
                 Relatório de Fluxo de Caixa
               </h2>
-              <button disabled={isGeneratingPr} onClick={() => setShowProjectReportModal(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+              <button disabled={isGeneratingPr} onClick={() => setShowProjectReportModal(false)} className="text-gray-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Projeto/Loteamento</label>
-                <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Projeto/Loteamento</label>
+                <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                    <option value="Todos">Consolidado (Todos)</option>
                    {projectsList.map((p, i) => <option key={i} value={p}>{p}</option>)}
                 </select>
@@ -2711,27 +2711,27 @@ export default function FinancePage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Data Inicial (Opcional)</label>
-                  <input type="date" value={prStartDate} onChange={e => setPrStartDate(e.target.value)} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Inicial (Opcional)</label>
+                  <input type="date" value={prStartDate} onChange={e => setPrStartDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Data Final (Opcional)</label>
-                  <input type="date" value={prEndDate} onChange={e => setPrEndDate(e.target.value)} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Final (Opcional)</label>
+                  <input type="date" value={prEndDate} onChange={e => setPrEndDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                  <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Tipo de Movimento</label>
-                    <select value={prType} onChange={e => setPrType(e.target.value)} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo de Movimento</label>
+                    <select value={prType} onChange={e => setPrType(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                        <option value="Todos">Todos</option>
                        <option value="Entradas">Somente Entradas</option>
                        <option value="Saídas">Somente Saídas</option>
                     </select>
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Situação</label>
-                    <select value={prStatus} onChange={e => setPrStatus(e.target.value)} className="w-full bg-[var(--color-surface)] text-white border border-[var(--color-border)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Situação</label>
+                    <select value={prStatus} onChange={e => setPrStatus(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                        <option value="Todos">Todas</option>
                        <option value="Pago">Pgto / Efetivado</option>
                        <option value="Pendente">Pendente</option>
@@ -2740,8 +2740,8 @@ export default function FinancePage() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-[var(--color-border)] flex justify-end gap-3">
-               <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-white transition-colors">
+            <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
+               <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
                  Cancelar
                </button>
                <button disabled={isGeneratingPr} type="button" onClick={() => handleGenerateProjectReport('pdf')} className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 text-sm font-bold rounded shadow flex items-center gap-2 transition-colors">
@@ -2763,12 +2763,12 @@ export default function FinancePage() {
 
 function StatCard({ title, value, subtitle, subtitleColor, icon, iconBg, iconColor, loading }: any) {
    return (
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 flex gap-4 items-center hover:border-[var(--color-border)] transition-colors shadow-sm">
+      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl p-5 flex gap-4 items-center hover:border-gray-600 transition-colors shadow-sm">
         <div className={`w-12 h-12 rounded-full flex shrink-0 items-center justify-center ${iconBg} ${iconColor}`}>
           {icon}
         </div>
         <div className="flex flex-col min-w-0">
-          <p className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest mb-1 truncate">{title}</p>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 truncate">{title}</p>
           <h3 className="text-lg lg:text-xl font-bold text-white leading-tight mb-1.5 break-words">{loading ? '-' : value}</h3>
           <p className={`text-[10px] font-medium leading-none truncate ${subtitleColor}`}>{subtitle}</p>
         </div>
@@ -2778,7 +2778,7 @@ function StatCard({ title, value, subtitle, subtitleColor, icon, iconBg, iconCol
 
 function StatusBadge({ status }: { status: string }) {
     let borderClass = 'border-gray-500/20';
-    let textClass = 'text-[var(--color-text-muted)]';
+    let textClass = 'text-gray-400';
     let label = 'DESCONHECIDO';
     
     switch(status.toLowerCase()) {
@@ -2790,8 +2790,8 @@ function StatusBadge({ status }: { status: string }) {
          break;
       case 'pendente':
       case 'pending': 
-         borderClass = 'border-[var(--color-primary)]/30';
-         textClass = 'text-[var(--color-primary)]';
+         borderClass = 'border-[#f8b63a]/30';
+         textClass = 'text-[#f8b63a]';
          label = 'PENDENTE';
          break;
       case 'atrasado':
@@ -2803,7 +2803,7 @@ function StatusBadge({ status }: { status: string }) {
       case 'cancelado':
       case 'canceled': 
          borderClass = 'border-gray-500/30';
-         textClass = 'text-[var(--color-text-muted)]';
+         textClass = 'text-gray-400';
          label = 'CANCELADO';
          break;
     }

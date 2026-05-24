@@ -71,7 +71,7 @@ export default function AuthCallbackPage() {
 
   return (
     <div className="flex h-screen items-center justify-center bg-[var(--color-background)] flex-col gap-4">
-      <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
+      <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
       <p className="text-[var(--color-text-muted)] font-mono text-sm tracking-wider uppercase animate-pulse">
         Autenticando...
       </p>

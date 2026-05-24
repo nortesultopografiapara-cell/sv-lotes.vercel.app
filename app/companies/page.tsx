@@ -158,7 +158,7 @@ export default function CompaniesPage() {
   if (authLoading || (dataLoading && companies.length === 0)) {
      return (
        <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
-          <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
+          <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
        </div>
      );
   }
@@ -177,7 +177,7 @@ export default function CompaniesPage() {
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-[var(--color-primary)]" />
+            <Building2 className="w-6 h-6 text-[#06b6d4]" />
             Gerenciar Empresas
           </h1>
           <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
@@ -209,7 +209,7 @@ export default function CompaniesPage() {
               setCompanyToEdit(null);
               setIsModalOpen(true);
             }}
-            className="bg-[var(--color-primary)] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+            className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
           >
             <Plus className="w-5 h-5" />
             Nova Empresa
@@ -219,7 +219,7 @@ export default function CompaniesPage() {
 
       {/* Multi-Tenant Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
+        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[#06b6d4]" bg="bg-[#06b6d4]/10" border="border-[#06b6d4]/20" />
         <StatCard title="Empresas Ativas" value={activeCompanies} icon={CheckCircle2} iconColor="text-[var(--color-success)]" bg="bg-[var(--color-success)]/10" border="border-[var(--color-success)]/20" />
         <StatCard title="Total de Loteamentos" value={totalProjects} icon={MapIcon} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
         <StatCard title="Total de Usuários" value={totalUsers} icon={Users} iconColor="text-[var(--color-purple)]" bg="bg-[var(--color-purple)]/10" border="border-[var(--color-purple)]/20" />
@@ -235,7 +235,7 @@ export default function CompaniesPage() {
               placeholder="Buscar por nome ou slug..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
             />
           </div>
         </div>
@@ -295,58 +295,58 @@ export default function CompaniesPage() {
       />
       {companyToView && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-[#151a23] border border-[var(--color-border)] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)]">
+           <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-6 border-b border-[#1f232b]">
                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-purple-400" /> Detalhes da Empresa
                  </h2>
-                 <button onClick={() => setCompanyToView(null)} className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors hover:bg-gray-800 rounded-lg">
+                 <button onClick={() => setCompanyToView(null)} className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-gray-800 rounded-lg">
                     <span className="sr-only">Fechar</span>
                     ✕
                  </button>
               </div>
               <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
                  <div>
-                    <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Nome</p>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Nome</p>
                     <p className="text-sm font-semibold text-white">{companyToView.name}</p>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">CNPJ</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">CNPJ</p>
                        <p className="text-sm font-semibold text-gray-300">{companyToView.cnpj || '—'}</p>
                     </div>
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Telefone</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Telefone</p>
                        <p className="text-sm font-semibold text-gray-300">{companyToView.phone || '—'}</p>
                     </div>
                  </div>
                  <div>
-                    <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Endereço</p>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Endereço</p>
                     <p className="text-sm font-semibold text-gray-300">{companyToView.address || '—'}</p>
                     <p className="text-sm font-semibold text-gray-300">{companyToView.city} {companyToView.state ? `- ${companyToView.state}` : ''} {companyToView.cep}</p>
                  </div>
-                 <div className="grid grid-cols-2 gap-4 border-t border-[var(--color-border)] pt-4">
+                 <div className="grid grid-cols-2 gap-4 border-t border-[#1f232b] pt-4">
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Plano</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Plano</p>
                        <p className="text-sm font-semibold text-blue-400">{companyToView.plan === 'premium' ? 'Premium' : companyToView.plan === 'professional' ? 'Profissional' : companyToView.plan === 'standard' ? 'Standard' : 'Básico'}</p>
                     </div>
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Status</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Status</p>
                        <p className="text-sm font-semibold text-gray-300">{companyToView.status_operacional || 'Inativa'}</p>
                     </div>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Projetos/Lotes</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Projetos/Lotes</p>
                        <p className="text-sm font-semibold text-gray-300">{companyToView.project_count || 0}</p>
                     </div>
                     <div>
-                       <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Usuários (Auth)</p>
+                       <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Usuários (Auth)</p>
                        <p className="text-sm font-semibold text-gray-300">{companyToView.users?.[0]?.count || 0}</p>
                     </div>
                  </div>
                  <div>
-                    <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase tracking-widest font-bold">Criação</p>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Criação</p>
                     <p className="text-sm font-semibold text-gray-300">{new Date(companyToView.created_at).toLocaleString('pt-BR')}</p>
                  </div>
               </div>
@@ -386,13 +386,13 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
        case 'Teste':
           return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-yellow-500"></div> Teste</span>;
        case 'Suspensa':
-          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-orange-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-[var(--color-primary)]"></div> Suspensa</span>;
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-500/10 text-orange-500 border border-orange-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-orange-500"></div> Suspensa</span>;
        case 'Bloqueada':
           return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-500 border border-red-500/20 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-red-500"></div> Bloqueada</span>;
        case 'Inadimplente':
-          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-[var(--color-text-muted)] border border-[var(--color-border)] shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-gray-500"></div> Inadimplente</span>;
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-gray-400 border border-gray-600 shadow-sm"><div className="w-1.5 h-1.5 mr-1.5 rounded-full bg-gray-500"></div> Inadimplente</span>;
        default:
-          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-[var(--color-text-muted)] border border-gray-500/20 shadow-sm">Inativa</span>;
+          return <span className="inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-500/10 text-gray-500 border border-gray-500/20 shadow-sm">Inativa</span>;
     }
   };
 
@@ -402,10 +402,10 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
   const showReactivate = !isActive;
 
   return (
-    <tr className={`border-b border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
+    <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
       <td className="p-4">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-blue-500/20 text-blue-500 border-blue-500/30' : 'bg-[var(--color-background)] text-gray-300 border-[var(--color-border)]'}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-blue-500/20 text-blue-500 border-blue-500/30' : 'bg-[#0b1111] text-gray-300 border-[#2d3340]'}`}>
             {company.name.charAt(0)}
           </div>
           <div>
@@ -413,24 +413,24 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
               {company.name}
               {isMain && <span className="text-[9px] font-bold uppercase bg-blue-600 text-white px-1.5 py-0.5 rounded-sm">Master</span>}
             </div>
-            <div className="text-[11px] text-[var(--color-text-muted)] font-mono mt-0.5">ID: {company.slug}</div>
+            <div className="text-[11px] text-gray-500 font-mono mt-0.5">ID: {company.slug}</div>
           </div>
         </div>
       </td>
       <td className="p-4 hidden md:table-cell">
         <div className="text-[12px] text-gray-300 mb-0.5 max-w-[200px] truncate">{company.cnpj ? `${company.cnpj}` : '—'}</div>
-        <div className="text-[11px] text-[var(--color-text-muted)] truncate">{company.email || '—'}</div>
+        <div className="text-[11px] text-gray-500 truncate">{company.email || '—'}</div>
       </td>
       <td className="p-4 text-center">
         {getStatusBadge(company.status_operacional, company.active)}
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
-        <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[var(--color-background)] rounded-md px-2 py-1 border border-[var(--color-border)]">
+        <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[#0b1111] rounded-md px-2 py-1 border border-[#2d3340]">
            {company.project_count || 0} / {company.project_limit === -1 || company.project_limit === undefined ? '∞' : company.project_limit}
         </div>
       </td>
       <td className="p-4 text-center hidden lg:table-cell">
-         <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[var(--color-background)] rounded-md px-2 py-1 border border-[var(--color-border)]">
+         <div className="inline-flex items-center gap-1.5 text-xs font-mono text-gray-300 bg-[#0b1111] rounded-md px-2 py-1 border border-[#2d3340]">
            {company.users?.[0]?.count || 0}
         </div>
       </td>
@@ -446,7 +446,7 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
           )}
           
           {showSuspend && (
-            <button onClick={() => onUpdateStatus(company, 'Inativa')} className="flex items-center justify-center p-2 text-[var(--color-primary)] hover:text-white transition-colors rounded-lg hover:bg-[var(--color-primary)]/20 tooltip-trigger" title="Desativar empresa">
+            <button onClick={() => onUpdateStatus(company, 'Inativa')} className="flex items-center justify-center p-2 text-orange-400 hover:text-white transition-colors rounded-lg hover:bg-orange-500/20 tooltip-trigger" title="Desativar empresa">
               <PowerOff className="w-4 h-4" />
             </button>
           )}
@@ -456,15 +456,15 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
             </button>
           )}
 
-          <button onClick={onEdit} className="flex items-center justify-center p-2 text-[var(--color-text-muted)] hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Editar empresa">
+          <button onClick={onEdit} className="flex items-center justify-center p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800 tooltip-trigger" title="Editar empresa">
             <Edit className="w-4 h-4" />
           </button>
           {isMain || company.id === user?.tenant_id ? (
-             <button disabled className="flex items-center justify-center p-2 text-[var(--color-text-muted)] transition-colors rounded-lg cursor-not-allowed tooltip-trigger" title="Empresa protegida. Não pode ser excluída.">
+             <button disabled className="flex items-center justify-center p-2 text-gray-600 transition-colors rounded-lg cursor-not-allowed tooltip-trigger" title="Empresa protegida. Não pode ser excluída.">
                <Trash2 className="w-4 h-4 opacity-50" />
              </button>
           ) : (
-             <button onClick={onDelete} className="flex items-center justify-center p-2 text-[var(--color-text-muted)] hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa definitivamente">
+             <button onClick={onDelete} className="flex items-center justify-center p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10 tooltip-trigger" title="Excluir empresa definitivamente">
                <Trash2 className="w-4 h-4" />
              </button>
           )}

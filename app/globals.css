@@ -1,68 +1,79 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
 
-:root {
-  --color-background: #050816;
-  --color-surface: #0E172B;
-  --color-surface-bright: #091224;
-  --color-border: rgba(59,130,246,0.15);
+@theme {
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
   
-  --color-text-main: #FFFFFF;
-  --color-text-muted: #94A3B8;
-  --color-text-tertiary: #64748B;
+  --color-background: #0B1121;
+  --color-surface-dim: #111827;
+  --color-surface: #151E2E;
+  --color-surface-bright: #1E293B;
   
-  --color-primary: #2563EB;
-  --color-primary-hover: #3B82F6;
+  --color-border: #1E293B;
+  --color-border-hover: #334155;
   
-  --color-success: #10B981;
-  --color-success-hover: #34D399;
+  --color-primary: #F97316; /* Orange */
+  --color-primary-hover: #EA580C;
   
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
   --color-danger: #EF4444;
-  --color-warning: #F59E0B;
-  --color-info: #2563EB;
-  --color-purple: #8B5CF6;
+  --color-info: #3B82F6;
+  --color-purple: #A855F7;
+  
+  --color-text-main: #F8FAFC;
+  --color-text-muted: #94A3B8;
 }
 
-body {
-  background-color: var(--color-background);
-  color: var(--color-text-main);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  margin: 0;
-  padding: 0;
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-main);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
-/* Force override of legacy light theme classes where they crept in */
-.bg-white { background-color: var(--color-surface) !important; color: var(--color-text-main) !important; border-color: var(--color-border) !important; }
-.bg-slate-50 { background-color: var(--color-background) !important; }
-.bg-slate-100 { background-color: var(--color-surface-bright) !important; }
-
-.border-slate-100, .border-slate-200, .border-slate-300, .border-gray-100, .border-gray-200, .border-gray-300 { 
-  border-color: var(--color-border) !important; 
+/* Scrollbar styles to match the premium look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-bright);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
 }
 
-.text-slate-900, .text-slate-800, .text-gray-900, .text-gray-800 { 
-  color: var(--color-text-main) !important; 
-}
-
-.text-slate-600, .text-slate-700, .text-gray-600, .text-gray-700 { 
-  color: var(--color-text-muted) !important; 
-}
-
-/* Base link and SVG glow fixing */
-a:hover {
-  text-shadow: 0 0 8px rgba(59,130,246,0.3);
-}
-
-.shadow-sm { box-shadow: 0 4px 12px 0 rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.05) !important; }
-.shadow-md { box-shadow: 0 8px 16px 0 rgba(0,0,0,0.6), inset 0 1px 0 0 rgba(255,255,255,0.05) !important; }
-.shadow-lg { box-shadow: 0 12px 24px 0 rgba(0,0,0,0.7), inset 0 1px 0 0 rgba(255,255,255,0.05) !important; }
-
-
-/* Leaflet styling fixes to render properly */
+/* Leaflet dark theme override */
 .leaflet-container {
-  width: 100%;
-  height: 100%;
-  border-radius: 0.75rem;
-  background-color: #cbd5e1;
+  background: var(--color-surface-dim) !important;
+  font-family: var(--font-sans) !important;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--color-surface) !important;
+  color: var(--color-text-main) !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--color-border) !important;
+}
+.leaflet-popup-tip {
+  background: var(--color-surface) !important;
+}
+.leaflet-bar {
+  border: none !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+}
+.leaflet-bar a {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text-main) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+.leaflet-bar a:hover {
+  background-color: var(--color-surface-bright) !important;
 }

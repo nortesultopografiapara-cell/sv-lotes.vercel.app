@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { 
    Users, Shield, UserPlus, Filter, X, Search, 
    Edit2, Lock, Unlock, MoreHorizontal, Download, 
-   Calendar, CheckCircle2, AlertCircle, Loader2, Activity 
+   Calendar, CheckCircle2, AlertCircle, Loader2 
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -55,7 +55,6 @@ export default function UsersPage() {
    }, []);
 
    useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadUsersAndCompanies();
    }, [loadUsersAndCompanies]);
 
@@ -119,14 +118,14 @@ export default function UsersPage() {
    };
 
    return (
-      <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[var(--color-surface)] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+      <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
             <div>
                <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">Usuários</h1>
-               <p className="text-[var(--color-text-muted)] mt-1 text-[14px]">Gerencie todos os usuários da plataforma SaaS.</p>
+               <p className="text-gray-400 mt-1 text-[14px]">Gerencie todos os usuários da plataforma SaaS.</p>
             </div>
             <div className="flex items-center gap-3 justify-end">
-               <button className="bg-[var(--color-surface)] border border-white/10 hover:bg-white/5 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+               <button className="bg-[#11161d] border border-white/10 hover:bg-white/5 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
                   <Download className="w-4 h-4" /> Exportar
                </button>
                <button className="bg-[#f97316] hover:bg-[#ea580c] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(249,115,22,0.4)]">
@@ -137,74 +136,74 @@ export default function UsersPage() {
 
          {/* STATS */}
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="bg-[var(--color-surface)] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
+            <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
                <div className="w-14 h-14 rounded-full bg-purple-500/10 flex items-center justify-center">
                   <Users className="w-7 h-7 text-purple-400" />
                </div>
                <div>
-                  <p className="text-[13px] text-[var(--color-text-muted)] font-medium">Total de Usuários</p>
+                  <p className="text-[13px] text-gray-400 font-medium">Total de Usuários</p>
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.total}</span>
                   </div>
-                  <span className="text-[11px] text-green-400 font-bold">↑ 20% <span className="text-[var(--color-text-muted)] font-normal">este mês</span></span>
+                  <span className="text-[11px] text-green-400 font-bold">↑ 20% <span className="text-gray-500 font-normal">este mês</span></span>
                </div>
             </div>
             
-            <div className="bg-[var(--color-surface)] border border-green-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
+            <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
                <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center">
                   <Shield className="w-7 h-7 text-green-400" />
                </div>
                <div>
-                  <p className="text-[13px] text-[var(--color-text-muted)] font-medium">Usuários Ativos</p>
+                  <p className="text-[13px] text-gray-400 font-medium">Usuários Ativos</p>
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.active}</span>
                   </div>
-                  <span className="text-[11px] text-green-400 font-bold">↑ 12% <span className="text-[var(--color-text-muted)] font-normal">este mês</span></span>
+                  <span className="text-[11px] text-green-400 font-bold">↑ 12% <span className="text-gray-500 font-normal">este mês</span></span>
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-orange-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
-               <div className="w-14 h-14 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center">
-                  <UserPlus className="w-7 h-7 text-[var(--color-primary)]" />
+            <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
+               <div className="w-14 h-14 rounded-full bg-orange-500/10 flex items-center justify-center">
+                  <UserPlus className="w-7 h-7 text-orange-400" />
                </div>
                <div>
-                  <p className="text-[13px] text-[var(--color-text-muted)] font-medium">Administradores</p>
+                  <p className="text-[13px] text-gray-400 font-medium">Administradores</p>
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.admins}</span>
                   </div>
-                  <span className="text-[11px] text-[var(--color-primary)] font-bold">↑ 0% <span className="text-[var(--color-text-muted)] font-normal">este mês</span></span>
+                  <span className="text-[11px] text-orange-400 font-bold">↑ 0% <span className="text-gray-500 font-normal">este mês</span></span>
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-blue-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
+            <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
                <div className="w-14 h-14 rounded-full bg-blue-500/10 flex items-center justify-center">
                   <Users className="w-7 h-7 text-blue-400" />
                </div>
                <div>
-                  <p className="text-[13px] text-[var(--color-text-muted)] font-medium">Novos Usuários</p>
+                  <p className="text-[13px] text-gray-400 font-medium">Novos Usuários</p>
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.news}</span>
                   </div>
-                  <span className="text-[11px] text-green-400 font-bold">↑ 33% <span className="text-[var(--color-text-muted)] font-normal">este mês</span></span>
+                  <span className="text-[11px] text-green-400 font-bold">↑ 33% <span className="text-gray-500 font-normal">este mês</span></span>
                </div>
             </div>
          </div>
 
          <div className="flex gap-4">
             {/* TABELA */}
-            <div className="flex-1 bg-[var(--color-surface)] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden min-h-[500px]">
-               <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-between bg-[var(--color-background)] rounded-t-2xl">
+            <div className="flex-1 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden min-h-[500px]">
+               <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-between bg-[#0B0E14] rounded-t-2xl">
                   <div className="relative w-full sm:w-[320px]">
-                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                      <input 
                         type="text" 
                         placeholder="Buscar usuários..." 
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="w-full bg-[var(--color-surface)] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[var(--color-primary)]/50 text-sm shadow-inner"
+                        className="w-full bg-[#070b14] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[#3b82f6]/50 text-sm shadow-inner"
                      />
                   </div>
-                  <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--color-primary)]/30 text-blue-400 text-sm hover:bg-[var(--color-primary)]/10 transition-colors">
+                  <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#3b82f6]/30 text-blue-400 text-sm hover:bg-[#3b82f6]/10 transition-colors">
                      <Filter className="w-4 h-4" /> Filtros
                   </button>
                </div>
@@ -212,27 +211,27 @@ export default function UsersPage() {
                <div className="overflow-x-auto flex-1">
                   <table className="w-full text-left border-collapse min-w-[900px]">
                      <thead>
-                        <tr className="bg-[var(--color-surface)] border-b border-white/5 border-t">
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Usuário</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Email</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Empresa</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Função</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Status</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Último Acesso</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-right">Ações</th>
+                        <tr className="bg-[#11161d] border-b border-white/5 border-t">
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Usuário</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Email</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Função</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Último Acesso</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium text-right">Ações</th>
                         </tr>
                      </thead>
                      <tbody>
                         {loading ? (
                            <tr>
-                              <td colSpan={7} className="h-48 text-center text-[var(--color-text-muted)]">
-                                 <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-[var(--color-primary)]" />
+                              <td colSpan={7} className="h-48 text-center text-gray-400">
+                                 <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-[#3b82f6]" />
                                  Carregando usuários...
                               </td>
                            </tr>
                         ) : filteredUsers.length === 0 ? (
                            <tr>
-                              <td colSpan={7} className="h-48 text-center text-[var(--color-text-muted)]">
+                              <td colSpan={7} className="h-48 text-center text-gray-400">
                                  Nenhum usuário encontrado.
                               </td>
                            </tr>
@@ -240,7 +239,7 @@ export default function UsersPage() {
                            const cName = u.companies?.name || 'S V Topografia';
                            const rName = formatRole(u.role);
                            const isAtivo = (u.status || 'ACTIVE').toUpperCase() !== 'INACTIVE';
-                           const vColor = idx % 3 === 0 ? 'bg-purple-500' : idx % 3 === 1 ? 'bg-green-500' : 'bg-[var(--color-primary)]';
+                           const vColor = idx % 3 === 0 ? 'bg-purple-500' : idx % 3 === 1 ? 'bg-green-500' : 'bg-orange-500';
                            const name = u.full_name || u.email?.split('@')[0] || 'Usuário';
 
                            return (
@@ -278,7 +277,7 @@ export default function UsersPage() {
                                     </span>
                                  </td>
                                  <td className="p-4 py-3 text-center">
-                                    <span className="text-[12px] font-medium text-[var(--color-text-muted)]">
+                                    <span className="text-[12px] font-medium text-gray-400">
                                        {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '23/05/2026 08:34'}
                                     </span>
                                  </td>
@@ -290,7 +289,7 @@ export default function UsersPage() {
                                        <button onClick={() => toggleUserStatus(u)} className={`w-[32px] h-[32px] rounded-lg border flex items-center justify-center transition-colors group/btn ${isAtivo ? 'border-yellow-500/20 hover:bg-yellow-500/10' : 'border-green-500/20 hover:bg-green-500/10'}`}>
                                           {isAtivo ? <Lock className="w-4 h-4 text-yellow-500 group-hover/btn:text-yellow-400" /> : <Unlock className="w-4 h-4 text-green-500 group-hover/btn:text-green-400" />}
                                        </button>
-                                       <button className="w-[32px] h-[32px] rounded-lg border border-[var(--color-border)]/30 flex items-center justify-center hover:bg-white/5 transition-colors text-[var(--color-text-muted)]">
+                                       <button className="w-[32px] h-[32px] rounded-lg border border-gray-600/30 flex items-center justify-center hover:bg-white/5 transition-colors text-gray-400">
                                           <MoreHorizontal className="w-4 h-4" />
                                        </button>
                                     </div>
@@ -302,30 +301,30 @@ export default function UsersPage() {
                   </table>
                </div>
                
-               <div className="p-4 border-t border-white/5 text-[13px] text-[var(--color-text-muted)] flex items-center justify-between bg-[var(--color-background)]">
+               <div className="p-4 border-t border-white/5 text-[13px] text-gray-400 flex items-center justify-between bg-[#0B0E14]">
                   <span>Mostrando 1 a {filteredUsers.length} de {filteredUsers.length} usuários</span>
                   <div className="flex items-center gap-2">
                      <button className="px-3 py-1.5 rounded border border-white/10 hover:bg-white/5 transition-colors disabled:opacity-50">Anterior</button>
-                     <button className="w-8 h-8 rounded border border-[var(--color-primary)] bg-[var(--color-primary)]/20 text-[var(--color-primary)] font-medium flex items-center justify-center">1</button>
+                     <button className="w-8 h-8 rounded border border-[#3b82f6] bg-[#3b82f6]/20 text-[#3b82f6] font-medium flex items-center justify-center">1</button>
                      <button className="px-3 py-1.5 rounded border border-white/10 hover:bg-white/5 transition-colors">Próxima</button>
                   </div>
                </div>
             </div>
 
             {/* SIDEBAR DE FILTROS */}
-            <div className="w-[280px] bg-[var(--color-surface)] border border-white/5 rounded-2xl flex flex-col mb-8 p-5 shrink-0">
+            <div className="w-[280px] bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 p-5 shrink-0">
                <div className="flex items-center justify-between mb-6">
                   <h3 className="font-bold text-white text-[15px]">Filtros</h3>
-                  <button className="text-[var(--color-text-muted)] hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+                  <button className="text-gray-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
                </div>
                
                <div className="space-y-5 flex-1">
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase tracking-wider">Empresa</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase tracking-wider">Empresa</label>
                      <select 
                         value={filterCompany} 
                         onChange={e => setFilterCompany(e.target.value)}
-                        className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]"
+                        className="w-full bg-[#070b14] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
                      >
                         <option value="all">Todas as empresas</option>
                         {companies.map(c => (
@@ -335,11 +334,11 @@ export default function UsersPage() {
                   </div>
 
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase tracking-wider">Função</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase tracking-wider">Função</label>
                      <select 
                         value={filterRole} 
                         onChange={e => setFilterRole(e.target.value)}
-                        className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]"
+                        className="w-full bg-[#070b14] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
                      >
                         <option value="all">Todas as funções</option>
                         <option value="super_admin">Super Admin</option>
@@ -349,11 +348,11 @@ export default function UsersPage() {
                   </div>
 
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase tracking-wider">Status</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase tracking-wider">Status</label>
                      <select 
                         value={filterStatus}
                         onChange={e => setFilterStatus(e.target.value)}
-                        className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]"
+                        className="w-full bg-[#070b14] border border-white/10 rounded-lg hidden sm:block p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
                      >
                         <option value="all">Todos os status</option>
                         <option value="active">Ativo</option>
@@ -362,15 +361,15 @@ export default function UsersPage() {
                   </div>
 
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase tracking-wider">Último acesso</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase tracking-wider">Último acesso</label>
                      <div className="space-y-2">
                         <div className="relative">
-                           <input type="text" placeholder="Data inicial" className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]" />
-                           <Calendar className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                           <input type="text" placeholder="Data inicial" className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]" />
+                           <Calendar className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" />
                         </div>
                         <div className="relative">
-                           <input type="text" placeholder="Data final" className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]" />
-                           <Calendar className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                           <input type="text" placeholder="Data final" className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]" />
+                           <Calendar className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" />
                         </div>
                      </div>
                   </div>
@@ -389,43 +388,43 @@ export default function UsersPage() {
 
          {/* HIGHLIGHT CARDS at the bottom */}
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2 mb-8">
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
+            <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
                <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex flex-col items-center justify-center shrink-0">
                   <Shield className="w-6 h-6 text-purple-400" />
                </div>
                <div>
                   <h4 className="text-[14px] font-bold text-white mb-1">Segurança Avançada</h4>
-                  <p className="text-[12px] text-[var(--color-text-muted)] leading-tight">Controle de acesso baseado em funções e permissões granulares.</p>
+                  <p className="text-[12px] text-gray-400 leading-tight">Controle de acesso baseado em funções e permissões granulares.</p>
                </div>
             </div>
             
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
+            <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
                <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex flex-col items-center justify-center shrink-0">
                   <Activity className="w-6 h-6 text-blue-400" />
                </div>
                <div>
                   <h4 className="text-[14px] font-bold text-white mb-1">Histórico Completo</h4>
-                  <p className="text-[12px] text-[var(--color-text-muted)] leading-tight">Todos os acessos e alterações são registrados automaticamente.</p>
+                  <p className="text-[12px] text-gray-400 leading-tight">Todos os acessos e alterações são registrados automaticamente.</p>
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
+            <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
                <div className="w-12 h-12 rounded-xl bg-green-500/10 border border-green-500/20 flex flex-col items-center justify-center shrink-0">
                   <Lock className="w-6 h-6 text-green-400" />
                </div>
                <div>
                   <h4 className="text-[14px] font-bold text-white mb-1">Controle Total</h4>
-                  <p className="text-[12px] text-[var(--color-text-muted)] leading-tight">Gerencie usuários, permissões e acessos da plataforma.</p>
+                  <p className="text-[12px] text-gray-400 leading-tight">Gerencie usuários, permissões e acessos da plataforma.</p>
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
+            <div className="bg-[#11161d] border border-white/5 rounded-xl p-5 flex items-start gap-4 hover:border-white/10 transition-colors">
                <div className="w-12 h-12 rounded-xl bg-[#f97316]/10 border border-[#f97316]/20 flex flex-col items-center justify-center shrink-0">
                   <Users className="w-6 h-6 text-[#f97316]" />
                </div>
                <div>
                   <h4 className="text-[14px] font-bold text-white mb-1">Suporte Especializado</h4>
-                  <p className="text-[12px] text-[var(--color-text-muted)] leading-tight">Equipe pronta para ajudar quando você precisar.</p>
+                  <p className="text-[12px] text-gray-400 leading-tight">Equipe pronta para ajudar quando você precisar.</p>
                </div>
             </div>
          </div>

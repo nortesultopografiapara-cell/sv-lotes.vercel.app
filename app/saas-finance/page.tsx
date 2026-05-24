@@ -88,7 +88,6 @@ export default function SaaSFinancePage() {
    };
 
    useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadData();
    }, []);
 
@@ -163,14 +162,14 @@ export default function SaaSFinancePage() {
    const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
    return (
-      <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[var(--color-surface)] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+      <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
             <div>
                <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">Financeiro SaaS</h1>
-               <p className="text-[var(--color-text-muted)] mt-1 text-[14px]">Acompanhe receitas, assinaturas, inadimplência e movimentações financeiras da plataforma.</p>
+               <p className="text-gray-400 mt-1 text-[14px]">Acompanhe receitas, assinaturas, inadimplência e movimentações financeiras da plataforma.</p>
             </div>
             <div className="flex items-center gap-3 justify-end">
-               <button onClick={handleExport} className="bg-[var(--color-surface)] border border-white/10 hover:bg-white/5 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+               <button onClick={handleExport} className="bg-[#11161d] border border-white/10 hover:bg-white/5 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
                   <Download className="w-4 h-4" /> Exportar Relatório
                </button>
                <button onClick={loadData} className="bg-[#f97316] hover:bg-[#ea580c] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(249,115,22,0.4)]">
@@ -181,61 +180,61 @@ export default function SaaSFinancePage() {
 
          {/* TOP STATS CARDS */}
          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-            <div className="bg-[var(--color-surface)] border border-green-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:border-green-500/40 transition-all">
+            <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:border-green-500/40 transition-all">
                <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
                   <DollarSign className="w-6 h-6 text-green-400" />
                </div>
                <div>
-                  <p className="text-[12px] text-[var(--color-text-muted)] font-medium">Receita Mensal (MRR)</p>
+                  <p className="text-[12px] text-gray-400 font-medium">Receita Mensal (MRR)</p>
                   <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.mrr)}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 18,6% <span className="text-[var(--color-text-muted)] font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-green-400 font-bold">↑ 18,6% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
                </div>
             </div>
-            <div className="bg-[var(--color-surface)] border border-blue-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:border-blue-500/40 transition-all">
+            <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:border-blue-500/40 transition-all">
                <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
                   <TrendingUp className="w-6 h-6 text-blue-400" />
                </div>
                <div>
-                  <p className="text-[12px] text-[var(--color-text-muted)] font-medium">Receita Anual (ARR)</p>
+                  <p className="text-[12px] text-gray-400 font-medium">Receita Anual (ARR)</p>
                   <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.arr)}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 22,3% <span className="text-[var(--color-text-muted)] font-normal">vs ano anterior</span></p>
+                  <p className="text-[11px] text-green-400 font-bold">↑ 22,3% <span className="text-gray-500 font-normal">vs ano anterior</span></p>
                </div>
             </div>
-            <div className="bg-[var(--color-surface)] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] hover:border-purple-500/40 transition-all">
+            <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] hover:border-purple-500/40 transition-all">
                <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0">
                   <Users className="w-6 h-6 text-purple-400" />
                </div>
                <div>
-                  <p className="text-[12px] text-[var(--color-text-muted)] font-medium">Clientes Ativos</p>
+                  <p className="text-[12px] text-gray-400 font-medium">Clientes Ativos</p>
                   <h4 className="text-[20px] font-bold text-white">{stats.activeClients}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 13,3% <span className="text-[var(--color-text-muted)] font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-green-400 font-bold">↑ 13,3% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
                </div>
             </div>
-            <div className="bg-[var(--color-surface)] border border-orange-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] hover:border-orange-500/40 transition-all">
-               <div className="w-12 h-12 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center shrink-0">
-                  <Target className="w-6 h-6 text-[var(--color-primary)]" />
+            <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] hover:border-orange-500/40 transition-all">
+               <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center shrink-0">
+                  <Target className="w-6 h-6 text-orange-400" />
                </div>
                <div>
-                  <p className="text-[12px] text-[var(--color-text-muted)] font-medium">Taxa de Conversão</p>
+                  <p className="text-[12px] text-gray-400 font-medium">Taxa de Conversão</p>
                   <h4 className="text-[20px] font-bold text-white">68,4%</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 12,4% <span className="text-[var(--color-text-muted)] font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-green-400 font-bold">↑ 12,4% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
                </div>
             </div>
-            <div className="bg-[var(--color-surface)] border border-cyan-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:border-cyan-500/40 transition-all">
+            <div className="bg-[#11161d] border border-cyan-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:border-cyan-500/40 transition-all">
                <div className="w-12 h-12 rounded-full bg-cyan-500/10 flex items-center justify-center shrink-0">
                   <AlertCircle className="w-6 h-6 text-cyan-400" />
                </div>
                <div>
-                  <p className="text-[12px] text-[var(--color-text-muted)] font-medium">Inadimplência</p>
+                  <p className="text-[12px] text-gray-400 font-medium">Inadimplência</p>
                   <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.delayedAmount || 1250)}</h4>
-                  <p className="text-[11px] text-cyan-400 font-bold">↓ 8,4% <span className="text-[var(--color-text-muted)] font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-cyan-400 font-bold">↓ 8,4% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
                </div>
             </div>
          </div>
 
          {/* CHARTS ROW */}
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5">
                <div className="flex justify-between items-center mb-6">
                   <h3 className="text-[14px] font-bold text-white">Receita (MRR) - Últimos 6 meses</h3>
                   <select className="bg-transparent border border-white/10 text-gray-300 text-xs rounded px-2 py-1 focus:outline-none">
@@ -258,7 +257,7 @@ export default function SaaSFinancePage() {
                </div>
             </div>
             
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5">
                <div className="flex justify-between items-center mb-6">
                   <h3 className="text-[14px] font-bold text-white">Receita por Plano</h3>
                </div>
@@ -286,7 +285,7 @@ export default function SaaSFinancePage() {
                               </div>
                               <div className="flex items-end justify-between pl-5">
                                  <span className="text-[14px] font-bold text-white">{formatCurrency(d.value)}</span>
-                                 <span className="text-[11px] text-[var(--color-text-muted)]">{perc}%</span>
+                                 <span className="text-[11px] text-gray-500">{perc}%</span>
                               </div>
                            </div>
                         )
@@ -295,7 +294,7 @@ export default function SaaSFinancePage() {
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5">
                <div className="flex justify-between items-center mb-6">
                   <h3 className="text-[14px] font-bold text-white">Receita por Mês (MRR)</h3>
                   <select className="bg-transparent border border-white/10 text-gray-300 text-xs rounded px-2 py-1 focus:outline-none">
@@ -321,21 +320,21 @@ export default function SaaSFinancePage() {
 
          {/* TABLE & FILTERS SECTION */}
          <div className="flex flex-col lg:flex-row gap-6 mb-8">
-            <div className="flex-1 bg-[var(--color-surface)] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+            <div className="flex-1 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
                <div className="p-5 border-b border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                   <div>
                      <h3 className="text-[16px] font-bold text-white">Assinaturas das Empresas</h3>
-                     <p className="text-[12px] text-[var(--color-text-muted)]">Acompanhe todas as assinaturas e pagamentos das empresas.</p>
+                     <p className="text-[12px] text-gray-400">Acompanhe todas as assinaturas e pagamentos das empresas.</p>
                   </div>
                   <div className="flex items-center gap-3 w-full md:w-auto">
                      <div className="relative flex-1 md:w-[250px]">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                         <input 
                            type="text" 
                            placeholder="Buscar empresa..." 
                            value={search}
                            onChange={e => setSearch(e.target.value)}
-                           className="w-full bg-[var(--color-background)] border border-white/10 text-white pl-9 pr-4 py-2 rounded-lg focus:outline-none focus:border-[var(--color-primary)]/50 text-[13px]"
+                           className="w-full bg-[#0B0E14] border border-white/10 text-white pl-9 pr-4 py-2 rounded-lg focus:outline-none focus:border-[#3b82f6]/50 text-[13px]"
                         />
                      </div>
                      <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-[13px] hover:bg-white/5 transition-colors whitespace-nowrap">
@@ -351,15 +350,15 @@ export default function SaaSFinancePage() {
                   <table className="w-full text-left min-w-[900px]">
                      <thead>
                         <tr className="border-b border-white/5">
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Empresa</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Plano</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Status</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Valor (R$)</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Ciclo</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Próxima Cobrança</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Vencimento</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Pagamento</th>
-                           <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-right">Ações</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Plano</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Valor (R$)</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Ciclo</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Próxima Cobrança</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Vencimento</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
+                           <th className="p-4 text-[12px] text-gray-400 font-medium text-right">Ações</th>
                         </tr>
                      </thead>
                      <tbody>
@@ -377,7 +376,7 @@ export default function SaaSFinancePage() {
                                        </div>
                                        <div>
                                           <p className="text-[13px] font-medium text-white line-clamp-1 cursor-pointer hover:text-blue-400">{c.name}</p>
-                                          <p className="text-[11px] text-[var(--color-text-muted)] line-clamp-1">{c.email}</p>
+                                          <p className="text-[11px] text-gray-500 line-clamp-1">{c.email}</p>
                                        </div>
                                     </div>
                                  </td>
@@ -387,18 +386,18 @@ export default function SaaSFinancePage() {
                                     </span>
                                  </td>
                                  <td className="p-4">
-                                    <span className={`text-[12px] font-medium ${isAtiva ? 'text-green-500' : isInad ? 'text-red-500' : 'text-[var(--color-primary)]'}`}>
+                                    <span className={`text-[12px] font-medium ${isAtiva ? 'text-green-500' : isInad ? 'text-red-500' : 'text-orange-500'}`}>
                                        {c.subscription_status}
                                     </span>
                                  </td>
                                  <td className="p-4 text-[13px] text-gray-300">{formatCurrency(c.price)}</td>
-                                 <td className="p-4 text-[13px] text-[var(--color-text-muted)]">Mensal</td>
-                                 <td className="p-4 text-[12px] text-[var(--color-text-muted)]">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
-                                 <td className="p-4 text-[12px] text-[var(--color-text-muted)]">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
+                                 <td className="p-4 text-[13px] text-gray-400">Mensal</td>
+                                 <td className="p-4 text-[12px] text-gray-400">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
+                                 <td className="p-4 text-[12px] text-gray-400">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
                                  <td className="p-4">
                                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
                                        c.payment_status === 'Pago' ? 'text-green-400 border-green-500/30 bg-green-500/10' :
-                                       c.payment_status === 'Pendente' ? 'text-[var(--color-primary)] border-orange-500/30 bg-[var(--color-primary)]/10' :
+                                       c.payment_status === 'Pendente' ? 'text-orange-400 border-orange-500/30 bg-orange-500/10' :
                                        'text-red-400 border-red-500/30 bg-red-500/10'
                                     }`}>
                                        {c.payment_status}
@@ -406,13 +405,13 @@ export default function SaaSFinancePage() {
                                  </td>
                                  <td className="p-4">
                                     <div className="flex items-center justify-end gap-2">
-                                       <button className="w-7 h-7 rounded border border-white/10 flex items-center justify-center hover:bg-white/5 text-[var(--color-text-muted)] hover:text-white transition-colors">
+                                       <button className="w-7 h-7 rounded border border-white/10 flex items-center justify-center hover:bg-white/5 text-gray-400 hover:text-white transition-colors">
                                           <Eye className="w-3.5 h-3.5" />
                                        </button>
                                        <button className="w-7 h-7 rounded border border-[#f97316]/30 flex items-center justify-center hover:bg-[#f97316]/10 text-[#f97316] transition-colors">
                                           <Edit2 className="w-3.5 h-3.5" />
                                        </button>
-                                       <button className="w-7 h-7 rounded border border-white/10 flex items-center justify-center hover:bg-white/5 text-[var(--color-text-muted)] hover:text-white transition-colors">
+                                       <button className="w-7 h-7 rounded border border-white/10 flex items-center justify-center hover:bg-white/5 text-gray-400 hover:text-white transition-colors">
                                           <MoreHorizontal className="w-3.5 h-3.5" />
                                        </button>
                                     </div>
@@ -422,7 +421,7 @@ export default function SaaSFinancePage() {
                         })}
                         {filteredCompanies.length === 0 && (
                            <tr>
-                              <td colSpan={9} className="p-8 text-center text-[var(--color-text-muted)]">Nenhuma empresa encontrada com estes filtros.</td>
+                              <td colSpan={9} className="p-8 text-center text-gray-500">Nenhuma empresa encontrada com estes filtros.</td>
                            </tr>
                         )}
                      </tbody>
@@ -431,16 +430,16 @@ export default function SaaSFinancePage() {
             </div>
 
             {/* FILTERS SIDEBAR */}
-            <div className="w-full lg:w-[300px] h-fit bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 shrink-0 flex flex-col">
+            <div className="w-full lg:w-[300px] h-fit bg-[#11161d] border border-white/5 rounded-2xl p-5 shrink-0 flex flex-col">
                <div className="flex items-center justify-between mb-5">
                   <h3 className="font-bold text-white text-[15px]">Filtros</h3>
-                  <button className="text-[var(--color-text-muted)] hover:text-white"><X className="w-4 h-4" /></button>
+                  <button className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
                </div>
                
                <div className="space-y-4">
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Plano</label>
-                     <select value={filterPlan} onChange={e => setFilterPlan(e.target.value)} className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]">
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Plano</label>
+                     <select value={filterPlan} onChange={e => setFilterPlan(e.target.value)} className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]">
                         <option value="all">Todos os planos</option>
                         <option value="BÁSICO">Básico</option>
                         <option value="BUSINESS">Business</option>
@@ -448,8 +447,8 @@ export default function SaaSFinancePage() {
                      </select>
                   </div>
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Status</label>
-                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]">
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Status</label>
+                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]">
                         <option value="all">Todos os status</option>
                         <option value="ativa">Ativa</option>
                         <option value="atrasada">Atrasada</option>
@@ -457,8 +456,8 @@ export default function SaaSFinancePage() {
                      </select>
                   </div>
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Pagamento</label>
-                     <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]">
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Pagamento</label>
+                     <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)} className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]">
                         <option value="all">Todos os pagamentos</option>
                         <option value="pago">Pago</option>
                         <option value="pendente">Pendente</option>
@@ -466,23 +465,23 @@ export default function SaaSFinancePage() {
                      </select>
                   </div>
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Período</label>
-                     <select className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)] mb-3">
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Período</label>
+                     <select className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2.5 text-[13px] text-white focus:outline-none focus:border-[#3b82f6] mb-3">
                         <option>Este mês</option>
                         <option>Mês passado</option>
                         <option>Personalizado</option>
                      </select>
                   </div>
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Data inicial</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Data inicial</label>
                      <div className="relative">
-                        <input type="date" className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]" />
+                        <input type="date" className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]" />
                      </div>
                   </div>
                   <div>
-                     <label className="block text-[11px] text-[var(--color-text-muted)] font-medium mb-1.5 uppercase">Data final</label>
+                     <label className="block text-[11px] text-gray-400 font-medium mb-1.5 uppercase">Data final</label>
                      <div className="relative">
-                        <input type="date" className="w-full bg-[var(--color-surface)] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[var(--color-primary)]" />
+                        <input type="date" className="w-full bg-[#070b14] border border-white/10 rounded-lg p-2 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]" />
                      </div>
                   </div>
                </div>
@@ -491,7 +490,7 @@ export default function SaaSFinancePage() {
                   <button onClick={handleApplyFilters} className="w-full bg-[#f97316] hover:bg-[#ea580c] text-white py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-colors">
                      Aplicar Filtros
                   </button>
-                  <button onClick={() => { setFilterPlan('all'); setFilterStatus('all'); setFilterPayment('all'); setSearch(''); }} className="w-full bg-[var(--color-surface)] hover:bg-white/5 border border-white/10 text-gray-300 py-2.5 rounded-lg text-[13px] font-medium transition-colors">
+                  <button onClick={() => { setFilterPlan('all'); setFilterStatus('all'); setFilterPayment('all'); setSearch(''); }} className="w-full bg-[#070b14] hover:bg-white/5 border border-white/10 text-gray-300 py-2.5 rounded-lg text-[13px] font-medium transition-colors">
                      Limpar Filtros
                   </button>
                </div>
@@ -500,14 +499,14 @@ export default function SaaSFinancePage() {
 
          {/* BOTTOM CARDS */}
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
                <h3 className="text-[14px] font-bold text-white mb-4">Resumo de Inadimplência</h3>
                
                <div className="flex items-center gap-6 mb-2">
                   <div className="flex-1">
-                     <p className="text-[12px] text-[var(--color-text-muted)] mb-1">Total em aberto</p>
+                     <p className="text-[12px] text-gray-400 mb-1">Total em aberto</p>
                      <h4 className="text-[24px] font-bold text-red-500 mb-1">{formatCurrency(stats.delayedAmount || 1250)}</h4>
-                     <p className="text-[12px] text-[var(--color-text-muted)]">{stats.outstandingCount || 2} assinaturas em atraso</p>
+                     <p className="text-[12px] text-gray-500">{stats.outstandingCount || 2} assinaturas em atraso</p>
                   </div>
                   <div className="w-24 h-24 relative flex items-center justify-center shrink-0">
                      <ResponsiveContainer width="100%" height="100%">
@@ -530,7 +529,7 @@ export default function SaaSFinancePage() {
                      <span className="text-white font-medium">{formatCurrency(1250)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[var(--color-primary)]"></div><span className="text-gray-300">A vencer (3)</span></div>
+                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div><span className="text-gray-300">A vencer (3)</span></div>
                      <span className="text-white font-medium">{formatCurrency(1100)}</span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -540,12 +539,12 @@ export default function SaaSFinancePage() {
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
-               <h3 className="text-[14px] font-bold text-white mb-4">Receita Prevista <span className="text-[var(--color-text-muted)] font-normal ml-1">(Próximos 30 dias)</span></h3>
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
+               <h3 className="text-[14px] font-bold text-white mb-4">Receita Prevista <span className="text-gray-500 font-normal ml-1">(Próximos 30 dias)</span></h3>
                <div className="mb-4">
-                  <p className="text-[12px] text-[var(--color-text-muted)] mb-1">Total previsto</p>
-                  <h4 className="text-[24px] font-bold text-[var(--color-primary)] mb-1">{formatCurrency(16500)}</h4>
-                  <p className="text-[12px] text-[var(--color-text-muted)]">5 cobranças previstas</p>
+                  <p className="text-[12px] text-gray-400 mb-1">Total previsto</p>
+                  <h4 className="text-[24px] font-bold text-[#3b82f6] mb-1">{formatCurrency(16500)}</h4>
+                  <p className="text-[12px] text-gray-500">5 cobranças previstas</p>
                </div>
                
                <div className="space-y-3 text-[12px]">
@@ -564,7 +563,7 @@ export default function SaaSFinancePage() {
                </div>
             </div>
 
-            <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
                <h3 className="text-[14px] font-bold text-white mb-4">Últimas Movimentações</h3>
                <div className="space-y-4 text-[12px] flex-1 mt-2">
                   <div className="flex flex-col gap-1 pb-3 border-b border-white/5">
@@ -572,21 +571,21 @@ export default function SaaSFinancePage() {
                         <span className="text-gray-300 font-medium">Pagamento recebido - Norte Sul Topografia</span>
                         <span className="text-green-400 font-bold whitespace-nowrap">+ R$ 549,99</span>
                      </div>
-                     <span className="text-[var(--color-text-muted)]">22/05/2026 08:34</span>
+                     <span className="text-gray-500">22/05/2026 08:34</span>
                   </div>
                   <div className="flex flex-col gap-1 pb-3 border-b border-white/5">
                      <div className="flex justify-between items-start gap-4">
                         <span className="text-gray-300 font-medium">Pagamento recebido - S V Topografia</span>
                         <span className="text-green-400 font-bold whitespace-nowrap">+ R$ 329,99</span>
                      </div>
-                     <span className="text-[var(--color-text-muted)]">15/05/2026 07:58</span>
+                     <span className="text-gray-500">15/05/2026 07:58</span>
                   </div>
                   <div className="flex flex-col gap-1">
                      <div className="flex justify-between items-start gap-4">
                         <span className="text-gray-300 font-medium">Falha na cobrança - Vale Verde Empreendimentos</span>
                         <span className="text-red-400 font-bold whitespace-nowrap">R$ 549,99</span>
                      </div>
-                     <span className="text-[var(--color-text-muted)]">05/05/2026 10:11</span>
+                     <span className="text-gray-500">05/05/2026 10:11</span>
                   </div>
                </div>
                <button className="text-[12px] font-medium text-blue-400 hover:text-blue-300 transition-colors mt-4 text-left w-fit flex items-center gap-1">

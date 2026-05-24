@@ -142,8 +142,8 @@ function NotificationBell({ user }: { user: any }) {
       </button>
 
       {show && (
-        <div className="absolute right-0 mt-2 w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl overflow-hidden z-[9999]" style={{ top: '100%' }}>
-           <div className="p-4 border-b border-[var(--color-border)] flex justify-between items-center bg-[#181c25]">
+        <div className="absolute right-0 mt-2 w-72 bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl overflow-hidden z-[9999]" style={{ top: '100%' }}>
+           <div className="p-4 border-b border-[#1f232b] flex justify-between items-center bg-[#181c25]">
               <h3 className="font-semibold text-white">Notificações</h3>
               <span className="text-xs bg-[#1f232b] text-gray-300 px-2 py-0.5 rounded font-bold">
                  {totalAlerts} Alertas
@@ -151,46 +151,46 @@ function NotificationBell({ user }: { user: any }) {
            </div>
            <div className="p-2 max-h-64 overflow-y-auto">
               {stats.qtyLate > 0 && (
-                <div className="px-3 py-2 border-b border-[var(--color-border)]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
                    <div className="w-8 h-8 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
                      <TrendingDown className="w-4 h-4" />
                    </div>
                    <div>
                      <p className="text-sm font-medium text-gray-200">{stats.qtyLate} parcelas vencidas</p>
-                     <p className="text-xs text-[var(--color-text-muted)]">Exigem cobrança urgente</p>
+                     <p className="text-xs text-gray-500">Exigem cobrança urgente</p>
                    </div>
                 </div>
               )}
               {stats.qtyDueToday > 0 && (
-                <div className="px-3 py-2 border-b border-[var(--color-border)]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
                    <div className="w-8 h-8 rounded-full bg-[var(--color-warning)]/10 text-[var(--color-warning)] flex items-center justify-center shrink-0">
                      <AlertCircle className="w-4 h-4" />
                    </div>
                    <div>
                      <p className="text-sm font-medium text-gray-200">{stats.qtyDueToday} parcelas vencem hoje</p>
-                     <p className="text-xs text-[var(--color-text-muted)]">Acompanhamento diário</p>
+                     <p className="text-xs text-gray-500">Acompanhamento diário</p>
                    </div>
                 </div>
               )}
               {stats.qtyNext7Days > 0 && (
-                <div className="px-3 py-2 border-b border-[var(--color-border)]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
+                <div className="px-3 py-2 border-b border-[#1f232b]/50 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
                    <div className="w-8 h-8 rounded-full bg-[var(--color-info)]/10 text-[var(--color-info)] flex items-center justify-center shrink-0">
                      <Banknote className="w-4 h-4" />
                    </div>
                    <div>
                      <p className="text-sm font-medium text-gray-200">{stats.qtyNext7Days} nos próximos 7 dias</p>
-                     <p className="text-xs text-[var(--color-text-muted)]">Programe-se</p>
+                     <p className="text-xs text-gray-500">Programe-se</p>
                    </div>
                 </div>
               )}
               {stats.qtyNoPaymentContracts > 0 && (
                 <div className="px-3 py-2 hover:bg-[#1f232b]/30 rounded-lg transition-colors flex gap-3 items-center group">
-                   <div className="w-8 h-8 rounded-full bg-gray-500/10 text-[var(--color-text-muted)] flex items-center justify-center shrink-0">
+                   <div className="w-8 h-8 rounded-full bg-gray-500/10 text-gray-400 flex items-center justify-center shrink-0">
                      <FileText className="w-4 h-4" />
                    </div>
                    <div>
                      <p className="text-sm font-medium text-gray-200">{stats.qtyNoPaymentContracts} contratos sem base</p>
-                     <p className="text-xs text-[var(--color-text-muted)]">Sem pagamentos recebidos</p>
+                     <p className="text-xs text-gray-500">Sem pagamentos recebidos</p>
                    </div>
                 </div>
               )}
@@ -200,11 +200,11 @@ function NotificationBell({ user }: { user: any }) {
                 </div>
               )}
            </div>
-           <div className="p-4 border-t border-[var(--color-border)] flex flex-col gap-2 bg-[#181c25]">
+           <div className="p-4 border-t border-[#1f232b] flex flex-col gap-2 bg-[#181c25]">
               <button onClick={() => { setShow(false); router.push('/finance'); }} className="w-full py-2 bg-[var(--color-primary)] hover:opacity-90 text-white rounded font-medium transition-colors text-sm">
                  Ver financeiro
               </button>
-              <button onClick={() => { setHidden(true); setShow(false); }} className="w-full py-2 bg-transparent border border-[var(--color-border)] hover:bg-[var(--color-surface)] text-gray-300 rounded font-medium transition-colors text-sm">
+              <button onClick={() => { setHidden(true); setShow(false); }} className="w-full py-2 bg-transparent border border-[var(--color-border)] hover:bg-[#1a1f29] text-gray-300 rounded font-medium transition-colors text-sm">
                  Limpar notificações visuais
               </button>
            </div>
@@ -243,7 +243,7 @@ const getMenuItems = (role: string) => {
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
-      { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[var(--color-primary)]' },
+      { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
       { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
@@ -280,16 +280,6 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function fetchCompany() {
-      // --- DEMO PREVIEW MODE ---
-      if (typeof window !== 'undefined' && localStorage.getItem('demo_preview_mode') === 'true') {
-        setCompany({
-          name: 'Empresa Demonstração',
-          fantasy_name: 'AI Studio Demo',
-          status_operacional: 'Ativa'
-        });
-        return;
-      }
-
       if (user?.tenant_id) {
         const { data } = await supabase.from('companies').select('logo_url, name, fantasy_name, status_operacional').eq('id', user.tenant_id).single();
         if (data) setCompany(data);
@@ -329,10 +319,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       try {
         localStorage.removeItem('contingency_auth');
-        localStorage.removeItem('demo_preview_mode');
       } catch(e) {}
       document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      document.cookie = "demo_preview_mode=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     } catch(e) {}
     window.location.assign('/login');
   };
@@ -347,17 +335,17 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
   if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional)) {
     return (
-      <div className="h-screen w-full bg-[var(--color-background)] flex flex-col items-center justify-center p-6 text-center">
+      <div className="h-screen w-full bg-[#0b1111] flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
            <AlertCircle className="w-10 h-10 text-red-500" />
         </div>
         <h1 className="text-2xl font-bold text-white mb-2">Empresa Temporariamente Indisponível</h1>
-        <p className="text-[var(--color-text-muted)] max-w-md mb-8">
+        <p className="text-gray-400 max-w-md mb-8">
            O acesso ao sistema para a empresa <strong>{company.name}</strong> encontra-se restrito no momento (Status: {company.status_operacional}). Por favor, entre em contato com o administrador da plataforma ou verifique sua situação financeira.
         </p>
         <button 
            onClick={handleLogout}
-           className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium border border-[var(--color-border)]"
+           className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium border border-[#2d3340]"
         >
            Sair e voltar ao Login
         </button>
@@ -414,7 +402,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
-                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-[var(--color-text-muted)] tracking-wider">
+                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-gray-500 tracking-wider">
                     {item.name}
                   </div>
                 );
@@ -460,7 +448,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
-                  <div key={`section-${idx}`} className="px-3 pt-4 pb-2 text-[10px] font-bold text-[var(--color-text-muted)] tracking-wider">
+                  <div key={`section-${idx}`} className="px-3 pt-4 pb-2 text-[10px] font-bold text-gray-500 tracking-wider">
                     {item.name}
                   </div>
                 );
@@ -516,7 +504,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                        console.error(e);
                    }
                }}
-               className="bg-[var(--color-surface)] text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-50 transition-colors"
+               className="bg-white text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-50 transition-colors"
             >
                Sair do modo empresa
             </button>
@@ -541,7 +529,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
             <div className="flex items-center gap-6">
               {user?.role === 'SUPER_ADMIN' && (
-                <div className="px-3 py-1.5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-xs font-bold border border-[var(--color-primary)]/20 tracking-wider">
+                <div className="px-3 py-1.5 rounded-full bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-bold border border-[#06b6d4]/20 tracking-wider">
                   MODO DEUS
                 </div>
               )}
@@ -556,10 +544,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
                 </div>
                 
-                <div className="absolute right-0 mt-2 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
-                  <div className="p-4 border-b border-[var(--color-border)] bg-[#151a23]">
+                <div className="absolute right-0 mt-2 w-56 bg-[#1a1f29] border border-[#2d3340] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
+                  <div className="p-4 border-b border-[#2d3340] bg-[#151a23]">
                     <p className="font-semibold text-white truncate">{user?.name}</p>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-1 truncate">{user?.email}</p>
+                    <p className="text-xs text-gray-400 mt-1 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
                     {user?.role === 'SUPER_ADMIN' ? (

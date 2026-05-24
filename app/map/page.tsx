@@ -4,10 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Settings } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
-import { calculateLotDimensions, getProjectMeasurementFactor, applyProjectMeasurementFactor } from '@/utils/calculateLotDimensions';
+import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -192,12 +192,6 @@ export default function MapPage() {
   const [drawStreetActive, setDrawStreetActive] = useState(false);
   const [streetGuidesVisible, setStreetGuidesVisible] = useState(true);
 
-  // Scale calibration state variables
-  const [isScaleModalOpen, setIsScaleModalOpen] = useState(false);
-  const [customScaleFactor, setCustomScaleFactor] = useState('');
-  const [calibSystemVal, setCalibSystemVal] = useState('38.05');
-  const [calibRealVal, setCalibRealVal] = useState('37.94');
-
   const loadStreetGuides = useCallback(async () => {
     if (!selectedProject) return;
     try {
@@ -211,14 +205,6 @@ export default function MapPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (selectedProject) loadStreetGuides();
   }, [selectedProject, loadStreetGuides]);
-
-  useEffect(() => {
-    if (selectedProject) {
-      const factor = getProjectMeasurementFactor(selectedProject.id);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCustomScaleFactor(factor.toString());
-    }
-  }, [selectedProject]);
 
   const handleIdentifyFronts = async () => {
     if (!selectedProject || streetGuides.length === 0) {
@@ -259,7 +245,7 @@ export default function MapPage() {
           if (!coords || coords.length < 4) continue;
           
           // Use calculateLotDimensions utilities to extract segments
-          const segments = extractSegments(coords, [], selectedProject.id); // not passing allPolys to keep it fast, we only care about closest to street
+          const segments = extractSegments(coords, []); // not passing allPolys to keep it fast, we only care about closest to street
           
           let bestSegment = null;
           let bestScore = Infinity;
@@ -537,51 +523,6 @@ export default function MapPage() {
     }
   };
 
-  const handleApplyScaleFactor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProject) return;
-    
-    const scaleNum = parseFloat(customScaleFactor);
-    if (isNaN(scaleNum) || scaleNum <= 0) {
-      alert("Por favor, forneça um fator de escala válido maior que zero.");
-      return;
-    }
-    
-    try {
-      // 1. Persist to cache/localStorage
-      applyProjectMeasurementFactor(scaleNum, selectedProject.id);
-      
-      // 2. Persist to database (if column exists)
-      const { error } = await supabase
-        .from('projects')
-        .update({ measurement_factor: scaleNum })
-        .eq('id', selectedProject.id);
-        
-      if (error) {
-        console.warn("Could not save factor to database, falling back to local storage:", error.message);
-      }
-      
-      // 3. Clear and reload
-      setMapRefreshKey(prev => prev + 1);
-      alert(`Fator de escala de ${scaleNum} configurado com sucesso para este loteamento!`);
-      setIsScaleModalOpen(false);
-    } catch (err: any) {
-      console.error(err);
-      alert("Erro ao aplicar fator de escala: " + err.message);
-    }
-  };
-
-  const calculateKFromValues = () => {
-    const systemVal = parseFloat(calibSystemVal);
-    const realVal = parseFloat(calibRealVal);
-    if (isNaN(systemVal) || isNaN(realVal) || systemVal <= 0 || realVal <= 0) {
-      alert("Por favor, insira valores válidos e maiores que zero.");
-      return;
-    }
-    const computedK = realVal / systemVal;
-    setCustomScaleFactor(computedK.toFixed(7));
-  };
-
   const handleImportKML = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile || !selectedProject || !user) return;
@@ -683,11 +624,10 @@ export default function MapPage() {
              try {
                 const poly = turfPolygon(geom.coordinates);
                 const areaCalculada = turfArea(poly);
-                const projectKey = getProjectMeasurementFactor(selectedProject.id);
-                const areaRealCorrigida = areaCalculada * 0.9952546259435014 * (projectKey * projectKey);
+                const areaRealCorrigida = areaCalculada * 0.9952546259435014;
                 calcArea = areaRealCorrigida;
                 
-                const calculatedDims = calculateLotDimensions(geom.coordinates[0], allPolys, geom.properties || {}, { projectId: selectedProject.id });
+                const calculatedDims = calculateLotDimensions(geom.coordinates[0], allPolys, geom.properties || {});
                 dims = {
                     frente: calculatedDims.frente as unknown as number,
                     fundo: calculatedDims.fundo as unknown as number,
@@ -825,14 +765,14 @@ export default function MapPage() {
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
         <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
-           <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
-              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
+           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
                 <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
                 <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
                 <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
               </div>
            </div>
@@ -840,9 +780,9 @@ export default function MapPage() {
 
         {/* TOP FLOATING HEADER - TOP LEFT */}
         <div className="absolute top-2 left-2 md:top-4 md:left-24 z-[400] pointer-events-auto">
-          <div className="flex items-center bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] shadow-lg rounded-lg p-2 max-w-[250px]">
+          <div className="flex items-center bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg p-2 max-w-[250px]">
              <div className="flex items-center gap-2 overflow-hidden">
-                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-[var(--color-text-muted)] hover:text-white transition-colors" title="Voltar">
+                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-gray-400 hover:text-white transition-colors" title="Voltar">
                    <ArrowLeft className="w-4 h-4" />
                 </button>
                 <h2 className="text-sm font-bold text-white truncate">{selectedProject.name}</h2>
@@ -853,39 +793,39 @@ export default function MapPage() {
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}
         <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
-           <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
+           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
              
              {user?.role !== 'BROKER' && (
                <>
                  {/* Import */}
                  <button 
                     onClick={() => setIsImportModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
                  </button>
                  
-                 <hr className="w-2/3 border-[var(--color-border)]" />
+                 <hr className="w-2/3 border-[#2d3340]" />
                </>
              )}
              
              {/* GPS */}
              <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#10b981]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
              >
                 <Navigation className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
              </button>
              
              {/* Medição */}
              <button 
                 onClick={() => setMeasureActive(!measureActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#4999e9]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9]'}`}
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
              </button>
              
              {/* Map Style */}
@@ -895,55 +835,44 @@ export default function MapPage() {
                    else if (activeLayer === 'streets') setActiveLayer('dark');
                    else setActiveLayer('satellite');
                 }} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#f59e0b] transition-colors group relative"
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
              >
                 <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                    {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
                 </span>
              </button>
              
              {user?.role !== 'BROKER' && (
                <>
-                 <hr className="w-2/3 border-[var(--color-border)]" />
+                 <hr className="w-2/3 border-[#2d3340]" />
                  
                  {/* Linha de Rua */}
                  <button 
                     onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#10b981]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
                  >
                     <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
                  </button>
                  
                  {/* Identificar Frentes */}
                  <button 
                     onClick={handleIdentifyFronts} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-[var(--color-text-muted)] hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Scan className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
                  </button>
                  
                  {/* Visibility Toggle */}
                  <button 
                     onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#f59e0b]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
                  >
                     {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                        {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
-                    </span>
-                 </button>
-
-                 {/* Calibrar Escala */}
-                 <button 
-                    onClick={() => setIsScaleModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-cyan-400 transition-colors group relative"
-                 >
-                    <Settings className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
-                       Calibrar Escala
                     </span>
                  </button>
                </>
@@ -1029,82 +958,6 @@ export default function MapPage() {
               </div>
            </div>
         )}
-
-        {isScaleModalOpen && (
-           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]/95">
-                    <h3 className="font-bold text-white text-lg">Calibração de Escala Métrica</h3>
-                    <button onClick={() => setIsScaleModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
-                       <X className="w-5 h-5" />
-                    </button>
-                 </div>
-                 <form onSubmit={handleApplyScaleFactor} className="p-6 flex flex-col gap-5 bg-[var(--color-surface)]">
-                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
-                       Ajuste o fator de escala global para calibrar as medidas decimais do mapa com a planta real aprovada. Isto afeta frentes, fundos, laterais, áreas e memoriais descritivos em tempo real.
-                    </p>
-                    
-                    <div>
-                       <label className="block text-xs font-bold text-[#4999e9] uppercase tracking-wider mb-2">Fator de Escala Global (K)</label>
-                       <input 
-                         type="text" required
-                         value={customScaleFactor} onChange={e => setCustomScaleFactor(e.target.value)}
-                         placeholder="Ex: 0.994 ou 1.0"
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] font-mono text-center text-lg"
-                       />
-                       <p className="text-[10px] text-[var(--color-text-muted)] mt-1">Fator padrão é 1.0. Menor que 1.0 encolhe as medidas calculadas; maior que 1.0 expande.</p>
-                    </div>
-
-                    <div className="border-t border-[var(--color-border)] pt-4">
-                       <span className="block text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3 text-center">Calculadora de Fator de Ajuste</span>
-                       <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div>
-                             <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase mb-1">Medida no Mapa (m)</label>
-                             <input 
-                               type="number" step="any"
-                               value={calibSystemVal} onChange={e => setCalibSystemVal(e.target.value)}
-                               placeholder="Ex: 38.05"
-                               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-                             />
-                          </div>
-                          <div>
-                             <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase mb-1">Medida Real Planta (m)</label>
-                             <input 
-                               type="number" step="any"
-                               value={calibRealVal} onChange={e => setCalibRealVal(e.target.value)}
-                               placeholder="Ex: 37.94"
-                               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-                             />
-                          </div>
-                       </div>
-                       <button
-                         type="button"
-                         onClick={calculateKFromValues}
-                         className="w-full py-2 px-3 border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold rounded-lg transition-colors"
-                       >
-                          Calcular e Preencher Fator (K)
-                       </button>
-                    </div>
-
-                    <div className="flex gap-3 justify-end border-t border-[var(--color-border)] pt-4 mt-2">
-                       <button 
-                         type="button" 
-                         onClick={() => setIsScaleModalOpen(false)}
-                         className="px-4 py-2 border border-[var(--color-border)] hover:bg-gray-800 text-sm font-medium text-white rounded-lg transition-colors"
-                       >
-                          Cancelar
-                       </button>
-                       <button 
-                         type="submit"
-                         className="px-5 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-sm font-bold text-white rounded-lg transition-colors"
-                       >
-                          Aplicar e Recalcular
-                       </button>
-                    </div>
-                  </form>
-               </div>
-            </div>
-         )}
       </div>
     );
   }
