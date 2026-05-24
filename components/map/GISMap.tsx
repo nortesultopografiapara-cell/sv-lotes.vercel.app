@@ -56,12 +56,26 @@ const isLotSold = (status?: string) => {
 function MapController({
   lots,
   blocksData,
+  refreshKey,
+  projectId
 }: {
   lots: any[];
   blocksData: any[];
+  refreshKey?: number;
+  projectId?: string;
 }) {
   const map = useMap();
+  const lastFitBoundsKey = useRef<{ projectId?: string, refreshKey?: number }>({});
+
   useEffect(() => {
+    if (lots.length === 0 && blocksData.length === 0) return;
+
+    const needFitBounds = 
+         lastFitBoundsKey.current.projectId !== projectId || 
+         lastFitBoundsKey.current.refreshKey !== refreshKey;
+
+    if (!needFitBounds) return;
+
     let allBounds: [number, number][] = [];
     lots.forEach((l) => {
       if (l.bounds) allBounds.push(...l.bounds);
@@ -75,8 +89,9 @@ function MapController({
         padding: [50, 50],
         maxZoom: 20,
       });
+      lastFitBoundsKey.current = { projectId, refreshKey };
     }
-  }, [lots, blocksData, map]);
+  }, [lots, blocksData, map, refreshKey, projectId]);
   return null;
 }
 
@@ -2121,7 +2136,7 @@ export default function GISMap({
         )}
 
         <ZoomControl position="bottomright" />
-        <MapController lots={lots} blocksData={blocksData} />
+        <MapController lots={lots} blocksData={blocksData} refreshKey={refreshKey} projectId={projectId} />
         <LocationController active={gpsActive} />
 
         {lots
