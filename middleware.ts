@@ -8,6 +8,33 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  const url = request.nextUrl.clone();
+  
+  // --- PREVIEW DEMO MODE ---
+  // If Supabase variables are missing, we bypass Supabase completely to allow local UI preview
+  const isSupabaseConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const hasDemoCookie = request.cookies.has('demo_preview_mode');
+
+  if (!isSupabaseConfigured) {
+    const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate'];
+    const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
+
+    if (isPublicRoute) {
+      if (hasDemoCookie && url.pathname === '/login') {
+        url.pathname = '/dashboard';
+        return NextResponse.redirect(url);
+      }
+      return response;
+    }
+
+    if (!hasDemoCookie) {
+      url.pathname = '/login';
+      return NextResponse.redirect(url);
+    }
+
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -32,7 +59,6 @@ export async function middleware(request: NextRequest) {
   // Use getUser() instead of getSession() in middleware to ensure security
   // and trigger refresh of cookies if necessary.
   const { data: { user } } = await supabase.auth.getUser();
-  const url = request.nextUrl.clone();
 
   // 1. PUBLIC ROUTES
   const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate'];

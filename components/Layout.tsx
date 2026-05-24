@@ -280,6 +280,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function fetchCompany() {
+      // --- DEMO PREVIEW MODE ---
+      if (typeof window !== 'undefined' && localStorage.getItem('demo_preview_mode') === 'true') {
+        setCompany({
+          name: 'Empresa Demonstração',
+          fantasy_name: 'AI Studio Demo',
+          status_operacional: 'Ativa'
+        });
+        return;
+      }
+
       if (user?.tenant_id) {
         const { data } = await supabase.from('companies').select('logo_url, name, fantasy_name, status_operacional').eq('id', user.tenant_id).single();
         if (data) setCompany(data);
@@ -319,8 +329,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       try {
         localStorage.removeItem('contingency_auth');
+        localStorage.removeItem('demo_preview_mode');
       } catch(e) {}
       document.cookie = "contingency_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "demo_preview_mode=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     } catch(e) {}
     window.location.assign('/login');
   };
