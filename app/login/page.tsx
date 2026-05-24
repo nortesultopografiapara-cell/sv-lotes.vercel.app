@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Globe, Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,14 +16,14 @@ export default function LoginPage() {
   // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
     const initializeAuth = async () => {
+      const supabase = getSupabase();
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
-        window.location.href = '/';
+        window.location.href = '/dashboard';
       } else if (error) {
-        // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
+        // We have a stale session in localStorage that middleware rejected, wipe it to break-loop.
         await supabase.auth.signOut();
-        // Also clear our manual caches just in case
         try {
            localStorage.removeItem('active_tenant');
            sessionStorage.clear();
@@ -35,14 +35,12 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('ENV CHECK:', {
-       url: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'EXISTS' : 'MISSING',
-       key_length: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0,
-       isConfigured: isSupabaseConfigured
-    });
+    const supabase = getSupabase();
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-    if (!isSupabaseConfigured) {
-      setError('Variáveis de ambiente do Supabase não configuradas no .env');
+    if (!url || url === 'https://placeholder.supabase.co' || !key || key === 'placeholder-key') {
+      setError('Variáveis de ambiente do Supabase não configuradas. Atualize .env ou adicione as chaves no Settings.');
       return;
     }
     
@@ -51,15 +49,14 @@ export default function LoginPage() {
     console.log('LOGIN START - Initiating auth process...');
     
     try {
-      // 1. Force Clean Authentication: Clear everything before attempt
+      // 1. Force Clean Authentication
       await supabase.auth.signOut();
       try {
-         localStorage.clear(); // Complete wipe
+         localStorage.clear();
          sessionStorage.clear();
       } catch (e) {}
 
       const cleanEmail = email.trim().toLowerCase();
-      console.log('LOGIN ATTEMPT - User:', cleanEmail);
       
       // 2. Strict Supabase Authentication
       const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -74,7 +71,6 @@ export default function LoginPage() {
         return;
       }
 
-      // 73: Check result for redirection
       if (data?.user) {
         console.log('LOGIN SUCCESS. Checking role for redirection...');
         // Need to check the role
