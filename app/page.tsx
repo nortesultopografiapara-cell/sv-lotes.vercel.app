@@ -93,77 +93,15 @@ export default function LandingPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative w-full aspect-[4/3] max-w-3xl mx-auto lg:ml-auto"
+              className="relative w-full aspect-[4/3] max-w-4xl mx-auto lg:ml-auto"
             >
-                 {/* Main Dashboard Mockup - Giant */}
-                 <div className="absolute inset-0 z-10 bg-[#0B1F3A]/30 backdrop-blur-3xl border border-[#0B1F3A] rounded-2xl shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/5 group transition-transform duration-500 hover:scale-[1.02]">
-                    {/* Window Header */}
-                    <div className="h-10 border-b border-[#0B1F3A] flex items-center px-4 gap-2 bg-[#040914]/80">
-                        <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
-                        <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
-                        <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
-                        <div className="mx-auto text-[10px] font-mono text-gray-500 tracking-wider">dashboard.svlotes.com</div>
-                    </div>
-                    {/* Dashboard Layout */}
-                    <div className="flex-1 flex gap-4 bg-[#040914] p-4">
-                        {/* Sidebar */}
-                        <div className="w-14 border-r border-[#0B1F3A] flex flex-col items-center py-4 gap-6">
-                           <div className="w-8 h-8 rounded-lg bg-[#00D26A]/20 border border-[#00D26A]/40 flex items-center justify-center shadow-[0_0_15px_rgba(0,210,106,0.2)]">
-                              <Globe className="w-5 h-5 text-[#00D26A]" />
-                           </div>
-                           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><AreaChart className="w-4 h-4 text-gray-500" /></div>
-                           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><FileText className="w-4 h-4 text-gray-500" /></div>
-                           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><Wallet className="w-4 h-4 text-gray-500" /></div>
-                        </div>
-                        {/* Content */}
-                        <div className="flex-1 flex flex-col gap-4">
-                           {/* KPIs */}
-                           <div className="grid grid-cols-4 gap-4">
-                               <div className="h-20 bg-[#0B1F3A]/40 border border-[#0B1F3A] rounded-xl p-3 flex flex-col justify-center shadow-lg">
-                                  <div className="text-[9px] text-gray-400 mb-1 uppercase tracking-widest font-bold">VGV Total</div>
-                                  <div className="text-lg font-black text-white">R$ 24.5M</div>
-                               </div>
-                               <div className="h-20 bg-[#00D26A]/10 border border-[#00D26A]/30 rounded-xl p-3 flex flex-col justify-center shadow-[0_0_20px_rgba(0,210,106,0.15)] relative overflow-hidden">
-                                  <div className="absolute right-0 top-0 w-16 h-16 bg-[#00D26A]/20 blur-xl" />
-                                  <div className="text-[9px] text-[#00D26A] mb-1 uppercase tracking-widest font-bold">Vendas Mês</div>
-                                  <div className="text-lg font-black text-white">R$ 1.8M</div>
-                               </div>
-                               <div className="h-20 bg-[#0B1F3A]/40 border border-[#0B1F3A] rounded-xl p-3 flex flex-col justify-center shadow-lg">
-                                  <div className="text-[9px] text-gray-400 mb-1 uppercase tracking-widest font-bold">Lotes Vendidos</div>
-                                  <div className="text-lg font-black text-white">128 / 450</div>
-                               </div>
-                               <div className="h-20 bg-[#0B1F3A]/40 border border-[#0B1F3A] rounded-xl p-3 flex flex-col justify-center shadow-lg">
-                                  <div className="text-[9px] text-gray-400 mb-1 uppercase tracking-widest font-bold">Inadimplência</div>
-                                  <div className="text-lg font-black text-white">2.4%</div>
-                               </div>
-                           </div>
-                           {/* Map & Chart row */}
-                           <div className="flex-1 flex gap-4">
-                               <div className="flex-[2] bg-[#0B1F3A]/20 rounded-xl border border-[#0B1F3A] relative overflow-hidden flex flex-col shadow-lg items-center justify-center p-2">
-                                    <div className="absolute inset-0 bg-[#040914] opacity-90" style={{ backgroundImage: 'radial-gradient(rgba(11, 31, 58, 0.5) 1px, transparent 1px)', backgroundSize: '15px 15px' }} />
-                                    <div className="absolute inset-0 flex flex-wrap content-center justify-center p-2 gap-1 rotate-6 scale-110">
-                                       {Array(40).fill(0).map((_, i) => (
-                                          <div key={i} className={`w-8 h-10 rounded-sm shadow-md transition-opacity duration-300 hover:opacity-100 ${i%4===0 ? 'bg-[#00D26A]/80 border border-[#00D26A] opacity-90' : i%7===0 ? 'bg-red-500/80 border border-red-500 opacity-90' : 'bg-[#0B1F3A]/80 border border-[#00D26A]/20 opacity-60'}`} />
-                                       ))}
-                                    </div>
-                               </div>
-                               <div className="flex-1 bg-[#0B1F3A]/20 rounded-xl border border-[#0B1F3A] flex flex-col p-4 justify-end gap-3 shadow-lg relative overflow-hidden">
-                                  <div className="absolute inset-0 bg-gradient-to-t from-[#0B1F3A]/50 to-transparent pointer-events-none" />
-                                  <div className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mb-auto relative z-10">Receitas</div>
-                                  {/* Bar chart */}
-                                  <div className="w-full h-2/3 flex items-end justify-between gap-1 px-1 relative z-10">
-                                     <div className="w-4 bg-white/20 hover:bg-[#00D26A] transition-colors rounded-t-sm" style={{height: '30%'}}/>
-                                     <div className="w-4 bg-white/20 hover:bg-[#00D26A] transition-colors rounded-t-sm" style={{height: '50%'}}/>
-                                     <div className="w-4 bg-white/20 hover:bg-[#00D26A] transition-colors rounded-t-sm" style={{height: '40%'}}/>
-                                     <div className="w-4 bg-[#00D26A] rounded-t-sm shadow-[0_0_15px_rgba(0,210,106,0.6)]" style={{height: '90%'}}/>
-                                  </div>
-                               </div>
-                           </div>
-                        </div>
-                    </div>
-                 </div>
-                 
-                 {/* Floating Elements removed to focus on Giant Mockup */}
+                 <div className="absolute inset-0 bg-[#00D26A]/10 blur-[100px] rounded-full pointer-events-none" />
+                 <img 
+                    src="/hero-mockup.png" 
+                    alt="SV Lotes Dashboard Mockup" 
+                    className="relative z-10 w-full h-auto object-contain rounded-2xl shadow-2xl transition-transform duration-500 hover:scale-[1.02]"
+                 />
+                 <div className="absolute inset-0 z-10 rounded-2xl ring-1 ring-white/10 pointer-events-none" />
             </motion.div>
           </div>
         </section>
