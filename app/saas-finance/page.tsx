@@ -88,7 +88,9 @@ export default function SaaSFinancePage() {
    };
 
    useEffect(() => {
-      loadData();
+      Promise.resolve().then(() => {
+         loadData();
+      });
    }, []);
 
    const stats = useMemo(() => {

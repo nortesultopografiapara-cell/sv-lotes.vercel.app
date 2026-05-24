@@ -55,7 +55,10 @@ export default function UsersPage() {
    }, []);
 
    useEffect(() => {
-      loadUsersAndCompanies();
+      // Run once on mount without synchronously checking state
+      Promise.resolve().then(() => {
+         loadUsersAndCompanies();
+      });
    }, [loadUsersAndCompanies]);
 
    const filteredUsers = useMemo(() => {

@@ -27,16 +27,18 @@ export function useAuth() {
 
     if (isDemo) {
       if (mounted) {
-        setUser({
-          id: 'demo-user-id',
-          tenant_id: 'demo-tenant-id',
-          role: 'ADMIN', // ADMIN covers most routes, you can use SUPER_ADMIN too
-          email: 'demo@preview.local',
-          name: 'Visitante (Demo)',
-          force_password_change: false,
-          onboarding_completed: true,
+        Promise.resolve().then(() => {
+          setUser({
+            id: 'demo-user-id',
+            tenant_id: 'demo-tenant-id',
+            role: 'ADMIN', // ADMIN covers most routes, you can use SUPER_ADMIN too
+            email: 'demo@preview.local',
+            name: 'Visitante (Demo)',
+            force_password_change: false,
+            onboarding_completed: true,
+          });
+          setLoading(false);
         });
-        setLoading(false);
       }
       return;
     }
