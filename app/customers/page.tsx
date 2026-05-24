@@ -492,11 +492,11 @@ export default function CustomersPage() {
                <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-4 space-y-2 text-sm text-[var(--color-text-muted)]">
                  <p className="text-white font-medium mb-2">Este cliente possui vínculos importantes:</p>
                  <div className="grid grid-cols-2 gap-2">
-                    <div><span className="font-medium text-gray-400">Cliente:</span> <br/><span className="text-white truncate block" title={deleteModalCustomer.name}>{deleteModalCustomer.name}</span></div>
-                    <div><span className="font-medium text-gray-400">CPF/CNPJ:</span> <br/><span className="text-white">{deleteModalCustomer.cpf_cnpj || deleteModalCustomer.document || '-'}</span></div>
-                    <div><span className="font-medium text-gray-400">Lotes vinculados:</span> <br/><span className="text-white">{deleteModalCustomer.blocks?.length || 0}</span></div>
-                    <div><span className="font-medium text-gray-400">Contratos:</span> <br/><span className="text-white">{deleteModalStats.contractCount || 0}</span></div>
-                    <div className="col-span-2"><span className="font-medium text-gray-400">Registros financeiros:</span> <span className="text-white">{deleteModalStats.receiptCount || 0}</span></div>
+                    <div><span className="font-medium text-[var(--color-text-muted)]">Cliente:</span> <br/><span className="text-white truncate block" title={deleteModalCustomer.name}>{deleteModalCustomer.name}</span></div>
+                    <div><span className="font-medium text-[var(--color-text-muted)]">CPF/CNPJ:</span> <br/><span className="text-white">{deleteModalCustomer.cpf_cnpj || deleteModalCustomer.document || '-'}</span></div>
+                    <div><span className="font-medium text-[var(--color-text-muted)]">Lotes vinculados:</span> <br/><span className="text-white">{deleteModalCustomer.blocks?.length || 0}</span></div>
+                    <div><span className="font-medium text-[var(--color-text-muted)]">Contratos:</span> <br/><span className="text-white">{deleteModalStats.contractCount || 0}</span></div>
+                    <div className="col-span-2"><span className="font-medium text-[var(--color-text-muted)]">Registros financeiros:</span> <span className="text-white">{deleteModalStats.receiptCount || 0}</span></div>
                  </div>
                  <p className="mt-4 pt-4 border-t border-[var(--color-border)] text-xs text-amber-500 font-medium">
                    A exclusão irá desvincular este cliente de todos os lotes, contratos e compras acima informadas. Os registros não serão apagados, constarão sem cliente atrelado.

@@ -400,19 +400,19 @@ function CustomerFormModal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto sm:p-4 font-sans">
-      <div className="bg-white w-full max-w-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl">
-        <div className="sticky top-0 z-20 p-4 border-b border-gray-100 flex items-center justify-between bg-white flex-none shadow-sm">
+      <div className="bg-[var(--color-surface)] w-full max-w-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl">
+        <div className="sticky top-0 z-20 p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)] flex-none shadow-sm">
           <div>
-            <h3 className="font-bold text-lg text-gray-900">
+            <h3 className="font-bold text-lg text-[var(--color-text-main)]">
               Novo Cliente {actionName === "Vendido" && "- Venda de Lote"}
             </h3>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--color-text-muted)]">
               Lot {lot.number} - Quadra {lot.block} ({actionName})
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+            className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text-muted)] rounded-full hover:bg-gray-200 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -426,7 +426,7 @@ function CustomerFormModal({
           >
             {/* DADOS DO CLIENTE */}
             <div className="space-y-4">
-              <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
+              <h4 className="text-sm font-bold text-[var(--color-text-main)] border-b pb-1">
                 DADOS DO CLIENTE
               </h4>
               <div>
@@ -440,7 +440,7 @@ function CustomerFormModal({
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                   placeholder="Ex: João da Silva"
                 />
               </div>
@@ -455,7 +455,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, cpf_cnpj: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="000.000.000-00"
                   />
                 </div>
@@ -469,7 +469,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, rg: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="00.000.000-0"
                   />
                 </div>
@@ -485,7 +485,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="(11) 99999-9999"
                   />
                 </div>
@@ -499,7 +499,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="joao@exemplo.com"
                   />
                 </div>
@@ -515,7 +515,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, profession: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="Ex: Empresário"
                   />
                 </div>
@@ -528,7 +528,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, civil_state: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                   >
                     <option value="">Selecione...</option>
                     <option value="Solteiro(a)">Solteiro(a)</option>
@@ -549,7 +549,7 @@ function CustomerFormModal({
                   onChange={(e) =>
                     setFormData({ ...formData, address: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                   placeholder="Rua Exemplo, 123"
                 />
               </div>
@@ -564,7 +564,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, neighborhood: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="Bairro"
                   />
                 </div>
@@ -578,7 +578,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, city: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="Ex: São Paulo"
                   />
                 </div>
@@ -592,7 +592,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, state_uf: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="SP"
                     maxLength={2}
                   />
@@ -607,7 +607,7 @@ function CustomerFormModal({
                     onChange={(e) =>
                       setFormData({ ...formData, zip_code: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     placeholder="00000-000"
                   />
                 </div>
@@ -616,8 +616,8 @@ function CustomerFormModal({
 
             {/* DADOS DA VENDA */}
             {actionName === "Vendido" && (
-              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
+              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-[var(--color-border)]">
+                <h4 className="text-sm font-bold text-[var(--color-text-main)] border-b pb-1">
                   DADOS DA VENDA
                 </h4>
 
@@ -633,7 +633,7 @@ function CustomerFormModal({
                         style: "currency",
                         currency: "BRL",
                       }).format(price)}
-                      className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm text-gray-900 font-medium cursor-not-allowed"
+                      className="w-full px-3 py-2 bg-gray-200 border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text-main)] font-medium cursor-not-allowed"
                     />
                   </div>
                   <div>
@@ -648,7 +648,7 @@ function CustomerFormModal({
                           payment_type: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                     >
                       <option value="À vista">À vista</option>
                       <option value="Parcelado">Parcelado</option>
@@ -657,7 +657,7 @@ function CustomerFormModal({
                 </div>
 
                 {formData.payment_type === "À vista" && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4 border-gray-200 mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4 border-[var(--color-border)] mt-2">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Desconto (R$)
@@ -673,7 +673,7 @@ function CustomerFormModal({
                             discount_value: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                         placeholder="0.00"
                       />
                     </div>
@@ -688,7 +688,7 @@ function CustomerFormModal({
                           style: "currency",
                           currency: "BRL",
                         }).format(finalValue)}
-                        className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm text-green-700 font-bold cursor-not-allowed"
+                        className="w-full px-3 py-2 bg-gray-200 border border-[var(--color-border)] rounded-lg text-sm text-green-700 font-bold cursor-not-allowed"
                       />
                     </div>
                     <div>
@@ -708,14 +708,14 @@ function CustomerFormModal({
                             down_payment_due_date: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                       />
                     </div>
                   </div>
                 )}
 
                 {formData.payment_type === "Parcelado" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4 border-gray-200 mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4 border-[var(--color-border)] mt-2">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Valor da Entrada (R$)
@@ -731,7 +731,7 @@ function CustomerFormModal({
                             down_payment: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                         placeholder="0.00"
                       />
                     </div>
@@ -753,7 +753,7 @@ function CustomerFormModal({
                             down_payment_due_date: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                       />
                     </div>
                     <div>
@@ -775,7 +775,7 @@ function CustomerFormModal({
                             installments_count: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                       />
                     </div>
                     <div>
@@ -795,7 +795,7 @@ function CustomerFormModal({
                             first_installment_due_date: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                        className="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-[var(--color-text-main)]"
                       />
                     </div>
                     <div className="col-span-1 md:col-span-2 mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-between">
@@ -816,7 +816,7 @@ function CustomerFormModal({
           </form>
         </div>
 
-        <div className="sticky bottom-0 z-20 p-4 pb-8 sm:pb-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white flex-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div className="sticky bottom-0 z-20 p-4 pb-8 sm:pb-4 border-t border-[var(--color-border)] flex flex-col-reverse sm:flex-row gap-3 bg-[var(--color-surface)] flex-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <button
             type="button"
             onClick={onClose}
@@ -876,38 +876,38 @@ function LotPopupContent({
   };
 
   return (
-    <div className="p-2 min-w-[320px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
+    <div className="p-2 min-w-[320px] bg-[var(--color-surface)] text-[var(--color-text-main)] rounded-md font-sans shadow-xl">
       <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-lg text-gray-900">
+        <span className="font-bold text-lg text-[var(--color-text-main)]">
           Lote {displayNum}
         </span>
       </div>
 
       <div className="space-y-2 mb-4 text-sm">
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Projeto:</span>
-          <span className="text-gray-900 text-right max-w-[150px] truncate">
+          <span className="text-[var(--color-text-muted)] font-semibold">Projeto:</span>
+          <span className="text-[var(--color-text-main)] text-right max-w-[150px] truncate">
             {lot.projectName}
           </span>
         </div>
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Quadra:</span>
-          <span className="text-gray-900">{lot.block}</span>
+          <span className="text-[var(--color-text-muted)] font-semibold">Quadra:</span>
+          <span className="text-[var(--color-text-main)]">{lot.block}</span>
         </div>
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Lote:</span>
-          <span className="text-gray-900">{displayNum}</span>
+          <span className="text-[var(--color-text-muted)] font-semibold">Lote:</span>
+          <span className="text-[var(--color-text-main)]">{displayNum}</span>
         </div>
         {lot.customerName && lot.status !== "Disponível" && (
           <div className="flex justify-between border-b pb-1 bg-yellow-50 px-1 rounded -mx-1">
-            <span className="text-gray-600 font-semibold">Cliente:</span>
-            <span className="text-gray-900 text-right max-w-[140px] truncate font-medium">
+            <span className="text-[var(--color-text-muted)] font-semibold">Cliente:</span>
+            <span className="text-[var(--color-text-main)] text-right max-w-[140px] truncate font-medium">
               {lot.customerName}
             </span>
           </div>
         )}
         <div className="flex justify-between items-center border-b pb-1 mt-1">
-          <span className="text-gray-600 font-semibold">Status:</span>
+          <span className="text-[var(--color-text-muted)] font-semibold">Status:</span>
           <span
             className="text-white text-[11px] font-bold px-2 py-0.5 rounded"
             style={{ backgroundColor: color }}
@@ -916,47 +916,47 @@ function LotPopupContent({
           </span>
         </div>
         <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Área (m²):</span>
-          <span className="text-gray-900">
+          <span className="text-[var(--color-text-muted)] font-semibold">Área (m²):</span>
+          <span className="text-[var(--color-text-main)]">
             {area.toLocaleString("pt-BR", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
           </span>
         </div>
-        <div className="border-b border-gray-100 pb-3 mb-2 mt-2">
-          <span className="text-gray-800 font-semibold text-[11px] uppercase tracking-wider mb-2 block text-center">
+        <div className="border-b border-[var(--color-border)] pb-3 mb-2 mt-2">
+          <span className="text-[var(--color-text-main)] font-semibold text-[11px] uppercase tracking-wider mb-2 block text-center">
             Dimensões do Lote (m)
           </span>
           <div className="grid grid-cols-4 gap-1.5 w-full">
-            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
-              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Frente</span>
-              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-[var(--color-border)]/60">
+              <span className="text-[var(--color-text-muted)] text-[9px] uppercase font-bold tracking-wider mb-0.5">Frente</span>
+              <span className="text-[var(--color-text-main)] text-[11px] font-semibold tabular-nums">
                 {lot.frente !== null && lot.frente !== undefined ? Number(lot.frente).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
-              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Fundo</span>
-              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-[var(--color-border)]/60">
+              <span className="text-[var(--color-text-muted)] text-[9px] uppercase font-bold tracking-wider mb-0.5">Fundo</span>
+              <span className="text-[var(--color-text-main)] text-[11px] font-semibold tabular-nums">
                 {lot.fundo !== null && lot.fundo !== undefined ? Number(lot.fundo).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
-              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Dir</span>
-              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-[var(--color-border)]/60">
+              <span className="text-[var(--color-text-muted)] text-[9px] uppercase font-bold tracking-wider mb-0.5">Dir</span>
+              <span className="text-[var(--color-text-main)] text-[11px] font-semibold tabular-nums">
                 {lot.lado_direito !== null && lot.lado_direito !== undefined ? Number(lot.lado_direito).toFixed(2) : "--"}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-gray-100/60">
-              <span className="text-gray-400 text-[9px] uppercase font-bold tracking-wider mb-0.5">Esq</span>
-              <span className="text-gray-800 text-[11px] font-semibold tabular-nums">
+            <div className="flex flex-col items-center justify-center bg-gray-50/80 p-1.5 rounded-md border border-[var(--color-border)]/60">
+              <span className="text-[var(--color-text-muted)] text-[9px] uppercase font-bold tracking-wider mb-0.5">Esq</span>
+              <span className="text-[var(--color-text-main)] text-[11px] font-semibold tabular-nums">
                 {lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined ? Number(lot.lado_esquerdo).toFixed(2) : "--"}
               </span>
             </div>
           </div>
         </div>
         <div className="flex justify-between items-center pt-1">
-          <span className="text-gray-600 font-semibold">
+          <span className="text-[var(--color-text-muted)] font-semibold">
             Valor do Lote (R$):
           </span>
           <input
@@ -964,13 +964,13 @@ function LotPopupContent({
             value={editedPrice}
             onChange={(e) => setEditedPrice(e.target.value)}
             onBlur={handlePriceBlur}
-            className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500 font-mono text-right"
+            className="w-24 bg-gray-50 border border-[var(--color-border)] rounded px-2 py-1 text-sm text-[var(--color-text-main)] focus:outline-none focus:border-blue-500 font-mono text-right"
           />
         </div>
       </div>
 
       <div className="mb-2">
-        <span className="text-sm font-semibold text-gray-800">
+        <span className="text-sm font-semibold text-[var(--color-text-main)]">
           Ações de comercial
         </span>
         <div className="flex gap-1 mt-1">
@@ -997,7 +997,7 @@ function LotPopupContent({
             }}
             disabled={actionLoading === lot.id || isSold}
             title={isSold ? "Este lote já está vendido" : "Reservar lote"}
-            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
+            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-[var(--color-text-muted)] cursor-not-allowed' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
           >
             Reservar
           </button>
@@ -1011,14 +1011,14 @@ function LotPopupContent({
             }}
             disabled={actionLoading === lot.id || isSold}
             title={isSold ? "Este lote já está vendido" : "Vender lote"}
-            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
+            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-[var(--color-text-muted)] cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
           >
             Vender
           </button>
           <button
             onClick={() => onRequestClear(lot, Number(editedPrice))}
             disabled={actionLoading === lot.id}
-            className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
+            className="flex-none px-2 bg-gray-100 text-[var(--color-text-muted)] hover:text-[var(--color-text-main)] border border-[var(--color-border)] hover:bg-gray-200 rounded flex flex-col items-center justify-center"
           >
             {actionLoading === lot.id ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1030,7 +1030,7 @@ function LotPopupContent({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-gray-500 justify-center pb-1">
+      <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)] justify-center pb-1">
         <span className="text-green-500 text-lg leading-none">●</span> /
         <span className="text-yellow-400 text-lg leading-none">●</span> /
         <span className="text-red-500 text-lg leading-none">●</span>
@@ -1167,41 +1167,41 @@ function ClearConfirmModal({
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <div className="bg-white w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 z-[10000]">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-bold text-lg text-gray-900">Confirmar limpeza do lote</h3>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
+      <div className="bg-[var(--color-surface)] w-full max-w-md rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 z-[10000]">
+        <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+          <h3 className="font-bold text-lg text-[var(--color-text-main)]">Confirmar limpeza do lote</h3>
+          <button onClick={onClose} className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-muted)] rounded-full hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
         
         <div className="p-5">
-          <p className="text-sm text-gray-600 leading-relaxed mb-4">
+          <p className="text-sm text-[var(--color-text-muted)] leading-relaxed mb-4">
             Esta ação irá remover o cliente vinculado, limpar o status de venda/reserva e devolver o lote para <strong>DISPONÍVEL</strong>. Esta ação não pode ser desfeita.
           </p>
           
-          <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-1 mb-5 text-sm">
+          <div className="bg-gray-50 border border-[var(--color-border)] rounded-lg p-3 space-y-1 mb-5 text-sm">
             <div className="flex justify-between blur-0">
-              <span className="text-gray-500">Projeto:</span>
-              <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.projectName}</span>
+              <span className="text-[var(--color-text-muted)]">Projeto:</span>
+              <span className="font-medium text-[var(--color-text-main)] truncate max-w-[150px]">{lot.projectName}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Quadra / Lote:</span>
-              <span className="font-medium text-gray-900">{lot.block} / {lot.number}</span>
+              <span className="text-[var(--color-text-muted)]">Quadra / Lote:</span>
+              <span className="font-medium text-[var(--color-text-main)]">{lot.block} / {lot.number}</span>
             </div>
             {lot.customerName && (
               <div className="flex justify-between">
-                <span className="text-gray-500">Cliente atual:</span>
-                <span className="font-medium text-gray-900 truncate max-w-[150px]">{lot.customerName}</span>
+                <span className="text-[var(--color-text-muted)]">Cliente atual:</span>
+                <span className="font-medium text-[var(--color-text-main)] truncate max-w-[150px]">{lot.customerName}</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-gray-500">Status atual:</span>
-              <span className="font-medium text-gray-900">{lot.status}</span>
+              <span className="text-[var(--color-text-muted)]">Status atual:</span>
+              <span className="font-medium text-[var(--color-text-main)]">{lot.status}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Valor:</span>
-              <span className="font-medium text-gray-900">
+              <span className="text-[var(--color-text-muted)]">Valor:</span>
+              <span className="font-medium text-[var(--color-text-main)]">
                 {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(price)}
               </span>
             </div>
@@ -1222,13 +1222,13 @@ function ClearConfirmModal({
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-3 py-2 pr-10 border border-[var(--color-border)] rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   placeholder="Senha de acesso"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-muted)] focus:outline-none"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -2070,7 +2070,7 @@ export default function GISMap({
   if (!projectId) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-[var(--color-background)]">
-        <p className="text-gray-500 font-medium">Projeto não identificado.</p>
+        <p className="text-[var(--color-text-muted)] font-medium">Projeto não identificado.</p>
       </div>
     );
   }
@@ -2314,7 +2314,7 @@ export default function GISMap({
                 </Tooltip>
                 <Popup>
                   <div className="p-2 space-y-2 font-sans font-medium">
-                    <p className="text-gray-900 mb-2">
+                    <p className="text-[var(--color-text-main)] mb-2">
                       <strong>Linha de Rua</strong>
                     </p>
                     <p className="text-sm text-gray-700">{guide.name}</p>

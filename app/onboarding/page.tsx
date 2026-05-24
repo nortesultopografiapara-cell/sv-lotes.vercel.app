@@ -98,19 +98,19 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-[var(--color-background)] flex">
       {/* Left side - Visual/Brand */}
       <div className="hidden lg:flex w-1/2 bg-[var(--color-surface)] border-r border-[var(--color-border)] p-12 flex-col justify-between relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-[500px] bg-[#06b6d4]/10 blur-[100px] rounded-full -translate-y-1/2 -translate-x-1/4" />
+        <div className="absolute top-0 left-0 w-full h-[500px] bg-[var(--color-primary)]/10 blur-[100px] rounded-full -translate-y-1/2 -translate-x-1/4" />
         
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-16">
-            <div className="w-10 h-10 rounded-xl bg-[#06b6d4]/20 flex items-center justify-center border border-[#06b6d4]">
-              <Building2 className="w-6 h-6 text-[#06b6d4]" />
+            <div className="w-10 h-10 rounded-xl bg-[var(--color-primary)]/20 flex items-center justify-center border border-[var(--color-primary)]">
+              <Building2 className="w-6 h-6 text-[var(--color-primary)]" />
             </div>
             <span className="font-sans font-bold text-2xl tracking-wider text-white">SV_LOTES</span>
           </div>
 
           <h1 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-6">
             Bem-vindo ao seu <br />
-            <span className="text-[#06b6d4]">novo Workspace.</span>
+            <span className="text-[var(--color-primary)]">novo Workspace.</span>
           </h1>
           <p className="text-lg text-[var(--color-text-muted)] max-w-md">
             Sua empresa foi cadastrada com sucesso. 
@@ -132,7 +132,7 @@ export default function OnboardingPage() {
             <>
               <div className="mb-8">
                 <div className="w-12 h-12 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center mb-6 lg:hidden">
-                  <Building2 className="w-6 h-6 text-[#06b6d4]" />
+                  <Building2 className="w-6 h-6 text-[var(--color-primary)]" />
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-2">Redefinir Senha</h2>
                 <p className="text-[var(--color-text-muted)]">
@@ -161,7 +161,7 @@ export default function OnboardingPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                       />
                     </div>
                   </div>
@@ -178,7 +178,7 @@ export default function OnboardingPage() {
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
+                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
                       />
                     </div>
                   </div>
@@ -186,7 +186,7 @@ export default function OnboardingPage() {
                   <button 
                     type="submit"
                     disabled={loading}
-                    className="w-full mt-4 bg-[#06b6d4] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full mt-4 bg-[var(--color-primary)] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {loading ? "Processando..." : "Salvar e Continuar"}
                     {!loading && <ArrowRight className="w-5 h-5" />}
@@ -201,7 +201,7 @@ export default function OnboardingPage() {
                   <button 
                     onClick={completeOnboardingLegacy}
                     disabled={loading}
-                    className="w-full mt-4 bg-[#06b6d4] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full mt-4 bg-[var(--color-primary)] hover:bg-[#0891b2] text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {loading ? "Acessando..." : "Entrar no Workspace"}
                     {!loading && <ArrowRight className="w-5 h-5" />}

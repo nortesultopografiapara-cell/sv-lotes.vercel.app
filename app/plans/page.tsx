@@ -281,7 +281,7 @@ export default function PlansPage() {
 
   if (authLoading || dataLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)] text-[var(--color-text-muted)] gap-4 bg-[#0B0E14]">
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)] text-[var(--color-text-muted)] gap-4 bg-[var(--color-background)]">
          <Loader2 className="w-8 h-8 animate-spin text-[#F97316]" />
          <p className="font-medium animate-pulse text-[#F97316]/70">Carregando Planos e Assinaturas...</p>
       </div>
@@ -291,33 +291,33 @@ export default function PlansPage() {
   const getThemeVars = (theme: string) => {
      switch (theme) {
         case 'green': return { text: 'text-[#22c55e]', border: 'border-[#22c55e]/30', bg: 'bg-[#22c55e]/10', icon: 'text-[#22c55e]', hoverBorder: 'hover:border-[#22c55e] hover:shadow-[0_0_30px_rgba(34,197,94,0.15)]', buttonBg: 'bg-[#22c55e]', badgeBg: 'bg-[#22c55e]' };
-        case 'blue': return { text: 'text-[#3b82f6]', border: 'border-[#3b82f6]/50', bg: 'bg-[#3b82f6]/10', icon: 'text-[#3b82f6]', hoverBorder: 'hover:border-[#3b82f6] hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]', buttonBg: 'bg-[#3b82f6]', badgeBg: 'bg-[#3b82f6]' };
+        case 'blue': return { text: 'text-[var(--color-primary)]', border: 'border-[var(--color-primary)]/50', bg: 'bg-[var(--color-primary)]/10', icon: 'text-[var(--color-primary)]', hoverBorder: 'hover:border-[var(--color-primary)] hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]', buttonBg: 'bg-[var(--color-primary)]', badgeBg: 'bg-[var(--color-primary)]' };
         case 'purple': return { text: 'text-[#a855f7]', border: 'border-[#a855f7]/30', bg: 'bg-[#a855f7]/10', icon: 'text-[#a855f7]', hoverBorder: 'hover:border-[#a855f7] hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]', buttonBg: 'bg-[#a855f7]', badgeBg: 'bg-[#a855f7]' };
-        default: return { text: 'text-gray-400', border: 'border-white/10', bg: 'bg-white/5', icon: 'text-gray-400', hoverBorder: 'hover:border-white/20', buttonBg: 'bg-gray-500', badgeBg: 'bg-gray-500' };
+        default: return { text: 'text-[var(--color-text-muted)]', border: 'border-white/10', bg: 'bg-white/5', icon: 'text-[var(--color-text-muted)]', hoverBorder: 'hover:border-white/20', buttonBg: 'bg-gray-500', badgeBg: 'bg-gray-500' };
      }
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[var(--color-surface)] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
         <div>
           <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">
             Planos & Assinaturas
           </h1>
-          <p className="text-gray-400 mt-1 text-[14px]">Gerencie seus planos e visualize as assinaturas das empresas da plataforma.</p>
+          <p className="text-[var(--color-text-muted)] mt-1 text-[14px]">Gerencie seus planos e visualize as assinaturas das empresas da plataforma.</p>
         </div>
         <div className="flex flex-col gap-4">
            <div className="flex items-center gap-3 justify-end">
-             <button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_rgba(37,99,235,0.6)]">
+             <button className="bg-[var(--color-primary)] hover:bg-[#1d4ed8] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_rgba(37,99,235,0.6)]">
                 <span className="text-lg leading-none mt-[-2px]">+</span> Novo Plano
              </button>
            </div>
            {/* Seletor Visão Planto/Assinaturas */}
-           <div className="flex items-center justify-end gap-2 text-sm text-gray-400">
+           <div className="flex items-center justify-end gap-2 text-sm text-[var(--color-text-muted)]">
               <span>Visão:</span>
-              <div className="flex items-center bg-[#11161d] rounded-lg border border-white/10 p-0.5">
-                 <button className="bg-[#1e3a8a]/40 text-[#60a5fa] px-4 py-1.5 rounded-md font-semibold text-xs border border-[#3b82f6]/30">Planos</button>
-                 <button className="text-gray-400 px-4 py-1.5 rounded-md font-medium text-xs hover:text-white transition-colors">Assinaturas</button>
+              <div className="flex items-center bg-[var(--color-surface)] rounded-lg border border-white/10 p-0.5">
+                 <button className="bg-[#1e3a8a]/40 text-[#60a5fa] px-4 py-1.5 rounded-md font-semibold text-xs border border-[var(--color-primary)]/30">Planos</button>
+                 <button className="text-[var(--color-text-muted)] px-4 py-1.5 rounded-md font-medium text-xs hover:text-white transition-colors">Assinaturas</button>
               </div>
            </div>
         </div>
@@ -337,7 +337,7 @@ export default function PlansPage() {
             const Icon = plan.icon;
             
             return (
-               <div key={plan.id} className={`relative flex flex-col p-8 rounded-[20px] transition-all duration-300 ${plan.popular ? `border-[1.5px] border-[#3b82f6] shadow-[0_0_20px_rgba(59,130,246,0.1)] bg-[#0B0E14] ${theme.hoverBorder}` : `border border-white/5 bg-[#0B0E14] hover:bg-[#0d1219] ${theme.hoverBorder}`}`}>
+               <div key={plan.id} className={`relative flex flex-col p-8 rounded-[20px] transition-all duration-300 ${plan.popular ? `border-[1.5px] border-[var(--color-primary)] shadow-[0_0_20px_rgba(59,130,246,0.1)] bg-[var(--color-background)] ${theme.hoverBorder}` : `border border-white/5 bg-[var(--color-background)] hover:bg-[#0d1219] ${theme.hoverBorder}`}`}>
                   {plan.popular && (
                      <div className={`absolute -top-[14px] left-1/2 -translate-x-1/2 ${theme.badgeBg} text-white text-[10px] font-bold px-4 py-1.5 rounded-md uppercase tracking-wider shadow-[0_0_15px_rgba(59,130,246,0.5)] flex items-center gap-1.5`}>
                         <Star className="w-3 h-3 fill-current" /> MAIS VENDIDO
@@ -352,36 +352,36 @@ export default function PlansPage() {
                         <h3 className={`text-[22px] font-bold uppercase tracking-wide ${theme.text}`}>
                            {plan.name}
                         </h3>
-                        <p className="text-[13px] text-gray-400 mt-1">{plan.desc}</p>
+                        <p className="text-[13px] text-[var(--color-text-muted)] mt-1">{plan.desc}</p>
                      </div>
                   </div>
                   
                   <div className="mt-4 mb-6 flex items-baseline justify-center gap-1">
                      <span className={`text-[36px] font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]`}>{plan.price}</span>
                      {plan.cents && <span className="text-xl font-bold text-gray-300">{plan.cents}</span>}
-                     {plan.period && <span className="text-[13px] text-gray-400 ml-1">{plan.period}</span>}
+                     {plan.period && <span className="text-[13px] text-[var(--color-text-muted)] ml-1">{plan.period}</span>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 mb-6 bg-[#11161d] p-3 rounded-xl border border-white/5">
+                  <div className="grid grid-cols-2 gap-3 mb-6 bg-[var(--color-surface)] p-3 rounded-xl border border-white/5">
                      <div className="flex flex-col items-center justify-center border-r border-white/5">
                         <div className="flex items-center gap-2 mb-1">
                            <MapIcon className={`w-4 h-4 ${theme.text}`} />
                            <span className="text-xl font-bold text-white">{plan.projectsLimit}</span>
                         </div>
-                        <span className="text-[11px] text-gray-400 font-medium">Loteamentos</span>
+                        <span className="text-[11px] text-[var(--color-text-muted)] font-medium">Loteamentos</span>
                      </div>
                      <div className="flex flex-col items-center justify-center">
                         <div className="flex items-center gap-2 mb-1">
                            <UsersIcon className={`w-4 h-4 ${theme.text}`} />
                            <span className="text-xl font-bold text-white">{plan.brokersLimit}</span>
                         </div>
-                        <span className="text-[11px] text-gray-400 font-medium">Corretores</span>
+                        <span className="text-[11px] text-[var(--color-text-muted)] font-medium">Corretores</span>
                      </div>
                   </div>
                   
                   <div className="space-y-0 grid grid-cols-2 gap-x-2 gap-y-3 mb-8 flex-1">
                      {plan.features.map((feature, i) => (
-                        <div key={i} className="flex items-center gap-2 bg-[#11161d] py-1.5 px-2 rounded-md border border-white/5">
+                        <div key={i} className="flex items-center gap-2 bg-[var(--color-surface)] py-1.5 px-2 rounded-md border border-white/5">
                            <div className={`rounded-full p-0.5 ${theme.bg}`}>
                               <Check className={`w-3 h-3 ${theme.text}`} />
                            </div>
@@ -392,8 +392,8 @@ export default function PlansPage() {
 
                   <button className={`w-full py-3.5 rounded-xl text-[14px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
                      plan.popular 
-                     ? 'bg-[#2563eb] hover:bg-[#1d4ed8] text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)]' 
-                     : `bg-[#11161d] border border-white/10 ${theme.text} hover:${theme.bg} hover:border-[currentColor]`
+                     ? 'bg-[var(--color-primary)] hover:bg-[#1d4ed8] text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)]' 
+                     : `bg-[var(--color-surface)] border border-white/10 ${theme.text} hover:${theme.bg} hover:border-[currentColor]`
                   }`}>
                      {plan.buttonText}
                      <ArrowRightLeft className="w-4 h-4 ml-1 opacity-70" />
@@ -406,19 +406,19 @@ export default function PlansPage() {
       {/* LISTA DE EMPRESAS */}
       <div className="mb-6">
          <h2 className="text-[20px] font-bold text-white tracking-tight mb-1">Empresas & Assinaturas</h2>
-         <p className="text-gray-400 text-[14px]">Gerencie os planos contratados pelas empresas da plataforma.</p>
+         <p className="text-[var(--color-text-muted)] text-[14px]">Gerencie os planos contratados pelas empresas da plataforma.</p>
       </div>
 
-      <div className="bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden">
-        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-end bg-[#0B0E14] rounded-t-2xl">
+      <div className="bg-[var(--color-surface)] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden">
+        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-end bg-[var(--color-background)] rounded-t-2xl">
             <div className="relative w-full sm:w-[320px]">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
               <input 
                 type="text" 
                 placeholder="Buscar empresa..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-[#070b14] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[#3b82f6]/50 text-sm shadow-inner"
+                className="w-full bg-[var(--color-surface)] border border-white/10 text-white pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-[var(--color-primary)]/50 text-sm shadow-inner"
               />
             </div>
             <button className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-sm hover:bg-white/5 transition-colors">
@@ -432,14 +432,14 @@ export default function PlansPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
              <thead>
-                <tr className="bg-[#11161d] border-b border-white/5 border-t">
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium">Plano Atual</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Loteamentos</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Corretores</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Vencimento</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-right">Ações</th>
+                <tr className="bg-[var(--color-surface)] border-b border-white/5 border-t">
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Empresa</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium">Plano Atual</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Loteamentos</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Corretores</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Status</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-center">Vencimento</th>
+                   <th className="p-4 text-[12px] text-[var(--color-text-muted)] font-medium text-right">Ações</th>
                 </tr>
              </thead>
              <tbody>
@@ -459,7 +459,7 @@ export default function PlansPage() {
                    const isActive = company.status_operacional !== 'Inativo' && company.active !== false;
 
                    // Avatar Color Logic
-                   const avColor = index % 4 === 0 ? 'bg-emerald-500' : index % 4 === 1 ? 'bg-purple-500' : index % 4 === 2 ? 'bg-blue-500' : 'bg-orange-500';
+                   const avColor = index % 4 === 0 ? 'bg-emerald-500' : index % 4 === 1 ? 'bg-purple-500' : index % 4 === 2 ? 'bg-blue-500' : 'bg-[var(--color-primary)]';
 
                    return (
                      <tr key={company.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
@@ -470,14 +470,14 @@ export default function PlansPage() {
                            </div>
                            <div>
                              <p className="text-[14px] font-medium text-white">{company.name || 'Empresa'}</p>
-                             <p className="text-[12px] text-gray-400 mt-0.5">{company.email || 'contato@empresa.com.br'}</p>
+                             <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">{company.email || 'contato@empresa.com.br'}</p>
                            </div>
                          </div>
                        </td>
                        <td className="p-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
                              isPro ? 'bg-[#a855f7]/10 text-[#a855f7] border-[#a855f7]/20 drop-shadow-[0_0_8px_rgba(168,85,247,0.3)]' : 
-                             isStandard ? 'bg-[#3b82f6]/10 text-[#3b82f6] border-[#3b82f6]/20 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 
+                             isStandard ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 
                              'bg-[#22c55e]/10 text-[#22c55e] border-[#22c55e]/20 drop-shadow-[0_0_8px_rgba(34,197,94,0.3)]'
                           }`}>
                             {uiPlan.name}
@@ -485,12 +485,12 @@ export default function PlansPage() {
                        </td>
                        <td className="p-4 py-3 text-center">
                            <span className="text-[13px] text-gray-300">
-                                {projCount} <span className="text-gray-500">/ {uiPlan.projectsLimit}</span>
+                                {projCount} <span className="text-[var(--color-text-muted)]">/ {uiPlan.projectsLimit}</span>
                            </span>
                        </td>
                        <td className="p-4 py-3 text-center">
                            <span className="text-[13px] text-gray-300">
-                                {usersCount} <span className="text-gray-500">/ {uiPlan.brokersLimit}</span>
+                                {usersCount} <span className="text-[var(--color-text-muted)]">/ {uiPlan.brokersLimit}</span>
                            </span>
                        </td>
                        <td className="p-4 py-3 text-center">
@@ -511,7 +511,7 @@ export default function PlansPage() {
                              <button className="w-[32px] h-[32px] rounded-lg border border-yellow-500/20 flex items-center justify-center hover:bg-yellow-500/10 transition-colors group">
                                 <CreditCard className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
                              </button>
-                             <button className="w-[32px] h-[32px] rounded-lg border border-gray-600/30 flex items-center justify-center hover:bg-white/5 transition-colors text-gray-400">
+                             <button className="w-[32px] h-[32px] rounded-lg border border-[var(--color-border)]/30 flex items-center justify-center hover:bg-white/5 transition-colors text-[var(--color-text-muted)]">
                                 <MoreVertical className="w-4 h-4" />
                              </button>
                           </div>
@@ -526,14 +526,14 @@ export default function PlansPage() {
 
       {/* STATS FOOTER */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-8 mt-2">
-          <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
+          <div className="bg-[var(--color-surface)] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
             <div>
-               <p className="text-[12px] text-gray-400 font-medium mb-1">Receita Mensal (MRR)</p>
+               <p className="text-[12px] text-[var(--color-text-muted)] font-medium mb-1">Receita Mensal (MRR)</p>
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.mrr)}
                </h4>
                <p className="text-[11px] text-green-500 font-bold tracking-wide">
-                  ↑ 18.6% <span className="text-gray-500 font-medium">vs mês anterior</span>
+                  ↑ 18.6% <span className="text-[var(--color-text-muted)] font-medium">vs mês anterior</span>
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">
@@ -549,12 +549,12 @@ export default function PlansPage() {
                </svg>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
+         <div className="bg-[var(--color-surface)] border border-blue-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] transition-all">
             <div>
-               <p className="text-[12px] text-gray-400 font-medium mb-1">Empresas Ativas</p>
+               <p className="text-[12px] text-[var(--color-text-muted)] font-medium mb-1">Empresas Ativas</p>
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.activeCompanies}</h4>
                <p className="text-[11px] text-blue-400 font-bold tracking-wide">
-                  {(companies.length > 0 ? ((stats.activeCompanies / companies.length) * 100).toFixed(2) : 0)}% <span className="text-gray-500 font-medium">do total</span>
+                  {(companies.length > 0 ? ((stats.activeCompanies / companies.length) * 100).toFixed(2) : 0)}% <span className="text-[var(--color-text-muted)] font-medium">do total</span>
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end gap-1.5 opacity-80">
@@ -565,12 +565,12 @@ export default function PlansPage() {
                <div className="w-2.5 bg-blue-500 rounded-t-sm" style={{height: '65%'}}></div>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
+         <div className="bg-[var(--color-surface)] border border-purple-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
             <div>
-               <p className="text-[12px] text-gray-400 font-medium mb-1">Usuários Ativos</p>
+               <p className="text-[12px] text-[var(--color-text-muted)] font-medium mb-1">Usuários Ativos</p>
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.activeUsers}</h4>
                <p className="text-[11px] text-purple-400 font-bold tracking-wide">
-                  92.31% <span className="text-gray-500 font-medium">do total</span>
+                  92.31% <span className="text-[var(--color-text-muted)] font-medium">do total</span>
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">
@@ -586,12 +586,12 @@ export default function PlansPage() {
                </svg>
             </div>
          </div>
-         <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
+         <div className="bg-[var(--color-surface)] border border-orange-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
             <div>
-               <p className="text-[12px] text-gray-400 font-medium mb-1">Taxa de Conversão</p>
+               <p className="text-[12px] text-[var(--color-text-muted)] font-medium mb-1">Taxa de Conversão</p>
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.conversionRate}</h4>
                <p className="text-[11px] text-green-500 font-bold tracking-wide">
-                  ↑ 12.4% <span className="text-gray-500 font-medium">vs mês anterior</span>
+                  ↑ 12.4% <span className="text-[var(--color-text-muted)] font-medium">vs mês anterior</span>
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">
@@ -626,10 +626,10 @@ export default function PlansPage() {
                animate={{ opacity: 1, scale: 1, y: 0 }} 
                exit={{ opacity: 0, scale: 0.95, y: 20 }} 
                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-               className="bg-[#11161d] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-0 w-full max-w-md relative z-10 overflow-hidden flex flex-col"
+               className="bg-[var(--color-surface)] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-0 w-full max-w-md relative z-10 overflow-hidden flex flex-col"
             >
               <div className="p-6 border-b border-white/5 relative">
-                 <button onClick={handleCloseModal} className="absolute right-6 top-6 p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors">
+                 <button onClick={handleCloseModal} className="absolute right-6 top-6 p-1.5 text-[var(--color-text-muted)] hover:text-white rounded-lg hover:bg-white/10 transition-colors">
                    <X className="w-5 h-5" />
                  </button>
                  <div className="flex items-center gap-3 mb-2">
@@ -638,7 +638,7 @@ export default function PlansPage() {
                     </div>
                     <div>
                        <h2 className="text-xl font-bold text-white tracking-tight">Alterar Plano</h2>
-                       <p className="text-xs text-gray-400 mt-1">{companyToEdit.name}</p>
+                       <p className="text-xs text-[var(--color-text-muted)] mt-1">{companyToEdit.name}</p>
                     </div>
                  </div>
               </div>
@@ -653,7 +653,7 @@ export default function PlansPage() {
                         key={plan.id}
                         onClick={() => !isSubmitting && handleSavePlan(plan.dbKey)}
                         className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all duration-200 group ${
-                          isSelected ? `bg-[#151a23] ${theme.border} shadow-[0_0_20px_rgba(0,0,0,0.2)] relative overflow-hidden` : 'bg-[#0B0E14] border-white/5 hover:border-white/20'
+                          isSelected ? `bg-[#151a23] ${theme.border} shadow-[0_0_20px_rgba(0,0,0,0.2)] relative overflow-hidden` : 'bg-[var(--color-background)] border-white/5 hover:border-white/20'
                         }`}
                      >
                         {isSelected && <div className={`absolute left-0 top-0 bottom-0 w-1 ${theme.bg.replace('/10', '')} shadow-[0_0_10px_currentColor] ${theme.text}`}></div>}
@@ -666,7 +666,7 @@ export default function PlansPage() {
                              </span>
                              {isSelected && <span className={`text-[9px] ${theme.bg} ${theme.text} px-2 py-0.5 rounded uppercase font-bold tracking-widest border ${theme.border}`}>Ativo</span>}
                            </div>
-                           <p className="text-xs text-gray-400 font-medium">
+                           <p className="text-xs text-[var(--color-text-muted)] font-medium">
                              {plan.price} &bull; {plan.features[0]}
                            </p>
                         </div>
@@ -678,7 +678,7 @@ export default function PlansPage() {
                 })}
               </div>
 
-              <div className="flex gap-3 justify-end p-5 border-t border-white/5 bg-[#0B0E14]">
+              <div className="flex gap-3 justify-end p-5 border-t border-white/5 bg-[var(--color-background)]">
                 <button 
                   onClick={handleCloseModal} 
                   disabled={isSubmitting}

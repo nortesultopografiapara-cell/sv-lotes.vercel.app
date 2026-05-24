@@ -197,21 +197,21 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+      <div className="bg-[#151a23] border border-[var(--color-border)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[#1f232b] relative overflow-hidden shrink-0">
+        <div className="flex items-center justify-between p-6 border-b border-[var(--color-border)] relative overflow-hidden shrink-0">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500" />
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Building2 className="w-5 h-5 text-blue-500" />
               {initialData ? "Gerenciar Instituição" : "Nova Empresa SaaS"}
             </h2>
-            {initialData && <p className="text-xs text-gray-500 mt-1">ID: {initialData.id}</p>}
+            {initialData && <p className="text-xs text-[var(--color-text-muted)] mt-1">ID: {initialData.id}</p>}
           </div>
           <button 
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 text-[var(--color-text-muted)] hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -219,17 +219,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
         {/* Tabs */}
         {initialData && (
-          <div className="flex border-b border-[#1f232b] px-6">
+          <div className="flex border-b border-[var(--color-border)] px-6">
             <button 
               type="button"
-              className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'geral' ? 'text-blue-400 border-blue-500' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
+              className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'geral' ? 'text-blue-400 border-blue-500' : 'text-[var(--color-text-muted)] border-transparent hover:text-gray-300'}`}
               onClick={() => setActiveTab('geral')}
             >
               Geral & Configurações
             </button>
             <button 
               type="button"
-              className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'seguranca' ? 'text-purple-400 border-purple-500' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
+              className={`px-4 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'seguranca' ? 'text-purple-400 border-purple-500' : 'text-[var(--color-text-muted)] border-transparent hover:text-gray-300'}`}
               onClick={() => setActiveTab('seguranca')}
             >
               <ShieldCheck className="w-4 h-4" />
@@ -256,99 +256,99 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Nome da Empresa *</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Nome da Empresa *</label>
                 <input 
                   type="text" 
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ex: Lotes Prime Empreendimentos LTDA"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">CNPJ / CPF</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CNPJ / CPF</label>
                 <input 
                   type="text" 
                   value={formData.cnpj}
                   onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
                   placeholder="00.000.000/0001-00"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">E-mail de Contato (Admin)</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">E-mail de Contato (Admin)</label>
                 <input 
                   type="email" 
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="contato@empresa.com.br"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Telefone</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Telefone</label>
                 <input 
                   type="tel" 
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="(11) 90000-0000"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Endereço Completo</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Endereço Completo</label>
                 <input 
                   type="text" 
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="Rua, Número, Bairro"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Cidade</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Cidade</label>
                 <input 
                   type="text" 
                   value={formData.city}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                   placeholder="Ex: São Paulo"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">UF</label>
+                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">UF</label>
                   <input 
                     type="text" 
                     maxLength={2}
                     value={formData.state}
                     onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
                     placeholder="SP"
-                    className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors uppercase"
+                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors uppercase"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">CEP</label>
+                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">CEP</label>
                   <input 
                     type="text" 
                     value={formData.cep}
                     onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
                     placeholder="00000-000"
-                    className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                   />
                 </div>
               </div>
 
               {!initialData && (
                  <div>
-                   <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">
                      Senha Inicial do Auth*
                    </label>
                    <input 
@@ -357,17 +357,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                      value={formData.password}
                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                      placeholder={"Senha forte para o primeiro login"}
-                     className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                     className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                    />
                  </div>
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Plano SaaS</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Plano SaaS</label>
                 <select 
                   value={formData.plan}
                   onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
                 >
                   <option value="basic">Básico</option>
                   <option value="standard">Standard</option>
@@ -377,11 +377,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Status Operacional</label>
+                <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1 uppercase tracking-wider">Status Operacional</label>
                 <select 
                   value={formData.status_operacional}
                   onChange={(e) => setFormData({ ...formData, status_operacional: e.target.value })}
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
                 >
                   <option value="Ativa">🟢 Ativa</option>
                   <option value="Teste">🟡 Teste</option>
@@ -391,10 +391,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 </select>
               </div>
 
-              <div className="md:col-span-2 flex items-center justify-between p-4 mt-2 bg-[#1a1f29] border border-[#2d3340] rounded-lg">
+              <div className="md:col-span-2 flex items-center justify-between p-4 mt-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg">
                  <div>
                    <h3 className="text-sm font-semibold text-white">Empresa de Teste (Sandbox)</h3>
-                   <p className="text-xs text-gray-500 mt-0.5">Se marcado, será possível excluir esta empresa e todos os dados em cascata.</p>
+                   <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Se marcado, será possível excluir esta empresa e todos os dados em cascata.</p>
                  </div>
                  <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -403,7 +403,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                       checked={formData.is_test_company}
                       onChange={(e) => setFormData({ ...formData, is_test_company: e.target.checked })}
                     />
-                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--color-surface)] after:border-[var(--color-border)] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
                  </label>
               </div>
             </div>
@@ -414,7 +414,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
              <div className={`space-y-6 ${activeTab !== 'seguranca' ? 'hidden' : 'block'}`}>
                 
                 {/* Auth Management Action */}
-                <div className="bg-[#1a1f29] border border-[#2d3340] rounded-xl p-5">
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
                    <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
                      <Lock className="w-4 h-4 text-purple-400" /> Gerenciamento de Supabase Auth
                    </h3>
@@ -423,37 +423,37 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                          type="button"
                          disabled={loading}
                          onClick={handleResetPassword}
-                         className="w-full flex items-center justify-between px-4 py-3 bg-[#0b1111] hover:bg-[#202530] border border-[#2d3340] rounded-lg transition-colors text-left"
+                         className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-background)] hover:bg-[#202530] border border-[var(--color-border)] rounded-lg transition-colors text-left"
                       >
                          <div>
                             <p className="text-sm font-medium text-gray-200">Redefinir Senha Imediatamente</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Gera uma nova senha aleatória no Auth e descarta a anterior.</p>
+                            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Gera uma nova senha aleatória no Auth e descarta a anterior.</p>
                          </div>
-                         <Key className="w-4 h-4 text-gray-400" />
+                         <Key className="w-4 h-4 text-[var(--color-text-muted)]" />
                       </button>
                       
                       <button 
                          type="button"
                          disabled={loading}
                          onClick={handleSendRecovery}
-                         className="w-full flex items-center justify-between px-4 py-3 bg-[#0b1111] hover:bg-[#202530] border border-[#2d3340] rounded-lg transition-colors text-left"
+                         className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-background)] hover:bg-[#202530] border border-[var(--color-border)] rounded-lg transition-colors text-left"
                       >
                          <div>
                             <p className="text-sm font-medium text-gray-200">Enviar Link de Recuperação</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Envia um e-mail padrão do Supabase para {initialData.email || 'o admin'}.</p>
+                            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Envia um e-mail padrão do Supabase para {initialData.email || 'o admin'}.</p>
                          </div>
-                         <Mail className="w-4 h-4 text-gray-400" />
+                         <Mail className="w-4 h-4 text-[var(--color-text-muted)]" />
                       </button>
 
                       <button 
                          type="button"
                          disabled={loading}
                          onClick={handleGenerateTempPassword}
-                         className="w-full flex items-center justify-between px-4 py-3 bg-[#0b1111] hover:bg-[#202530] border border-[#2d3340] rounded-lg transition-colors text-left"
+                         className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-background)] hover:bg-[#202530] border border-[var(--color-border)] rounded-lg transition-colors text-left"
                       >
                          <div>
                             <p className="text-sm font-medium text-gray-200">Gerar Senha Temporária (Master)</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Exibe uma senha para você reportar ao cliente offline.</p>
+                            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Exibe uma senha para você reportar ao cliente offline.</p>
                          </div>
                          <Key className="w-4 h-4 text-purple-400" />
                       </button>
@@ -461,17 +461,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 </div>
 
                 {/* Sessoes */}
-                <div className="bg-[#1a1f29] border border-[#2d3340] rounded-xl p-5">
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5">
                    <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
                      <MonitorPlay className="w-4 h-4 text-blue-400" /> Sessões Ativas (Auth Refresh Tokens)
                    </h3>
-                   <div className="flex items-center justify-between mb-4 bg-[#0b1111] p-4 rounded-lg border border-[#2d3340]">
+                   <div className="flex items-center justify-between mb-4 bg-[var(--color-background)] p-4 rounded-lg border border-[var(--color-border)]">
                       <div>
-                         <p className="text-xs text-gray-500">Última Atividade Registrada</p>
+                         <p className="text-xs text-[var(--color-text-muted)]">Última Atividade Registrada</p>
                          <p className="text-sm text-gray-200 font-medium">Há 2 horas atrás</p>
                       </div>
                       <div className="text-right">
-                         <p className="text-xs text-gray-500">Sessões Totais</p>
+                         <p className="text-xs text-[var(--color-text-muted)]">Sessões Totais</p>
                          <p className="text-sm text-gray-200 font-medium tracking-widest">3</p>
                       </div>
                    </div>
@@ -491,7 +491,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-[#1f232b] shrink-0 flex flex-col sm:flex-row items-center justify-end gap-3 bg-[#151a23]">
+        <div className="p-6 border-t border-[var(--color-border)] shrink-0 flex flex-col sm:flex-row items-center justify-end gap-3 bg-[#151a23]">
           
           {/* Acessar Empresa Mode Trigger inside form if needed, or in the table? Usually better in the table row */}
           
@@ -500,7 +500,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
           <button 
             type="button"
             onClick={onClose}
-            className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-gray-300 hover:bg-[#1a1f29] border border-[#2d3340] transition-colors"
+            className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-medium text-gray-300 hover:bg-[var(--color-surface)] border border-[var(--color-border)] transition-colors"
           >
             Cancelar
           </button>

@@ -101,11 +101,11 @@ export default function GISMapInside({
   });
 
   return (
-    <div className="relative w-full h-[550px] shadow-inner border border-slate-200 rounded-xl overflow-hidden bg-slate-100">
+    <div className="relative w-full h-[550px] shadow-inner border border-[var(--color-border)] rounded-xl overflow-hidden bg-[var(--color-background)]">
       {/* Search Bar / Map Overlay Controls */}
       <div className="absolute top-4 left-4 z-[999] flex flex-wrap gap-2 max-w-[calc(100%-2rem)]">
-        <div className="flex bg-white/95 backdrop-blur shadow-md rounded-lg overflow-hidden border border-slate-200">
-          <div className="flex items-center px-3 text-slate-400 bg-white border-r border-slate-100">
+        <div className="flex bg-white/95 backdrop-blur shadow-md rounded-lg overflow-hidden border border-[var(--color-border)]">
+          <div className="flex items-center px-3 text-[var(--color-text-muted)] bg-[var(--color-surface)] border-r border-[var(--color-border)]">
             <Search className="w-4 h-4" />
           </div>
           <input
@@ -113,16 +113,16 @@ export default function GISMapInside({
             placeholder="Localizar Lote ou Quadra..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-4 py-2 text-sm text-slate-800 bg-white placeholder-slate-400 outline-none w-52 focus:w-64 transition-all duration-300"
+            className="px-4 py-2 text-sm text-[var(--color-text-main)] bg-[var(--color-surface)] placeholder-slate-400 outline-none w-52 focus:w-64 transition-all duration-300"
           />
         </div>
 
         {/* Layer Toggler */}
         <button
           onClick={() => setMapType(mapType === 'streets' ? 'satellite' : 'streets')}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white/95 backdrop-blur hover:bg-slate-50 text-slate-700 rounded-lg shadow-md border border-slate-200 transition-all"
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white/95 backdrop-blur hover:bg-[var(--color-background)] text-slate-700 rounded-lg shadow-md border border-[var(--color-border)] transition-all"
         >
-          <Layers className="w-3.5 h-3.5 text-slate-500" />
+          <Layers className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
           <span>{mapType === 'streets' ? 'Satélite' : 'Mapa'}</span>
         </button>
 
@@ -135,10 +135,10 @@ export default function GISMapInside({
           className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg shadow-md border transition-all ${
             rulerActive
               ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'
-              : 'bg-white/95 backdrop-blur hover:bg-slate-50 text-slate-700 border-slate-200'
+              : 'bg-white/95 backdrop-blur hover:bg-[var(--color-background)] text-slate-700 border-[var(--color-border)]'
           }`}
         >
-          <Ruler className={`w-3.5 h-3.5 ${rulerActive ? 'text-white' : 'text-slate-500'}`} />
+          <Ruler className={`w-3.5 h-3.5 ${rulerActive ? 'text-white' : 'text-[var(--color-text-muted)]'}`} />
           <span>Régua {rulerActive ? 'Ativa' : 'Métrica'}</span>
         </button>
 
@@ -155,7 +155,7 @@ export default function GISMapInside({
         <button
           onClick={onRefresh}
           disabled={isLoading}
-          className="p-2 bg-white/95 backdrop-blur hover:bg-slate-100 text-slate-600 disabled:opacity-50 rounded-lg shadow-md border border-slate-200 transition-all"
+          className="p-2 bg-white/95 backdrop-blur hover:bg-[var(--color-background)] text-[var(--color-text-muted)] disabled:opacity-50 rounded-lg shadow-md border border-[var(--color-border)] transition-all"
           title="Recarregar dados"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -172,11 +172,11 @@ export default function GISMapInside({
           <div className="space-y-1 text-slate-300">
             <div>Pontos demarcados: <span className="text-white font-bold">{rulerPoints.length}</span></div>
             <div>Distância física geométrica: <span className="text-white">{rulerTotal.toFixed(2)} m</span></div>
-            <div className="text-emerald-400 font-bold border-t border-slate-800 pt-1 mt-1 flex justify-between">
+            <div className="text-emerald-400 font-bold border-t border-[var(--color-border)] pt-1 mt-1 flex justify-between">
               <span>Distância real (Calibrada):</span>
               <span>{rulerTotalCalibrated.toFixed(2)} m</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-1 italic leading-tight">
+            <div className="text-[10px] text-[var(--color-text-muted)] mt-1 italic leading-tight">
               Fator calibrado aplicado de {GLOBAL_MEASUREMENT_FACTOR}
             </div>
           </div>
@@ -248,7 +248,7 @@ export default function GISMapInside({
               }}
             >
               {/* Map label: Lot Number & Calibrated Area */}
-              <Tooltip sticky direction="top" className="bg-white/90 text-slate-900 border border-slate-200 px-2 py-1 rounded shadow-md text-xs font-semibold">
+              <Tooltip sticky direction="top" className="bg-white/90 text-[var(--color-text-main)] border border-[var(--color-border)] px-2 py-1 rounded shadow-md text-xs font-semibold">
                 <div className="font-bold flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-brand-500" />
                   Q{lot.block_name} - L{lot.lot_number}
@@ -261,54 +261,54 @@ export default function GISMapInside({
               {/* Lot Popup with Raw vs Calibrated metrics */}
               <Popup className="custom-leaflet-popup">
                 <div className="p-2 min-w-56 font-sans">
-                  <div className="border-b border-slate-100 pb-1.5 mb-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                  <div className="border-b border-[var(--color-border)] pb-1.5 mb-1.5">
+                    <span className="text-[11px] font-bold text-[var(--color-text-muted)] uppercase tracking-widest block font-mono">
                       Amostra de Lote GIS
                     </span>
-                    <h3 className="text-sm font-bold text-slate-800 m-0">
+                    <h3 className="text-sm font-bold text-[var(--color-text-main)] m-0">
                       Lote {lot.lot_number} — Quadra {lot.block_name}
                     </h3>
                   </div>
 
                   <div className="space-y-1 text-xs">
-                    <div className="grid grid-cols-3 font-semibold text-slate-400 text-[10px] pb-1 border-b border-dashed border-slate-100">
+                    <div className="grid grid-cols-3 font-semibold text-[var(--color-text-muted)] text-[10px] pb-1 border-b border-dashed border-[var(--color-border)]">
                       <span>Rumo</span>
                       <span className="text-right">Original</span>
                       <span className="text-right text-emerald-600">Calibrado</span>
                     </div>
 
                     <div className="grid grid-cols-3 py-0.5">
-                      <span className="text-slate-500">Frente:</span>
-                      <span className="text-right text-slate-400 font-mono">{lotMetrics.raw.frente.toFixed(2)}m</span>
+                      <span className="text-[var(--color-text-muted)]">Frente:</span>
+                      <span className="text-right text-[var(--color-text-muted)] font-mono">{lotMetrics.raw.frente.toFixed(2)}m</span>
                       <span className="text-right text-emerald-600 font-bold font-mono">{lotMetrics.calibrated.frente.toFixed(2)}m</span>
                     </div>
 
                     <div className="grid grid-cols-3 py-0.5">
-                      <span className="text-slate-500">Fundo:</span>
-                      <span className="text-right text-slate-400 font-mono">{lotMetrics.raw.fundo.toFixed(2)}m</span>
+                      <span className="text-[var(--color-text-muted)]">Fundo:</span>
+                      <span className="text-right text-[var(--color-text-muted)] font-mono">{lotMetrics.raw.fundo.toFixed(2)}m</span>
                       <span className="text-right text-emerald-600 font-bold font-mono">{lotMetrics.calibrated.fundo.toFixed(2)}m</span>
                     </div>
 
                     <div className="grid grid-cols-3 py-0.5">
-                      <span className="text-slate-500">L. Dir:</span>
-                      <span className="text-right text-slate-400 font-mono">{lotMetrics.raw.lado_direito.toFixed(2)}m</span>
+                      <span className="text-[var(--color-text-muted)]">L. Dir:</span>
+                      <span className="text-right text-[var(--color-text-muted)] font-mono">{lotMetrics.raw.lado_direito.toFixed(2)}m</span>
                       <span className="text-right text-emerald-600 font-bold font-mono">{lotMetrics.calibrated.lado_direito.toFixed(2)}m</span>
                     </div>
 
                     <div className="grid grid-cols-3 py-0.5">
-                      <span className="text-slate-500">L. Esq:</span>
-                      <span className="text-right text-slate-400 font-mono">{lotMetrics.raw.lado_esquerdo.toFixed(2)}m</span>
+                      <span className="text-[var(--color-text-muted)]">L. Esq:</span>
+                      <span className="text-right text-[var(--color-text-muted)] font-mono">{lotMetrics.raw.lado_esquerdo.toFixed(2)}m</span>
                       <span className="text-right text-emerald-600 font-bold font-mono">{lotMetrics.calibrated.lado_esquerdo.toFixed(2)}m</span>
                     </div>
 
-                    <div className="grid grid-cols-3 border-t border-slate-100 pt-1.5 mt-1 font-bold">
+                    <div className="grid grid-cols-3 border-t border-[var(--color-border)] pt-1.5 mt-1 font-bold">
                       <span className="text-slate-700">Área:</span>
-                      <span className="text-right text-slate-400 font-mono">{lotMetrics.raw.area.toFixed(1)}m²</span>
+                      <span className="text-right text-[var(--color-text-muted)] font-mono">{lotMetrics.raw.area.toFixed(1)}m²</span>
                       <span className="text-right text-emerald-600 font-mono">{lotMetrics.calibrated.area.toFixed(2)}m²</span>
                     </div>
                   </div>
 
-                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-2 pt-2 border-t border-[var(--color-border)] flex items-center justify-between">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                       lot.status?.toLowerCase() === 'vendido' 
                         ? 'bg-red-50 text-red-600' 

@@ -110,7 +110,7 @@ export default function TemplatesPage() {
         <div className="w-full md:w-1/3 border-r border-[var(--color-border)] flex flex-col h-full shrink-0">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
               <div className="flex items-center gap-3">
-                  <a href="/contracts" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface)] text-gray-400 hover:text-white transition-colors">
+                  <a href="/contracts" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-white transition-colors">
                       <ArrowLeft className="w-5 h-5" />
                   </a>
                   <h2 className="text-lg font-bold text-white">Modelos</h2>
@@ -124,7 +124,7 @@ export default function TemplatesPage() {
               {loading ? (
                   <div className="p-4 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" /></div>
               ) : templates.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">
+                  <div className="p-8 text-center text-[var(--color-text-muted)]">
                       Nenhum modelo cadastrado.
                       <br/>Clique em + para criar o primeiro.
                   </div>
@@ -139,7 +139,7 @@ export default function TemplatesPage() {
                               <FileText className="w-5 h-5 text-[var(--color-primary)]" />
                               <span className="text-sm font-semibold text-white">{tmpl.name}</span>
                           </div>
-                          <button onClick={(e) => handleDelete(tmpl.id, e)} className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => handleDelete(tmpl.id, e)} className="text-[var(--color-text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                               <Trash2 className="w-4 h-4" />
                           </button>
                       </div>
@@ -154,7 +154,7 @@ export default function TemplatesPage() {
          <div className="flex-1 flex flex-col items-center overflow-hidden bg-gray-100/5 h-full relative">
               <div className="w-full bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4 flex items-center justify-between shrink-0">
                    <div className="flex items-center gap-3">
-                       <button onClick={() => setIsEditing(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-border)] text-gray-400 hover:text-white transition-colors">
+                       <button onClick={() => setIsEditing(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-border)] text-[var(--color-text-muted)] hover:text-white transition-colors">
                            <ArrowLeft className="w-5 h-5" />
                        </button>
                        <input 
@@ -165,7 +165,7 @@ export default function TemplatesPage() {
                            placeholder="Nome do Modelo" 
                        />
                    </div>
-                   <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-lg hover:bg-[#8b5cf6] transition-colors disabled:opacity-50">
+                   <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50">
                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                        Salvar Modelo
                    </button>
@@ -173,7 +173,7 @@ export default function TemplatesPage() {
               
               <div className="flex-1 w-full flex overflow-hidden">
                   <div className="flex-1 overflow-y-auto p-8 flex justify-center">
-                      <div className="w-full max-w-[800px] bg-white text-black min-h-[1056px] shadow-2xl flex flex-col p-8" style={{fontFamily: 'Arial, sans-serif'}}>
+                      <div className="w-full max-w-[800px] bg-[var(--color-surface)] text-black min-h-[1056px] shadow-2xl flex flex-col p-8" style={{fontFamily: 'Arial, sans-serif'}}>
                           <textarea 
                               className="w-full flex-1 resize-none border-none focus:outline-none focus:ring-0 p-0 m-0 text-black text-base leading-relaxed bg-transparent"
                               value={editContent}
@@ -185,11 +185,11 @@ export default function TemplatesPage() {
 
                   <div className="w-64 border-l border-[var(--color-border)] shrink-0 overflow-y-auto bg-[var(--color-background)] p-4 flex flex-col gap-4">
                       <h3 className="font-bold text-white text-sm">Variáveis Disponíveis</h3>
-                      <p className="text-xs text-gray-400">Clique para copiar as chaves e cole no editor para substituição automática.</p>
+                      <p className="text-xs text-[var(--color-text-muted)]">Clique para copiar as chaves e cole no editor para substituição automática.</p>
                       
                       <div className="space-y-4">
                           <div>
-                              <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">Empresa</h4>
+                              <h4 className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 uppercase">Empresa</h4>
                               <div className="flex flex-col gap-1">
                                   {['COMPANY_NAME', 'COMPANY_CNPJ', 'COMPANY_ADDRESS', 'COMPANY_CITY_STATE'].map(v => (
                                       <button key={v} onClick={() => copyVariable(`{{${v}}}`)} className="text-left text-xs bg-[var(--color-surface)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-1.5 text-[var(--color-primary)] transition-colors">
@@ -199,7 +199,7 @@ export default function TemplatesPage() {
                               </div>
                           </div>
                           <div>
-                              <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">Comprador</h4>
+                              <h4 className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 uppercase">Comprador</h4>
                               <div className="flex flex-col gap-1">
                                   {['CLIENT_NAME', 'CLIENT_CPF', 'CLIENT_RG', 'CLIENT_EMAIL', 'CLIENT_PHONE', 'CLIENT_ADDRESS'].map(v => (
                                       <button key={v} onClick={() => copyVariable(`{{${v}}}`)} className="text-left text-xs bg-[var(--color-surface)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-1.5 text-[var(--color-primary)] transition-colors">
@@ -209,7 +209,7 @@ export default function TemplatesPage() {
                               </div>
                           </div>
                           <div>
-                              <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">Imóvel e Valores</h4>
+                              <h4 className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 uppercase">Imóvel e Valores</h4>
                               <div className="flex flex-col gap-1">
                                   {['LOT_NUMBER', 'BLOCK_NAME', 'PROJECT_NAME', 'SALE_VALUE', 'PAYMENT_TYPE'].map(v => (
                                       <button key={v} onClick={() => copyVariable(`{{${v}}}`)} className="text-left text-xs bg-[var(--color-surface)] hover:bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-1.5 text-[var(--color-primary)] transition-colors">
@@ -223,7 +223,7 @@ export default function TemplatesPage() {
               </div>
          </div>
       ) : (
-         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 hidden md:flex">
+         <div className="flex-1 flex flex-col items-center justify-center text-[var(--color-text-muted)] hidden md:flex">
              <FileText className="w-16 h-16 mb-4 opacity-20" />
              <p>Selecione um modelo à esquerda ou crie um novo.</p>
          </div>

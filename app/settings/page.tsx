@@ -129,18 +129,18 @@ export default function SettingsPage() {
   }
 
   if (!user?.tenant_id && user?.role !== 'SUPER_ADMIN') {
-     return <div className="p-8 text-center text-gray-500">Acesso negado ou empresa não localizada.</div>;
+     return <div className="p-8 text-center text-[var(--color-text-muted)]">Acesso negado ou empresa não localizada.</div>;
   }
 
   return (
     <div className="p-8 max-w-4xl mx-auto font-sans h-full overflow-y-auto">
-      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-800">
+      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[var(--color-border)]">
         <div className="w-12 h-12 bg-blue-900/30 rounded-xl flex items-center justify-center text-blue-400 border border-blue-800">
           <Building2 className="w-6 h-6" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Configurações da Empresa</h1>
-          <p className="text-sm text-gray-400">Gerencie os dados e identidades da sua empresa para contratos e recibos.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Gerencie os dados e identidades da sua empresa para contratos e recibos.</p>
         </div>
       </div>
 
@@ -148,7 +148,7 @@ export default function SettingsPage() {
         
         <div className="space-y-4">
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
-             <ImagePlus className="w-5 h-5 text-gray-400" />
+             <ImagePlus className="w-5 h-5 text-[var(--color-text-muted)]" />
              Identidade Visual
            </h2>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -161,7 +161,7 @@ export default function SettingsPage() {
                          {company?.logo_url ? (
                              <img src={company.logo_url} alt="Logo" className="w-full h-full object-contain" />
                          ) : (
-                             <span className="text-[10px] text-gray-500 font-medium">Sem Logo</span>
+                             <span className="text-[10px] text-[var(--color-text-muted)] font-medium">Sem Logo</span>
                          )}
                      </div>
                      <div className="flex-1">
@@ -175,7 +175,7 @@ export default function SettingsPage() {
                              {uploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                              Fazer Upload da Logo
                          </button>
-                         <p className="text-[10px] text-gray-500 mt-2 leading-tight">Será usada na barra lateral e no cabeçalho dos contratos.</p>
+                         <p className="text-[10px] text-[var(--color-text-muted)] mt-2 leading-tight">Será usada na barra lateral e no cabeçalho dos contratos.</p>
                      </div>
                  </div>
               </div>
@@ -188,7 +188,7 @@ export default function SettingsPage() {
                          {company?.signature_url ? (
                              <img src={company.signature_url} alt="Assinatura" className="w-full h-full object-contain" />
                          ) : (
-                             <span className="text-[10px] text-gray-500 font-medium">Sem Assinatura</span>
+                             <span className="text-[10px] text-[var(--color-text-muted)] font-medium">Sem Assinatura</span>
                          )}
                      </div>
                      <div className="flex-1">
@@ -202,7 +202,7 @@ export default function SettingsPage() {
                              {uploadingSignature ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                              Upload Assinatura
                          </button>
-                         <p className="text-[10px] text-gray-500 mt-2 leading-tight">Aparecerá automaticamente no campo do vendedor nos contratos.</p>
+                         <p className="text-[10px] text-[var(--color-text-muted)] mt-2 leading-tight">Aparecerá automaticamente no campo do vendedor nos contratos.</p>
                      </div>
                  </div>
               </div>
@@ -212,16 +212,16 @@ export default function SettingsPage() {
 
         <div className="space-y-4">
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
-             <Building2 className="w-5 h-5 text-gray-400" />
+             <Building2 className="w-5 h-5 text-[var(--color-text-muted)]" />
              Dados Principais
            </h2>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Nome Fantasia *</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome Fantasia *</label>
                  <input type="text" required name="fantasy_name" value={company?.fantasy_name || company?.name || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">CNPJ</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CNPJ</label>
                  <input type="text" name="cnpj" value={company?.cnpj || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
            </div>
@@ -231,27 +231,27 @@ export default function SettingsPage() {
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2">Contato e Endereço</h2>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Telefone</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Telefone</label>
                  <input type="text" name="phone" value={company?.phone || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">E-mail</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">E-mail</label>
                  <input type="email" name="email" value={company?.email || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div className="md:col-span-2">
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Endereço Completo</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Endereço Completo</label>
                  <input type="text" name="address" value={company?.address || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua, Número, Bairro, Complemento" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Cidade</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Cidade</label>
                  <input type="text" name="city" value={company?.city || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">UF</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">UF</label>
                  <input type="text" name="state" value={company?.state || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" maxLength={2} placeholder="Ex: SP" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">CEP</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CEP</label>
                  <input type="text" name="zip_code" value={company?.zip_code || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
            </div>
@@ -261,18 +261,18 @@ export default function SettingsPage() {
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2">Dados do Responsável / Representante Legal</h2>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Nome do Responsável</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome do Responsável</label>
                  <input type="text" name="legal_representative" value={company?.legal_representative || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">CPF do Responsável</label>
+                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CPF do Responsável</label>
                  <input type="text" name="representative_cpf" value={company?.representative_cpf || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
            </div>
         </div>
 
         <div className="flex justify-end pt-4 border-t border-[var(--color-border)] mt-8">
-           <button type="submit" disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 bg-[var(--color-primary)] hover:bg-[#8b5cf6] text-white font-medium rounded-lg transition-colors">
+           <button type="submit" disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium rounded-lg transition-colors">
               {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
               Salvar Configurações
            </button>

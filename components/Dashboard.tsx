@@ -40,24 +40,24 @@ export default function Dashboard({ lots }: DashboardProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {/* Visual stats cards */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm border border-[var(--color-border)] flex items-center justify-between">
         <div>
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+          <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider block">
             Área Bruta Total (Planta)
           </span>
-          <h3 className="text-2xl font-bold font-mono text-slate-600 mt-1">
+          <h3 className="text-2xl font-bold font-mono text-[var(--color-text-muted)] mt-1">
             {totalRawArea.toLocaleString('pt-BR', { minimumFractionDigits: 1 })} m²
           </h3>
-          <span className="text-[10px] text-slate-400 block mt-1.5 italic">
+          <span className="text-[10px] text-[var(--color-text-muted)] block mt-1.5 italic">
             Área medida em plano cartográfico puro
           </span>
         </div>
-        <div className="p-3.5 bg-slate-100 text-slate-400 rounded-2xl">
+        <div className="p-3.5 bg-[var(--color-background)] text-[var(--color-text-muted)] rounded-2xl">
           <Ruler className="w-6 h-6" />
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-100 flex items-center justify-between bg-gradient-to-br from-white to-emerald-50/20">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm border border-emerald-100 flex items-center justify-between bg-gradient-to-br from-white to-emerald-50/20">
         <div>
           <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider block">
             Área Real Calibrada (SIG-UTM)
@@ -74,9 +74,9 @@ export default function Dashboard({ lots }: DashboardProps) {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm border border-[var(--color-border)] flex items-center justify-between">
         <div>
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+          <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider block">
             Divergência Cartográfica Filtrada
           </span>
           <h3 className="text-2xl font-bold font-mono text-slate-700 mt-1">
@@ -92,7 +92,7 @@ export default function Dashboard({ lots }: DashboardProps) {
       </div>
 
       {/* Grid Charts */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 md:col-span-2">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm border border-[var(--color-border)] md:col-span-2">
         <h4 className="font-sans font-bold text-sm text-slate-700 uppercase tracking-wide mb-4">
           Comparação de Área de Amostras (Bruta vs Calibrada)
         </h4>
@@ -110,14 +110,14 @@ export default function Dashboard({ lots }: DashboardProps) {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-slate-400 font-mono text-xs">
+            <div className="h-full flex items-center justify-center text-[var(--color-text-muted)] font-mono text-xs">
               Sem dados de lotes disponíveis para comparar.
             </div>
           )}
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm border border-[var(--color-border)]">
         <h4 className="font-sans font-bold text-sm text-slate-700 uppercase tracking-wide mb-4">
           Status de Lançamento
         </h4>
@@ -142,7 +142,7 @@ export default function Dashboard({ lots }: DashboardProps) {
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-slate-400 font-mono text-xs">
+            <div className="h-full flex items-center justify-center text-[var(--color-text-muted)] font-mono text-xs">
               Sem lotes cadastrados.
             </div>
           )}
@@ -150,7 +150,7 @@ export default function Dashboard({ lots }: DashboardProps) {
             <span className="text-xl font-extrabold font-mono text-slate-700 block leading-none">
               {lots.length}
             </span>
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5 block">
+            <span className="text-[9px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mt-0.5 block">
               Lotes Total
             </span>
           </div>
@@ -159,8 +159,8 @@ export default function Dashboard({ lots }: DashboardProps) {
           {(Object.entries(statusCounts) as [string, number][]).map(([status, val]) => (
             <div key={status} className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[status] || '#64748b' }}></span>
-              <span className="text-slate-500">{status}:</span>
-              <span className="font-bold text-slate-800">{val}</span>
+              <span className="text-[var(--color-text-muted)]">{status}:</span>
+              <span className="font-bold text-[var(--color-text-main)]">{val}</span>
             </div>
           ))}
         </div>

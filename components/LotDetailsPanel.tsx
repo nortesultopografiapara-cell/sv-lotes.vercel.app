@@ -15,12 +15,12 @@ export default function LotDetailsPanel({ lot, metrics }: LotDetailsPanelProps) 
 
   if (!lot) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-slate-100 shadow-sm min-h-[400px]">
-        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-200 mb-4 animate-bounce">
-          <MapPin className="w-8 h-8 text-slate-400" />
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] shadow-sm min-h-[400px]">
+        <div className="w-16 h-16 bg-[var(--color-background)] rounded-full flex items-center justify-center border border-[var(--color-border)] mb-4 animate-bounce">
+          <MapPin className="w-8 h-8 text-[var(--color-text-muted)]" />
         </div>
         <h3 className="font-sans font-bold text-slate-700 text-lg">Nenhum Lote Selecionado</h3>
-        <p className="text-sm text-slate-400 max-w-sm mt-1 leading-relaxed">
+        <p className="text-sm text-[var(--color-text-muted)] max-w-sm mt-1 leading-relaxed">
           Clique em qualquer lote diretamente no mapa ou pesquise o lote ideal para carregar suas métricas e memorial calibrado.
         </p>
       </div>
@@ -94,7 +94,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
   const isLote2Q1 = lot.lot_number === '2' && lot.block_name === '01';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col overflow-hidden min-h-[500px]">
+    <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] shadow-sm flex flex-col overflow-hidden min-h-[500px]">
       {/* Header Panel */}
       <div className="bg-slate-900 text-white p-5">
         <div className="flex items-center justify-between">
@@ -105,13 +105,13 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
             <h2 className="text-lg font-bold font-sans mt-1">
               Lote {lot.lot_number} — Quadra {lot.block_name}
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-slate-500" />
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5 flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
               Loteamento Castanheira, Parauapebas - PA
             </p>
           </div>
           <div className="text-right">
-            <span className="text-[10px] font-bold text-slate-400 block uppercase font-mono">
+            <span className="text-[10px] font-bold text-[var(--color-text-muted)] block uppercase font-mono">
               Área Calibrada
             </span>
             <span className="text-xl font-black font-mono text-emerald-400">
@@ -122,11 +122,11 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
       </div>
 
       {/* Tabs list */}
-      <div className="flex border-b border-slate-100 bg-slate-50/50 text-slate-600 font-semibold text-xs overflow-x-auto">
+      <div className="flex border-b border-[var(--color-border)] bg-[var(--color-background)]/50 text-[var(--color-text-muted)] font-semibold text-xs overflow-x-auto">
         <button
           onClick={() => setActiveTab('details')}
           className={`flex-1 px-4 py-3 border-b-2 font-semibold whitespace-nowrap text-center transition-all ${
-            activeTab === 'details' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent hover:text-slate-800'
+            activeTab === 'details' ? 'border-blue-600 text-blue-700 bg-[var(--color-surface)]' : 'border-transparent hover:text-[var(--color-text-main)]'
           }`}
         >
           Dimensões & Escala
@@ -134,7 +134,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         <button
           onClick={() => setActiveTab('memorial')}
           className={`flex-1 px-4 py-3 border-b-2 font-semibold whitespace-nowrap text-center transition-all ${
-            activeTab === 'memorial' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent hover:text-slate-800'
+            activeTab === 'memorial' ? 'border-blue-600 text-blue-700 bg-[var(--color-surface)]' : 'border-transparent hover:text-[var(--color-text-main)]'
           }`}
         >
           Memorial Técnico
@@ -142,7 +142,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         <button
           onClick={() => setActiveTab('contract')}
           className={`flex-1 px-4 py-3 border-b-2 font-semibold whitespace-nowrap text-center transition-all ${
-            activeTab === 'contract' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent hover:text-slate-800'
+            activeTab === 'contract' ? 'border-blue-600 text-blue-700 bg-[var(--color-surface)]' : 'border-transparent hover:text-[var(--color-text-main)]'
           }`}
         >
           Minuta Contratual
@@ -150,7 +150,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         <button
           onClick={() => setActiveTab('pdf')}
           className={`flex-1 px-4 py-3 border-b-2 font-semibold whitespace-nowrap text-center transition-all ${
-            activeTab === 'pdf' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent hover:text-slate-800'
+            activeTab === 'pdf' ? 'border-blue-600 text-blue-700 bg-[var(--color-surface)]' : 'border-transparent hover:text-[var(--color-text-main)]'
           }`}
         >
           Relatório Exportável
@@ -158,7 +158,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         <button
           onClick={() => setActiveTab('validation')}
           className={`flex-1 px-4 py-3 border-b-2 font-bold whitespace-nowrap text-center transition-all ${
-            activeTab === 'validation' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent hover:text-slate-800'
+            activeTab === 'validation' ? 'border-blue-600 text-blue-700 bg-[var(--color-surface)]' : 'border-transparent hover:text-[var(--color-text-main)]'
           }`}
         >
           Check Técnico {isLote2Q1 ? '✓' : ''}
@@ -166,24 +166,24 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
       </div>
 
       {/* Dynamic Tab Panel */}
-      <div className="p-6 flex-1 bg-white select-none">
+      <div className="p-6 flex-1 bg-[var(--color-surface)] select-none">
         
         {/* Tab 1: Tab dimensions comparison */}
         {activeTab === 'details' && (
           <div className="space-y-6">
-            <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+            <div className="bg-[var(--color-background)] border border-[var(--color-border)] p-4 rounded-xl">
               <h3 className="font-sans font-bold text-slate-700 text-xs flex items-center gap-1.5 uppercase tracking-wide">
                 <Scale className="w-4 h-4 text-emerald-600" />
                 Matriz de Validação do Plano de Ajuste Geral
               </h3>
-              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+              <p className="text-[11px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
                 As medições originais representam as distâncias puros calculadas via projeção cartográfica. A calibração calcula e cancela o erro do plano, assegurando compatibilidade com a topografia cartorial.
               </p>
             </div>
 
             {/* Grid display side lines */}
             <div className="space-y-2.5">
-              <div className="grid grid-cols-4 font-mono text-[10px] font-bold text-slate-400 border-b border-slate-100 pb-2">
+              <div className="grid grid-cols-4 font-mono text-[10px] font-bold text-[var(--color-text-muted)] border-b border-[var(--color-border)] pb-2">
                 <span>Rumo / Divisa</span>
                 <span className="text-right">Geometria Bruta</span>
                 <span className="text-right text-emerald-600">Calibrado Real</span>
@@ -192,40 +192,40 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
 
               {/* Frente */}
               <div className="grid grid-cols-4 items-center text-xs border-b border-slate-50 py-2">
-                <span className="font-semibold text-slate-600">Frente (Segmento Norte)</span>
-                <span className="text-right font-mono text-slate-400">{lotMetrics.raw.frente.toFixed(2)}m</span>
+                <span className="font-semibold text-[var(--color-text-muted)]">Frente (Segmento Norte)</span>
+                <span className="text-right font-mono text-[var(--color-text-muted)]">{lotMetrics.raw.frente.toFixed(2)}m</span>
                 <span className="text-right font-mono font-bold text-emerald-600">{lotMetrics.calibrated.frente.toFixed(2)}m</span>
                 <span className="text-right font-mono text-rose-500">-{(lotMetrics.raw.frente - lotMetrics.calibrated.frente).toFixed(2)}m</span>
               </div>
 
               {/* Fundo */}
               <div className="grid grid-cols-4 items-center text-xs border-b border-slate-50 py-2">
-                <span className="font-semibold text-slate-600">Fundo (Segmento Sul)</span>
-                <span className="text-right font-mono text-slate-400">{lotMetrics.raw.fundo.toFixed(2)}m</span>
+                <span className="font-semibold text-[var(--color-text-muted)]">Fundo (Segmento Sul)</span>
+                <span className="text-right font-mono text-[var(--color-text-muted)]">{lotMetrics.raw.fundo.toFixed(2)}m</span>
                 <span className="text-right font-mono font-bold text-emerald-600">{lotMetrics.calibrated.fundo.toFixed(2)}m</span>
                 <span className="text-right font-mono text-rose-500">-{(lotMetrics.raw.fundo - lotMetrics.calibrated.fundo).toFixed(2)}m</span>
               </div>
 
               {/* Lado Direito */}
               <div className="grid grid-cols-4 items-center text-xs border-b border-slate-50 py-2">
-                <span className="font-semibold text-slate-600">Lat. Direita (Leste)</span>
-                <span className="text-right font-mono text-slate-400">{lotMetrics.raw.lado_direito.toFixed(2)}m</span>
+                <span className="font-semibold text-[var(--color-text-muted)]">Lat. Direita (Leste)</span>
+                <span className="text-right font-mono text-[var(--color-text-muted)]">{lotMetrics.raw.lado_direito.toFixed(2)}m</span>
                 <span className="text-right font-mono font-bold text-emerald-600">{lotMetrics.calibrated.lado_direito.toFixed(2)}m</span>
                 <span className="text-right font-mono text-rose-500">-{(lotMetrics.raw.lado_direito - lotMetrics.calibrated.lado_direito).toFixed(2)}m</span>
               </div>
 
               {/* Lado Esquerdo */}
               <div className="grid grid-cols-4 items-center text-xs border-b border-slate-50 py-2">
-                <span className="font-semibold text-slate-600">Lat. Esquerda (Oeste)</span>
-                <span className="text-right font-mono text-slate-400">{lotMetrics.raw.lado_esquerdo.toFixed(2)}m</span>
+                <span className="font-semibold text-[var(--color-text-muted)]">Lat. Esquerda (Oeste)</span>
+                <span className="text-right font-mono text-[var(--color-text-muted)]">{lotMetrics.raw.lado_esquerdo.toFixed(2)}m</span>
                 <span className="text-right font-mono font-bold text-emerald-600">{lotMetrics.calibrated.lado_esquerdo.toFixed(2)}m</span>
                 <span className="text-right font-mono text-rose-500">-{(lotMetrics.raw.lado_esquerdo - lotMetrics.calibrated.lado_esquerdo).toFixed(2)}m</span>
               </div>
 
               {/* Area */}
-              <div className="grid grid-cols-4 items-center text-xs border-t border-slate-200 pt-3 font-bold bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+              <div className="grid grid-cols-4 items-center text-xs border-t border-[var(--color-border)] pt-3 font-bold bg-[var(--color-background)]/50 p-2.5 rounded-lg border border-[var(--color-border)]">
                 <span className="text-slate-700">Área Geonômica</span>
-                <span className="text-right font-mono text-slate-400">{lotMetrics.raw.area.toFixed(1)} m²</span>
+                <span className="text-right font-mono text-[var(--color-text-muted)]">{lotMetrics.raw.area.toFixed(1)} m²</span>
                 <span className="text-right font-mono text-emerald-600">{lotMetrics.calibrated.area.toFixed(2)} m²</span>
                 <span className="text-right font-mono text-rose-500">-{(lotMetrics.raw.area - lotMetrics.calibrated.area).toFixed(2)} m²</span>
               </div>
@@ -237,12 +237,12 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         {activeTab === 'memorial' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider block">
                 Folha de Memorial Técnico Geoespacial
               </span>
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[var(--color-background)] hover:bg-[var(--color-background)] text-slate-700 rounded-lg transition-all"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Imprimir</span>
@@ -251,7 +251,7 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
             <textarea
               readOnly
               value={getMemorialDescritivoText()}
-              className="w-full h-80 p-4 border border-slate-200 rounded-xl font-mono text-xs text-slate-700 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500 leading-relaxed resize-none scrollbar-thin"
+              className="w-full h-80 p-4 border border-[var(--color-border)] rounded-xl font-mono text-xs text-slate-700 bg-[var(--color-background)] focus:outline-none focus:ring-1 focus:ring-brand-500 leading-relaxed resize-none scrollbar-thin"
             />
           </div>
         )}
@@ -260,12 +260,12 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         {activeTab === 'contract' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider block">
                 Emissão Integrada de Contrato Particular
               </span>
               <button
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[var(--color-background)] hover:bg-[var(--color-background)] text-slate-700 rounded-lg transition-all"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>Emitir Minuta</span>
@@ -274,19 +274,19 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
             <textarea
               readOnly
               value={getContractDraft()}
-              className="w-full h-80 p-4 border border-slate-200 rounded-xl font-mono text-xs text-slate-700 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-brand-500 leading-relaxed resize-none scrollbar-thin"
+              className="w-full h-80 p-4 border border-[var(--color-border)] rounded-xl font-mono text-xs text-slate-700 bg-[var(--color-background)] focus:outline-none focus:ring-1 focus:ring-brand-500 leading-relaxed resize-none scrollbar-thin"
             />
           </div>
         )}
 
         {/* Tab 4: Relatório Exportável */}
         {activeTab === 'pdf' && (
-          <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-2xl min-h-[300px]">
+          <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-[var(--color-border)] rounded-2xl min-h-[300px]">
             <div className="w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center mb-3">
               <Download className="w-7 h-7 text-emerald-600" />
             </div>
             <h4 className="font-sans font-bold text-slate-700 text-base">Folha Técnica Pronta para Exportação</h4>
-            <p className="text-xs text-slate-400 max-w-xs mt-1 leading-relaxed">
+            <p className="text-xs text-[var(--color-text-muted)] max-w-xs mt-1 leading-relaxed">
               Expede o relatório completo georreferenciado e calibrado estruturado no formato nativo PDF A4 com carimbo de aprovação e QR Code de autenticação fiscal.
             </p>
             <button
@@ -302,13 +302,13 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
         {/* Tab 5: Tech Calibration Validation pane */}
         {activeTab === 'validation' && (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border)]">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-slate-800">Homologação de Calibração Definitiva</h4>
-                <p className="text-[10px] text-slate-400">Verificação obrigatória do fator global e consistência dos rumos.</p>
+                <h4 className="text-sm font-bold text-[var(--color-text-main)]">Homologação de Calibração Definitiva</h4>
+                <p className="text-[10px] text-[var(--color-text-muted)]">Verificação obrigatória do fator global e consistência dos rumos.</p>
               </div>
             </div>
 
@@ -324,27 +324,27 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
 
                 <div className="mt-4 grid grid-cols-2 gap-3 font-mono text-xs">
                   <div className="bg-white/80 p-3 rounded-lg border border-emerald-100">
-                    <span className="text-[10px] text-slate-400 block font-sans">Frente Reajustada</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] block font-sans">Frente Reajustada</span>
                     <span className="text-emerald-700 font-black tracking-tight">{lotMetrics.calibrated.frente.toFixed(2)}m</span>
                     <span className="text-[9px] text-emerald-600/70 block font-sans mt-1">Conforme Esperado: 37.94</span>
                   </div>
                   <div className="bg-white/80 p-3 rounded-lg border border-emerald-100">
-                    <span className="text-[10px] text-slate-400 block font-sans">Fundo Reajustada</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] block font-sans">Fundo Reajustada</span>
                     <span className="text-emerald-700 font-black tracking-tight">{lotMetrics.calibrated.fundo.toFixed(2)}m</span>
                     <span className="text-[9px] text-emerald-600/70 block font-sans mt-1">Conforme Esperado: 37.93</span>
                   </div>
                   <div className="bg-white/80 p-3 rounded-lg border border-emerald-100">
-                    <span className="text-[10px] text-slate-400 block font-sans">Lateral Dir (Leste)</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] block font-sans">Lateral Dir (Leste)</span>
                     <span className="text-emerald-700 font-black tracking-tight">{lotMetrics.calibrated.lado_direito.toFixed(2)}m</span>
                     <span className="text-[9px] text-emerald-600/70 block font-sans mt-1">Conforme Esperado: 65.82</span>
                   </div>
                   <div className="bg-white/80 p-3 rounded-lg border border-emerald-100">
-                    <span className="text-[10px] text-slate-400 block font-sans">Lateral Esq (Oeste)</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] block font-sans">Lateral Esq (Oeste)</span>
                     <span className="text-emerald-700 font-black tracking-tight">{lotMetrics.calibrated.lado_esquerdo.toFixed(2)}m</span>
                     <span className="text-[9px] text-emerald-600/70 block font-sans mt-1">Conforme Esperado: 66.07</span>
                   </div>
                   <div className="bg-white/80 p-3 rounded-lg border border-emerald-100 col-span-2">
-                    <span className="text-[10px] text-slate-400 block font-sans">Área Calibrada Consolidada</span>
+                    <span className="text-[10px] text-[var(--color-text-muted)] block font-sans">Área Calibrada Consolidada</span>
                     <span className="text-emerald-700 font-black tracking-tight">{lotMetrics.calibrated.area.toFixed(2)} m²</span>
                     <span className="text-[9px] text-emerald-600/70 block font-sans mt-1">Conforme Esperado: 2500.00</span>
                   </div>
@@ -359,8 +359,8 @@ Declaram todas as partes contratantes estar cientes de que o mapeamento digital 
                   Esta amostra técnica possui calibração ativa de {GLOBAL_MEASUREMENT_FACTOR}.
                 </p>
                 <div className="mt-3 font-mono space-y-1 bg-white/70 p-2.5 rounded border border-amber-100">
-                  <div>Frente: <span className="font-bold text-slate-800">{lotMetrics.calibrated.frente.toFixed(2)}m</span> (desvio: -{(lotMetrics.raw.frente - lotMetrics.calibrated.frente).toFixed(2)}m)</div>
-                  <div>Área: <span className="font-bold text-slate-800">{lotMetrics.calibrated.area.toFixed(2)} m²</span> (desvio: -{(lotMetrics.raw.area - lotMetrics.calibrated.area).toFixed(2)}m²)</div>
+                  <div>Frente: <span className="font-bold text-[var(--color-text-main)]">{lotMetrics.calibrated.frente.toFixed(2)}m</span> (desvio: -{(lotMetrics.raw.frente - lotMetrics.calibrated.frente).toFixed(2)}m)</div>
+                  <div>Área: <span className="font-bold text-[var(--color-text-main)]">{lotMetrics.calibrated.area.toFixed(2)} m²</span> (desvio: -{(lotMetrics.raw.area - lotMetrics.calibrated.area).toFixed(2)}m²)</div>
                 </div>
               </div>
             )}

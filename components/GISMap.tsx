@@ -17,9 +17,9 @@ const DynamicGISMapInside = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[550px] bg-slate-100 flex flex-col items-center justify-center border border-slate-200 rounded-xl">
+      <div className="w-full h-[550px] bg-[var(--color-background)] flex flex-col items-center justify-center border border-[var(--color-border)] rounded-xl">
         <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-        <span className="text-sm text-slate-500 font-semibold font-mono animate-pulse">
+        <span className="text-sm text-[var(--color-text-muted)] font-semibold font-mono animate-pulse">
           Carregando Mapa Dinâmico do GIS...
         </span>
       </div>

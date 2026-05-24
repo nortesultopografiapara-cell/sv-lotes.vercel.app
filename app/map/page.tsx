@@ -825,14 +825,14 @@ export default function MapPage() {
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
         <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
-           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+           <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
                 <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
                 <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--color-text-muted)]">
                 <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
               </div>
            </div>
@@ -840,9 +840,9 @@ export default function MapPage() {
 
         {/* TOP FLOATING HEADER - TOP LEFT */}
         <div className="absolute top-2 left-2 md:top-4 md:left-24 z-[400] pointer-events-auto">
-          <div className="flex items-center bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg p-2 max-w-[250px]">
+          <div className="flex items-center bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] shadow-lg rounded-lg p-2 max-w-[250px]">
              <div className="flex items-center gap-2 overflow-hidden">
-                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-gray-400 hover:text-white transition-colors" title="Voltar">
+                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-[var(--color-text-muted)] hover:text-white transition-colors" title="Voltar">
                    <ArrowLeft className="w-4 h-4" />
                 </button>
                 <h2 className="text-sm font-bold text-white truncate">{selectedProject.name}</h2>
@@ -853,39 +853,39 @@ export default function MapPage() {
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}
         <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
-           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
+           <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
              
              {user?.role !== 'BROKER' && (
                <>
                  {/* Import */}
                  <button 
                     onClick={() => setIsImportModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras</span>
                  </button>
                  
-                 <hr className="w-2/3 border-[#2d3340]" />
+                 <hr className="w-2/3 border-[var(--color-border)]" />
                </>
              )}
              
              {/* GPS */}
              <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#10b981]'}`}
              >
                 <Navigation className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
              </button>
              
              {/* Medição */}
              <button 
                 onClick={() => setMeasureActive(!measureActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#4999e9]'}`}
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
              </button>
              
              {/* Map Style */}
@@ -895,43 +895,43 @@ export default function MapPage() {
                    else if (activeLayer === 'streets') setActiveLayer('dark');
                    else setActiveLayer('satellite');
                 }} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#f59e0b] transition-colors group relative"
              >
                 <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                    {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
                 </span>
              </button>
              
              {user?.role !== 'BROKER' && (
                <>
-                 <hr className="w-2/3 border-[#2d3340]" />
+                 <hr className="w-2/3 border-[var(--color-border)]" />
                  
                  {/* Linha de Rua */}
                  <button 
                     onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#10b981]'}`}
                  >
                     <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
                  </button>
                  
                  {/* Identificar Frentes */}
                  <button 
                     onClick={handleIdentifyFronts} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-[var(--color-text-muted)] hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Scan className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
                  </button>
                  
                  {/* Visibility Toggle */}
                  <button 
                     onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-[#f59e0b]'}`}
                  >
                     {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                        {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
                     </span>
                  </button>
@@ -939,10 +939,10 @@ export default function MapPage() {
                  {/* Calibrar Escala */}
                  <button 
                     onClick={() => setIsScaleModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-cyan-400 transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-[var(--color-text-muted)] hover:text-cyan-400 transition-colors group relative"
                  >
                     <Settings className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                        Calibrar Escala
                     </span>
                  </button>
@@ -1033,7 +1033,7 @@ export default function MapPage() {
         {isScaleModalOpen && (
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
               <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[#11141a]/95">
+                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]/95">
                     <h3 className="font-bold text-white text-lg">Calibração de Escala Métrica</h3>
                     <button onClick={() => setIsScaleModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
                        <X className="w-5 h-5" />
@@ -1052,7 +1052,7 @@ export default function MapPage() {
                          placeholder="Ex: 0.994 ou 1.0"
                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] font-mono text-center text-lg"
                        />
-                       <p className="text-[10px] text-gray-500 mt-1">Fator padrão é 1.0. Menor que 1.0 encolhe as medidas calculadas; maior que 1.0 expande.</p>
+                       <p className="text-[10px] text-[var(--color-text-muted)] mt-1">Fator padrão é 1.0. Menor que 1.0 encolhe as medidas calculadas; maior que 1.0 expande.</p>
                     </div>
 
                     <div className="border-t border-[var(--color-border)] pt-4">

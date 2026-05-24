@@ -73,15 +73,15 @@ export default function Home() {
   return (
     <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
       {/* Visual Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 bg-white p-6 rounded-2xl shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-6 bg-[var(--color-surface)] p-6 rounded-2xl shadow-sm">
         <div>
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-6 h-6 text-emerald-600 animate-pulse" />
-            <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-800 uppercase">
+            <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-[var(--color-text-main)] uppercase">
               SV_LOTES <span className="text-neutral-400 font-normal">| Portal GIS Calibrado</span>
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
+          <p className="text-xs sm:text-sm text-[var(--color-text-muted)] mt-1 leading-relaxed">
             Sistema decisório de Ajuste de Projeção Métrica SIG-UTM. Fator Corretivo Ativo: <span className="font-mono text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">0.9971090670170828</span>
           </p>
         </div>
@@ -107,12 +107,12 @@ export default function Home() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Interactive map (col-span-7) */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
+          <div className="bg-[var(--color-surface)] p-4 rounded-2xl shadow-sm border border-[var(--color-border)]">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--color-border)] mb-3 text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-widest font-mono">
               <span className="flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-brand-500" /> Mapas Integrados SIRGAS2000
               </span>
-              <span className="flex items-center gap-1 font-mono text-slate-500 text-[10px]">
+              <span className="flex items-center gap-1 font-mono text-[var(--color-text-muted)] text-[10px]">
                 <Database className="w-3.5 h-3.5" /> Supabase Conectado
               </span>
             </div>
@@ -133,8 +133,8 @@ export default function Home() {
       </div>
 
       {/* Complete Recharts Analytical dashboards */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-        <div className="flex items-center gap-2 pb-4 border-b border-slate-100">
+      <div className="bg-[var(--color-surface)] p-6 rounded-2xl border border-[var(--color-border)] shadow-sm space-y-6">
+        <div className="flex items-center gap-2 pb-4 border-b border-[var(--color-border)]">
           <LayoutDashboard className="w-5 h-5 text-brand-500" />
           <h3 className="font-sans font-bold text-slate-700 text-sm uppercase tracking-wider">
             Painel Geral de Estatísticas e Metrologia Corretiva
