@@ -115,47 +115,14 @@ export default function LandingPage() {
               <p className="text-gray-400 max-w-2xl mx-auto text-lg font-light">Ferramentas avançadas para gestão, vendas, GIS e automação.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
-              <FeatureCard 
-                icon={<MapIcon className="text-[#00D26A]" />} 
-                title="Mapa GIS Interativo" 
-                desc="Acompanhe vendas em tempo real sobre mapa inteligente. Clique no lote e veja os dados."
-              />
-              <FeatureCard 
-                icon={<Calendar className="text-[#00D26A]" />} 
-                title="Reservas e Vendas" 
-                desc="Gerencie disponibilidade e propostas comerciais rapidamente em um fluxo organizado."
-              />
-              <FeatureCard 
-                icon={<FileText className="text-[#00D26A]" />} 
-                title="Contratos Automáticos" 
-                desc="Gere documentos preenchidos com os dados do cliente e do lote num clique."
-              />
-              <FeatureCard 
-                icon={<Wallet className="text-[#00D26A]" />} 
-                title="Financeiro Completo" 
-                desc="Títulos a receber, inadimplência, relatórios de caixa e projeção de faturamento."
-              />
-              <FeatureCard 
-                icon={<Users className="text-[#00D26A]" />} 
-                title="Corretores e Comissões" 
-                desc="Gestão impecável de corretores, pagamentos de comissão e controle de metas."
-              />
-              <FeatureCard 
-                icon={<AreaChart className="text-[#00D26A]" />} 
-                title="Relatórios PDF/Excel" 
-                desc="Auditoria e exportação de dados com layout refinado para reuniões executivas."
-              />
-              <FeatureCard 
-                icon={<Globe className="text-[#00D26A]" />} 
-                title="Multiempresa SaaS" 
-                desc="Organize diferentes CNPJs ou SPEs (loteamentos) com banco de dados seguro."
-              />
-              <FeatureCard 
-                icon={<Lock className="text-[#00D26A]" />} 
-                title="Segurança e Auditoria" 
-                desc="Registro completo de tudo que acontece no sistema e proteção rigorosa de acessos."
-              />
+            <div className="relative z-10 max-w-5xl mx-auto mt-12">
+                 <div className="absolute inset-0 bg-[#00D26A]/10 blur-[100px] rounded-full pointer-events-none" />
+                 <img 
+                    src="/recursos-mockup.png" 
+                    alt="SV Lotes Recursos Mockup" 
+                    className="relative z-10 w-full h-auto object-contain rounded-2xl shadow-2xl transition-transform duration-500 hover:scale-[1.02]"
+                 />
+                 <div className="absolute inset-0 z-10 rounded-2xl ring-1 ring-white/10 pointer-events-none" />
             </div>
           </div>
         </section>
