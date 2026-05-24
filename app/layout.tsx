@@ -1,6 +1,5 @@
 import './globals.css';
 import React from 'react';
-import { Sidebar } from '@/components/Layout';
 
 export const metadata = {
   title: 'SV_LOTES - GIS Digital Twin',
@@ -24,7 +23,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-slate-50 text-slate-900 selection:bg-brand-100 antialiased">
-        <Sidebar>{children}</Sidebar>
+        {children}
       </body>
     </html>
   );

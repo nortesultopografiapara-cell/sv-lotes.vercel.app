@@ -329,7 +329,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     return <div className="h-screen w-full bg-[var(--color-background)] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-t-transparent border-[var(--color-primary)] rounded-full"></div></div>;
   }
 
-  const isPublicStandalone = pathname === '/' || ['/login', '/onboarding', '/verify-email', '/auth/callback'].some(route => pathname.startsWith(route));
+  const isPublicStandalone = ['/login', '/onboarding', '/verify-email', '/auth/callback'].some(route => pathname.startsWith(route));
   if (isPublicStandalone) return <>{children}</>;
 
   // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
@@ -387,22 +387,22 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
-          <div className="h-20 flex items-center px-6 gap-3 border-b border-[var(--color-border)]">
+          <div className="h-20 flex items-center px-6 gap-3">
              {company?.logo_url ? (
                   <img src={company.logo_url} alt="Logo" className="max-h-12 w-full object-contain object-left" />
               ) : (
                   <>
                     <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wider text-[var(--color-primary)]">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
+                    <span className="font-sans font-bold text-xl tracking-wider text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
                   </>
               )}
           </div>
 
-          <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
+          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-1">
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
-                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-[var(--color-text-muted)] tracking-wider">
+                  <div key={`section-${idx}`} className="px-4 pt-4 pb-2 text-[11px] font-bold text-gray-500 tracking-wider">
                     {item.name}
                   </div>
                 );
@@ -412,14 +412,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 <Link 
                   key={item.href} 
                   href={item.href!}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
                     isActive 
-                      ? 'bg-[var(--color-info)]/20 text-[var(--color-info)] shadow-sm border border-[var(--color-info)]/30' 
-                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-info)] border border-transparent'
+                      ? 'bg-[var(--color-primary)]/10 text-white border border-[var(--color-primary)]/20 shadow-sm' 
+                      : 'text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)]/50 border border-transparent'
                   }`}
                 >
-                  {item.icon && <item.icon className={`w-5 h-5 ${isActive ? 'text-[var(--color-info)]' : 'text-[var(--color-text-muted)] group-hover:text-[var(--color-info)]'}`} />}
-                  <span className="text-[14.5px]">{item.name}</span>
+                  {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
+                  <span className="text-[14px]">{item.name}</span>
                 </Link>
               );
             })}
@@ -440,7 +440,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               ) : (
                   <>
                     <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wide text-[var(--color-primary)]">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
+                    <span className="font-sans font-bold text-xl tracking-wide text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
                   </>
               )}
           </div>
@@ -448,7 +448,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
-                  <div key={`section-${idx}`} className="px-3 pt-4 pb-2 text-[10px] font-bold text-[var(--color-text-muted)] tracking-wider">
+                  <div key={`section-${idx}`} className="px-3 pt-4 pb-2 text-[10px] font-bold text-gray-500 tracking-wider">
                     {item.name}
                   </div>
                 );
@@ -461,11 +461,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   onClick={() => isMobile && setIsOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
                     isActive 
-                      ? 'bg-[var(--color-info)]/20 text-[var(--color-info)] border border-[var(--color-info)]/30' 
-                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-[var(--color-info)] border border-transparent'
+                      ? 'bg-[var(--color-surface-bright)] text-[var(--color-primary)] border border-[var(--color-primary)]/20' 
+                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-white border border-transparent'
                   }`}
                 >
-                  {item.icon && <item.icon className={`w-5 h-5 ${isActive ? 'text-[var(--color-info)]' : 'text-[var(--color-text-muted)] group-hover:text-[var(--color-info)]'}`} />}
+                  {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
                   <span className="font-sans font-medium text-sm">{item.name}</span>
                 </Link>
               );
@@ -513,12 +513,12 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (
-          <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-surface)]">
+          <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">
             <div>
-              <h1 className="text-xl font-bold text-[var(--color-text)] flex items-center gap-1">
-                <span className="text-[var(--color-text-muted)] font-medium">Olá,</span> {user?.name || 'Usuário'} {user?.role === 'SUPER_ADMIN' && '(Super Admin)'}
+              <h1 className="text-xl font-medium text-white flex items-center gap-1">
+                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'} {user?.role === 'SUPER_ADMIN' && '(Super Admin)'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
+              <p className="text-sm text-[var(--color-text-muted)]">
                 {user?.role === 'SUPER_ADMIN' 
                   ? 'Painel de Controle da Plataforma' 
                   : user?.role === 'BROKER' 
@@ -529,7 +529,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
             <div className="flex items-center gap-6">
               {user?.role === 'SUPER_ADMIN' && (
-                <div className="px-3 py-1.5 rounded-full bg-[var(--color-success)]/10 text-[var(--color-success)] text-[11px] font-bold border border-[var(--color-success)]/30 tracking-widest shadow-sm">
+                <div className="px-3 py-1.5 rounded-full bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-bold border border-[#06b6d4]/20 tracking-wider">
                   MODO DEUS
                 </div>
               )}
@@ -538,37 +538,37 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               {/* Profile Dropdown */}
               <div className="relative group cursor-pointer">
                 <div className="flex items-center gap-3" title="Opções de Perfil">
-                  <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-md uppercase">
+                  <div className="w-10 h-10 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white font-bold text-lg shadow-lg uppercase">
                     {user?.name?.charAt(0) || 'U'}
                   </div>
-                  <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-[var(--color-text)] transition-colors" />
+                  <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
                 </div>
                 
-                <div className="absolute right-0 mt-2 w-56 bg-[var(--color-surface-bright)] border border-[var(--color-border)] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
-                  <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-                    <p className="font-bold text-[var(--color-text)] truncate">{user?.name}</p>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-1 truncate">{user?.email}</p>
+                <div className="absolute right-0 mt-2 w-56 bg-[#1a1f29] border border-[#2d3340] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
+                  <div className="p-4 border-b border-[#2d3340] bg-[#151a23]">
+                    <p className="font-semibold text-white truncate">{user?.name}</p>
+                    <p className="text-xs text-gray-400 mt-1 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
                     {user?.role === 'SUPER_ADMIN' ? (
-                      <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] rounded-lg transition-colors font-medium">
+                      <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
                         <User className="w-4 h-4" /> Meu Perfil Master
                       </Link>
                     ) : (
                       <>
-                        <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] rounded-lg transition-colors text-left font-medium">
+                        <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left">
                           <User className="w-4 h-4" /> Meu Perfil
                         </button>
-                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] rounded-lg transition-colors text-left mt-1 font-medium">
+                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
                           <Lock className="w-4 h-4" /> Alterar Senha
                         </button>
-                        <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] rounded-lg transition-colors text-left mt-1 font-medium">
+                        <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
                           <Shield className="w-4 h-4" /> Segurança
                         </button>
                       </>
                     )}
-                    <div className="h-px bg-[var(--color-border)] my-1" />
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors text-left font-medium">
+                    <div className="h-px bg-[#2d3340] my-1" />
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left">
                        <LogOut className="w-4 h-4" /> Sair do Sistema
                     </button>
                   </div>

@@ -1,311 +1,147 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
-import { motion } from 'motion/react';
-import { Globe, ShieldCheck, Map as MapIcon, Calendar, FileText, Wallet, Users, AreaChart, Lock, ChevronRight, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { getSupabase } from '@/lib/supabase';
+import { calculateLotDimensions, CalibratedLotData } from '@/utils/calculateLotDimensions';
+import GISMap from '@/components/GISMap';
+import LotDetailsPanel from '@/components/LotDetailsPanel';
+import Dashboard from '@/components/Dashboard';
+import { ShieldCheck, Database, RefreshCw, Layers, Award, LayoutDashboard } from 'lucide-react';
 
-export default function LandingPage() {
+export default function Home() {
+  const [lots, setLots] = useState<any[]>([]);
+  const [selectedLot, setSelectedLot] = useState<any | null>(null);
+  const [selectedMetrics, setSelectedMetrics] = useState<CalibratedLotData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  // Fetch lots from database (blocks table)
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const supabaseClient = getSupabase();
+      const { data, error } = await supabaseClient
+        .from('blocks')
+        .select('*')
+        .order('lot_number', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        setLots(data);
+
+        // Auto-select "LOTE 02 QUADRA 01" Martine II as the primary demo lot
+        const demoLot = data.find(
+          (l: any) => l.lot_number === '2' && l.block_name === '01'
+        );
+
+        const activeLot = demoLot || data[0];
+        
+        if (activeLot) {
+          const ring = activeLot.geometry?.coordinates?.[0] || [];
+          const metrics = calculateLotDimensions(ring, {
+            frente: activeLot.frente,
+            fundo: activeLot.fundo,
+            lado_direito: activeLot.lado_direito,
+            lado_esquerdo: activeLot.lado_esquerdo
+          });
+          setSelectedLot(activeLot);
+          setSelectedMetrics(metrics);
+        }
+      }
+    } catch (e: any) {
+      console.error('Error fetching blocks:', e.message);
+      setNotification(`Erro ao consultar dados do Supabase. Utilizando dados fallback.`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleSelectLot = (lot: any, metrics: CalibratedLotData) => {
+    setSelectedLot(lot);
+    setSelectedMetrics(metrics);
+    setNotification(`Lote ${lot.lot_number} selecionado com calibração ativa!`);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
   return (
-    <div className="min-h-screen bg-[#040914] text-white selection:bg-[#00D26A] selection:text-black font-sans overflow-x-hidden">
-      {/* HEADER */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-[#040914]/80 backdrop-blur-md border-b border-white/5 transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-6 h-24 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative group">
-               <Globe className="w-10 h-10 text-[#00D26A] transition-transform duration-500 group-hover:rotate-180" />
-               <div className="absolute inset-0 bg-[#00D26A] blur-[15px] opacity-40 mix-blend-screen" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-2xl font-black tracking-tighter uppercase text-white leading-none">
-                SV <span className="text-[#00D26A] font-light">LOTES</span>
+    <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
+      {/* Visual Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6 bg-white p-6 rounded-2xl shadow-sm">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-6 h-6 text-emerald-600 animate-pulse" />
+            <h1 className="text-xl sm:text-2xl font-black font-sans tracking-tight text-slate-800 uppercase">
+              SV_LOTES <span className="text-neutral-400 font-normal">| Portal GIS Calibrado</span>
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
+            Sistema decisório de Ajuste de Projeção Métrica SIG-UTM. Fator Corretivo Ativo: <span className="font-mono text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">0.9971090670170828</span>
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {notification && (
+            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl font-sans tracking-wide animate-fade-in animate-pulse shadow-sm">
+              {notification}
+            </span>
+          )}
+          <button
+            onClick={loadData}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-4.5 py-2.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Recarregar SIG</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main interactive GIS section */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Interactive map (col-span-7) */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
+              <span className="flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-brand-500" /> Mapas Integrados SIRGAS2000
+              </span>
+              <span className="flex items-center gap-1 font-mono text-slate-500 text-[10px]">
+                <Database className="w-3.5 h-3.5" /> Supabase Conectado
               </span>
             </div>
-          </div>
-          
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-            <a href="#inicio" className="hover:text-white transition-colors">Início</a>
-            <a href="#recursos" className="hover:text-white transition-colors">Recursos</a>
-            <a href="#demonstracao" className="hover:text-white transition-colors">Demonstração</a>
-            <a href="#planos" className="hover:text-white transition-colors">Planos</a>
-            <a href="#contato" className="hover:text-white transition-colors">Contato</a>
-          </nav>
-
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/login" 
-              className="px-6 py-2.5 text-sm font-bold rounded-lg bg-[#0B1F3A] border border-[#0B1F3A] hover:bg-[#00D26A] hover:text-black hover:border-[#00D26A] text-white transition-all shadow-[0_0_20px_rgba(11,31,58,0.5)] hover:shadow-[0_0_25px_rgba(0,210,106,0.5)]"
-            >
-              Acessar Sistema
-            </Link>
+            <GISMap
+              onSelectLot={handleSelectLot}
+              selectedLotId={selectedLot?.id || null}
+              lots={lots}
+              isLoading={isLoading}
+              onRefresh={loadData}
+            />
           </div>
         </div>
-      </header>
 
-      <main>
-        {/* HERO */}
-        <section id="inicio" className="relative pt-40 pb-24 md:pt-48 md:pb-40 px-6 overflow-hidden">
-          {/* Background effects */}
-          <div className="absolute top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[#0B1F3A]/40 rounded-full blur-[150px] pointer-events-none" />
-          <div className="absolute top-1/4 right-0 w-[600px] h-[600px] bg-[#00D26A]/10 rounded-full blur-[120px] pointer-events-none" />
-          <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#00D26A 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-          <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
-
-          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-            >
-              <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
-                SV LOTES — Gestão Inteligente para <span className="text-[#00D26A] drop-shadow-[0_0_15px_rgba(0,210,106,0.4)]">Loteamentos.</span>
-              </h1>
-              <p className="text-lg md:text-xl text-gray-300 leading-relaxed mb-10 max-w-lg font-light">
-                Mapa GIS, contratos, financeiro, reservas e relatórios em uma única plataforma.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row items-center gap-4 mb-10">
-                <a 
-                  href="#demonstracao" 
-                  className="w-full sm:w-auto px-8 py-4 flex items-center justify-center gap-2 text-sm font-bold rounded-xl bg-[#00D26A] hover:bg-[#00b058] text-black transition-all shadow-[0_0_30px_rgba(0,210,106,0.3)] hover:shadow-[0_0_40px_rgba(0,210,106,0.5)]"
-                >
-                  Solicitar Demonstração
-                </a>
-                <Link 
-                  href="/login" 
-                  className="w-full sm:w-auto px-8 py-4 flex items-center justify-center gap-2 text-sm font-bold rounded-xl bg-transparent border border-[#0B1F3A] text-white hover:bg-[#0B1F3A]/50 hover:border-[#00D26A]/50 transition-all shadow-[0_0_20px_rgba(11,31,58,0.2)]"
-                >
-                  Acessar Sistema <ChevronRight className="w-4 h-4" />
-                </Link>
-              </div>
-
-              {/* Mini Indicators */}
-              <div className="flex flex-wrap items-center gap-6 text-xs font-semibold text-gray-400">
-                 <div className="flex items-center gap-1.5"><ShieldCheck className="w-5 h-5 text-[#00D26A]" /> 100% Web e Seguro</div>
-                 <div className="flex items-center gap-1.5"><MapIcon className="w-5 h-5 text-[#00D26A]" /> GIS Interativo</div>
-                 <div className="flex items-center gap-1.5"><FileText className="w-5 h-5 text-[#00D26A]" /> Automação de Contratos</div>
-                 <div className="flex items-center gap-1.5"><Users className="w-5 h-5 text-[#00D26A]" /> Multiempresa SaaS</div>
-              </div>
-
-            </motion.div>
-
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative w-full aspect-[4/3] max-w-4xl mx-auto lg:ml-auto"
-            >
-                 <div className="absolute inset-0 bg-[#00D26A]/10 blur-[100px] rounded-full pointer-events-none" />
-                 <img 
-                    src="/hero-mockup.png" 
-                    alt="SV Lotes Dashboard Mockup" 
-                    className="relative z-10 w-full h-auto object-contain rounded-2xl shadow-2xl transition-transform duration-500 hover:scale-[1.02]"
-                 />
-                 <div className="absolute inset-0 z-10 rounded-2xl ring-1 ring-white/10 pointer-events-none" />
-            </motion.div>
-          </div>
-        </section>
-
-        {/* RECURSOS */}
-        <section id="recursos" className="py-24 px-6 bg-[#0B1F3A]/10 border-y border-[#0B1F3A]">
-          <div className="max-w-7xl mx-auto relative z-10">
-            <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#00D26A 2px, transparent 2px)', backgroundSize: '60px 60px' }} />
-            <div className="text-center mb-16 relative z-10">
-              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4 text-white">Tudo que sua loteadora precisa</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto text-lg font-light">Ferramentas avançadas para gestão, vendas, GIS e automação.</p>
-            </div>
-
-            <div className="relative z-10 max-w-5xl mx-auto mt-12">
-                 <div className="absolute inset-0 bg-[#00D26A]/10 blur-[100px] rounded-full pointer-events-none" />
-                 <img 
-                    src="/recursos-mockup.png" 
-                    alt="SV Lotes Recursos Mockup" 
-                    className="relative z-10 w-full h-auto object-contain rounded-2xl shadow-2xl transition-transform duration-500 hover:scale-[1.02]"
-                 />
-                 <div className="absolute inset-0 z-10 rounded-2xl ring-1 ring-white/10 pointer-events-none" />
-            </div>
-          </div>
-        </section>
-
-        {/* DEMONSTRAÇÃO VISUAL */}
-        <section id="demonstracao" className="py-32 px-6 relative overflow-hidden bg-[#040914]">
-          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-[#00D26A]/5 rounded-full blur-[150px] pointer-events-none -translate-y-1/2" />
-          
-          <div className="max-w-7xl mx-auto flex flex-col items-center">
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 text-center">Demonstração da Plataforma</h2>
-            <p className="text-gray-400 text-lg mb-12 text-center max-w-2xl font-light">Interface moderna, intuitiva e completa.</p>
-            
-            {/* Fake Tabs */}
-            <div className="flex flex-wrap justify-center gap-2 mb-12 p-1.5 bg-[#0B1F3A]/50 rounded-2xl backdrop-blur-md border border-[#0B1F3A]">
-               <div className="px-6 py-2.5 rounded-xl bg-[#00D26A] text-black font-bold text-sm shadow-[0_0_20px_rgba(0,210,106,0.5)]">Dashboard</div>
-               <div className="px-6 py-2.5 rounded-xl text-gray-400 font-medium text-sm hover:text-white cursor-pointer transition-colors hover:bg-white/5">Mapa GIS</div>
-               <div className="px-6 py-2.5 rounded-xl text-gray-400 font-medium text-sm hover:text-white cursor-pointer transition-colors hover:bg-white/5">Financeiro</div>
-               <div className="px-6 py-2.5 rounded-xl text-gray-400 font-medium text-sm hover:text-white cursor-pointer transition-colors hover:bg-white/5">Contratos</div>
-               <div className="px-6 py-2.5 rounded-xl text-gray-400 font-medium text-sm hover:text-white cursor-pointer transition-colors hover:bg-white/5">Corretores</div>
-               <div className="px-6 py-2.5 rounded-xl text-gray-400 font-medium text-sm hover:text-white cursor-pointer transition-colors hover:bg-white/5">Clientes</div>
-            </div>
-
-            {/* Huge Mockup Screen - Multi-panel */}
-            <div className="w-full max-w-6xl aspect-[16/8] bg-[#040914]/90 backdrop-blur-2xl border border-[#0B1F3A] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative flex overflow-hidden ring-1 ring-[#0B1F3A]/50 p-6 gap-6">
-                 {/* Internal Dashboard Mockup */}
-                 <div className="flex-1 border border-[#0B1F3A]/50 bg-[#0B1F3A]/20 rounded-2xl overflow-hidden flex flex-col p-4 shadow-xl">
-                     <div className="h-6 w-1/3 bg-white/5 rounded-md mb-6" />
-                     <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="h-24 bg-white/5 border border-white/5 rounded-xl" />
-                        <div className="h-24 bg-white/5 border border-white/5 rounded-xl" />
-                     </div>
-                     <div className="flex-1 bg-white/5 border border-white/5 rounded-xl mt-2 flex items-center justify-center relative overflow-hidden">
-                       <AreaChart className="w-16 h-16 text-[#00D26A] opacity-20" />
-                       <div className="absolute bottom-0 inset-x-0 h-1/2 bg-gradient-to-t from-[#00D26A]/20 to-transparent" />
-                     </div>
-                 </div>
-
-                 {/* Middle GIS Mockup */}
-                 <div className="flex-[1.5] border border-[#0B1F3A] bg-[#0B1F3A]/40 rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(11,31,58,0.8)] relative group">
-                    <div className="absolute inset-0 z-0 bg-[#040914] opacity-80" style={{ backgroundImage: 'radial-gradient(rgba(0, 210, 106, 0.4) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-                    <div className="absolute inset-4 border border-[#00D26A]/40 rounded-xl bg-[#00D26A]/5 backdrop-blur-sm z-10 p-4 flex flex-col items-center justify-center overflow-hidden">
-                       <MapIcon className="w-20 h-20 text-[#00D26A]/50 mb-4" />
-                       <div className="flex flex-wrap items-center justify-center gap-1 w-full h-full rotate-6">
-                           {Array(30).fill(0).map((_, i) => (
-                              <div key={i} className={`w-8 h-12 rounded-sm ${i%3===0 ? 'bg-red-500/80 border border-red-500' : 'bg-[#00D26A]/80 border border-[#00D26A]'}`} />
-                           ))}
-                       </div>
-                    </div>
-                 </div>
-
-                 {/* Right Side Panel */}
-                 <div className="flex-1 border border-[#0B1F3A]/50 bg-[#0B1F3A]/20 rounded-2xl overflow-hidden flex flex-col p-4 shadow-xl">
-                     <div className="h-6 w-1/2 bg-white/5 rounded-md mb-6" />
-                     <div className="space-y-3">
-                        <div className="h-12 bg-white/5 border border-white/5 rounded-lg flex items-center px-4 justify-between"><div className="w-1/2 h-2 bg-white/10 rounded-full" /><div className="w-1/4 h-4 bg-[#00D26A]/50 rounded-md" /></div>
-                        <div className="h-12 bg-white/5 border border-white/5 rounded-lg flex items-center px-4 justify-between"><div className="w-2/3 h-2 bg-white/10 rounded-full" /><div className="w-1/4 h-4 bg-[#0B1F3A]/80 rounded-md" /></div>
-                        <div className="h-12 bg-white/5 border border-white/5 rounded-lg flex items-center px-4 justify-between"><div className="w-1/2 h-2 bg-white/10 rounded-full" /><div className="w-1/4 h-4 bg-red-500/50 rounded-md" /></div>
-                        <div className="h-12 bg-white/5 border border-white/5 rounded-lg flex items-center px-4 justify-between"><div className="w-3/4 h-2 bg-white/10 rounded-full" /><div className="w-1/4 h-4 bg-[#00D26A]/50 rounded-md" /></div>
-                     </div>
-                 </div>
-            </div>
-            
-            {/* Carousel dots */}
-            <div className="flex justify-center gap-2 mt-8">
-               <div className="w-2 h-2 rounded-full bg-[#00D26A] shadow-[0_0_10px_rgba(0,210,106,0.8)]" />
-               <div className="w-2 h-2 rounded-full bg-gray-700" />
-               <div className="w-2 h-2 rounded-full bg-gray-700" />
-               <div className="w-2 h-2 rounded-full bg-gray-700" />
-            </div>
-          </div>
-        </section>
-
-        {/* PLANOS */}
-        <section id="planos" className="py-32 px-6 bg-[#040914] border-t border-[#0B1F3A]">
-          <div className="max-w-7xl mx-auto relative z-10">
-             <div className="text-center mb-20">
-              <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 text-white">Escolha o plano ideal</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto text-lg font-light">Planos flexíveis para loteadoras de todos os tamanhos.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-              {/* Básico */}
-              <div className="bg-[#0B1F3A]/20 backdrop-blur-xl border border-[#0B1F3A] hover:border-[#00D26A]/30 rounded-[2rem] p-10 flex flex-col transition-all duration-300 shadow-lg">
-                <h3 className="text-xl font-bold text-gray-300 mb-2">Básico</h3>
-                <div className="flex items-start gap-1 mb-8">
-                  <span className="text-4xl font-black text-white">R$ 329,99</span>
-                  <span className="text-gray-500 font-medium text-sm mt-2">/mês</span>
-                </div>
-                <div className="text-sm font-bold text-gray-400 mb-8 border-b border-[#0B1F3A] pb-4">
-                  3 loteamentos<br/>5 corretores
-                </div>
-                <div className="space-y-5 mb-10 flex-1">
-                  <PlanFeature text="Mapa GIS Interativo" />
-                  <PlanFeature text="Contratos Automáticos" />
-                  <PlanFeature text="Financeiro Básico" />
-                  <PlanFeature text="Suporte Ticket" />
-                </div>
-                <Link href="#contato" className="block w-full text-center px-6 py-4 rounded-xl bg-transparent border border-[#0B1F3A] hover:bg-[#0B1F3A]/50 text-white font-bold transition-colors">
-                  Escolher Plano
-                </Link>
-              </div>
-
-              {/* Business - DESTACADO */}
-              <div className="bg-[#0B1F3A] border border-[#00D26A] rounded-[2.5rem] p-12 flex flex-col relative transform md:-translate-y-8 shadow-[0_0_50px_rgba(0,210,106,0.15)] ring-1 ring-[#00D26A]/50 z-10">
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-6 py-1.5 bg-[#00D26A] rounded-full text-[10px] font-black tracking-widest uppercase text-black shadow-[0_0_15px_rgba(0,210,106,0.5)] whitespace-nowrap">Mais Popular</div>
-                <h3 className="text-2xl font-bold text-[#00D26A] mb-2">Business</h3>
-                <div className="flex items-start gap-1 mb-8">
-                  <span className="text-5xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">R$ 549,99</span>
-                  <span className="text-gray-400 font-medium text-sm mt-3">/mês</span>
-                </div>
-                 <div className="text-sm font-bold text-gray-300 mb-8 border-b border-[#00D26A]/20 pb-4">
-                  6 loteamentos<br/>10 corretores
-                </div>
-                <div className="space-y-5 mb-10 flex-1">
-                  <PlanFeature text="Mapa GIS Interativo" />
-                  <PlanFeature text="Contratos Automáticos" />
-                  <PlanFeature text="Financeiro Completo" />
-                  <PlanFeature text="Relatórios PDF/Excel" />
-                  <PlanFeature text="Suporte via WhatsApp" />
-                </div>
-                <Link href="/login" className="block w-full text-center px-6 py-4 rounded-xl bg-[#00D26A] hover:bg-[#00b058] text-black font-black tracking-wide shadow-[0_0_20px_rgba(0,210,106,0.3)] transition-all">
-                  Escolher Plano
-                </Link>
-              </div>
-
-              {/* Profissional */}
-              <div className="bg-[#0B1F3A]/20 backdrop-blur-xl border border-[#0B1F3A] hover:border-[#00D26A]/30 rounded-[2rem] p-10 flex flex-col transition-all duration-300 shadow-lg">
-                <h3 className="text-xl font-bold text-gray-300 mb-2">Profissional</h3>
-                <div className="flex items-start gap-1 mb-8">
-                  <span className="text-4xl font-black text-white">R$ 1.099,99</span>
-                  <span className="text-gray-500 font-medium text-sm mt-2">/mês</span>
-                </div>
-                <div className="text-sm font-bold text-gray-400 mb-8 border-b border-[#0B1F3A] pb-4">
-                  25 loteamentos<br/>50 corretores
-                </div>
-                <div className="space-y-5 mb-10 flex-1">
-                  <PlanFeature text="Mapa GIS Interativo" />
-                  <PlanFeature text="Contratos Automáticos" />
-                  <PlanFeature text="Financeiro Completo" />
-                  <PlanFeature text="Relatórios PDF/Excel" />
-                  <PlanFeature text="Suporte via WhatsApp" />
-                </div>
-                <Link href="#contato" className="block w-full text-center px-6 py-4 rounded-xl bg-transparent border border-[#0B1F3A] hover:bg-[#0B1F3A]/50 text-white font-bold transition-colors">
-                  Escolher Plano
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-
-      </main>
-
-      {/* FOOTER */}
-      <footer className="border-t border-[#0B1F3A] bg-[#040914] py-10 px-6 relative z-10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between text-sm text-gray-500 font-medium tracking-wide">
-           <p>SV LOTES © {new Date().getFullYear()}</p>
+        {/* Dynamic Details / Sidebar Section (col-span-5) */}
+        <div className="lg:col-span-5">
+          <LotDetailsPanel lot={selectedLot} metrics={selectedMetrics} />
         </div>
-      </footer>
-    </div>
-  );
-}
+      </div>
 
-function FeatureCard({ icon, title, desc }: any) {
-  return (
-    <div className="group relative bg-[#0B1F3A]/40 backdrop-blur-md border border-[#0B1F3A] rounded-2xl p-6 hover:border-[#00D26A] transition-all duration-300 overflow-hidden shadow-lg hover:shadow-[0_0_25px_rgba(0,210,106,0.15)] flex flex-col">
-       {/* Hover gradient glow */}
-       <div 
-         className="absolute -right-8 -top-8 w-24 h-24 rounded-full opacity-0 blur-2xl group-hover:opacity-20 transition-opacity duration-500 bg-[#00D26A]" 
-       />
-       <div className="w-12 h-12 bg-[#040914] rounded-xl border border-[#0B1F3A] flex items-center justify-center mb-4 group-hover:border-[#00D26A]/50 transition-colors">
-          {icon}
-       </div>
-       <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
-       <p className="text-sm text-gray-400 leading-relaxed">{desc}</p>
-    </div>
-  );
-}
-
-function PlanFeature({ text }: { text: string }) {
-  return (
-     <div className="flex items-center gap-3">
-        <CheckCircle2 className="w-4 h-4 text-[#00D26A]" />
-        <span className="text-gray-300 text-sm">{text}</span>
-     </div>
+      {/* Complete Recharts Analytical dashboards */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+        <div className="flex items-center gap-2 pb-4 border-b border-slate-100">
+          <LayoutDashboard className="w-5 h-5 text-brand-500" />
+          <h3 className="font-sans font-bold text-slate-700 text-sm uppercase tracking-wider">
+            Painel Geral de Estatísticas e Metrologia Corretiva
+          </h3>
+        </div>
+        <Dashboard lots={lots} />
+      </div>
+    </main>
   );
 }

@@ -176,8 +176,8 @@ export default function CompaniesPage() {
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-text)] mb-1 flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-[var(--color-info)]" />
+          <h1 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
+            <Building2 className="w-6 h-6 text-[#06b6d4]" />
             Gerenciar Empresas
           </h1>
           <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
@@ -209,7 +209,7 @@ export default function CompaniesPage() {
               setCompanyToEdit(null);
               setIsModalOpen(true);
             }}
-            className="bg-[var(--color-info)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors hover:brightness-110 shadow-sm"
+            className="bg-[#06b6d4] hover:bg-[#0891b2] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
           >
             <Plus className="w-5 h-5" />
             Nova Empresa
@@ -219,7 +219,7 @@ export default function CompaniesPage() {
 
       {/* Multi-Tenant Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[var(--color-info)]" bg="bg-[var(--color-info)]/10" border="border-[var(--color-info)]/20" />
+        <StatCard title="Total de Empresas" value={companies.length} icon={Database} iconColor="text-[#06b6d4]" bg="bg-[#06b6d4]/10" border="border-[#06b6d4]/20" />
         <StatCard title="Empresas Ativas" value={activeCompanies} icon={CheckCircle2} iconColor="text-[var(--color-success)]" bg="bg-[var(--color-success)]/10" border="border-[var(--color-success)]/20" />
         <StatCard title="Total de Loteamentos" value={totalProjects} icon={MapIcon} iconColor="text-[var(--color-primary)]" bg="bg-[var(--color-primary)]/10" border="border-[var(--color-primary)]/20" />
         <StatCard title="Total de Usuários" value={totalUsers} icon={Users} iconColor="text-[var(--color-purple)]" bg="bg-[var(--color-purple)]/10" border="border-[var(--color-purple)]/20" />
@@ -235,7 +235,7 @@ export default function CompaniesPage() {
               placeholder="Buscar por nome ou slug..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#06b6d4] transition-colors"
             />
           </div>
         </div>
@@ -405,7 +405,7 @@ function CompanyRow({ company, user, onEdit, onView, onDelete, onUpdateStatus, o
     <tr className={`border-b border-[#2d3340] hover:bg-[#1a1f29] transition-colors group ${isMain ? 'bg-blue-500/5 hover:bg-blue-500/10' : ''}`}>
       <td className="p-4">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-blue-500/20 text-blue-500 border-blue-500/30' : 'bg-[var(--color-info)]/10 text-[var(--color-info)] border-[var(--color-info)]/20'}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm border ${isMain ? 'bg-blue-500/20 text-blue-500 border-blue-500/30' : 'bg-[#0b1111] text-gray-300 border-[#2d3340]'}`}>
             {company.name.charAt(0)}
           </div>
           <div>

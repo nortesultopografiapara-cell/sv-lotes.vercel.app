@@ -3,9 +3,9 @@ import { calibrateDistance, calibrateArea } from './measurementCalibration';
 const PI = Math.PI;
 const a = 6378137.0; // semi-major axis
 const f = 1.0 / 298.257223563; // flattening
-const bDef = a * (1.0 - f); // semi-minor axis
-const e2 = (a*a - bDef*bDef) / (a*a);
-const ePrime2 = (a*a - bDef*bDef) / (bDef*bDef);
+const b = a * (1.0 - f); // semi-minor axis
+const e2 = (a*a - b*b) / (a*a);
+const ePrime2 = (a*a - b*b) / (b*b);
 
 export interface LatLng {
   lng: number;
@@ -32,31 +32,6 @@ export interface CalibratedLotData {
     lado_esquerdo: number;
     area: number;
   };
-  frente?: number;
-  fundo?: number;
-  ladoDireito?: number;
-  ladoEsquerdo?: number;
-  area?: number;
-}
-
-export interface GISSegment {
-  p1: [number, number];
-  p2: [number, number];
-  length: number;
-}
-
-// Global project factors local state for dynamic scaling
-const globalProjectFactors: Record<string, number> = {};
-
-export function getProjectMeasurementFactor(projectId?: string): number {
-  if (!projectId) return 1.0;
-  return globalProjectFactors[projectId] ?? 1.0;
-}
-
-export function applyProjectMeasurementFactor(value: number, projectId?: string): void {
-  if (projectId) {
-    globalProjectFactors[projectId] = value;
-  }
 }
 
 function degreesToRadians(deg: number): number {
@@ -114,105 +89,10 @@ export function areaShoelace(pts: UtmPoint[]): number {
   return Math.abs(sum) / 2.0;
 }
 
-export function extractSegments(coords: [number, number][], polygons?: any[], projectId?: string): GISSegment[] {
-  let workingCoords = [...coords];
-  if (
-    workingCoords.length > 2 &&
-    workingCoords[0][0] === workingCoords[workingCoords.length - 1][0] &&
-    workingCoords[0][1] === workingCoords[workingCoords.length - 1][1]
-  ) {
-    workingCoords = workingCoords.slice(0, workingCoords.length - 1);
-  }
-  const utmPts = workingCoords.map(c => wgs84ToUtm(c[0], c[1], 22));
-  const n = utmPts.length;
-  const segments: GISSegment[] = [];
-  for (let i = 0; i < n; i++) {
-    const p1_utm = utmPts[i];
-    const p2_utm = utmPts[(i + 1) % n];
-    const distance = dist(p1_utm, p2_utm);
-    segments.push({
-      p1: workingCoords[i],
-      p2: workingCoords[(i + 1) % n],
-      length: Number(distance.toFixed(2))
-    });
-  }
-  return segments;
-}
-
-export function detectSides(segments: GISSegment[], frontSeg: GISSegment, backSeg: GISSegment | null): { ladoDireito: number; ladoEsquerdo: number } {
-  const otherSegs = segments.filter(s => s !== frontSeg && s !== backSeg);
-  let ladoDireito = 0;
-  let ladoEsquerdo = 0;
-  if (otherSegs.length >= 2) {
-    ladoDireito = otherSegs[0].length;
-    ladoEsquerdo = otherSegs[1].length;
-  } else if (otherSegs.length === 1) {
-    ladoDireito = otherSegs[0].length;
-    ladoEsquerdo = otherSegs[0].length;
-  } else {
-    ladoDireito = frontSeg.length;
-    ladoEsquerdo = frontSeg.length;
-  }
-  return { ladoDireito, ladoEsquerdo };
-}
-
-export function normalizeDimensions(value: number, reference: number = 0): number {
-  return Number(value.toFixed(2));
-}
-
-export function calculateCorrectedArea(area: number, projectId?: string): number {
-  return Number(area.toFixed(2));
-}
-
-function parseOfficial(value: any): number | null {
-  if (value === null || value === undefined) return null;
-  const str = String(value).trim();
-  if (str === "" || str.toLowerCase() === "null") return null;
-  const cleaned = str.replace(",", ".");
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? null : num;
-}
-
 /**
- * Calculates and calibrates structural lot boundaries from coordinates,
- * prioritizing official database metrics if present.
+ * Calculates and calibrates structural lot boundaries from coordinates
  */
-export function calculateLotDimensions(
-  coords: [number, number][],
-  allPolys?: any,
-  dbDefault?: any,
-  extraOptions?: any,
-  moreOptions?: any
-): CalibratedLotData {
-  // Extract Project ID
-  const projectId = dbDefault?.project_id || extraOptions?.projectId || moreOptions?.projectId || "";
-
-  // Look for any passed official properties/values
-  const searchSources = [dbDefault, extraOptions, moreOptions].filter(src => src && typeof src === 'object');
-  
-  let dbFrenteOficial: number | null = null;
-  let dbFundoOficial: number | null = null;
-  let dbDirOficial: number | null = null;
-  let dbEsqOficial: number | null = null;
-  let dbAreaOficial: number | null = null;
-
-  for (const src of searchSources) {
-    if (dbFrenteOficial === null && src.frente_oficial !== undefined) dbFrenteOficial = parseOfficial(src.frente_oficial);
-    if (dbFundoOficial === null && src.fundo_oficial !== undefined) dbFundoOficial = parseOfficial(src.fundo_oficial);
-    if (dbDirOficial === null && src.dir_oficial !== undefined) dbDirOficial = parseOfficial(src.dir_oficial);
-    if (dbEsqOficial === null && src.esq_oficial !== undefined) dbEsqOficial = parseOfficial(src.esq_oficial);
-    if (dbAreaOficial === null && src.area !== undefined) dbAreaOficial = parseOfficial(src.area);
-    
-    if (src.properties && typeof src.properties === 'object') {
-      const p = src.properties;
-      if (dbFrenteOficial === null && p.frente_oficial !== undefined) dbFrenteOficial = parseOfficial(p.frente_oficial);
-      if (dbFundoOficial === null && p.fundo_oficial !== undefined) dbFundoOficial = parseOfficial(p.fundo_oficial);
-      if (dbDirOficial === null && p.dir_oficial !== undefined) dbDirOficial = parseOfficial(p.dir_oficial);
-      if (dbEsqOficial === null && p.esq_oficial !== undefined) dbEsqOficial = parseOfficial(p.esq_oficial);
-      if (dbAreaOficial === null && p.area !== undefined) dbAreaOficial = parseOfficial(p.area);
-    }
-  }
-
+export function calculateLotDimensions(coords: [number, number][], dbDefault?: { frente?: number, fundo?: number, lado_direito?: number, lado_esquerdo?: number }): CalibratedLotData {
   // Clear any redundant closed loop point
   let workingCoords = [...coords];
   if (
@@ -234,11 +114,11 @@ export function calculateLotDimensions(
   // Calculate planar raw area
   const rawArea = areaShoelace(utmPts);
 
-  // Targets for search/comparison (using parsed official values or legacy fields as backdoors)
-  const dbF = dbFrenteOficial ?? parseOfficial(dbDefault?.frente) ?? 0;
-  const dbFu = dbFundoOficial ?? parseOfficial(dbDefault?.fundo) ?? 0;
-  const dbR = dbDirOficial ?? parseOfficial(dbDefault?.lado_direito) ?? parseOfficial(dbDefault?.ladoDireito) ?? 0;
-  const dbL = dbEsqOficial ?? parseOfficial(dbDefault?.lado_esquerdo) ?? parseOfficial(dbDefault?.ladoEsquerdo) ?? 0;
+  // Default db comparison targets
+  const dbF = dbDefault?.frente ?? 0;
+  const dbFu = dbDefault?.fundo ?? 0;
+  const dbR = dbDefault?.lado_direito ?? 0;
+  const dbL = dbDefault?.lado_esquerdo ?? 0;
 
   // Align segments which best correspond to layout (Frente, Esq, Fundo, Dir)
   let matched = { frente: 0, esq: 0, fundo: 0, dir: 0 };
@@ -302,133 +182,24 @@ export function calculateLotDimensions(
   const rawRight = matched.dir;
   const rawLeft = matched.esq;
 
-  // Determine calibration factor
-  const factor = projectId ? getProjectMeasurementFactor(projectId) : 1.0;
+  // Perform calibration
+  const frenteCal = calibrateDistance(rawFront);
+  const fundoCal = calibrateDistance(rawBack);
+  const dirCal = calibrateDistance(rawRight);
+  const esqCal = calibrateDistance(rawLeft);
+  const areaCal = calibrateArea(rawArea);
 
-  // 1. Resolve Frente
-  let frenteCal: number;
-  let frenteRaw: number;
-  if (dbFrenteOficial !== null) {
-    frenteCal = dbFrenteOficial;
-    frenteRaw = dbFrenteOficial;
-    console.log("GIS_OFFICIAL_MEASUREMENTS_USED", "frente_oficial");
-  } else {
-    if (factor !== 1.0) {
-      frenteCal = Number((rawFront * factor).toFixed(2));
-      frenteRaw = Number(rawFront.toFixed(2));
-      console.log("GIS_FACTOR_K_FALLBACK_USED", "frente");
-    } else {
-      const globCal = calibrateDistance(rawFront);
-      if (globCal !== rawFront) {
-        frenteCal = globCal;
-        frenteRaw = Number(rawFront.toFixed(2));
-        console.log("GIS_FACTOR_K_FALLBACK_USED", "frente");
-      } else {
-        frenteCal = Number(rawFront.toFixed(2));
-        frenteRaw = Number(rawFront.toFixed(2));
-        console.log("GIS_GEOMETRY_FALLBACK_USED", "frente");
-      }
-    }
-  }
-
-  // 2. Resolve Fundo
-  let fundoCal: number;
-  let fundoRaw: number;
-  if (dbFundoOficial !== null) {
-    fundoCal = dbFundoOficial;
-    fundoRaw = dbFundoOficial;
-    console.log("GIS_OFFICIAL_MEASUREMENTS_USED", "fundo_oficial");
-  } else {
-    if (factor !== 1.0) {
-      fundoCal = Number((rawBack * factor).toFixed(2));
-      fundoRaw = Number(rawBack.toFixed(2));
-      console.log("GIS_FACTOR_K_FALLBACK_USED", "fundo");
-    } else {
-      const globCal = calibrateDistance(rawBack);
-      if (globCal !== rawBack) {
-        fundoCal = globCal;
-        fundoRaw = Number(rawBack.toFixed(2));
-        console.log("GIS_FACTOR_K_FALLBACK_USED", "fundo");
-      } else {
-        fundoCal = Number(rawBack.toFixed(2));
-        fundoRaw = Number(rawBack.toFixed(2));
-        console.log("GIS_GEOMETRY_FALLBACK_USED", "fundo");
-      }
-    }
-  }
-
-  // 3. Resolve Lado Direito
-  let dirCal: number;
-  let dirRaw: number;
-  if (dbDirOficial !== null) {
-    dirCal = dbDirOficial;
-    dirRaw = dbDirOficial;
-    console.log("GIS_OFFICIAL_MEASUREMENTS_USED", "dir_oficial");
-  } else {
-    if (factor !== 1.0) {
-      dirCal = Number((rawRight * factor).toFixed(2));
-      dirRaw = Number(rawRight.toFixed(2));
-      console.log("GIS_FACTOR_K_FALLBACK_USED", "lado_direito");
-    } else {
-      const globCal = calibrateDistance(rawRight);
-      if (globCal !== rawRight) {
-        dirCal = globCal;
-        dirRaw = Number(rawRight.toFixed(2));
-        console.log("GIS_FACTOR_K_FALLBACK_USED", "lado_direito");
-      } else {
-        dirCal = Number(rawRight.toFixed(2));
-        dirRaw = Number(rawRight.toFixed(2));
-        console.log("GIS_GEOMETRY_FALLBACK_USED", "lado_direito");
-      }
-    }
-  }
-
-  // 4. Resolve Lado Esquerdo
-  let esqCal: number;
-  let esqRaw: number;
-  if (dbEsqOficial !== null) {
-    esqCal = dbEsqOficial;
-    esqRaw = dbEsqOficial;
-    console.log("GIS_OFFICIAL_MEASUREMENTS_USED", "esq_oficial");
-  } else {
-    if (factor !== 1.0) {
-      esqCal = Number((rawLeft * factor).toFixed(2));
-      esqRaw = Number(rawLeft.toFixed(2));
-      console.log("GIS_FACTOR_K_FALLBACK_USED", "lado_esquerdo");
-    } else {
-      const globCal = calibrateDistance(rawLeft);
-      if (globCal !== rawLeft) {
-        esqCal = globCal;
-        esqRaw = Number(rawLeft.toFixed(2));
-        console.log("GIS_FACTOR_K_FALLBACK_USED", "lado_esquerdo");
-      } else {
-        esqCal = Number(rawLeft.toFixed(2));
-        esqRaw = Number(rawLeft.toFixed(2));
-        console.log("GIS_GEOMETRY_FALLBACK_USED", "lado_esquerdo");
-      }
-    }
-  }
-
-  // 5. Resolve Area
-  let areaCal: number;
-  let areaRaw: number;
-  if (dbAreaOficial !== null) {
-    areaCal = dbAreaOficial;
-    areaRaw = dbAreaOficial;
-    console.log("GIS_OFFICIAL_MEASUREMENTS_USED", "area");
-  } else {
-    areaCal = calibrateArea(rawArea);
-    areaRaw = Number(rawArea.toFixed(2));
-    console.log("GIS_GEOMETRY_FALLBACK_USED", "area");
-  }
+  // REQUIRED LOGGING IN ASSIGNED FORMAT
+  console.log({ rawFront, calibratedFront: frenteCal });
+  console.log({ rawArea, calibratedArea: areaCal });
 
   return {
     raw: {
-      frente: frenteRaw,
-      fundo: fundoRaw,
-      lado_direito: dirRaw,
-      lado_esquerdo: esqRaw,
-      area: areaRaw
+      frente: Number(rawFront.toFixed(2)),
+      fundo: Number(rawBack.toFixed(2)),
+      lado_direito: Number(rawRight.toFixed(2)),
+      lado_esquerdo: Number(rawLeft.toFixed(2)),
+      area: Number(rawArea.toFixed(2))
     },
     calibrated: {
       frente: frenteCal,
@@ -436,11 +207,6 @@ export function calculateLotDimensions(
       lado_direito: dirCal,
       lado_esquerdo: esqCal,
       area: areaCal
-    },
-    frente: frenteCal,
-    fundo: fundoCal,
-    ladoDireito: dirCal,
-    ladoEsquerdo: esqCal,
-    area: areaCal
+    }
   };
 }
