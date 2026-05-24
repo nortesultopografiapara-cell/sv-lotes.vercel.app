@@ -451,7 +451,7 @@ export default function LandingPage() {
         </div>
         
         <div className="max-w-7xl mx-auto pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-gray-500 font-medium tracking-wide">
-           <p>© {new Date().getFullYear()} SV TOPOGRAFIA E PROJETOS. Todos os direitos reservados.</p>
+           <p>© {new Date().getFullYear()} SV LOTES — Desenvolvido por SV TOPOGRAFIA E PROJETOS. Todos os direitos reservados.</p>
            <div className="flex gap-6">
               <a href="#" className="hover:text-white transition-colors">Termos de Serviço</a>
               <a href="#" className="hover:text-white transition-colors">Política de Privacidade</a>
