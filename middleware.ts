@@ -11,6 +11,10 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+  const isDevPreview = request.nextUrl.hostname.includes("aistudio") || 
+                       request.nextUrl.hostname.includes("run.app") ||
+                       process.env.NODE_ENV === "development";
+
   const isDemoAllowed = !supabaseUrl || !supabaseAnonKey;
   const isDemoMode = isDemoAllowed && request.cookies.get('demo_mode')?.value === 'true';
 
@@ -55,15 +59,15 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
-    if ((user || isDemoMode) && url.pathname === '/login') {
-      url.pathname = '/dashboard';
+    if ((user || isDemoMode || isDevPreview) && url.pathname === '/login') {
+      url.pathname = isDevPreview || userData?.role === 'BROKER' ? '/map' : '/dashboard';
       return NextResponse.redirect(url);
     }
     return response;
   }
 
   // 2. PROTECTED ROUTES - NO SESSION
-  if (!user && !isDemoMode) {
+  if (!user && !isDemoMode && !isDevPreview) {
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
@@ -79,6 +83,9 @@ export async function middleware(request: NextRequest) {
        url.pathname = '/map';
        return NextResponse.redirect(url);
     }
+  } else if (isDevPreview && url.pathname === '/') {
+       url.pathname = '/map';
+       return NextResponse.redirect(url);
   }
 
   // 5. HARDENING HEADERS
