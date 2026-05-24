@@ -872,23 +872,16 @@ function LotPopupContent({
   onRequestClear: (lot: any, newPrice: number) => void;
   actionLoading: string | null;
 }) {
-  const [editedPrice, setEditedPrice] = useState(lot.price.toString());
   const color = getStatusColor(lot.status);
   const isSold = isLotSold(lot.status);
 
   const area = lot.area || 0;
-  const currentPrice = Number(editedPrice) || 0;
+  const currentPrice = Number(lot.price) || 0;
   const displayNum =
     String(lot.number)
       .replace(/[^0-9A-Za-z]/g, "")
       .replace(/.*linha.*/i, "")
       .replace(/.*kml.*/i, "") || String(lot.number).replace(/\D/g, "");
-
-  const handlePriceBlur = () => {
-    if (Number(editedPrice) !== lot.price) {
-      onAction(lot, lot.status, Number(editedPrice));
-    }
-  };
 
   return (
     <div className="p-2 min-w-[320px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
@@ -955,24 +948,24 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.fundo !== null && lot.fundo !== undefined
-                  ? `${Number(lot.fundo).toFixed(2)} m`
+                {lot.Fundo !== null && lot.Fundo !== undefined
+                  ? `${Number(lot.Fundo).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.lado_direito !== null && lot.lado_direito !== undefined
-                  ? `${Number(lot.lado_direito).toFixed(2)} m`
+                {lot["Lado Dir."] !== null && lot["Lado Dir."] !== undefined
+                  ? `${Number(lot["Lado Dir."]).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.lado_esquerdo !== null && lot.lado_esquerdo !== undefined
-                  ? `${Number(lot.lado_esquerdo).toFixed(2)} m`
+                {lot["Lado Esq."] !== null && lot["Lado Esq."] !== undefined
+                  ? `${Number(lot["Lado Esq."]).toFixed(2)} m`
                   : "--"}
               </span>
             </div>
@@ -982,13 +975,12 @@ function LotPopupContent({
           <span className="text-gray-600 font-semibold">
             Valor do Lote (R$):
           </span>
-          <input
-            type="number"
-            value={editedPrice}
-            onChange={(e) => setEditedPrice(e.target.value)}
-            onBlur={handlePriceBlur}
-            className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500 font-mono text-right"
-          />
+          <span className="text-gray-900 font-bold font-mono text-right">
+            {Number(lot.price || 0).toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
         </div>
       </div>
 
@@ -1000,9 +992,9 @@ function LotPopupContent({
           <button
             onClick={() => {
                if (isSold) {
-                 onRequestClear(lot, Number(editedPrice));
+                 onRequestClear(lot, currentPrice);
                } else {
-                 onAction(lot, "Disponível", Number(editedPrice));
+                 onAction(lot, "Disponível", currentPrice);
                }
             }}
             disabled={actionLoading === lot.id}
@@ -1016,7 +1008,7 @@ function LotPopupContent({
                 alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
                 return;
               }
-              onRequestCustomerForm(lot, "Reservado", Number(editedPrice));
+              onRequestCustomerForm(lot, "Reservado", currentPrice);
             }}
             disabled={actionLoading === lot.id || isSold}
             title={isSold ? "Este lote já está vendido" : "Reservar lote"}
@@ -1030,7 +1022,7 @@ function LotPopupContent({
                 alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
                 return;
               }
-              onRequestCustomerForm(lot, "Vendido", Number(editedPrice))
+              onRequestCustomerForm(lot, "Vendido", currentPrice)
             }}
             disabled={actionLoading === lot.id || isSold}
             title={isSold ? "Este lote já está vendido" : "Vender lote"}
@@ -1039,7 +1031,7 @@ function LotPopupContent({
             Vender
           </button>
           <button
-            onClick={() => onRequestClear(lot, Number(editedPrice))}
+            onClick={() => onRequestClear(lot, currentPrice)}
             disabled={actionLoading === lot.id}
             className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
           >
@@ -1418,9 +1410,9 @@ export default function GISMap({
                 geometryType: b.geometry?.type,
                 bounds,
                 frente: b.frente !== null ? b.frente : (dimsFromGeo ? dimsFromGeo.frente : null),
-                fundo: b.fundo !== null ? b.fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
-                lado_direito: b.lado_direito !== null ? b.lado_direito : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
-                lado_esquerdo: b.lado_esquerdo !== null ? b.lado_esquerdo : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
+                Fundo: b.Fundo !== null && b.Fundo !== undefined ? b.Fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
+                'Lado Dir.': b['Lado Dir.'] !== null && b['Lado Dir.'] !== undefined ? b['Lado Dir.'] : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
+                'Lado Esq.': b['Lado Esq.'] !== null && b['Lado Esq.'] !== undefined ? b['Lado Esq.'] : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
               };
             })
             .filter((b) => b.bounds.length > 0);

@@ -807,7 +807,7 @@ export default function MapPage() {
       
       const blocksToInsert = blocksParsed.map((b) => {
           const finalArea = b.area;
-          const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
+          const finalPrice = parseFloat((finalArea * 120.00).toFixed(2));
           
           let frente = null;
           let fundo = null;
@@ -815,16 +815,11 @@ export default function MapPage() {
           let lado_esquerdo = null;
           
           if (b.segments && b.segments.length >= 4) {
-             frente = b.segments[0]?.length || 0;
-             lado_direito = b.segments[1]?.length || 0;
-             fundo = b.segments[2]?.length || 0;
-             lado_esquerdo = b.segments[3]?.length || 0;
+             frente = b.segments[0]?.length || null;
+             lado_direito = b.segments[1]?.length || null;
+             fundo = b.segments[2]?.length || null;
+             lado_esquerdo = b.segments[3]?.length || null;
           }
-
-          const frente_oficial = frente != null ? String(frente) : null;
-          const dir_oficial = lado_direito != null ? String(lado_direito) : null;
-          const fundo_oficial = fundo != null ? String(fundo) : null;
-          const esq_oficial = lado_esquerdo != null ? String(lado_esquerdo) : null;
 
           let geom = null;
           if (b.coords.length >= 4) {
@@ -848,13 +843,9 @@ export default function MapPage() {
              tenant_id: finalTenantId,
              company_id: finalTenantId,
              frente,
-             fundo,
-             lado_direito,
-             lado_esquerdo,
-             frente_oficial,
-             fundo_oficial,
-             dir_oficial,
-             esq_oficial,
+             'Lado Dir.': lado_direito,
+             'Fundo': fundo,
+             'Lado Esq.': lado_esquerdo,
              segments_json: b.segments,
              coordinates_utm_json: b.coords,
              source_import: 'TXT_CIVIL3D'
