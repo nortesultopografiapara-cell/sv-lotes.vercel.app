@@ -8,10 +8,17 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+  const isDemoAllowed = !supabaseUrl || !supabaseAnonKey;
+  const isDemoMode = isDemoAllowed && request.cookies.get('demo_mode')?.value === 'true';
+
+  let user = null;
+  let userData = null;
+
+  if (supabaseUrl && supabaseAnonKey) {
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -26,12 +33,21 @@ export async function middleware(request: NextRequest) {
           );
         },
       },
-    }
-  );
+    });
 
-  // Use getUser() instead of getSession() in middleware to ensure security
-  // and trigger refresh of cookies if necessary.
-  const { data: { user } } = await supabase.auth.getUser();
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+      
+      if (user) {
+        const { data: ud } = await supabase.from('users').select('role').eq('id', user.id).single();
+        userData = ud;
+      }
+    } catch (e) {
+      console.error('Middleware auth check error', e);
+    }
+  }
+
   const url = request.nextUrl.clone();
 
   // 1. PUBLIC ROUTES
@@ -39,7 +55,7 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
-    if (user && url.pathname === '/login') {
+    if ((user || isDemoMode) && url.pathname === '/login') {
       url.pathname = '/dashboard';
       return NextResponse.redirect(url);
     }
@@ -47,66 +63,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. PROTECTED ROUTES - NO SESSION
-  if (!user) {
+  if (!user && !isDemoMode) {
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  // 3. EMAIL VERIFICATION
-  // Commenting this out if email confirmation shouldn't be strictly enforced during login
-  // if (!user.email_confirmed_at) {
-  //  if (url.pathname !== '/verify-email') {
-  //    url.pathname = '/verify-email';
-  //    return NextResponse.redirect(url);
-  //  }
-  // }
-  
-  // Temporarily disable extra logic to fix the basic auth loop as requested by the user.
-  /*
-  // 4. ONBOARDING & TENANT VERIFICATION
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role, tenant_id, onboarding_completed, force_password_change')
-    .eq('id', user.id)
-    .single();
-
-  if (userData) {
-    response.headers.set('x-tenant-id', userData.tenant_id || '');
-    response.headers.set('x-user-role', userData.role || '');
-
-    const needsOnboarding = !userData.onboarding_completed || userData.force_password_change;
-    const authSetupRoutes = ['/onboarding'];
-
-    if (needsOnboarding && !authSetupRoutes.includes(url.pathname)) {
-      url.pathname = '/onboarding';
-      return NextResponse.redirect(url);
-    }
-
-    if (!needsOnboarding && authSetupRoutes.includes(url.pathname)) {
-      url.pathname = '/';
-      return NextResponse.redirect(url);
-    }
-
-    if (url.pathname.startsWith('/empresas') && userData.role !== 'SUPER_ADMIN') {
-      url.pathname = '/';
-      return NextResponse.redirect(url);
-    }
-
-    if (userData.role !== 'SUPER_ADMIN' && !userData.tenant_id && !needsOnboarding) {
-       await supabase.auth.signOut();
-       url.pathname = '/login';
-       return NextResponse.redirect(url);
-    }
-  }
-  */
-
   // 4. BROKER ROUTE PROTECTION
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-
   if (userData?.role === 'BROKER') {
     const allowedRoutesForBroker = ['/map'];
     const blockedRoutes = ['/dashboard', '/customers', '/finance', '/contracts', '/settings'];

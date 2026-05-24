@@ -28,7 +28,7 @@ import {
   X
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
 
@@ -111,7 +111,7 @@ function NotificationBell({ user }: { user: any }) {
 
     // Supabase Realtime subscription
     let channel: any = null;
-    if (user?.tenant_id || user?.role === 'SUPER_ADMIN') {
+    if (isSupabaseConfigured && (user?.tenant_id || user?.role === 'SUPER_ADMIN')) {
         channel = supabase.channel('finance_receipts_changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_receipts' }, () => {
                 loadAlerts();

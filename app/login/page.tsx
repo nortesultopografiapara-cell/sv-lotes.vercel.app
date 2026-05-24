@@ -15,11 +15,13 @@ export default function LoginPage() {
 
   // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
     const initializeAuth = async () => {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
-        window.location.href = '/';
+        window.location.href = '/dashboard';
       } else if (error) {
         // We have a stale session in localStorage that middleware rejected, wipe it to break the loop.
         await supabase.auth.signOut();
@@ -123,62 +125,75 @@ export default function LoginPage() {
           </div>
         )}
 
-        {!isSupabaseConfigured && (
-          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-500 text-xs">
-            <p className="font-bold mb-1">Aviso de Configuração (AI Studio):</p>
-            <p>O NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY não estão definidos.</p>
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-              <input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                placeholder="nome@nortesultopografia.com.br"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
-              <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
-              <input 
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                placeholder="••••••••"
-                required
-              />
+        {!isSupabaseConfigured ? (
+          <div className="mb-6 space-y-4">
+            <div className="p-4 bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/20 rounded-lg text-center">
+              <p className="text-sm font-bold text-white mb-2">Modo Visualização (AI Studio)</p>
+              <p className="text-xs text-[var(--color-text-muted)] mb-4">
+                As variáveis do Supabase não estão configuradas neste ambiente de preview.
+              </p>
               <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
+                onClick={() => {
+                  document.cookie = "demo_mode=true; path=/; max-age=3600";
+                  window.location.href = '/dashboard';
+                }}
+                className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-2 rounded-lg transition-colors text-sm"
               >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                Entrar em modo demonstração
               </button>
             </div>
           </div>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  placeholder="nome@nortesultopografia.com.br"
+                  required
+                />
+              </div>
+            </div>
 
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
-          </button>
-        </form>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
+                <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                  placeholder="••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
+            </button>
+          </form>
+        )}
 
         <div className="mt-8 pt-6 border-t border-[var(--color-border)] text-center">
           <p className="text-[10px] font-mono text-[var(--color-text-muted)]">

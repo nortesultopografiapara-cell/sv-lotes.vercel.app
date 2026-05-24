@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export interface UserProfile {
@@ -19,6 +19,27 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true;
+
+    // Check demo mode cookie first
+    const isDemo = typeof window !== 'undefined' && 
+                   document.cookie.includes('demo_mode=true') && 
+                   !isSupabaseConfigured;
+
+    if (isDemo) {
+      if (mounted) {
+        setUser({
+          id: 'demo-user-id',
+          tenant_id: 'demo-tenant-id',
+          role: 'ADMIN', // ADMIN covers most routes, you can use SUPER_ADMIN too
+          email: 'demo@preview.local',
+          name: 'Visitante (Demo)',
+          force_password_change: false,
+          onboarding_completed: true,
+        });
+        setLoading(false);
+      }
+      return;
+    }
     
     async function getUser() {
       try {
