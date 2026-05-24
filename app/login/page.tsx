@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -20,18 +21,21 @@ export default function LoginPage() {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user) {
         // We have a VALID, server-confirmed session on client but somehow landed on login.
-        window.location.href = '/dashboard';
-      } else if (error) {
-        // We have a stale session in localStorage that middleware rejected, wipe it to break-loop.
-        await supabase.auth.signOut();
-        try {
-           localStorage.removeItem('active_tenant');
-           sessionStorage.clear();
-        } catch (e) {}
+        router.replace('/dashboard');
+      } else {
+        if (error) {
+          // We have a stale session in localStorage that middleware rejected, wipe it to break-loop.
+          await supabase.auth.signOut();
+          try {
+             localStorage.removeItem('active_tenant');
+             sessionStorage.clear();
+          } catch (e) {}
+        }
+        setIsChecking(false);
       }
     };
     initializeAuth();
-  }, []);
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,9 +85,9 @@ export default function LoginPage() {
           .single();
           
         if (userData?.role === 'BROKER') {
-           window.location.href = '/map';
+           router.replace('/map');
         } else {
-           window.location.href = '/dashboard';
+           router.replace('/dashboard');
         }
       }
     } catch (err: any) {
@@ -93,6 +97,14 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (isChecking) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#06090e]">
+        <Loader2 className="w-8 h-8 text-[#2563eb] animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-[#06090e] p-4 relative overflow-hidden font-sans">
