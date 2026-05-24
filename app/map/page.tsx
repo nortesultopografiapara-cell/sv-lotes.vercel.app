@@ -739,37 +739,37 @@ export default function MapPage() {
       const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
 
       for (let chunk of nameChunks) {
-         const lines = chunk.split('\n');
-         const name = lines[0].trim();
+         const name = chunk.split('\n')[0].trim();
          
          let area = 0;
          let perimeter = 0;
          let segments: any[] = [];
-         let currentSeg: any = {};
          let coords: number[][] = [];
          
-         for (let line of lines) {
-            line = line.trim();
-            if (line.match(/^Segment\s*#/i)) {
-                if (Object.keys(currentSeg).length > 0) segments.push(currentSeg);
-                currentSeg = {};
-            } else if (line.match(/^Length:\s*([0-9.]+)/i)) {
-                currentSeg.length = parseFloat(line.match(/^Length:\s*([0-9.]+)/i)![1]);
-            } else if (line.match(/^North(ing)?:\s*([0-9.]+)/i)) {
-                currentSeg.northing = parseFloat(line.match(/^North(ing)?:\s*([0-9.]+)/i)![2]);
-            } else if (line.match(/^East(ing)?:\s*([0-9.]+)/i)) {
-                currentSeg.easting = parseFloat(line.match(/^East(ing)?:\s*([0-9.]+)/i)![2]);
-                if (currentSeg.northing !== undefined) {
-                    const [lng, lat] = proj4(proj4String, "EPSG:4326", [currentSeg.easting, currentSeg.northing]);
-                    coords.push([lng, lat]);
-                }
-            } else if (line.match(/^Area:\s*([0-9.]+)/i)) {
-                area = parseFloat(line.match(/^Area:\s*([0-9.]+)/i)![1]);
-            } else if (line.match(/^Perimeter:\s*([0-9.]+)/i)) {
-                perimeter = parseFloat(line.match(/^Perimeter:\s*([0-9.]+)/i)![1]);
-            }
+         const areaMatch = chunk.match(/Area:\s*([0-9.]+)/i);
+         if (areaMatch) area = parseFloat(areaMatch[1]);
+         
+         const perimeterMatch = chunk.match(/Perimeter:\s*([0-9.]+)/i);
+         if (perimeterMatch) perimeter = parseFloat(perimeterMatch[1]);
+
+         const northingMatches = [...chunk.matchAll(/North(?:ing)?\s*:\s*([0-9.]+)/ig)];
+         const eastingMatches = [...chunk.matchAll(/East(?:ing)?\s*:\s*([0-9.]+)/ig)];
+         const lengthMatches = [...chunk.matchAll(/Length\s*:\s*([0-9.]+)/ig)];
+
+         const numPoints = Math.min(northingMatches.length, eastingMatches.length);
+         for(let i=0; i < numPoints; i++) {
+             const northing = parseFloat(northingMatches[i][1]);
+             const easting = parseFloat(eastingMatches[i][1]);
+             
+             let seg: any = { northing, easting };
+             if (i < lengthMatches.length) {
+                 seg.length = parseFloat(lengthMatches[i][1]);
+             }
+             segments.push(seg);
+             
+             const [lng, lat] = proj4(proj4String, "EPSG:4326", [easting, northing]);
+             coords.push([lng, lat]);
          }
-         if (Object.keys(currentSeg).length > 0) segments.push(currentSeg);
          
          if (coords.length > 2) {
              const first = coords[0];
@@ -796,7 +796,7 @@ export default function MapPage() {
          .limit(1);
 
       if (blockCheck && blockCheck.length > 0) {
-         alert(`Erro: A Quadra "${importTxtQuadra.toUpperCase()}" já existe neste projeto.`);
+         alert(`Erro: A Quadra "${importTxtQuadra}" já existe neste projeto.`);
          setImportingTxt(false);
          return;
       }
@@ -806,7 +806,7 @@ export default function MapPage() {
       const PRICE_PER_M2 = 0.0993035247984734; // Placeholder
       
       const blocksToInsert = blocksParsed.map((b) => {
-          const finalArea = parseFloat(b.area.toFixed(2));
+          const finalArea = b.area;
           const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
           
           let frente = null;
@@ -815,14 +815,6 @@ export default function MapPage() {
           let lado_esquerdo = null;
           
           if (b.segments && b.segments.length >= 4) {
-             const sortedByLength = [...b.segments].sort((s1, s2) => s1.length - s2.length);
-             frente = sortedByLength[0].length;
-             fundo = sortedByLength[1].length;
-             lado_direito = sortedByLength[2].length;
-             lado_esquerdo = sortedByLength[3].length;
-             // Attempt to match typical pattern if we had azimuth... but we just use sorted lengths for now 
-             // to ensure they are captured. Or just keep order: seg 0,1,2,3? Usually TXT segments are sequential around the perimeter.
-             // We'll keep them raw in segments_json and make a simple assignment. User requested official Length.
              frente = b.segments[0]?.length || 0;
              lado_direito = b.segments[1]?.length || 0;
              fundo = b.segments[2]?.length || 0;
