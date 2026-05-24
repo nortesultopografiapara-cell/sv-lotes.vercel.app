@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Map as MapIcon, Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Globe, Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -99,19 +99,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[var(--color-background)] p-4 relative overflow-hidden">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#06090e] p-4 relative overflow-hidden font-sans">
       {/* Cool atmospheric background for login */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--color-primary)] rounded-full mix-blend-screen filter blur-[120px] opacity-20 animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[var(--color-success)] rounded-full mix-blend-screen filter blur-[120px] opacity-10" />
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-[#2563eb] rounded-full mix-blend-screen filter blur-[150px] opacity-10 animate-pulse" />
+      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-[#10b981] rounded-full mix-blend-screen filter blur-[150px] opacity-10" />
 
-      <div className="w-full max-w-md bg-[var(--color-surface)]/80 backdrop-blur-xl rounded-2xl border border-[var(--color-border)] shadow-2xl p-8 transform transition-all relative z-10">
+      <div className="w-full max-w-md bg-[#0a0d14]/80 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-8 transform transition-all relative z-10">
         
         <div className="flex flex-col items-center justify-center mb-8">
-          <div className="w-16 h-16 bg-[var(--color-primary)]/10 rounded-2xl flex items-center justify-center mb-4 text-[var(--color-primary)] border border-[var(--color-primary)]/20 shadow-[0_0_15px_rgba(242,125,38,0.2)]">
-            <MapIcon className="w-8 h-8" />
+          <div className="flex items-center gap-2 mb-4">
+            <Globe className="w-10 h-10 text-[#10b981]" />
+            <span className="text-3xl font-black tracking-tight uppercase text-white">SV<span className="text-[#60a5fa]">_LOTES</span></span>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">SV_LOTES</h1>
-          <p className="text-sm text-[var(--color-text-muted)] font-mono text-center uppercase tracking-widest">
+          <p className="text-sm text-gray-400 font-mono text-center uppercase tracking-widest">
             Gestão & GIS
           </p>
         </div>
@@ -123,24 +123,17 @@ export default function LoginPage() {
           </div>
         )}
 
-        {!isSupabaseConfigured && (
-          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-500 text-xs">
-            <p className="font-bold mb-1">Aviso de Configuração (AI Studio):</p>
-            <p>O NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY não estão definidos.</p>
-          </div>
-        )}
-
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
+            <label className="text-xs font-bold text-gray-400 tracking-wider uppercase">Email Corporativo</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
               <input 
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
-                placeholder="nome@nortesultopografia.com.br"
+                className="w-full bg-[#11161d] border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] transition-all"
+                placeholder="nome@svtopografia.com.br"
                 required
               />
             </div>
@@ -148,23 +141,23 @@ export default function LoginPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Senha</label>
-              <a href="#" className="text-xs text-[var(--color-primary)] hover:underline">Esqueci a senha</a>
+              <label className="text-xs font-bold text-gray-400 tracking-wider uppercase">Senha</label>
+              <a href="#" className="text-xs text-[#60a5fa] hover:text-[#2563eb] transition-colors">Esqueci a senha</a>
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-3 w-5 h-5 text-[var(--color-text-muted)]" />
+              <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
               <input 
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[var(--color-primary)] transition-colors"
+                className="w-full bg-[#11161d] border border-white/10 rounded-lg py-3 pl-10 pr-10 text-white focus:outline-none focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] transition-all"
                 placeholder="••••••••"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors focus:outline-none"
+                className="absolute right-3 top-3 text-gray-500 hover:text-white transition-colors focus:outline-none"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
@@ -174,16 +167,16 @@ export default function LoginPage() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_4px_14px_0_rgba(242,125,38,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-[#2563eb] to-[#3b82f6] hover:opacity-90 text-white font-bold py-3 rounded-lg transition-opacity flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(37,99,235,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Acessar Workspace'}
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-[var(--color-border)] text-center">
-          <p className="text-[10px] font-mono text-[var(--color-text-muted)]">
+        <div className="mt-8 pt-6 border-t border-white/10 text-center">
+          <p className="text-[10px] font-mono text-gray-500">
             Acesso restrito a colaboradores.<br/>
-            Norte Sul Topografia © 2026
+            SV TOPOGRAFIA E PROJETOS © 2026
           </p>
         </div>
       </div>
