@@ -257,11 +257,40 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     const propEsq = extractProp(['ESQ', 'ESQUERDA', 'LADO_ESQ', 'LESQUERDO', 'COMPR_ESQ', 'MEDIDA_ESQ']);
 
     if (propFrente && propFundo && propDir && propEsq) {
+        let calculatedChanfro = 0;
+        try {
+            const rawSegments = extractSegments(coords, allPolys);
+            const segments = mergeCurvedSegments(rawSegments, 20);
+            if (segments.length > 4) {
+                const frenteRaw = detectFront(segments);
+                const fundoRaw = detectBack(segments, frenteRaw);
+                const chanfroSegments = segments.filter((s, idx) => {
+                    if (s === frenteRaw || s === fundoRaw) return false;
+                    const prevSeg = segments[(idx - 1 + segments.length) % segments.length];
+                    const nextSeg = segments[(idx + 1) % segments.length];
+                    const deflPrev = diffAngle(s.azimuth, prevSeg.azimuth);
+                    const deflNext = diffAngle(s.azimuth, nextSeg.azimuth);
+                    const relAzimuth = (s.azimuth - (frenteRaw?.azimuth || 0) + 360) % 360;
+                    const dev = Math.min(
+                        relAzimuth,
+                        Math.abs(relAzimuth - 90),
+                        Math.abs(relAzimuth - 180),
+                        Math.abs(relAzimuth - 270),
+                        Math.abs(relAzimuth - 360)
+                    );
+                    return s.length < 8 && (deflPrev < 40 || deflNext < 40 || dev > 25);
+                });
+                calculatedChanfro = chanfroSegments.reduce((sum, s) => sum + s.length, 0);
+            }
+        } catch (e) {
+            console.error("Erro calcular chanfro para TXT_CIVIL3D", e);
+        }
         return {
             frente: propFrente,
             fundo: propFundo,
             ladoDireito: propDir,
-            ladoEsquerdo: propEsq
+            ladoEsquerdo: propEsq,
+            chanfro: parseFloat(calculatedChanfro.toFixed(2))
         };
     }
 
@@ -281,10 +310,50 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
         ladoEsquerdo: propEsq || 0 
     };
 
+    let finalChanfro = 0;
+
     if (segments.length > 0) {
         const frenteRaw = detectFront(segments);
         const fundoRaw = detectBack(segments, frenteRaw);
-        const calcSides = detectSides(segments, frenteRaw, fundoRaw);
+
+        // Identificar Chanfros
+        const chanfroSegments: Segment[] = [];
+        const nonChanfroSegments: Segment[] = [];
+
+        segments.forEach((s, idx) => {
+            if (s === frenteRaw || s === fundoRaw) {
+                nonChanfroSegments.push(s);
+                return;
+            }
+
+            const prevSeg = segments[(idx - 1 + segments.length) % segments.length];
+            const nextSeg = segments[(idx + 1) % segments.length];
+            const deflPrev = diffAngle(s.azimuth, prevSeg.azimuth);
+            const deflNext = diffAngle(s.azimuth, nextSeg.azimuth);
+
+            const relAzimuth = (s.azimuth - (frenteRaw?.azimuth || 0) + 360) % 360;
+            const dev = Math.min(
+                relAzimuth,
+                Math.abs(relAzimuth - 90),
+                Math.abs(relAzimuth - 180),
+                Math.abs(relAzimuth - 270),
+                Math.abs(relAzimuth - 360)
+            );
+
+            // Um segmento é considerado chanfro se:
+            // 1. É curto (< 8m)
+            // 2. E tem deflexões menores que 40 graus com seus vizinhos OU possui orientação diagonal nítida (desvio > 25)
+            const isChan = s.length < 8 && (deflPrev < 40 || deflNext < 40 || dev > 25);
+            if (isChan) {
+                chanfroSegments.push(s);
+            } else {
+                nonChanfroSegments.push(s);
+            }
+        });
+
+        finalChanfro = parseFloat(chanfroSegments.reduce((sum, s) => sum + s.length, 0).toFixed(2));
+
+        const calcSides = detectSides(nonChanfroSegments, frenteRaw, fundoRaw);
 
         if (!result.frente) result.frente = frenteRaw ? frenteRaw.length : 0;
         if (!result.fundo) result.fundo = fundoRaw ? fundoRaw.length : result.frente;
@@ -312,20 +381,23 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
         frente: finalFrente,
         fundo: finalFundo,
         ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
+        ladoEsquerdo: finalEsq,
+        chanfro: finalChanfro
     });
 
     console.log("LOT_DIMENSION_FINAL_RESULT", {
         frente: finalFrente,
         fundo: finalFundo,
         ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
+        ladoEsquerdo: finalEsq,
+        chanfro: finalChanfro
     });
 
     return {
         frente: finalFrente,
         fundo: finalFundo,
         ladoDireito: finalDir,
-        ladoEsquerdo: finalEsq
+        ladoEsquerdo: finalEsq,
+        chanfro: finalChanfro
     };
 }

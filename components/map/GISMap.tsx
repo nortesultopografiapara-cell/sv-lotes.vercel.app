@@ -888,6 +888,7 @@ function LotPopupContent({
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEditablePrice(currentPrice);
   }, [currentPrice]);
 
@@ -996,6 +997,14 @@ function LotPopupContent({
                   : "--"}
               </span>
             </div>
+            {lot.chanfro !== null && lot.chanfro !== undefined && Number(lot.chanfro) > 0 && (
+              <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1">
+                <span className="text-[10px] font-semibold text-gray-500">Chanfro:</span>{" "}
+                <span className="font-bold text-gray-900 text-[11px]">
+                  {`${Number(lot.chanfro).toFixed(2)} m`}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex justify-between items-center pt-1">
@@ -1455,6 +1464,7 @@ export default function GISMap({
                 Fundo: b.Fundo !== null && b.Fundo !== undefined ? b.Fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
                 'Lado Dir.': b['Lado Dir.'] !== null && b['Lado Dir.'] !== undefined ? b['Lado Dir.'] : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
                 'Lado Esq.': b['Lado Esq.'] !== null && b['Lado Esq.'] !== undefined ? b['Lado Esq.'] : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
+                chanfro: b.chanfro !== null && b.chanfro !== undefined ? b.chanfro : (dimsFromGeo ? dimsFromGeo.chanfro : null),
               };
             })
             .filter((b) => b.bounds.length > 0);
