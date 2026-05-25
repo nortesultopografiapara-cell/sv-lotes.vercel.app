@@ -152,6 +152,69 @@ function parseKML(xmlString: string) {
   return geometries;
 }
 
+type AuthUser = {
+  id: string;
+  tenant_id: string | null;
+  role: string;
+  email?: string;
+};
+
+type ProjectFeedback = { type: 'success' | 'error'; message: string };
+
+/** Resolve tenant/company ativo: perfil → DB → impersonação (super admin). */
+async function resolveActiveTenantId(user: AuthUser | null): Promise<string | null> {
+  if (!user) return null;
+  if (user.tenant_id) return user.tenant_id;
+
+  if (typeof window !== 'undefined') {
+    const impersonating = localStorage.getItem('impersonating_tenant_id');
+    if (impersonating && user.role === 'SUPER_ADMIN') return impersonating;
+  }
+
+  if (user.id && !['dev-preview-user', 'demo-user-id'].includes(user.id)) {
+    const { data } = await supabase.from('users').select('tenant_id').eq('id', user.id).maybeSingle();
+    if (data?.tenant_id) return data.tenant_id;
+  }
+
+  return null;
+}
+
+function applyTenantFilterToProjectsQuery(
+  query: ReturnType<typeof supabase.from>,
+  user: AuthUser,
+  tenantId: string | null,
+) {
+  if (user.role === 'SUPER_ADMIN') return query;
+  if (!tenantId) return query;
+  return query.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
+}
+
+/** Insere projeto tentando payloads progressivamente (colunas opcionais / schema drift). */
+async function insertProjectRow(
+  payloads: Record<string, unknown>[],
+): Promise<{ error: { message: string; code?: string } | null }> {
+  let lastError: { message: string; code?: string } | null = null;
+
+  for (const payload of payloads) {
+    const cleaned = Object.fromEntries(
+      Object.entries(payload).filter(([, v]) => v !== undefined),
+    );
+    const { error } = await supabase.from('projects').insert([cleaned]);
+    if (!error) return { error: null };
+    lastError = error;
+
+    const missingCol = error.message?.match(/Could not find the '(\w+)' column/i)?.[1];
+    if (missingCol && missingCol in cleaned) {
+      const { [missingCol]: _removed, ...withoutCol } = cleaned;
+      const retry = await supabase.from('projects').insert([withoutCol]);
+      if (!retry.error) return { error: null };
+      lastError = retry.error;
+    }
+  }
+
+  return { error: lastError };
+}
+
 export default function MapPage() {
   const { user, loading: authLoading } = useAuth();
   const [search, setSearch] = useState('');
@@ -192,6 +255,7 @@ export default function MapPage() {
   const [newProjectAddr, setNewProjectAddr] = useState('');
   const [newProjectForum, setNewProjectForum] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
+  const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
@@ -352,65 +416,78 @@ export default function MapPage() {
     }
   };
 
-  useEffect(() => {
-    async function loadProjects() {
-      if (!user) return;
-      try {
-        let limit: number | null = 5;
-        let pName = 'Standard';
-        if (user.tenant_id) {
-           const { data: companyData } = await supabase.from('companies').select('plan').eq('id', user.tenant_id).maybeSingle();
-           if (companyData?.plan) {
-              const plan = companyData.plan.toLowerCase();
-              console.log('PROJECT_LIMITS_RESOLVED', plan);
-              const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
-                basic: { brokers: 5, projects: 3 },
-                standard: { brokers: 10, projects: 5 },
-                professional: { brokers: Infinity, projects: Infinity },
-                premium: { brokers: Infinity, projects: Infinity },
-              };
-              const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
-              limit = mappedLimits.projects === Infinity ? null : mappedLimits.projects;
-              pName = plan === 'premium' ? 'Premium' : 
-                      plan === 'professional' ? 'Profissional' : 
-                      plan === 'standard' ? 'Standard' : 
-                      'Básico';
-           }
-        }
-        setProjectLimit(limit);
-        setCompanyPlan(pName);
+  const loadProjects = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const activeTenantId = await resolveActiveTenantId(user);
 
-        let query = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
-        
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-            query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-        } else if (user.role !== 'SUPER_ADMIN' && !user.tenant_id) {
-            // Block access
-            setProjects([]);
-            setLoading(false);
-            return;
+      let limit: number | null = 5;
+      let pName = 'Standard';
+      const planTenantId = activeTenantId || user.tenant_id;
+      if (planTenantId) {
+        const { data: companyData } = await supabase
+          .from('companies')
+          .select('plan')
+          .eq('id', planTenantId)
+          .maybeSingle();
+        if (companyData?.plan) {
+          const plan = String(companyData.plan).toLowerCase();
+          const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
+            basic: { brokers: 5, projects: 3 },
+            standard: { brokers: 10, projects: 5 },
+            professional: { brokers: Infinity, projects: Infinity },
+            premium: { brokers: Infinity, projects: Infinity },
+          };
+          const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.basic;
+          limit = mappedLimits.projects === Infinity ? null : mappedLimits.projects;
+          pName =
+            plan === 'premium'
+              ? 'Premium'
+              : plan === 'professional'
+                ? 'Profissional'
+                : plan === 'standard'
+                  ? 'Standard'
+                  : 'Básico';
         }
-
-        const { data, error } = await query;
-        
-        if (error) {
-           console.warn("Error fetching projects:", error);
-           setProjects([]);
-           return;
-        }
-        
-        setProjects(data || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
       }
+      setProjectLimit(limit);
+      setCompanyPlan(pName);
+
+      if (user.role !== 'SUPER_ADMIN' && !activeTenantId) {
+        setProjects([]);
+        return;
+      }
+
+      let query = supabase
+        .from('projects')
+        .select('*, blocks(status, geometry)')
+        .order('created_at', { ascending: false });
+
+      query = applyTenantFilterToProjectsQuery(query, user, activeTenantId);
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.warn('Error fetching projects:', error);
+        setProjects([]);
+        return;
+      }
+
+      setProjects(data || []);
+    } catch (err) {
+      console.error(err);
+      setProjects([]);
+    } finally {
+      setLoading(false);
     }
-    
+  }, [user]);
+
+  useEffect(() => {
     if (!authLoading) {
       loadProjects();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, loadProjects]);
 
   const filteredProjects = projects.filter(p => 
      p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -425,87 +502,138 @@ export default function MapPage() {
     setSelectedProject(null);
   };
 
-  const handleCreateProject = async (e?: React.FormEvent | any) => {
-    if (e && e.preventDefault) e.preventDefault();
-    const projectNameStr = newProjectName.trim();
-    if (!projectNameStr) return;
+  const resetNewProjectForm = () => {
+    setNewProjectName('');
+    setNewProjectCity('');
+    setNewProjectUf('');
+    setNewProjectNbhd('');
+    setNewProjectAddr('');
+    setNewProjectForum('');
+  };
 
+  const closeNewProjectModal = () => {
+    setIsNewProjectModalOpen(false);
+    setProjectFeedback(null);
+    resetNewProjectForm();
+  };
+
+  const openNewProjectModal = () => {
     if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
-        alert(`O limite do seu plano de ${projectLimit} loteamentos foi atingido. Para cadastrar mais, contate o administrador.`);
-        return;
+      setProjectFeedback({
+        type: 'error',
+        message: `Limite do plano (${projectLimit} loteamentos) atingido. Contate o administrador.`,
+      });
+      return;
+    }
+    setProjectFeedback(null);
+    resetNewProjectForm();
+    setIsNewProjectModalOpen(true);
+  };
+
+  const handleCreateProject = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setProjectFeedback(null);
+
+    const projectNameStr = newProjectName.trim();
+    const cityStr = newProjectCity.trim();
+    const ufStr = newProjectUf.trim().toUpperCase();
+
+    if (!projectNameStr) {
+      setProjectFeedback({ type: 'error', message: 'Informe o nome do projeto.' });
+      return;
+    }
+    if (!cityStr) {
+      setProjectFeedback({ type: 'error', message: 'Informe a cidade do loteamento.' });
+      return;
+    }
+    if (!ufStr || ufStr.length !== 2) {
+      setProjectFeedback({ type: 'error', message: 'Informe a UF com 2 letras (ex: PA).' });
+      return;
+    }
+
+    if (!user) {
+      setProjectFeedback({ type: 'error', message: 'Sessão não carregada. Aguarde ou faça login novamente.' });
+      return;
+    }
+
+    if (projectLimit !== null && projects.length >= projectLimit && user.role !== 'SUPER_ADMIN') {
+      setProjectFeedback({
+        type: 'error',
+        message: `O limite do seu plano (${projectLimit} loteamentos) foi atingido.`,
+      });
+      return;
     }
 
     setCreatingProject(true);
-    
+
     try {
-      let createTenantId = user?.tenant_id;
+      let createTenantId = await resolveActiveTenantId(user);
+
+      if (!createTenantId && user.role === 'SUPER_ADMIN') {
+        setProjectFeedback({
+          type: 'error',
+          message:
+            'Nenhuma empresa ativa. Use "Entrar como Empresa" em Empresas ou vincule um tenant ao seu usuário.',
+        });
+        return;
+      }
+
       if (!createTenantId) {
-        const { data: userData } = await supabase.from('users').select('tenant_id').eq('id', user?.id).single();
-        if (userData?.tenant_id) {
-            createTenantId = userData.tenant_id;
-        }
+        setProjectFeedback({
+          type: 'error',
+          message: 'Empresa (tenant) não identificada. Faça login novamente ou contate o suporte.',
+        });
+        return;
       }
-      
-      const isMasterAdmin = user?.email === 'severino@nortesultopografia.com.br' || user?.email === 'nortesultopografiapara@gmail.com' || user?.role === 'SUPER_ADMIN';
-      if (!createTenantId && isMasterAdmin) {
-          createTenantId = null;
-      }
-      
-      let insertData: any = {
+
+      const locationParts = [cityStr, ufStr].filter(Boolean);
+      const fullPayload: Record<string, unknown> = {
         name: projectNameStr,
-        city: newProjectCity.trim() || null,
-        uf: newProjectUf.trim().toUpperCase() || null,
+        city: cityStr,
+        uf: ufStr,
         neighborhood: newProjectNbhd.trim() || null,
         address: newProjectAddr.trim() || null,
-        forum_city: newProjectForum.trim() || null,
+        forum_city: newProjectForum.trim() || cityStr,
+        location: locationParts.length ? locationParts.join(' - ') : null,
         tenant_id: createTenantId,
-        company_id: createTenantId
+        company_id: createTenantId,
+        status: 'ACTIVE',
       };
 
-      let { error } = await supabase.from('projects').insert([insertData]);
+      const minimalPayload: Record<string, unknown> = {
+        name: projectNameStr,
+        tenant_id: createTenantId,
+        city: cityStr,
+        uf: ufStr,
+      };
 
-      if (error && error.message && error.message.includes('schema cache')) {
-          console.warn('Schema cache error detected, retrying without address...', error.message);
-          delete insertData.address;
-          const fallback = await supabase.from('projects').insert([insertData]);
-          error = fallback.error;
-          
-          if (error && error.message && error.message.includes('schema cache')) {
-              console.warn('Schema cache error persists, retrying with minimal fields...');
-              const minimalFallback = await supabase.from('projects').insert([{
-                  name: projectNameStr,
-                  tenant_id: createTenantId,
-                  company_id: createTenantId
-              }]);
-              error = minimalFallback.error;
-          }
-      }
+      const { error } = await insertProjectRow([
+        fullPayload,
+        { ...fullPayload, address: undefined },
+        minimalPayload,
+        { name: projectNameStr, tenant_id: createTenantId },
+      ]);
 
       if (error) {
-         throw error;
+        throw error;
       }
-      
-      let fetchQuery = supabase.from('projects').select('*, blocks(status, geometry)').order('created_at', { ascending: false });
-      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          fetchQuery = fetchQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-      }
-      const { data: updatedProjects } = await fetchQuery;
-      
-      if (updatedProjects) {
-         setProjects(updatedProjects);
-      }
-      
-      setIsNewProjectModalOpen(false);
-      setNewProjectName('');
-      setNewProjectCity('');
-      setNewProjectUf('');
-      setNewProjectNbhd('');
-      setNewProjectAddr('');
-      setNewProjectForum('');
-      
-    } catch (err: any) {
+
+      await loadProjects();
+
+      setProjectFeedback({ type: 'success', message: 'Projeto criado com sucesso!' });
+      setTimeout(() => {
+        closeNewProjectModal();
+      }, 600);
+    } catch (err: unknown) {
       console.error(err);
-      alert('Erro ao criar projeto: ' + (err.message || 'Erro desconhecido'));
+      const message =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : 'Erro desconhecido';
+      setProjectFeedback({
+        type: 'error',
+        message: `Não foi possível criar o projeto: ${message}`,
+      });
     } finally {
       setCreatingProject(false);
     }
@@ -1229,13 +1357,7 @@ export default function MapPage() {
         </div>
         {user?.role !== 'BROKER' && (
           <button 
-            onClick={() => {
-                if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
-                    alert(`Limite do plano (${projectLimit} loteamentos) atingido.`);
-                    return;
-                }
-                setIsNewProjectModalOpen(true);
-            }}
+            onClick={openNewProjectModal}
             className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
           >
             <Plus className="w-5 h-5" />
@@ -1291,11 +1413,26 @@ export default function MapPage() {
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
                <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
                   <h3 className="font-bold text-white text-lg">Novo Projeto</h3>
-                  <button onClick={() => setIsNewProjectModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                  <button type="button" onClick={closeNewProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
                      <X className="w-5 h-5" />
                   </button>
                </div>
-               <div className="p-6 flex flex-col gap-4 overflow-y-auto">
+               <form
+                 onSubmit={handleCreateProject}
+                 className="p-6 flex flex-col gap-4 overflow-y-auto"
+               >
+                  {projectFeedback && (
+                    <div
+                      role="alert"
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        projectFeedback.type === 'success'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-red-500/40 bg-red-500/10 text-red-300'
+                      }`}
+                    >
+                      {projectFeedback.message}
+                    </div>
+                  )}
                   <div>
                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto *</label>
                      <input 
@@ -1354,14 +1491,13 @@ export default function MapPage() {
                   </div>
 
                   <button 
-                     type="button" 
-                     onClick={handleCreateProject}
-                     disabled={creatingProject || !newProjectName.trim() || !newProjectCity.trim() || !newProjectUf.trim()}
-                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                     type="submit" 
+                     disabled={creatingProject}
+                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                   >
                      {creatingProject ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Criar Projeto'}
                   </button>
-               </div>
+               </form>
             </div>
          </div>
       )}
