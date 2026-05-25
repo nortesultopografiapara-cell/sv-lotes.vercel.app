@@ -883,6 +883,33 @@ function LotPopupContent({
       .replace(/.*linha.*/i, "")
       .replace(/.*kml.*/i, "") || String(lot.number).replace(/\D/g, "");
 
+  const [editablePrice, setEditablePrice] = useState(currentPrice);
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    setEditablePrice(currentPrice);
+  }, [currentPrice]);
+
+  const handleSavePrice = async () => {
+    try {
+      setIsSavingPrice(true);
+      setSavedSuccess(false);
+      const { error } = await supabase.from("blocks").update({ price: editablePrice }).eq("id", lot.id);
+      if (error) throw error;
+      
+      onAction(lot, lot.status, editablePrice);
+      
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2000);
+    } catch (err: any) {
+      console.error(err);
+      alert("Erro ao salvar preço: " + err.message);
+    } finally {
+      setIsSavingPrice(false);
+    }
+  };
+
   return (
     <div className="p-2 min-w-[320px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
       <div className="flex justify-between items-center mb-3">
@@ -972,15 +999,30 @@ function LotPopupContent({
           </div>
         </div>
         <div className="flex justify-between items-center pt-1">
-          <span className="text-gray-600 font-semibold">
+          <span className="text-gray-600 font-semibold mb-1">
             Valor do Lote (R$):
           </span>
-          <span className="text-gray-900 font-bold font-mono text-right">
-            {Number(lot.price || 0).toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
+          <div className="flex items-center gap-1 justify-end">
+            <input
+              type="number"
+              value={editablePrice}
+              onChange={(e) => setEditablePrice(Number(e.target.value))}
+              className="w-24 px-1 py-1 text-right text-sm border border-gray-300 rounded font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-gray-900"
+            />
+            <button
+              onClick={handleSavePrice}
+              disabled={isSavingPrice || editablePrice === currentPrice}
+              className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                savedSuccess 
+                  ? 'bg-green-500 text-white' 
+                  : editablePrice !== currentPrice
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isSavingPrice ? <Loader2 className="w-3 h-3 animate-spin"/> : (savedSuccess ? "Salvo" : "Salvar")}
+            </button>
+          </div>
         </div>
       </div>
 
