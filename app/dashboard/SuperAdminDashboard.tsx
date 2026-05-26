@@ -31,7 +31,7 @@ import {
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getSaasPlanDisplayName, getSaasPlanLimits, normalizeSaasPlanKey } from '@/lib/saasPlans';
+import { getCompanySaasPlan, getSaasPlanDisplayName, normalizeSaasPlanKey } from '@/lib/saasPlans';
 import { 
   LineChart, 
   Line, 
@@ -161,7 +161,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
 
       if (recent) {
          const formattedRecent = recent.map((r: any) => {
-            const saas = getSaasPlanLimits(r.plan || 'basic');
+            const saas = getCompanySaasPlan(r);
 
             return {
                id: r.id,

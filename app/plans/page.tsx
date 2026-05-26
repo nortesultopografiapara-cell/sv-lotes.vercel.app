@@ -18,7 +18,7 @@ import {
 } from '@/lib/masterProduction';
 import { supabase } from '@/lib/supabase';
 import {
-  getSaasPlanLimits,
+  getCompanySaasPlan,
   normalizeSaasPlanKey,
   saasLimitsDbPayload,
 } from '@/lib/saasPlans';
@@ -96,8 +96,11 @@ const PLANS_UI = {
   }
 };
 
-const mapDbPlanToUi = (planKey: string) => {
-  const key = normalizeSaasPlanKey(planKey);
+const mapDbPlanToUi = (companyOrPlan: string | Record<string, unknown>) => {
+  const key =
+    typeof companyOrPlan === 'string'
+      ? normalizeSaasPlanKey(companyOrPlan)
+      : getCompanySaasPlan(companyOrPlan as Parameters<typeof getCompanySaasPlan>[0]).planKey;
   if (key === 'profissional') return PLANS_UI.enterprise;
   if (key === 'business') return PLANS_UI.business;
   return PLANS_UI.starter;
@@ -439,7 +442,7 @@ export default function PlansPage() {
              </thead>
              <tbody>
                 {filteredCompanies.map((company, index) => {
-                   const uiPlan = mapDbPlanToUi(company.plan);
+                   const uiPlan = mapDbPlanToUi(company);
                    const isBasic = uiPlan.id === 'starter';
                    const isStandard = uiPlan.id === 'business';
                    const isPro = uiPlan.id === 'enterprise';

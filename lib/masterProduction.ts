@@ -2,7 +2,7 @@
  * Filtros e utilitários do painel Master — produção sem mocks/dados de teste.
  */
 
-import { normalizeSaasPlanKey } from '@/lib/saasPlans';
+import { getCompanySaasPlan, normalizeSaasPlanKey } from '@/lib/saasPlans';
 
 export type CompanyLike = {
   id?: string;
@@ -135,7 +135,7 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
 export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | null }>(
   company: T
 ) {
-  const planKey = normalizeSaasPlanKey(company.plan);
+  const planKey = getCompanySaasPlan(company).planKey;
   const uiPlan =
     planKey === 'profissional'
       ? 'PROFISSIONAL'

@@ -9,11 +9,9 @@ import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 import proj4 from 'proj4';
-import {
-  getSaasPlanAvailabilityMessage,
-  logSaasPlanUsage,
-  resolveCompanySaasLimits,
-} from '@/lib/saasPlans';
+import { resolveActiveTenantId } from '@/lib/activeTenant';
+import { logSaasCompanyContext } from '@/lib/saasPlans';
+import { useCompanySaas } from '@/hooks/useCompanySaas';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -166,24 +164,6 @@ type AuthUser = {
 
 type ProjectFeedback = { type: 'success' | 'error'; message: string };
 
-/** Resolve tenant/company ativo: perfil → DB → impersonação (super admin). */
-async function resolveActiveTenantId(user: AuthUser | null): Promise<string | null> {
-  if (!user) return null;
-  if (user.tenant_id) return user.tenant_id;
-
-  if (typeof window !== 'undefined') {
-    const impersonating = localStorage.getItem('impersonating_tenant_id');
-    if (impersonating && user.role === 'SUPER_ADMIN') return impersonating;
-  }
-
-  if (user.id && !['dev-preview-user', 'demo-user-id'].includes(user.id)) {
-    const { data } = await supabase.from('users').select('tenant_id').eq('id', user.id).maybeSingle();
-    if (data?.tenant_id) return data.tenant_id;
-  }
-
-  return null;
-}
-
 function applyTenantFilterToProjectsQuery(
   query: ReturnType<typeof supabase.from>,
   user: AuthUser,
@@ -292,12 +272,19 @@ async function createProjectThroughApi(payload: {
 
 export default function MapPage() {
   const { user, loading: authLoading } = useAuth();
+  const {
+    saas,
+    company: saasCompany,
+    tenantId: saasTenantId,
+    availabilityMessage: planAvailabilityMsg,
+    loading: saasLoading,
+    reload: reloadSaas,
+  } = useCompanySaas();
+  const projectLimit = saas?.maxProjects ?? null;
+  const companyPlan = saas?.displayName ?? '';
   const [search, setSearch] = useState('');
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [projectLimit, setProjectLimit] = useState<number | null>(null);
-  const [companyPlan, setCompanyPlan] = useState<string>('');
-  const [planAvailabilityMsg, setPlanAvailabilityMsg] = useState<string>('');
   
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
 
@@ -496,30 +483,8 @@ export default function MapPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const activeTenantId = await resolveActiveTenantId(user);
-
-      let limit: number | null = null;
-      let pName = '';
-      let availabilityMsg = '';
-      let companyForPlan: { plan?: string | null; plan_type?: string | null } | null = null;
-      const planTenantId = activeTenantId || user.tenant_id;
-      if (planTenantId) {
-        const { data: companyData } = await supabase
-          .from('companies')
-          .select('plan, plan_type')
-          .eq('id', planTenantId)
-          .maybeSingle();
-        if (companyData) {
-          companyForPlan = companyData;
-          const saas = resolveCompanySaasLimits(companyData);
-          limit = saas.maxProjects;
-          pName = saas.displayName;
-          availabilityMsg = getSaasPlanAvailabilityMessage(companyData.plan ?? companyData.plan_type);
-        }
-      }
-      setProjectLimit(limit);
-      setCompanyPlan(pName);
-      setPlanAvailabilityMsg(availabilityMsg);
+      const activeTenantId =
+        saasTenantId ?? (await resolveActiveTenantId(user));
 
       if (user.role !== 'SUPER_ADMIN' && !activeTenantId) {
         setProjects([]);
@@ -543,22 +508,20 @@ export default function MapPage() {
 
       const projectList = data || [];
       setProjects(projectList);
-      if (companyForPlan) {
-        logSaasPlanUsage(companyForPlan.plan ?? companyForPlan.plan_type, projectList.length);
-      }
+      logSaasCompanyContext(activeTenantId, saasCompany, projectList.length);
     } catch (err) {
       console.error(err);
       setProjects([]);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, saasTenantId, saasCompany]);
 
   useEffect(() => {
-    if (!authLoading) {
+    if (!authLoading && !saasLoading) {
       loadProjects();
     }
-  }, [user, authLoading, loadProjects]);
+  }, [user, authLoading, saasLoading, loadProjects]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || projects.length === 0) return;
@@ -603,7 +566,12 @@ export default function MapPage() {
   };
 
   const openNewProjectModal = () => {
-    if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
+    if (
+      projectLimit != null &&
+      projectLimit > 0 &&
+      projects.length >= projectLimit &&
+      user?.role !== 'SUPER_ADMIN'
+    ) {
       setProjectFeedback({
         type: 'error',
         message: `Limite do plano ${companyPlan || ''} (${projectLimit} loteamentos) atingido. Contate o administrador.`,
@@ -641,7 +609,12 @@ export default function MapPage() {
       return;
     }
 
-    if (projectLimit !== null && projects.length >= projectLimit && user.role !== 'SUPER_ADMIN') {
+    if (
+      projectLimit != null &&
+      projectLimit > 0 &&
+      projects.length >= projectLimit &&
+      user.role !== 'SUPER_ADMIN'
+    ) {
       setProjectFeedback({
         type: 'error',
         message: `O limite do seu plano (${projectLimit} loteamentos) foi atingido.`,
@@ -685,6 +658,7 @@ export default function MapPage() {
           user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
       });
 
+      await reloadSaas();
       await loadProjects();
 
       setProjectFeedback({ type: 'success', message: 'Projeto criado com sucesso!' });

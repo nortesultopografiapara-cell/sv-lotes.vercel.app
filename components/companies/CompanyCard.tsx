@@ -14,10 +14,10 @@ import {
   Users,
 } from 'lucide-react';
 import '@/components/admin/admin-shell.css';
-import { getSaasPlanDisplayName, getSaasPlanLimits, normalizeSaasPlanKey } from '@/lib/saasPlans';
+import { getCompanySaasPlan } from '@/lib/saasPlans';
 
 function planLabel(plan?: string) {
-  return getSaasPlanDisplayName(normalizeSaasPlanKey(plan));
+  return getCompanySaasPlan({ plan }).displayName;
 }
 
 function StatusBadge({ status, legacyActive }: { status?: string; legacyActive?: boolean }) {
@@ -185,7 +185,7 @@ export function CompanyCard({
             <MapIcon className="w-3.5 h-3.5 text-[var(--color-primary)]" />
             {projectCount}
             <span className="text-slate-500 font-normal text-xs">
-              / {getSaasPlanLimits(company.plan).maxProjects}
+              / {getCompanySaasPlan(company).maxProjects}
             </span>
           </p>
         </div>

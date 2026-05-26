@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 export interface UserProfile {
   id: string;
   tenant_id: string | null;
+  company_id: string | null;
   role: string;
   email: string;
   name: string;
@@ -36,6 +37,7 @@ export function useAuth() {
           setUser({
             id: 'dev-preview-user',
             tenant_id: '75fcaae6-8975-4e06-9100-8c8aa1537854',
+            company_id: '75fcaae6-8975-4e06-9100-8c8aa1537854',
             role: 'MASTER-ADMIN',
             email: 'sv@svtopografiaeprojetos.com.br',
             name: 'Desenvolvedor (Preview)',
@@ -58,6 +60,7 @@ export function useAuth() {
           setUser({
             id: 'demo-user-id',
             tenant_id: 'demo-tenant-id',
+            company_id: 'demo-tenant-id',
             role: 'ADMIN',
             email: 'demo@preview.local',
             name: 'Visitante (Demo)',
@@ -97,6 +100,7 @@ export function useAuth() {
             setUser({
               id: session.user.id,
               tenant_id: userData.tenant_id,
+              company_id: userData.company_id ?? userData.tenant_id ?? null,
               role: (userData.role || '').toUpperCase(),
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',

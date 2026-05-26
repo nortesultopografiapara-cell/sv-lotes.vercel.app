@@ -4,7 +4,12 @@ import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, L
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import { logSaasPlanUsage, resolveCompanySaasLimits } from '@/lib/saasPlans';
+import { resolveActiveTenantId } from '@/lib/activeTenant';
+import {
+  fetchCompanySaasByTenantId,
+  getCompanySaasPlan,
+  logSaasCompanyContext,
+} from '@/lib/saasPlans';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 
 export default function CorretoresPage() {
@@ -54,23 +59,22 @@ export default function CorretoresPage() {
   const loadBrokers = useCallback(async () => {
     if (!user) return;
     try {
-      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
-      
+      const resolvedTenantId =
+        (await resolveActiveTenantId(user)) ||
+        user?.tenant_id ||
+        (user as { company_id?: string }).company_id ||
+        null;
+
       let limit: number | null = null;
       let pName = '';
-      let companyForPlan: { plan?: string | null; plan_type?: string | null } | null = null;
+      let companyForPlan = null;
       if (resolvedTenantId) {
-         const { data: companyData, error } = await supabase
-           .from('companies')
-           .select('plan, plan_type')
-           .eq('id', resolvedTenantId)
-           .maybeSingle();
-         if (!error && companyData) {
-            companyForPlan = companyData;
-            const saas = resolveCompanySaasLimits(companyData);
-            limit = saas.maxBrokers;
-            pName = saas.displayName;
-         }
+        companyForPlan = await fetchCompanySaasByTenantId(supabase, resolvedTenantId);
+        if (companyForPlan) {
+          const saas = getCompanySaasPlan(companyForPlan);
+          limit = saas.maxBrokers;
+          pName = saas.displayName;
+        }
       }
       setBrokerLimit(limit);
       setCompanyPlan(pName);
@@ -237,11 +241,7 @@ export default function CorretoresPage() {
       const finalActiveBrokers = enhancedData.filter(b => b.active);
       setCorretores(finalActiveBrokers);
       if (companyForPlan) {
-        logSaasPlanUsage(
-          companyForPlan.plan ?? companyForPlan.plan_type,
-          undefined,
-          finalActiveBrokers.length
-        );
+        logSaasCompanyContext(resolvedTenantId, companyForPlan, undefined, finalActiveBrokers.length);
       }
       console.log("BROKERS_FINAL_RENDER_LIST", finalActiveBrokers);
 
