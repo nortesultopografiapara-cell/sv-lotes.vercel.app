@@ -162,32 +162,208 @@ function isContractVisibleInList(_c: any): boolean {
   return true;
 }
 
-/** Garante campos mínimos para exibição quando o join falha. */
-function enrichContractRow(row: any): any {
-  if (!row) return row;
-  const shortId = (id?: string) => (id ? `${String(id).slice(0, 8)}…` : "—");
+function looksLikeUuidFragment(value: string): boolean {
+  const s = String(value || "").trim();
+  if (!s) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s)) return true;
+  if (s.length >= 12 && /^[0-9a-f-]+$/i.test(s)) return true;
+  return false;
+}
+
+function resolveCustomerName(customer: any, contract: any): string {
+  const name =
+    customer?.name ||
+    customer?.full_name ||
+    customer?.nome ||
+    contract?.customer_name ||
+    "";
+  return String(name).trim();
+}
+
+function resolveBlockQuadra(block: any): string {
+  if (!block) return "";
+  return String(
+    block.block_name || block.block || block.quadra || block.name || "",
+  ).trim();
+}
+
+function resolveLotNumber(block: any, contract: any): string {
+  const raw =
+    block?.lot_number ||
+    block?.number ||
+    block?.lot ||
+    block?.name ||
+    contract?.lot_number ||
+    "";
+  const s = String(raw).trim();
+  if (!s || looksLikeUuidFragment(s)) return "";
+  return s;
+}
+
+function resolveContractSaleValue(
+  contract: any,
+  sale?: any | null,
+  block?: any | null,
+): number {
+  const candidates = [
+    contract?.sale_value,
+    contract?.sale_value_display,
+    sale?.total_value,
+    sale?.final_value,
+    sale?.agreed_price,
+    sale?.sale_value,
+    sale?.sale_price,
+    block?.price,
+  ];
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+function buildLocationDisplay(blockName: string, lotNumber: string): string {
+  const quad = blockName && blockName !== "?" ? blockName : "";
+  const lot = lotNumber && !looksLikeUuidFragment(lotNumber) ? lotNumber : "";
+  if (quad && lot) return `QD ${quad} • LT ${lot}`;
+  if (quad) return `QD ${quad}`;
+  if (lot) return `LT ${lot}`;
+  return "Localização não informada";
+}
+
+async function fetchRowsByIds(
+  table: string,
+  select: string,
+  ids: string[],
+): Promise<any[]> {
+  if (!ids.length) return [];
+  const unique = [...new Set(ids.filter(Boolean))];
+  const chunkSize = 80;
+  const rows: any[] = [];
+
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .in("id", chunk);
+    if (error) {
+      console.error(`[CONTRATOS] erro ao buscar ${table}`, error);
+    } else if (data?.length) {
+      rows.push(...data);
+    }
+  }
+  return rows;
+}
+
+/** Enriquece um contrato com dados reais de customer, block, project e sale. */
+function enrichContractWithRelations(
+  contract: any,
+  maps: {
+    customers: Map<string, any>;
+    blocks: Map<string, any>;
+    projects: Map<string, any>;
+    sales: Map<string, any>;
+  },
+): any {
+  const customer = contract.customer_id
+    ? maps.customers.get(contract.customer_id)
+    : null;
+  const block = contract.block_id ? maps.blocks.get(contract.block_id) : null;
+  const sale = contract.sale_id ? maps.sales.get(contract.sale_id) : null;
+
+  const project =
+    (contract.project_id && maps.projects.get(contract.project_id)) ||
+    block?.projects ||
+    null;
+
+  const customer_name =
+    resolveCustomerName(customer, contract) || "Cliente não informado";
+  const block_name = resolveBlockQuadra(block);
+  const lot_number = resolveLotNumber(block, contract);
+  const project_name =
+    contract.project_name_snapshot ||
+    project?.name ||
+    block?.projects?.name ||
+    "Projeto não informado";
+  const sale_value_display = resolveContractSaleValue(contract, sale, block);
+  const location_display = buildLocationDisplay(block_name, lot_number);
+
+  const customerDoc =
+    customer?.document || customer?.cpf || contract?.customer_document || "";
+
   return {
-    ...row,
-    customers:
-      row.customers ||
-      (row.customer_id
-        ? {
-            id: row.customer_id,
-            name: row.customer_name || `Cliente (${shortId(row.customer_id)})`,
-            document: row.customer_document || row.customer_cpf || "",
-          }
-        : null),
-    projects: row.projects || (row.project_id ? { id: row.project_id, name: row.project_name_snapshot || `Projeto ${shortId(row.project_id)}` } : null),
-    blocks:
-      row.blocks ||
-      (row.block_id
-        ? {
-            id: row.block_id,
-            number: row.lot_number || row.block_number || shortId(row.block_id),
-            block_name: row.block_name || row.quadra || "?",
-          }
-        : null),
+    ...contract,
+    customers: customer
+      ? {
+          ...customer,
+          name: customer_name,
+          document: customerDoc || customer.document,
+        }
+      : customer_name !== "Cliente não informado"
+        ? { id: contract.customer_id, name: customer_name, document: customerDoc }
+        : null,
+    blocks: block
+      ? {
+          ...block,
+          block_name: block_name || block.block_name,
+          number: lot_number || block.number,
+          projects: block.projects || project,
+        }
+      : null,
+    projects: project?.id ? project : project?.name ? { name: project.name } : null,
+    sales: sale || contract.sales || null,
+    customer_name,
+    project_name,
+    block_name,
+    lot_number,
+    sale_value_display,
+    location_display,
   };
+}
+
+/** Busca relações em lote quando o select(*) não traz joins. */
+async function enrichContractsWithRelations(contracts: any[]): Promise<any[]> {
+  if (!contracts.length) return [];
+
+  const customerIds = contracts.map((c) => c.customer_id).filter(Boolean);
+  const blockIds = contracts.map((c) => c.block_id).filter(Boolean);
+  const projectIds = contracts.map((c) => c.project_id).filter(Boolean);
+  const saleIds = contracts.map((c) => c.sale_id).filter(Boolean);
+
+  const [customers, blocks, projects, sales] = await Promise.all([
+    fetchRowsByIds("customers", "*", customerIds as string[]),
+    fetchRowsByIds("blocks", `*, projects(name)`, blockIds as string[]),
+    fetchRowsByIds("projects", "*", projectIds as string[]),
+    fetchRowsByIds("sales", "*", saleIds as string[]),
+  ]);
+
+  console.log("[CONTRATOS] customer/block/sale encontrados", {
+    customers: customers.length,
+    blocks: blocks.length,
+    projects: projects.length,
+    sales: sales.length,
+  });
+
+  const maps = {
+    customers: new Map(customers.map((r) => [r.id, r])),
+    blocks: new Map(blocks.map((r) => [r.id, r])),
+    projects: new Map(projects.map((r) => [r.id, r])),
+    sales: new Map(sales.map((r) => [r.id, r])),
+  };
+
+  return contracts.map((contract) => {
+    const enriched = enrichContractWithRelations(contract, maps);
+    console.log("[CONTRATOS] contrato enriquecido", {
+      id: enriched.id,
+      contract_number: enriched.contract_number,
+      customer_name: enriched.customer_name,
+      project_name: enriched.project_name,
+      location_display: enriched.location_display,
+      sale_value_display: enriched.sale_value_display,
+    });
+    return enriched;
+  });
 }
 
 function normalizeContractStatus(status?: string | null): string {
@@ -301,7 +477,7 @@ export default function ContractsPage() {
 
         const rawRows = await loadContractsList(user, resolvedTenantId);
         const visible = rawRows.filter(isContractVisibleInList);
-        const rows = visible.map(enrichContractRow);
+        const rows = await enrichContractsWithRelations(visible);
 
         console.log("[CONTRATOS] contratos encontrados", {
           total: rows.length,
@@ -329,13 +505,9 @@ export default function ContractsPage() {
 
       data.forEach((c) => {
         const st = normalizeContractStatus(c.status);
-        const val = Number(
-          c.sales?.total_value ||
-            c.sales?.final_value ||
-            c.sales?.agreed_price ||
-            c.sale_value ||
-            0,
-        );
+        const val =
+          Number(c.sale_value_display) ||
+          resolveContractSaleValue(c, c.sales, c.blocks);
 
         valorTotal += val;
 
@@ -378,13 +550,17 @@ export default function ContractsPage() {
   }, [selectedContract]);
 
   const filteredContracts = contracts.filter(isContractVisibleInList).filter((c) => {
-    const p = c.customers?.name?.toLowerCase() || "";
-    const proj =
-      c.project_name_snapshot?.toLowerCase() ||
-      c.sales?.projects?.name?.toLowerCase() ||
-      c.blocks?.projects?.name?.toLowerCase() ||
-      c.projects?.name?.toLowerCase() ||
-      "";
+    const p =
+      (c.customer_name || c.customers?.name || "").toLowerCase();
+    const proj = (
+      c.project_name ||
+      c.project_name_snapshot ||
+      c.sales?.projects?.name ||
+      c.blocks?.projects?.name ||
+      c.projects?.name ||
+      ""
+    ).toLowerCase();
+    const loc = (c.location_display || "").toLowerCase();
     const doc =
       c.customers?.document?.toLowerCase() ||
       c.customers?.cpf?.toLowerCase() ||
@@ -401,6 +577,7 @@ export default function ContractsPage() {
     return (
       p.includes(term) ||
       proj.includes(term) ||
+      loc.includes(term) ||
       doc.includes(term) ||
       cnum.includes(term) ||
       cid.includes(term) ||
@@ -1378,25 +1555,11 @@ export default function ContractsPage() {
               filteredContracts.map((c) => {
                 const isSelected = selectedContract?.id === c.id;
                 const cnum = displayContractNumber(c.contract_number);
-                const projName =
-                  c.project_name_snapshot ||
-                  c.sales?.projects?.name ||
-                  c.blocks?.projects?.name ||
-                  c.projects?.name ||
-                  "Projeto não informado";
-                const quad =
-                  c.blocks?.block_name ||
-                  c.blocks?.name ||
-                  c.sales?.blocks?.block_name ||
-                  "?";
-                const lote = c.blocks?.number || c.sales?.blocks?.number || "?";
-                const loc = `QD ${quad} • LT ${lote}`;
-                const val = Number(
-                  c.sales?.total_value ||
-                    c.sales?.final_value ||
-                    c.sales?.agreed_price ||
-                    0,
-                );
+                const projName = c.project_name || "Projeto não informado";
+                const loc = c.location_display || "Localização não informada";
+                const val =
+                  Number(c.sale_value_display) ||
+                  resolveContractSaleValue(c, c.sales, c.blocks);
 
                 return (
                   <button
@@ -1433,18 +1596,13 @@ export default function ContractsPage() {
                       </div>
                     </div>
                     <div className="text-sm font-semibold text-gray-200 truncate pr-4">
-                      {c.customers?.name || "Cliente não informado"}
+                      {c.customer_name || c.customers?.name || "Cliente não informado"}
                     </div>
-                    {c.customers?.document && (
+                    {(c.customers?.document || c.customers?.cpf) && (
                       <div className="text-[10px] text-gray-500 mt-0.5">
-                        CPF/CNPJ: {c.customers.document}
+                        CPF/CNPJ: {c.customers?.document || c.customers?.cpf}
                       </div>
                     )}
-                    <div className="text-[10px] text-gray-600 mt-0.5 font-mono">
-                      {c.customer_id ? `cliente: ${String(c.customer_id).slice(0, 8)}…` : ""}
-                      {c.block_id ? ` • lote: ${String(c.block_id).slice(0, 8)}…` : ""}
-                      {c.project_id ? ` • proj: ${String(c.project_id).slice(0, 8)}…` : ""}
-                    </div>
 
                     <div className="flex justify-between items-end mt-3">
                       <div>
@@ -1543,7 +1701,8 @@ export default function ContractsPage() {
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Cliente</p>
                     <p className="font-semibold text-gray-200">
-                      {selectedContract.customers?.name ||
+                      {selectedContract.customer_name ||
+                        selectedContract.customers?.name ||
                         "Cliente não informado"}
                     </p>
                     <p className="text-[10px] text-gray-500">
@@ -1556,7 +1715,8 @@ export default function ContractsPage() {
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Projeto</p>
                     <p className="font-semibold text-gray-200">
-                      {selectedContract.project_name_snapshot ||
+                      {selectedContract.project_name ||
+                        selectedContract.project_name_snapshot ||
                         selectedContract.sales?.projects?.name ||
                         selectedContract.blocks?.projects?.name ||
                         selectedContract.projects?.name ||
@@ -1566,15 +1726,14 @@ export default function ContractsPage() {
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Localização</p>
                     <p className="font-semibold text-gray-200">
-                      QD{" "}
-                      {selectedContract.blocks?.block_name ||
-                        selectedContract.blocks?.name ||
-                        selectedContract.sales?.blocks?.block_name ||
-                        "?"}{" "}
-                      • LT{" "}
-                      {selectedContract.blocks?.number ||
-                        selectedContract.sales?.blocks?.number ||
-                        "?"}
+                      {selectedContract.location_display ||
+                        buildLocationDisplay(
+                          resolveBlockQuadra(selectedContract.blocks),
+                          resolveLotNumber(
+                            selectedContract.blocks,
+                            selectedContract,
+                          ),
+                        )}
                     </p>
                   </div>
                   <div>
@@ -1586,12 +1745,12 @@ export default function ContractsPage() {
                         style: "currency",
                         currency: "BRL",
                       }).format(
-                        Number(
-                          selectedContract.sales?.total_value ||
-                            selectedContract.sales?.final_value ||
-                            selectedContract.sales?.agreed_price ||
-                            0,
-                        ),
+                        Number(selectedContract.sale_value_display) ||
+                          resolveContractSaleValue(
+                            selectedContract,
+                            selectedContract.sales,
+                            selectedContract.blocks,
+                          ),
                       )}
                     </p>
                   </div>
