@@ -441,6 +441,91 @@ function resolveCashMovementMeta(c: any): {
   };
 }
 
+export type FinancialTotalsResult = {
+  totalEntradas: number;
+  totalSaidas: number;
+  saldoFinal: number;
+};
+
+/** Mesma lógica dos cards Entradas/Saídas do módulo Financeiro. */
+export function calculateFinancialTotals(
+  receipts: any[],
+  cashMvs: any[],
+  comms: any[],
+): FinancialTotalsResult {
+  let totalEntradas = 0;
+  let totalSaidas = 0;
+
+  const safeReceipts = receipts || [];
+  const safeCash = cashMvs || [];
+  const safeComms = comms || [];
+
+  safeReceipts.forEach((r) => {
+    const status = (r.status || "").toLowerCase();
+    if (status === "pago" || status === "paid") {
+      totalEntradas += Number(r.paid_amount) || Number(r.amount) || 0;
+    }
+  });
+
+  safeCash.forEach((c) => {
+    const status = (c.status || "ativo").toLowerCase();
+    if (status === "estornado" || status === "cancelado" || status === "deleted") {
+      return;
+    }
+    const typeStr = (c.type || "").toLowerCase();
+    const isSaidaStr = ["saida", "saída", "saida ", "despesa", "expense"].some(
+      (val) => typeStr.includes(val),
+    );
+    const isEntradaStr = typeStr.includes("entrada");
+
+    if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) {
+      totalEntradas += Number(c.amount || 0);
+    }
+
+    if (isSaidaStr) {
+      totalSaidas += Number(c.amount || 0);
+    }
+  });
+
+  safeComms.forEach((cm) => {
+    const cmStatus = (cm.status || "").toLowerCase();
+    const isCommPaid = ["pago", "paga", "paid", "aprovado", "aprovada"].includes(
+      cmStatus,
+    );
+
+    if (!isCommPaid) return;
+
+    const amount = Number(cm.amount || 0);
+    const duplicatedInCash = safeCash.some((c) => {
+      const st = (c.status || "ativo").toLowerCase();
+      if (st === "estornado" || st === "cancelado" || st === "deleted") {
+        return false;
+      }
+      const typeStr = (c.type || "").toLowerCase();
+      const isSaidaStr = ["saida", "saída", "saida ", "despesa", "expense"].some(
+        (val) => typeStr.includes(val),
+      );
+      if (!isSaidaStr) return false;
+      const cMd = getCashMovementMetadata(c);
+      const brokerMatch =
+        cm.broker_id &&
+        (cMd.broker_id === cm.broker_id || c.broker_id === cm.broker_id);
+      return (
+        (c.sale_id === cm.sale_id || brokerMatch) &&
+        Math.abs(Number(c.amount) - amount) < 1
+      );
+    });
+    if (duplicatedInCash) return;
+    totalSaidas += amount;
+  });
+
+  return {
+    totalEntradas,
+    totalSaidas,
+    saldoFinal: totalEntradas - totalSaidas,
+  };
+}
+
 /** Lista unificada — mesma base dos cards Entradas/Saídas. */
 export function buildCashFlowItems(
   receipts: any[],

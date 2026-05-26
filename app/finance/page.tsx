@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import {
   buildCashFlowItems,
+  calculateFinancialTotals,
   cashFlowItemsToReportRows,
   filterFlowReportRows,
   formatFlowDate,
@@ -33,84 +34,10 @@ import {
 import { generateExpenseReceiptPdf } from '@/lib/expenseReceiptPdf';
 
 export type { CashFlowItem };
-export { buildCashFlowItems };
+export { buildCashFlowItems, calculateFinancialTotals };
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms: any[]) {
-    let totalEntradas = 0;
-    let totalSaidas = 0;
-
-    const safeReceipts = receipts || [];
-    const safeCash = cashMvs || [];
-    const safeComms = comms || [];
-    
-    let cashMovementsTotal = 0;
-    let brokerCommissionsTotal = 0;
-    
-    console.log("FINANCE_TOTALS_PAYMENTS_SOURCE", safeReceipts);
-    console.log("FINANCE_TOTALS_CASH_MOVEMENTS_SOURCE", safeCash);
-    console.log("FINANCE_TOTALS_COMMISSIONS_SOURCE", safeComms);
-
-    // Recebimentos (Entradas)
-    safeReceipts.forEach(r => {
-        const status = r.status?.toLowerCase() || 'pendente';
-        if (status === 'pago') {
-           totalEntradas += Number(r.paid_amount) || Number(r.amount) || 0;
-        }
-    });
-
-    // Movimentações Caixa (Entradas e Saídas)
-    safeCash.forEach(c => {
-        const status = c.status?.toLowerCase() || 'ativo';
-        if (status !== 'estornado' && status !== 'cancelado' && status !== 'deleted') {
-            const typeStr = (c.type || '').toLowerCase();
-            const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(val => typeStr.includes(val));
-            const isEntradaStr = typeStr.includes('entrada');
-            
-            if (isEntradaStr && !isSaidaStr && !c.finance_receipt_id) {
-                totalEntradas += Number(c.amount || 0);
-            }
-            
-            if (isSaidaStr) {
-                totalSaidas += Number(c.amount || 0);
-                cashMovementsTotal += Number(c.amount || 0);
-            }
-        }
-    });
-
-    // Comissões (Saídas) — ignora se já existe movimento de caixa equivalente
-    safeComms.forEach(cm => {
-        const cmStatus = cm.status?.toLowerCase() || 'pendente';
-        const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
-        
-        if (isCommPaid) {
-            const amount = Number(cm.amount || 0);
-            const duplicatedInCash = safeCash.some((c) => {
-                const st = (c.status || 'ativo').toLowerCase();
-                if (st === 'estornado' || st === 'cancelado' || st === 'deleted') return false;
-                const typeStr = (c.type || '').toLowerCase();
-                const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some((val) => typeStr.includes(val));
-                if (!isSaidaStr) return false;
-                return (
-                  (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
-                  Math.abs(Number(c.amount) - amount) < 1
-                );
-            });
-            if (duplicatedInCash) return;
-            totalSaidas += amount;
-            brokerCommissionsTotal += amount;
-        }
-    });
-    
-    console.log("CASH_MOVEMENTS_TOTAL", cashMovementsTotal);
-    console.log("BROKER_COMMISSIONS_TOTAL", brokerCommissionsTotal);
-    console.log("TOTAL_SAIDAS_FINAL", totalSaidas);
-    console.log("FINANCE_TOTALS_RESULT", { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas });
-
-    return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
-}
 
 const INITIAL_SAIDA_FORM = {
   category: 'Despesa administrativa',

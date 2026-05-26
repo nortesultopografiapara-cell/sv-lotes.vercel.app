@@ -28,6 +28,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { calculateFinancialTotals } from '@/lib/financeCashFlow';
 import dynamic from 'next/dynamic';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import { motion, AnimatePresence } from 'motion/react';
@@ -52,11 +53,15 @@ function OperationalDashboard({ user }: { user: any }) {
     reserved: 0,
     sold: 0,
     vgv: 0,
-    recebimentos_mes: 22500,
-    a_receber: 139500,
-    comissoes_pagas: 8100,
+    recebimentos_mes: 0,
+    a_receber: 0,
+    comissoes_pagas: 0,
     comissoes_pendentes: 0,
-    inadimplencia: 0.00
+    inadimplencia: 0,
+    total_entradas: 0,
+    total_saidas: 0,
+    saldo_atual: 0,
+    margem_percent: 0,
   });
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,55 +136,89 @@ function OperationalDashboard({ user }: { user: any }) {
         let comissoesPendentes = 0;
         let aReceber = 0;
         let inadimplenciaVal = 0;
-        
+        let totalEntradas = 0;
+        let totalSaidas = 0;
+        let saldoAtual = 0;
+        let margemPercent = 0;
+
         try {
-            const startOfMonthDate = new Date(currentTime.getFullYear(), currentTime.getMonth(), 1).toISOString();
-            
-            // Basic financial fetch if available
-            let cashQuery = supabase.from('cash_movements').select('amount, type, category').eq('type', 'entrada').gte('movement_date', startOfMonthDate);
-            if(resolvedTenantId) cashQuery = cashQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-            
-            const { data: cData } = await cashQuery;
-            if (cData && cData.length > 0) {
-               recebimentosMes = cData.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-            } else {
-               recebimentosMes = 22500; // mock if no data just to keep the visual filled for presentation
+            const startOfMonth = new Date(
+              currentTime.getFullYear(),
+              currentTime.getMonth(),
+              1,
+            );
+            const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+
+            let recQuery = supabase.from('finance_receipts').select('*');
+            if (resolvedTenantId) {
+              recQuery = recQuery.or(
+                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
+              );
             }
-            
-            let commQuery = supabase.from('broker_commissions').select('amount, status');
-            if(resolvedTenantId) commQuery = commQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+            const { data: receiptsData } = await recQuery;
+
+            let cashQuery = supabase.from('cash_movements').select('*');
+            if (resolvedTenantId) {
+              cashQuery = cashQuery.or(
+                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
+              );
+            }
+            const { data: cashData } = await cashQuery;
+
+            let commQuery = supabase.from('broker_commissions').select('*');
+            if (resolvedTenantId) {
+              commQuery = commQuery.or(
+                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
+              );
+            }
             const { data: commsData } = await commQuery;
-            
-            if (commsData && commsData.length > 0) {
-                commsData.forEach(c => {
-                   const st = String(c.status).toLowerCase();
-                   if (['pago', 'paid', 'aprovado'].some(s => st.includes(s))) {
-                       comissoesPagas += Number(c.amount) || 0;
-                   } else if (['pendente', 'pending'].some(s => st.includes(s))) {
-                       comissoesPendentes += Number(c.amount) || 0;
-                   }
-                });
-            } else {
-               comissoesPagas = 8100;
-               comissoesPendentes = 0;
-            }
-            
-            let recQuery = supabase.from('finance_receipts').select('amount, status');
-            if(resolvedTenantId) recQuery = recQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-            const { data: rData } = await recQuery;
-            
-            if (rData && rData.length > 0) {
-                rData.forEach(r => {
-                   const st = String(r.status).toLowerCase();
-                   if (['pendente', 'pending'].some(x => st.includes(x))) {
-                       aReceber += Number(r.amount) || 0;
-                   }
-                });
-            } else {
-               aReceber = 139500;
-            }
-        } catch(e) {
-            console.error(e);
+
+            const totals = calculateFinancialTotals(
+              receiptsData || [],
+              cashData || [],
+              commsData || [],
+            );
+            totalEntradas = totals.totalEntradas;
+            totalSaidas = totals.totalSaidas;
+            saldoAtual = totals.saldoFinal;
+            margemPercent =
+              totalEntradas > 0 ? (saldoAtual / totalEntradas) * 100 : 0;
+
+            console.log('[DASHBOARD] resumo financeiro real', totals);
+            console.log('[DASHBOARD] entradas', totalEntradas);
+            console.log('[DASHBOARD] saídas', totalSaidas);
+            console.log('[DASHBOARD] saldo', saldoAtual);
+
+            (receiptsData || []).forEach((r) => {
+              const st = String(r.status || '').toLowerCase();
+              const amt = Number(r.paid_amount) || Number(r.amount) || 0;
+              const paidAt = r.paid_at ? new Date(r.paid_at) : null;
+              if (
+                (st === 'pago' || st === 'paid') &&
+                paidAt &&
+                paidAt >= startOfMonth
+              ) {
+                recebimentosMes += amt;
+              }
+              if (st === 'pendente' || st === 'pending') {
+                aReceber += Number(r.amount) || 0;
+              }
+              if (st === 'atrasado' || st === 'overdue') {
+                inadimplenciaVal += Number(r.amount) || 0;
+              }
+            });
+
+            (commsData || []).forEach((c) => {
+              const st = String(c.status || '').toLowerCase();
+              const amt = Number(c.amount) || 0;
+              if (['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(st)) {
+                comissoesPagas += amt;
+              } else if (['pendente', 'pending'].includes(st)) {
+                comissoesPendentes += amt;
+              }
+            });
+        } catch (e) {
+            console.error('[DASHBOARD] erro financeiro', e);
         }
 
         // Load Activities / Logs
@@ -191,7 +230,21 @@ function OperationalDashboard({ user }: { user: any }) {
         const { data: logsData } = await logsQuery;
         setActivities(logsData || []);
         
-        setStats({ available, reserved, sold, vgv, recebimentos_mes: recebimentosMes, a_receber: aReceber, comissoes_pagas: comissoesPagas, comissoes_pendentes: comissoesPendentes, inadimplencia: inadimplenciaVal });
+        setStats({
+          available,
+          reserved,
+          sold,
+          vgv,
+          recebimentos_mes: recebimentosMes,
+          a_receber: aReceber,
+          comissoes_pagas: comissoesPagas,
+          comissoes_pendentes: comissoesPendentes,
+          inadimplencia: inadimplenciaVal,
+          total_entradas: totalEntradas,
+          total_saidas: totalSaidas,
+          saldo_atual: saldoAtual,
+          margem_percent: margemPercent,
+        });
       } catch (err) {
         console.error("Dashboard stats error:", err);
       } finally {
@@ -250,10 +303,12 @@ function OperationalDashboard({ user }: { user: any }) {
     { name: 'Jun', vgv: stats.vgv * 0.08 },
   ];
   
-  const mockBarData = [
-    { name: 'Abr', recebimentos: stats.recebimentos_mes * 0.4, despesas: stats.recebimentos_mes * 0.2 },
-    { name: 'Mai', recebimentos: stats.recebimentos_mes, despesas: stats.recebimentos_mes * 0.6 },
-    { name: 'Jun', recebimentos: 0, despesas: 0 },
+  const cashFlowBarData = [
+    {
+      name: 'Caixa',
+      recebimentos: stats.total_entradas,
+      despesas: stats.total_saidas,
+    },
   ];
 
   return (
@@ -565,7 +620,7 @@ function OperationalDashboard({ user }: { user: any }) {
                <h3 className="text-sm font-bold text-white tracking-wide mb-6">Recebimentos x Despesas</h3>
                <div className="flex-1 min-h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={mockBarData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }} barSize={16}>
+                    <BarChart data={cashFlowBarData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }} barSize={24}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                       <XAxis dataKey="name" stroke="#6b7280" fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis stroke="#6b7280" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `R$ ${(val/1000)}k`} />
@@ -588,24 +643,31 @@ function OperationalDashboard({ user }: { user: any }) {
                <div className="space-y-4 flex-1">
                   <div className="flex justify-between items-center py-1">
                      <span className="text-sm text-gray-400">Total de Entradas</span>
-                     <span className="text-sm font-bold text-emerald-500">{formatCurrency(stats.recebimentos_mes)}</span>
+                     <span className="text-sm font-bold text-emerald-500">{formatCurrency(stats.total_entradas)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                      <span className="text-sm text-gray-400">Total de Saídas</span>
-                     <span className="text-sm font-bold text-red-500">{formatCurrency(stats.comissoes_pagas + mockBarData[1].despesas)}</span>
+                     <span className="text-sm font-bold text-red-500">{formatCurrency(stats.total_saidas)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-t border-white/5 pt-3 mt-1">
                      <span className="text-sm text-gray-300 font-medium">Saldo Atual</span>
-                     <span className="text-sm font-bold text-blue-500">{formatCurrency(stats.recebimentos_mes - (stats.comissoes_pagas + mockBarData[1].despesas))}</span>
+                     <span className="text-sm font-bold text-blue-500">{formatCurrency(stats.saldo_atual)}</span>
                   </div>
                   
                   <div className="pt-4 mt-2">
                      <div className="flex justify-between items-center mb-1.5">
                         <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">Margem</span>
-                        <span className="text-xs font-bold text-white">41,78%</span>
+                        <span className="text-xs font-bold text-white">
+                          {loading ? '—' : `${stats.margem_percent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`}
+                        </span>
                      </div>
                      <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-                        <div className="bg-blue-600 h-full rounded-full" style={{ width: '41.78%' }} />
+                        <div
+                          className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, stats.margem_percent))}%`,
+                          }}
+                        />
                      </div>
                   </div>
                </div>
