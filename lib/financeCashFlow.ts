@@ -3,6 +3,11 @@ import { displayContractNumber } from "@/lib/contractNumber";
 export type CashFlowItem = {
   id: string;
   source: "finance_receipts" | "cash_movements" | "broker_commissions";
+  /** Tabela de origem no banco (cash_movements, broker_commissions, finance_receipts). */
+  source_table: string | null;
+  source_id: string | null;
+  /** Tipo do registro na tabela de origem (ex.: saida, entrada). */
+  type: string | null;
   cashMovementId: string | null;
   receiptId: string | null;
   contractId: string | null;
@@ -280,6 +285,9 @@ export function buildCashFlowItems(
     items.push({
       id: `rec_${p.id}`,
       source: "finance_receipts",
+      source_table: "finance_receipts",
+      source_id: p.id,
+      type: "entrada",
       cashMovementId: null,
       receiptId: p.id,
       contractId: p.contract_id || firstSaleContract?.id || null,
@@ -326,6 +334,9 @@ export function buildCashFlowItems(
     items.push({
       id: `cash_${c.id}`,
       source: "cash_movements",
+      source_table: "cash_movements",
+      source_id: c.id,
+      type: c.type || (isSaida ? "saida" : "entrada"),
       cashMovementId: c.id,
       receiptId: c.finance_receipt_id || null,
       contractId: c.contract_id || c.contracts?.id || null,
@@ -397,6 +408,9 @@ export function buildCashFlowItems(
     items.push({
       id: `comm_${cm.id}`,
       source: "broker_commissions",
+      source_table: "broker_commissions",
+      source_id: cm.id,
+      type: "saida",
       cashMovementId: null,
       receiptId: null,
       contractId: firstContract.id || cm.contract_id || cm.contracts?.id || null,

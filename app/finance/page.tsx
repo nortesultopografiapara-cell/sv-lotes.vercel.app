@@ -19,6 +19,7 @@ import {
   type CashFlowItem,
   type CashMovementManualMeta,
 } from '@/lib/financeCashFlow';
+import { deleteCashFlowItem } from '@/lib/financeCashFlowDelete';
 import { displayContractNumber } from '@/lib/contractNumber';
 import {
   createDocumentValidationCode,
@@ -75,14 +76,27 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
         }
     });
 
-    // Comissões (Saídas)
+    // Comissões (Saídas) — ignora se já existe movimento de caixa equivalente
     safeComms.forEach(cm => {
         const cmStatus = cm.status?.toLowerCase() || 'pendente';
         const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
         
         if (isCommPaid) {
-            totalSaidas += Number(cm.amount || 0);
-            brokerCommissionsTotal += Number(cm.amount || 0);
+            const amount = Number(cm.amount || 0);
+            const duplicatedInCash = safeCash.some((c) => {
+                const st = (c.status || 'ativo').toLowerCase();
+                if (st === 'estornado' || st === 'cancelado' || st === 'deleted') return false;
+                const typeStr = (c.type || '').toLowerCase();
+                const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some((val) => typeStr.includes(val));
+                if (!isSaidaStr) return false;
+                return (
+                  (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
+                  Math.abs(Number(c.amount) - amount) < 1
+                );
+            });
+            if (duplicatedInCash) return;
+            totalSaidas += amount;
+            brokerCommissionsTotal += amount;
         }
     });
     
@@ -200,6 +214,7 @@ export default function FinancePage() {
   const [loadingSaidaLookups, setLoadingSaidaLookups] = useState(false);
   const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
   const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
+  const [financeToast, setFinanceToast] = useState<string | null>(null);
 
   const contractsForSaida = useMemo(() => {
     if (!saidaForm.project_id) return financeContracts;
@@ -538,6 +553,12 @@ export default function FinancePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading]);
+
+  useEffect(() => {
+    if (!financeToast) return;
+    const timer = setTimeout(() => setFinanceToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [financeToast]);
 
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
@@ -1244,6 +1265,58 @@ export default function FinancePage() {
     setShowSaidaModal(true);
   };
 
+  const applyOptimisticCashFlowRemoval = (item: CashFlowItem) => {
+    const linkedCashIds = new Set<string>();
+    if (item.commissionId) {
+      cashMovements.forEach((c) => {
+        const typeStr = (c.type || '').toLowerCase();
+        const isSaidaStr = ['saida', 'saída', 'despesa', 'expense'].some((v) =>
+          typeStr.includes(v),
+        );
+        if (!isSaidaStr) return;
+        const matches =
+          (c.source_table === 'broker_commissions' &&
+            c.source_id === item.commissionId) ||
+          (((c.sale_id && item.saleId && c.sale_id === item.saleId) ||
+            (c.broker_id && item.brokerId && c.broker_id === item.brokerId)) &&
+            Math.abs(Number(c.amount) - item.amount) < 1);
+        if (matches) linkedCashIds.add(c.id);
+      });
+    }
+    if (item.cashMovementId) linkedCashIds.add(item.cashMovementId);
+
+    setCashFlowItems((prev) =>
+      prev.filter(
+        (x) =>
+          x.id !== item.id &&
+          (!x.cashMovementId || !linkedCashIds.has(x.cashMovementId)),
+      ),
+    );
+
+    if (linkedCashIds.size > 0) {
+      setCashMovements((prev) =>
+        prev.filter((c) => !linkedCashIds.has(c.id)),
+      );
+    }
+
+    if (item.commissionId) {
+      setBrokerCommissions((prev) =>
+        prev.filter((c) => c.id !== item.commissionId),
+      );
+    }
+
+    if (item.tipo === 'saida') {
+      setStats((prev) => {
+        const newSaidas = Math.max(0, (prev.saidasCaixa || 0) - item.amount);
+        return {
+          ...prev,
+          saidasCaixa: newSaidas,
+          saldoCaixa: (prev.entradasCaixa || 0) - newSaidas,
+        };
+      });
+    }
+  };
+
   const handleFlowDeleteLancamento = async (item: CashFlowItem) => {
     if (item.tipo === 'entrada') {
       alert('Para entradas/parcelas, use Estornar em vez de excluir.');
@@ -1252,60 +1325,17 @@ export default function FinancePage() {
     if (!window.confirm(CONFIRM_DELETE_LANCAMENTO)) return;
 
     const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
-    console.log('[FINANCEIRO] excluir lançamento', item.id, item.source);
+    const snapshot = {
+      flow: cashFlowItems,
+      cash: cashMovements,
+      comms: brokerCommissions,
+      stats,
+    };
+
+    applyOptimisticCashFlowRemoval(item);
 
     try {
-      if (item.source === 'broker_commissions' && item.commissionId) {
-        const linkedCash = cashMovements.filter((c) => {
-          const typeStr = (c.type || '').toLowerCase();
-          const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(
-            (v) => typeStr.includes(v),
-          );
-          if (!isSaidaStr) return false;
-          return (
-            (c.sale_id && item.saleId && c.sale_id === item.saleId) ||
-            (c.broker_id && item.brokerId && c.broker_id === item.brokerId)
-          ) && Math.abs(Number(c.amount) - item.amount) < 1;
-        });
-
-        for (const cm of linkedCash) {
-          const { error: cashErr } = await supabase
-            .from('cash_movements')
-            .delete()
-            .eq('id', cm.id);
-          if (cashErr) {
-            await supabase
-              .from('cash_movements')
-              .update({ status: 'estornado' })
-              .eq('id', cm.id);
-          }
-        }
-
-        const { error: commErr } = await supabase
-          .from('broker_commissions')
-          .delete()
-          .eq('id', item.commissionId);
-
-        if (commErr) {
-          const { error: commUpdErr } = await supabase
-            .from('broker_commissions')
-            .update({ status: 'cancelado' })
-            .eq('id', item.commissionId);
-          if (commUpdErr) throw commUpdErr;
-        }
-
-        console.log('[FINANCEIRO] comissão removida', item.commissionId);
-      } else if (item.cashMovementId && item.source === 'cash_movements') {
-        const { error } = await supabase
-          .from('cash_movements')
-          .delete()
-          .eq('id', item.cashMovementId);
-        if (error) throw error;
-        console.log('[FINANCEIRO] despesa removida', item.cashMovementId);
-      } else {
-        alert('Não foi possível localizar o registro para exclusão.');
-        return;
-      }
+      await deleteCashFlowItem(supabase, item, cashMovements);
 
       try {
         await supabase.from('audit_logs').insert([
@@ -1315,20 +1345,25 @@ export default function FinancePage() {
             user_id: user?.id,
             action: 'CASH_FLOW_DELETE',
             module: 'FINANCE',
-            description: `Exclusão fluxo: ${item.id}`,
+            description: `Exclusão fluxo: ${item.id} (${item.source_table}/${item.source_id})`,
           },
         ]);
       } catch (auditErr) {
         console.warn(auditErr);
       }
 
+      console.log('[FINANCEIRO] deletado com sucesso');
       await loadFinance();
       console.log('[FINANCEIRO] cards recalculados');
-      alert('Lançamento excluído. Totais e fluxo de caixa atualizados.');
+      setFinanceToast('Lançamento excluído com sucesso.');
     } catch (err: unknown) {
+      setCashFlowItems(snapshot.flow);
+      setCashMovements(snapshot.cash);
+      setBrokerCommissions(snapshot.comms);
+      setStats(snapshot.stats);
       const message = err instanceof Error ? err.message : String(err);
-      console.error('[FINANCEIRO] excluir lançamento erro', err);
-      alert('Erro ao excluir: ' + message);
+      console.error('[FINANCEIRO] erro ao deletar', err);
+      alert(message || 'Erro ao excluir lançamento.');
     }
   };
 
@@ -2440,7 +2475,16 @@ export default function FinancePage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#0b0e14] p-6 md:p-8 text-white h-full font-sans">
-      
+      {financeToast && (
+        <div
+          role="status"
+          className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-[#1a2e24] px-4 py-3 text-sm text-emerald-300 shadow-lg"
+        >
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          {financeToast}
+        </div>
+      )}
+
       {/* HEADER */}
       <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
