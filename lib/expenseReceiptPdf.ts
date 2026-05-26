@@ -106,13 +106,17 @@ export function buildNormalizedExpenseReceiptItem(
       blockFromMeta,
       item.locationLabel,
     ),
-    payment_method:
-      pickReceiptField(
-        md.payment_method,
-        options?.paymentMethod,
-        (item as { payment_method?: string }).payment_method,
-      ) || "Dinheiro/Não especificado",
+    payment_method: pickReceiptField(
+      (item as { payment_method?: string }).payment_method,
+      md.payment_method,
+      options?.paymentMethod,
+    ),
   };
+}
+
+function displayPaymentMethod(value: string | null | undefined): string {
+  const v = pickReceiptField(value);
+  return v || "Não informado";
 }
 
 function receiptFieldsFromItem(item: ExpenseReceiptItem) {
@@ -122,7 +126,7 @@ function receiptFieldsFromItem(item: ExpenseReceiptItem) {
     customerName: displayReceiptField(item.customer_name),
     beneficiary: displayReceiptField(item.broker_name),
     locationLabel: displayReceiptField(item.block_label),
-    paymentMethod: item.payment_method || "Dinheiro/Não especificado",
+    paymentMethod: displayPaymentMethod(item.payment_method),
   };
 }
 
@@ -206,12 +210,11 @@ export function resolveExpenseReceiptDisplay(
 
   const locationLabel = pickReceiptField(item.locationLabel);
 
-  const paymentMethod =
-    pickReceiptField(
-      md.payment_method,
-      extra?.paymentMethod,
-      (item as { payment_method?: string }).payment_method,
-    ) || "Dinheiro/Não especificado";
+  const paymentMethod = pickReceiptField(
+    (item as { payment_method?: string }).payment_method,
+    md.payment_method,
+    extra?.paymentMethod,
+  );
 
   return {
     projectName,

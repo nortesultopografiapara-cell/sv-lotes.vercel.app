@@ -18,6 +18,8 @@ import {
   splitCashMovementDescription,
   getCashMovementMetadata,
   buildSaidaCashMovementMetadata,
+  resolveFlowPaymentMethod,
+  SAIDA_PAYMENT_METHODS,
   parseMoneyAmount,
   emptyUuidToNull,
   stripUndefinedFields,
@@ -57,6 +59,7 @@ const INITIAL_SAIDA_FORM = {
   contract_number_manual: '',
   quadra_manual: '',
   lote_manual: '',
+  payment_method: 'PIX',
   movement_date: new Date().toISOString().split('T')[0],
 };
 
@@ -834,6 +837,11 @@ export default function FinancePage() {
       return alert('Para comissão, selecione o corretor ou informe o nome manualmente.');
     }
 
+    const paymentMethod = (saidaForm.payment_method || '').trim();
+    if (!paymentMethod) {
+      return alert('Selecione a forma de pagamento.');
+    }
+
     const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
     if (!resolvedTenantId) {
       return alert('Empresa não identificada. Faça login novamente.');
@@ -854,8 +862,7 @@ export default function FinancePage() {
         loteManual: saidaForm.lote_manual,
         projectId: saidaForm.project_id,
         projectName: projectFromList?.name,
-        paymentMethod:
-          saidaForm.category === 'Comissão' ? 'Transferência / PIX' : 'Dinheiro/Não especificado',
+        paymentMethod,
       });
 
       const coreFields = stripUndefinedFields({
@@ -1108,8 +1115,7 @@ export default function FinancePage() {
       cm?.sales?.projects?.name;
     const md = enriched.metadata || {};
     const defaultPayment =
-      md.payment_method ||
-      (item.category === 'Comissão' ? 'Transferência / PIX' : 'Dinheiro/Não especificado');
+      item.payment_method || md.payment_method || undefined;
 
     const validationCode = createDocumentValidationCode();
     const persistId = item.cashMovementId || item.commissionId || item.id;
@@ -1123,6 +1129,8 @@ export default function FinancePage() {
       projectNameFromDb: projectFromJoin,
       paymentMethod: defaultPayment,
     });
+    receiptItem.payment_method =
+      receiptItem.payment_method || defaultPayment || undefined;
 
     console.log('[RECIBO] item normalizado', receiptItem);
 
@@ -1261,7 +1269,23 @@ export default function FinancePage() {
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
       broker_id: md.broker_id || '',
-      broker_manual: md.broker_name || '',
+      broker_manual: md.beneficiary_manual || md.broker_manual || md.broker_name || '',
+      payment_method: (() => {
+        const pm = String(md.payment_method || '').trim();
+        if (
+          SAIDA_PAYMENT_METHODS.includes(
+            pm as (typeof SAIDA_PAYMENT_METHODS)[number],
+          )
+        ) {
+          return pm;
+        }
+        if (pm.toLowerCase().includes('pix')) return 'PIX';
+        if (pm.toLowerCase().includes('transfer')) return 'Transferência';
+        if (pm.toLowerCase().includes('dinheiro')) return 'Dinheiro';
+        if (pm.toLowerCase().includes('boleto')) return 'Boleto';
+        if (pm.toLowerCase().includes('cart')) return 'Cartão';
+        return 'PIX';
+      })(),
       customer_id: cm.customer_id || '',
       sale_id: cm.sale_id || '',
       customer_manual:
@@ -3033,6 +3057,11 @@ export default function FinancePage() {
                                 ? displayContractNumber(item.contractNumber)
                                 : flowDisplayLabel('', item.isManual)}
                             </span>
+                            {item.tipo === 'saida' && (
+                              <span className="block text-xs mt-0.5 text-gray-500">
+                                Pagamento: {resolveFlowPaymentMethod(item)}
+                              </span>
+                            )}
                          </td>
                          <td className="px-5 py-4 text-gray-500 text-xs uppercase">
                             {item.source === 'finance_receipts' && 'Parcela'}
@@ -3109,6 +3138,12 @@ export default function FinancePage() {
                     ? displayContractNumber(selectedFlowItem.contractNumber)
                     : flowDisplayLabel('', selectedFlowItem.isManual)}
                 </div>
+                {selectedFlowItem.tipo === 'saida' && (
+                  <div>
+                    <span className="text-xs text-gray-500 block">Forma de pagamento</span>
+                    {resolveFlowPaymentMethod(selectedFlowItem)}
+                  </div>
+                )}
                 {selectedFlowItem.locationLabel && selectedFlowItem.locationLabel !== 'Lançamento manual' && (
                   <div className="col-span-2">
                     <span className="text-xs text-gray-500 block">Quadra / Lote</span>
@@ -3262,6 +3297,24 @@ export default function FinancePage() {
                     placeholder="5685,37 ou 5685.37"
                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Forma de pagamento *</label>
+                  <select
+                    required
+                    value={saidaForm.payment_method}
+                    onChange={(e) =>
+                      setSaidaForm({ ...saidaForm, payment_method: e.target.value })
+                    }
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                  >
+                    {SAIDA_PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

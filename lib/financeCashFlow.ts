@@ -29,7 +29,30 @@ export type CashFlowItem = {
   brokerName: string;
   isManual: boolean;
   metadata: CashMovementMetadata | null;
+  payment_method: string | null;
 };
+
+export const SAIDA_PAYMENT_METHODS = [
+  "PIX",
+  "Dinheiro",
+  "Boleto",
+  "Cartão",
+  "Transferência",
+  "Outros",
+] as const;
+
+/** Forma de pagamento para listagem/recibo. */
+export function resolveFlowPaymentMethod(item: {
+  payment_method?: string | null;
+  metadata?: CashMovementMetadata | null;
+}): string {
+  const raw =
+    item.payment_method ||
+    item.metadata?.payment_method ||
+    "";
+  const v = String(raw).trim();
+  return v.length > 0 ? v : "Não informado";
+}
 
 const MANUAL_LABEL = "Lançamento manual";
 
@@ -588,6 +611,7 @@ export function buildCashFlowItems(
       brokerName: p.brokers?.name || "",
       isManual: false,
       metadata: null,
+      payment_method: null,
     });
   });
 
@@ -643,6 +667,7 @@ export function buildCashFlowItems(
       brokerName: meta.brokerName,
       isManual: meta.isManual,
       metadata: mdKeys,
+      payment_method: movementMd.payment_method || null,
     });
   });
 
@@ -722,6 +747,7 @@ export function buildCashFlowItems(
       brokerName,
       isManual: false,
       metadata: null,
+      payment_method: null,
     });
   });
 
