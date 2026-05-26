@@ -71,6 +71,222 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
     return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
 }
 
+export type CashFlowItem = {
+  id: string;
+  source: 'finance_receipts' | 'cash_movements' | 'broker_commissions';
+  cashMovementId: string | null;
+  movement_date: string;
+  tipo: 'entrada' | 'saida';
+  category: string;
+  description: string;
+  amount: number;
+  status: string;
+  projectName: string;
+  customerName: string;
+  locationLabel: string;
+  contractNumber: string;
+  brokerName: string;
+};
+
+function isCashMovementSaida(typeStr: string): boolean {
+  return ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(
+    (val) => typeStr.includes(val),
+  );
+}
+
+function resolveBlockLocation(block: any): string {
+  if (!block) return '';
+  const quad =
+    block.block_name || block.block || block.quadra || block.name || '';
+  const lot = block.lot_number || block.number || block.lot || '';
+  if (quad && lot) return `QD ${quad} • LT ${lot}`;
+  if (quad) return `QD ${quad}`;
+  if (lot) return `LT ${lot}`;
+  return '';
+}
+
+/** Lista unificada de fluxo — mesma base dos cards Entradas/Saídas. */
+export function buildCashFlowItems(
+  receipts: any[],
+  cashMvs: any[],
+  comms: any[],
+): CashFlowItem[] {
+  const items: CashFlowItem[] = [];
+
+  (receipts || []).forEach((p) => {
+    const status = (p.status || '').toLowerCase();
+    if (status !== 'pago' && status !== 'paid') return;
+
+    const amount = Number(p.paid_amount) || Number(p.amount) || 0;
+    if (amount <= 0) return;
+
+    const projectName =
+      p.projects?.name ||
+      p.sales?.projects?.name ||
+      p.blocks?.projects?.name ||
+      'Geral/Outros';
+    const contractNumber =
+      p.contracts?.contract_number ||
+      p.sales?.contracts?.[0]?.contract_number ||
+      p.sales?.contracts?.contract_number ||
+      '-';
+
+    items.push({
+      id: `rec_${p.id}`,
+      source: 'finance_receipts',
+      cashMovementId: null,
+      movement_date: p.paid_at || p.due_date || p.created_at || '',
+      tipo: 'entrada',
+      category:
+        p.installment_number === 0 || p.installment_number === '0'
+          ? 'Sinal/Entrada'
+          : 'Parcela',
+      description:
+        p.description ||
+        `Recebimento parcela ${p.installment_number ?? '1'}`.trim(),
+      amount,
+      status: 'ativo',
+      projectName,
+      customerName: p.customers?.name || p.customers?.full_name || '',
+      locationLabel: resolveBlockLocation(p.blocks),
+      contractNumber: String(contractNumber),
+      brokerName: p.brokers?.name || '',
+    });
+  });
+
+  (cashMvs || []).forEach((c) => {
+    const st = (c.status || 'ativo').toLowerCase();
+    if (st === 'estornado' || st === 'cancelado' || st === 'deleted') return;
+
+    const typeStr = (c.type || '').toLowerCase();
+    const isSaida = isCashMovementSaida(typeStr);
+    const isEntrada = typeStr.includes('entrada') && !isSaida;
+    if (!isSaida && !isEntrada) return;
+    if (isEntrada && c.finance_receipt_id) return;
+
+    const amount = Number(c.amount) || 0;
+    if (amount <= 0) return;
+
+    let projectName =
+      c.projects?.name ||
+      c.sales?.projects?.name ||
+      c.contracts?.projects?.name ||
+      '';
+    const contractNumber =
+      c.contracts?.contract_number ||
+      c.sales?.contracts?.contract_number ||
+      c.sales?.contracts?.[0]?.contract_number ||
+      '-';
+
+    if (
+      !projectName &&
+      (c.category === 'Comissão' || c.category === 'Comissao') &&
+      comms?.length
+    ) {
+      const matchingComm = comms.find(
+        (cm) =>
+          (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
+          Math.abs(Number(c.amount) - Number(cm.amount)) < 1,
+      );
+      if (matchingComm) {
+        projectName =
+          matchingComm.sales?.projects?.name ||
+          matchingComm.contracts?.projects?.name ||
+          projectName;
+      }
+    }
+    if (!projectName) projectName = 'Geral/Outros';
+
+    items.push({
+      id: `cash_${c.id}`,
+      source: 'cash_movements',
+      cashMovementId: c.id,
+      movement_date: c.movement_date || c.created_at || '',
+      tipo: isSaida ? 'saida' : 'entrada',
+      category: c.category || (isSaida ? 'Despesa' : 'Entrada manual'),
+      description: c.description || '-',
+      amount,
+      status: st === 'estornado' ? 'estornado' : 'ativo',
+      projectName,
+      customerName: c.customers?.name || c.customers?.full_name || '',
+      locationLabel: resolveBlockLocation(c.blocks),
+      contractNumber: String(contractNumber),
+      brokerName: c.brokers?.name || '',
+    });
+  });
+
+  (comms || []).forEach((cm) => {
+    const cmStatus = (cm.status || '').toLowerCase();
+    const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(
+      cmStatus,
+    );
+    if (!isCommPaid) return;
+
+    const amount = Number(cm.amount) || 0;
+    if (amount <= 0) return;
+
+    const duplicatedInCash = (cashMvs || []).some((c) => {
+      const typeStr = (c.type || '').toLowerCase();
+      if (!isCashMovementSaida(typeStr)) return false;
+      return (
+        (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
+        Math.abs(Number(c.amount) - amount) < 1
+      );
+    });
+    if (duplicatedInCash) return;
+
+    const sContracts = Array.isArray(cm.sales?.contracts)
+      ? cm.sales.contracts
+      : [cm.sales?.contracts].filter(Boolean);
+    const firstContract = sContracts[0] || {};
+    const contractNumber =
+      firstContract.contract_number ||
+      firstContract.number ||
+      cm.contracts?.contract_number ||
+      'Não Informado';
+
+    const sBlocks = Array.isArray(cm.sales?.blocks)
+      ? cm.sales.blocks
+      : [cm.sales?.blocks].filter(Boolean);
+    const firstBlock = sBlocks[0] || {};
+
+    const brokerName =
+      cm.brokers?.name || cm.brokers?.full_name || 'Corretor';
+    const customerName =
+      cm.sales?.customers?.name ||
+      cm.sales?.customers?.full_name ||
+      'Cliente';
+
+    items.push({
+      id: `comm_${cm.id}`,
+      source: 'broker_commissions',
+      cashMovementId: null,
+      movement_date: cm.paid_at || cm.created_at || '',
+      tipo: 'saida',
+      category: 'Comissão',
+      description: `Pagamento de comissão — ${brokerName}`,
+      amount,
+      status: 'ativo',
+      projectName:
+        cm.sales?.projects?.name ||
+        cm.contracts?.projects?.name ||
+        'Geral/Outros',
+      customerName,
+      locationLabel: resolveBlockLocation(firstBlock),
+      contractNumber: String(contractNumber),
+      brokerName,
+    });
+  });
+
+  items.sort(
+    (a, b) =>
+      new Date(b.movement_date || 0).getTime() -
+      new Date(a.movement_date || 0).getTime(),
+  );
+
+  return items;
+}
+
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
   
@@ -111,6 +327,7 @@ export default function FinancePage() {
 
   const [cashMovements, setCashMovements] = useState<any[]>([]);
   const [brokerCommissions, setBrokerCommissions] = useState<any[]>([]);
+  const [cashFlowItems, setCashFlowItems] = useState<CashFlowItem[]>([]);
   const [activeTab, setActiveTab] = useState<'parcelas'|'caixa'>('parcelas');
   const [showSaidaModal, setShowSaidaModal] = useState(false);
   const [saidaForm, setSaidaForm] = useState({
@@ -344,6 +561,22 @@ export default function FinancePage() {
 
         const totals = calculateFinancialTotals(data || [], cashData, commsData);
         console.log("FINANCE_TOTAL_OUTCOMES_FINAL", totals.totalSaidas);
+
+        const flowItems = buildCashFlowItems(data || [], cashData, commsData);
+        const entradasCount = flowItems.filter((i) => i.tipo === 'entrada').length;
+        const saidasCount = flowItems.filter((i) => i.tipo === 'saida').length;
+        console.log('[FINANCEIRO] entradas carregadas', entradasCount, {
+          total: flowItems
+            .filter((i) => i.tipo === 'entrada')
+            .reduce((s, i) => s + i.amount, 0),
+        });
+        console.log('[FINANCEIRO] saídas carregadas', saidasCount, {
+          total: flowItems
+            .filter((i) => i.tipo === 'saida')
+            .reduce((s, i) => s + i.amount, 0),
+        });
+        console.log('[FINANCEIRO] fluxo de caixa final', flowItems.length, flowItems);
+        setCashFlowItems(flowItems);
 
         setStats({ 
             recebidoMes: localRecebido, 
@@ -2482,7 +2715,7 @@ export default function FinancePage() {
                <Wallet className="w-4 h-4" /> HISTÓRICO DE FLUXO DE CAIXA
             </h3>
          </div>
-         {cashMovements.length === 0 ? (
+         {cashFlowItems.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
                Nenhuma movimentação de caixa registrada ainda.
             </div>
@@ -2494,39 +2727,74 @@ export default function FinancePage() {
                      <th className="px-5 py-4 border-b border-[#1f232b]">Tipo</th>
                      <th className="px-5 py-4 border-b border-[#1f232b]">Categoria</th>
                      <th className="px-5 py-4 border-b border-[#1f232b]">Descrição</th>
+                     <th className="px-5 py-4 border-b border-[#1f232b]">Origem</th>
                      <th className="px-5 py-4 border-b border-[#1f232b]">Valor</th>
                      <th className="px-5 py-4 border-b border-[#1f232b]">Status</th>
                      <th className="px-5 py-4 border-b border-[#1f232b] text-right">Ação</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-[#1f232b]">
-                  {cashMovements.map((c) => (
-                      <tr key={c.id} className="hover:bg-[#1a1e27] transition-colors group">
+                  {cashFlowItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-[#1a1e27] transition-colors group">
                          <td className="px-5 py-4 text-gray-300 font-medium">
-                            {c.movement_date ? new Date(c.movement_date+'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
+                            {item.movement_date
+                              ? new Date(item.movement_date + 'T12:00:00Z').toLocaleDateString('pt-BR')
+                              : '-'}
                          </td>
                          <td className="px-5 py-4 font-bold">
-                            {c.type === 'entrada' ? <span className="text-emerald-500 flex items-center gap-1"><TrendingUp className="w-3 h-3"/> ENTRADA</span> : <span className="text-red-500 flex items-center gap-1"><TrendingDown className="w-3 h-3"/> SAÍDA</span>}
+                            {item.tipo === 'entrada' ? (
+                              <span className="text-emerald-500 flex items-center gap-1">
+                                <TrendingUp className="w-3 h-3"/> ENTRADA
+                              </span>
+                            ) : (
+                              <span className="text-red-500 flex items-center gap-1">
+                                <TrendingDown className="w-3 h-3"/> SAÍDA
+                              </span>
+                            )}
                          </td>
                          <td className="px-5 py-4 text-gray-300">
-                            {c.category}
+                            {item.category}
                          </td>
-                         <td className="px-5 py-4 text-gray-400">
-                            {c.description || '-'}
-                            {c.projects?.name && <span className="block text-xs mt-0.5 text-gray-500">Proj: {c.projects?.name}</span>}
+                         <td className="px-5 py-4 text-gray-400 max-w-[280px] whitespace-normal">
+                            <span className="text-gray-200">{item.description}</span>
+                            {item.customerName && (
+                              <span className="block text-xs mt-0.5 text-gray-500">
+                                Cliente: {item.customerName}
+                              </span>
+                            )}
+                            {item.projectName && (
+                              <span className="block text-xs mt-0.5 text-gray-500">
+                                Proj: {item.projectName}
+                                {item.locationLabel ? ` • ${item.locationLabel}` : ''}
+                              </span>
+                            )}
+                            {item.contractNumber && item.contractNumber !== '-' && (
+                              <span className="block text-xs mt-0.5 text-gray-600 font-mono">
+                                Contrato: {item.contractNumber}
+                              </span>
+                            )}
+                         </td>
+                         <td className="px-5 py-4 text-gray-500 text-xs uppercase">
+                            {item.source === 'finance_receipts' && 'Parcela'}
+                            {item.source === 'cash_movements' && 'Caixa'}
+                            {item.source === 'broker_commissions' && 'Comissão'}
                          </td>
                          <td className="px-5 py-4 text-white font-mono">
-                            {formatCurrency(c.amount)}
+                            {formatCurrency(item.amount)}
                          </td>
                          <td className="px-5 py-4">
-                            {c.status === 'estornado' ? <span className="text-xs text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded">ESTORNADO</span> : <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>}
+                            {item.status === 'estornado' ? (
+                              <span className="text-xs text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded">ESTORNADO</span>
+                            ) : (
+                              <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>
+                            )}
                          </td>
                          <td className="px-5 py-4 text-right">
-                            {c.status === 'ativo' && (
+                            {item.cashMovementId && item.status === 'ativo' && (
                                <button 
                                  onClick={async () => {
                                     if(window.confirm('Atenção, deseja marcar esta movimentação como ESTORNADA? Isso impactará o saldo.')) {
-                                       await supabase.from('cash_movements').update({status:'estornado'}).eq('id', c.id);
+                                       await supabase.from('cash_movements').update({status:'estornado'}).eq('id', item.cashMovementId);
                                        try { await supabase.from('audit_logs').insert({action:'CASH_MOVEMENT_REVERSED', user_id: user?.id, tenant_id: user?.tenant_id||((user as any)?.company_id)}); } catch(e){}
                                        await loadFinance();
                                     }
