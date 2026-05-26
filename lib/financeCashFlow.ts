@@ -72,6 +72,7 @@ export type CashMovementMetadata = {
   broker_name?: string | null;
   broker_manual?: string | null;
   beneficiary_manual?: string | null;
+  beneficiary_document?: string | null;
   contract_manual?: string | null;
   customer_manual?: string | null;
   quadra_manual?: string | null;
@@ -95,6 +96,7 @@ function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
     broker_name: pick("broker_name"),
     broker_manual: pick("broker_manual"),
     beneficiary_manual: pick("beneficiary_manual"),
+    beneficiary_document: pick("beneficiary_document"),
     contract_manual: pick("contract_manual"),
     customer_manual: pick("customer_manual"),
     quadra_manual: pick("quadra_manual"),
@@ -133,6 +135,8 @@ export function buildSaidaCashMovementMetadata(input: {
   customerId?: string;
   brokerId?: string;
   brokerManual?: string;
+  beneficiaryManual?: string;
+  beneficiaryDocument?: string;
   brokerNameFromList?: string;
   customerManual?: string;
   contractManual?: string;
@@ -146,13 +150,20 @@ export function buildSaidaCashMovementMetadata(input: {
   const brokerId = emptyUuidToNull(input.brokerId);
   if (brokerId) meta.broker_id = brokerId;
 
-  const brokerManual = String(input.brokerManual ?? "").trim();
+  const fornecedorManual = String(
+    input.beneficiaryManual ?? input.brokerManual ?? "",
+  ).trim();
   const brokerListName = String(input.brokerNameFromList ?? "").trim();
-  if (brokerManual) {
-    meta.beneficiary_manual = brokerManual;
-    meta.broker_manual = brokerManual;
+  if (fornecedorManual) {
+    meta.beneficiary_manual = fornecedorManual;
+    meta.broker_manual = fornecedorManual;
   } else if (brokerListName) {
     meta.broker_name = brokerListName;
+  }
+
+  const beneficiaryDoc = String(input.beneficiaryDocument ?? "").replace(/\D/g, "");
+  if (beneficiaryDoc) {
+    meta.beneficiary_document = beneficiaryDoc;
   }
 
   const projectName = String(input.projectName ?? "").trim();
