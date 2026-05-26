@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { supabase } from '@/lib/supabase';
+import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
@@ -189,30 +189,100 @@ function applyTenantFilterToProjectsQuery(
   return query.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
 }
 
-/** Insere projeto tentando payloads progressivamente (colunas opcionais / schema drift). */
-async function insertProjectRow(
-  payloads: Record<string, unknown>[],
-): Promise<{ error: { message: string; code?: string } | null }> {
-  let lastError: { message: string; code?: string } | null = null;
-
-  for (const payload of payloads) {
-    const cleaned = Object.fromEntries(
-      Object.entries(payload).filter(([, v]) => v !== undefined),
-    );
-    const { error } = await supabase.from('projects').insert([cleaned]);
-    if (!error) return { error: null };
-    lastError = error;
-
-    const missingCol = error.message?.match(/Could not find the '(\w+)' column/i)?.[1];
-    if (missingCol && missingCol in cleaned) {
-      const { [missingCol]: _removed, ...withoutCol } = cleaned;
-      const retry = await supabase.from('projects').insert([withoutCol]);
-      if (!retry.error) return { error: null };
-      lastError = retry.error;
-    }
+/** Cria projeto via API Next.js (evita fetch direto ao Supabase com URL mock / CORS). */
+async function createProjectThroughApi(payload: {
+  name: string;
+  city: string;
+  uf: string;
+  neighborhood?: string | null;
+  address?: string | null;
+  forum_city?: string | null;
+  impersonatingTenantId?: string | null;
+}): Promise<{ project: Record<string, unknown> }> {
+  const configError = getClientConfigErrorMessage();
+  if (configError) {
+    console.error('[Criar Projeto] Supabase não configurado no cliente:', {
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '(vazio)',
+      hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      hint: 'Crie .env.local a partir de .env.example',
+    });
+    throw new Error(configError);
   }
 
-  return { error: lastError };
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const apiUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/projects`
+      : '/api/projects';
+
+  console.log('[Criar Projeto] POST', apiUrl, {
+    name: payload.name,
+    city: payload.city,
+    uf: payload.uf,
+    hasSession: Boolean(session?.access_token),
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (networkErr: unknown) {
+    console.error('[Criar Projeto] TypeError / Failed to fetch', {
+      networkErr,
+      apiUrl,
+      supabasePublicUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '(não definida no build)',
+      causes: [
+        'Servidor Next não está rodando (npm run dev)?',
+        '.env.local ausente ou sem NEXT_PUBLIC_SUPABASE_*?',
+        'Antes o cliente usava mock.supabase.co e gerava Failed to fetch',
+      ],
+    });
+    const msg =
+      networkErr instanceof Error ? networkErr.message : 'Failed to fetch';
+    throw new Error(
+      msg.includes('fetch')
+        ? 'Falha de rede ao chamar /api/projects. Verifique se o servidor local está ativo (npm run dev) e se .env.local está configurado.'
+        : msg,
+    );
+  }
+
+  let json: {
+    error?: string;
+    code?: string;
+    hint?: string;
+    details?: unknown;
+    project?: Record<string, unknown>;
+  } = {};
+
+  try {
+    json = await response.json();
+  } catch {
+    json = { error: `Resposta inválida da API (HTTP ${response.status})` };
+  }
+
+  if (!response.ok) {
+    console.error('[Criar Projeto] Erro da API', {
+      status: response.status,
+      code: json.code,
+      error: json.error,
+      hint: json.hint,
+      details: json.details,
+    });
+    throw new Error(json.error || `Erro ao criar projeto (HTTP ${response.status})`);
+  }
+
+  console.log('[Criar Projeto] Sucesso', json.project?.id);
+  return { project: json.project || {} };
 }
 
 export default function MapPage() {
@@ -586,37 +656,19 @@ export default function MapPage() {
         return;
       }
 
-      const locationParts = [cityStr, ufStr].filter(Boolean);
-      const fullPayload: Record<string, unknown> = {
+      const impersonatingTenantId =
+        typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null;
+
+      await createProjectThroughApi({
         name: projectNameStr,
         city: cityStr,
         uf: ufStr,
         neighborhood: newProjectNbhd.trim() || null,
         address: newProjectAddr.trim() || null,
         forum_city: newProjectForum.trim() || cityStr,
-        location: locationParts.length ? locationParts.join(' - ') : null,
-        tenant_id: createTenantId,
-        company_id: createTenantId,
-        status: 'ACTIVE',
-      };
-
-      const minimalPayload: Record<string, unknown> = {
-        name: projectNameStr,
-        tenant_id: createTenantId,
-        city: cityStr,
-        uf: ufStr,
-      };
-
-      const { error } = await insertProjectRow([
-        fullPayload,
-        { ...fullPayload, address: undefined },
-        minimalPayload,
-        { name: projectNameStr, tenant_id: createTenantId },
-      ]);
-
-      if (error) {
-        throw error;
-      }
+        impersonatingTenantId:
+          user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
+      });
 
       await loadProjects();
 
@@ -625,14 +677,18 @@ export default function MapPage() {
         closeNewProjectModal();
       }, 600);
     } catch (err: unknown) {
-      console.error(err);
       const message =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as { message: string }).message)
-          : 'Erro desconhecido';
+        err instanceof Error ? err.message : 'Erro desconhecido';
+      console.error('[Criar Projeto] Falha completa:', err);
+      const friendly =
+        message.includes('Failed to fetch') || message.includes('Falha de rede')
+          ? 'Não foi possível conectar ao servidor. Rode npm run dev e configure .env.local (veja .env.example).'
+          : message.includes('Supabase não configurado')
+            ? message
+            : `Não foi possível criar o projeto: ${message}`;
       setProjectFeedback({
         type: 'error',
-        message: `Não foi possível criar o projeto: ${message}`,
+        message: friendly,
       });
     } finally {
       setCreatingProject(false);

@@ -19,6 +19,7 @@ import L from "leaflet";
 import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { allocateContractNumber } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import {
   chanfreTooltipText,
@@ -2066,8 +2067,6 @@ export default function GISMap({
             1,
             Number(customerData.installments_count || 1) || 1,
           );
-          const contractNumber = `CTR-${Date.now()}`;
-
           // Contrato em try/catch isolado — falha aqui NÃO reverte venda/financeiro
           try {
             console.log("[VENDA] iniciando criação do contrato", {
@@ -2077,6 +2076,11 @@ export default function GISMap({
               projectId: finalProjectId,
             });
 
+            const contractNumber = await allocateContractNumber(
+              supabase,
+              finalTenantId,
+            );
+
             const blockRow = (await fetchBlockForContract(lot.id)) || lot;
             const contractHtml = generateContractHTML({
               tenant: tenantData || {},
@@ -2084,7 +2088,10 @@ export default function GISMap({
               project: projDataSnapshot || lot.projects || {},
               block: blockRow,
               sale: enrichedSaleData,
-              contractSnapshot: contractPayloadPartial,
+              contractSnapshot: {
+                ...contractPayloadPartial,
+                contract_number: contractNumber,
+              },
             });
 
             const contractPayloads: Record<string, unknown>[] = [

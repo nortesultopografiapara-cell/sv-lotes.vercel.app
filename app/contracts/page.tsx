@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import jsPDF from "jspdf";
+import { formatContractNumberDisplay } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 
@@ -561,7 +562,12 @@ export default function ContractsPage() {
           // Contract number top right
           pdf.setFontSize(8);
           pdf.setTextColor(100);
-          pdf.text(`Contrato nº CTR-${selectedContract.contract_number || selectedContract.id.substring(0,6).toUpperCase()}`, rightX, 13, { align: 'right' });
+          pdf.text(
+            `Contrato nº ${formatContractNumberDisplay(selectedContract.contract_number)}`,
+            rightX,
+            13,
+            { align: "right" },
+          );
 
           pdf.setDrawColor(150);
           pdf.setLineWidth(0.3);
@@ -1051,7 +1057,12 @@ export default function ContractsPage() {
           pdf.setFontSize(8);
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
-          pdf.text(`Contrato: ${selectedContract.contract_number || "S/N"}`, rightX, ryPos, { align: 'right' });
+          pdf.text(
+            `Contrato: ${formatContractNumberDisplay(selectedContract.contract_number)}`,
+            rightX,
+            ryPos,
+            { align: "right" },
+          );
           ryPos += 4;
           
           pdf.setFont("helvetica", "normal");
@@ -1324,9 +1335,7 @@ export default function ContractsPage() {
             ) : (
               filteredContracts.map((c) => {
                 const isSelected = selectedContract?.id === c.id;
-                const cnum =
-                  c.contract_number ||
-                  (c.id ? `CTR-${c.id.slice(-6).toUpperCase()}` : "CTR-NOID");
+                const cnum = formatContractNumberDisplay(c.contract_number);
                 const projName =
                   c.project_name_snapshot ||
                   c.sales?.projects?.name ||
@@ -1431,10 +1440,9 @@ export default function ContractsPage() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold flex items-center gap-3">
-                        {selectedContract.contract_number ||
-                          (selectedContract.id
-                            ? `CTR-${selectedContract.id.slice(-6).toUpperCase()}`
-                            : "CTR-NOID")}
+                        {formatContractNumberDisplay(
+                          selectedContract.contract_number,
+                        )}
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}
                         >
