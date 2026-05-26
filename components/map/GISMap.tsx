@@ -20,6 +20,11 @@ import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { generateContractHTML } from "@/lib/contractTemplate";
+import {
+  chanfreTooltipText,
+  computeChanfreFromBlock,
+  formatChanfreMeters,
+} from "@/lib/lotChanfre";
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 
 const getStatusColor = (status: string) => {
@@ -1077,11 +1082,14 @@ function LotPopupContent({
                   : "--"}
               </span>
             </div>
-            {lot.chanfro !== null && lot.chanfro !== undefined && Number(lot.chanfro) > 0 && (
-              <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1">
-                <span className="text-[10px] font-semibold text-gray-500">Chanfro:</span>{" "}
+            {lot.chanfreInfo && lot.chanfreInfo.total > 0 && (
+              <div
+                className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1 cursor-help"
+                title={chanfreTooltipText(lot.chanfreInfo)}
+              >
+                <span className="text-[10px] font-semibold text-gray-500">Chanfre:</span>{" "}
                 <span className="font-bold text-gray-900 text-[11px]">
-                  {`${Number(lot.chanfro).toFixed(2)} m`}
+                  {formatChanfreMeters(lot.chanfreInfo.total)}
                 </span>
               </div>
             )}
@@ -1524,6 +1532,23 @@ export default function GISMap({
                 }
               }
 
+              const chanfreInfo = computeChanfreFromBlock({
+                ...b,
+                frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
+                Fundo:
+                  b.Fundo !== null && b.Fundo !== undefined
+                    ? b.Fundo
+                    : dimsFromGeo?.fundo,
+                "Lado Dir.":
+                  b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
+                    ? b["Lado Dir."]
+                    : dimsFromGeo?.ladoDireito,
+                "Lado Esq.":
+                  b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
+                    ? b["Lado Esq."]
+                    : dimsFromGeo?.ladoEsquerdo,
+              });
+
               return {
                 id: b.id,
                 block: b.block_name || b.name || "?",
@@ -1540,11 +1565,12 @@ export default function GISMap({
                     : 0,
                 geometryType: b.geometry?.type,
                 bounds,
+                segments_json: b.segments_json,
                 frente: b.frente !== null ? b.frente : (dimsFromGeo ? dimsFromGeo.frente : null),
                 Fundo: b.Fundo !== null && b.Fundo !== undefined ? b.Fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
                 'Lado Dir.': b['Lado Dir.'] !== null && b['Lado Dir.'] !== undefined ? b['Lado Dir.'] : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
                 'Lado Esq.': b['Lado Esq.'] !== null && b['Lado Esq.'] !== undefined ? b['Lado Esq.'] : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
-                chanfro: b.chanfro !== null && b.chanfro !== undefined ? b.chanfro : (dimsFromGeo ? dimsFromGeo.chanfro : null),
+                chanfreInfo,
               };
             })
             .filter((b) => b.bounds.length > 0);
