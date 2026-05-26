@@ -8,21 +8,23 @@ type ReceiptValidation = {
   valid: boolean;
   status?: string;
   empresa?: string;
+  cnpj?: string;
   valor?: number;
   data?: string;
   categoria?: string;
   tipo_despesa?: string;
   tipo_documento?: string;
   descricao?: string;
+  beneficiario?: string;
+  cpf_cnpj?: string;
+  forma_pagamento?: string;
   projeto?: string;
   cliente?: string;
   corretor?: string;
   contrato?: string;
-  quadra_lote?: string;
   receipt_number?: string;
   validation_code?: string;
   autenticidade?: string;
-  error?: string;
 };
 
 function formatBrl(value: number) {
@@ -40,7 +42,7 @@ export default function ValidarReciboPage() {
 
   useEffect(() => {
     if (!codigo) {
-      setData({ valid: false, error: "Código não informado" });
+      setData({ valid: false });
       setLoading(false);
       return;
     }
@@ -51,14 +53,16 @@ export default function ValidarReciboPage() {
           `/api/validar-recibo/${encodeURIComponent(codigo)}`,
         );
         const json = (await res.json()) as ReceiptValidation;
-        setData(json);
+        setData(json?.valid ? json : { valid: false });
       } catch {
-        setData({ valid: false, error: "Falha ao validar recibo" });
+        setData({ valid: false });
       } finally {
         setLoading(false);
       }
     })();
   }, [codigo]);
+
+  const codigoExibicao = data?.validation_code || codigo;
 
   return (
     <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center p-6">
@@ -75,30 +79,39 @@ export default function ValidarReciboPage() {
             </div>
             <h1 className="text-xl font-bold text-white mb-1 text-center flex items-center justify-center gap-2">
               <FileText className="w-5 h-5 text-[#2980b9]" />
-              Recibo autêntico
+              Recibo validado
             </h1>
-            <p className="text-emerald-400 font-semibold text-sm text-center mb-1">
-              {data.tipo_documento || "RECIBO DE PAGAMENTO / SAÍDA"}
-            </p>
-            <p className="text-gray-500 text-xs text-center mb-6">
-              {data.autenticidade || "Documento gerado pelo SV LOTES"}
+            <p className="text-emerald-400 font-semibold text-sm text-center mb-6">
+              {data.status || "Documento autêntico gerado pelo SV LOTES"}
             </p>
             <div className="text-left space-y-3 text-sm text-gray-300 bg-[#1a1e27] rounded-lg p-4 border border-[#2d3340]">
-              <Row label="Status" value={data.status || "Válido"} highlight />
+              <Row label="Código" value={codigoExibicao} mono />
               <Row label="Empresa" value={data.empresa || "—"} />
+              <Row label="CNPJ" value={data.cnpj || "—"} mono />
               <Row
                 label="Valor"
                 value={data.valor != null ? formatBrl(data.valor) : "—"}
               />
               <Row label="Data" value={data.data || "—"} />
-              <Row label="Tipo / Categoria" value={data.tipo_despesa || data.categoria || "—"} />
-              <Row label="Nº do recibo" value={data.receipt_number || "—"} mono />
-              <Row label="Código" value={data.validation_code || codigo} mono />
-              {data.projeto ? <Row label="Projeto" value={data.projeto} /> : null}
-              {data.cliente && data.cliente !== "—" ? (
-                <Row label="Cliente" value={data.cliente} />
+              <Row label="Descrição" value={data.descricao || "—"} />
+              <Row
+                label="Beneficiário"
+                value={data.beneficiario || data.corretor || "—"}
+              />
+              {data.cpf_cnpj ? (
+                <Row label="CPF/CNPJ" value={data.cpf_cnpj} mono />
               ) : null}
-              {data.descricao ? <Row label="Descrição" value={data.descricao} /> : null}
+              <Row
+                label="Forma de pagamento"
+                value={data.forma_pagamento || "—"}
+              />
+              <Row
+                label="Status"
+                value={
+                  data.status || "Documento autêntico gerado pelo SV LOTES"
+                }
+                highlight
+              />
             </div>
           </>
         ) : (
@@ -107,14 +120,16 @@ export default function ValidarReciboPage() {
               <XCircle className="w-8 h-8 text-red-400" />
             </div>
             <h1 className="text-xl font-bold text-white text-center mb-2">
-              Recibo não validado
+              Recibo não encontrado
             </h1>
             <p className="text-gray-400 text-sm text-center">
-              {data?.error || "Código inválido ou recibo não encontrado."}
+              Não foi possível localizar um recibo válido para este código.
             </p>
-            <p className="text-xs text-gray-500 text-center mt-4 font-mono break-all">
-              {codigo}
-            </p>
+            {codigo ? (
+              <p className="text-xs text-gray-500 text-center mt-4 font-mono break-all">
+                {codigo}
+              </p>
+            ) : null}
           </>
         )}
       </div>
