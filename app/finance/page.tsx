@@ -910,6 +910,7 @@ export default function FinancePage() {
 
     try {
       const brokerFromList = financeBrokers.find((b) => b.id === saidaForm.broker_id);
+      const projectFromList = financeProjects.find((p) => p.id === saidaForm.project_id);
       const movementMetadata = buildSaidaCashMovementMetadata({
         contractId: saidaForm.contract_id,
         customerId: saidaForm.customer_id,
@@ -920,6 +921,10 @@ export default function FinancePage() {
         contractManual: saidaForm.contract_number_manual,
         quadraManual: saidaForm.quadra_manual,
         loteManual: saidaForm.lote_manual,
+        projectId: saidaForm.project_id,
+        projectName: projectFromList?.name,
+        paymentMethod:
+          saidaForm.category === 'Comissão' ? 'Transferência / PIX' : 'Dinheiro/Não especificado',
       });
 
       const coreFields = stripUndefinedFields({
@@ -1131,6 +1136,28 @@ export default function FinancePage() {
     doc.save(`Carne_${contractNo}_${dueDate.replace(/\//g,'')}.pdf`);
   };
 
+  const enrichReceiptCashFlowItem = (item: CashFlowItem): CashFlowItem => {
+    if (!item.cashMovementId) return item;
+    const cm = cashMovements.find((c) => c.id === item.cashMovementId);
+    if (!cm) return item;
+    const md = getCashMovementMetadata(cm);
+    const projectFromJoin =
+      cm.projects?.name || cm.contracts?.projects?.name || cm.sales?.projects?.name;
+    return {
+      ...item,
+      metadata: {
+        ...(item.metadata || {}),
+        ...md,
+        project_name: md.project_name || projectFromJoin || item.metadata?.project_name,
+      },
+      projectName: md.project_name || projectFromJoin || item.projectName,
+      customerName: item.customerName || md.customer_manual || '',
+      brokerName:
+        item.brokerName || md.beneficiary_manual || md.broker_manual || md.broker_name || '',
+      contractNumber: item.contractNumber || md.contract_manual || '',
+    };
+  };
+
   const handleGenerateExpenseReceipt = async (item: CashFlowItem) => {
     if (item.tipo !== 'saida') {
       alert('Recibo de pagamento disponível apenas para saídas.');
@@ -1141,6 +1168,13 @@ export default function FinancePage() {
       return;
     }
 
+    let pdfGenerated = false;
+    const receiptItem = enrichReceiptCashFlowItem(item);
+    const md = receiptItem.metadata || {};
+    const defaultPayment =
+      md.payment_method ||
+      (item.category === 'Comissão' ? 'Transferência / PIX' : 'Dinheiro/Não especificado');
+
     try {
       const validationCode = createDocumentValidationCode();
       const persistId = item.cashMovementId || item.commissionId || item.id;
@@ -1148,15 +1182,16 @@ export default function FinancePage() {
       const receiptUrl = getReceiptValidationUrl(validationCode);
 
       const doc = await generateExpenseReceiptPdf({
-        item,
+        item: receiptItem,
         tenantData,
         receiptNumber,
         validationCode,
-        paymentMethod: item.category === 'Comissão' ? 'Transferência / PIX' : undefined,
+        paymentMethod: defaultPayment,
       });
 
       const fileName = `recibo_pagamento_saida_${receiptNumber}.pdf`;
       doc.save(fileName);
+      pdfGenerated = true;
       console.log('[RECIBO] pdf salvo', fileName);
 
       const receiptPayload = {
@@ -1165,30 +1200,45 @@ export default function FinancePage() {
         validation_code: validationCode,
       };
 
-      if (item.cashMovementId) {
-        const { error } = await supabase
-          .from('cash_movements')
-          .update(receiptPayload)
-          .eq('id', item.cashMovementId);
-        if (error) throw error;
-      } else if (item.commissionId) {
-        const { error } = await supabase
-          .from('broker_commissions')
-          .update(receiptPayload)
-          .eq('id', item.commissionId);
-        if (error) {
-          console.warn('[RECIBO] comissão sem colunas de recibo — PDF gerado', error.message);
+      try {
+        if (item.cashMovementId) {
+          const { error } = await supabase
+            .from('cash_movements')
+            .update(receiptPayload)
+            .eq('id', item.cashMovementId);
+          if (error) {
+            console.warn('[RECIBO] persistência caixa', error);
+          }
+        } else if (item.commissionId) {
+          const { error } = await supabase
+            .from('broker_commissions')
+            .update(receiptPayload)
+            .eq('id', item.commissionId);
+          if (error) {
+            console.warn('[RECIBO] persistência comissão', error);
+          }
         }
+      } catch (persistErr) {
+        console.warn('[RECIBO] erro ao persistir validação (PDF já gerado)', persistErr);
       }
 
       console.log('[RECIBO] recibo gerado', receiptNumber);
-      console.log('[RECIBO] validacao criada', validationCode);
+      console.log('[RECIBO] validacao criada', validationCode, receiptUrl);
 
-      await loadFinance();
+      try {
+        await loadFinance();
+      } catch (reloadErr) {
+        console.warn('[RECIBO] reload finance', reloadErr);
+      }
+
+      setFinanceToast('Recibo de saída gerado com sucesso.');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[RECIBO] erro', err);
-      alert('Erro ao gerar recibo de saída: ' + message);
+      console.error('[RECIBO] erro completo', err);
+      if (!pdfGenerated) {
+        alert('Erro ao gerar recibo de saída: ' + formatSupabaseFinanceError(err));
+      } else {
+        console.warn('[RECIBO] PDF gerado; erro pós-download ignorado para o usuário', err);
+      }
     }
   };
 

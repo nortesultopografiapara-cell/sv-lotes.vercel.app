@@ -2,7 +2,11 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
 import { displayContractNumber } from "@/lib/contractNumber";
-import { formatFlowDate, type CashFlowItem } from "@/lib/financeCashFlow";
+import {
+  formatFlowDate,
+  type CashFlowItem,
+  type CashMovementMetadata,
+} from "@/lib/financeCashFlow";
 import { getReceiptValidationUrl } from "@/lib/pdfValidation";
 
 export type ExpenseReceiptPdfInput = {
@@ -18,17 +22,101 @@ export type ExpenseReceiptPdfInput = {
   paymentMethod?: string;
 };
 
-function displayReceiptField(value: string | null | undefined): string {
+const PLACEHOLDER_LABELS = new Set([
+  "",
+  "-",
+  "lancamento manual",
+  "lançamento manual",
+  "s/n",
+  "nao informado",
+  "não informado",
+]);
+
+function isPlaceholderReceiptValue(value: string | null | undefined): boolean {
   const v = String(value ?? "").trim();
-  if (
-    !v ||
-    v === "-" ||
-    v === "Lançamento manual" ||
-    v.toLowerCase() === "s/n"
-  ) {
-    return "Não informado";
+  if (!v) return true;
+  return PLACEHOLDER_LABELS.has(v.toLowerCase());
+}
+
+function pickReceiptField(...candidates: (string | null | undefined)[]): string {
+  for (const c of candidates) {
+    const v = String(c ?? "").trim();
+    if (!isPlaceholderReceiptValue(v)) return v;
   }
-  return v;
+  return "";
+}
+
+function displayReceiptField(value: string | null | undefined): string {
+  const v = pickReceiptField(value);
+  return v || "Não informado";
+}
+
+export type ExpenseReceiptDisplay = {
+  projectName: string;
+  contractNumber: string;
+  customerName: string;
+  beneficiary: string;
+  locationLabel: string;
+  paymentMethod: string;
+};
+
+/** Resolve campos do recibo a partir do item do fluxo + metadata. */
+export function resolveExpenseReceiptDisplay(
+  item: CashFlowItem,
+  extra?: { projectNameFromDb?: string; paymentMethod?: string },
+): ExpenseReceiptDisplay {
+  const md: CashMovementMetadata = {
+    ...(item.metadata || {}),
+  };
+
+  const projectName = pickReceiptField(
+    md.project_name,
+    md.project_manual,
+    extra?.projectNameFromDb,
+    item.projectName,
+    (item as { project_name?: string }).project_name,
+  );
+
+  const contractRaw = pickReceiptField(
+    md.contract_manual,
+    item.contractNumber && !isPlaceholderReceiptValue(item.contractNumber)
+      ? displayContractNumber(item.contractNumber)
+      : "",
+    (item as { contract_number?: string }).contract_number,
+  );
+
+  const customerName = pickReceiptField(
+    md.customer_manual,
+    item.customerName,
+    (item as { customer_name?: string }).customer_name,
+  );
+
+  const beneficiary = pickReceiptField(
+    md.beneficiary_manual,
+    md.broker_manual,
+    md.broker_name,
+    item.brokerName,
+    (item as { broker_name?: string }).broker_name,
+    item.customerName,
+  );
+
+  const locationLabel = pickReceiptField(item.locationLabel);
+
+  const paymentMethod =
+    pickReceiptField(
+      md.payment_method,
+      extra?.paymentMethod,
+      (item as { payment_method?: string }).payment_method,
+    ) || "Dinheiro/Não especificado";
+
+  return {
+    projectName,
+    contractNumber: contractRaw,
+    customerName,
+    beneficiary,
+    locationLabel,
+    paymentMethod,
+  };
 }
 
 async function loadLogoBase64(url: string): Promise<string | null> {
@@ -84,15 +172,11 @@ export async function generateExpenseReceiptPdf(
   const paymentDate = formatFlowDate(item.movement_date);
   const valorStr = formatBrl(item.amount);
   const descricao = displayReceiptField(item.description);
-
-  const contratoRaw =
-    item.contractNumber && item.contractNumber !== "Lançamento manual"
-      ? displayContractNumber(item.contractNumber)
-      : "";
-  const contrato = displayReceiptField(contratoRaw);
-  const beneficiario = displayReceiptField(
-    item.brokerName || item.customerName,
-  );
+  const display = resolveExpenseReceiptDisplay(item, {
+    paymentMethod,
+  });
+  const contrato = displayReceiptField(display.contractNumber);
+  const beneficiario = displayReceiptField(display.beneficiary);
 
   doc.setFillColor(19, 22, 28);
   doc.rect(0, 0, pageWidth, 96, "F");
@@ -145,12 +229,12 @@ export async function generateExpenseReceiptPdf(
     ["Categoria", displayReceiptField(item.category)],
     ["Descrição / Destino", descricao],
     ["Valor pago", valorStr],
-    ["Projeto / Loteamento", displayReceiptField(item.projectName)],
+    ["Projeto / Loteamento", displayReceiptField(display.projectName)],
     ["Contrato", contrato],
-    ["Cliente", displayReceiptField(item.customerName)],
+    ["Cliente", displayReceiptField(display.customerName)],
     ["Corretor / Fornecedor / Beneficiário", beneficiario],
-    ["Quadra / Lote", displayReceiptField(item.locationLabel)],
-    ["Forma de pagamento", displayReceiptField(paymentMethod)],
+    ["Quadra / Lote", displayReceiptField(display.locationLabel)],
+    ["Forma de pagamento", display.paymentMethod],
     ["Código de validação", validationCode],
   ];
 
@@ -188,11 +272,11 @@ export async function generateExpenseReceiptPdf(
   doc.setFontSize(8);
   doc.setTextColor(100);
   doc.setFont("helvetica", "normal");
-  doc.text(
-    "Escaneie o QR Code para validar a autenticidade deste recibo em /validar-recibo",
-    margin,
-    qrY + 12,
-  );
+  doc.text("Escaneie para validar este recibo", margin, qrY + 12);
+  doc.setFontSize(7);
+  doc.text(validationUrl, margin, qrY + 22, {
+    maxWidth: pageWidth - margin - 90,
+  });
   if (qrBase64) {
     doc.addImage(qrBase64, "PNG", pageWidth - margin - 76, qrY + 4, 68, 68);
   }

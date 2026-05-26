@@ -47,10 +47,15 @@ export type CashMovementManualMeta = {
 export type CashMovementMetadata = {
   broker_id?: string | null;
   broker_name?: string | null;
+  broker_manual?: string | null;
+  beneficiary_manual?: string | null;
   contract_manual?: string | null;
   customer_manual?: string | null;
   quadra_manual?: string | null;
   lote_manual?: string | null;
+  project_name?: string | null;
+  project_manual?: string | null;
+  payment_method?: string | null;
 };
 
 function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
@@ -65,10 +70,15 @@ function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
   return {
     broker_id: pick("broker_id"),
     broker_name: pick("broker_name"),
+    broker_manual: pick("broker_manual"),
+    beneficiary_manual: pick("beneficiary_manual"),
     contract_manual: pick("contract_manual"),
     customer_manual: pick("customer_manual"),
     quadra_manual: pick("quadra_manual"),
     lote_manual: pick("lote_manual"),
+    project_name: pick("project_name"),
+    project_manual: pick("project_manual"),
+    payment_method: pick("payment_method"),
   };
 }
 
@@ -85,6 +95,8 @@ export function getCashMovementMetadata(row: {
   if (!legacy) return {};
   return normalizeCashMovementMetadata({
     broker_name: legacy.manual_broker,
+    broker_manual: legacy.manual_broker,
+    beneficiary_manual: legacy.manual_broker,
     customer_manual: legacy.manual_customer,
     contract_manual: legacy.manual_contract,
     quadra_manual: legacy.manual_quadra,
@@ -103,6 +115,9 @@ export function buildSaidaCashMovementMetadata(input: {
   contractManual?: string;
   quadraManual?: string;
   loteManual?: string;
+  projectId?: string;
+  projectName?: string;
+  paymentMethod?: string;
 }): CashMovementMetadata | null {
   const meta: CashMovementMetadata = {};
   const brokerId = emptyUuidToNull(input.brokerId);
@@ -110,8 +125,17 @@ export function buildSaidaCashMovementMetadata(input: {
 
   const brokerManual = String(input.brokerManual ?? "").trim();
   const brokerListName = String(input.brokerNameFromList ?? "").trim();
-  if (brokerManual) meta.broker_name = brokerManual;
-  else if (brokerListName) meta.broker_name = brokerListName;
+  if (brokerManual) {
+    meta.beneficiary_manual = brokerManual;
+    meta.broker_manual = brokerManual;
+  } else if (brokerListName) {
+    meta.broker_name = brokerListName;
+  }
+
+  const projectName = String(input.projectName ?? "").trim();
+  if (projectName) meta.project_name = projectName;
+  const paymentMethod = String(input.paymentMethod ?? "").trim();
+  if (paymentMethod) meta.payment_method = paymentMethod;
 
   if (!input.contractId) {
     const customerManual = String(input.customerManual ?? "").trim();
@@ -353,6 +377,8 @@ function resolveCashMovementMeta(c: any): {
     null;
 
   let projectName =
+    md.project_name ||
+    md.project_manual ||
     c.projects?.name ||
     c.contracts?.projects?.name ||
     c.sales?.projects?.name ||
@@ -373,6 +399,12 @@ function resolveCashMovementMeta(c: any): {
   let brokerName = c.brokers?.name || c.brokers?.full_name || "";
   if (!brokerName && md.broker_name) {
     brokerName = md.broker_name.trim();
+  }
+  if (!brokerName && md.beneficiary_manual) {
+    brokerName = md.beneficiary_manual.trim();
+  }
+  if (!brokerName && md.broker_manual) {
+    brokerName = md.broker_manual.trim();
   }
   let locationLabel = resolveBlockLocation(block);
   if (!locationLabel) {

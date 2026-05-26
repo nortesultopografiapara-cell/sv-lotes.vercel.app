@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import { formatFlowDate } from "@/lib/financeCashFlow";
+import { formatFlowDate, getCashMovementMetadata } from "@/lib/financeCashFlow";
 import { displayContractNumber } from "@/lib/contractNumber";
 
 function buildValidResponse(payload: {
@@ -59,12 +59,11 @@ export async function GET(
     .from("cash_movements")
     .select(
       `
-      id, category, description, amount, movement_date, status,
+      id, category, description, amount, movement_date, status, metadata,
       receipt_number, validation_code,
       companies:company_id(razao_social, name),
       projects:project_id(name),
       customers:customer_id(name, full_name),
-      brokers:broker_id(name, full_name),
       contracts:contract_id(contract_number)
     `,
     )
@@ -90,11 +89,10 @@ export async function GET(
       (cash.companies as { razao_social?: string; name?: string } | null) || {};
     const customer =
       (cash.customers as { name?: string; full_name?: string } | null) || {};
-    const broker =
-      (cash.brokers as { name?: string; full_name?: string } | null) || {};
     const project = (cash.projects as { name?: string } | null) || {};
     const contract =
       (cash.contracts as { contract_number?: string } | null) || {};
+    const md = getCashMovementMetadata(cash);
 
     return buildValidResponse({
       empresa: company.razao_social || company.name || "SV LOTES",
@@ -104,12 +102,26 @@ export async function GET(
       description: cash.description || "",
       receipt_number: cash.receipt_number,
       validation_code: cash.validation_code,
-      projeto: project.name,
-      cliente: customer.name || customer.full_name,
-      corretor: broker.name || broker.full_name,
-      contrato: contract.contract_number
-        ? displayContractNumber(contract.contract_number)
-        : undefined,
+      projeto:
+        md.project_name ||
+        md.project_manual ||
+        project.name ||
+        undefined,
+      cliente:
+        md.customer_manual ||
+        customer.name ||
+        customer.full_name ||
+        undefined,
+      corretor:
+        md.beneficiary_manual ||
+        md.broker_manual ||
+        md.broker_name ||
+        undefined,
+      contrato: md.contract_manual
+        ? displayContractNumber(md.contract_manual)
+        : contract.contract_number
+          ? displayContractNumber(contract.contract_number)
+          : undefined,
     });
   }
 
