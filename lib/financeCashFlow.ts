@@ -39,7 +39,61 @@ export type CashMovementManualMeta = {
   manual_quadra?: string;
   manual_lote?: string;
   manual_contract?: string;
+  manual_broker?: string;
 };
+
+/** Converte "5685,37" / "5.685,37" / "5685.37" para número. */
+export function parseMoneyAmount(raw: string | number | null | undefined): number | null {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  }
+  let s = String(raw ?? "").trim();
+  if (!s) return null;
+  s = s.replace(/[R$\s]/gi, "");
+  if (s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function emptyUuidToNull(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
+export function stripUndefinedFields(
+  obj: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) out[key] = val;
+  }
+  return out;
+}
+
+type SupabaseErrorShape = {
+  message?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+};
+
+export function formatSupabaseFinanceError(err: unknown): string {
+  if (!err) return "Erro desconhecido";
+  if (err instanceof Error) return err.message;
+  const e = err as SupabaseErrorShape;
+  const parts = [e.message, e.details, e.hint, e.code].filter(
+    (p) => typeof p === "string" && p.trim().length > 0,
+  );
+  if (parts.length > 0) return parts.join(" — ");
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
 
 export function splitCashMovementDescription(raw: string | null | undefined): {
   text: string;
@@ -216,7 +270,10 @@ function resolveCashMovementMeta(c: any): {
     customerName = manualMeta.manual_customer.trim();
   }
 
-  const brokerName = c.brokers?.name || c.brokers?.full_name || "";
+  let brokerName = c.brokers?.name || c.brokers?.full_name || "";
+  if (!brokerName && manualMeta?.manual_broker) {
+    brokerName = manualMeta.manual_broker.trim();
+  }
   let locationLabel = resolveBlockLocation(block);
   if (!locationLabel) {
     locationLabel = formatManualLocation(manualMeta);

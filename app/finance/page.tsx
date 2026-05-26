@@ -16,6 +16,10 @@ import {
   SAIDA_CATEGORIES,
   buildCashMovementDescription,
   splitCashMovementDescription,
+  parseMoneyAmount,
+  emptyUuidToNull,
+  stripUndefinedFields,
+  formatSupabaseFinanceError,
   type CashFlowItem,
   type CashMovementManualMeta,
 } from '@/lib/financeCashFlow';
@@ -115,6 +119,7 @@ const INITIAL_SAIDA_FORM = {
   project_id: '',
   contract_id: '',
   broker_id: '',
+  broker_manual: '',
   customer_id: '',
   sale_id: '',
   customer_manual: '',
@@ -850,19 +855,23 @@ export default function FinancePage() {
   };
 
   const buildSaidaManualMeta = (): CashMovementManualMeta | null => {
-    if (saidaForm.contract_id) return null;
     const meta: CashMovementManualMeta = {};
-    if (!saidaForm.customer_id && saidaForm.customer_manual.trim()) {
-      meta.manual_customer = saidaForm.customer_manual.trim();
+    if (!saidaForm.contract_id) {
+      if (!saidaForm.customer_id && saidaForm.customer_manual.trim()) {
+        meta.manual_customer = saidaForm.customer_manual.trim();
+      }
+      if (saidaForm.contract_number_manual.trim()) {
+        meta.manual_contract = saidaForm.contract_number_manual.trim();
+      }
+      if (saidaForm.quadra_manual.trim()) {
+        meta.manual_quadra = saidaForm.quadra_manual.trim();
+      }
+      if (saidaForm.lote_manual.trim()) {
+        meta.manual_lote = saidaForm.lote_manual.trim();
+      }
     }
-    if (saidaForm.contract_number_manual.trim()) {
-      meta.manual_contract = saidaForm.contract_number_manual.trim();
-    }
-    if (saidaForm.quadra_manual.trim()) {
-      meta.manual_quadra = saidaForm.quadra_manual.trim();
-    }
-    if (saidaForm.lote_manual.trim()) {
-      meta.manual_lote = saidaForm.lote_manual.trim();
+    if (!saidaForm.broker_id && saidaForm.broker_manual.trim()) {
+      meta.manual_broker = saidaForm.broker_manual.trim();
     }
     return Object.keys(meta).length > 0 ? meta : null;
   };
@@ -902,34 +911,52 @@ export default function FinancePage() {
     e.preventDefault();
     const desc = saidaForm.description?.trim();
     if (!desc) return alert('Informe a descrição / destino da saída.');
-    if (!saidaForm.amount || Number(saidaForm.amount) <= 0) return alert('Valor inválido');
+
+    const amount = parseMoneyAmount(saidaForm.amount);
+    if (amount === null) return alert('Valor inválido. Use formato 5685,37 ou 5685.37');
+
     const movementDate = (saidaForm.movement_date || '').split('T')[0];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) {
       return alert('Informe uma data válida para a saída.');
     }
-    if (saidaForm.category === 'Comissão' && !saidaForm.broker_id) {
-      return alert('Para comissão, selecione o corretor.');
+
+    const hasBroker =
+      !!emptyUuidToNull(saidaForm.broker_id) || !!saidaForm.broker_manual.trim();
+    if (saidaForm.category === 'Comissão' && !hasBroker) {
+      return alert('Para comissão, selecione o corretor ou informe o nome manualmente.');
+    }
+
+    const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+    if (!resolvedTenantId) {
+      return alert('Empresa não identificada. Faça login novamente.');
     }
 
     try {
-      const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
-
       const manualMeta = buildSaidaManualMeta();
-      const payload: Record<string, unknown> = {
-        tenant_id: resolvedTenantId,
-        company_id: resolvedTenantId,
+      const coreFields = stripUndefinedFields({
         type: 'saida',
-        category: saidaForm.category,
+        category: saidaForm.category.trim(),
         description: buildCashMovementDescription(desc, manualMeta),
-        amount: parseFloat(saidaForm.amount),
+        amount,
         movement_date: movementDate,
-        created_by: user?.id,
-        project_id: saidaForm.project_id || null,
-        contract_id: saidaForm.contract_id || null,
-        sale_id: saidaForm.sale_id || null,
-        customer_id: saidaForm.customer_id || null,
-        broker_id: saidaForm.broker_id || null,
-      };
+        status: 'ativo',
+        project_id: emptyUuidToNull(saidaForm.project_id),
+        contract_id: emptyUuidToNull(saidaForm.contract_id),
+        sale_id: emptyUuidToNull(saidaForm.sale_id),
+        customer_id: emptyUuidToNull(saidaForm.customer_id),
+        broker_id: emptyUuidToNull(saidaForm.broker_id),
+      });
+
+      const payload = editingCashMovementId
+        ? coreFields
+        : stripUndefinedFields({
+            ...coreFields,
+            tenant_id: resolvedTenantId,
+            company_id: resolvedTenantId,
+            created_by: emptyUuidToNull(user?.id),
+          });
+
+      console.log('[FINANCEIRO] payload saída', payload);
 
       let error;
       if (editingCashMovementId) {
@@ -938,13 +965,16 @@ export default function FinancePage() {
           .update(payload)
           .eq('id', editingCashMovementId);
         error = updErr;
-        console.log('[FINANCEIRO] editar saída', editingCashMovementId, payload);
       } else {
-        const { error: insErr } = await supabase.from('cash_movements').insert(payload);
+        const { error: insErr } = await supabase
+          .from('cash_movements')
+          .insert(payload);
         error = insErr;
-        console.log('[FINANCEIRO] saída salva', payload);
       }
+
       if (error) throw error;
+
+      console.log('[FINANCEIRO] saída salva', editingCashMovementId || 'novo');
 
       try {
         await supabase.from('audit_logs').insert([
@@ -952,9 +982,9 @@ export default function FinancePage() {
             tenant_id: resolvedTenantId,
             company_id: resolvedTenantId,
             user_id: user?.id,
-            action: 'CASH_OUT_CREATED',
+            action: editingCashMovementId ? 'CASH_OUT_UPDATED' : 'CASH_OUT_CREATED',
             module: 'FINANCE',
-            description: `Saída de ${saidaForm.amount} - ${saidaForm.category}`,
+            description: `Saída de ${amount} - ${saidaForm.category}`,
           },
         ]);
       } catch (auditErr) {
@@ -966,11 +996,14 @@ export default function FinancePage() {
       setEditingCashMovementId(null);
       setSaidaForm({ ...INITIAL_SAIDA_FORM });
       await loadFinance();
-      alert(wasEdit ? 'Saída atualizada com sucesso.' : 'Saída registrada com sucesso.');
+      setFinanceToast(
+        wasEdit ? 'Saída atualizada com sucesso.' : 'Saída registrada com sucesso.',
+      );
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(err);
-      alert('Erro ao registrar saída: ' + message);
+      console.error('[FINANCEIRO] erro completo ao registrar saída', err);
+      alert(
+        'Erro ao registrar saída: ' + formatSupabaseFinanceError(err),
+      );
     }
   };
 
@@ -1246,6 +1279,7 @@ export default function FinancePage() {
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
       broker_id: cm.broker_id || '',
+      broker_manual: meta?.manual_broker || '',
       customer_id: cm.customer_id || '',
       sale_id: cm.sale_id || '',
       customer_manual:
@@ -3237,12 +3271,11 @@ export default function FinancePage() {
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$) *</label>
                   <input
                     required
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                    type="text"
+                    inputMode="decimal"
                     value={saidaForm.amount}
                     onChange={(e) => setSaidaForm({ ...saidaForm, amount: e.target.value })}
-                    placeholder="0.00"
+                    placeholder="5685,37 ou 5685.37"
                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
                   />
                 </div>
@@ -3373,10 +3406,17 @@ export default function FinancePage() {
                     Corretor {saidaForm.category === 'Comissão' ? '*' : '(opcional)'}
                   </label>
                   <select
-                    required={saidaForm.category === 'Comissão'}
+                    required={saidaForm.category === 'Comissão' && !saidaForm.broker_manual.trim()}
                     value={saidaForm.broker_id}
-                    onChange={(e) => setSaidaForm({ ...saidaForm, broker_id: e.target.value })}
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                    onChange={(e) =>
+                      setSaidaForm({
+                        ...saidaForm,
+                        broker_id: e.target.value,
+                        broker_manual: e.target.value ? '' : saidaForm.broker_manual,
+                      })
+                    }
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    disabled={!!saidaForm.broker_manual.trim() && !saidaForm.broker_id}
                   >
                     <option value="">Selecione o corretor</option>
                     {financeBrokers.map((b) => (
@@ -3385,6 +3425,20 @@ export default function FinancePage() {
                       </option>
                     ))}
                   </select>
+                  <input
+                    type="text"
+                    disabled={!!saidaForm.broker_id}
+                    value={saidaForm.broker_manual}
+                    onChange={(e) =>
+                      setSaidaForm({
+                        ...saidaForm,
+                        broker_manual: e.target.value,
+                        broker_id: e.target.value.trim() ? '' : saidaForm.broker_id,
+                      })
+                    }
+                    placeholder="Nome do corretor (manual, opcional)"
+                    className="mt-2 w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                  />
                 </div>
               </div>
               <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
