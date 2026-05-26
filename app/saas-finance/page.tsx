@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { MasterEmptyState } from '@/components/master/MasterEmptyState';
+import {
+  augmentCompanyBilling,
+  filterRealCompanies,
+  masterLog,
+} from '@/lib/masterProduction';
 import { 
    Wallet, TrendingUp, Users, Target, AlertCircle, 
    Search, Filter, Download, RefreshCw, X, Eye, Edit2, 
@@ -46,42 +53,22 @@ export default function SaaSFinancePage() {
 
    const loadData = async () => {
       setLoading(true);
-      console.log('SAAS_FINANCE_LOAD - Iniciando...');
-      console.log('SAAS_FINANCE_COMPANIES_LOAD - Buscando empresas...');
+      masterLog('mocks removidos');
       try {
-         const { data, error } = await supabase.from('companies').select('*');
+         const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
          
          if (error) {
-             console.error('Erro ao buscar empresas', error);
-         } else if (data) {
-             // Mock some statuses and payment info since we don't have a real saas_subscriptions table yet
-             const augmentedData = data.map((c, i) => {
-                 let paymentStatus = 'Pago';
-                 let subStatus = 'Ativa';
-                 
-                 // Artificial distribution for demonstration
-                 if (i % 7 === 0) {
-                     paymentStatus = 'Vencido';
-                     subStatus = 'Inadimplente';
-                 } else if (i % 5 === 0) {
-                     paymentStatus = 'Pendente';
-                     subStatus = 'Atrasada';
-                 }
-
-                 return {
-                     ...c,
-                     ui_plan: PLAN_NAMES[c.plan?.toLowerCase()] || 'BÁSICO',
-                     price: PLAN_PRICES[c.plan?.toLowerCase()] || 329.99,
-                     payment_status: paymentStatus,
-                     subscription_status: subStatus,
-                     next_billing: new Date(new Date().setDate(new Date().getDate() + (i * 2))).toISOString(),
-                     last_billing: new Date(new Date().setDate(new Date().getDate() - 30 + (i * 2))).toISOString()
-                 };
-             });
-             setCompanies(augmentedData);
+             console.error('[MASTER] Erro ao buscar empresas', error);
+             setCompanies([]);
+             masterLog('nenhum dado real encontrado');
+         } else {
+             const real = filterRealCompanies(data || []);
+             setCompanies(real.map((c) => augmentCompanyBilling(c)));
          }
       } catch (err) {
-         console.error('Erro geral', err);
+         console.error('[MASTER] Erro geral', err);
+         setCompanies([]);
+         masterLog('nenhum dado real encontrado');
       } finally {
          setLoading(false);
       }
@@ -106,20 +93,17 @@ export default function SaaSFinancePage() {
              mrr += c.price;
          }
          
-         if (c.subscription_status === 'Inadimplente' || c.subscription_status === 'Atrasada') {
+         if (c.subscription_status === 'Inadimplente') {
              delayedAmount += c.price;
              outstandingCount++;
          }
       });
-
-      console.log('SAAS_FINANCE_MRR_CALCULATED', mrr);
 
       return {
          mrr,
          arr: mrr * 12,
          activeClients,
          delayedAmount,
-         conversionRate: '68.4%',
          outstandingCount
       };
    }, [companies]);
@@ -145,15 +129,9 @@ export default function SaaSFinancePage() {
        alert('Relatório exportado com sucesso!');
    };
 
-   // Mock data for charts
-   const mrrTrendData = [
-      { name: 'Dez', value: 3000 },
-      { name: 'Jan', value: 8000 },
-      { name: 'Fev', value: 12000 },
-      { name: 'Mar', value: 16000 },
-      { name: 'Abr', value: 20000 },
-      { name: 'Mai', value: stats.mrr }
-   ];
+   const mrrTrendData = stats.mrr > 0
+      ? [{ name: 'Atual', value: stats.mrr }]
+      : [];
 
    const planDistData = [
       { name: 'Básico', value: companies.filter(c => c.ui_plan === 'BÁSICO').length * 329.99, fill: PLAN_COLORS['BÁSICO'] },
@@ -170,12 +148,15 @@ export default function SaaSFinancePage() {
                <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">Financeiro SaaS</h1>
                <p className="text-gray-400 mt-1 text-[14px]">Acompanhe receitas, assinaturas, inadimplência e movimentações financeiras da plataforma.</p>
             </div>
-            <div className="flex items-center gap-3 justify-end">
-               <button onClick={handleExport} className="bg-[#11161d] border border-white/10 hover:bg-white/5 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
-                  <Download className="w-4 h-4" /> Exportar Relatório
-               </button>
-               <button onClick={loadData} className="bg-[#f97316] hover:bg-[#ea580c] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(249,115,22,0.4)]">
-                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar Dados
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+               <Link href="/companies?new=1" className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all">
+                  + Nova Empresa
+               </Link>
+               <Link href="/plans" className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all">
+                  + Nova Assinatura
+               </Link>
+               <button onClick={loadData} className="bg-[#11161d] border border-white/10 hover:bg-white/5 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
                </button>
             </div>
          </div>
@@ -189,7 +170,7 @@ export default function SaaSFinancePage() {
                <div>
                   <p className="text-[12px] text-gray-400 font-medium">Receita Mensal (MRR)</p>
                   <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.mrr)}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 18,6% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-gray-500 font-normal">Baseado em planos reais</p>
                </div>
             </div>
             <div className="bg-[#11161d] border border-blue-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:border-blue-500/40 transition-all">
@@ -199,7 +180,7 @@ export default function SaaSFinancePage() {
                <div>
                   <p className="text-[12px] text-gray-400 font-medium">Receita Anual (ARR)</p>
                   <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.arr)}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 22,3% <span className="text-gray-500 font-normal">vs ano anterior</span></p>
+                  <p className="text-[11px] text-gray-500 font-normal">Projeção anual</p>
                </div>
             </div>
             <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] hover:border-purple-500/40 transition-all">
@@ -209,17 +190,7 @@ export default function SaaSFinancePage() {
                <div>
                   <p className="text-[12px] text-gray-400 font-medium">Clientes Ativos</p>
                   <h4 className="text-[20px] font-bold text-white">{stats.activeClients}</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 13,3% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
-               </div>
-            </div>
-            <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] hover:border-orange-500/40 transition-all">
-               <div className="w-12 h-12 rounded-full bg-orange-500/10 flex items-center justify-center shrink-0">
-                  <Target className="w-6 h-6 text-orange-400" />
-               </div>
-               <div>
-                  <p className="text-[12px] text-gray-400 font-medium">Taxa de Conversão</p>
-                  <h4 className="text-[20px] font-bold text-white">68,4%</h4>
-                  <p className="text-[11px] text-green-400 font-bold">↑ 12,4% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
+                  <p className="text-[11px] text-gray-500 font-normal">Tenants ativos</p>
                </div>
             </div>
             <div className="bg-[#11161d] border border-cyan-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(6,182,212,0.1)] hover:border-cyan-500/40 transition-all">
@@ -228,8 +199,8 @@ export default function SaaSFinancePage() {
                </div>
                <div>
                   <p className="text-[12px] text-gray-400 font-medium">Inadimplência</p>
-                  <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.delayedAmount || 1250)}</h4>
-                  <p className="text-[11px] text-cyan-400 font-bold">↓ 8,4% <span className="text-gray-500 font-normal">vs mês anterior</span></p>
+                  <h4 className="text-[20px] font-bold text-white truncate">{formatCurrency(stats.delayedAmount)}</h4>
+                  <p className="text-[11px] text-gray-500 font-normal">{stats.outstandingCount} inadimplente(s)</p>
                </div>
             </div>
          </div>
@@ -394,8 +365,12 @@ export default function SaaSFinancePage() {
                                  </td>
                                  <td className="p-4 text-[13px] text-gray-300">{formatCurrency(c.price)}</td>
                                  <td className="p-4 text-[13px] text-gray-400">Mensal</td>
-                                 <td className="p-4 text-[12px] text-gray-400">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
-                                 <td className="p-4 text-[12px] text-gray-400">{new Date(c.next_billing).toLocaleDateString('pt-BR')}</td>
+                                 <td className="p-4 text-[12px] text-gray-400">
+                                    {c.next_billing ? new Date(c.next_billing).toLocaleDateString('pt-BR') : '—'}
+                                 </td>
+                                 <td className="p-4 text-[12px] text-gray-400">
+                                    {c.next_billing ? new Date(c.next_billing).toLocaleDateString('pt-BR') : '—'}
+                                 </td>
                                  <td className="p-4">
                                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
                                        c.payment_status === 'Pago' ? 'text-green-400 border-green-500/30 bg-green-500/10' :
@@ -423,7 +398,12 @@ export default function SaaSFinancePage() {
                         })}
                         {filteredCompanies.length === 0 && (
                            <tr>
-                              <td colSpan={9} className="p-8 text-center text-gray-500">Nenhuma empresa encontrada com estes filtros.</td>
+                              <td colSpan={9} className="p-6">
+                                 <MasterEmptyState
+                                    title="Nenhuma assinatura real cadastrada ainda"
+                                    description="Cadastre a primeira empresa para iniciar cobranças e faturamento SaaS com dados reais."
+                                 />
+                              </td>
                            </tr>
                         )}
                      </tbody>
@@ -499,102 +479,23 @@ export default function SaaSFinancePage() {
             </div>
          </div>
 
-         {/* BOTTOM CARDS */}
-         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
+         {companies.length > 0 && (
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5">
                <h3 className="text-[14px] font-bold text-white mb-4">Resumo de Inadimplência</h3>
-               
-               <div className="flex items-center gap-6 mb-2">
-                  <div className="flex-1">
-                     <p className="text-[12px] text-gray-400 mb-1">Total em aberto</p>
-                     <h4 className="text-[24px] font-bold text-red-500 mb-1">{formatCurrency(stats.delayedAmount || 1250)}</h4>
-                     <p className="text-[12px] text-gray-500">{stats.outstandingCount || 2} assinaturas em atraso</p>
-                  </div>
-                  <div className="w-24 h-24 relative flex items-center justify-center shrink-0">
-                     <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                           <Pie data={[
-                               {name: 'Vencido', value: 1250, fill: '#ef4444'},
-                               {name: 'A vencer', value: 1100, fill: '#f59e0b'},
-                               {name: 'Em dia', value: 20100, fill: '#22c55e'}
-                             ]} 
-                             innerRadius={25} outerRadius={40} dataKey="value" stroke="none">
-                           </Pie>
-                        </PieChart>
-                     </ResponsiveContainer>
-                  </div>
-               </div>
-               
-               <div className="space-y-3 mt-4 text-[12px]">
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-red-500"></div><span className="text-gray-300">Vencido (2)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(1250)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div><span className="text-gray-300">A vencer (3)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(1100)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div><span className="text-gray-300">Em dia (12)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(20100)}</span>
-                  </div>
-               </div>
+               <p className="text-[12px] text-gray-400 mb-1">Total em aberto (status real)</p>
+               <h4 className="text-[24px] font-bold text-red-500 mb-1">{formatCurrency(stats.delayedAmount)}</h4>
+               <p className="text-[12px] text-gray-500">{stats.outstandingCount} assinatura(s) inadimplente(s)</p>
             </div>
-
-            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
-               <h3 className="text-[14px] font-bold text-white mb-4">Receita Prevista <span className="text-gray-500 font-normal ml-1">(Próximos 30 dias)</span></h3>
-               <div className="mb-4">
-                  <p className="text-[12px] text-gray-400 mb-1">Total previsto</p>
-                  <h4 className="text-[24px] font-bold text-[#3b82f6] mb-1">{formatCurrency(16500)}</h4>
-                  <p className="text-[12px] text-gray-500">5 cobranças previstas</p>
-               </div>
-               
-               <div className="space-y-3 text-[12px]">
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div><span className="text-gray-300">Básico (2)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(659.98)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-gray-300">Business (2)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(1099.98)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-purple-500"></div><span className="text-gray-300">Profissional (1)</span></div>
-                     <span className="text-white font-medium">{formatCurrency(1099.99)}</span>
-                  </div>
-               </div>
-            </div>
-
-            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
-               <h3 className="text-[14px] font-bold text-white mb-4">Últimas Movimentações</h3>
-               <div className="space-y-4 text-[12px] flex-1 mt-2">
-                  <div className="flex flex-col gap-1 pb-3 border-b border-white/5">
-                     <div className="flex justify-between items-start gap-4">
-                        <span className="text-gray-300 font-medium">Pagamento recebido - Norte Sul Topografia</span>
-                        <span className="text-green-400 font-bold whitespace-nowrap">+ R$ 549,99</span>
-                     </div>
-                     <span className="text-gray-500">22/05/2026 08:34</span>
-                  </div>
-                  <div className="flex flex-col gap-1 pb-3 border-b border-white/5">
-                     <div className="flex justify-between items-start gap-4">
-                        <span className="text-gray-300 font-medium">Pagamento recebido - S V Topografia</span>
-                        <span className="text-green-400 font-bold whitespace-nowrap">+ R$ 329,99</span>
-                     </div>
-                     <span className="text-gray-500">15/05/2026 07:58</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                     <div className="flex justify-between items-start gap-4">
-                        <span className="text-gray-300 font-medium">Falha na cobrança - Vale Verde Empreendimentos</span>
-                        <span className="text-red-400 font-bold whitespace-nowrap">R$ 549,99</span>
-                     </div>
-                     <span className="text-gray-500">05/05/2026 10:11</span>
-                  </div>
-               </div>
-               <button className="text-[12px] font-medium text-blue-400 hover:text-blue-300 transition-colors mt-4 text-left w-fit flex items-center gap-1">
-                  Ver todas movimentações <TrendingUp className="w-3 h-3" />
-               </button>
+            <div className="bg-[#11161d] border border-white/5 rounded-2xl p-5">
+               <h3 className="text-[14px] font-bold text-white mb-4">Movimentações SaaS</h3>
+               <p className="text-sm text-gray-500 leading-relaxed">
+                  Histórico de pagamentos e faturas será exibido quando a integração de cobrança estiver ativa.
+                  Nenhum lançamento fictício é mostrado em produção.
+               </p>
             </div>
          </div>
+         )}
       </div>
    );
 }

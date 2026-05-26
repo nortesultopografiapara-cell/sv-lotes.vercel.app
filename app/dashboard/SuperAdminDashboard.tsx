@@ -44,6 +44,7 @@ import {
   Cell
 } from 'recharts';
 import { useRouter } from 'next/navigation';
+import { filterRealCompanies, masterLog } from '@/lib/masterProduction';
 
 export default function SuperAdminDashboard({ user }: { user: any }) {
   const router = useRouter();
@@ -89,14 +90,15 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
          supabase.from('blocks').select('*', { count: 'exact', head: true })
       ]);
 
-      const comps = companies || [];
+      masterLog('mocks removidos');
+      const comps = filterRealCompanies(companies || []);
       
       const active = comps.filter(c => c.status_operacional === 'Ativa').length || comps.filter(c => c.active === true).length;
       const suspended = comps.filter(c => c.status_operacional === 'Suspensa').length;
       const inactive = comps.filter(c => c.status_operacional === 'Inativa' || c.status_operacional === 'Inadimplente' || c.status_operacional === 'Bloqueada').length || comps.filter(c => c.active === false).length;
       
       setStats({
-        totalCompanies: totalCompanies || 0,
+        totalCompanies: comps.length,
         activeCompanies: active,
         suspendedCompanies: suspended,
         inactiveCompanies: inactive,

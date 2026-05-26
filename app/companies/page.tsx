@@ -16,7 +16,9 @@ import {
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
+import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
+import { filterRealCompanies } from '@/lib/masterProduction';
 import { supabase } from '@/lib/supabase';
 
 export default function CompaniesPage() {
@@ -81,7 +83,7 @@ function CompaniesPageContent() {
          project_count: counts[c.id] || 0
       }));
 
-      setCompanies(mergedData);
+      setCompanies(filterRealCompanies(mergedData));
     } catch (err) {
       console.error('ERROR in loadCompanies:', err);
     } finally {
@@ -285,9 +287,14 @@ function CompaniesPageContent() {
         </div>
       </div>
 
-      {filteredCompanies.length === 0 ? (
+      {companies.length === 0 ? (
+        <MasterEmptyState
+          title="Nenhuma empresa real cadastrada ainda"
+          description="Cadastre a primeira empresa para iniciar a operação SaaS com assinaturas e cobranças reais."
+        />
+      ) : filteredCompanies.length === 0 ? (
         <div className="flex-1 flex items-center justify-center rounded-2xl border border-dashed border-white/10 py-16">
-          <p className="text-sm text-slate-500">Nenhuma empresa encontrada.</p>
+          <p className="text-sm text-slate-500">Nenhuma empresa encontrada para esta busca.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pb-8">

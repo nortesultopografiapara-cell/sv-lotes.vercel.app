@@ -30,12 +30,12 @@ export function useAuth() {
                    document.cookie.includes('demo_mode=true') && 
                    !isSupabaseConfigured;
 
-    if (isDevPreview) {
+    if (isDevPreview && process.env.NODE_ENV !== 'production') {
       if (mounted) {
         Promise.resolve().then(() => {
           setUser({
             id: 'dev-preview-user',
-            tenant_id: '75fcaae6-8975-4e06-9100-8c8aa1537854', // Your tenant ID
+            tenant_id: '75fcaae6-8975-4e06-9100-8c8aa1537854',
             role: 'MASTER-ADMIN',
             email: 'sv@svtopografiaeprojetos.com.br',
             name: 'Desenvolvedor (Preview)',
@@ -52,13 +52,13 @@ export function useAuth() {
       return;
     }
 
-    if (isDemo) {
+    if (isDemo && process.env.NODE_ENV !== 'production') {
       if (mounted) {
         Promise.resolve().then(() => {
           setUser({
             id: 'demo-user-id',
             tenant_id: 'demo-tenant-id',
-            role: 'ADMIN', // ADMIN covers most routes, you can use SUPER_ADMIN too
+            role: 'ADMIN',
             email: 'demo@preview.local',
             name: 'Visitante (Demo)',
             force_password_change: false,

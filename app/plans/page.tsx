@@ -8,7 +8,14 @@ import {
   Rocket, TrendingUp, Diamond, Edit2, CreditCard, MoreVertical, Filter, Download,
   BarChart3, UserCheck, TrendingUp as TrendingUpIcon, Users as UsersIcon
 } from 'lucide-react';
+import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
+import { MasterEmptyState } from '@/components/master/MasterEmptyState';
+import {
+  calculateMrrFromCompanies,
+  filterRealCompanies,
+  masterLog,
+} from '@/lib/masterProduction';
 import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -101,76 +108,48 @@ export default function PlansPage() {
      mrr: 0,
      activeCompanies: 0,
      activeUsers: 0,
-     conversionRate: '68.4%'
   });
   const [dataLoading, setDataLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasError, setHasError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
-    console.log('SAAS_COMPANIES_LOAD - Iniciando request...');
+    masterLog('mocks removidos');
+    setLoadError(null);
     try {
-      const [ { data: companiesData, error: compErr }, { data: projectsData, error: projErr }, { data: brokersData, error: brokersErr } ] = await Promise.all([
-         supabase
-          .from('companies')
-          .select('*')
-          .order('created_at', { ascending: false }),
-         supabase
-          .from('projects')
-          .select('tenant_id'),
-         supabase
-          .from('brokers')
-          .select('tenant_id')
+      const [
+        { data: companiesData, error: compErr },
+        { data: projectsData },
+        { data: brokersData },
+      ] = await Promise.all([
+         supabase.from('companies').select('*').order('created_at', { ascending: false }),
+         supabase.from('projects').select('tenant_id'),
+         supabase.from('brokers').select('tenant_id'),
       ]);
 
       if (compErr) {
-         console.warn('Erro ao carregar companies, usando fallback', compErr);
-         setHasError(true);
+        console.error('[MASTER] erro ao carregar companies', compErr);
+        setLoadError(compErr.message);
+        setCompanies([]);
+        setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
+        masterLog('nenhum dado real encontrado');
+        return;
       }
 
-      let activeCompaniesCount = 0;
-      let calculatedMrr = 0;
-      let finalCompanies = companiesData || [];
+      const finalCompanies = filterRealCompanies(companiesData || []);
+      setCompanies(finalCompanies);
 
-      if (finalCompanies.length > 0) {
-        setCompanies(finalCompanies);
-        
-        finalCompanies.forEach(c => {
-           // We assume company is active if status_operacional is 'Ativo' or it doesn't exist
-           const isActive = c.status_operacional !== 'Inativo' && c.active !== false;
-           if (isActive) {
-              activeCompaniesCount++;
-              
-              if (c.plan === 'business' || c.plan === 'standard') {
-                 calculatedMrr += 549.99;
-              } else if (c.plan === 'professional' || c.plan === 'enterprise') {
-                 calculatedMrr += 1099.99;
-              } else {
-                 // Basic / outros
-                 calculatedMrr += 329.99;
-              }
-           }
-        });
-      } else {
-         // Fallback Mock se banco não retornar nada ou der erro
-         const mockData = [
-            { id: '1', name: 'Norte Sul Topografia', email: 'contato@nortesultopografia.com.br', plan: 'standard', max_brokers: 10, max_projects: 6, active: true },
-            { id: '2', name: 'Loteadora Paraíso LTDA', email: 'financeiro@paraisoloteadora.com.br', plan: 'basic', max_brokers: 5, max_projects: 3, active: true },
-            { id: '3', name: 'Vale Verde Empreendimentos', email: 'adm@valeverde.com.br', plan: 'professional', max_brokers: 50, max_projects: 25, active: true },
-         ];
-         setCompanies(mockData);
-         activeCompaniesCount = 3;
-         calculatedMrr = 549.99 + 329.99 + 1099.99;
-      }
-      
+      const activeCompaniesCount = finalCompanies.filter(
+        (c) => c.status_operacional !== 'Inativo' && c.active !== false
+      ).length;
+      const calculatedMrr = calculateMrrFromCompanies(finalCompanies);
+
       if (projectsData) {
         const counts: Record<string, number> = {};
-        projectsData.forEach((p: any) => {
-          if (p.tenant_id) {
-            counts[p.tenant_id] = (counts[p.tenant_id] || 0) + 1;
-          }
+        projectsData.forEach((p: { tenant_id?: string }) => {
+          if (p.tenant_id) counts[p.tenant_id] = (counts[p.tenant_id] || 0) + 1;
         });
         setProjectsCount(counts);
       }
@@ -178,34 +157,26 @@ export default function PlansPage() {
       let usersCountVal = 0;
       if (brokersData) {
         const bCounts: Record<string, number> = {};
-        brokersData.forEach((b: any) => {
-          if (b.tenant_id) {
+        brokersData.forEach((b: { tenant_id?: string }) => {
+          if (b.tenant_id && finalCompanies.some((c) => c.id === b.tenant_id)) {
              bCounts[b.tenant_id] = (bCounts[b.tenant_id] || 0) + 1;
              usersCountVal++;
           }
         });
         setBrokersCount(bCounts);
-      } else {
-         usersCountVal = 24; // fallback
       }
 
-      // Add a fallback for user profiles if we want to add admins to usersCountVal, but brokers count is a good approximation for active users.
-      // Usually platform admins also count, let's just add activeCompaniesCount to it (approx 1 admin per company)
-      if (usersCountVal > 0) usersCountVal += activeCompaniesCount;
-      
       setStats({
          mrr: calculatedMrr,
          activeCompanies: activeCompaniesCount,
-         activeUsers: usersCountVal > 0 ? usersCountVal : 24,
-         conversionRate: '68.4%'
+         activeUsers: usersCountVal,
       });
-
     } catch (error) {
-      console.error('Error loading companies:', error);
-      setHasError(true);
-      setCompanies([
-         { id: '1', name: 'Empresa Teste SaaS', email: 'teste@saas.com.br', plan: 'standard', max_brokers: 10, max_projects: 6, status_operacional: 'Ativo' },
-      ]);
+      console.error('[MASTER] Error loading companies:', error);
+      setLoadError('Falha ao carregar dados do Supabase.');
+      setCompanies([]);
+      setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
+      masterLog('nenhum dado real encontrado');
     } finally {
       setDataLoading(false);
     }
@@ -307,10 +278,19 @@ export default function PlansPage() {
           <p className="text-gray-400 mt-1 text-[14px]">Gerencie seus planos e visualize as assinaturas das empresas da plataforma.</p>
         </div>
         <div className="flex flex-col gap-4">
-           <div className="flex items-center gap-3 justify-end">
-             <button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_rgba(37,99,235,0.6)]">
-                <span className="text-lg leading-none mt-[-2px]">+</span> Novo Plano
-             </button>
+           <div className="flex flex-wrap items-center gap-2 justify-end">
+             <Link
+               href="/companies?new=1"
+               className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2"
+             >
+                <Building2 className="w-4 h-4" /> Nova Empresa
+             </Link>
+             <Link
+               href="/companies?new=1"
+               className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2"
+             >
+                <CreditCard className="w-4 h-4" /> Nova Assinatura
+             </Link>
            </div>
            {/* Seletor Visão Planto/Assinaturas */}
            <div className="flex items-center justify-end gap-2 text-sm text-gray-400">
@@ -323,10 +303,10 @@ export default function PlansPage() {
         </div>
       </div>
 
-      {hasError && (
+      {loadError && (
          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3">
             <ShieldCore className="w-5 h-5 shrink-0" />
-            <p className="text-sm">Exibindo ambiente de visualização seguro.</p>
+            <p className="text-sm">{loadError}</p>
          </div>
       )}
 
@@ -452,9 +432,11 @@ export default function PlansPage() {
                    const usersCount = brokersCount[company.id] || 0;
                    const projCount = projectsCount[company.id] || 0;
                    
-                   const vDate = company.vencimento_plano 
-                      ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR') 
-                      : (company.due_date ? new Date(company.due_date).toLocaleDateString('pt-BR') : 'Sob consulta');
+                   const vDate = company.vencimento_plano
+                      ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR')
+                      : company.due_date
+                        ? new Date(company.due_date).toLocaleDateString('pt-BR')
+                        : '—';
                    
                    const isActive = company.status_operacional !== 'Inativo' && company.active !== false;
 
@@ -519,6 +501,18 @@ export default function PlansPage() {
                      </tr>
                    );
                 })}
+                {filteredCompanies.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-0">
+                      <div className="p-6">
+                        <MasterEmptyState
+                          title="Nenhuma assinatura real cadastrada ainda"
+                          description="Cadastre a primeira empresa para iniciar o faturamento SaaS com planos e limites reais."
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
              </tbody>
           </table>
         </div>
@@ -532,8 +526,8 @@ export default function PlansPage() {
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.mrr)}
                </h4>
-               <p className="text-[11px] text-green-500 font-bold tracking-wide">
-                  ↑ 18.6% <span className="text-gray-500 font-medium">vs mês anterior</span>
+               <p className="text-[11px] text-gray-500 font-medium tracking-wide">
+                  Dados reais do Supabase
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">
@@ -569,8 +563,8 @@ export default function PlansPage() {
             <div>
                <p className="text-[12px] text-gray-400 font-medium mb-1">Usuários Ativos</p>
                <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.activeUsers}</h4>
-               <p className="text-[11px] text-purple-400 font-bold tracking-wide">
-                  92.31% <span className="text-gray-500 font-medium">do total</span>
+               <p className="text-[11px] text-gray-500 font-medium tracking-wide">
+                  Corretores cadastrados
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">
@@ -588,10 +582,10 @@ export default function PlansPage() {
          </div>
          <div className="bg-[#11161d] border border-orange-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.1)] transition-all">
             <div>
-               <p className="text-[12px] text-gray-400 font-medium mb-1">Taxa de Conversão</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{stats.conversionRate}</h4>
-               <p className="text-[11px] text-green-500 font-bold tracking-wide">
-                  ↑ 12.4% <span className="text-gray-500 font-medium">vs mês anterior</span>
+               <p className="text-[12px] text-gray-400 font-medium mb-1">Empresas cadastradas</p>
+               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">{companies.length}</h4>
+               <p className="text-[11px] text-gray-500 font-medium tracking-wide">
+                  Apenas tenants reais
                </p>
             </div>
             <div className="w-24 h-12 flex items-end justify-end">

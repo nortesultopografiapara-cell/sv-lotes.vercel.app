@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { isTestCompany } from '@/lib/masterProduction';
 
 export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -25,8 +26,20 @@ export async function POST(req: Request) {
     }
 
     // 2. Get all companies
-    const { data: companies } = await supabaseAdmin.from('companies').select('id');
+    const { data: companies } = await supabaseAdmin.from('companies').select('id, name, fantasy_name, slug, email, status_operacional, is_test');
     const companyIds = new Set(companies?.map(c => c.id) || []);
+
+    let testCompaniesRemoved = 0;
+    if (companies) {
+      for (const comp of companies) {
+        if (isTestCompany(comp)) {
+          console.log(`[CLEANUP] Removendo empresa de teste: ${comp.name || comp.id}`);
+          await supabaseAdmin.from('companies').delete().eq('id', comp.id);
+          companyIds.delete(comp.id);
+          testCompaniesRemoved++;
+        }
+      }
+    }
 
     // 3. Get all public.users
     const { data: publicUsers } = await supabaseAdmin.from('users').select('id, email, tenant_id');
@@ -35,7 +48,8 @@ export async function POST(req: Request) {
     let cleanedStats = {
       orphanedAuthUsers: 0,
       invalidPublicUsers: 0,
-      emptyCompanies: 0
+      emptyCompanies: 0,
+      testCompaniesRemoved,
     };
 
     // 4. Limpar public.users sem tenant válido (incompletos)
