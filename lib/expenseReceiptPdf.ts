@@ -63,7 +63,7 @@ export function formatReceiptError(err: unknown): string {
   );
 }
 
-function blockLabelFromMetadata(md: CashMovementMetadata): string {
+export function formatQuadraLoteFromMetadata(md: CashMovementMetadata): string {
   const quad = String(md.quadra_manual ?? "").trim();
   const lot = String(md.lote_manual ?? "").trim();
   if (quad && lot) return `QD ${quad} • LT ${lot}`;
@@ -118,7 +118,7 @@ export function buildNormalizedExpenseReceiptItem(
   },
 ): ExpenseReceiptItem {
   const md: CashMovementMetadata = { ...(item.metadata || {}) };
-  const blockFromMeta = blockLabelFromMetadata(md);
+  const blockFromMeta = formatQuadraLoteFromMetadata(md);
 
   const contract_number = resolveReceiptContractNumber(item, md);
   const customer_name = resolveReceiptCustomerName(item, md);

@@ -44,6 +44,7 @@ import {
   resolveReceiptContractNumber,
   resolveReceiptCustomerName,
 } from '@/lib/expenseReceiptPdf';
+import { persistExpenseReceiptValidation } from '@/lib/expenseReceiptPersist';
 
 export type { CashFlowItem };
 export { buildCashFlowItems, calculateFinancialTotals };
@@ -1171,32 +1172,41 @@ export default function FinancePage() {
       return;
     }
 
-    const receiptPayload = {
-      receipt_number: receiptNumber,
-      receipt_url: validationUrl,
-      validation_code: validationCode,
-    };
-
-    try {
-      if (item.cashMovementId) {
-        const { error } = await supabase
-          .from('cash_movements')
-          .update(receiptPayload)
-          .eq('id', item.cashMovementId);
-        if (error) {
-          console.warn('[RECIBO] persistência caixa', error);
-        }
-      } else if (item.commissionId) {
+    if (item.cashMovementId) {
+      const cmRow = cashMovements.find((c) => c.id === item.cashMovementId);
+      const persistResult = await persistExpenseReceiptValidation(
+        supabase,
+        item.cashMovementId,
+        cmRow,
+        {
+          validationCode,
+          receiptNumber,
+          validationUrl,
+        },
+      );
+      if (!persistResult.ok) {
+        console.error('[RECIBO] falha ao persistir validação', persistResult.error);
+        alert(
+          'Recibo gerado, mas o código de validação não foi salvo. Tente gerar novamente ou contate o suporte.',
+        );
+        return;
+      }
+    } else if (item.commissionId) {
+      try {
         const { error } = await supabase
           .from('broker_commissions')
-          .update(receiptPayload)
+          .update({
+            receipt_number: receiptNumber,
+            receipt_url: validationUrl,
+            validation_code: validationCode,
+          })
           .eq('id', item.commissionId);
         if (error) {
           console.warn('[RECIBO] persistência comissão', error);
         }
+      } catch (persistErr) {
+        console.warn('[RECIBO] erro ao persistir comissão', persistErr);
       }
-    } catch (persistErr) {
-      console.warn('[RECIBO] erro ao persistir validação (PDF já gerado)', persistErr);
     }
 
     console.log('[RECIBO] recibo gerado', receiptNumber);

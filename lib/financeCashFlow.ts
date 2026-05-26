@@ -83,6 +83,11 @@ export type CashMovementMetadata = {
   project_name?: string | null;
   project_manual?: string | null;
   payment_method?: string | null;
+  validation_code?: string | null;
+  receipt_number?: string | null;
+  receipt_url?: string | null;
+  receipt_generated_at?: string | null;
+  receipt_type?: string | null;
 };
 
 function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
@@ -107,6 +112,11 @@ function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
     project_name: pick("project_name"),
     project_manual: pick("project_manual"),
     payment_method: pick("payment_method"),
+    validation_code: pick("validation_code"),
+    receipt_number: pick("receipt_number"),
+    receipt_url: pick("receipt_url"),
+    receipt_generated_at: pick("receipt_generated_at"),
+    receipt_type: pick("receipt_type"),
   };
 }
 

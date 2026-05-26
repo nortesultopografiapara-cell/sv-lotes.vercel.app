@@ -22,6 +22,7 @@ type ReceiptValidation = {
   cliente?: string;
   corretor?: string;
   contrato?: string;
+  quadra_lote?: string;
   receipt_number?: string;
   validation_code?: string;
   autenticidade?: string;
@@ -94,10 +95,19 @@ export default function ValidarReciboPage() {
               />
               <Row label="Data" value={data.data || "—"} />
               <Row label="Descrição" value={data.descricao || "—"} />
+              {data.cliente && data.cliente !== "Não informado" ? (
+                <Row label="Cliente" value={data.cliente} />
+              ) : null}
               <Row
                 label="Beneficiário"
                 value={data.beneficiario || data.corretor || "—"}
               />
+              {data.contrato && data.contrato !== "Não informado" ? (
+                <Row label="Contrato" value={data.contrato} mono />
+              ) : null}
+              {data.quadra_lote && data.quadra_lote !== "Não informado" ? (
+                <Row label="Quadra / Lote" value={data.quadra_lote} />
+              ) : null}
               {data.cpf_cnpj ? (
                 <Row label="CPF/CNPJ" value={data.cpf_cnpj} mono />
               ) : null}

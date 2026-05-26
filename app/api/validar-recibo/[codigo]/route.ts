@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { formatFlowDate, getCashMovementMetadata } from "@/lib/financeCashFlow";
 import { formatReceiptContractNumber } from "@/lib/contractNumber";
-import { formatBeneficiaryDocument } from "@/lib/expenseReceiptPdf";
+import {
+  formatBeneficiaryDocument,
+  formatQuadraLoteFromMetadata,
+} from "@/lib/expenseReceiptPdf";
+import {
+  findCashMovementByValidationCode,
+  normalizeValidationCode,
+  resolveStoredReceiptNumber,
+  resolveStoredValidationCode,
+} from "@/lib/expenseReceiptPersist";
 
 type CompanyRow = {
   id?: string;
@@ -46,14 +55,15 @@ function buildValidResponse(payload: {
   movement_date: string;
   category: string;
   description: string;
-  receipt_number: string | null;
-  validation_code: string | null;
+  receipt_number: string;
+  validation_code: string;
   beneficiario?: string;
   cpf_cnpj?: string;
   forma_pagamento?: string;
   projeto?: string;
   cliente?: string;
   contrato?: string;
+  quadra_lote?: string;
 }) {
   return NextResponse.json({
     valid: true,
@@ -73,6 +83,7 @@ function buildValidResponse(payload: {
     cliente: payload.cliente || "Não informado",
     corretor: payload.beneficiario || "Não informado",
     contrato: payload.contrato || "Não informado",
+    quadra_lote: payload.quadra_lote || "Não informado",
     receipt_number: payload.receipt_number,
     validation_code: payload.validation_code,
     autenticidade: "Documento autêntico gerado pelo SV LOTES",
@@ -115,12 +126,50 @@ function resolveContractFromMetadata(
   return formatReceiptContractNumber(raw) || raw;
 }
 
+function buildCashMovementValidPayload(
+  cash: Record<string, unknown>,
+  company: CompanyRow | null,
+) {
+  const md = getCashMovementMetadata(cash);
+  const beneficiario = resolveBeneficiaryFromMetadata(md);
+  const cliente = resolveCustomerFromMetadata(md, beneficiario);
+  const docRaw = String(md.beneficiary_document ?? "").trim();
+  const cpf_cnpj = docRaw ? formatBeneficiaryDocument(docRaw) : "";
+  const formaPagamento = String(md.payment_method ?? "").trim();
+  const quadra_lote = formatQuadraLoteFromMetadata(md);
+  const contrato = resolveContractFromMetadata(md);
+
+  return buildValidResponse({
+    empresa:
+      company?.razao_social ||
+      company?.name ||
+      company?.fantasy_name ||
+      "SV LOTES",
+    cnpj: company?.cnpj || undefined,
+    valor: Number(cash.amount) || 0,
+    movement_date: String(cash.movement_date ?? ""),
+    category: String(cash.category || "Saída"),
+    description: cleanMovementDescription(
+      cash.description as string | null | undefined,
+    ),
+    receipt_number: resolveStoredReceiptNumber(cash),
+    validation_code: resolveStoredValidationCode(cash),
+    beneficiario,
+    cpf_cnpj,
+    forma_pagamento: formaPagamento || undefined,
+    projeto: md.project_name || md.project_manual || undefined,
+    cliente,
+    contrato: contrato || undefined,
+    quadra_lote: quadra_lote || undefined,
+  });
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ codigo: string }> },
 ) {
   const { codigo } = await context.params;
-  const code = decodeURIComponent(codigo || "").trim();
+  const code = normalizeValidationCode(codigo || "");
   if (!code) {
     return notFoundResponse();
   }
@@ -131,54 +180,16 @@ export async function GET(
     return notFoundResponse();
   }
 
-  const { data: cash, error: cashErr } = await client
-    .from("cash_movements")
-    .select("*")
-    .eq("validation_code", code)
-    .maybeSingle();
-
-  if (cashErr) {
-    console.error("[RECIBO] erro validação caixa", cashErr);
-    return notFoundResponse();
-  }
+  const cash = await findCashMovementByValidationCode(client, code);
 
   if (cash) {
-    const st = (cash.status || "").toLowerCase();
+    const st = String(cash.status || "").toLowerCase();
     if (st === "estornado" || st === "cancelado" || st === "deleted") {
-      return NextResponse.json(
-        { valid: false, error: "Recibo não encontrado" },
-        { status: 404 },
-      );
+      return notFoundResponse();
     }
 
     const company = await fetchCompanyByMovement(client, cash);
-    const md = getCashMovementMetadata(cash);
-    const beneficiario = resolveBeneficiaryFromMetadata(md);
-    const cliente = resolveCustomerFromMetadata(md, beneficiario);
-    const docRaw = String(md.beneficiary_document ?? "").trim();
-    const cpf_cnpj = docRaw ? formatBeneficiaryDocument(docRaw) : "";
-    const formaPagamento = String(md.payment_method ?? "").trim();
-
-    return buildValidResponse({
-      empresa:
-        company?.razao_social ||
-        company?.name ||
-        company?.fantasy_name ||
-        "SV LOTES",
-      cnpj: company?.cnpj || undefined,
-      valor: Number(cash.amount) || 0,
-      movement_date: cash.movement_date,
-      category: cash.category || "Saída",
-      description: cleanMovementDescription(cash.description),
-      receipt_number: cash.receipt_number,
-      validation_code: cash.validation_code,
-      beneficiario,
-      cpf_cnpj,
-      forma_pagamento: formaPagamento || undefined,
-      projeto: md.project_name || md.project_manual || undefined,
-      cliente,
-      contrato: resolveContractFromMetadata(md) || undefined,
-    });
+    return buildCashMovementValidPayload(cash, company);
   }
 
   const { data: comm, error: commErr } = await client
@@ -215,7 +226,6 @@ export async function GET(
 
   let projeto: string | undefined;
   let cliente: string | undefined;
-  let contrato: string | undefined;
 
   if (comm.sale_id) {
     const { data: sale } = await client
@@ -254,12 +264,11 @@ export async function GET(
     movement_date: comm.paid_at || "",
     category: "Comissão",
     description: `Pagamento de comissão — ${brokerName || "Corretor"}`,
-    receipt_number: comm.receipt_number,
-    validation_code: comm.validation_code,
+    receipt_number: String(comm.receipt_number ?? ""),
+    validation_code: String(comm.validation_code ?? code),
     beneficiario: brokerName || undefined,
     projeto,
     cliente,
-    contrato,
     forma_pagamento: "Não informado",
   });
 }
