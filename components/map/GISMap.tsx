@@ -53,6 +53,86 @@ const isLotSold = (status?: string) => {
   return ["vendido", "sold", "venda", "sold_out"].includes(normalized);
 };
 
+const isVendidoStatus = (status: string) => {
+  const s = String(status || "").toLowerCase().trim();
+  return s === "vendido" || s === "sold";
+};
+
+const BLOCKS_SALE_SELECT = `
+  *,
+  frente,
+  area,
+  fundo,
+  lado_direito,
+  lado_esquerdo,
+  "Fundo",
+  "Lado Dir.",
+  "Lado Esq."
+`;
+
+async function fetchBlockForContract(lotId: string) {
+  const { data, error } = await supabase
+    .from("blocks")
+    .select(BLOCKS_SALE_SELECT)
+    .eq("id", lotId)
+    .maybeSingle();
+  if (error) {
+    console.error("[VENDA] erro ao buscar block para contrato:", error);
+  }
+  return data;
+}
+
+/** Insere contrato com payloads progressivos (colunas opcionais / schema drift). */
+async function insertContractForSale(
+  payloads: Record<string, unknown>[],
+): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }> {
+  let lastError: { message?: string } | null = null;
+
+  for (let i = 0; i < payloads.length; i++) {
+    const payload = payloads[i];
+    const cleaned = Object.fromEntries(
+      Object.entries(payload).filter(([, v]) => v !== undefined),
+    );
+
+    console.log(`[VENDA] tentativa insert contrato #${i + 1}`, {
+      keys: Object.keys(cleaned),
+      sale_id: cleaned.sale_id,
+      block_id: cleaned.block_id,
+    });
+
+    const { data, error } = await supabase
+      .from("contracts")
+      .insert([cleaned])
+      .select("*")
+      .single();
+
+    if (!error && data) {
+      console.log("[VENDA] contrato criado", {
+        id: data.id,
+        contract_number: data.contract_number,
+      });
+      return { data, error: null };
+    }
+
+    lastError = error;
+    console.error("[VENDA] erro ao criar contrato (tentativa)", error?.message, error?.code);
+
+    const missingCol = error?.message?.match(/Could not find the '(\w+)' column/i)?.[1];
+    if (missingCol && missingCol in cleaned) {
+      const { [missingCol]: _removed, ...withoutCol } = cleaned;
+      const retry = await supabase.from("contracts").insert([withoutCol]).select("*").single();
+      if (!retry.error && retry.data) {
+        console.log("[VENDA] contrato criado (retry sem coluna)", missingCol);
+        return { data: retry.data, error: null };
+      }
+      lastError = retry.error;
+      console.error("[VENDA] retry contrato falhou", retry.error?.message);
+    }
+  }
+
+  return { data: null, error: lastError };
+}
+
 function MapController({
   lots,
   blocksData,
@@ -1796,9 +1876,9 @@ export default function GISMap({
       let newSaleData: any = null;
       let newContractData: any = null;
 
-      if (newStatus.toLowerCase().trim() === "vendido") {
-        console.log("TRANSACTION_STARTED");
-        console.log("INICIO POS VENDA COMPLETAMENTE TRANSACIONAL");
+      if (isVendidoStatus(newStatus)) {
+        console.log("[VENDA] TRANSACTION_STARTED");
+        console.log("[VENDA] INICIO POS VENDA COMPLETAMENTE TRANSACIONAL");
 
         try {
           // Log start
@@ -1954,45 +2034,118 @@ export default function GISMap({
             forum_city_snapshot: projDataSnapshot?.forum_city || projDataSnapshot?.city || null,
           };
 
-          const contractHtml = generateContractHTML({
-            tenant: tenantData || {},
-            customer: fullCustomer || {},
-            project: projDataSnapshot || lot.projects || {},
-            block: lot,
-            sale: enrichedSaleData,
-            contractSnapshot: contractPayloadPartial,
-          });
+          const saleValue = Number(customerData.final_value || finalPrice) || 0;
+          const downPaymentVal = Number(customerData.down_payment || 0) || 0;
+          const installmentsVal = Math.max(
+            1,
+            Number(customerData.installments_count || 1) || 1,
+          );
+          const contractNumber = `CTR-${Date.now()}`;
 
-          const contractPayload = {
-            tenant_id: finalTenantId,
-            company_id: finalTenantId,
-            sale_id: saleId,
-            customer_id: customerId,
-            broker_id: finalBrokerId,
-            project_id: lot.project_id || null,
-            block_id: lot.id,
-            contract_number: `CTR-${Date.now()}`,
-            generated_html: contractHtml,
-            ...contractPayloadPartial,
-            status: "ativo",
-          };
+          // Contrato em try/catch isolado — falha aqui NÃO reverte venda/financeiro
+          try {
+            console.log("[VENDA] iniciando criação do contrato", {
+              saleId,
+              blockId: lot.id,
+              customerId,
+              projectId: finalProjectId,
+            });
 
-          console.log("CONTRACT_CREATED");
-          const { data: contractData, error: contractError } = await supabase
-            .from("contracts")
-            .insert([contractPayload])
-            .select()
-            .single();
+            const blockRow = (await fetchBlockForContract(lot.id)) || lot;
+            const contractHtml = generateContractHTML({
+              tenant: tenantData || {},
+              customer: fullCustomer || {},
+              project: projDataSnapshot || lot.projects || {},
+              block: blockRow,
+              sale: enrichedSaleData,
+              contractSnapshot: contractPayloadPartial,
+            });
 
-          if (contractError || !contractData) {
-            console.error("ERRO CONTRACT", contractError);
-            throw contractError || new Error("Falha ao criar contrato");
+            const contractPayloads: Record<string, unknown>[] = [
+              {
+                tenant_id: finalTenantId,
+                company_id: finalTenantId,
+                sale_id: saleId,
+                customer_id: customerId,
+                project_id: finalProjectId,
+                block_id: lot.id,
+                broker_id: finalBrokerId,
+                contract_number: contractNumber,
+                sale_value: saleValue,
+                down_payment: downPaymentVal,
+                installments: installmentsVal,
+                status: "ativo",
+                generated_html: contractHtml,
+                created_at: new Date().toISOString(),
+                ...contractPayloadPartial,
+              },
+              {
+                tenant_id: finalTenantId,
+                company_id: finalTenantId,
+                sale_id: saleId,
+                customer_id: customerId,
+                project_id: finalProjectId,
+                block_id: lot.id,
+                contract_number: contractNumber,
+                status: "ativo",
+                generated_html: contractHtml,
+                ...contractPayloadPartial,
+              },
+              {
+                tenant_id: finalTenantId,
+                sale_id: saleId,
+                customer_id: customerId,
+                project_id: finalProjectId,
+                block_id: lot.id,
+                contract_number: contractNumber,
+                status: "ativo",
+              },
+            ];
+
+            const { data: insertedContract, error: contractInsertError } =
+              await insertContractForSale(contractPayloads);
+
+            if (contractInsertError || !insertedContract) {
+              console.error("[VENDA] erro ao criar contrato (final)", contractInsertError);
+              alert(
+                `Venda e financeiro salvos, mas o contrato não foi criado: ${
+                  contractInsertError?.message || "erro desconhecido"
+                }. Use "Regenerar contrato" em Contratos ou contate o suporte.`,
+              );
+            } else {
+              newContractData = insertedContract;
+
+              if (contractHtml && !insertedContract.generated_html) {
+                const { error: htmlUpdErr } = await supabase
+                  .from("contracts")
+                  .update({ generated_html: contractHtml })
+                  .eq("id", insertedContract.id);
+
+                if (htmlUpdErr) {
+                  console.error("[VENDA] erro ao salvar generated_html", htmlUpdErr);
+                } else {
+                  console.log("[VENDA] generated_html salvo", insertedContract.id);
+                  newContractData = { ...insertedContract, generated_html: contractHtml };
+                }
+              } else {
+                console.log("[VENDA] generated_html salvo no insert");
+              }
+
+              console.log("[VENDA] CUSTOMER_ID_LINKED_TO_CONTRACT", {
+                contract_id: insertedContract.id,
+              });
+            }
+          } catch (contractErr: unknown) {
+            console.error("[VENDA] exceção ao criar contrato", contractErr);
+            const msg =
+              contractErr instanceof Error ? contractErr.message : String(contractErr);
+            alert(
+              `Venda e financeiro salvos, mas falha ao gerar contrato: ${msg}. Verifique a tela Contratos.`,
+            );
           }
-          console.log("CUSTOMER_ID_LINKED_TO_CONTRACT");
-          newContractData = contractData;
 
-          // Atualizar BLOCO imediatamente antes da comissão garantindo atomicidade logica da venda
-          console.log("BLOCK_MARKED_SOLD");
+          // Atualizar BLOCO — venda concluída mesmo se contrato falhou (sale_id preservado)
+          console.log("[VENDA] BLOCK_MARKED_SOLD");
           const { error: blockUpdErr } = await supabase
             .from("blocks")
             .update({
@@ -2000,13 +2153,13 @@ export default function GISMap({
               price: finalPrice,
               customer_id: customerId,
               sale_id: saleId,
-              contract_id: contractData.id,
+              contract_id: newContractData?.id || null,
               broker_id: finalBrokerId
             })
             .eq("id", lot.id);
             
           if (blockUpdErr) {
-             console.error("ERRO AO ATUALIZAR STATUS DO LOTE", blockUpdErr);
+             console.error("[VENDA] ERRO AO ATUALIZAR STATUS DO LOTE", blockUpdErr);
              throw blockUpdErr;
           }
 
@@ -2026,7 +2179,7 @@ export default function GISMap({
                     tenant_id: finalTenantId,
                     broker_id: finalBrokerId,
                     sale_id: saleId,
-                    contract_id: contractData.id,
+                    contract_id: newContractData?.id || null,
                     customer_id: customerId || clientId,
                     commission_percent: pct,
                     amount: cv,
@@ -2045,7 +2198,10 @@ export default function GISMap({
             }
           }
           
-          console.log("TRANSACTION_SUCCESS");
+          console.log("[VENDA] TRANSACTION_SUCCESS", {
+            sale_id: saleId,
+            contract_id: newContractData?.id || null,
+          });
           try {
              await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_SUCCESS', module: 'SALES', description: 'Venda concluída com sucesso para o lote ' + lot.id, reference_id: newSaleData?.id }]);
           } catch(e) {}
