@@ -1443,6 +1443,20 @@ function ClearConfirmModal({
   );
 }
 
+/** Atualiza zoom para exibir/ocultar rótulos de lotes no dashboard. */
+function MapZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const update = () => onZoom(map.getZoom());
+    map.on("zoomend", update);
+    update();
+    return () => {
+      map.off("zoomend", update);
+    };
+  }, [map, onZoom]);
+  return null;
+}
+
 export default function GISMap({
   projectId,
   activeLayer = "satellite",
@@ -1454,6 +1468,7 @@ export default function GISMap({
   drawStreetActive = false,
   onSaveStreetGuide,
   onDeleteStreetGuide,
+  labelsMinZoom,
 }: {
   projectId?: string;
   activeLayer?: "streets" | "satellite" | "dark";
@@ -1465,6 +1480,8 @@ export default function GISMap({
   drawStreetActive?: boolean;
   onSaveStreetGuide?: (latlngs: L.LatLng[]) => void;
   onDeleteStreetGuide?: (id: string) => void;
+  /** Rótulos permanentes só quando zoom >= valor (ex.: 17 no dashboard). */
+  labelsMinZoom?: number;
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -1472,6 +1489,9 @@ export default function GISMap({
   const [blocksData, setBlocksData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [mapZoom, setMapZoom] = useState(18);
+  const showPermanentLabels =
+    labelsMinZoom == null || mapZoom >= labelsMinZoom;
 
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
@@ -2434,6 +2454,7 @@ export default function GISMap({
         )}
 
         <ZoomControl position="bottomright" />
+        <MapZoomTracker onZoom={setMapZoom} />
         <MapController lots={lots} blocksData={blocksData} refreshKey={refreshKey} projectId={projectId} />
         <LocationController active={gpsActive} />
 
@@ -2477,7 +2498,7 @@ export default function GISMap({
                   },
                 }}
               >
-                {displayNum && displayNum !== "0" && (
+                {showPermanentLabels && displayNum && displayNum !== "0" && (
                   <Tooltip
                     permanent
                     direction="center"
@@ -2491,6 +2512,7 @@ export default function GISMap({
                     </div>
                   </Tooltip>
                 )}
+                {labelsMinZoom == null && (
                 <Popup>
                   <LotPopupContent
                     lot={lot}
@@ -2502,6 +2524,7 @@ export default function GISMap({
                     actionLoading={actionLoading}
                   />
                 </Popup>
+                )}
               </Polygon>
             );
           })}
@@ -2543,7 +2566,7 @@ export default function GISMap({
                 },
               }}
             >
-              {displayNum && displayNum !== "0" && (
+              {showPermanentLabels && displayNum && displayNum !== "0" && (
                 <Tooltip
                   permanent
                   direction="center"
@@ -2557,6 +2580,7 @@ export default function GISMap({
                   </div>
                 </Tooltip>
               )}
+              {labelsMinZoom == null && (
               <Popup>
                 <LotPopupContent
                   lot={block}
@@ -2568,6 +2592,7 @@ export default function GISMap({
                   actionLoading={actionLoading}
                 />
               </Popup>
+              )}
             </Polygon>
           );
         })}
