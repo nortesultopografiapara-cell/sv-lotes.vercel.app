@@ -15,14 +15,19 @@ export const SCREEN_LABELS: Record<ScreenId, string> = {
   settings: 'Configurações',
 };
 
+/** Screenshots em public/landing/ (01 = menu; 02–07 = telas do sistema) */
 export const SCREEN_IMAGE_PATHS: Record<ScreenId, string> = {
-  dashboard: '/landing/dashboard.webp',
-  map: '/landing/mapa.webp',
-  finance: '/landing/financeiro.webp',
-  contracts: '/landing/contratos.webp',
-  customers: '/landing/clientes.webp',
-  settings: '/landing/configuracoes.webp',
+  dashboard: '/landing/02.png',
+  map: '/landing/03.png',
+  finance: '/landing/06.png',
+  contracts: '/landing/07.png',
+  customers: '/landing/04.png',
+  settings: '/landing/05.png',
 };
+
+export const LANDING_EXTRA_IMAGES = [
+  { src: '/landing/01.png', label: 'Navegação integrada' },
+] as const;
 
 function MockChrome({ title }: { title: string }) {
   return (
