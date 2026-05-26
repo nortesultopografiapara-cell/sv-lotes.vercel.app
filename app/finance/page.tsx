@@ -20,6 +20,12 @@ import {
   type CashMovementManualMeta,
 } from '@/lib/financeCashFlow';
 import { displayContractNumber } from '@/lib/contractNumber';
+import {
+  createDocumentValidationCode,
+  createExpenseReceiptNumber,
+  getReceiptValidationUrl,
+} from '@/lib/pdfValidation';
+import { generateExpenseReceiptPdf } from '@/lib/expenseReceiptPdf';
 
 export type { CashFlowItem };
 export { buildCashFlowItems };
@@ -1084,44 +1090,52 @@ export default function FinancePage() {
     doc.save(`Carne_${contractNo}_${dueDate.replace(/\//g,'')}.pdf`);
   };
 
-  const handleGenerateSaidaComprovante = async (item: CashFlowItem) => {
-    const doc = new jsPDF('portrait', 'pt', 'a4');
-    const companyName = tenantData
-      ? (tenantData.razao_social || tenantData.name).toUpperCase()
-      : 'EMPRESA';
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('COMPROVANTE DE SAÍDA', 40, 40);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(companyName, 40, 55);
-    const rows = [
-      ['Data', formatFlowDate(item.movement_date)],
-      ['Categoria', item.category],
-      ['Descrição', item.description],
-      ['Valor', formatCurrency(item.amount)],
-      ['Projeto', flowDisplayLabel(item.projectName, item.isManual)],
-      ['Cliente', flowDisplayLabel(item.customerName, item.isManual)],
-      ['Corretor', flowDisplayLabel(item.brokerName, item.isManual)],
-      [
-        'Contrato',
-        item.contractNumber && item.contractNumber !== 'Lançamento manual'
-          ? displayContractNumber(item.contractNumber)
-          : flowDisplayLabel('', item.isManual),
-      ],
-      ['Local', item.locationLabel || flowDisplayLabel('', item.isManual)],
-      ['Status', item.status === 'estornado' ? 'Estornado' : 'Ativo'],
-    ];
-    autoTable(doc, {
-      startY: 70,
-      head: [['Campo', 'Valor']],
-      body: rows,
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [52, 73, 94] },
-    });
-    const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
-    await addProfessionalFooterAndSignature(doc, companyName, 'Comprovante de Saída');
-    doc.save(`comprovante_saida_${item.cashMovementId || item.id}_${Date.now()}.pdf`);
+  const handleGenerateExpenseReceipt = async (item: CashFlowItem) => {
+    if (!item.cashMovementId) {
+      alert('Recibo disponível apenas para saídas registradas no caixa.');
+      return;
+    }
+    if (item.status === 'estornado') {
+      alert('Não é possível gerar recibo para lançamento estornado.');
+      return;
+    }
+
+    try {
+      const validationCode = createDocumentValidationCode();
+      const receiptNumber = createExpenseReceiptNumber(item.cashMovementId);
+      const receiptUrl = getReceiptValidationUrl(validationCode);
+
+      const doc = await generateExpenseReceiptPdf({
+        item,
+        tenantData,
+        receiptNumber,
+        validationCode,
+      });
+
+      const fileName = `recibo_${receiptNumber}.pdf`;
+      doc.save(fileName);
+      console.log('[RECIBO] pdf salvo', fileName);
+
+      const { error } = await supabase
+        .from('cash_movements')
+        .update({
+          receipt_number: receiptNumber,
+          receipt_url: receiptUrl,
+          validation_code: validationCode,
+        })
+        .eq('id', item.cashMovementId);
+
+      if (error) throw error;
+
+      console.log('[RECIBO] recibo gerado', receiptNumber);
+      console.log('[RECIBO] validacao criada', validationCode);
+
+      await loadFinance();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[RECIBO] erro', err);
+      alert('Erro ao gerar recibo: ' + message);
+    }
   };
 
   const handleFlowView = (item: CashFlowItem) => {
@@ -1234,7 +1248,7 @@ export default function FinancePage() {
   };
 
   const flowActionBar = (buttons: ReactNode) => (
-    <div className="flex items-center justify-end gap-0.5 min-h-[28px] min-w-[72px] opacity-70 group-hover:opacity-100 transition-opacity">
+    <div className="flex items-center justify-end gap-0.5 min-h-[28px] min-w-[100px] opacity-70 group-hover:opacity-100 transition-opacity">
       {buttons}
     </div>
   );
@@ -1246,20 +1260,21 @@ export default function FinancePage() {
       item.tipo === 'entrada' &&
       !!item.receiptId &&
       item.source === 'finance_receipts';
-    const isManualSaida =
+    const isSaidaCash =
       item.tipo === 'saida' &&
       item.source === 'cash_movements' &&
-      item.isManual &&
       !!item.cashMovementId;
+    const isManualSaida = isSaidaCash && item.isManual;
     const canEditManual = isManualSaida && isActive;
     const canDeleteManual = isManualSaida && isActive;
+    const canGerarReciboSaida = isSaidaCash && isActive;
     const isLinkedParcel =
       item.tipo === 'entrada' && item.source === 'finance_receipts';
     const canEstornar =
       isActive &&
       (isLinkedParcel ||
         item.source === 'broker_commissions' ||
-        (item.source === 'cash_movements' && !isManualSaida));
+        (isSaidaCash && !isManualSaida));
 
     if (item.tipo === 'entrada') {
       return flowActionBar(
@@ -1305,28 +1320,61 @@ export default function FinancePage() {
       );
     }
 
-    if (isManualSaida) {
+    if (isSaidaCash) {
       return flowActionBar(
         <>
           <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
             <Eye className="w-4 h-4" />
           </FlowIconBtn>
-          {canEditManual ? (
-            <FlowIconBtn title="Editar lançamento" tone="blue" onClick={() => handleFlowEditSaida(item)}>
-              <Pencil className="w-4 h-4" />
+          {isManualSaida ? (
+            canEditManual ? (
+              <FlowIconBtn title="Editar lançamento" tone="blue" onClick={() => handleFlowEditSaida(item)}>
+                <Pencil className="w-4 h-4" />
+              </FlowIconBtn>
+            ) : (
+              <FlowIconBtn title="Editar lançamento" disabled>
+                <Pencil className="w-4 h-4 opacity-20" />
+              </FlowIconBtn>
+            )
+          ) : canContract ? (
+            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
+              <ScrollText className="w-4 h-4" />
             </FlowIconBtn>
           ) : (
-            <FlowIconBtn title="Editar lançamento" disabled>
-              <Pencil className="w-4 h-4 opacity-20" />
+            <FlowIconBtn title="Abrir contrato" disabled>
+              <ScrollText className="w-4 h-4 opacity-20" />
             </FlowIconBtn>
           )}
-          {canDeleteManual ? (
-            <FlowIconBtn title="Excluir lançamento" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
-              <Trash2 className="w-4 h-4" />
+          {canGerarReciboSaida ? (
+            <FlowIconBtn
+              title="Gerar recibo"
+              tone="blue"
+              onClick={() => handleGenerateExpenseReceipt(item)}
+            >
+              <Receipt className="w-4 h-4" />
             </FlowIconBtn>
           ) : (
-            <FlowIconBtn title="Excluir lançamento" disabled>
-              <Trash2 className="w-4 h-4 opacity-20" />
+            <FlowIconBtn title="Gerar recibo" disabled>
+              <Receipt className="w-4 h-4 opacity-20" />
+            </FlowIconBtn>
+          )}
+          {isManualSaida ? (
+            canDeleteManual ? (
+              <FlowIconBtn title="Excluir lançamento" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
+                <Trash2 className="w-4 h-4" />
+              </FlowIconBtn>
+            ) : (
+              <FlowIconBtn title="Excluir lançamento" disabled>
+                <Trash2 className="w-4 h-4 opacity-20" />
+              </FlowIconBtn>
+            )
+          ) : canEstornar ? (
+            <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
+              <RotateCcw className="w-4 h-4" />
+            </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Estornar pagamento" disabled>
+              <RotateCcw className="w-4 h-4 opacity-20" />
             </FlowIconBtn>
           )}
         </>,
@@ -3015,6 +3063,7 @@ export default function FinancePage() {
                     setSaidaForm({ ...INITIAL_SAIDA_FORM });
                   }}
                   className="text-gray-500 hover:text-white transition-colors"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>

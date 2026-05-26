@@ -17,3 +17,16 @@ export function getAppBaseUrl(): string {
 export function getValidationUrl(code: string): string {
   return `${getAppBaseUrl()}/validar?codigo=${encodeURIComponent(code)}`;
 }
+
+export function getReceiptValidationUrl(code: string): string {
+  return `${getAppBaseUrl()}/validar-recibo/${encodeURIComponent(code)}`;
+}
+
+/** Número sequencial legível para recibo de despesa. */
+export function createExpenseReceiptNumber(movementId?: string): string {
+  const year = new Date().getFullYear();
+  const suffix = movementId
+    ? movementId.replace(/-/g, "").slice(0, 8).toUpperCase()
+    : crypto.randomUUID().split("-")[0].toUpperCase();
+  return `REC-${year}-${suffix}`;
+}

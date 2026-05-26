@@ -55,7 +55,7 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
 
   // 1. PUBLIC ROUTES
-  const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/validar'];
+  const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/validar', '/validar-recibo', '/api/validar-recibo'];
   const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
