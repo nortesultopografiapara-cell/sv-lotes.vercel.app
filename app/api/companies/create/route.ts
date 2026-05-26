@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import { saasLimitsDbPayload } from '@/lib/saasPlans';
 
 function generateSlug(name: string) {
   return name
@@ -73,13 +74,8 @@ export async function POST(req: Request) {
     // 1. Criar Empresa (Tenant) primeiro
     console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
     
-    // Calcular limites do plano
-    const planLimits = {
-        'Básico': { broker_limit: 5, project_limit: 5 },
-        'Standard': { broker_limit: 10, project_limit: 10 },
-        'Profissional': { broker_limit: null, project_limit: null }
-    };
-    const limits = planLimits[plan as keyof typeof planLimits] || planLimits['Básico'];
+    const planSource = body.plan_type || plan || 'basic';
+    const limits = saasLimitsDbPayload(planSource);
 
     const companyPayload: any = {
       name,
@@ -87,9 +83,13 @@ export async function POST(req: Request) {
       cnpj,
       email: email || adminEmail,
       phone: phone || adminPhone,
-      plan_type: body.plan_type || plan,
+      plan: limits.plan,
+      plan_type: limits.plan,
       status_operacional: body.status_operacional || 'Ativa',
-      ...limits
+      project_limit: limits.project_limit,
+      broker_limit: limits.broker_limit,
+      max_projects: limits.max_projects,
+      max_brokers: limits.max_brokers,
     };
 
     if (body.address) companyPayload.address = body.address;

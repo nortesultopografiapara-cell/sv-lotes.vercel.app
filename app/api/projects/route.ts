@@ -6,6 +6,7 @@ import {
   logSupabaseConfigDebug,
 } from '@/lib/supabase/server';
 import { getServerConfigErrorMessage } from '@/lib/supabase-config';
+import { logSaasPlanUsage, resolveCompanySaasLimits } from '@/lib/saasPlans';
 
 export const runtime = 'nodejs';
 
@@ -135,6 +136,33 @@ export async function POST(request: Request) {
   }
 
   const location = [city, uf].filter(Boolean).join(' - ');
+
+  if (callerRole !== 'SUPER_ADMIN') {
+    const { data: companyRow } = await admin
+      .from('companies')
+      .select('plan, plan_type')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    const saas = resolveCompanySaasLimits(companyRow || {});
+    const { count: projectCount } = await admin
+      .from('projects')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId);
+
+    const used = projectCount ?? 0;
+    logSaasPlanUsage(companyRow?.plan ?? companyRow?.plan_type, used);
+
+    if (used >= saas.maxProjects) {
+      return NextResponse.json(
+        {
+          error: `Limite do plano ${saas.displayName} (${saas.maxProjects} loteamentos) atingido.`,
+          code: 'SAAS_PROJECT_LIMIT',
+        },
+        { status: 403 },
+      );
+    }
+  }
 
   try {
     const { data, error } = await insertProjectWithFallback(admin, {

@@ -5,6 +5,7 @@ import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, Moni
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
+import { saasLimitsDbPayload } from '@/lib/saasPlans';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
@@ -167,15 +168,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     try {
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
-      const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
-        basic: { brokers: 5, projects: 3 },
-        standard: { brokers: 10, projects: 5 },
-        professional: { brokers: Infinity, projects: Infinity },
-        premium: { brokers: Infinity, projects: Infinity },
-      };
-
       console.log('COMPANY_PLAN_BEFORE_SAVE', initialData?.plan);
-      const limits = PLAN_LIMITS[formData.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
+      const planLimitsPayload = saasLimitsDbPayload(formData.plan);
 
       if (initialData) {
          const updatePayload: any = {
@@ -184,7 +178,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             phone: formData.phone,
             email: formData.email,
             status_operacional: formData.status_operacional,
-            plan: formData.plan
+            plan: planLimitsPayload.plan,
+            project_limit: planLimitsPayload.project_limit,
+            broker_limit: planLimitsPayload.broker_limit,
+            max_projects: planLimitsPayload.max_projects,
+            max_brokers: planLimitsPayload.max_brokers,
          };
 
          if (!initialData.slug) {

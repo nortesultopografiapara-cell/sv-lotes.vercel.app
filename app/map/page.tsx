@@ -9,6 +9,11 @@ import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 import proj4 from 'proj4';
+import {
+  getSaasPlanAvailabilityMessage,
+  logSaasPlanUsage,
+  resolveCompanySaasLimits,
+} from '@/lib/saasPlans';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -291,7 +296,8 @@ export default function MapPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectLimit, setProjectLimit] = useState<number | null>(null);
-  const [companyPlan, setCompanyPlan] = useState<string>('Standard');
+  const [companyPlan, setCompanyPlan] = useState<string>('');
+  const [planAvailabilityMsg, setPlanAvailabilityMsg] = useState<string>('');
   
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
 
@@ -492,37 +498,28 @@ export default function MapPage() {
     try {
       const activeTenantId = await resolveActiveTenantId(user);
 
-      let limit: number | null = 5;
-      let pName = 'Standard';
+      let limit: number | null = null;
+      let pName = '';
+      let availabilityMsg = '';
+      let companyForPlan: { plan?: string | null; plan_type?: string | null } | null = null;
       const planTenantId = activeTenantId || user.tenant_id;
       if (planTenantId) {
         const { data: companyData } = await supabase
           .from('companies')
-          .select('plan')
+          .select('plan, plan_type')
           .eq('id', planTenantId)
           .maybeSingle();
-        if (companyData?.plan) {
-          const plan = String(companyData.plan).toLowerCase();
-          const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
-            basic: { brokers: 5, projects: 3 },
-            standard: { brokers: 10, projects: 5 },
-            professional: { brokers: Infinity, projects: Infinity },
-            premium: { brokers: Infinity, projects: Infinity },
-          };
-          const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.basic;
-          limit = mappedLimits.projects === Infinity ? null : mappedLimits.projects;
-          pName =
-            plan === 'premium'
-              ? 'Premium'
-              : plan === 'professional'
-                ? 'Profissional'
-                : plan === 'standard'
-                  ? 'Standard'
-                  : 'Básico';
+        if (companyData) {
+          companyForPlan = companyData;
+          const saas = resolveCompanySaasLimits(companyData);
+          limit = saas.maxProjects;
+          pName = saas.displayName;
+          availabilityMsg = getSaasPlanAvailabilityMessage(companyData.plan ?? companyData.plan_type);
         }
       }
       setProjectLimit(limit);
       setCompanyPlan(pName);
+      setPlanAvailabilityMsg(availabilityMsg);
 
       if (user.role !== 'SUPER_ADMIN' && !activeTenantId) {
         setProjects([]);
@@ -544,7 +541,11 @@ export default function MapPage() {
         return;
       }
 
-      setProjects(data || []);
+      const projectList = data || [];
+      setProjects(projectList);
+      if (companyForPlan) {
+        logSaasPlanUsage(companyForPlan.plan ?? companyForPlan.plan_type, projectList.length);
+      }
     } catch (err) {
       console.error(err);
       setProjects([]);
@@ -605,7 +606,7 @@ export default function MapPage() {
     if (projectLimit !== null && projects.length >= projectLimit && user?.role !== 'SUPER_ADMIN') {
       setProjectFeedback({
         type: 'error',
-        message: `Limite do plano (${projectLimit} loteamentos) atingido. Contate o administrador.`,
+        message: `Limite do plano ${companyPlan || ''} (${projectLimit} loteamentos) atingido. Contate o administrador.`,
       });
       return;
     }
@@ -1418,12 +1419,15 @@ export default function MapPage() {
           <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
           <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider flexitems-center gap-2">
             Gestão Unificada de Loteamentos
-            {user?.role !== 'SUPER_ADMIN' && (
+            {user?.role !== 'SUPER_ADMIN' && projectLimit !== null && (
                <span className="ml-3 px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs border border-blue-500/20">
-                 Projetos: {projects.length} / {projectLimit === null ? 'Ilimitado' : projectLimit}
+                 PROJETOS: {projects.length} / {projectLimit}
                </span>
             )}
           </p>
+          {user?.role !== 'SUPER_ADMIN' && planAvailabilityMsg && (
+            <p className="text-xs text-blue-400/90 mt-1">{planAvailabilityMsg}</p>
+          )}
         </div>
         {user?.role !== 'BROKER' && (
           <button 

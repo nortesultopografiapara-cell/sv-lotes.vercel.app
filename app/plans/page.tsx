@@ -17,6 +17,11 @@ import {
   masterLog,
 } from '@/lib/masterProduction';
 import { supabase } from '@/lib/supabase';
+import {
+  getSaasPlanLimits,
+  normalizeSaasPlanKey,
+  saasLimitsDbPayload,
+} from '@/lib/saasPlans';
 import { motion, AnimatePresence } from 'motion/react';
 
 const PLANS_UI = {
@@ -92,9 +97,10 @@ const PLANS_UI = {
 };
 
 const mapDbPlanToUi = (planKey: string) => {
-  if (planKey === 'professional') return PLANS_UI.enterprise;
-  if (planKey === 'standard') return PLANS_UI.business;
-  return PLANS_UI.starter; // basic or default
+  const key = normalizeSaasPlanKey(planKey);
+  if (key === 'profissional') return PLANS_UI.enterprise;
+  if (key === 'business') return PLANS_UI.business;
+  return PLANS_UI.starter;
 };
 
 export default function PlansPage() {
@@ -212,18 +218,27 @@ export default function PlansPage() {
     console.log(`SAAS_PLAN_UPDATE - Iniciando update para empresa ${companyToEdit.id} para o plano ${newPlanDbKey}`);
     
     try {
-      const planLimits = newPlanDbKey === 'basic' ? { brokers: 5, projects: 3 } : newPlanDbKey === 'standard' ? { brokers: 10, projects: 6 } : { brokers: 50, projects: 25 };
+      const planLimits = saasLimitsDbPayload(newPlanDbKey);
       
       // Update locally immediately for better UX
       setCompanies(prev => prev.map(c => 
-         c.id === companyToEdit.id ? { ...c, plan: newPlanDbKey, max_brokers: planLimits.brokers, max_projects: planLimits.projects } : c
+         c.id === companyToEdit.id ? {
+           ...c,
+           plan: planLimits.plan,
+           max_brokers: planLimits.max_brokers,
+           max_projects: planLimits.max_projects,
+           broker_limit: planLimits.broker_limit,
+           project_limit: planLimits.project_limit,
+         } : c
       ));
 
       // Attempt DB update
       const { error } = await supabase.from('companies').update({
-        plan: newPlanDbKey,
-        max_brokers: planLimits.brokers,
-        max_projects: planLimits.projects,
+        plan: planLimits.plan,
+        max_brokers: planLimits.max_brokers,
+        max_projects: planLimits.max_projects,
+        broker_limit: planLimits.broker_limit,
+        project_limit: planLimits.project_limit,
         updated_at: new Date().toISOString()
       }).eq('id', companyToEdit.id);
 

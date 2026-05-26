@@ -4,6 +4,7 @@ import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, L
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { logSaasPlanUsage, resolveCompanySaasLimits } from '@/lib/saasPlans';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 
 export default function CorretoresPage() {
@@ -11,8 +12,8 @@ export default function CorretoresPage() {
   const [search, setSearch] = useState('');
   const [corretores, setCorretores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [brokerLimit, setBrokerLimit] = useState<number | null>(10);
-  const [companyPlan, setCompanyPlan] = useState<string>('Standard');
+  const [brokerLimit, setBrokerLimit] = useState<number | null>(null);
+  const [companyPlan, setCompanyPlan] = useState<string>('');
   const [tenantData, setTenantData] = useState<any>(null);
 
   useEffect(() => {
@@ -55,25 +56,20 @@ export default function CorretoresPage() {
     try {
       const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
       
-      let limit: number | null = 10;
-      let pName = 'Standard';
+      let limit: number | null = null;
+      let pName = '';
+      let companyForPlan: { plan?: string | null; plan_type?: string | null } | null = null;
       if (resolvedTenantId) {
-         const { data: companyData, error } = await supabase.from('companies').select('plan').eq('id', resolvedTenantId).maybeSingle();
-         if (!error && companyData?.plan) {
-            const plan = companyData.plan.toLowerCase();
-            console.log('BROKER_LIMITS_RESOLVED', plan);
-            const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
-              basic: { brokers: 5, projects: 3 },
-              standard: { brokers: 10, projects: 5 },
-              professional: { brokers: Infinity, projects: Infinity },
-              premium: { brokers: Infinity, projects: Infinity },
-            };
-            const mappedLimits = PLAN_LIMITS[plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
-            limit = mappedLimits.brokers === Infinity ? null : mappedLimits.brokers;
-            pName = plan === 'premium' ? 'Premium' : 
-                    plan === 'professional' ? 'Profissional' : 
-                    plan === 'standard' ? 'Standard' : 
-                    'Básico';
+         const { data: companyData, error } = await supabase
+           .from('companies')
+           .select('plan, plan_type')
+           .eq('id', resolvedTenantId)
+           .maybeSingle();
+         if (!error && companyData) {
+            companyForPlan = companyData;
+            const saas = resolveCompanySaasLimits(companyData);
+            limit = saas.maxBrokers;
+            pName = saas.displayName;
          }
       }
       setBrokerLimit(limit);
@@ -240,6 +236,13 @@ export default function CorretoresPage() {
 
       const finalActiveBrokers = enhancedData.filter(b => b.active);
       setCorretores(finalActiveBrokers);
+      if (companyForPlan) {
+        logSaasPlanUsage(
+          companyForPlan.plan ?? companyForPlan.plan_type,
+          undefined,
+          finalActiveBrokers.length
+        );
+      }
       console.log("BROKERS_FINAL_RENDER_LIST", finalActiveBrokers);
 
       let rActs: any[] = [];
@@ -977,9 +980,11 @@ export default function CorretoresPage() {
                </div>
              </div>
              <div className="text-xs text-emerald-500 font-medium">
-               {brokerLimit === null 
-                 ? 'Plano ilimitado' 
-                 : `${Math.round((corretores.filter(c => c.active).length / brokerLimit) * 100)}% da licença utilizada`}
+               {brokerLimit === null
+                 ? 'Carregando limites do plano…'
+                 : companyPlan
+                   ? `Plano ${companyPlan} — até ${brokerLimit} corretores`
+                   : `${Math.round((corretores.filter(c => c.active).length / brokerLimit) * 100)}% da licença utilizada`}
              </div>
          </div>
 

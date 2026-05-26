@@ -2,6 +2,8 @@
  * Filtros e utilitários do painel Master — produção sem mocks/dados de teste.
  */
 
+import { normalizeSaasPlanKey } from '@/lib/saasPlans';
+
 export type CompanyLike = {
   id?: string;
   name?: string | null;
@@ -98,9 +100,11 @@ export function filterRealCompanies<T extends CompanyLike>(companies: T[]): T[] 
 export const PLAN_MRR: Record<string, number> = {
   starter: 329.99,
   basic: 329.99,
+  basico: 329.99,
   business: 549.99,
   standard: 549.99,
   professional: 1099.99,
+  profissional: 1099.99,
   enterprise: 1099.99,
   premium: 1099.99,
 };
@@ -131,10 +135,11 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
 export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | null }>(
   company: T
 ) {
+  const planKey = normalizeSaasPlanKey(company.plan);
   const uiPlan =
-    normalize(company.plan) === 'professional' || normalize(company.plan) === 'enterprise'
+    planKey === 'profissional'
       ? 'PROFISSIONAL'
-      : normalize(company.plan) === 'standard' || normalize(company.plan) === 'business'
+      : planKey === 'business'
         ? 'BUSINESS'
         : 'BÁSICO';
 

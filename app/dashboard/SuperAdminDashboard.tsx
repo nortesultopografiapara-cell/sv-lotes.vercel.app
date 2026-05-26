@@ -31,6 +31,7 @@ import {
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getSaasPlanDisplayName, getSaasPlanLimits, normalizeSaasPlanKey } from '@/lib/saasPlans';
 import { 
   LineChart, 
   Line, 
@@ -111,14 +112,10 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
       });
 
       const plans = comps.reduce((acc, current) => {
-         const rawPlan = current.plan || 'basic';
-         const plan = rawPlan === 'premium' ? 'Premium' : 
-                      rawPlan === 'professional' ? 'Profissional' : 
-                      rawPlan === 'standard' ? 'Standard' : 
-                      'Básico';
+         const plan = getSaasPlanDisplayName(normalizeSaasPlanKey(current.plan || 'basic'));
          acc[plan] = (acc[plan] || 0) + 1;
          return acc;
-      }, {} as any);
+      }, {} as Record<string, number>);
 
       const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6b7280'];
       const pd = Object.keys(plans).map((key, i) => ({
@@ -163,30 +160,18 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
          .limit(5);
 
       if (recent) {
-         const PLAN_LIMITS: Record<string, { brokers: number; projects: number }> = {
-            basic: { brokers: 5, projects: 3 },
-            standard: { brokers: 10, projects: 5 },
-            professional: { brokers: Infinity, projects: Infinity },
-            premium: { brokers: Infinity, projects: Infinity },
-         };
-
          const formattedRecent = recent.map((r: any) => {
-            const rawPlan = r.plan || 'basic';
-            const mappedLimits = PLAN_LIMITS[rawPlan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS['basic'];
-            const displayPlan = rawPlan === 'premium' ? 'Premium' : 
-                                rawPlan === 'professional' ? 'Profissional' : 
-                                rawPlan === 'standard' ? 'Standard' : 
-                                'Básico';
+            const saas = getSaasPlanLimits(r.plan || 'basic');
 
             return {
                id: r.id,
                name: r.name,
                slug: r.slug,
-               plan: displayPlan,
+               plan: saas.displayName,
                status: r.status_operacional || 'Ativa',
-               projects: [r.projects?.[0]?.count || 0, mappedLimits.projects],
-               users: [r.users?.[0]?.count || 0, Infinity], // assuming infinite users limit for now
-               brokers: [r.brokers?.[0]?.count || 0, mappedLimits.brokers],
+               projects: [r.projects?.[0]?.count || 0, saas.maxProjects],
+               users: [r.users?.[0]?.count || 0, saas.maxBrokers],
+               brokers: [r.brokers?.[0]?.count || 0, saas.maxBrokers],
                mrr: 0 // real MRR goes here when billing is ready
             };
          });
@@ -508,13 +493,13 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                               </div>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.projects[0]} / {c.projects[1] === Infinity ? 'Ilimitado' : c.projects[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.projects[0]} / {c.projects[1]}</span>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.users[0]} / {c.users[1] === Infinity ? 'Ilimitado' : c.users[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.users[0]} / {c.users[1]}</span>
                            </td>
                            <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.brokers[0]} / {c.brokers[1] === Infinity ? 'Ilimitado' : c.brokers[1]}</span>
+                              <span className="text-gray-300 text-[12px]">{c.brokers[0]} / {c.brokers[1]}</span>
                            </td>
                            <td className="p-4">
                               <span className="text-gray-200 font-medium text-[13px]">{formatCurrency(c.mrr)}</span>
