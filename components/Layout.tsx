@@ -31,6 +31,8 @@ import { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
+import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
+import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -216,26 +218,7 @@ function NotificationBell({ user }: { user: any }) {
 
 const getMenuItems = (role: string) => {
   if (role === 'SUPER_ADMIN') {
-    return [
-      { name: 'GESTÃO DA PLATAFORMA', isSection: true },
-      { name: 'Dashboard SaaS', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
-      { name: 'Empresas', href: '/companies', icon: Building2, color: 'text-gray-300' },
-      { name: 'Planos & Assinaturas', href: '/plans', icon: Banknote, color: 'text-gray-300' },
-      { name: 'Usuários', href: '/users', icon: Users, color: 'text-gray-300' },
-      { name: 'Financeiro SaaS', href: '/saas-finance', icon: Wallet, color: 'text-gray-300' },
-      { name: 'Relatórios Globais', href: '/reports', icon: TrendingDown, color: 'text-gray-300' },
-      { name: 'SEGURANÇA E SUPORTE', isSection: true },
-      { name: 'Logs de Auditoria', href: '/logs', icon: AlertCircle, color: 'text-gray-300' },
-      { name: 'Monitoramento', href: '/monitoring', icon: TrendingDown, color: 'text-gray-300' },
-      { name: 'Suporte', href: '/support', icon: User, color: 'text-gray-300' },
-      { name: 'Configurações Globais', href: '/settings/global', icon: Settings, color: 'text-gray-300' },
-      { name: 'Integrações', href: '/integrations', icon: Settings, color: 'text-gray-300' },
-      { name: 'ACESSO RÁPIDO', isSection: true },
-      { name: 'Acessar como Empresa', href: '/companies/login-as', icon: Building2, color: 'text-gray-300' },
-      { name: 'Nova Empresa', href: '/companies/new', icon: Plus, color: 'text-gray-300' },
-      { name: 'Nova Assinatura', href: '/plans/new', icon: Banknote, color: 'text-gray-300' },
-      { name: 'Ver Tickets de Suporte', href: '/support/tickets', icon: User, color: 'text-gray-300' },
-    ];
+    return [];
   }
 
   if (['ADMIN', 'COMPANY_ADMIN', 'ADMIN_EMPRESA', 'MASTER-ADMIN'].includes(role)) {
@@ -275,8 +258,31 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [impersonatingTenantId, setImpersonatingTenantId] = useState<string | null>(null);
   const [impersonatingCompanyName, setImpersonatingCompanyName] = useState<string | null>(null);
   const [activeProfileModal, setActiveProfileModal] = useState<'profile' | 'password' | 'security' | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('saas_sidebar_collapsed');
+      if (stored === 'true') setSidebarCollapsed(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('saas_sidebar_collapsed', String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     async function fetchCompany() {
@@ -363,33 +369,57 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
-        <div className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-[300] flex items-center px-4 justify-between shadow-sm">
-          <div className="flex items-center gap-4">
-            <button onClick={toggleSidebar} className="text-white p-1">
-              <Menu className="w-6 h-6" />
+        <div className="fixed top-0 left-0 right-0 h-14 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-white/5 z-[300] flex items-center px-4 justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleSidebar}
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+              aria-label="Abrir menu"
+            >
+              <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2">
-              {company?.logo_url ? (
-                  <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
+            <div className="flex items-center gap-2 min-w-0">
+              {isSuperAdmin ? (
+                <>
+                  <MapIcon className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
+                  <span className="font-semibold text-sm text-white truncate">Master Console</span>
+                </>
+              ) : company?.logo_url ? (
+                <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
               ) : (
-                  <>
-                    <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-lg tracking-wide text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
-                  </>
+                <>
+                  <MapIcon className="w-5 h-5 text-[var(--color-primary)]" />
+                  <span className="font-semibold text-sm text-white truncate">
+                    {company?.fantasy_name || company?.name || 'SV_LOTES'}
+                  </span>
+                </>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && <SuperAdminQuickActions />}
             <NotificationBell user={user} />
-            <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white border-2 border-[var(--color-surface)]">
-              <User className="w-5 h-5" />
+            <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white text-sm font-bold">
+              {user?.name?.charAt(0) || 'U'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Desktop Sidebar */}
-      {!isMobile && (
+      {/* Super Admin Sidebar */}
+      {isSuperAdmin && (
+        <SuperAdminSidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
+          isMobile={isMobile}
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {/* Desktop Sidebar (tenant roles) */}
+      {!isMobile && !isSuperAdmin && (
         <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
           <div className="h-20 flex items-center px-6 gap-3">
              {company?.logo_url ? (
@@ -431,8 +461,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         </aside>
       )}
 
-      {/* Mobile Drawer (optional sidebar on mobile) */}
-      {isMobile && (
+      {/* Mobile Drawer (tenant roles) */}
+      {isMobile && !isSuperAdmin && (
         <aside 
           className={`fixed top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[400] transition-transform duration-300 ease-in-out flex flex-col ${
             isOpen ? 'translate-x-0' : '-translate-x-full'
@@ -485,7 +515,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area */}
-      <main className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${isMobile ? 'pt-16 pb-20' : ''}`}>
+      <main
+        className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${
+          isMobile ? (isSuperAdmin ? 'pt-14' : 'pt-16 pb-20') : ''
+        }`}
+      >
         
         {impersonatingTenantId && (
           <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
@@ -517,25 +551,27 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (
-          <header className="h-20 w-full flex items-center justify-between px-8 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-background)]">
-            <div>
-              <h1 className="text-xl font-medium text-white flex items-center gap-1">
-                <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'} {user?.role === 'SUPER_ADMIN' && '(Super Admin)'}</strong>
+          <header className="h-16 w-full flex items-center justify-between px-6 lg:px-8 border-b border-white/5 flex-shrink-0 bg-[var(--color-background)]">
+            <div className="min-w-0">
+              <h1 className="text-base font-medium text-white flex items-center gap-1.5 truncate">
+                <span className="text-slate-500 font-normal">Olá,</span>
+                <strong className="truncate">{user?.name || 'Usuário'}</strong>
               </h1>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {user?.role === 'SUPER_ADMIN' 
-                  ? 'Painel de Controle da Plataforma' 
-                  : user?.role === 'BROKER' 
-                    ? 'Corretor / Vendedor' 
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isSuperAdmin
+                  ? 'Painel Master · SaaS'
+                  : user?.role === 'BROKER'
+                    ? 'Corretor / Vendedor'
                     : 'Admin Empresa'}
               </p>
             </div>
 
-            <div className="flex items-center gap-6">
-              {user?.role === 'SUPER_ADMIN' && (
-                <div className="px-3 py-1.5 rounded-full bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-bold border border-[#06b6d4]/20 tracking-wider">
-                  MODO DEUS
-                </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {isSuperAdmin && <SuperAdminQuickActions />}
+              {isSuperAdmin && (
+                <span className="hidden md:inline-flex px-2.5 py-1 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold uppercase tracking-wider border border-[var(--color-primary)]/20">
+                  Master
+                </span>
               )}
               <NotificationBell user={user} />
               
@@ -587,8 +623,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
       </main>
 
-      {/* Mobile Bottom Navigation Menu */}
-      {isMobile && (
+      {/* Mobile Bottom Navigation (tenant roles only) */}
+      {isMobile && !isSuperAdmin && menuItems.length > 0 && (
         <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe overflow-x-auto">
           {menuItems.filter(item => !item.isSection).slice(0, 5).map((item) => {
             const isActive = pathname === item.href;
@@ -610,10 +646,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
       {/* Mobile overlay */}
       {isMobile && isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-[250] backdrop-blur-sm"
-          onClick={() => setIsOpen(false)}
-        />
+        <div className="sa-mobile-overlay fixed inset-0 z-[350]" onClick={() => setIsOpen(false)} />
       )}
 
       {/* User Profile Modals */}
