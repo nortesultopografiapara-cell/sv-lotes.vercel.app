@@ -4,6 +4,14 @@
 
 import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, ReceiptText, FileSignature } from 'lucide-react';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import './finance-premium.css';
+import {
+  FinanceStatCard,
+  FinanceStatusBadge,
+  FinanceTableEmpty,
+  FinanceTableLoading,
+  PaymentTableRow,
+} from '@/components/finance/FinancePremiumUI';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -104,7 +112,7 @@ function FlowIconBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors ${FLOW_ACTION_STYLES[variant]}`}
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${FLOW_ACTION_STYLES[variant]} hover:shadow-[0_0_12px_rgba(59,130,246,0.2)]`}
     >
       {children}
     </button>
@@ -2548,7 +2556,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#0b0e14] p-6 md:p-8 text-white h-full font-sans">
+    <div className="finance-premium flex-1 overflow-y-auto bg-[#0a0d14] p-4 md:p-6 lg:p-7 text-white h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -2560,11 +2568,13 @@ export default function FinancePage() {
       )}
 
       {/* HEADER */}
-      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <header className="mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">Módulo Financeiro</h1>
-          <p className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
-            CONTRATOS, TÍTULOS E INADIMPLÊNCIA
+          <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
+            Módulo Financeiro
+          </h1>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mt-0.5">
+            Contratos · Títulos · Inadimplência
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center mt-4 md:mt-0 w-full md:w-auto">
@@ -2612,110 +2622,81 @@ export default function FinancePage() {
         </div>
       </header>
 
-      {/* CAIXA CARDS */}
-      <h2 className="text-xl font-bold text-white mb-4">Controle de Caixa Geral</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-        <StatCard 
-            title="Entradas (Total)" 
-            value={formatCurrency(stats.entradasCaixa)} 
-            subtitle="Recebimentos de vendas e manuais"
-            subtitleColor="text-gray-500"
-            icon={<TrendingUp className="w-5 h-5" />} 
-            iconBg="bg-[#2ad271]/10" 
+      {/* KPIs — 3 colunas desktop, compactos */}
+      <p className="finance-section-title">Resumo financeiro</p>
+      <div className="finance-kpi-grid mb-5">
+        <FinanceStatCard
+          title="Entradas Totais"
+          value={formatCurrency(stats.entradasCaixa)}
+          subtitle="Vendas e entradas manuais"
+          icon={<TrendingUp />}
+          iconWrapClass="bg-emerald-500/12 text-emerald-400"
         />
-        <StatCard 
-            title="Saídas (Total)" 
-            value={formatCurrency(stats.saidasCaixa)} 
-            subtitle="Comissões e despesas"
-            subtitleColor="text-gray-500"
-            icon={<TrendingDown className="w-5 h-5" />} 
-            iconBg="bg-[#f04449]/10" 
+        <FinanceStatCard
+          title="Saídas Totais"
+          value={formatCurrency(stats.saidasCaixa)}
+          subtitle="Comissões e despesas"
+          icon={<TrendingDown />}
+          iconWrapClass="bg-rose-500/12 text-rose-400"
         />
-        <StatCard 
-            title="Saldo Atual" 
-            value={formatCurrency(stats.saldoCaixa)} 
-            subtitle="Entradas - Saídas"
-            subtitleColor="text-gray-500"
-            icon={<Wallet className="w-5 h-5" />} 
-            iconBg={stats.saldoCaixa >= 0 ? "bg-emerald-500/10" : "bg-[#f04449]/10"} 
+        <FinanceStatCard
+          title="Saldo Atual"
+          value={formatCurrency(stats.saldoCaixa)}
+          subtitle="Entradas − Saídas"
+          icon={<Wallet />}
+          iconWrapClass={
+            stats.saldoCaixa >= 0
+              ? 'bg-emerald-500/12 text-emerald-400'
+              : 'bg-rose-500/12 text-rose-400'
+          }
         />
-      </div>
-
-      <h2 className="text-xl font-bold text-white mb-4">Métricas de Parcelas</h2>
-      {/* STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        <StatCard 
-            title="Recebido no mês" 
-            value={formatCurrency(stats.recebidoMes)} 
-            subtitle={"+12% vs mês anterior"}
-            subtitleColor="text-[#2ad271]"
-            icon={<TrendingUp className="w-5 h-5" />} 
-            iconBg="bg-[#2ad271]/10" 
-            iconColor="text-[#2ad271]" 
-            loading={loading} 
+        <FinanceStatCard
+          title="Recebido no mês"
+          value={formatCurrency(stats.recebidoMes)}
+          subtitle="Mês corrente"
+          subtitleColor="text-emerald-400/90"
+          icon={<TrendingUp />}
+          iconWrapClass="bg-emerald-500/12 text-emerald-400"
+          loading={loading}
         />
-        <StatCard 
-            title="A receber" 
-            value={formatCurrency(stats.aReceber)} 
-            subtitle={`${stats.qtyPending} parcelas pendentes`}
-            subtitleColor="text-[#4999e9]"
-            icon={<FileText className="w-5 h-5" />} 
-            iconBg="bg-[#4999e9]/10" 
-            iconColor="text-[#4999e9]" 
-            loading={loading} 
+        <FinanceStatCard
+          title="A Receber"
+          value={formatCurrency(stats.aReceber)}
+          subtitle={`${stats.qtyPending} parcelas pendentes`}
+          subtitleColor="text-blue-400/90"
+          icon={<FileText />}
+          iconWrapClass="bg-blue-500/12 text-blue-400"
+          loading={loading}
         />
-        <StatCard 
-            title="Parcelas vencidas" 
-            value={formatCurrency(stats.vencidas)} 
-            subtitle={`${stats.qtyLate} parcelas em atraso`}
-            subtitleColor="text-gray-500"
-            icon={<TrendingDown className="w-5 h-5" />} 
-            iconBg="bg-[#f04449]/10" 
-            iconColor="text-[#f04449]" 
-            loading={loading} 
-        />
-        <StatCard 
-            title="Vencendo hoje" 
-            value={formatCurrency(stats.vencendoHoje)} 
-            subtitle={`${stats.qtyDueToday} parcelas`}
-            subtitleColor="text-[#f8b63a]"
-            icon={<AlertCircle className="w-5 h-5" />} 
-            iconBg="bg-[#f8b63a]/10" 
-            iconColor="text-[#f8b63a]" 
-            loading={loading} 
-        />
-        <StatCard 
-            title="Total em contratos" 
-            value={formatCurrency(stats.totalContratosValor)} 
-            subtitle={`${stats.qtyContracts} contratos ativos`}
-            subtitleColor="text-gray-500"
-            icon={<Banknote className="w-5 h-5" />} 
-            iconBg="bg-[#a855f7]/10" 
-            iconColor="text-[#a855f7]" 
-            loading={loading} 
-        />
-        <StatCard 
-            title="Inadimplência %" 
-            value={`${stats.inadimplencia.toFixed(2)}%`} 
-            subtitle={stats.inadimplencia > 5 ? "Acima do ideal (5%)" : "Dentro do ideal"}
-            subtitleColor={stats.inadimplencia > 5 ? "text-[#f04449]" : "text-gray-500"}
-            icon={<AlertCircle className="w-5 h-5" />} 
-            iconBg="bg-[#f04449]/10" 
-            iconColor="text-[#f04449]" 
-            loading={loading} 
+        <FinanceStatCard
+          title="Inadimplência"
+          value={`${stats.inadimplencia.toFixed(2)}%`}
+          subtitle={
+            stats.inadimplencia > 5
+              ? `${stats.qtyLate} em atraso · acima do ideal`
+              : `${stats.qtyLate} em atraso · dentro do ideal`
+          }
+          subtitleColor={
+            stats.inadimplencia > 5 ? 'text-rose-400/90' : 'text-slate-500'
+          }
+          icon={<AlertCircle />}
+          iconWrapClass="bg-rose-500/12 text-rose-400"
+          loading={loading}
         />
       </div>
 
-      <div className="flex items-center gap-4 border-b border-[#1f232b] mb-6 mt-4">
-        <button 
-           onClick={() => setActiveTab('parcelas')}
-           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'parcelas' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
+      <div className="finance-tabs">
+        <button
+          type="button"
+          onClick={() => setActiveTab('parcelas')}
+          className={`finance-tab ${activeTab === 'parcelas' ? 'active' : ''}`}
         >
           Parcelas
         </button>
-        <button 
-           onClick={() => setActiveTab('caixa')}
-           className={`pb-3 text-sm font-semibold transition-colors duration-200 border-b-2 px-2 ${activeTab === 'caixa' ? 'border-[#2ad271] text-white' : 'border-transparent text-gray-400 hover:text-gray-300'}`}
+        <button
+          type="button"
+          onClick={() => setActiveTab('caixa')}
+          className={`finance-tab ${activeTab === 'caixa' ? 'active' : ''}`}
         >
           Fluxo de Caixa
         </button>
@@ -2723,203 +2704,130 @@ export default function FinancePage() {
 
       {activeTab === 'parcelas' && (
       <>
-      {/* FILTERS */}
-      <div className="flex flex-wrap gap-4 items-end mb-6">
-        <div className="flex-1 min-w-[250px]">
-          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Buscar por cliente, contrato ou lote</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
-            <input 
-              type="text" 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg py-2 pl-9 pr-4 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors" 
-              placeholder="Digite cliente, contrato ou lote..." 
-            />
-          </div>
-        </div>
-        
-        <div className="w-full sm:w-48">
-          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Status</label>
-          <select 
-             value={statusFilter}
-             onChange={(e) => setStatusFilter(e.target.value)}
-             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
-            <option>Todas as Situações</option>
-            <option>Pago</option>
-            <option>Pendente</option>
-            <option>Atrasado</option>
-            <option>Cancelado</option>
-          </select>
-        </div>
-
-        <div className="w-full sm:w-48">
-          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Projeto</label>
-          <select 
-             value={projectFilter}
-             onChange={(e) => setProjectFilter(e.target.value)}
-             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-gray-500 transition-colors">
-            <option>Todos os projetos</option>
-            {projectsList.map((p, i) => <option key={i} value={p}>{p}</option>)}
-          </select>
-        </div>
-
-        <div className="w-full sm:w-36">
-          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Data inicial</label>
-          <input 
-             type="date" 
-             value={startDate}
-             onChange={(e) => setStartDate(e.target.value)}
-             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-400 focus:outline-none focus:border-gray-500 transition-colors" 
-             style={{ colorScheme: 'dark' }}
+      {/* FILTERS — barra compacta sticky */}
+      <div className="finance-filters-bar" role="search">
+        <div className="relative finance-filter-search shrink-0">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="finance-filter-input w-full pl-8"
+            placeholder="Buscar cliente, contrato ou lote…"
+            aria-label="Buscar"
           />
         </div>
-
-        <div className="w-full sm:w-36">
-          <label className="block text-xs text-gray-400 mb-1.5 ml-1">Data final</label>
-          <input 
-             type="date" 
-             value={endDate}
-             onChange={(e) => setEndDate(e.target.value)}
-             className="w-full bg-[#13161c] border border-[#1f232b] rounded-lg px-3 py-2 text-sm text-gray-400 focus:outline-none focus:border-gray-500 transition-colors" 
-             style={{ colorScheme: 'dark' }}
-          />
-        </div>
-        
-        <button 
-           onClick={clearFilters}
-           className="bg-transparent border border-[#1f232b] hover:bg-[#1f232b] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center gap-2 h-[38px] transition-colors whitespace-nowrap">
-          <Filter className="w-4 h-4" />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="finance-filter-input finance-filter-select"
+          aria-label="Status"
+        >
+          <option>Todas as Situações</option>
+          <option>Pago</option>
+          <option>Pendente</option>
+          <option>Atrasado</option>
+          <option>Cancelado</option>
+        </select>
+        <select
+          value={projectFilter}
+          onChange={(e) => setProjectFilter(e.target.value)}
+          className="finance-filter-input finance-filter-select"
+          aria-label="Projeto"
+        >
+          <option>Todos os projetos</option>
+          {projectsList.map((p, i) => (
+            <option key={i} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="finance-filter-input finance-filter-date"
+          style={{ colorScheme: 'dark' }}
+          aria-label="Data inicial"
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="finance-filter-input finance-filter-date"
+          style={{ colorScheme: 'dark' }}
+          aria-label="Data final"
+        />
+        <button
+          type="button"
+          onClick={clearFilters}
+          className="finance-filter-input shrink-0 flex items-center gap-1.5 px-3 hover:bg-slate-800/80 whitespace-nowrap"
+        >
+          <Filter className="w-3.5 h-3.5" />
           Limpar filtros
         </button>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl overflow-hidden shadow-xl mb-8 flex flex-col">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left whitespace-nowrap">
+      {/* TABELA PARCELAS — prioridade visual */}
+      <div className="finance-table-panel mb-6 flex flex-col">
+        <div className="finance-table-scroll">
+          <table className="finance-table text-left">
             <thead>
-              <tr className="border-b border-[#1f232b] bg-[#161a22]">
-                <th className="px-4 py-4 w-10">
-                   <input type="checkbox" onChange={(e) => {
-                     if (e.target.checked) {
-                       setSelectedIds(new Set(currentPayments.map(p => p.id)));
-                     } else {
-                       setSelectedIds(new Set());
-                     }
-                   }} checked={currentPayments.length > 0 && selectedIds.size === currentPayments.length} />
+              <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-600"
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedIds(new Set(currentPayments.map((p) => p.id)));
+                      } else {
+                        setSelectedIds(new Set());
+                      }
+                    }}
+                    checked={
+                      currentPayments.length > 0 &&
+                      selectedIds.size === currentPayments.length
+                    }
+                    aria-label="Selecionar todos"
+                  />
                 </th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Contrato / Lote</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Cliente</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Projeto</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Parcela</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Vencimento</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-right">Valor Parcela</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-right">Valor Pago</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Status</th>
-                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase tracking-widest font-semibold text-center">Ações</th>
+                <th>Contrato / Lote</th>
+                <th>Cliente</th>
+                <th>Projeto</th>
+                <th className="text-center">Parcela</th>
+                <th>Vencimento</th>
+                <th className="text-right">Valor Parcela</th>
+                <th className="text-right">Valor Pago</th>
+                <th className="text-center">Status</th>
+                <th className="finance-sticky-actions text-center">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1f232b]">
+            <tbody>
               {loading ? (
-                <tr>
-                   <td colSpan={9} className="text-center p-16">
-                      <Loader2 className="w-8 h-8 text-[#4999e9] animate-spin mx-auto mb-4" />
-                      <p className="text-sm font-medium text-gray-400">Sincronizando registros financeiros...</p>
-                   </td>
-                </tr>
+                <FinanceTableLoading colSpan={10} />
               ) : currentPayments.length > 0 ? (
-                currentPayments.map(p => {
-                   const projectName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
-                   const blockName = p.blocks?.block_name || p.blocks?.name || '?';
-                   const lotNumber = p.blocks?.number || '?';
-                   
-                   const loteDesc = `QD ${blockName} - LT ${lotNumber}`;
-                   const contractNo = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
-                   
-                   const clientName = p.customers?.name || 'Desconhecido';
-                   const isEntry = p.installment_number === 0 || p.installment_number === '0';
-                   const parcelInfo = isEntry ? 'ENTRADA' : `${p.installment_number || 1}`;
-                   const maxParcel = p.sales?.installments_count && !isEntry ? ` / ${p.sales.installments_count}` : '';
-                   
-                   const pStatusRaw = p.status?.toLowerCase() || 'pendente';
-                   const dueStr = p.due_date?.split('T')[0];
-                   const todayStr = new Date().toISOString().split('T')[0];
-                   
-                   let computedStatus = pStatusRaw;
-                   if ((pStatusRaw === 'pendente' || pStatusRaw === 'pending') && dueStr && dueStr < todayStr) {
-                       computedStatus = 'atrasado';
-                   }
-                   
-                   const isPaid = computedStatus === 'pago' || computedStatus === 'paid';
-                   const amount = Number(p.amount) || 0;
-                   const paidAmount = isPaid ? (Number(p.paid_amount) || amount) : 0;
-
-                   return (
-                      <tr key={p.id} className="hover:bg-[#1a1f29] transition-colors group">
-                        <td className="px-4 py-4">
-                          <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleSelection(p.id)} />
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-gray-200 text-sm mb-0.5">{contractNo}</div>
-                          <div className="text-[11px] text-gray-500">{loteDesc}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-300 text-sm">{clientName}</div>
-                          {/* Em um cenário real adicionar telefone em p.customers.phone */}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-400">
-                          {projectName}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          {isEntry ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
-                          ) : (
-                            <span className="text-sm font-mono text-gray-400">{parcelInfo}{maxParcel}</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-300">
-                          {dueStr ? new Date(dueStr + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}
-                        </td>
-                        <td className="px-6 py-4 font-medium text-sm text-gray-300 text-right">
-                          {formatCurrency(amount)}
-                        </td>
-                        <td className="px-6 py-4 font-medium text-sm text-gray-400 text-right">
-                          {formatCurrency(paidAmount)}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <StatusBadge status={computedStatus} />
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex items-center justify-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                             <button onClick={() => { console.log('FINANCE VIEW DETAIL', p); setSelectedPayment(p); }} className="p-1.5 hover:text-white text-gray-500 transition-colors" title="Visualizar Detalhes">
-                               <Eye className="w-5 h-5" />
-                             </button>
-                             {!isPaid && (
-                               <button onClick={() => handleMarkPaid(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Registrar Pagamento">
-                                  <CheckCircle className="w-5 h-5" />
-                               </button>
-                             )}
-                             <button onClick={() => handleWhatsApp(p)} className="p-1.5 hover:text-[#2ad271] text-gray-500 transition-colors" title="Cobrar no WhatsApp">
-                                <MessageCircle className="w-5 h-5" />
-                             </button>
-                             <button onClick={() => handleGenerateCarne(p)} className="p-1.5 hover:text-[#4999e9] text-gray-500 transition-colors" title="Gerar Carnê/Boleto">
-                                <FileText className="w-5 h-5" />
-                             </button>
-                             <button onClick={() => handleDeleteReceipt(p)} className="p-1.5 hover:text-[#f04449] text-gray-500 transition-colors" title="Excluir Parcela">
-                                <Trash2 className="w-5 h-5" />
-                             </button>
-                          </div>
-                        </td>
-                      </tr>
-                   );
-                })
+                currentPayments.map((p) => (
+                  <PaymentTableRow
+                    key={p.id}
+                    payment={p}
+                    selected={selectedIds.has(p.id)}
+                    formatCurrency={formatCurrency}
+                    onToggle={() => toggleSelection(p.id)}
+                    onView={() => {
+                      setSelectedPayment(p);
+                    }}
+                    onMarkPaid={() => handleMarkPaid(p)}
+                    onWhatsApp={() => handleWhatsApp(p)}
+                    onCarne={() => handleGenerateCarne(p)}
+                    onDelete={() => handleDeleteReceipt(p)}
+                  />
+                ))
               ) : (
-                <tr>
-                   <td colSpan={9} className="py-12 bg-[#0E1116] text-center">
-                      <div className="text-gray-500 text-sm">Nenhum registro encontrado para os filtros selecionados.</div>
-                   </td>
-                </tr>
+                <FinanceTableEmpty
+                  colSpan={10}
+                  message="Nenhum registro encontrado para os filtros selecionados."
+                />
               )}
             </tbody>
           </table>
@@ -2976,149 +2884,93 @@ export default function FinancePage() {
         )}
       </div>
 
-      {/* FOOTER INFO PANEL */}
-      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl flex flex-col md:flex-row shadow-xl overflow-hidden mb-6">
-        <div className="flex-1 p-6 md:p-8 flex gap-5 items-start border-b md:border-b-0 md:border-r border-[#1f232b]">
-           <div className="w-14 h-14 rounded-xl bg-[#1c212a] flex items-center justify-center shrink-0">
-              <Banknote className="w-7 h-7 text-gray-400" />
-           </div>
-           <div>
-             <h3 className="text-white font-semibold text-lg mb-2">Nenhum recebimento encontrado.</h3>
-             <p className="text-gray-400 text-sm leading-relaxed mb-1">
-               As vendas confirmadas e suas parcelas aparecerão aqui automaticamente.
-             </p>
-             <p className="text-gray-500 text-sm leading-relaxed">
-               Finalize uma venda para começar a acompanhar os recebimentos.
-             </p>
-           </div>
-        </div>
-        <div className="flex-1 p-6 md:p-8 flex flex-col justify-between">
-           <div>
-             <h4 className="text-white font-semibold mb-4 text-sm">Dicas rápidas:</h4>
-             <ul className="space-y-3 text-sm text-gray-400">
-               <li className="flex items-center gap-3">
-                 <CheckCircle className="w-4 h-4 text-[#2ad271]/70 shrink-0" /> 
-                 Use os filtros acima para refinar sua busca
-               </li>
-               <li className="flex items-center gap-3">
-                 <CheckCircle className="w-4 h-4 text-[#2ad271]/70 shrink-0" /> 
-                 Clique em <Eye className="w-4 h-4 inline" /> para ver os detalhes da parcela
-               </li>
-               <li className="flex items-center gap-3">
-                 <CheckCircle className="w-4 h-4 text-[#2ad271]/70 shrink-0" /> 
-                 Registre pagamentos para manter controle atualizado
-               </li>
-             </ul>
-           </div>
-           <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[#1f232b]">
-             <span className="text-sm text-gray-400 font-medium tracking-wide">Precisa de ajuda?</span>
-             <button className="bg-[#1c212a] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
-               <BookOpen className="w-4 h-4" /> 
-               Ver guia rápido
-             </button>
-           </div>
-        </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#1f232b]/60 bg-[#13161c]/50 px-4 py-3 mb-4 text-xs text-slate-500">
+        <BookOpen className="w-4 h-4 text-blue-400/70 shrink-0" />
+        <span>
+          Use os filtros para refinar · <Eye className="w-3 h-3 inline" /> detalhes ·{' '}
+          <CheckCircle className="w-3 h-3 inline text-emerald-400/80" /> registrar pagamento
+        </span>
       </div>
       </>
       )}
 
       {activeTab === 'caixa' && (
-      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl overflow-x-auto shadow-md min-h-[400px]">
-         <div className="p-4 border-b border-[#1f232b] bg-[#1a1e27] flex items-center gap-2">
-            <h3 className="text-white font-bold tracking-wider text-sm flex items-center gap-2">
-               <Wallet className="w-4 h-4" /> HISTÓRICO DE FLUXO DE CAIXA
+      <div className="finance-table-panel min-h-[360px]">
+         <div className="px-4 py-2.5 border-b border-[#1f232b]/80 bg-[#12161f]/90 flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-blue-400" />
+            <h3 className="text-white font-semibold text-xs uppercase tracking-wider">
+               Fluxo de caixa
             </h3>
          </div>
          {cashFlowItems.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-10 text-center text-slate-500 text-sm">
                Nenhuma movimentação de caixa registrada ainda.
             </div>
          ) : (
-            <table className="w-full text-left text-sm whitespace-nowrap">
-               <thead className="bg-[#1a1e27] text-gray-400 uppercase text-[10px] font-bold tracking-wider">
+            <div className="finance-table-scroll">
+            <table className="finance-table text-sm" style={{ minWidth: 1200 }}>
+               <thead>
                   <tr>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Data</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Tipo</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Categoria</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Descrição</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Origem</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Valor</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b]">Status</th>
-                     <th className="px-5 py-4 border-b border-[#1f232b] text-right">Ação</th>
+                     <th>Data</th>
+                     <th>Tipo</th>
+                     <th>Categoria</th>
+                     <th>Descrição</th>
+                     <th>Origem</th>
+                     <th className="text-right">Valor</th>
+                     <th className="text-center">Status</th>
+                     <th className="finance-sticky-actions text-center">Ações</th>
                   </tr>
                </thead>
-               <tbody className="divide-y divide-[#1f232b]">
+               <tbody>
                   {cashFlowItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-[#1a1e27] transition-colors group">
-                         <td className="px-5 py-4 text-gray-300 font-medium">
+                      <tr key={item.id} className="group">
+                         <td className="text-slate-300 font-medium">
                             {formatFlowDate(item.movement_date)}
                          </td>
-                         <td className="px-5 py-4 font-bold">
+                         <td className="font-semibold">
                             {item.tipo === 'entrada' ? (
-                              <span className="text-emerald-500 flex items-center gap-1">
+                              <span className="inline-flex items-center gap-1 text-emerald-400 text-[10px] tracking-wide">
                                 <TrendingUp className="w-3 h-3"/> ENTRADA
                               </span>
                             ) : (
-                              <span className="text-red-500 flex items-center gap-1">
+                              <span className="inline-flex items-center gap-1 text-rose-400 text-[10px] tracking-wide">
                                 <TrendingDown className="w-3 h-3"/> SAÍDA
                               </span>
                             )}
                          </td>
-                         <td className="px-5 py-4 text-gray-300">
-                            {item.category}
+                         <td className="text-slate-400">{item.category}</td>
+                         <td className="max-w-[280px] whitespace-normal text-slate-400">
+                            <span className="text-slate-200 line-clamp-1">{item.description}</span>
+                            <span className="block text-[10px] text-slate-500 mt-0.5">
+                              {flowDisplayLabel(item.customerName, item.isManual)}
+                              {item.brokerName ? ` · ${flowDisplayLabel(item.brokerName, item.isManual)}` : ''}
+                            </span>
                          </td>
-                         <td className="px-5 py-4 text-gray-400 max-w-[320px] whitespace-normal">
-                            <span className="text-gray-200">{item.description}</span>
-                            <span className="block text-xs mt-0.5 text-gray-500">
-                              Cliente: {flowDisplayLabel(item.customerName, item.isManual)}
-                            </span>
-                            {item.brokerName && (
-                              <span className="block text-xs mt-0.5 text-gray-500">
-                                Corretor: {flowDisplayLabel(item.brokerName, item.isManual)}
-                              </span>
-                            )}
-                            <span className="block text-xs mt-0.5 text-gray-500">
-                              Proj: {flowDisplayLabel(item.projectName, item.isManual)}
-                              {item.locationLabel && item.locationLabel !== 'Lançamento manual'
-                                ? ` • ${item.locationLabel}`
-                                : ''}
-                            </span>
-                            <span className="block text-xs mt-0.5 text-gray-600 font-mono">
-                              Contrato:{' '}
-                              {item.contractNumber && item.contractNumber !== 'Lançamento manual'
-                                ? formatReceiptContractNumber(item.contractNumber) ||
-                                  item.metadata?.contract_manual ||
-                                  '—'
-                                : flowDisplayLabel('', item.isManual)}
-                            </span>
-                            {item.tipo === 'saida' && (
-                              <span className="block text-xs mt-0.5 text-gray-500">
-                                Pagamento: {resolveFlowPaymentMethod(item)}
-                              </span>
-                            )}
-                         </td>
-                         <td className="px-5 py-4 text-gray-500 text-xs uppercase">
+                         <td className="text-slate-500 text-[10px] uppercase">
                             {item.source === 'finance_receipts' && 'Parcela'}
                             {item.source === 'cash_movements' && 'Caixa'}
                             {item.source === 'broker_commissions' && 'Comissão'}
                          </td>
-                         <td className="px-5 py-4 text-white font-mono">
+                         <td className="text-right font-mono text-slate-100">
                             {formatCurrency(item.amount)}
                          </td>
-                         <td className="px-5 py-4">
+                         <td className="text-center">
                             {item.status === 'estornado' ? (
-                              <span className="text-xs text-orange-500 font-bold bg-orange-500/10 px-2 py-1 rounded">ESTORNADO</span>
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-orange-500/30 bg-orange-500/10 text-orange-400">Estornado</span>
                             ) : (
-                              <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Ativo</span>
                             )}
                          </td>
-                         <td className="px-3 py-4 text-right min-w-[140px]">
+                         <td className="finance-sticky-actions text-center">
+                            <div className="flex items-center justify-center gap-0.5">
                             {renderFlowActions(item)}
+                            </div>
                          </td>
                       </tr>
                   ))}
                </tbody>
             </table>
+            </div>
          )}
       </div>
       )}
@@ -3255,7 +3107,7 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <span className="block text-xs font-semibold text-gray-500 mb-1">Status</span>
-                  <StatusBadge status={selectedPayment.status || 'pendente'} />
+                  <FinanceStatusBadge status={selectedPayment.status || 'pendente'} />
                 </div>
                 <div>
                   <span className="block text-xs font-semibold text-gray-500 mb-1">Data Criação</span>
@@ -3657,60 +3509,5 @@ export default function FinancePage() {
     </div>
   );
 }
-
-function StatCard({ title, value, subtitle, subtitleColor, icon, iconBg, iconColor, loading }: any) {
-   return (
-      <div className="bg-[#13161c] border border-[#1f232b] rounded-xl p-5 flex gap-4 items-center hover:border-gray-600 transition-colors shadow-sm">
-        <div className={`w-12 h-12 rounded-full flex shrink-0 items-center justify-center ${iconBg} ${iconColor}`}>
-          {icon}
-        </div>
-        <div className="flex flex-col min-w-0">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1 truncate">{title}</p>
-          <h3 className="text-lg lg:text-xl font-bold text-white leading-tight mb-1.5 break-words">{loading ? '-' : value}</h3>
-          <p className={`text-[10px] font-medium leading-none truncate ${subtitleColor}`}>{subtitle}</p>
-        </div>
-      </div>
-   );
-}
-
-function StatusBadge({ status }: { status: string }) {
-    let borderClass = 'border-gray-500/20';
-    let textClass = 'text-gray-400';
-    let label = 'DESCONHECIDO';
-    
-    switch(status.toLowerCase()) {
-      case 'pago':
-      case 'paid': 
-         borderClass = 'border-[#2ad271]/30';
-         textClass = 'text-[#2ad271]';
-         label = 'PAGO';
-         break;
-      case 'pendente':
-      case 'pending': 
-         borderClass = 'border-[#f8b63a]/30';
-         textClass = 'text-[#f8b63a]';
-         label = 'PENDENTE';
-         break;
-      case 'atrasado':
-      case 'overdue': 
-         borderClass = 'border-[#f04449]/30';
-         textClass = 'text-[#f04449]';
-         label = 'ATRASADO';
-         break;
-      case 'cancelado':
-      case 'canceled': 
-         borderClass = 'border-gray-500/30';
-         textClass = 'text-gray-400';
-         label = 'CANCELADO';
-         break;
-    }
-    
-    return (
-        <span className={`inline-flex items-center justify-center min-w-[70px] px-2 py-1 rounded text-[9px] font-semibold tracking-wider border bg-transparent ${borderClass} ${textClass}`}>
-           {label}
-        </span>
-    );
-}
-
 
 
