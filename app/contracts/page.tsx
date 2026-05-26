@@ -27,6 +27,44 @@ import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import jsPDF from "jspdf";
 import { generateContractHTML } from "@/lib/contractTemplate";
 
+/** Campos de medidas do lote — colunas com e sem aspas no Postgres/Supabase */
+const BLOCKS_CONTRACT_SELECT = `
+  *,
+  frente,
+  area,
+  fundo,
+  lado_direito,
+  lado_esquerdo,
+  "Fundo",
+  "Lado Dir.",
+  "Lado Esq."
+`;
+
+/** Unifica nomes de colunas (snake_case e Civil3D) para o contractTemplate */
+function enrichBlockForContract(block: Record<string, any> | null | undefined): Record<string, any> {
+  if (!block || typeof block !== "object") return {};
+  return {
+    ...block,
+    frente: block.frente ?? block.Frente ?? "",
+    area: block.area,
+    Fundo: block["Fundo"] ?? block.Fundo ?? block.fundo ?? "",
+    "Lado Dir.":
+      block["Lado Dir."] ??
+      block["Lado Dir"] ??
+      block.ladoDireito ??
+      block.lado_dir ??
+      block.lado_direito ??
+      "",
+    "Lado Esq.":
+      block["Lado Esq."] ??
+      block["Lado Esq"] ??
+      block.ladoEsquerdo ??
+      block.lado_esq ??
+      block.lado_esquerdo ??
+      "",
+  };
+}
+
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
   const [contracts, setContracts] = useState<any[]>([]);
@@ -83,9 +121,9 @@ export default function ContractsPage() {
         .select(`
           *,
           customers:customer_id(*),
-          sales:sale_id(*, projects:project_id(*), blocks:block_id(*)),
+          sales:sale_id(*, projects:project_id(*), blocks:block_id(${BLOCKS_CONTRACT_SELECT})),
           projects:project_id(*),
-          blocks:block_id(*, projects:project_id(*))
+          blocks:block_id(${BLOCKS_CONTRACT_SELECT}, projects:project_id(*))
         `)
         .order("created_at", { ascending: false });
 
@@ -103,7 +141,7 @@ export default function ContractsPage() {
         console.warn("ERRO JOIN CONTRACTS. Buscando raw fallback...", error);
         let fallbackQuery = supabase
           .from("contracts")
-          .select("*, customers:customer_id(*), projects:project_id(*), blocks:block_id(*)")
+          .select(`*, customers:customer_id(*), projects:project_id(*), blocks:block_id(${BLOCKS_CONTRACT_SELECT})`)
           .order("created_at", { ascending: false });
           
         if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
@@ -928,6 +966,36 @@ export default function ContractsPage() {
     
     const updatedContract = { ...selectedContract, ...contractPayloadPartial };
 
+    const blockId =
+      selectedContract.block_id ||
+      updatedContract.blocks?.id ||
+      updatedContract.sales?.blocks?.id ||
+      updatedContract.sales?.block_id;
+
+    let blockForTemplate =
+      updatedContract.blocks || updatedContract.sales?.blocks || {};
+
+    if (blockId) {
+      const { data: freshBlock, error: blockFetchError } = await supabase
+        .from("blocks")
+        .select(BLOCKS_CONTRACT_SELECT)
+        .eq("id", blockId)
+        .maybeSingle();
+
+      if (blockFetchError) {
+        console.error("[Regenerar contrato] Erro ao buscar block:", blockFetchError);
+      } else if (freshBlock) {
+        console.log("[Regenerar contrato] Block medidas:", {
+          frente: freshBlock.frente,
+          area: freshBlock.area,
+          Fundo: freshBlock["Fundo"] ?? freshBlock.fundo,
+          "Lado Dir.": freshBlock["Lado Dir."] ?? freshBlock.lado_direito,
+          "Lado Esq.": freshBlock["Lado Esq."] ?? freshBlock.lado_esquerdo,
+        });
+        blockForTemplate = freshBlock;
+      }
+    }
+
     const newHtml = generateContractHTML({
       tenant: tenantData || {},
       customer:
@@ -936,7 +1004,7 @@ export default function ContractsPage() {
           ? { id: updatedContract.customer_id }
           : {}),
       project: projData,
-      block: updatedContract.blocks || updatedContract.sales?.blocks || {},
+      block: enrichBlockForContract(blockForTemplate),
       sale: { ...(updatedContract.sales || {}), receipts_sum },
       contractSnapshot: updatedContract,
       contractDate: updatedContract.created_at,
