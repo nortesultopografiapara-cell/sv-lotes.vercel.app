@@ -35,6 +35,7 @@ import {
 } from '@/lib/pdfValidation';
 import {
   buildNormalizedExpenseReceiptItem,
+  formatBeneficiaryDocument,
   formatReceiptError,
   generateExpenseReceiptPdf,
 } from '@/lib/expenseReceiptPdf';
@@ -56,6 +57,8 @@ const INITIAL_SAIDA_FORM = {
   customer_id: '',
   sale_id: '',
   customer_manual: '',
+  beneficiary_manual: '',
+  beneficiary_document: '',
   contract_number_manual: '',
   quadra_manual: '',
   lote_manual: '',
@@ -832,9 +835,11 @@ export default function FinancePage() {
     }
 
     const hasBroker =
-      !!emptyUuidToNull(saidaForm.broker_id) || !!saidaForm.broker_manual.trim();
+      !!emptyUuidToNull(saidaForm.broker_id) ||
+      !!saidaForm.broker_manual.trim() ||
+      !!saidaForm.beneficiary_manual.trim();
     if (saidaForm.category === 'Comissão' && !hasBroker) {
-      return alert('Para comissão, selecione o corretor ou informe o nome manualmente.');
+      return alert('Para comissão, selecione o corretor ou informe o fornecedor/beneficiário.');
     }
 
     const paymentMethod = (saidaForm.payment_method || '').trim();
@@ -855,6 +860,8 @@ export default function FinancePage() {
         customerId: saidaForm.customer_id,
         brokerId: saidaForm.broker_id,
         brokerManual: saidaForm.broker_manual,
+        beneficiaryManual: saidaForm.beneficiary_manual,
+        beneficiaryDocument: saidaForm.beneficiary_document,
         brokerNameFromList: brokerFromList?.name || brokerFromList?.full_name,
         customerManual: saidaForm.customer_manual,
         contractManual: saidaForm.contract_number_manual,
@@ -1269,7 +1276,10 @@ export default function FinancePage() {
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
       broker_id: md.broker_id || '',
-      broker_manual: md.beneficiary_manual || md.broker_manual || md.broker_name || '',
+      beneficiary_manual:
+        md.beneficiary_manual || md.broker_manual || md.broker_name || '',
+      beneficiary_document: md.beneficiary_document || '',
+      broker_manual: md.broker_manual || '',
       payment_method: (() => {
         const pm = String(md.payment_method || '').trim();
         if (
@@ -3122,11 +3132,27 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Cliente</span>
-                  {flowDisplayLabel(selectedFlowItem.customerName, selectedFlowItem.isManual)}
+                  {selectedFlowItem.metadata?.customer_manual ||
+                    flowDisplayLabel(
+                      selectedFlowItem.customerName,
+                      selectedFlowItem.isManual,
+                    )}
                 </div>
+                {selectedFlowItem.metadata?.beneficiary_document && (
+                  <div>
+                    <span className="text-xs text-gray-500 block">CPF/CNPJ</span>
+                    {formatBeneficiaryDocument(
+                      selectedFlowItem.metadata.beneficiary_document,
+                    )}
+                  </div>
+                )}
                 <div>
-                  <span className="text-xs text-gray-500 block">Corretor</span>
-                  {flowDisplayLabel(selectedFlowItem.brokerName, selectedFlowItem.isManual)}
+                  <span className="text-xs text-gray-500 block">Fornecedor / Beneficiário</span>
+                  {selectedFlowItem.metadata?.beneficiary_manual ||
+                    flowDisplayLabel(
+                      selectedFlowItem.brokerName,
+                      selectedFlowItem.isManual,
+                    )}
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Projeto</span>
@@ -3406,8 +3432,43 @@ export default function FinancePage() {
                       onChange={(e) =>
                         setSaidaForm({ ...saidaForm, customer_manual: e.target.value })
                       }
-                      placeholder="Nome do cliente"
+                      placeholder="Ex.: João Vitor Magão"
                       className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">
+                      CPF/CNPJ do beneficiário
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={saidaForm.beneficiary_document}
+                      onChange={(e) =>
+                        setSaidaForm({
+                          ...saidaForm,
+                          beneficiary_document: e.target.value,
+                        })
+                      }
+                      placeholder="000.000.000-00 ou CNPJ"
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 font-mono"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">
+                      Fornecedor / Beneficiário
+                    </label>
+                    <input
+                      type="text"
+                      value={saidaForm.beneficiary_manual}
+                      onChange={(e) =>
+                        setSaidaForm({
+                          ...saidaForm,
+                          beneficiary_manual: e.target.value,
+                        })
+                      }
+                      placeholder="Nome do fornecedor ou beneficiário do pagamento"
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500"
                     />
                   </div>
                   <div>
@@ -3443,7 +3504,10 @@ export default function FinancePage() {
                     Corretor {saidaForm.category === 'Comissão' ? '*' : '(opcional)'}
                   </label>
                   <select
-                    required={saidaForm.category === 'Comissão' && !saidaForm.broker_manual.trim()}
+                    required={
+                      saidaForm.category === 'Comissão' &&
+                      !saidaForm.beneficiary_manual.trim()
+                    }
                     value={saidaForm.broker_id}
                     onChange={(e) =>
                       setSaidaForm({
@@ -3453,7 +3517,9 @@ export default function FinancePage() {
                       })
                     }
                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500 disabled:opacity-50"
-                    disabled={!!saidaForm.broker_manual.trim() && !saidaForm.broker_id}
+                    disabled={
+                      !!saidaForm.beneficiary_manual.trim() && !saidaForm.broker_id
+                    }
                   >
                     <option value="">Selecione o corretor</option>
                     {financeBrokers.map((b) => (
@@ -3473,7 +3539,7 @@ export default function FinancePage() {
                         broker_id: e.target.value.trim() ? '' : saidaForm.broker_id,
                       })
                     }
-                    placeholder="Nome do corretor (manual, opcional)"
+                    placeholder="Corretor manual (opcional, se não usar cadastro)"
                     className="mt-2 w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                   />
                 </div>

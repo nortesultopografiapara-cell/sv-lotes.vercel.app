@@ -15,9 +15,25 @@ export type ExpenseReceiptItem = CashFlowItem & {
   contract_number?: string;
   customer_name?: string;
   broker_name?: string;
+  beneficiary_document?: string;
   block_label?: string;
   payment_method?: string;
 };
+
+/** Formata CPF (11) ou CNPJ (14) para exibição no recibo. */
+export function formatBeneficiaryDocument(raw: string | null | undefined): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  if (digits.length === 11) {
+    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+  if (digits.length === 14) {
+    return digits.replace(
+      /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+      "$1.$2.$3/$4-$5",
+    );
+  }
+  return String(raw ?? "").trim();
+}
 
 export type ExpenseReceiptPdfInput = {
   item: ExpenseReceiptItem;
@@ -100,6 +116,10 @@ export function buildNormalizedExpenseReceiptItem(
       (item as { broker_name?: string }).broker_name,
       item.brokerName,
     ),
+    beneficiary_document: pickReceiptField(
+      md.beneficiary_document,
+      (item as { beneficiary_document?: string }).beneficiary_document,
+    ),
     block_label: pickReceiptField(
       (item as { block_label?: string }).block_label,
       (item as { location_display?: string }).location_display,
@@ -120,14 +140,85 @@ function displayPaymentMethod(value: string | null | undefined): string {
 }
 
 function receiptFieldsFromItem(item: ExpenseReceiptItem) {
+  const docRaw = pickReceiptField(item.beneficiary_document);
   return {
     projectName: displayReceiptField(item.project_name),
     contractNumber: pickReceiptField(item.contract_number) || "S/N",
     customerName: displayReceiptField(item.customer_name),
     beneficiary: displayReceiptField(item.broker_name),
+    beneficiaryDocument: docRaw ? formatBeneficiaryDocument(docRaw) : "",
     locationLabel: displayReceiptField(item.block_label),
     paymentMethod: displayPaymentMethod(item.payment_method),
   };
+}
+
+function drawReceiverSignatureBlock(
+  doc: jsPDF,
+  x: number,
+  width: number,
+  startY: number,
+  receiverName: string,
+  receiverDocument: string,
+) {
+  const boxH = 112;
+  doc.setDrawColor(210);
+  doc.setFillColor(252, 252, 253);
+  doc.roundedRect(x, startY, width, boxH, 4, 4, "FD");
+
+  doc.setTextColor(90);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("RECEBEDOR / BENEFICIÁRIO", x + width / 2, startY + 12, {
+    align: "center",
+  });
+
+  const nameVal = pickReceiptField(receiverName);
+  const docVal = pickReceiptField(receiverDocument);
+  const centerX = x + width / 2;
+
+  doc.setTextColor(35);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  if (nameVal) {
+    doc.text(`Nome: ${nameVal.toUpperCase()}`, centerX, startY + 32, {
+      align: "center",
+    });
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text("Nome: _________________________________", centerX, startY + 32, {
+      align: "center",
+    });
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(35);
+  if (docVal) {
+    doc.text(
+      `CPF/CNPJ: ${formatBeneficiaryDocument(docVal)}`,
+      centerX,
+      startY + 48,
+      { align: "center" },
+    );
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text("CPF/CNPJ: _____________________________", centerX, startY + 48, {
+      align: "center",
+    });
+  }
+
+  const lineW = Math.min(240, width - 60);
+  const lineX = x + (width - lineW) / 2;
+  doc.setDrawColor(150);
+  doc.line(lineX, startY + 78, lineX + lineW, startY + 78);
+  doc.setFontSize(7);
+  doc.setTextColor(110);
+  doc.setFont("helvetica", "normal");
+  doc.text("Assinatura do recebedor", centerX, startY + 96, { align: "center" });
 }
 
 const PLACEHOLDER_LABELS = new Set([
@@ -338,6 +429,9 @@ export async function generateExpenseReceiptPdf(
     ["Contrato", contrato],
     ["Cliente", display.customerName],
     ["Corretor / Fornecedor / Beneficiário", beneficiario],
+    ...(display.beneficiaryDocument
+      ? [["CPF/CNPJ do recebedor", display.beneficiaryDocument] as [string, string]]
+      : []),
     ["Quadra / Lote", display.locationLabel],
     ["Forma de pagamento", display.paymentMethod],
     ["Código de validação", validationCode],
@@ -392,45 +486,54 @@ export async function generateExpenseReceiptPdf(
     signY = 50;
   }
 
-  const colMid = pageWidth / 2;
-  const boxW = (pageWidth - margin * 2 - 16) / 2;
+  const contentW = pageWidth - margin * 2;
+  const signName = pickReceiptField(item.customer_name) || pickReceiptField(item.broker_name);
+  const signDoc = item.beneficiary_document || "";
 
-  const drawSignBox = (
-    x: number,
-    title: string,
-    lines: string[],
-    startY: number,
-  ) => {
-    doc.setDrawColor(200);
-    doc.setFillColor(252, 252, 253);
-    doc.roundedRect(x, startY, boxW, 100, 3, 3, "FD");
-    doc.setTextColor(50);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text(title, x + 8, startY + 14);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    let ly = startY + 28;
-    lines.forEach((line) => {
-      doc.text(line, x + 8, ly);
-      ly += 12;
-    });
-    doc.setDrawColor(160);
-    doc.line(x + 8, startY + 78, x + boxW - 8, startY + 78);
-    doc.setFontSize(7);
-    doc.setTextColor(120);
-    doc.text("Assinatura", x + 8, startY + 90);
-  };
+  drawReceiverSignatureBlock(
+    doc,
+    margin,
+    contentW,
+    signY,
+    signName,
+    signDoc,
+  );
 
-  drawSignBox(margin, "Recebedor / Beneficiário", [
-    "Nome: _________________________________",
-    "CPF/CNPJ: _____________________________",
-  ], signY);
-
-  drawSignBox(margin + boxW + 16, "Empresa pagadora", [
-    companyName,
-    `CNPJ: ${companyCnpj}`,
-  ], signY);
+  const companyBoxW = Math.min(280, contentW);
+  const companyX = margin + (contentW - companyBoxW) / 2;
+  const companyY = signY + 122;
+  doc.setDrawColor(210);
+  doc.setFillColor(252, 252, 253);
+  doc.roundedRect(companyX, companyY, companyBoxW, 72, 4, 4, "FD");
+  doc.setTextColor(90);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("EMPRESA PAGADORA", companyX + companyBoxW / 2, companyY + 12, {
+    align: "center",
+  });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(40);
+  doc.text(companyName, companyX + companyBoxW / 2, companyY + 30, {
+    align: "center",
+    maxWidth: companyBoxW - 16,
+  });
+  doc.text(`CNPJ: ${companyCnpj}`, companyX + companyBoxW / 2, companyY + 44, {
+    align: "center",
+  });
+  doc.setDrawColor(150);
+  const cLineW = Math.min(200, companyBoxW - 40);
+  doc.line(
+    companyX + (companyBoxW - cLineW) / 2,
+    companyY + 58,
+    companyX + (companyBoxW + cLineW) / 2,
+    companyY + 58,
+  );
+  doc.setFontSize(7);
+  doc.setTextColor(110);
+  doc.text("Assinatura da empresa", companyX + companyBoxW / 2, companyY + 66, {
+    align: "center",
+  });
 
   doc.setFontSize(7);
   doc.setTextColor(140);
