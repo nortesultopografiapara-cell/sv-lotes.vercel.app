@@ -1,6 +1,5 @@
 const extenso = require("extenso");
 
-import { displayContractNumber } from "@/lib/contractNumber";
 import {
   formatChanfreClause,
   resolveLotMeasuresFromBlock,
@@ -334,19 +333,10 @@ export function generateContractHTML({
 
   const projectDescString = projectDescParts.length > 0 ? `, ${projectDescParts.join(', ')}` : '';
 
-  const contratoNumero = displayContractNumber(
-    contractSnapshot?.contract_number,
-  );
-  const contratoNumeroLinha =
-    contratoNumero !== "S/N"
-      ? `<p style="font-family: 'Times New Roman', Times, serif; text-align: center; font-size: 11pt; margin: 0 0 10px 0; padding: 0;"><strong>Contrato nº ${contratoNumero}</strong></p>`
-      : "";
-
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
             
             <div style="text-align: center; margin-top: 15px; margin-bottom: 25px; page-break-inside: avoid;">
-                 ${contratoNumeroLinha}
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
             </div>
             
