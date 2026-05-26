@@ -1,5 +1,37 @@
 const extenso = require("extenso");
 
+const formatMeasure = (val: any) => {
+  if (val === null || val === undefined || val === "") {
+    return "não informado";
+  }
+
+  const num = Number(val);
+
+  if (isNaN(num)) return String(val);
+
+  return (
+    num.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + " m"
+  );
+};
+
+const formatArea = (val: any) => {
+  if (!val) return "não informado";
+
+  const num = Number(val);
+
+  if (isNaN(num)) return String(val);
+
+  return (
+    num.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + " m²"
+  );
+};
+
 interface GenerateContractParams {
   tenant: any;
   customer: any;
@@ -111,11 +143,27 @@ export function generateContractHTML({
     (isValid(sale?.blocks?.number) ? sale.blocks.number : null) ||
     "";
 
-  const areaM2 = block?.area || "";
-  const frente = block?.frente || "";
-  const fundo = block?.fundo || "";
-  const lateralDireita = block?.lado_direito || "";
-  const lateralEsquerda = block?.lado_esquerdo || "";
+  const frente =
+    block?.frente ??
+    block?.Frente ??
+    "";
+
+  const fundo =
+    block?.["Fundo"] ??
+    block?.fundo ??
+    "";
+
+  const ladoDireito =
+    block?.["Lado Dir."] ??
+    block?.ladoDireito ??
+    block?.lado_dir ??
+    "";
+
+  const ladoEsquerdo =
+    block?.["Lado Esq."] ??
+    block?.ladoEsquerdo ??
+    block?.lado_esq ??
+    "";
 
   // Cidade, UF e Foro hierarquia correta
   const empreendimentoCidade = toTitleCase(
@@ -292,7 +340,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}, com área total de <strong>${areaM2}m²</strong>, frente <strong>${frente}m</strong>, fundo <strong>${fundo}m</strong>, lateral esquerda <strong>${lateralEsquerda}m</strong>, lateral direita <strong>${lateralDireita}m</strong>.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>.
                 </p>
             </div>
 
