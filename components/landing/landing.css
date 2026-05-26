@@ -221,9 +221,83 @@
   animation: landing-float 5s ease-in-out infinite;
 }
 
+.landing-contact-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+  border-radius: 0.75rem;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.landing-contact-card:hover {
+  border-color: rgba(249, 115, 22, 0.22);
+  background: rgba(30, 41, 59, 0.35);
+}
+
+.landing-btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: white;
+  background: #25d366;
+  border-radius: 0.625rem;
+  box-shadow: 0 4px 20px rgba(37, 211, 102, 0.35);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landing-btn-whatsapp:hover {
+  background: #20bd5a;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px rgba(37, 211, 102, 0.45);
+}
+
+.landing-whatsapp-float {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 99;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 9999px;
+  background: #25d366;
+  color: white;
+  box-shadow: 0 8px 28px rgba(37, 211, 102, 0.45);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landing-whatsapp-float:hover {
+  transform: scale(1.06);
+  box-shadow: 0 10px 36px rgba(37, 211, 102, 0.55);
+}
+
+.landing-service-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.625rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
 @media (max-width: 768px) {
   .landing-section {
     padding: 3rem 1rem;
+  }
+
+  .landing-whatsapp-float {
+    bottom: 1rem;
+    right: 1rem;
+    width: 3.25rem;
+    height: 3.25rem;
   }
 
   .landing-hero-shot-inner {

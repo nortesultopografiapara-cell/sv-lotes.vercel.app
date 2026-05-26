@@ -7,17 +7,29 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  Compass,
   FileText,
+  Globe,
   LayoutDashboard,
+  Mail,
   Map as MapIcon,
+  MapPin,
+  Phone,
   QrCode,
   Shield,
+  User,
   Users,
   Wallet,
   Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { LandingScreenshot } from './LandingScreenshot';
-import { SCREEN_LABELS, type ScreenId } from './ScreenMocks';
+import {
+  LANDING_CONTACT,
+  LANDING_SERVICES,
+  SCREEN_LABELS,
+  type ScreenId,
+} from './ScreenMocks';
 import './landing.css';
 
 const GALLERY_SCREENS: ScreenId[] = [
@@ -342,7 +354,7 @@ export function LandingPage() {
         </section>
 
         {/* CTA final */}
-        <section className="landing-section pb-20">
+        <section className="landing-section pb-8">
           <RevealSection>
             <div className="landing-glass rounded-2xl p-8 sm:p-12 text-center relative overflow-hidden">
               <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-[var(--color-primary)] opacity-15 blur-3xl pointer-events-none" />
@@ -361,13 +373,177 @@ export function LandingPage() {
             </div>
           </RevealSection>
         </section>
+
+        {/* Contato */}
+        <section id="contato" className="landing-section border-t border-[var(--color-border)]/40 pb-16">
+          <RevealSection className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">Contato</h2>
+            <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto">
+              Fale com a equipe técnica da SV Topografia e Projetos — suporte ao SV LOTES e
+              serviços de engenharia.
+            </p>
+          </RevealSection>
+
+          <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
+            <RevealSection>
+              <div className="landing-glass rounded-2xl p-6 sm:p-8 h-full">
+                <div className="flex items-start gap-4 mb-6 pb-6 border-b border-[var(--color-border)]/60">
+                  <div className="w-14 h-14 rounded-xl bg-[var(--color-primary)]/15 border border-[var(--color-primary)]/25 flex items-center justify-center shrink-0">
+                    <User className="w-7 h-7 text-[var(--color-primary)]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-bold text-white">{LANDING_CONTACT.name}</h3>
+                    <p className="text-sm text-[var(--color-primary)] mt-0.5 font-medium">
+                      {LANDING_CONTACT.role}
+                    </p>
+                    <p className="text-sm text-[var(--color-text-muted)] mt-2 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 shrink-0" />
+                      {LANDING_CONTACT.company}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 mb-8">
+                  <a
+                    href={`tel:+55${LANDING_CONTACT.phones[0].replace(/\D/g, '')}`}
+                    className="landing-contact-card landing-glass block"
+                  >
+                    <span className="w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center shrink-0">
+                      <Phone className="w-5 h-5 text-emerald-400" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                        Telefone
+                      </p>
+                      <p className="text-sm text-slate-200">
+                        {LANDING_CONTACT.phones[0]} / {LANDING_CONTACT.phones[1]}
+                      </p>
+                    </div>
+                  </a>
+
+                  <a
+                    href={LANDING_CONTACT.mailto}
+                    className="landing-contact-card landing-glass block"
+                  >
+                    <span className="w-10 h-10 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
+                      <Mail className="w-5 h-5 text-blue-400" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                        E-mail
+                      </p>
+                      <p className="text-sm text-slate-200 break-all">{LANDING_CONTACT.email}</p>
+                    </div>
+                  </a>
+
+                  <a
+                    href={LANDING_CONTACT.websiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="landing-contact-card landing-glass block"
+                  >
+                    <span className="w-10 h-10 rounded-lg bg-orange-500/15 border border-orange-500/25 flex items-center justify-center shrink-0">
+                      <Globe className="w-5 h-5 text-[var(--color-primary)]" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                        Site
+                      </p>
+                      <p className="text-sm text-slate-200">{LANDING_CONTACT.website}</p>
+                    </div>
+                  </a>
+
+                  <div className="landing-contact-card landing-glass">
+                    <span className="w-10 h-10 rounded-lg bg-purple-500/15 border border-purple-500/25 flex items-center justify-center shrink-0">
+                      <MapPin className="w-5 h-5 text-purple-400" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                        Cidade
+                      </p>
+                      <p className="text-sm text-slate-200">{LANDING_CONTACT.city}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href={LANDING_CONTACT.whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="landing-btn-whatsapp"
+                  >
+                    <WhatsAppIcon className="w-5 h-5" />
+                    Falar no WhatsApp
+                  </a>
+                  <a href={LANDING_CONTACT.mailto} className="landing-btn-ghost">
+                    <Mail className="w-4 h-4" />
+                    Enviar e-mail
+                  </a>
+                </div>
+              </div>
+            </RevealSection>
+
+            <RevealSection>
+              <div className="landing-glass rounded-2xl p-6 sm:p-8 h-full flex flex-col">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-11 h-11 rounded-xl bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center">
+                    <Compass className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Serviços prestados</h3>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Engenharia e geotecnologia para o seu empreendimento
+                    </p>
+                  </div>
+                </div>
+
+                <ul className="space-y-3 flex-1">
+                  {LANDING_SERVICES.map((service) => (
+                    <li key={service} className="landing-service-item">
+                      <CheckCircle2 className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
+                      <span className="text-sm text-slate-200">{service}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mt-8 pt-6 border-t border-[var(--color-border)]/50 text-center text-sm italic text-slate-400">
+                  {LANDING_CONTACT.slogan}
+                </p>
+              </div>
+            </RevealSection>
+          </div>
+        </section>
       </main>
 
-      <footer className="relative z-[1] border-t border-[var(--color-border)]/50 py-8 text-center">
-        <p className="text-xs text-[var(--color-text-muted)] font-mono">
-          SV LOTES · Gestão & GIS · Norte Sul Topografia © {new Date().getFullYear()}
+      <footer className="relative z-[1] border-t border-[var(--color-border)]/50 py-10 px-4 text-center">
+        <p className="text-sm font-medium text-slate-300 mb-2">{LANDING_CONTACT.slogan}</p>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          {LANDING_CONTACT.company} · Parauapebas - PA
+        </p>
+        <p className="text-xs text-[var(--color-text-muted)] font-mono mt-2">
+          SV LOTES · Gestão & GIS © {new Date().getFullYear()}
         </p>
       </footer>
+
+      <a
+        href={LANDING_CONTACT.whatsappUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="landing-whatsapp-float"
+        aria-label="Falar no WhatsApp"
+        title="Falar no WhatsApp"
+      >
+        <WhatsAppIcon className="w-7 h-7" />
+      </a>
     </div>
+  );
+}
+
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
   );
 }

@@ -29,6 +29,27 @@ export const LANDING_EXTRA_IMAGES = [
   { src: '/landing/01.png', label: 'Navegação integrada' },
 ] as const;
 
+export const LANDING_CONTACT = {
+  name: 'Severino França',
+  role: 'Técnico Agrimensor | Direção Técnica',
+  company: 'SV Topografia e Projetos LTDA',
+  phones: ['(94) 99195-5918', '(94) 98446-1415'],
+  email: 'gerencia@nortesultopografia.com.br',
+  website: 'www.nortesultopografia.com.br',
+  websiteUrl: 'https://www.nortesultopografia.com.br',
+  city: 'Parauapebas - PA',
+  slogan: 'Precisão e tecnologia para o seu projeto.',
+  whatsappUrl: 'https://wa.me/5594991955918',
+  mailto: 'mailto:gerencia@nortesultopografia.com.br',
+} as const;
+
+export const LANDING_SERVICES = [
+  'Topografia',
+  'Aerofotogrametria e Drones',
+  'Georreferenciamento e Cadastro',
+  'Projetos e Levantamentos',
+] as const;
+
 function MockChrome({ title }: { title: string }) {
   return (
     <div className="landing-mock-bar shrink-0">
