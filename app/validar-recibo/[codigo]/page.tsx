@@ -12,6 +12,7 @@ type ReceiptValidation = {
   data?: string;
   categoria?: string;
   tipo_despesa?: string;
+  tipo_documento?: string;
   descricao?: string;
   projeto?: string;
   cliente?: string;
@@ -76,7 +77,10 @@ export default function ValidarReciboPage() {
               <FileText className="w-5 h-5 text-[#2980b9]" />
               Recibo autêntico
             </h1>
-            <p className="text-emerald-400 font-semibold text-sm text-center mb-6">
+            <p className="text-emerald-400 font-semibold text-sm text-center mb-1">
+              {data.tipo_documento || "RECIBO DE PAGAMENTO / SAÍDA"}
+            </p>
+            <p className="text-gray-500 text-xs text-center mb-6">
               {data.autenticidade || "Documento gerado pelo SV LOTES"}
             </p>
             <div className="text-left space-y-3 text-sm text-gray-300 bg-[#1a1e27] rounded-lg p-4 border border-[#2d3340]">

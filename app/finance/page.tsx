@@ -1089,8 +1089,8 @@ export default function FinancePage() {
   };
 
   const handleGenerateExpenseReceipt = async (item: CashFlowItem) => {
-    if (!item.cashMovementId) {
-      alert('Recibo disponível apenas para saídas registradas no caixa.');
+    if (item.tipo !== 'saida') {
+      alert('Recibo de pagamento disponível apenas para saídas.');
       return;
     }
     if (item.status === 'estornado') {
@@ -1100,7 +1100,8 @@ export default function FinancePage() {
 
     try {
       const validationCode = createDocumentValidationCode();
-      const receiptNumber = createExpenseReceiptNumber(item.cashMovementId);
+      const persistId = item.cashMovementId || item.commissionId || item.id;
+      const receiptNumber = createExpenseReceiptNumber(persistId);
       const receiptUrl = getReceiptValidationUrl(validationCode);
 
       const doc = await generateExpenseReceiptPdf({
@@ -1108,22 +1109,34 @@ export default function FinancePage() {
         tenantData,
         receiptNumber,
         validationCode,
+        paymentMethod: item.category === 'Comissão' ? 'Transferência / PIX' : undefined,
       });
 
-      const fileName = `recibo_${receiptNumber}.pdf`;
+      const fileName = `recibo_pagamento_saida_${receiptNumber}.pdf`;
       doc.save(fileName);
       console.log('[RECIBO] pdf salvo', fileName);
 
-      const { error } = await supabase
-        .from('cash_movements')
-        .update({
-          receipt_number: receiptNumber,
-          receipt_url: receiptUrl,
-          validation_code: validationCode,
-        })
-        .eq('id', item.cashMovementId);
+      const receiptPayload = {
+        receipt_number: receiptNumber,
+        receipt_url: receiptUrl,
+        validation_code: validationCode,
+      };
 
-      if (error) throw error;
+      if (item.cashMovementId) {
+        const { error } = await supabase
+          .from('cash_movements')
+          .update(receiptPayload)
+          .eq('id', item.cashMovementId);
+        if (error) throw error;
+      } else if (item.commissionId) {
+        const { error } = await supabase
+          .from('broker_commissions')
+          .update(receiptPayload)
+          .eq('id', item.commissionId);
+        if (error) {
+          console.warn('[RECIBO] comissão sem colunas de recibo — PDF gerado', error.message);
+        }
+      }
 
       console.log('[RECIBO] recibo gerado', receiptNumber);
       console.log('[RECIBO] validacao criada', validationCode);
@@ -1132,7 +1145,7 @@ export default function FinancePage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[RECIBO] erro', err);
-      alert('Erro ao gerar recibo: ' + message);
+      alert('Erro ao gerar recibo de saída: ' + message);
     }
   };
 
@@ -1266,10 +1279,9 @@ export default function FinancePage() {
       item.tipo === 'entrada' &&
       !!item.receiptId &&
       item.source === 'finance_receipts';
+    const isSaida = item.tipo === 'saida';
     const isSaidaCash =
-      item.tipo === 'saida' &&
-      item.source === 'cash_movements' &&
-      !!item.cashMovementId;
+      isSaida && item.source === 'cash_movements' && !!item.cashMovementId;
     const isManualSaida = isSaidaCash && item.isManual;
     const isLinkedParcel =
       item.tipo === 'entrada' && item.source === 'finance_receipts';
@@ -1323,7 +1335,7 @@ export default function FinancePage() {
       );
     }
 
-    if (isManualSaida) {
+    if (isSaida) {
       return flowActionBar(
         <>
           <FlowIconBtn
@@ -1333,69 +1345,53 @@ export default function FinancePage() {
           >
             <Eye size={16} />
           </FlowIconBtn>
-          <FlowIconBtn
-            title="Editar"
-            variant="edit"
-            onClick={() => guardEstornado(item, () => handleFlowEditSaida(item))}
-          >
-            <Pencil size={16} />
-          </FlowIconBtn>
-          <FlowIconBtn
-            title="Gerar recibo"
-            variant="receipt"
-            onClick={() =>
-              guardEstornado(item, () => handleGenerateExpenseReceipt(item))
-            }
-          >
-            <ReceiptText size={16} />
-          </FlowIconBtn>
-          <FlowIconBtn
-            title="Excluir"
-            variant="delete"
-            onClick={() => guardEstornado(item, () => handleFlowDeleteSaida(item))}
-          >
-            <Trash2 size={16} />
-          </FlowIconBtn>
-        </>,
-      );
-    }
-
-    if (isSaidaCash) {
-      return flowActionBar(
-        <>
-          <FlowIconBtn
-            title="Visualizar"
-            variant="view"
-            onClick={() => handleFlowView(item)}
-          >
-            <Eye size={16} />
-          </FlowIconBtn>
-          <FlowIconBtn
-            title="Gerar recibo"
-            variant="receipt"
-            onClick={() =>
-              guardEstornado(item, () => handleGenerateExpenseReceipt(item))
-            }
-          >
-            <ReceiptText size={16} />
-          </FlowIconBtn>
-          {canContract && (
+          {isManualSaida && (
             <FlowIconBtn
-              title="Abrir contrato"
-              variant="contract"
-              onClick={() => handleFlowOpenContract(item)}
+              title="Editar"
+              variant="edit"
+              onClick={() => guardEstornado(item, () => handleFlowEditSaida(item))}
             >
-              <FileSignature size={16} />
+              <Pencil size={16} />
             </FlowIconBtn>
           )}
-          {canEstornar && (
+          <FlowIconBtn
+            title="Gerar recibo"
+            variant="receipt"
+            onClick={() =>
+              guardEstornado(item, () => handleGenerateExpenseReceipt(item))
+            }
+          >
+            <ReceiptText size={16} />
+          </FlowIconBtn>
+          {isManualSaida ? (
             <FlowIconBtn
-              title="Estornar"
-              variant="reverse"
-              onClick={() => handleFlowReverse(item)}
+              title="Excluir"
+              variant="delete"
+              onClick={() => guardEstornado(item, () => handleFlowDeleteSaida(item))}
             >
-              <RotateCcw size={16} />
+              <Trash2 size={16} />
             </FlowIconBtn>
+          ) : (
+            <>
+              {canContract && (
+                <FlowIconBtn
+                  title="Abrir contrato"
+                  variant="contract"
+                  onClick={() => handleFlowOpenContract(item)}
+                >
+                  <FileSignature size={16} />
+                </FlowIconBtn>
+              )}
+              {canEstornar && (
+                <FlowIconBtn
+                  title="Estornar"
+                  variant="reverse"
+                  onClick={() => handleFlowReverse(item)}
+                >
+                  <RotateCcw size={16} />
+                </FlowIconBtn>
+              )}
+            </>
           )}
         </>,
       );
@@ -1410,24 +1406,6 @@ export default function FinancePage() {
         >
           <Eye size={16} />
         </FlowIconBtn>
-        {canContract && (
-          <FlowIconBtn
-            title="Abrir contrato"
-            variant="contract"
-            onClick={() => handleFlowOpenContract(item)}
-          >
-            <FileSignature size={16} />
-          </FlowIconBtn>
-        )}
-        {canEstornar && (
-          <FlowIconBtn
-            title="Estornar"
-            variant="reverse"
-            onClick={() => handleFlowReverse(item)}
-          >
-            <RotateCcw size={16} />
-          </FlowIconBtn>
-        )}
       </>,
     );
   };
