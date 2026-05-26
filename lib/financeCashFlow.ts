@@ -137,20 +137,20 @@ export function buildSaidaCashMovementMetadata(input: {
   const paymentMethod = String(input.paymentMethod ?? "").trim();
   if (paymentMethod) meta.payment_method = paymentMethod;
 
-  if (!input.contractId) {
-    const customerManual = String(input.customerManual ?? "").trim();
-    if (!emptyUuidToNull(input.customerId)) {
-      /* cliente vinculado por customer_id */
-    } else if (customerManual) {
-      meta.customer_manual = customerManual;
-    }
-    const contractManual = String(input.contractManual ?? "").trim();
-    if (contractManual) meta.contract_manual = contractManual;
-    const quadra = String(input.quadraManual ?? "").trim();
-    if (quadra) meta.quadra_manual = quadra;
-    const lote = String(input.loteManual ?? "").trim();
-    if (lote) meta.lote_manual = lote;
+  const customerManual = String(input.customerManual ?? "").trim();
+  if (!emptyUuidToNull(input.customerId) && customerManual) {
+    /* cliente vinculado por id — nome manual opcional não duplica */
+  } else if (customerManual) {
+    meta.customer_manual = customerManual;
   }
+
+  const contractManual = String(input.contractManual ?? "").trim();
+  if (contractManual) meta.contract_manual = contractManual;
+
+  const quadra = String(input.quadraManual ?? "").trim();
+  if (quadra) meta.quadra_manual = quadra;
+  const lote = String(input.loteManual ?? "").trim();
+  if (lote) meta.lote_manual = lote;
 
   const hasValues = Object.values(meta).some(
     (v) => v !== undefined && v !== null && String(v).trim() !== "",

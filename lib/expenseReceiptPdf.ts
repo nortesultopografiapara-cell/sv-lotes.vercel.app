@@ -9,8 +9,18 @@ import {
 } from "@/lib/financeCashFlow";
 import { getReceiptValidationUrl } from "@/lib/pdfValidation";
 
+/** Item normalizado para PDF — campos explícitos, sem "Lançamento manual". */
+export type ExpenseReceiptItem = CashFlowItem & {
+  project_name?: string;
+  contract_number?: string;
+  customer_name?: string;
+  broker_name?: string;
+  block_label?: string;
+  payment_method?: string;
+};
+
 export type ExpenseReceiptPdfInput = {
-  item: CashFlowItem;
+  item: ExpenseReceiptItem;
   tenantData: {
     razao_social?: string;
     name?: string;
@@ -19,8 +29,102 @@ export type ExpenseReceiptPdfInput = {
   } | null;
   receiptNumber: string;
   validationCode: string;
+  validationUrl?: string;
   paymentMethod?: string;
 };
+
+export function formatReceiptError(err: unknown): string {
+  const e = err as {
+    message?: string;
+    details?: string;
+    hint?: string;
+  };
+  return (
+    e?.message ||
+    e?.details ||
+    e?.hint ||
+    (typeof err === "string" ? err : JSON.stringify(err))
+  );
+}
+
+function blockLabelFromMetadata(md: CashMovementMetadata): string {
+  const quad = String(md.quadra_manual ?? "").trim();
+  const lot = String(md.lote_manual ?? "").trim();
+  if (quad && lot) return `QD ${quad} • LT ${lot}`;
+  if (quad) return `QD ${quad}`;
+  if (lot) return `LT ${lot}`;
+  return "";
+}
+
+/** Monta objeto com campos do recibo priorizando metadata e valores reais. */
+export function buildNormalizedExpenseReceiptItem(
+  item: CashFlowItem,
+  options?: {
+    projectNameFromDb?: string;
+    paymentMethod?: string;
+  },
+): ExpenseReceiptItem {
+  const md: CashMovementMetadata = { ...(item.metadata || {}) };
+  const blockFromMeta = blockLabelFromMetadata(md);
+
+  const contractRaw = pickReceiptField(
+    md.contract_manual,
+    item.contractNumber,
+    (item as { contract_number?: string }).contract_number,
+  );
+  const contract_number = contractRaw
+    ? displayContractNumber(contractRaw)
+    : "";
+
+  return {
+    ...item,
+    metadata: md,
+    project_name: pickReceiptField(
+      md.project_name,
+      md.project_manual,
+      options?.projectNameFromDb,
+      item.projectName,
+      (item as { project_name?: string }).project_name,
+      (item as { project_display?: string }).project_display,
+    ),
+    contract_number,
+    customer_name: pickReceiptField(
+      md.customer_manual,
+      (item as { customer_name?: string }).customer_name,
+      item.customerName,
+    ),
+    broker_name: pickReceiptField(
+      md.beneficiary_manual,
+      md.broker_manual,
+      md.broker_name,
+      (item as { broker_name?: string }).broker_name,
+      item.brokerName,
+    ),
+    block_label: pickReceiptField(
+      (item as { block_label?: string }).block_label,
+      (item as { location_display?: string }).location_display,
+      blockFromMeta,
+      item.locationLabel,
+    ),
+    payment_method:
+      pickReceiptField(
+        md.payment_method,
+        options?.paymentMethod,
+        (item as { payment_method?: string }).payment_method,
+      ) || "Dinheiro/Não especificado",
+  };
+}
+
+function receiptFieldsFromItem(item: ExpenseReceiptItem) {
+  return {
+    projectName: displayReceiptField(item.project_name),
+    contractNumber: pickReceiptField(item.contract_number) || "S/N",
+    customerName: displayReceiptField(item.customer_name),
+    beneficiary: displayReceiptField(item.broker_name),
+    locationLabel: displayReceiptField(item.block_label),
+    paymentMethod: item.payment_method || "Dinheiro/Não especificado",
+  };
+}
 
 const PLACEHOLDER_LABELS = new Set([
   "",
@@ -154,8 +258,7 @@ function formatBrl(amount: number): string {
 export async function generateExpenseReceiptPdf(
   input: ExpenseReceiptPdfInput,
 ): Promise<jsPDF> {
-  const { item, tenantData, receiptNumber, validationCode, paymentMethod } =
-    input;
+  const { item, tenantData, receiptNumber, validationCode } = input;
   const doc = new jsPDF("portrait", "pt", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -167,16 +270,15 @@ export async function generateExpenseReceiptPdf(
     "S.V TOPOGRAFIA E PROJETOS LTDA"
   ).toUpperCase();
   const companyCnpj = tenantData?.cnpj || "Não informado";
-  const validationUrl = getReceiptValidationUrl(validationCode);
+  const validationUrl =
+    input.validationUrl || getReceiptValidationUrl(validationCode);
   const issuedAt = new Date().toLocaleString("pt-BR");
   const paymentDate = formatFlowDate(item.movement_date);
   const valorStr = formatBrl(item.amount);
   const descricao = displayReceiptField(item.description);
-  const display = resolveExpenseReceiptDisplay(item, {
-    paymentMethod,
-  });
-  const contrato = displayReceiptField(display.contractNumber);
-  const beneficiario = displayReceiptField(display.beneficiary);
+  const display = receiptFieldsFromItem(item);
+  const contrato = display.contractNumber;
+  const beneficiario = display.beneficiary;
 
   doc.setFillColor(19, 22, 28);
   doc.rect(0, 0, pageWidth, 96, "F");
@@ -229,11 +331,11 @@ export async function generateExpenseReceiptPdf(
     ["Categoria", displayReceiptField(item.category)],
     ["Descrição / Destino", descricao],
     ["Valor pago", valorStr],
-    ["Projeto / Loteamento", displayReceiptField(display.projectName)],
+    ["Projeto / Loteamento", display.projectName],
     ["Contrato", contrato],
-    ["Cliente", displayReceiptField(display.customerName)],
+    ["Cliente", display.customerName],
     ["Corretor / Fornecedor / Beneficiário", beneficiario],
-    ["Quadra / Lote", displayReceiptField(display.locationLabel)],
+    ["Quadra / Lote", display.locationLabel],
     ["Forma de pagamento", display.paymentMethod],
     ["Código de validação", validationCode],
   ];

@@ -121,7 +121,7 @@ export async function GET(
         ? displayContractNumber(md.contract_manual)
         : contract.contract_number
           ? displayContractNumber(contract.contract_number)
-          : undefined,
+          : "S/N",
     });
   }
 

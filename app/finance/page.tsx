@@ -31,7 +31,11 @@ import {
   createExpenseReceiptNumber,
   getReceiptValidationUrl,
 } from '@/lib/pdfValidation';
-import { generateExpenseReceiptPdf } from '@/lib/expenseReceiptPdf';
+import {
+  buildNormalizedExpenseReceiptItem,
+  formatReceiptError,
+  generateExpenseReceiptPdf,
+} from '@/lib/expenseReceiptPdf';
 
 export type { CashFlowItem };
 export { buildCashFlowItems, calculateFinancialTotals };
@@ -1070,18 +1074,17 @@ export default function FinancePage() {
     const md = getCashMovementMetadata(cm);
     const projectFromJoin =
       cm.projects?.name || cm.contracts?.projects?.name || cm.sales?.projects?.name;
+    const mergedMeta = {
+      ...(item.metadata || {}),
+      ...md,
+      project_name: md.project_name || projectFromJoin || undefined,
+    };
     return {
       ...item,
-      metadata: {
-        ...(item.metadata || {}),
-        ...md,
-        project_name: md.project_name || projectFromJoin || item.metadata?.project_name,
-      },
-      projectName: md.project_name || projectFromJoin || item.projectName,
-      customerName: item.customerName || md.customer_manual || '',
-      brokerName:
-        item.brokerName || md.beneficiary_manual || md.broker_manual || md.broker_name || '',
-      contractNumber: item.contractNumber || md.contract_manual || '',
+      metadata: mergedMeta,
+      description:
+        (cm.description || item.description || '').split('[[sv_meta]]')[0].trim() ||
+        item.description,
     };
   };
 
@@ -1095,78 +1098,90 @@ export default function FinancePage() {
       return;
     }
 
-    let pdfGenerated = false;
-    const receiptItem = enrichReceiptCashFlowItem(item);
-    const md = receiptItem.metadata || {};
+    const enriched = enrichReceiptCashFlowItem(item);
+    const cm = item.cashMovementId
+      ? cashMovements.find((c) => c.id === item.cashMovementId)
+      : null;
+    const projectFromJoin =
+      cm?.projects?.name ||
+      cm?.contracts?.projects?.name ||
+      cm?.sales?.projects?.name;
+    const md = enriched.metadata || {};
     const defaultPayment =
       md.payment_method ||
       (item.category === 'Comissão' ? 'Transferência / PIX' : 'Dinheiro/Não especificado');
 
-    try {
-      const validationCode = createDocumentValidationCode();
-      const persistId = item.cashMovementId || item.commissionId || item.id;
-      const receiptNumber = createExpenseReceiptNumber(persistId);
-      const receiptUrl = getReceiptValidationUrl(validationCode);
+    const validationCode = createDocumentValidationCode();
+    const persistId = item.cashMovementId || item.commissionId || item.id;
+    const receiptNumber = createExpenseReceiptNumber(persistId);
+    const validationUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/validar-recibo/${encodeURIComponent(validationCode)}`
+        : getReceiptValidationUrl(validationCode);
 
+    const receiptItem = buildNormalizedExpenseReceiptItem(enriched, {
+      projectNameFromDb: projectFromJoin,
+      paymentMethod: defaultPayment,
+    });
+
+    console.log('[RECIBO] item normalizado', receiptItem);
+
+    try {
       const doc = await generateExpenseReceiptPdf({
         item: receiptItem,
         tenantData,
         receiptNumber,
         validationCode,
-        paymentMethod: defaultPayment,
+        validationUrl,
       });
 
       const fileName = `recibo_pagamento_saida_${receiptNumber}.pdf`;
       doc.save(fileName);
-      pdfGenerated = true;
       console.log('[RECIBO] pdf salvo', fileName);
-
-      const receiptPayload = {
-        receipt_number: receiptNumber,
-        receipt_url: receiptUrl,
-        validation_code: validationCode,
-      };
-
-      try {
-        if (item.cashMovementId) {
-          const { error } = await supabase
-            .from('cash_movements')
-            .update(receiptPayload)
-            .eq('id', item.cashMovementId);
-          if (error) {
-            console.warn('[RECIBO] persistência caixa', error);
-          }
-        } else if (item.commissionId) {
-          const { error } = await supabase
-            .from('broker_commissions')
-            .update(receiptPayload)
-            .eq('id', item.commissionId);
-          if (error) {
-            console.warn('[RECIBO] persistência comissão', error);
-          }
-        }
-      } catch (persistErr) {
-        console.warn('[RECIBO] erro ao persistir validação (PDF já gerado)', persistErr);
-      }
-
-      console.log('[RECIBO] recibo gerado', receiptNumber);
-      console.log('[RECIBO] validacao criada', validationCode, receiptUrl);
-
-      try {
-        await loadFinance();
-      } catch (reloadErr) {
-        console.warn('[RECIBO] reload finance', reloadErr);
-      }
-
-      setFinanceToast('Recibo de saída gerado com sucesso.');
     } catch (err: unknown) {
       console.error('[RECIBO] erro completo', err);
-      if (!pdfGenerated) {
-        alert('Erro ao gerar recibo de saída: ' + formatSupabaseFinanceError(err));
-      } else {
-        console.warn('[RECIBO] PDF gerado; erro pós-download ignorado para o usuário', err);
-      }
+      alert('Erro ao gerar recibo de saída: ' + formatReceiptError(err));
+      return;
     }
+
+    const receiptPayload = {
+      receipt_number: receiptNumber,
+      receipt_url: validationUrl,
+      validation_code: validationCode,
+    };
+
+    try {
+      if (item.cashMovementId) {
+        const { error } = await supabase
+          .from('cash_movements')
+          .update(receiptPayload)
+          .eq('id', item.cashMovementId);
+        if (error) {
+          console.warn('[RECIBO] persistência caixa', error);
+        }
+      } else if (item.commissionId) {
+        const { error } = await supabase
+          .from('broker_commissions')
+          .update(receiptPayload)
+          .eq('id', item.commissionId);
+        if (error) {
+          console.warn('[RECIBO] persistência comissão', error);
+        }
+      }
+    } catch (persistErr) {
+      console.warn('[RECIBO] erro ao persistir validação (PDF já gerado)', persistErr);
+    }
+
+    console.log('[RECIBO] recibo gerado', receiptNumber);
+    console.log('[RECIBO] validacao criada', validationCode, validationUrl);
+
+    try {
+      await loadFinance();
+    } catch (reloadErr) {
+      console.warn('[RECIBO] reload finance', reloadErr);
+    }
+
+    setFinanceToast('Recibo de saída gerado com sucesso.');
   };
 
   const handleFlowView = (item: CashFlowItem) => {
