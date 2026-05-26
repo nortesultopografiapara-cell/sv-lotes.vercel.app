@@ -1,12 +1,23 @@
 /**
- * Chanfre: segmentos extras em lotes com mais de 4 lados (segments_json).
- * As 4 medidas principais vêm das colunas frente / fundo / laterais do lote.
+ * Chanfre: segmentos extras quando há mais de 4 lados em segments_json.
+ * Cada lado oficial recebe exatamente 1 segmento; o restante é chanfre (sem somar no lado).
  */
 
 export type ChanfreInfo = {
   total: number;
-  /** Medidas individuais dos segmentos considerados chanfre (m) */
   segments: number[];
+};
+
+export type LotSideMeasures = {
+  frente: number | null;
+  fundo: number | null;
+  ladoDireito: number | null;
+  ladoEsquerdo: number | null;
+};
+
+export type LotMeasuresResult = {
+  sides: LotSideMeasures;
+  chanfre: ChanfreInfo | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -58,85 +69,151 @@ export function parseSegmentLengthsFromJson(segmentsJson: unknown): number[] {
   return out;
 }
 
-function matchTolerance(expected: number): number {
-  return Math.max(0.12, expected * 0.03);
+function getColumnTargets(block: Record<string, unknown>): LotSideMeasures {
+  return {
+    frente: parseBlockSideLength(block.frente ?? block.Frente),
+    fundo: parseBlockSideLength(block.Fundo ?? block.fundo),
+    ladoDireito: parseBlockSideLength(
+      block["Lado Dir."] ??
+        block["Lado Dir"] ??
+        block.lado_direito ??
+        block.ladoDireito,
+    ),
+    ladoEsquerdo: parseBlockSideLength(
+      block["Lado Esq."] ??
+        block["Lado Esq"] ??
+        block.lado_esquerdo ??
+        block.ladoEsquerdo,
+    ),
+  };
+}
+
+/** Combinações de k índices entre 0..n-1 */
+function combinations(n: number, k: number): number[][] {
+  const result: number[][] = [];
+  const combo: number[] = [];
+
+  function backtrack(start: number) {
+    if (combo.length === k) {
+      result.push([...combo]);
+      return;
+    }
+    for (let i = start; i <= n - (k - combo.length); i++) {
+      combo.push(i);
+      backtrack(i + 1);
+      combo.pop();
+    }
+  }
+
+  backtrack(0);
+  return result;
+}
+
+/** Permutações de um array (atribuição lado ↔ segmento) */
+function permutations<T>(arr: T[]): T[][] {
+  if (arr.length <= 1) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const head = arr[i];
+    const rest = permutations(arr.filter((_, j) => j !== i));
+    for (const p of rest) out.push([head, ...p]);
+  }
+  return out;
 }
 
 /**
- * Identifica chanfre somando segmentos de segments_json que não correspondem
- * às 4 medidas principais já salvas no lote.
+ * >4 segmentos: escolhe 4 segmentos (1 por lado) minimizando diferença às colunas;
+ * segmentos não escolhidos = chanfre.
  */
+function resolveWithExtraSegments(
+  segmentLengths: number[],
+  columnTargets: LotSideMeasures,
+): LotMeasuresResult {
+  const targets = [
+    columnTargets.frente,
+    columnTargets.fundo,
+    columnTargets.ladoDireito,
+    columnTargets.ladoEsquerdo,
+  ];
+
+  const n = segmentLengths.length;
+  let bestCost = Infinity;
+  let bestPerm: number[] | null = null;
+  let bestCombo: number[] | null = null;
+
+  for (const combo of combinations(n, 4)) {
+    for (const perm of permutations(combo)) {
+      let cost = 0;
+      for (let s = 0; s < 4; s++) {
+        const target = targets[s];
+        if (target == null) continue;
+        cost += Math.abs(segmentLengths[perm[s]] - target);
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestPerm = perm;
+        bestCombo = combo;
+      }
+    }
+  }
+
+  if (!bestPerm || !bestCombo) {
+    return { sides: columnTargets, chanfre: null };
+  }
+
+  const used = new Set(bestCombo);
+  const chanfreSegments = segmentLengths.filter((_, i) => !used.has(i));
+
+  const sides: LotSideMeasures = {
+    frente: round2(segmentLengths[bestPerm[0]]),
+    fundo: round2(segmentLengths[bestPerm[1]]),
+    ladoDireito: round2(segmentLengths[bestPerm[2]]),
+    ladoEsquerdo: round2(segmentLengths[bestPerm[3]]),
+  };
+
+  if (chanfreSegments.length === 0) {
+    return { sides, chanfre: null };
+  }
+
+  const total = round2(chanfreSegments.reduce((sum, len) => sum + len, 0));
+  return {
+    sides,
+    chanfre: {
+      total,
+      segments: chanfreSegments.map(round2),
+    },
+  };
+}
+
+/** Medidas do lote + chanfre (fonte única para mapa e contrato). */
+export function resolveLotMeasuresFromBlock(
+  block: Record<string, unknown> | null | undefined,
+): LotMeasuresResult {
+  const empty: LotMeasuresResult = {
+    sides: { frente: null, fundo: null, ladoDireito: null, ladoEsquerdo: null },
+    chanfre: null,
+  };
+  if (!block) return empty;
+
+  const columnTargets = getColumnTargets(block);
+  const segmentLengths = parseSegmentLengthsFromJson(block.segments_json);
+
+  if (segmentLengths.length === 0) {
+    return { sides: columnTargets, chanfre: null };
+  }
+
+  if (segmentLengths.length <= 4) {
+    return { sides: columnTargets, chanfre: null };
+  }
+
+  return resolveWithExtraSegments(segmentLengths, columnTargets);
+}
+
+/** Compatibilidade: só retorna chanfre quando houver segmentos extras. */
 export function computeChanfreFromBlock(
   block: Record<string, unknown> | null | undefined,
 ): ChanfreInfo | null {
-  if (!block) return null;
-
-  const segmentLengths = parseSegmentLengthsFromJson(block.segments_json);
-  if (segmentLengths.length <= 4) {
-    const stored = parseBlockSideLength(
-      block.chanfre ?? block.chanfro ?? block.Chanfre,
-    );
-    if (stored && stored > 0) {
-      return { total: round2(stored), segments: [round2(stored)] };
-    }
-    return null;
-  }
-
-  const principals = [
-    parseBlockSideLength(block.frente ?? block.Frente),
-    parseBlockSideLength(block.Fundo ?? block.fundo),
-    parseBlockSideLength(
-      block["Lado Dir."] ?? block["Lado Dir"] ?? block.lado_direito ?? block.ladoDireito,
-    ),
-    parseBlockSideLength(
-      block["Lado Esq."] ?? block["Lado Esq"] ?? block.lado_esquerdo ?? block.ladoEsquerdo,
-    ),
-  ].filter((v): v is number => v != null);
-
-  const used = new Set<number>();
-
-  for (const principal of principals) {
-    let bestIdx = -1;
-    let bestDiff = Infinity;
-    for (let i = 0; i < segmentLengths.length; i++) {
-      if (used.has(i)) continue;
-      const diff = Math.abs(segmentLengths[i] - principal);
-      if (diff <= matchTolerance(principal) && diff < bestDiff) {
-        bestDiff = diff;
-        bestIdx = i;
-      }
-    }
-    if (bestIdx >= 0) used.add(bestIdx);
-  }
-
-  let extraSegments = segmentLengths.filter((_, i) => !used.has(i));
-
-  // Fallback: import TXT grava frente/dir/fundo/esq nos 4 primeiros índices
-  if (
-    extraSegments.length === 0 &&
-    principals.length >= 4 &&
-    segmentLengths.length > 4
-  ) {
-    extraSegments = segmentLengths.slice(4);
-  }
-
-  if (extraSegments.length === 0) {
-    const stored = parseBlockSideLength(
-      block.chanfre ?? block.chanfro ?? block.Chanfre,
-    );
-    if (stored && stored > 0) {
-      return { total: round2(stored), segments: [round2(stored)] };
-    }
-    return null;
-  }
-
-  const total = round2(extraSegments.reduce((sum, len) => sum + len, 0));
-  if (total <= 0) return null;
-
-  return {
-    total,
-    segments: extraSegments.map(round2),
-  };
+  return resolveLotMeasuresFromBlock(block).chanfre;
 }
 
 export function formatChanfreMeters(value: number): string {
@@ -146,13 +223,21 @@ export function formatChanfreMeters(value: number): string {
   })} m`;
 }
 
+export function formatChanfreClause(chanfre: ChanfreInfo): string {
+  if (chanfre.segments.length === 1) {
+    return `, chanfre <strong>${formatChanfreMeters(chanfre.segments[0])}</strong>`;
+  }
+  const parts = chanfre.segments.map((s) => formatChanfreMeters(s)).join(", ");
+  return `, chanfre <strong>${parts}</strong>`;
+}
+
 /** Texto de tooltip com medidas individuais do chanfre. */
 export function chanfreTooltipText(info: ChanfreInfo): string {
   if (info.segments.length <= 1) {
-    return `Chanfre total: ${formatChanfreMeters(info.total)}`;
+    return `Chanfre: ${formatChanfreMeters(info.total)}`;
   }
   const parts = info.segments
     .map((s, i) => `${i + 1}: ${formatChanfreMeters(s)}`)
     .join(" · ");
-  return `Chanfre total: ${formatChanfreMeters(info.total)} (${parts})`;
+  return `Chanfre: ${formatChanfreMeters(info.total)} (${parts})`;
 }

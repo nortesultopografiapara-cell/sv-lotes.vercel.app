@@ -22,8 +22,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import {
   chanfreTooltipText,
-  computeChanfreFromBlock,
   formatChanfreMeters,
+  resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 
@@ -1532,7 +1532,7 @@ export default function GISMap({
                 }
               }
 
-              const chanfreInfo = computeChanfreFromBlock({
+              const lotMeasures = resolveLotMeasuresFromBlock({
                 ...b,
                 frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
                 Fundo:
@@ -1566,11 +1566,11 @@ export default function GISMap({
                 geometryType: b.geometry?.type,
                 bounds,
                 segments_json: b.segments_json,
-                frente: b.frente !== null ? b.frente : (dimsFromGeo ? dimsFromGeo.frente : null),
-                Fundo: b.Fundo !== null && b.Fundo !== undefined ? b.Fundo : (dimsFromGeo ? dimsFromGeo.fundo : null),
-                'Lado Dir.': b['Lado Dir.'] !== null && b['Lado Dir.'] !== undefined ? b['Lado Dir.'] : (dimsFromGeo ? dimsFromGeo.ladoDireito : null),
-                'Lado Esq.': b['Lado Esq.'] !== null && b['Lado Esq.'] !== undefined ? b['Lado Esq.'] : (dimsFromGeo ? dimsFromGeo.ladoEsquerdo : null),
-                chanfreInfo,
+                frente: lotMeasures.sides.frente,
+                Fundo: lotMeasures.sides.fundo,
+                "Lado Dir.": lotMeasures.sides.ladoDireito,
+                "Lado Esq.": lotMeasures.sides.ladoEsquerdo,
+                chanfreInfo: lotMeasures.chanfre,
               };
             })
             .filter((b) => b.bounds.length > 0);

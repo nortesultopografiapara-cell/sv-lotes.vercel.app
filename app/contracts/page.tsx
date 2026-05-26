@@ -26,7 +26,7 @@ import {
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import jsPDF from "jspdf";
 import { generateContractHTML } from "@/lib/contractTemplate";
-import { computeChanfreFromBlock } from "@/lib/lotChanfre";
+import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 
 /** Campos de medidas do lote — colunas com e sem aspas no Postgres/Supabase */
 const BLOCKS_CONTRACT_SELECT = `
@@ -216,11 +216,15 @@ function enrichBlockForContract(block: Record<string, any> | null | undefined): 
       block.lado_esquerdo ??
       "",
   };
-  const chanfreInfo = computeChanfreFromBlock(normalized);
+  const lotMeasures = resolveLotMeasuresFromBlock(normalized);
   return {
     ...normalized,
-    chanfre: chanfreInfo?.total ?? null,
-    chanfre_segments: chanfreInfo?.segments ?? [],
+    frente: lotMeasures.sides.frente ?? normalized.frente,
+    Fundo: lotMeasures.sides.fundo ?? normalized.Fundo,
+    "Lado Dir.": lotMeasures.sides.ladoDireito ?? normalized["Lado Dir."],
+    "Lado Esq.": lotMeasures.sides.ladoEsquerdo ?? normalized["Lado Esq."],
+    chanfre: lotMeasures.chanfre?.total ?? null,
+    chanfre_segments: lotMeasures.chanfre?.segments ?? [],
   };
 }
 

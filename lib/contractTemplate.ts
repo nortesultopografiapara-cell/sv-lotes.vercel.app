@@ -1,6 +1,9 @@
 const extenso = require("extenso");
 
-import { computeChanfreFromBlock } from "@/lib/lotChanfre";
+import {
+  formatChanfreClause,
+  resolveLotMeasuresFromBlock,
+} from "@/lib/lotChanfre";
 
 const formatMeasure = (val: any) => {
   if (val === null || val === undefined || val === "") {
@@ -145,32 +148,38 @@ export function generateContractHTML({
     (isValid(sale?.blocks?.number) ? sale.blocks.number : null) ||
     "";
 
+  const lotMeasures = resolveLotMeasuresFromBlock(block);
+  const { sides, chanfre: chanfreInfo } = lotMeasures;
+
   const frente =
+    sides.frente ??
     block?.frente ??
     block?.Frente ??
     "";
 
   const fundo =
+    sides.fundo ??
     block?.["Fundo"] ??
     block?.fundo ??
     "";
 
   const ladoDireito =
+    sides.ladoDireito ??
     block?.["Lado Dir."] ??
     block?.ladoDireito ??
     block?.lado_dir ??
     "";
 
   const ladoEsquerdo =
+    sides.ladoEsquerdo ??
     block?.["Lado Esq."] ??
     block?.ladoEsquerdo ??
     block?.lado_esq ??
     "";
 
-  const chanfreInfo = computeChanfreFromBlock(block);
   const chanfreClause =
     chanfreInfo && chanfreInfo.total > 0
-      ? `, chanfre total de <strong>${formatMeasure(chanfreInfo.total)}</strong>`
+      ? formatChanfreClause(chanfreInfo)
       : "";
 
   // Cidade, UF e Foro hierarquia correta
