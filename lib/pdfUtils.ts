@@ -1,5 +1,9 @@
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
+import {
+    createDocumentValidationCode,
+    getValidationUrl,
+} from '@/lib/pdfValidation';
 
 export const addProfessionalFooterAndSignature = async (
     doc: jsPDF, 
@@ -8,11 +12,13 @@ export const addProfessionalFooterAndSignature = async (
 ) => {
     const pageCount = doc.internal.getNumberOfPages();
     const timestamp = new Date().toLocaleString('pt-BR');
-    const hash = crypto.randomUUID().split('-')[0].toUpperCase() + '-' + crypto.randomUUID().split('-')[1].toUpperCase();
+    const hash = createDocumentValidationCode();
+    const validationUrl = getValidationUrl(hash);
 
     let qrBase64 = null;
     try {
-        qrBase64 = await QRCode.toDataURL(`doc_${hash}|${companyName}|${documentType}|${timestamp}`);
+        qrBase64 = await QRCode.toDataURL(validationUrl, { margin: 1, width: 256 });
+        console.log("[PDF] URL validação", validationUrl);
         console.log("PDF_QRCODE_GENERATED");
     } catch(err) {
         console.error("Erro QR Code", err);
@@ -45,11 +51,11 @@ export const addProfessionalFooterAndSignature = async (
     doc.text(`Responsável: ${companyName}`, 14, 60);
     doc.text(`Data/Hora: ${timestamp}`, 14, 65);
     doc.text(`Código de Validação: ${hash}`, 14, 70);
+    doc.text("Escaneie para validar este relatório", 14, 76);
     
     if (qrBase64) {
-        // Add QR to the bottom right of the signature page
         const pageWidth = doc.internal.pageSize.getWidth();
-        doc.addImage(qrBase64, 'PNG', pageWidth - 50, 40, 35, 35);
+        doc.addImage(qrBase64, 'PNG', pageWidth - 52, 38, 38, 38);
     }
     console.log("PDF_DIGITAL_SIGNATURE_CREATED");
 

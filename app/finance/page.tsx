@@ -3,9 +3,22 @@
 'use client';
 
 import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import {
+  buildCashFlowItems,
+  cashFlowItemsToReportRows,
+  filterFlowReportRows,
+  formatFlowDate,
+  flowDisplayLabel,
+  SAIDA_CATEGORIES,
+  type CashFlowItem,
+} from '@/lib/financeCashFlow';
+import { displayContractNumber } from '@/lib/contractNumber';
+
+export type { CashFlowItem };
+export { buildCashFlowItems };
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -71,221 +84,19 @@ export function calculateFinancialTotals(receipts: any[], cashMvs: any[], comms:
     return { totalEntradas, totalSaidas, saldoFinal: totalEntradas - totalSaidas };
 }
 
-export type CashFlowItem = {
-  id: string;
-  source: 'finance_receipts' | 'cash_movements' | 'broker_commissions';
-  cashMovementId: string | null;
-  movement_date: string;
-  tipo: 'entrada' | 'saida';
-  category: string;
-  description: string;
-  amount: number;
-  status: string;
-  projectName: string;
-  customerName: string;
-  locationLabel: string;
-  contractNumber: string;
-  brokerName: string;
+const INITIAL_SAIDA_FORM = {
+  category: 'Despesa administrativa',
+  description: '',
+  amount: '',
+  project_id: '',
+  contract_id: '',
+  broker_id: '',
+  customer_id: '',
+  sale_id: '',
+  customer_display: '',
+  location_display: '',
+  movement_date: new Date().toISOString().split('T')[0],
 };
-
-function isCashMovementSaida(typeStr: string): boolean {
-  return ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(
-    (val) => typeStr.includes(val),
-  );
-}
-
-function resolveBlockLocation(block: any): string {
-  if (!block) return '';
-  const quad =
-    block.block_name || block.block || block.quadra || block.name || '';
-  const lot = block.lot_number || block.number || block.lot || '';
-  if (quad && lot) return `QD ${quad} • LT ${lot}`;
-  if (quad) return `QD ${quad}`;
-  if (lot) return `LT ${lot}`;
-  return '';
-}
-
-/** Lista unificada de fluxo — mesma base dos cards Entradas/Saídas. */
-export function buildCashFlowItems(
-  receipts: any[],
-  cashMvs: any[],
-  comms: any[],
-): CashFlowItem[] {
-  const items: CashFlowItem[] = [];
-
-  (receipts || []).forEach((p) => {
-    const status = (p.status || '').toLowerCase();
-    if (status !== 'pago' && status !== 'paid') return;
-
-    const amount = Number(p.paid_amount) || Number(p.amount) || 0;
-    if (amount <= 0) return;
-
-    const projectName =
-      p.projects?.name ||
-      p.sales?.projects?.name ||
-      p.blocks?.projects?.name ||
-      'Geral/Outros';
-    const contractNumber =
-      p.contracts?.contract_number ||
-      p.sales?.contracts?.[0]?.contract_number ||
-      p.sales?.contracts?.contract_number ||
-      '-';
-
-    items.push({
-      id: `rec_${p.id}`,
-      source: 'finance_receipts',
-      cashMovementId: null,
-      movement_date: p.paid_at || p.due_date || p.created_at || '',
-      tipo: 'entrada',
-      category:
-        p.installment_number === 0 || p.installment_number === '0'
-          ? 'Sinal/Entrada'
-          : 'Parcela',
-      description:
-        p.description ||
-        `Recebimento parcela ${p.installment_number ?? '1'}`.trim(),
-      amount,
-      status: 'ativo',
-      projectName,
-      customerName: p.customers?.name || p.customers?.full_name || '',
-      locationLabel: resolveBlockLocation(p.blocks),
-      contractNumber: String(contractNumber),
-      brokerName: p.brokers?.name || '',
-    });
-  });
-
-  (cashMvs || []).forEach((c) => {
-    const st = (c.status || 'ativo').toLowerCase();
-    if (st === 'estornado' || st === 'cancelado' || st === 'deleted') return;
-
-    const typeStr = (c.type || '').toLowerCase();
-    const isSaida = isCashMovementSaida(typeStr);
-    const isEntrada = typeStr.includes('entrada') && !isSaida;
-    if (!isSaida && !isEntrada) return;
-    if (isEntrada && c.finance_receipt_id) return;
-
-    const amount = Number(c.amount) || 0;
-    if (amount <= 0) return;
-
-    let projectName =
-      c.projects?.name ||
-      c.sales?.projects?.name ||
-      c.contracts?.projects?.name ||
-      '';
-    const contractNumber =
-      c.contracts?.contract_number ||
-      c.sales?.contracts?.contract_number ||
-      c.sales?.contracts?.[0]?.contract_number ||
-      '-';
-
-    if (
-      !projectName &&
-      (c.category === 'Comissão' || c.category === 'Comissao') &&
-      comms?.length
-    ) {
-      const matchingComm = comms.find(
-        (cm) =>
-          (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
-          Math.abs(Number(c.amount) - Number(cm.amount)) < 1,
-      );
-      if (matchingComm) {
-        projectName =
-          matchingComm.sales?.projects?.name ||
-          matchingComm.contracts?.projects?.name ||
-          projectName;
-      }
-    }
-    if (!projectName) projectName = 'Geral/Outros';
-
-    items.push({
-      id: `cash_${c.id}`,
-      source: 'cash_movements',
-      cashMovementId: c.id,
-      movement_date: c.movement_date || c.created_at || '',
-      tipo: isSaida ? 'saida' : 'entrada',
-      category: c.category || (isSaida ? 'Despesa' : 'Entrada manual'),
-      description: c.description || '-',
-      amount,
-      status: st === 'estornado' ? 'estornado' : 'ativo',
-      projectName,
-      customerName: c.customers?.name || c.customers?.full_name || '',
-      locationLabel: resolveBlockLocation(c.blocks),
-      contractNumber: String(contractNumber),
-      brokerName: c.brokers?.name || '',
-    });
-  });
-
-  (comms || []).forEach((cm) => {
-    const cmStatus = (cm.status || '').toLowerCase();
-    const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(
-      cmStatus,
-    );
-    if (!isCommPaid) return;
-
-    const amount = Number(cm.amount) || 0;
-    if (amount <= 0) return;
-
-    const duplicatedInCash = (cashMvs || []).some((c) => {
-      const typeStr = (c.type || '').toLowerCase();
-      if (!isCashMovementSaida(typeStr)) return false;
-      return (
-        (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
-        Math.abs(Number(c.amount) - amount) < 1
-      );
-    });
-    if (duplicatedInCash) return;
-
-    const sContracts = Array.isArray(cm.sales?.contracts)
-      ? cm.sales.contracts
-      : [cm.sales?.contracts].filter(Boolean);
-    const firstContract = sContracts[0] || {};
-    const contractNumber =
-      firstContract.contract_number ||
-      firstContract.number ||
-      cm.contracts?.contract_number ||
-      'Não Informado';
-
-    const sBlocks = Array.isArray(cm.sales?.blocks)
-      ? cm.sales.blocks
-      : [cm.sales?.blocks].filter(Boolean);
-    const firstBlock = sBlocks[0] || {};
-
-    const brokerName =
-      cm.brokers?.name || cm.brokers?.full_name || 'Corretor';
-    const customerName =
-      cm.sales?.customers?.name ||
-      cm.sales?.customers?.full_name ||
-      'Cliente';
-
-    items.push({
-      id: `comm_${cm.id}`,
-      source: 'broker_commissions',
-      cashMovementId: null,
-      movement_date: cm.paid_at || cm.created_at || '',
-      tipo: 'saida',
-      category: 'Comissão',
-      description: `Pagamento de comissão — ${brokerName}`,
-      amount,
-      status: 'ativo',
-      projectName:
-        cm.sales?.projects?.name ||
-        cm.contracts?.projects?.name ||
-        'Geral/Outros',
-      customerName,
-      locationLabel: resolveBlockLocation(firstBlock),
-      contractNumber: String(contractNumber),
-      brokerName,
-    });
-  });
-
-  items.sort(
-    (a, b) =>
-      new Date(b.movement_date || 0).getTime() -
-      new Date(a.movement_date || 0).getTime(),
-  );
-
-  return items;
-}
 
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
@@ -330,14 +141,15 @@ export default function FinancePage() {
   const [cashFlowItems, setCashFlowItems] = useState<CashFlowItem[]>([]);
   const [activeTab, setActiveTab] = useState<'parcelas'|'caixa'>('parcelas');
   const [showSaidaModal, setShowSaidaModal] = useState(false);
-  const [saidaForm, setSaidaForm] = useState({
-      category: 'Outros',
-      description: '',
-      amount: '',
-      project_id: '',
-      movement_date: new Date().toISOString().split('T')[0],
-      comments: ''
-  });
+  const [saidaForm, setSaidaForm] = useState({ ...INITIAL_SAIDA_FORM });
+  const [financeBrokers, setFinanceBrokers] = useState<any[]>([]);
+  const [financeContracts, setFinanceContracts] = useState<any[]>([]);
+  const [loadingSaidaLookups, setLoadingSaidaLookups] = useState(false);
+
+  const contractsForSaida = useMemo(() => {
+    if (!saidaForm.project_id) return financeContracts;
+    return financeContracts.filter((c) => c.project_id === saidaForm.project_id);
+  }, [financeContracts, saidaForm.project_id]);
 
   const [showProjectReportModal, setShowProjectReportModal] = useState(false);
   const [prFilterProject, setPrFilterProject] = useState('Todos');
@@ -364,6 +176,43 @@ export default function FinancePage() {
     }
     loadTenant();
   }, [user]);
+
+  useEffect(() => {
+    if (!showSaidaModal || !user) return;
+    const resolvedTenantId = user.tenant_id || (user as any).company_id;
+    if (!resolvedTenantId) return;
+
+    (async () => {
+      setLoadingSaidaLookups(true);
+      try {
+        const tenantOr = `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`;
+        const [brokersRes, contractsRes] = await Promise.all([
+          supabase
+            .from('brokers')
+            .select('id, name, full_name')
+            .is('deleted_at', null)
+            .or(tenantOr)
+            .order('name', { ascending: true }),
+          supabase
+            .from('contracts')
+            .select(`
+              id, contract_number, project_id, customer_id, sale_id, block_id,
+              customers(id, name, full_name),
+              blocks(id, block_name, number, lot_number),
+              projects(id, name)
+            `)
+            .or(tenantOr)
+            .order('created_at', { ascending: false }),
+        ]);
+        setFinanceBrokers(brokersRes.data || []);
+        setFinanceContracts(contractsRes.data || []);
+      } catch (e) {
+        console.error('Erro ao carregar dados do modal de saída', e);
+      } finally {
+        setLoadingSaidaLookups(false);
+      }
+    })();
+  }, [showSaidaModal, user]);
 
   const loadFinance = async () => {
       if (!user) return;
@@ -508,7 +357,25 @@ export default function FinancePage() {
         let cashData: any[] = [];
         try {
            let queryCash = supabase.from('cash_movements')
-               .select(`*, projects(name), sales(projects(name), contracts(contract_number)), contracts(projects(name), contract_number)`)
+               .select(`
+                 *,
+                 projects(name),
+                 customers:customer_id(id, name, full_name),
+                 brokers:broker_id(id, name, full_name),
+                 contracts:contract_id(
+                   id, contract_number, customer_id, block_id, project_id,
+                   customers(id, name, full_name),
+                   blocks(id, block_name, number, lot_number),
+                   projects(id, name)
+                 ),
+                 sales:sale_id(
+                   id, project_id, block_id, customer_id,
+                   customers(id, name, full_name),
+                   blocks(id, block_name, number, lot_number),
+                   projects(id, name),
+                   contracts(contract_number)
+                 )
+               `)
                .order('movement_date', { ascending: false });
                
            if (resolvedTenantId) {
@@ -575,7 +442,7 @@ export default function FinancePage() {
             .filter((i) => i.tipo === 'saida')
             .reduce((s, i) => s + i.amount, 0),
         });
-        console.log('[FINANCEIRO] fluxo de caixa final', flowItems.length, flowItems);
+        console.log('[FINANCEIRO] fluxo enriquecido', flowItems.length, flowItems);
         setCashFlowItems(flowItems);
 
         setStats({ 
@@ -900,57 +767,97 @@ export default function FinancePage() {
      ];
   };
 
+  const applyContractToSaidaForm = (contractId: string) => {
+    if (!contractId) {
+      setSaidaForm((prev) => ({
+        ...prev,
+        contract_id: '',
+        customer_id: '',
+        sale_id: '',
+        customer_display: '',
+        location_display: '',
+      }));
+      return;
+    }
+    const c = financeContracts.find((x) => x.id === contractId);
+    if (!c) return;
+    const block = c.blocks;
+    const quad = block?.block_name || block?.name || '';
+    const lot = block?.lot_number || block?.number || '';
+    const loc =
+      quad && lot ? `QD ${quad} • LT ${lot}` : quad ? `QD ${quad}` : lot ? `LT ${lot}` : '';
+    setSaidaForm((prev) => ({
+      ...prev,
+      contract_id: contractId,
+      project_id: c.project_id || prev.project_id,
+      customer_id: c.customer_id || '',
+      sale_id: c.sale_id || '',
+      customer_display: c.customers?.name || c.customers?.full_name || '',
+      location_display: loc,
+    }));
+  };
+
   const handleRegistrarSaida = async (e: React.FormEvent) => {
     e.preventDefault();
+    const desc = saidaForm.description?.trim();
+    if (!desc) return alert('Informe a descrição / destino da saída.');
     if (!saidaForm.amount || Number(saidaForm.amount) <= 0) return alert('Valor inválido');
-    
+    const movementDate = (saidaForm.movement_date || '').split('T')[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) {
+      return alert('Informe uma data válida para a saída.');
+    }
+    if (saidaForm.category === 'Comissão' && !saidaForm.broker_id) {
+      return alert('Para comissão, selecione o corretor.');
+    }
+
     try {
       const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
-      
-      const payload: any = {
-          tenant_id: resolvedTenantId,
-          company_id: resolvedTenantId,
-          type: 'saida',
-          category: saidaForm.category,
-          description: saidaForm.description,
-          amount: parseFloat(saidaForm.amount),
-          movement_date: saidaForm.movement_date,
-          created_by: user?.id
+
+      const payload: Record<string, unknown> = {
+        tenant_id: resolvedTenantId,
+        company_id: resolvedTenantId,
+        type: 'saida',
+        category: saidaForm.category,
+        description: desc,
+        amount: parseFloat(saidaForm.amount),
+        movement_date: movementDate,
+        created_by: user?.id,
       };
-      
-      if (saidaForm.project_id) {
-          payload.project_id = saidaForm.project_id;
-          const pName = financeProjects.find((p: any) => p.id === saidaForm.project_id)?.name;
-          if (pName) payload.project_name = pName;
-          console.log('EXPENSE_PROJECT_SELECTED', saidaForm.project_id);
-      }
-      
+
+      if (saidaForm.project_id) payload.project_id = saidaForm.project_id;
+      if (saidaForm.contract_id) payload.contract_id = saidaForm.contract_id;
+      if (saidaForm.sale_id) payload.sale_id = saidaForm.sale_id;
+      if (saidaForm.customer_id) payload.customer_id = saidaForm.customer_id;
+      if (saidaForm.broker_id) payload.broker_id = saidaForm.broker_id;
+
       const { error } = await supabase.from('cash_movements').insert(payload);
-      
-      if (saidaForm.project_id) {
-          console.log('CASH_MOVEMENT_PROJECT_LINKED', saidaForm.project_id);
-      }
-      
       if (error) throw error;
-      
+
+      console.log('[FINANCEIRO] saída salva', payload);
+
       try {
-         await supabase.from('audit_logs').insert([{
-             tenant_id: resolvedTenantId,
-             company_id: resolvedTenantId,
-             user_id: user?.id,
-             action: 'CASH_OUT_CREATED',
-             module: 'FINANCE',
-             description: `Saída de ${saidaForm.amount} - ${saidaForm.category}`
-         }]);
-      } catch(e) {}
-      
+        await supabase.from('audit_logs').insert([
+          {
+            tenant_id: resolvedTenantId,
+            company_id: resolvedTenantId,
+            user_id: user?.id,
+            action: 'CASH_OUT_CREATED',
+            module: 'FINANCE',
+            description: `Saída de ${saidaForm.amount} - ${saidaForm.category}`,
+          },
+        ]);
+      } catch (auditErr) {
+        console.warn(auditErr);
+      }
+
       setShowSaidaModal(false);
-      setSaidaForm({ category: 'Outros', description: '', amount: '', project_id: '', movement_date: new Date().toISOString().split('T')[0], comments: '' });
+      setSaidaForm({ ...INITIAL_SAIDA_FORM });
       await loadFinance();
       alert('Saída registrada com sucesso.');
-    } catch(e: any) {
-       console.error(e);
-       alert('Erro ao registrar saída: ' + e.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(err);
+      alert('Erro ao registrar saída: ' + message);
     }
   };
 
@@ -1851,232 +1758,28 @@ export default function FinancePage() {
       setIsGeneratingPr(true);
       try {
           console.log("FLOW_PROJECT_SELECTED", prFilterProject);
-          const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
-          
-          let startDate = prStartDate ? new Date(prStartDate + 'T00:00:00Z') : null;
-          let endDate = prEndDate ? new Date(prEndDate + 'T23:59:59Z') : null;
 
-          console.log("FLOW_CARD_SOURCE_ENTRIES", payments);
-          console.log("FLOW_CARD_SOURCE_OUTCOMES", cashMovements);
-
-          // 1. Entradas (finance_receipts)
-          const mappedPayments = payments.map(p => {
-              const pStatus = p.status?.toLowerCase() || 'pendente';
-              const amt = Number(p.paid_amount) || Number(p.amount) || 0;
-              
-              let status = pStatus;
-              if (status === 'pago' || status === 'paid') status = 'Pago';
-              else if (status === 'pendente' || status === 'pending') status = 'Pendente';
-              else status = 'Estornado';
-              
-              const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
-              const dDate = new Date(p.paid_at || p.due_date || p.created_at);
-              
-              const contratoNum = p.contracts?.contract_number || p.contracts?.number || p.contracts?.code || p.contracts?.id || 
-                                  p.sales?.contracts?.contract_number || p.sales?.contracts?.number || p.sales?.contracts?.code || p.sales?.contracts?.id || '-';
-
-              return {
-                  id_check: `rec_${p.id}`,
-                  data: dDate,
-                  projeto: projName,
-                  tipo: 'Entrada', // finance receipts are Entradas
-                  categoria: p.installment_number === 0 || p.installment_number === '0' ? 'Sinal/Entrada' : 'Parcela',
-                  cliente: p.customers?.name || p.customers?.full_name || 'NI',
-                  corretor: p.brokers?.name || 'NI',
-                  contrato: contratoNum,
-                  quadra: p.blocks?.block_name || p.blocks?.name || '-',
-                  lote: p.blocks?.number || '-',
-                  descricao: p.description || `Parcela ${p.installment_number || '1'}`,
-                  valor: amt,
-                  status: status
-              };
+          const allReportRows = cashFlowItemsToReportRows(cashFlowItems);
+          const flowRows = filterFlowReportRows(allReportRows, {
+            project: prFilterProject,
+            type: prType,
+            status: prStatus,
+            startDate: prStartDate,
+            endDate: prEndDate,
           });
-          
-          // Use comissoes fetched globally
-          let comms = brokerCommissions;
 
-          // 2. Caixas (cash_movements)
-          console.log("FLOW_OUTCOMES_FOUND", cashMovements.filter(c => c.type === 'saida'));
-          
-          const mappedCashMovements = cashMovements.filter(c => !c.finance_receipt_id).map(c => {
-              let status = c.status === 'ativo' ? 'Pago' : 'Estornado';
-              
-              const tipoStr = (c.type || '').toLowerCase();
-              const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(val => tipoStr.includes(val));
-              const type = isSaidaStr ? 'Saída' : (tipoStr.includes('entrada') ? 'Entrada' : 'Saída');
-              
-              let projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name;
-              
-              let contractName = c.contracts?.contract_number || c.contracts?.number || c.contracts?.code || c.contracts?.id || 
-                                 c.sales?.contracts?.contract_number || c.sales?.contracts?.number || c.sales?.contracts?.code || c.sales?.contracts?.id || '-';
-              
-              // Cross-reference with broker_commissions to find the project if missing
-              if (!projName && (c.category === 'Comissão' || c.category === 'Comissao' || isSaidaStr) && comms) {
-                  const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && Math.abs(c.amount - cm.amount) < 1);
-                  if (matchingComm) {
-                      projName = matchingComm.sales?.projects?.name || matchingComm.contracts?.projects?.name;
-                      contractName = matchingComm.sales?.contracts?.contract_number || matchingComm.sales?.contracts?.number || matchingComm.sales?.contracts?.code || matchingComm.sales?.contracts?.id ||
-                                     matchingComm.contracts?.contract_number || matchingComm.contracts?.number || matchingComm.contracts?.code || matchingComm.contracts?.id || contractName;
-                  }
-              }
-              
-              if (!projName) projName = 'Geral/Outros';
-
-              const mDate = new Date(c.movement_date || c.created_at);
-              
-              return {
-                  id_check: `cash_${c.id}`,
-                  data: mDate,
-                  projeto: projName,
-                  tipo: type,
-                  categoria: c.category || '-',
-                  cliente: c.customers?.name || '-',
-                  corretor: c.brokers?.name || '-',
-                  contrato: contractName,
-                  quadra: '-',
-                  lote: '-',
-                  descricao: c.description || '-',
-                  valor: Number(c.amount) || 0,
-                  status: status
-              };
-          });
-          
-          let movements = [...mappedPayments, ...mappedCashMovements];
-          console.log('FLOW_REPORT_ENTRIES_ROWS', mappedPayments.length, mappedPayments);
-          console.log('PDF_CASH_MOVEMENTS_ROWS', mappedCashMovements.length, mappedCashMovements);
-
-          console.log("PDF_BROKER_COMMISSIONS_RAW", comms);
-
-          // 3. Comissões pagas (legacy or missing in cash_movements)
-          if (comms) {
-              const mappedComms: any[] = [];
-              comms.forEach(cm => {
-                  let status = 'Pendente';
-                  const cmStatus = cm.status?.toLowerCase() || 'pendente';
-                  const isCommPaid = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'].includes(cmStatus);
-                  if (isCommPaid) status = 'Pago';
-                  else if (cm.status === 'pendente') status = 'Pendente';
-                  
-                  const sContracts = Array.isArray(cm.sales?.contracts) ? cm.sales.contracts : [cm.sales?.contracts].filter(Boolean);
-                  const firstContract = sContracts[0] || {};
-                  const commContrato = firstContract.contract_number || firstContract.number || firstContract.code || firstContract.id || 
-                                       cm.contracts?.contract_number || cm.contracts?.number || cm.contracts?.code || cm.contracts?.id || 'Não Informado';
-                  
-                  if (status === 'Pago') {
-                      const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
-                      const mDate = new Date(cm.paid_at || cm.created_at);
-                      
-                      const customerName = cm.sales?.customers?.name || cm.sales?.customers?.full_name || 'Cliente Não Informado';
-                      
-                      const sBlocks = Array.isArray(cm.sales?.blocks) ? cm.sales.blocks : [cm.sales?.blocks].filter(Boolean);
-                      const firstBlock = sBlocks[0] || {};
-                      const quadraName = firstBlock.quadra || firstBlock.quadra_number || firstBlock.block_number || firstBlock.block_name || firstBlock.block || firstBlock.name || 'S/Q';
-                      const loteName = firstBlock.lote || firstBlock.lot_number || firstBlock.number || firstBlock.name || 'S/L';
-                      
-                      const corretorNome = cm.brokers?.name || cm.brokers?.full_name || 'Corretor Não Informado';
-                      
-                      console.log("PDF_COMMISSION_RELATIONS_RESOLVED");
-                      
-                      mappedComms.push({
-                          id_check: `comm_${cm.id}`,
-                          data: mDate,
-                          projeto: projName,
-                          tipo: 'Saída',
-                          categoria: 'Comissão',
-                          cliente: customerName,
-                          corretor: corretorNome,
-                          contrato: commContrato,
-                          quadra: quadraName,
-                          lote: loteName,
-                          descricao: `Pagamento de comissão ao corretor ${corretorNome}`,
-                          valor: Number(cm.amount) || 0,
-                          status: status
-                      });
-                  }
-              });
-              movements = [...movements, ...mappedComms];
-              console.log('PDF_BROKER_COMMISSIONS_ROWS', mappedComms.length, mappedComms);
-          }
-
-          console.log('PDF_FINAL_ROWS', movements);
-
-          // FILTER
-          const flowRows = movements.filter(m => {
-              if (prFilterProject !== 'Todos' && m.projeto !== prFilterProject) return false;
-              if (prType !== 'Todos' && prType !== m.tipo + 's') return false; 
-              
-              if (prStatus === 'Todos') {
-                  // If it's a cash flow report, "Todos" should still logically focus on REALIZED money (Pago),
-                  // since the user explicitly requested "finance_receipts pagos", "comissão paga", etc.
-                  // But to avoid blocking "Estornado" if it is actually useful, let's just make sure "Pendente" is excluded 
-                  // to keep the totals matching the actual cash balance of 10k/2.1k
-                  if (m.status === 'Pendente') return false;
-              } else {
-                  if (m.status !== prStatus) return false;
-              }
-              
-              if (startDate && m.data < startDate) return false;
-              if (endDate && m.data > endDate) return false;
-              
-              return true;
-          });
-          
-          console.log("FLOW_REPORT_ROWS_AFTER_FILTER", flowRows);
-
-          // Sort by date
           flowRows.sort((a, b) => a.data.getTime() - b.data.getTime());
+          console.log('[FINANCEIRO] fluxo enriquecido PDF', flowRows.length, flowRows);
 
-          // Using global unification function
-          const rawReportPayments = payments.filter(p => {
-              const dDate = new Date(p.paid_at || p.due_date || p.created_at);
-              const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Geral/Outros';
-              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
-              if (prType !== 'Todos' && prType !== 'Entradas') return false;
-              if (startDate && dDate < startDate) return false;
-              if (endDate && dDate > endDate) return false;
-              return true;
-          });
+          const totalEntradas = flowRows
+            .filter((r) => r.tipo === 'Entrada')
+            .reduce((s, r) => s + r.valor, 0);
+          const totalSaidas = flowRows
+            .filter((r) => r.tipo === 'Saída')
+            .reduce((s, r) => s + r.valor, 0);
+          const saldo = totalEntradas - totalSaidas;
 
-          const rawReportCash = cashMovements.filter(c => {
-              const mDate = new Date(c.movement_date || c.created_at);
-              let projName = c.projects?.name || c.sales?.projects?.name || c.contracts?.projects?.name;
-              if (!projName && (c.category === 'Comissão' || c.category === 'Comissao') && comms) {
-                  const matchingComm = comms.find(cm => (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) && Math.abs(c.amount - cm.amount) < 1);
-                  if (matchingComm) projName = matchingComm.sales?.projects?.name || matchingComm.contracts?.projects?.name;
-              }
-              if (!projName) projName = 'Geral/Outros';
-              
-              const tipoStr = (c.type || '').toLowerCase();
-              const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense', 'commission', 'comissao', 'comissão'].some(val => tipoStr.includes(val));
-              const mTipo = isSaidaStr ? 'Saídas' : (tipoStr.includes('entrada') ? 'Entradas' : 'Saídas');
-              
-              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
-              if (prType !== 'Todos' && prType !== mTipo) return false;
-              if (startDate && mDate < startDate) return false;
-              if (endDate && mDate > endDate) return false;
-              return true;
-          });
-          
-          console.log("FLOW_REPORT_MANUAL_EXPENSES", rawReportCash);
-
-          const rawReportComms = (comms || []).filter(cm => {
-              const mDate = new Date(cm.paid_at || cm.created_at);
-              const projName = cm.sales?.projects?.name || cm.contracts?.projects?.name || 'Geral/Outros';
-              if (prFilterProject !== 'Todos' && projName !== prFilterProject) return false;
-              if (prType !== 'Todos' && prType !== 'Saídas') return false;
-              if (startDate && mDate < startDate) return false;
-              if (endDate && mDate > endDate) return false;
-              return true;
-          });
-          
-          console.log("FLOW_REPORT_PAID_COMMISSIONS", rawReportComms);
-
-          const totals = calculateFinancialTotals(rawReportPayments, rawReportCash, rawReportComms);
-          const totalEntradas = totals.totalEntradas;
-          const totalSaidas = totals.totalSaidas;
-          const saldo = totals.saldoFinal;
-          
-          console.log("PDF_FINAL_TOTALS", totals);
+          console.log("PDF_FINAL_TOTALS", { totalEntradas, totalSaidas, saldo });
 
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Sua Empresa';
           
@@ -2737,9 +2440,7 @@ export default function FinancePage() {
                   {cashFlowItems.map((item) => (
                       <tr key={item.id} className="hover:bg-[#1a1e27] transition-colors group">
                          <td className="px-5 py-4 text-gray-300 font-medium">
-                            {item.movement_date
-                              ? new Date(item.movement_date + 'T12:00:00Z').toLocaleDateString('pt-BR')
-                              : '-'}
+                            {formatFlowDate(item.movement_date)}
                          </td>
                          <td className="px-5 py-4 font-bold">
                             {item.tipo === 'entrada' ? (
@@ -2755,24 +2456,28 @@ export default function FinancePage() {
                          <td className="px-5 py-4 text-gray-300">
                             {item.category}
                          </td>
-                         <td className="px-5 py-4 text-gray-400 max-w-[280px] whitespace-normal">
+                         <td className="px-5 py-4 text-gray-400 max-w-[320px] whitespace-normal">
                             <span className="text-gray-200">{item.description}</span>
-                            {item.customerName && (
+                            <span className="block text-xs mt-0.5 text-gray-500">
+                              Cliente: {flowDisplayLabel(item.customerName, item.isManual)}
+                            </span>
+                            {item.brokerName && (
                               <span className="block text-xs mt-0.5 text-gray-500">
-                                Cliente: {item.customerName}
+                                Corretor: {flowDisplayLabel(item.brokerName, item.isManual)}
                               </span>
                             )}
-                            {item.projectName && (
-                              <span className="block text-xs mt-0.5 text-gray-500">
-                                Proj: {item.projectName}
-                                {item.locationLabel ? ` • ${item.locationLabel}` : ''}
-                              </span>
-                            )}
-                            {item.contractNumber && item.contractNumber !== '-' && (
-                              <span className="block text-xs mt-0.5 text-gray-600 font-mono">
-                                Contrato: {item.contractNumber}
-                              </span>
-                            )}
+                            <span className="block text-xs mt-0.5 text-gray-500">
+                              Proj: {flowDisplayLabel(item.projectName, item.isManual)}
+                              {item.locationLabel && item.locationLabel !== 'Lançamento manual'
+                                ? ` • ${item.locationLabel}`
+                                : ''}
+                            </span>
+                            <span className="block text-xs mt-0.5 text-gray-600 font-mono">
+                              Contrato:{' '}
+                              {item.contractNumber && item.contractNumber !== 'Lançamento manual'
+                                ? displayContractNumber(item.contractNumber)
+                                : flowDisplayLabel('', item.isManual)}
+                            </span>
                          </td>
                          <td className="px-5 py-4 text-gray-500 text-xs uppercase">
                             {item.source === 'finance_receipts' && 'Parcela'}
@@ -2879,66 +2584,154 @@ export default function FinancePage() {
 
       {showSaidaModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleRegistrarSaida}>
-              <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
+              <div className="p-6 border-b border-[#1f232b] flex justify-between items-center sticky top-0 bg-[#13161c] z-10">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
-                  Registrar Saída (Despesa / Saque)
+                  Registrar Saída
                 </h3>
                 <button type="button" onClick={() => setShowSaidaModal(false)} className="text-gray-500 hover:text-white transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="p-6 space-y-4 text-sm text-gray-300">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
-                    <input type="text" value="SAÍDA" disabled className="w-full bg-[#1c212a] text-red-400 font-bold border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed" />
+                {loadingSaidaLookups && (
+                  <div className="flex items-center gap-2 text-gray-500 text-xs">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Carregando projetos, contratos e corretores…
                   </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Categoria</label>
-                    <select required value={saidaForm.category} onChange={e => setSaidaForm({...saidaForm, category: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors">
-                        <option value="Roço do chacreamento">Roço do chacreamento</option>
-                        <option value="Compra de postes">Compra de postes</option>
-                        <option value="Terraplanagem">Terraplanagem</option>
-                        <option value="Escritório">Escritório</option>
-                        <option value="Marketing">Marketing</option>
-                        <option value="Comissão">Comissão</option>
-                        <option value="Serviços Terceirizados">Serviços Terceirizados</option>
-                        <option value="Infraestrutura">Infraestrutura</option>
-                        <option value="Outros">Outros</option>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Categoria *</label>
+                    <select
+                      required
+                      value={saidaForm.category}
+                      onChange={(e) => setSaidaForm({ ...saidaForm, category: e.target.value })}
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                    >
+                      {SAIDA_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Destino / Descrição (Opcional)</label>
-                  <input type="text" value={saidaForm.description} onChange={e => setSaidaForm({...saidaForm, description: e.target.value})} placeholder="Para onde foi o dinheiro ou do que se trata..." className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$)*</label>
-                    <input required type="number" step="0.01" min="0.01" value={saidaForm.amount} onChange={e => setSaidaForm({...saidaForm, amount: e.target.value})} placeholder="0.00" className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Data*</label>
-                    <input required type="date" value={saidaForm.movement_date} onChange={e => setSaidaForm({...saidaForm, movement_date: e.target.value})} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors" />
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Data *</label>
+                    <input
+                      required
+                      type="date"
+                      value={saidaForm.movement_date}
+                      onChange={(e) => setSaidaForm({ ...saidaForm, movement_date: e.target.value })}
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                    />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Loteamento / Projeto (Opcional)</label>
-                  <select 
-                     value={saidaForm.project_id} 
-                     onChange={e => setSaidaForm({...saidaForm, project_id: e.target.value})} 
-                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Descrição / Destino *</label>
+                  <input
+                    required
+                    type="text"
+                    value={saidaForm.description}
+                    onChange={(e) => setSaidaForm({ ...saidaForm, description: e.target.value })}
+                    placeholder="Para onde foi o dinheiro ou do que se trata..."
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$) *</label>
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={saidaForm.amount}
+                    onChange={(e) => setSaidaForm({ ...saidaForm, amount: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Loteamento (opcional)</label>
+                  <select
+                    value={saidaForm.project_id}
+                    onChange={(e) =>
+                      setSaidaForm({
+                        ...saidaForm,
+                        project_id: e.target.value,
+                        contract_id: '',
+                        customer_id: '',
+                        sale_id: '',
+                        customer_display: '',
+                        location_display: '',
+                      })
+                    }
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
                   >
-                     <option value="">Geral / Sem vínculo específico</option>
-                     {financeProjects.map(proj => (
-                       <option key={proj.id} value={proj.id}>{proj.name}</option>
-                     ))}
+                    <option value="">Sem vínculo de projeto</option>
+                    {financeProjects.map((proj) => (
+                      <option key={proj.id} value={proj.id}>{proj.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Contrato (opcional)</label>
+                  <select
+                    value={saidaForm.contract_id}
+                    onChange={(e) => applyContractToSaidaForm(e.target.value)}
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                  >
+                    <option value="">Nenhum contrato</option>
+                    {contractsForSaida.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {displayContractNumber(c.contract_number)} — {c.customers?.name || c.customers?.full_name || 'Cliente'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={saidaForm.customer_display || (saidaForm.contract_id ? '' : '—')}
+                      placeholder="Preenchido ao selecionar contrato"
+                      className="w-full bg-[#1c212a]/60 text-gray-400 border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Quadra / Lote</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={saidaForm.location_display || '—'}
+                      placeholder="Preenchido ao selecionar contrato"
+                      className="w-full bg-[#1c212a]/60 text-gray-400 border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Corretor {saidaForm.category === 'Comissão' ? '*' : '(opcional)'}
+                  </label>
+                  <select
+                    required={saidaForm.category === 'Comissão'}
+                    value={saidaForm.broker_id}
+                    onChange={(e) => setSaidaForm({ ...saidaForm, broker_id: e.target.value })}
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                  >
+                    <option value="">Selecione o corretor</option>
+                    {financeBrokers.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name || b.full_name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
