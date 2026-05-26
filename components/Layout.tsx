@@ -325,12 +325,16 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     window.location.assign('/login');
   };
 
+  const isPublicStandalone =
+    pathname === '/' ||
+    ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
+      pathname.startsWith(route)
+    );
+  if (isPublicStandalone) return <>{children}</>;
+
   if (isCheckingAuth) {
     return <div className="h-screen w-full bg-[var(--color-background)] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-t-transparent border-[var(--color-primary)] rounded-full"></div></div>;
   }
-
-  const isPublicStandalone = ['/login', '/onboarding', '/verify-email', '/auth/callback'].some(route => pathname.startsWith(route));
-  if (isPublicStandalone) return <>{children}</>;
 
   // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
   if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional)) {

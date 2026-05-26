@@ -44,7 +44,7 @@ export function useAuth() {
           });
           setLoading(false);
           
-          if (window.location.pathname === '/' || window.location.pathname === '/login') {
+          if (window.location.pathname === '/login') {
             router.push('/map');
           }
         });

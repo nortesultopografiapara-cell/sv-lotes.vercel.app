@@ -54,13 +54,24 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl.clone();
 
-  // 1. PUBLIC ROUTES
+  // 1. PUBLIC ROUTES (landing + auth + validação)
+  const isLanding = url.pathname === '/';
   const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/validar', '/validar-recibo', '/api/validar-recibo'];
-  const isPublicRoute = publicRoutes.some(route => url.pathname.startsWith(route));
+  const isPublicRoute = isLanding || publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
-    if ((user || isDemoMode || isDevPreview) && url.pathname === '/login') {
-      url.pathname = isDevPreview || userData?.role === 'BROKER' ? '/map' : '/dashboard';
+    if (user || isDemoMode) {
+      if (isLanding) {
+        url.pathname = userData?.role === 'BROKER' ? '/map' : '/dashboard';
+        return NextResponse.redirect(url);
+      }
+      if (url.pathname === '/login') {
+        url.pathname = userData?.role === 'BROKER' ? '/map' : '/dashboard';
+        return NextResponse.redirect(url);
+      }
+    }
+    if (isDevPreview && url.pathname === '/login') {
+      url.pathname = '/map';
       return NextResponse.redirect(url);
     }
     return response;
@@ -79,13 +90,10 @@ export async function middleware(request: NextRequest) {
     
     // If exact path is one of the blocked routes, redirect to /map
     const isBlocked = blockedRoutes.some(r => url.pathname.startsWith(r));
-    if (isBlocked || url.pathname === '/') {
+    if (isBlocked) {
        url.pathname = '/map';
        return NextResponse.redirect(url);
     }
-  } else if (isDevPreview && url.pathname === '/') {
-       url.pathname = '/map';
-       return NextResponse.redirect(url);
   }
 
   // 5. HARDENING HEADERS
