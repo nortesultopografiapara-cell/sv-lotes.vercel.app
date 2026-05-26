@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
-import { displayContractNumber } from "@/lib/contractNumber";
+import { formatReceiptContractNumber } from "@/lib/contractNumber";
 import {
   formatFlowDate,
   type CashFlowItem,
@@ -72,6 +72,43 @@ function blockLabelFromMetadata(md: CashMovementMetadata): string {
   return "";
 }
 
+/** Contrato para recibo — prioriza metadata manual e não força S/N em números curtos. */
+export function resolveReceiptContractNumber(
+  item: CashFlowItem,
+  md: CashMovementMetadata = item.metadata || {},
+): string {
+  const raw = pickReceiptField(
+    md.contract_manual,
+    (item as { contract_manual?: string }).contract_manual,
+    (item as { contract_number?: string }).contract_number,
+    item.contractNumber,
+  );
+  return raw ? formatReceiptContractNumber(raw) : "";
+}
+
+/** Cliente para recibo — metadata manual; se vazio, usa beneficiário/corretor. */
+export function resolveReceiptCustomerName(
+  item: CashFlowItem,
+  md: CashMovementMetadata = item.metadata || {},
+): string {
+  let name = pickReceiptField(
+    md.customer_manual,
+    (item as { customer_manual?: string }).customer_manual,
+    (item as { customer_name?: string }).customer_name,
+    item.customerName,
+  );
+  if (!name) {
+    name = pickReceiptField(
+      (item as { broker_name?: string }).broker_name,
+      item.brokerName,
+      md.beneficiary_manual,
+      md.broker_manual,
+      md.broker_name,
+    );
+  }
+  return name;
+}
+
 /** Monta objeto com campos do recibo priorizando metadata e valores reais. */
 export function buildNormalizedExpenseReceiptItem(
   item: CashFlowItem,
@@ -83,14 +120,8 @@ export function buildNormalizedExpenseReceiptItem(
   const md: CashMovementMetadata = { ...(item.metadata || {}) };
   const blockFromMeta = blockLabelFromMetadata(md);
 
-  const contractRaw = pickReceiptField(
-    md.contract_manual,
-    item.contractNumber,
-    (item as { contract_number?: string }).contract_number,
-  );
-  const contract_number = contractRaw
-    ? displayContractNumber(contractRaw)
-    : "";
+  const contract_number = resolveReceiptContractNumber(item, md);
+  const customer_name = resolveReceiptCustomerName(item, md);
 
   return {
     ...item,
@@ -104,11 +135,7 @@ export function buildNormalizedExpenseReceiptItem(
       (item as { project_display?: string }).project_display,
     ),
     contract_number,
-    customer_name: pickReceiptField(
-      md.customer_manual,
-      (item as { customer_name?: string }).customer_name,
-      item.customerName,
-    ),
+    customer_name,
     broker_name: pickReceiptField(
       md.beneficiary_manual,
       md.broker_manual,
@@ -140,11 +167,15 @@ function displayPaymentMethod(value: string | null | undefined): string {
 }
 
 function receiptFieldsFromItem(item: ExpenseReceiptItem) {
+  const md = item.metadata || {};
   const docRaw = pickReceiptField(item.beneficiary_document);
+  const contractRaw = pickReceiptField(item.contract_number) || resolveReceiptContractNumber(item, md);
+  const customerRaw =
+    pickReceiptField(item.customer_name) || resolveReceiptCustomerName(item, md);
   return {
     projectName: displayReceiptField(item.project_name),
-    contractNumber: pickReceiptField(item.contract_number) || "S/N",
-    customerName: displayReceiptField(item.customer_name),
+    contractNumber: contractRaw || "S/N",
+    customerName: customerRaw || "Não informado",
     beneficiary: displayReceiptField(item.broker_name),
     beneficiaryDocument: docRaw ? formatBeneficiaryDocument(docRaw) : "",
     locationLabel: displayReceiptField(item.block_label),
@@ -276,19 +307,9 @@ export function resolveExpenseReceiptDisplay(
     (item as { project_name?: string }).project_name,
   );
 
-  const contractRaw = pickReceiptField(
-    md.contract_manual,
-    item.contractNumber && !isPlaceholderReceiptValue(item.contractNumber)
-      ? displayContractNumber(item.contractNumber)
-      : "",
-    (item as { contract_number?: string }).contract_number,
-  );
+  const contractRaw = resolveReceiptContractNumber(item, md);
 
-  const customerName = pickReceiptField(
-    md.customer_manual,
-    item.customerName,
-    (item as { customer_name?: string }).customer_name,
-  );
+  const customerName = resolveReceiptCustomerName(item, md);
 
   const beneficiary = pickReceiptField(
     md.beneficiary_manual,
@@ -487,7 +508,9 @@ export async function generateExpenseReceiptPdf(
   }
 
   const contentW = pageWidth - margin * 2;
-  const signName = pickReceiptField(item.customer_name) || pickReceiptField(item.broker_name);
+  const signName =
+    resolveReceiptCustomerName(item, item.metadata || {}) ||
+    pickReceiptField(item.broker_name);
   const signDoc = item.beneficiary_document || "";
 
   drawReceiverSignatureBlock(

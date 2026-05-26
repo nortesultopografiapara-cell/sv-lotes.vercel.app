@@ -1,4 +1,7 @@
-import { displayContractNumber } from "@/lib/contractNumber";
+import {
+  displayContractNumber,
+  formatReceiptContractNumber,
+} from "@/lib/contractNumber";
 
 export type CashFlowItem = {
   id: string;
@@ -172,11 +175,7 @@ export function buildSaidaCashMovementMetadata(input: {
   if (paymentMethod) meta.payment_method = paymentMethod;
 
   const customerManual = String(input.customerManual ?? "").trim();
-  if (!emptyUuidToNull(input.customerId) && customerManual) {
-    /* cliente vinculado por id — nome manual opcional não duplica */
-  } else if (customerManual) {
-    meta.customer_manual = customerManual;
-  }
+  if (customerManual) meta.customer_manual = customerManual;
 
   const contractManual = String(input.contractManual ?? "").trim();
   if (contractManual) meta.contract_manual = contractManual;
@@ -429,6 +428,12 @@ function resolveCashMovementMeta(c: any): {
   if (!customerName && md.customer_manual) {
     customerName = md.customer_manual.trim();
   }
+  if (!customerName && md.beneficiary_manual) {
+    customerName = md.beneficiary_manual.trim();
+  }
+  if (!customerName && md.broker_manual) {
+    customerName = md.broker_manual.trim();
+  }
 
   let brokerName = c.brokers?.name || c.brokers?.full_name || "";
   if (!brokerName && md.broker_name) {
@@ -450,7 +455,7 @@ function resolveCashMovementMeta(c: any): {
   }
 
   const contractNumber = contractRaw
-    ? displayContractNumber(contractRaw)
+    ? formatReceiptContractNumber(contractRaw)
     : "";
 
   const typeStr = (c.type || "").toLowerCase();

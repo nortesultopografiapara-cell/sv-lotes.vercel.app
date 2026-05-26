@@ -30,6 +30,19 @@ export function displayContractNumber(
 }
 
 /**
+ * Contrato no recibo/fluxo: formato oficial quando válido;
+ * senão exibe o valor manual digitado (ex.: 000025/2026).
+ */
+export function formatReceiptContractNumber(
+  contractNumber: string | null | undefined,
+): string {
+  const cleaned = stripContractNumberPrefix(String(contractNumber ?? "").trim());
+  if (!cleaned) return "";
+  if (CONTRACT_NUMBER_PATTERN.test(cleaned)) return cleaned;
+  return cleaned;
+}
+
+/**
  * Próximo número sequencial por empresa/tenant e ano vigente.
  * Formato salvo: 000000001/2026
  */

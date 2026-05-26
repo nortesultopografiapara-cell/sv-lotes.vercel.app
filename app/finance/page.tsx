@@ -27,7 +27,10 @@ import {
   type CashFlowItem,
 } from '@/lib/financeCashFlow';
 import { deleteCashFlowItem } from '@/lib/financeCashFlowDelete';
-import { displayContractNumber } from '@/lib/contractNumber';
+import {
+  displayContractNumber,
+  formatReceiptContractNumber,
+} from '@/lib/contractNumber';
 import {
   createDocumentValidationCode,
   createExpenseReceiptNumber,
@@ -38,6 +41,8 @@ import {
   formatBeneficiaryDocument,
   formatReceiptError,
   generateExpenseReceiptPdf,
+  resolveReceiptContractNumber,
+  resolveReceiptCustomerName,
 } from '@/lib/expenseReceiptPdf';
 
 export type { CashFlowItem };
@@ -1093,12 +1098,19 @@ export default function FinancePage() {
       ...md,
       project_name: md.project_name || projectFromJoin || undefined,
     };
-    return {
+    const merged: CashFlowItem = {
       ...item,
       metadata: mergedMeta,
       description:
         (cm.description || item.description || '').split('[[sv_meta]]')[0].trim() ||
         item.description,
+    };
+    const contractResolved = resolveReceiptContractNumber(merged, mergedMeta);
+    const customerResolved = resolveReceiptCustomerName(merged, mergedMeta);
+    return {
+      ...merged,
+      contractNumber: contractResolved || merged.contractNumber,
+      customerName: customerResolved || merged.customerName,
     };
   };
 
@@ -3064,7 +3076,9 @@ export default function FinancePage() {
                             <span className="block text-xs mt-0.5 text-gray-600 font-mono">
                               Contrato:{' '}
                               {item.contractNumber && item.contractNumber !== 'Lançamento manual'
-                                ? displayContractNumber(item.contractNumber)
+                                ? formatReceiptContractNumber(item.contractNumber) ||
+                                  item.metadata?.contract_manual ||
+                                  '—'
                                 : flowDisplayLabel('', item.isManual)}
                             </span>
                             {item.tipo === 'saida' && (
@@ -3160,9 +3174,12 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <span className="text-xs text-gray-500 block">Contrato</span>
-                  {selectedFlowItem.contractNumber && selectedFlowItem.contractNumber !== 'Lançamento manual'
-                    ? displayContractNumber(selectedFlowItem.contractNumber)
-                    : flowDisplayLabel('', selectedFlowItem.isManual)}
+                  {selectedFlowItem.metadata?.contract_manual ||
+                    (selectedFlowItem.contractNumber &&
+                    selectedFlowItem.contractNumber !== 'Lançamento manual'
+                      ? formatReceiptContractNumber(selectedFlowItem.contractNumber)
+                      : '') ||
+                    flowDisplayLabel('', selectedFlowItem.isManual)}
                 </div>
                 {selectedFlowItem.tipo === 'saida' && (
                   <div>
