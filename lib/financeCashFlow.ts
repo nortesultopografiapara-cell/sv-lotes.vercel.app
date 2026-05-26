@@ -27,6 +27,55 @@ export type CashFlowItem = {
 
 const MANUAL_LABEL = "Lançamento manual";
 
+export const CASH_MOVEMENT_META_TAG = "[[sv_meta]]";
+
+export type CashMovementManualMeta = {
+  manual_customer?: string;
+  manual_quadra?: string;
+  manual_lote?: string;
+  manual_contract?: string;
+};
+
+export function splitCashMovementDescription(raw: string | null | undefined): {
+  text: string;
+  meta: CashMovementManualMeta | null;
+} {
+  const desc = String(raw ?? "");
+  const idx = desc.indexOf(CASH_MOVEMENT_META_TAG);
+  if (idx === -1) return { text: desc.trim(), meta: null };
+  const text = desc.slice(0, idx).trim();
+  try {
+    const meta = JSON.parse(
+      desc.slice(idx + CASH_MOVEMENT_META_TAG.length),
+    ) as CashMovementManualMeta;
+    return { text, meta };
+  } catch {
+    return { text: desc.trim(), meta: null };
+  }
+}
+
+export function buildCashMovementDescription(
+  text: string,
+  meta: CashMovementManualMeta | null,
+): string {
+  const clean = text.trim();
+  const hasMeta =
+    meta &&
+    Object.values(meta).some((v) => String(v ?? "").trim().length > 0);
+  if (!hasMeta) return clean;
+  return `${clean}\n${CASH_MOVEMENT_META_TAG}${JSON.stringify(meta)}`;
+}
+
+function formatManualLocation(meta: CashMovementManualMeta | null): string {
+  if (!meta) return "";
+  const quad = String(meta.manual_quadra ?? "").trim();
+  const lot = String(meta.manual_lote ?? "").trim();
+  if (quad && lot) return `QD ${quad} • LT ${lot}`;
+  if (quad) return `QD ${quad}`;
+  if (lot) return `LT ${lot}`;
+  return "";
+}
+
 export const SAIDA_CATEGORIES = [
   "Comissão",
   "Despesa administrativa",
@@ -114,13 +163,23 @@ function resolveCashMovementMeta(c: any): {
   contractNumber: string;
   locationLabel: string;
   isManual: boolean;
+  descriptionText: string;
 } {
-  const hasLink = !!(
+  const { text: descriptionText, meta: manualMeta } = splitCashMovementDescription(
+    c.description,
+  );
+
+  const hasDbLink = !!(
     c.customer_id ||
     c.contract_id ||
     c.sale_id ||
-    c.broker_id ||
-    c.project_id
+    c.broker_id
+  );
+  const hasManualMeta = !!(
+    manualMeta?.manual_customer ||
+    manualMeta?.manual_quadra ||
+    manualMeta?.manual_lote ||
+    manualMeta?.manual_contract
   );
 
   const customer =
@@ -147,24 +206,44 @@ function resolveCashMovementMeta(c: any): {
   let contractRaw =
     c.contracts?.contract_number || saleContractNum || "";
 
-  const customerName = customer?.name || customer?.full_name || "";
+  let customerName = customer?.name || customer?.full_name || "";
+  if (!customerName && manualMeta?.manual_customer) {
+    customerName = manualMeta.manual_customer.trim();
+  }
+
   const brokerName = c.brokers?.name || c.brokers?.full_name || "";
-  const locationLabel = resolveBlockLocation(block);
+  let locationLabel = resolveBlockLocation(block);
+  if (!locationLabel) {
+    locationLabel = formatManualLocation(manualMeta);
+  }
+
+  if (!contractRaw && manualMeta?.manual_contract) {
+    contractRaw = manualMeta.manual_contract.trim();
+  }
+
   const contractNumber = contractRaw
     ? displayContractNumber(contractRaw)
     : "";
 
+  const typeStr = (c.type || "").toLowerCase();
+  const isSaida = isCashMovementSaida(typeStr);
+  /** Despesa/saque manual: sem vínculo formal de contrato ou venda. */
   const isManual =
-    !hasLink ||
-    (!customerName && !brokerName && !contractNumber && !locationLabel && !projectName);
+    isSaida && !c.finance_receipt_id && !c.contract_id && !c.sale_id;
+
+  const showManualLabel = isManual && !customerName && !contractNumber && !locationLabel;
 
   return {
     projectName: flowDisplayLabel(projectName, isManual && !projectName),
-    customerName: flowDisplayLabel(customerName, isManual && !customerName),
+    customerName: flowDisplayLabel(
+      customerName,
+      showManualLabel && !customerName,
+    ),
     brokerName: flowDisplayLabel(brokerName, isManual && !brokerName),
     contractNumber: contractNumber || (isManual ? MANUAL_LABEL : ""),
     locationLabel: locationLabel || (isManual ? MANUAL_LABEL : ""),
     isManual,
+    descriptionText: descriptionText || "-",
   };
 }
 
@@ -266,7 +345,7 @@ export function buildCashFlowItems(
       movement_date: c.movement_date || c.created_at?.split("T")[0] || "",
       tipo: isSaida ? "saida" : "entrada",
       category: c.category || (isSaida ? "Despesa" : "Entrada manual"),
-      description: c.description || "-",
+      description: meta.descriptionText,
       amount,
       status: st === "estornado" ? "estornado" : "ativo",
       projectName: meta.projectName,

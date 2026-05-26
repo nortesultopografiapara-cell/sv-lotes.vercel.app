@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, Link2, MapPin, RotateCcw } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, Receipt, ScrollText } from 'lucide-react';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,7 +14,10 @@ import {
   formatFlowDate,
   flowDisplayLabel,
   SAIDA_CATEGORIES,
+  buildCashMovementDescription,
+  splitCashMovementDescription,
   type CashFlowItem,
+  type CashMovementManualMeta,
 } from '@/lib/financeCashFlow';
 import { displayContractNumber } from '@/lib/contractNumber';
 
@@ -94,10 +97,17 @@ const INITIAL_SAIDA_FORM = {
   broker_id: '',
   customer_id: '',
   sale_id: '',
-  customer_display: '',
-  location_display: '',
+  customer_manual: '',
+  contract_number_manual: '',
+  quadra_manual: '',
+  lote_manual: '',
   movement_date: new Date().toISOString().split('T')[0],
 };
+
+const CONFIRM_DELETE_LANCAMENTO =
+  'Tem certeza que deseja excluir este lançamento?';
+const CONFIRM_ESTORNAR_PAGAMENTO =
+  'Tem certeza que deseja estornar este pagamento?';
 
 function FlowIconBtn({
   title,
@@ -182,6 +192,7 @@ export default function FinancePage() {
   const [saidaForm, setSaidaForm] = useState({ ...INITIAL_SAIDA_FORM });
   const [financeBrokers, setFinanceBrokers] = useState<any[]>([]);
   const [financeContracts, setFinanceContracts] = useState<any[]>([]);
+  const [financeCustomers, setFinanceCustomers] = useState<any[]>([]);
   const [loadingSaidaLookups, setLoadingSaidaLookups] = useState(false);
   const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
   const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
@@ -226,7 +237,7 @@ export default function FinancePage() {
       setLoadingSaidaLookups(true);
       try {
         const tenantOr = `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`;
-        const [brokersRes, contractsRes] = await Promise.all([
+        const [brokersRes, contractsRes, customersRes] = await Promise.all([
           supabase
             .from('brokers')
             .select('id, name, full_name')
@@ -243,9 +254,15 @@ export default function FinancePage() {
             `)
             .or(tenantOr)
             .order('created_at', { ascending: false }),
+          supabase
+            .from('customers')
+            .select('id, name, full_name')
+            .or(tenantOr)
+            .order('name', { ascending: true }),
         ]);
         setFinanceBrokers(brokersRes.data || []);
         setFinanceContracts(contractsRes.data || []);
+        setFinanceCustomers(customersRes.data || []);
       } catch (e) {
         console.error('Erro ao carregar dados do modal de saída', e);
       } finally {
@@ -807,6 +824,24 @@ export default function FinancePage() {
      ];
   };
 
+  const buildSaidaManualMeta = (): CashMovementManualMeta | null => {
+    if (saidaForm.contract_id) return null;
+    const meta: CashMovementManualMeta = {};
+    if (!saidaForm.customer_id && saidaForm.customer_manual.trim()) {
+      meta.manual_customer = saidaForm.customer_manual.trim();
+    }
+    if (saidaForm.contract_number_manual.trim()) {
+      meta.manual_contract = saidaForm.contract_number_manual.trim();
+    }
+    if (saidaForm.quadra_manual.trim()) {
+      meta.manual_quadra = saidaForm.quadra_manual.trim();
+    }
+    if (saidaForm.lote_manual.trim()) {
+      meta.manual_lote = saidaForm.lote_manual.trim();
+    }
+    return Object.keys(meta).length > 0 ? meta : null;
+  };
+
   const applyContractToSaidaForm = (contractId: string) => {
     if (!contractId) {
       setSaidaForm((prev) => ({
@@ -814,8 +849,9 @@ export default function FinancePage() {
         contract_id: '',
         customer_id: '',
         sale_id: '',
-        customer_display: '',
-        location_display: '',
+        contract_number_manual: '',
+        quadra_manual: '',
+        lote_manual: '',
       }));
       return;
     }
@@ -824,16 +860,16 @@ export default function FinancePage() {
     const block = c.blocks;
     const quad = block?.block_name || block?.name || '';
     const lot = block?.lot_number || block?.number || '';
-    const loc =
-      quad && lot ? `QD ${quad} • LT ${lot}` : quad ? `QD ${quad}` : lot ? `LT ${lot}` : '';
     setSaidaForm((prev) => ({
       ...prev,
       contract_id: contractId,
       project_id: c.project_id || prev.project_id,
       customer_id: c.customer_id || '',
       sale_id: c.sale_id || '',
-      customer_display: c.customers?.name || c.customers?.full_name || '',
-      location_display: loc,
+      customer_manual: '',
+      contract_number_manual: displayContractNumber(c.contract_number || ''),
+      quadra_manual: quad,
+      lote_manual: lot,
     }));
   };
 
@@ -853,22 +889,22 @@ export default function FinancePage() {
     try {
       const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
 
+      const manualMeta = buildSaidaManualMeta();
       const payload: Record<string, unknown> = {
         tenant_id: resolvedTenantId,
         company_id: resolvedTenantId,
         type: 'saida',
         category: saidaForm.category,
-        description: desc,
+        description: buildCashMovementDescription(desc, manualMeta),
         amount: parseFloat(saidaForm.amount),
         movement_date: movementDate,
         created_by: user?.id,
+        project_id: saidaForm.project_id || null,
+        contract_id: saidaForm.contract_id || null,
+        sale_id: saidaForm.sale_id || null,
+        customer_id: saidaForm.customer_id || null,
+        broker_id: saidaForm.broker_id || null,
       };
-
-      if (saidaForm.project_id) payload.project_id = saidaForm.project_id;
-      if (saidaForm.contract_id) payload.contract_id = saidaForm.contract_id;
-      if (saidaForm.sale_id) payload.sale_id = saidaForm.sale_id;
-      if (saidaForm.customer_id) payload.customer_id = saidaForm.customer_id;
-      if (saidaForm.broker_id) payload.broker_id = saidaForm.broker_id;
 
       let error;
       if (editingCashMovementId) {
@@ -1106,38 +1142,8 @@ export default function FinancePage() {
     router.push('/contracts');
   };
 
-  const handleFlowOpenMap = (item: CashFlowItem) => {
-    if (!item.blockId || !item.projectId) return;
-    console.log('[FINANCEIRO] abrir mapa', { projectId: item.projectId, blockId: item.blockId });
-    sessionStorage.setItem(
-      'sv_gis_focus',
-      JSON.stringify({ projectId: item.projectId, blockId: item.blockId }),
-    );
-    router.push('/map');
-  };
-
-  const handleFlowOpenLink = (item: CashFlowItem) => {
-    if (item.contractId) {
-      handleFlowOpenContract(item);
-      return;
-    }
-    if (item.saleId) {
-      console.log('[FINANCEIRO] abrir vínculo venda', item.saleId);
-      sessionStorage.setItem('sv_sale_focus', item.saleId);
-      router.push('/contracts');
-      return;
-    }
-    if (item.brokerId) {
-      router.push('/dashboard/brokers');
-    }
-  };
-
   const handleFlowReverse = async (item: CashFlowItem) => {
-    if (
-      !window.confirm(
-        'Deseja estornar esta movimentação? O saldo do fluxo de caixa será recalculado.',
-      )
-    ) {
+    if (!window.confirm(CONFIRM_ESTORNAR_PAGAMENTO)) {
       return;
     }
     try {
@@ -1175,39 +1181,44 @@ export default function FinancePage() {
   };
 
   const handleFlowEditSaida = (item: CashFlowItem) => {
-    if (!item.cashMovementId) return;
+    if (!item.cashMovementId || !item.isManual) return;
     const cm = cashMovements.find((c) => c.id === item.cashMovementId);
     if (!cm) return;
     console.log('[FINANCEIRO] editar saída', item.cashMovementId);
+    const { text, meta } = splitCashMovementDescription(cm.description);
     const block = cm.contracts?.blocks || cm.sales?.blocks;
-    const quad = block?.block_name || block?.name || '';
-    const lot = block?.lot_number || block?.number || '';
-    const loc =
-      quad && lot ? `QD ${quad} • LT ${lot}` : quad ? `QD ${quad}` : lot ? `LT ${lot}` : '';
+    const quadFromBlock = block?.block_name || block?.name || '';
+    const lotFromBlock = block?.lot_number || block?.number || '';
     setEditingCashMovementId(item.cashMovementId);
     setSaidaForm({
       category: cm.category || 'Outros',
-      description: cm.description || '',
+      description: text,
       amount: String(cm.amount ?? ''),
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
       broker_id: cm.broker_id || '',
       customer_id: cm.customer_id || '',
       sale_id: cm.sale_id || '',
-      customer_display:
-        cm.customers?.name ||
-        cm.customers?.full_name ||
-        cm.contracts?.customers?.name ||
-        '',
-      location_display: loc,
+      customer_manual:
+        meta?.manual_customer ||
+        (!cm.customer_id
+          ? cm.customers?.name || cm.customers?.full_name || ''
+          : ''),
+      contract_number_manual:
+        meta?.manual_contract ||
+        (cm.contracts?.contract_number
+          ? displayContractNumber(cm.contracts.contract_number)
+          : ''),
+      quadra_manual: meta?.manual_quadra || quadFromBlock,
+      lote_manual: meta?.manual_lote || lotFromBlock,
       movement_date: (cm.movement_date || '').split('T')[0] || new Date().toISOString().split('T')[0],
     });
     setShowSaidaModal(true);
   };
 
   const handleFlowDeleteSaida = async (item: CashFlowItem) => {
-    if (!item.cashMovementId) return;
-    if (!window.confirm('Excluir esta saída permanentemente?')) return;
+    if (!item.cashMovementId || !item.isManual) return;
+    if (!window.confirm(CONFIRM_DELETE_LANCAMENTO)) return;
     try {
       const { error } = await supabase
         .from('cash_movements')
@@ -1222,105 +1233,133 @@ export default function FinancePage() {
     }
   };
 
+  const flowActionBar = (buttons: ReactNode) => (
+    <div className="flex items-center justify-end gap-0.5 min-h-[28px] min-w-[72px] opacity-70 group-hover:opacity-100 transition-opacity">
+      {buttons}
+    </div>
+  );
+
   const renderFlowActions = (item: CashFlowItem) => {
     const isActive = item.status !== 'estornado';
     const canContract = !!item.contractId;
-    const canMap = !!item.blockId && !!item.projectId;
-    const canEdit = !!item.cashMovementId && item.source === 'cash_movements';
-    const canDelete = canEdit && isActive;
-    const canReceiptPdf = !!item.receiptId && item.source === 'finance_receipts';
-    const canSaidaPdf = item.tipo === 'saida' && isActive;
-    const canReverse =
+    const canReceiptPdf =
+      item.tipo === 'entrada' &&
+      !!item.receiptId &&
+      item.source === 'finance_receipts';
+    const isManualSaida =
+      item.tipo === 'saida' &&
+      item.source === 'cash_movements' &&
+      item.isManual &&
+      !!item.cashMovementId;
+    const canEditManual = isManualSaida && isActive;
+    const canDeleteManual = isManualSaida && isActive;
+    const isLinkedParcel =
+      item.tipo === 'entrada' && item.source === 'finance_receipts';
+    const canEstornar =
       isActive &&
-      (!!item.receiptId || !!item.cashMovementId || !!item.commissionId);
-
-    if (item.isManual) {
-      return (
-        <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-          <FlowIconBtn title="Visualizar movimentação" onClick={() => handleFlowView(item)}>
-            <Eye className="w-4 h-4" />
-          </FlowIconBtn>
-          {canEdit && (
-            <FlowIconBtn title="Editar saída" tone="blue" onClick={() => handleFlowEditSaida(item)}>
-              <Pencil className="w-4 h-4" />
-            </FlowIconBtn>
-          )}
-          {canDelete && (
-            <FlowIconBtn title="Excluir saída" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
-              <Trash2 className="w-4 h-4" />
-            </FlowIconBtn>
-          )}
-        </div>
-      );
-    }
+      (isLinkedParcel ||
+        item.source === 'broker_commissions' ||
+        (item.source === 'cash_movements' && !isManualSaida));
 
     if (item.tipo === 'entrada') {
-      return (
-        <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-          <FlowIconBtn title="Visualizar movimentação" onClick={() => handleFlowView(item)}>
+      return flowActionBar(
+        <>
+          <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
             <Eye className="w-4 h-4" />
           </FlowIconBtn>
-          {canReceiptPdf && (
+          {canContract ? (
+            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
+              <ScrollText className="w-4 h-4" />
+            </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Abrir contrato" disabled>
+              <ScrollText className="w-4 h-4 opacity-20" />
+            </FlowIconBtn>
+          )}
+          {canReceiptPdf ? (
             <FlowIconBtn
-              title="Baixar recibo/PDF"
+              title="Baixar recibo"
               tone="blue"
               onClick={() => {
                 const p = payments.find((pay) => pay.id === item.receiptId);
                 if (p) handleGenerateCarne(p);
               }}
             >
-              <FileText className="w-4 h-4" />
+              <Receipt className="w-4 h-4" />
+            </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Baixar recibo" disabled>
+              <Receipt className="w-4 h-4 opacity-20" />
             </FlowIconBtn>
           )}
-          {canContract && (
-            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
-              <Link2 className="w-4 h-4" />
-            </FlowIconBtn>
-          )}
-          {canMap && (
-            <FlowIconBtn title="Abrir no mapa" tone="blue" onClick={() => handleFlowOpenMap(item)}>
-              <MapPin className="w-4 h-4" />
-            </FlowIconBtn>
-          )}
-          {canReverse && (
-            <FlowIconBtn title="Estornar recebimento" tone="orange" onClick={() => handleFlowReverse(item)}>
+          {canEstornar ? (
+            <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
               <RotateCcw className="w-4 h-4" />
             </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Estornar pagamento" disabled>
+              <RotateCcw className="w-4 h-4 opacity-20" />
+            </FlowIconBtn>
           )}
-        </div>
+        </>,
       );
     }
 
-    return (
-      <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-        <FlowIconBtn title="Ver detalhes" onClick={() => handleFlowView(item)}>
+    if (isManualSaida) {
+      return flowActionBar(
+        <>
+          <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
+            <Eye className="w-4 h-4" />
+          </FlowIconBtn>
+          {canEditManual ? (
+            <FlowIconBtn title="Editar lançamento" tone="blue" onClick={() => handleFlowEditSaida(item)}>
+              <Pencil className="w-4 h-4" />
+            </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Editar lançamento" disabled>
+              <Pencil className="w-4 h-4 opacity-20" />
+            </FlowIconBtn>
+          )}
+          {canDeleteManual ? (
+            <FlowIconBtn title="Excluir lançamento" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
+              <Trash2 className="w-4 h-4" />
+            </FlowIconBtn>
+          ) : (
+            <FlowIconBtn title="Excluir lançamento" disabled>
+              <Trash2 className="w-4 h-4 opacity-20" />
+            </FlowIconBtn>
+          )}
+        </>,
+      );
+    }
+
+    return flowActionBar(
+      <>
+        <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
           <Eye className="w-4 h-4" />
         </FlowIconBtn>
-        {canEdit && (
-          <FlowIconBtn title="Editar saída" tone="blue" onClick={() => handleFlowEditSaida(item)}>
-            <Pencil className="w-4 h-4" />
+        {canContract ? (
+          <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
+            <ScrollText className="w-4 h-4" />
+          </FlowIconBtn>
+        ) : (
+          <FlowIconBtn title="Abrir contrato" disabled>
+            <ScrollText className="w-4 h-4 opacity-20" />
           </FlowIconBtn>
         )}
-        {canSaidaPdf && (
-          <FlowIconBtn
-            title="Gerar comprovante PDF"
-            tone="blue"
-            onClick={() => handleGenerateSaidaComprovante(item)}
-          >
-            <FileText className="w-4 h-4" />
+        <FlowIconBtn title="Baixar recibo" disabled>
+          <Receipt className="w-4 h-4 opacity-20" />
+        </FlowIconBtn>
+        {canEstornar ? (
+          <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
+            <RotateCcw className="w-4 h-4" />
+          </FlowIconBtn>
+        ) : (
+          <FlowIconBtn title="Estornar pagamento" disabled>
+            <RotateCcw className="w-4 h-4 opacity-20" />
           </FlowIconBtn>
         )}
-        {(canContract || item.saleId || item.brokerId) && (
-          <FlowIconBtn title="Abrir vínculo relacionado" tone="blue" onClick={() => handleFlowOpenLink(item)}>
-            <Link2 className="w-4 h-4" />
-          </FlowIconBtn>
-        )}
-        {canDelete && (
-          <FlowIconBtn title="Excluir saída" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
-            <Trash2 className="w-4 h-4" />
-          </FlowIconBtn>
-        )}
-      </div>
+      </>,
     );
   };
 
@@ -3048,8 +3087,9 @@ export default function FinancePage() {
                         contract_id: '',
                         customer_id: '',
                         sale_id: '',
-                        customer_display: '',
-                        location_display: '',
+                        contract_number_manual: '',
+                        quadra_manual: '',
+                        lote_manual: '',
                       })
                     }
                     className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
@@ -3077,25 +3117,82 @@ export default function FinancePage() {
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Contrato manual (sem vínculo no sistema)
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!!saidaForm.contract_id}
+                    value={saidaForm.contract_number_manual}
+                    onChange={(e) =>
+                      setSaidaForm({ ...saidaForm, contract_number_manual: e.target.value })
+                    }
+                    placeholder="Ex.: 000000001/2026"
+                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente (cadastro)</label>
+                    <select
+                      disabled={!!saidaForm.contract_id}
+                      value={saidaForm.customer_id}
+                      onChange={(e) =>
+                        setSaidaForm({
+                          ...saidaForm,
+                          customer_id: e.target.value,
+                          customer_manual: '',
+                        })
+                      }
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    >
+                      <option value="">Nenhum / texto manual abaixo</option>
+                      {financeCustomers.map((cust) => (
+                        <option key={cust.id} value={cust.id}>
+                          {cust.name || cust.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente manual</label>
                     <input
                       type="text"
-                      readOnly
-                      value={saidaForm.customer_display || (saidaForm.contract_id ? '' : '—')}
-                      placeholder="Preenchido ao selecionar contrato"
-                      className="w-full bg-[#1c212a]/60 text-gray-400 border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed"
+                      disabled={!!saidaForm.contract_id || !!saidaForm.customer_id}
+                      value={saidaForm.customer_manual}
+                      onChange={(e) =>
+                        setSaidaForm({ ...saidaForm, customer_manual: e.target.value })
+                      }
+                      placeholder="Nome do cliente"
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Quadra / Lote</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Quadra manual</label>
                     <input
                       type="text"
-                      readOnly
-                      value={saidaForm.location_display || '—'}
-                      placeholder="Preenchido ao selecionar contrato"
-                      className="w-full bg-[#1c212a]/60 text-gray-400 border border-[#2d3340] rounded px-3 py-2 cursor-not-allowed"
+                      disabled={!!saidaForm.contract_id}
+                      value={saidaForm.quadra_manual}
+                      onChange={(e) =>
+                        setSaidaForm({ ...saidaForm, quadra_manual: e.target.value })
+                      }
+                      placeholder="Ex.: A"
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Lote manual</label>
+                    <input
+                      type="text"
+                      disabled={!!saidaForm.contract_id}
+                      value={saidaForm.lote_manual}
+                      onChange={(e) =>
+                        setSaidaForm({ ...saidaForm, lote_manual: e.target.value })
+                      }
+                      placeholder="Ex.: 12"
+                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                   </div>
                 </div>
