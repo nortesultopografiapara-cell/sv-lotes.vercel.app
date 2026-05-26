@@ -40,6 +40,157 @@ const BLOCKS_CONTRACT_SELECT = `
   "Lado Esq."
 `;
 
+const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
+
+/** Resolve tenant/empresa ativa (perfil + impersonação super admin). */
+function resolveContractsTenantId(user: any): string | null {
+  if (!user) return null;
+  if (user.tenant_id) return user.tenant_id;
+  if (typeof window !== "undefined") {
+    const impersonating = localStorage.getItem("impersonating_tenant_id");
+    if (impersonating && PLATFORM_ADMIN_ROLES.includes(user.role)) return impersonating;
+  }
+  return (user as any)?.company_id || null;
+}
+
+/** Sincroniza tenant com auth.uid() + users (fonte do RLS: current_tenant_id()). */
+async function resolveContractsTenantWithDb(user: any): Promise<string | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const authUserId = sessionData?.session?.user?.id;
+
+  if (authUserId) {
+    const { data, error } = await supabase
+      .from("users")
+      .select("tenant_id")
+      .eq("id", authUserId)
+      .maybeSingle();
+    if (!error && data?.tenant_id) return data.tenant_id;
+  }
+
+  return resolveContractsTenantId(user);
+}
+
+/**
+ * Carrega contratos sem joins — evita falha silenciosa do PostgREST.
+ * Tenta company_id, tenant_id, .or e por último sem filtro (admin).
+ */
+async function loadContractsList(
+  user: any,
+  tenantId: string | null,
+): Promise<any[]> {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+
+  const pushRows = (rows: any[] | null | undefined) => {
+    if (!rows?.length) return;
+    for (const row of rows) {
+      const id = row?.id;
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
+      merged.push(row);
+    }
+  };
+
+  const runQuery = async (
+    label: string,
+    build: () => ReturnType<typeof supabase.from>,
+  ) => {
+    const res = await build();
+    console.log("[CONTRATOS] contratos encontrados", {
+      via: label,
+      count: res.data?.length ?? 0,
+    });
+    if (res.error) {
+      console.error("[CONTRATOS] erro", { via: label, message: res.error.message, code: res.error.code });
+    }
+    pushRows(res.data);
+    return res;
+  };
+
+  if (tenantId) {
+    await runQuery("company_id", () =>
+      supabase
+        .from("contracts")
+        .select("*")
+        .eq("company_id", tenantId)
+        .order("created_at", { ascending: false }),
+    );
+
+    await runQuery("tenant_id", () =>
+      supabase
+        .from("contracts")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false }),
+    );
+
+    if (!merged.length) {
+      await runQuery("tenant_or_company", () =>
+        supabase
+          .from("contracts")
+          .select("*")
+          .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`)
+          .order("created_at", { ascending: false }),
+      );
+    }
+  }
+
+  if (!merged.length && user && PLATFORM_ADMIN_ROLES.includes(user.role)) {
+    await runQuery("admin_sem_filtro", () =>
+      supabase.from("contracts").select("*").order("created_at", { ascending: false }),
+    );
+  }
+
+  merged.sort((a, b) => {
+    const ta = new Date(a.created_at || 0).getTime();
+    const tb = new Date(b.created_at || 0).getTime();
+    return tb - ta;
+  });
+
+  return merged;
+}
+
+/** Status exibidos na lista — sem ocultar por customer/project nulo ou status ativo. */
+function isContractVisibleInList(_c: any): boolean {
+  return true;
+}
+
+/** Garante campos mínimos para exibição quando o join falha. */
+function enrichContractRow(row: any): any {
+  if (!row) return row;
+  const shortId = (id?: string) => (id ? `${String(id).slice(0, 8)}…` : "—");
+  return {
+    ...row,
+    customers:
+      row.customers ||
+      (row.customer_id
+        ? {
+            id: row.customer_id,
+            name: row.customer_name || `Cliente (${shortId(row.customer_id)})`,
+            document: row.customer_document || row.customer_cpf || "",
+          }
+        : null),
+    projects: row.projects || (row.project_id ? { id: row.project_id, name: row.project_name_snapshot || `Projeto ${shortId(row.project_id)}` } : null),
+    blocks:
+      row.blocks ||
+      (row.block_id
+        ? {
+            id: row.block_id,
+            number: row.lot_number || row.block_number || shortId(row.block_id),
+            block_name: row.block_name || row.quadra || "?",
+          }
+        : null),
+  };
+}
+
+function normalizeContractStatus(status?: string | null): string {
+  const st = String(status ?? "").toLowerCase().trim();
+  if (!st || st === "null" || st === "undefined") return "ativo";
+  return st;
+}
+
 /** Unifica nomes de colunas (snake_case e Civil3D) para o contractTemplate */
 function enrichBlockForContract(block: Record<string, any> | null | undefined): Record<string, any> {
   if (!block || typeof block !== "object") return {};
@@ -91,7 +242,7 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function loadTenant() {
-      const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
+      const resolvedTenantId = resolveContractsTenantId(user);
       if (resolvedTenantId) {
         const { data } = await supabase
           .from("companies")
@@ -106,60 +257,49 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function loadContracts() {
-      const resolvedTenantId = (user as any)?.company_id || user?.tenant_id;
-      console.log("USER CONTRATOS:", user);
-      console.log("TENANT CONTRATOS:", resolvedTenantId);
+      setLoading(true);
 
-      if (!resolvedTenantId && user?.role !== "SUPER_ADMIN") {
-        console.warn("tenant_id não encontrado para carregar contratos");
-        setLoading(false);
-        return;
-      }
+      try {
+        const resolvedTenantId = await resolveContractsTenantWithDb(user);
 
-      let query = supabase
-        .from("contracts")
-        .select(`
-          *,
-          customers:customer_id(*),
-          sales:sale_id(*, projects:project_id(*), blocks:block_id(${BLOCKS_CONTRACT_SELECT})),
-          projects:project_id(*),
-          blocks:block_id(${BLOCKS_CONTRACT_SELECT}, projects:project_id(*))
-        `)
-        .order("created_at", { ascending: false });
+        console.log("[CONTRATOS] empresa atual", {
+          user_id: user?.id,
+          role: user?.role,
+          tenant_id_perfil: user?.tenant_id,
+          company_id_perfil: (user as any)?.company_id,
+          tenant_resolvido: resolvedTenantId,
+          impersonating:
+            typeof window !== "undefined"
+              ? localStorage.getItem("impersonating_tenant_id")
+              : null,
+        });
 
-      if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
-        query = query.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-      } else if (user?.role !== "SUPER_ADMIN" && !resolvedTenantId) {
-        setLoading(false);
-        return;
-      }
+        const isPlatformAdmin =
+          user?.role && PLATFORM_ADMIN_ROLES.includes(user.role);
 
-      let { data, error } = await query;
-      console.log("CONTRACTS FETCH ENRICHED:", data, error);
-
-      if (error) {
-        console.warn("ERRO JOIN CONTRACTS. Buscando raw fallback...", error);
-        let fallbackQuery = supabase
-          .from("contracts")
-          .select(`*, customers:customer_id(*), projects:project_id(*), blocks:block_id(${BLOCKS_CONTRACT_SELECT})`)
-          .order("created_at", { ascending: false });
-          
-        if (user?.role !== "SUPER_ADMIN" && resolvedTenantId) {
-          fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-        } else if (user?.role !== "SUPER_ADMIN" && !resolvedTenantId) {
-          setLoading(false);
+        if (!resolvedTenantId && !isPlatformAdmin) {
+          console.warn("[CONTRATOS] erro — tenant não identificado no perfil");
+          setContracts([]);
           return;
         }
-        
-        const fallbackRes = await fallbackQuery;
-        console.log("CONTRACTS RAW FALLBACK:", fallbackRes.data, fallbackRes.error);
-        data = fallbackRes.data;
-        error = fallbackRes.error;
-      }
 
-      console.log("CONTRACTS FINAL DATA:", data, error);
-      if (data) processContracts(data);
-      setLoading(false);
+        const rawRows = await loadContractsList(user, resolvedTenantId);
+        const visible = rawRows.filter(isContractVisibleInList);
+        const rows = visible.map(enrichContractRow);
+
+        console.log("[CONTRATOS] contratos encontrados", {
+          total: rows.length,
+          numeros: rows.map((c) => c.contract_number),
+          statuses: rows.map((c) => c.status),
+        });
+
+        processContracts(rows);
+      } catch (e) {
+        console.error("[CONTRATOS] erro", e);
+        setContracts([]);
+      } finally {
+        setLoading(false);
+      }
     }
 
     function processContracts(data: any[]) {
@@ -172,22 +312,24 @@ export default function ContractsPage() {
         valorTotal = 0;
 
       data.forEach((c) => {
-        const st = c.status?.toLowerCase() || "pendente";
+        const st = normalizeContractStatus(c.status);
         const val = Number(
           c.sales?.total_value ||
             c.sales?.final_value ||
             c.sales?.agreed_price ||
+            c.sale_value ||
             0,
         );
 
         valorTotal += val;
 
-        if (st === "assinado") {
+        if (st === "assinado" || st === "signed") {
           assinados++;
           ativos++;
-        } else if (st === "cancelado") {
+        } else if (st === "cancelado" || st === "cancelled") {
           cancelados++;
         } else {
+          // ativo, active, pendente, pending, null, rascunho, etc.
           pendentes++;
           ativos++;
         }
@@ -219,7 +361,7 @@ export default function ContractsPage() {
     return () => { active = false; };
   }, [selectedContract]);
 
-  const filteredContracts = contracts.filter((c) => {
+  const filteredContracts = contracts.filter(isContractVisibleInList).filter((c) => {
     const p = c.customers?.name?.toLowerCase() || "";
     const proj =
       c.project_name_snapshot?.toLowerCase() ||
@@ -232,30 +374,45 @@ export default function ContractsPage() {
       c.customers?.cpf?.toLowerCase() ||
       "";
     const cnum = c.contract_number?.toLowerCase() || "";
+    const cid = String(c.customer_id || "").toLowerCase();
+    const bid = String(c.block_id || "").toLowerCase();
+    const pid = String(c.project_id || "").toLowerCase();
+    const st = normalizeContractStatus(c.status);
     const term = search.toLowerCase();
+
+    if (!term) return true;
 
     return (
       p.includes(term) ||
       proj.includes(term) ||
       doc.includes(term) ||
-      cnum.includes(term)
+      cnum.includes(term) ||
+      cid.includes(term) ||
+      bid.includes(term) ||
+      pid.includes(term) ||
+      st.includes(term)
     );
   });
 
   const getStatusColor = (status: string) => {
-    const st = status?.toLowerCase() || "pendente";
-    if (st === "assinado")
+    const st = normalizeContractStatus(status);
+    if (st === "assinado" || st === "signed")
       return "text-[var(--color-success)] bg-[var(--color-success)]/10 border-[var(--color-success)]/20";
-    if (st === "cancelado")
+    if (st === "cancelado" || st === "cancelled")
       return "text-[var(--color-danger)] bg-[var(--color-danger)]/10 border-[var(--color-danger)]/20";
+    if (st === "ativo" || st === "active")
+      return "text-[var(--color-primary)] bg-[var(--color-primary)]/10 border-[var(--color-primary)]/20";
     return "text-[var(--color-warning)] bg-[var(--color-warning)]/10 border-[var(--color-warning)]/20";
   };
 
   const getStatusLabel = (status: string) => {
-    const st = status?.toLowerCase() || "pendente";
-    if (st === "assinado") return "Assinado";
-    if (st === "cancelado") return "Cancelado";
-    return "Pendente";
+    const st = normalizeContractStatus(status);
+    if (st === "assinado" || st === "signed") return "Assinado";
+    if (st === "cancelado" || st === "cancelled") return "Cancelado";
+    if (st === "ativo" || st === "active") return "Ativo";
+    if (st === "pending" || st === "pendente") return "Pendente";
+    if (st === "rascunho" || st === "draft") return "Rascunho";
+    return st ? st.charAt(0).toUpperCase() + st.slice(1) : "Ativo";
   };
 
   const handleBaixarPDF = async () => {
@@ -1220,6 +1377,11 @@ export default function ContractsPage() {
                         CPF/CNPJ: {c.customers.document}
                       </div>
                     )}
+                    <div className="text-[10px] text-gray-600 mt-0.5 font-mono">
+                      {c.customer_id ? `cliente: ${String(c.customer_id).slice(0, 8)}…` : ""}
+                      {c.block_id ? ` • lote: ${String(c.block_id).slice(0, 8)}…` : ""}
+                      {c.project_id ? ` • proj: ${String(c.project_id).slice(0, 8)}…` : ""}
+                    </div>
 
                     <div className="flex justify-between items-end mt-3">
                       <div>
