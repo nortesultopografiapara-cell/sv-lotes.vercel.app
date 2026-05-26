@@ -559,6 +559,20 @@ export default function MapPage() {
     }
   }, [user, authLoading, loadProjects]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || projects.length === 0) return;
+    const raw = sessionStorage.getItem('sv_gis_focus');
+    if (!raw) return;
+    try {
+      const { projectId } = JSON.parse(raw) as { projectId?: string; blockId?: string };
+      const proj = projects.find((p) => p.id === projectId);
+      if (proj) setSelectedProject(proj);
+      sessionStorage.removeItem('sv_gis_focus');
+    } catch {
+      sessionStorage.removeItem('sv_gis_focus');
+    }
+  }, [projects]);
+
   const filteredProjects = projects.filter(p => 
      p.name.toLowerCase().includes(search.toLowerCase()) || 
      (p.location && p.location.toLowerCase().includes(search.toLowerCase()))

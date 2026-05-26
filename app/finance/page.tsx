@@ -2,8 +2,9 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, Link2, MapPin, RotateCcw } from 'lucide-react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import {
@@ -98,8 +99,45 @@ const INITIAL_SAIDA_FORM = {
   movement_date: new Date().toISOString().split('T')[0],
 };
 
+function FlowIconBtn({
+  title,
+  onClick,
+  children,
+  tone = 'default',
+  disabled = false,
+}: {
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+  tone?: 'default' | 'blue' | 'orange' | 'red' | 'green';
+  disabled?: boolean;
+}) {
+  const hoverClass =
+    tone === 'blue'
+      ? 'hover:text-[#4999e9]'
+      : tone === 'orange'
+        ? 'hover:text-orange-400'
+        : tone === 'red'
+          ? 'hover:text-[#f04449]'
+          : tone === 'green'
+            ? 'hover:text-[#2ad271]'
+            : 'hover:text-white';
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={`p-1.5 text-gray-500 ${hoverClass} transition-colors rounded hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   
   // States
   const [search, setSearch] = useState('');
@@ -145,6 +183,8 @@ export default function FinancePage() {
   const [financeBrokers, setFinanceBrokers] = useState<any[]>([]);
   const [financeContracts, setFinanceContracts] = useState<any[]>([]);
   const [loadingSaidaLookups, setLoadingSaidaLookups] = useState(false);
+  const [editingCashMovementId, setEditingCashMovementId] = useState<string | null>(null);
+  const [selectedFlowItem, setSelectedFlowItem] = useState<CashFlowItem | null>(null);
 
   const contractsForSaida = useMemo(() => {
     if (!saidaForm.project_id) return financeContracts;
@@ -830,10 +870,20 @@ export default function FinancePage() {
       if (saidaForm.customer_id) payload.customer_id = saidaForm.customer_id;
       if (saidaForm.broker_id) payload.broker_id = saidaForm.broker_id;
 
-      const { error } = await supabase.from('cash_movements').insert(payload);
+      let error;
+      if (editingCashMovementId) {
+        const { error: updErr } = await supabase
+          .from('cash_movements')
+          .update(payload)
+          .eq('id', editingCashMovementId);
+        error = updErr;
+        console.log('[FINANCEIRO] editar saída', editingCashMovementId, payload);
+      } else {
+        const { error: insErr } = await supabase.from('cash_movements').insert(payload);
+        error = insErr;
+        console.log('[FINANCEIRO] saída salva', payload);
+      }
       if (error) throw error;
-
-      console.log('[FINANCEIRO] saída salva', payload);
 
       try {
         await supabase.from('audit_logs').insert([
@@ -850,10 +900,12 @@ export default function FinancePage() {
         console.warn(auditErr);
       }
 
+      const wasEdit = !!editingCashMovementId;
       setShowSaidaModal(false);
+      setEditingCashMovementId(null);
       setSaidaForm({ ...INITIAL_SAIDA_FORM });
       await loadFinance();
-      alert('Saída registrada com sucesso.');
+      alert(wasEdit ? 'Saída atualizada com sucesso.' : 'Saída registrada com sucesso.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(err);
@@ -994,6 +1046,282 @@ export default function FinancePage() {
     await addProfessionalFooterAndSignature(doc, companyName, 'Recibo/Carnê');
 
     doc.save(`Carne_${contractNo}_${dueDate.replace(/\//g,'')}.pdf`);
+  };
+
+  const handleGenerateSaidaComprovante = async (item: CashFlowItem) => {
+    const doc = new jsPDF('portrait', 'pt', 'a4');
+    const companyName = tenantData
+      ? (tenantData.razao_social || tenantData.name).toUpperCase()
+      : 'EMPRESA';
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('COMPROVANTE DE SAÍDA', 40, 40);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(companyName, 40, 55);
+    const rows = [
+      ['Data', formatFlowDate(item.movement_date)],
+      ['Categoria', item.category],
+      ['Descrição', item.description],
+      ['Valor', formatCurrency(item.amount)],
+      ['Projeto', flowDisplayLabel(item.projectName, item.isManual)],
+      ['Cliente', flowDisplayLabel(item.customerName, item.isManual)],
+      ['Corretor', flowDisplayLabel(item.brokerName, item.isManual)],
+      [
+        'Contrato',
+        item.contractNumber && item.contractNumber !== 'Lançamento manual'
+          ? displayContractNumber(item.contractNumber)
+          : flowDisplayLabel('', item.isManual),
+      ],
+      ['Local', item.locationLabel || flowDisplayLabel('', item.isManual)],
+      ['Status', item.status === 'estornado' ? 'Estornado' : 'Ativo'],
+    ];
+    autoTable(doc, {
+      startY: 70,
+      head: [['Campo', 'Valor']],
+      body: rows,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [52, 73, 94] },
+    });
+    const { addProfessionalFooterAndSignature } = await import('@/lib/pdfUtils');
+    await addProfessionalFooterAndSignature(doc, companyName, 'Comprovante de Saída');
+    doc.save(`comprovante_saida_${item.cashMovementId || item.id}_${Date.now()}.pdf`);
+  };
+
+  const handleFlowView = (item: CashFlowItem) => {
+    if (item.source === 'finance_receipts' && item.receiptId) {
+      const payment = payments.find((p) => p.id === item.receiptId);
+      if (payment) {
+        setSelectedPayment(payment);
+        return;
+      }
+    }
+    setSelectedFlowItem(item);
+  };
+
+  const handleFlowOpenContract = (item: CashFlowItem) => {
+    if (!item.contractId) return;
+    console.log('[FINANCEIRO] abrir contrato', item.contractId);
+    sessionStorage.setItem('sv_contract_focus', item.contractId);
+    router.push('/contracts');
+  };
+
+  const handleFlowOpenMap = (item: CashFlowItem) => {
+    if (!item.blockId || !item.projectId) return;
+    console.log('[FINANCEIRO] abrir mapa', { projectId: item.projectId, blockId: item.blockId });
+    sessionStorage.setItem(
+      'sv_gis_focus',
+      JSON.stringify({ projectId: item.projectId, blockId: item.blockId }),
+    );
+    router.push('/map');
+  };
+
+  const handleFlowOpenLink = (item: CashFlowItem) => {
+    if (item.contractId) {
+      handleFlowOpenContract(item);
+      return;
+    }
+    if (item.saleId) {
+      console.log('[FINANCEIRO] abrir vínculo venda', item.saleId);
+      sessionStorage.setItem('sv_sale_focus', item.saleId);
+      router.push('/contracts');
+      return;
+    }
+    if (item.brokerId) {
+      router.push('/dashboard/brokers');
+    }
+  };
+
+  const handleFlowReverse = async (item: CashFlowItem) => {
+    if (
+      !window.confirm(
+        'Deseja estornar esta movimentação? O saldo do fluxo de caixa será recalculado.',
+      )
+    ) {
+      return;
+    }
+    try {
+      if (item.receiptId && item.source === 'finance_receipts') {
+        await supabase
+          .from('finance_receipts')
+          .update({ status: 'pendente', paid_amount: null, paid_at: null })
+          .eq('id', item.receiptId);
+        const linkedCash = cashMovements.find(
+          (c) => c.finance_receipt_id === item.receiptId,
+        );
+        if (linkedCash?.id) {
+          await supabase
+            .from('cash_movements')
+            .update({ status: 'estornado' })
+            .eq('id', linkedCash.id);
+        }
+      } else if (item.cashMovementId) {
+        await supabase
+          .from('cash_movements')
+          .update({ status: 'estornado' })
+          .eq('id', item.cashMovementId);
+      } else if (item.commissionId) {
+        await supabase
+          .from('broker_commissions')
+          .update({ status: 'pendente' })
+          .eq('id', item.commissionId);
+      }
+      await loadFinance();
+      alert('Movimentação estornada.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      alert('Erro ao estornar: ' + message);
+    }
+  };
+
+  const handleFlowEditSaida = (item: CashFlowItem) => {
+    if (!item.cashMovementId) return;
+    const cm = cashMovements.find((c) => c.id === item.cashMovementId);
+    if (!cm) return;
+    console.log('[FINANCEIRO] editar saída', item.cashMovementId);
+    const block = cm.contracts?.blocks || cm.sales?.blocks;
+    const quad = block?.block_name || block?.name || '';
+    const lot = block?.lot_number || block?.number || '';
+    const loc =
+      quad && lot ? `QD ${quad} • LT ${lot}` : quad ? `QD ${quad}` : lot ? `LT ${lot}` : '';
+    setEditingCashMovementId(item.cashMovementId);
+    setSaidaForm({
+      category: cm.category || 'Outros',
+      description: cm.description || '',
+      amount: String(cm.amount ?? ''),
+      project_id: cm.project_id || cm.contracts?.project_id || '',
+      contract_id: cm.contract_id || '',
+      broker_id: cm.broker_id || '',
+      customer_id: cm.customer_id || '',
+      sale_id: cm.sale_id || '',
+      customer_display:
+        cm.customers?.name ||
+        cm.customers?.full_name ||
+        cm.contracts?.customers?.name ||
+        '',
+      location_display: loc,
+      movement_date: (cm.movement_date || '').split('T')[0] || new Date().toISOString().split('T')[0],
+    });
+    setShowSaidaModal(true);
+  };
+
+  const handleFlowDeleteSaida = async (item: CashFlowItem) => {
+    if (!item.cashMovementId) return;
+    if (!window.confirm('Excluir esta saída permanentemente?')) return;
+    try {
+      const { error } = await supabase
+        .from('cash_movements')
+        .delete()
+        .eq('id', item.cashMovementId);
+      if (error) throw error;
+      await loadFinance();
+      alert('Saída excluída.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      alert('Erro ao excluir: ' + message);
+    }
+  };
+
+  const renderFlowActions = (item: CashFlowItem) => {
+    const isActive = item.status !== 'estornado';
+    const canContract = !!item.contractId;
+    const canMap = !!item.blockId && !!item.projectId;
+    const canEdit = !!item.cashMovementId && item.source === 'cash_movements';
+    const canDelete = canEdit && isActive;
+    const canReceiptPdf = !!item.receiptId && item.source === 'finance_receipts';
+    const canSaidaPdf = item.tipo === 'saida' && isActive;
+    const canReverse =
+      isActive &&
+      (!!item.receiptId || !!item.cashMovementId || !!item.commissionId);
+
+    if (item.isManual) {
+      return (
+        <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+          <FlowIconBtn title="Visualizar movimentação" onClick={() => handleFlowView(item)}>
+            <Eye className="w-4 h-4" />
+          </FlowIconBtn>
+          {canEdit && (
+            <FlowIconBtn title="Editar saída" tone="blue" onClick={() => handleFlowEditSaida(item)}>
+              <Pencil className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+          {canDelete && (
+            <FlowIconBtn title="Excluir saída" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
+              <Trash2 className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+        </div>
+      );
+    }
+
+    if (item.tipo === 'entrada') {
+      return (
+        <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+          <FlowIconBtn title="Visualizar movimentação" onClick={() => handleFlowView(item)}>
+            <Eye className="w-4 h-4" />
+          </FlowIconBtn>
+          {canReceiptPdf && (
+            <FlowIconBtn
+              title="Baixar recibo/PDF"
+              tone="blue"
+              onClick={() => {
+                const p = payments.find((pay) => pay.id === item.receiptId);
+                if (p) handleGenerateCarne(p);
+              }}
+            >
+              <FileText className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+          {canContract && (
+            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
+              <Link2 className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+          {canMap && (
+            <FlowIconBtn title="Abrir no mapa" tone="blue" onClick={() => handleFlowOpenMap(item)}>
+              <MapPin className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+          {canReverse && (
+            <FlowIconBtn title="Estornar recebimento" tone="orange" onClick={() => handleFlowReverse(item)}>
+              <RotateCcw className="w-4 h-4" />
+            </FlowIconBtn>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+        <FlowIconBtn title="Ver detalhes" onClick={() => handleFlowView(item)}>
+          <Eye className="w-4 h-4" />
+        </FlowIconBtn>
+        {canEdit && (
+          <FlowIconBtn title="Editar saída" tone="blue" onClick={() => handleFlowEditSaida(item)}>
+            <Pencil className="w-4 h-4" />
+          </FlowIconBtn>
+        )}
+        {canSaidaPdf && (
+          <FlowIconBtn
+            title="Gerar comprovante PDF"
+            tone="blue"
+            onClick={() => handleGenerateSaidaComprovante(item)}
+          >
+            <FileText className="w-4 h-4" />
+          </FlowIconBtn>
+        )}
+        {(canContract || item.saleId || item.brokerId) && (
+          <FlowIconBtn title="Abrir vínculo relacionado" tone="blue" onClick={() => handleFlowOpenLink(item)}>
+            <Link2 className="w-4 h-4" />
+          </FlowIconBtn>
+        )}
+        {canDelete && (
+          <FlowIconBtn title="Excluir saída" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
+            <Trash2 className="w-4 h-4" />
+          </FlowIconBtn>
+        )}
+      </div>
+    );
   };
 
   const handleExportExcel = async () => {
@@ -1983,7 +2311,7 @@ export default function FinancePage() {
 
           <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
 
-          <button onClick={() => setShowSaidaModal(true)} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
+          <button onClick={() => { setEditingCashMovementId(null); setSaidaForm({ ...INITIAL_SAIDA_FORM }); setShowSaidaModal(true); }} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
             <TrendingDown className="w-4 h-4" />
             Registrar Saída
           </button>
@@ -2494,20 +2822,8 @@ export default function FinancePage() {
                               <span className="text-xs text-emerald-500 font-bold bg-emerald-500/10 px-2 py-1 rounded">ATIVO</span>
                             )}
                          </td>
-                         <td className="px-5 py-4 text-right">
-                            {item.cashMovementId && item.status === 'ativo' && (
-                               <button 
-                                 onClick={async () => {
-                                    if(window.confirm('Atenção, deseja marcar esta movimentação como ESTORNADA? Isso impactará o saldo.')) {
-                                       await supabase.from('cash_movements').update({status:'estornado'}).eq('id', item.cashMovementId);
-                                       try { await supabase.from('audit_logs').insert({action:'CASH_MOVEMENT_REVERSED', user_id: user?.id, tenant_id: user?.tenant_id||((user as any)?.company_id)}); } catch(e){}
-                                       await loadFinance();
-                                    }
-                                 }}
-                                 className="opacity-0 group-hover:opacity-100 p-1.5 text-orange-500 hover:text-white hover:bg-orange-500/80 rounded transition-all text-xs border border-orange-500/30" title="Estornar">
-                                 Estornar
-                               </button>
-                            )}
+                         <td className="px-3 py-4 text-right min-w-[140px]">
+                            {renderFlowActions(item)}
                          </td>
                       </tr>
                   ))}
@@ -2515,6 +2831,67 @@ export default function FinancePage() {
             </table>
          )}
       </div>
+      )}
+
+      {selectedFlowItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white">Detalhes da Movimentação</h3>
+              <button onClick={() => setSelectedFlowItem(null)} className="text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3 text-sm text-gray-300">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-xs text-gray-500 block">Data</span>
+                  {formatFlowDate(selectedFlowItem.movement_date)}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Tipo</span>
+                  {selectedFlowItem.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Categoria</span>
+                  {selectedFlowItem.category}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Valor</span>
+                  {formatCurrency(selectedFlowItem.amount)}
+                </div>
+                <div className="col-span-2">
+                  <span className="text-xs text-gray-500 block">Descrição</span>
+                  {selectedFlowItem.description}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Cliente</span>
+                  {flowDisplayLabel(selectedFlowItem.customerName, selectedFlowItem.isManual)}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Corretor</span>
+                  {flowDisplayLabel(selectedFlowItem.brokerName, selectedFlowItem.isManual)}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Projeto</span>
+                  {flowDisplayLabel(selectedFlowItem.projectName, selectedFlowItem.isManual)}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Contrato</span>
+                  {selectedFlowItem.contractNumber && selectedFlowItem.contractNumber !== 'Lançamento manual'
+                    ? displayContractNumber(selectedFlowItem.contractNumber)
+                    : flowDisplayLabel('', selectedFlowItem.isManual)}
+                </div>
+                {selectedFlowItem.locationLabel && selectedFlowItem.locationLabel !== 'Lançamento manual' && (
+                  <div className="col-span-2">
+                    <span className="text-xs text-gray-500 block">Quadra / Lote</span>
+                    {selectedFlowItem.locationLabel}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {selectedPayment && (
@@ -2589,9 +2966,16 @@ export default function FinancePage() {
               <div className="p-6 border-b border-[#1f232b] flex justify-between items-center sticky top-0 bg-[#13161c] z-10">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
-                  Registrar Saída
+                  {editingCashMovementId ? 'Editar Saída' : 'Registrar Saída'}
                 </h3>
-                <button type="button" onClick={() => setShowSaidaModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSaidaModal(false);
+                    setEditingCashMovementId(null);
+                    setSaidaForm({ ...INITIAL_SAIDA_FORM });
+                  }}
+                  className="text-gray-500 hover:text-white transition-colors"
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -2740,7 +3124,7 @@ export default function FinancePage() {
                    Cancelar
                  </button>
                  <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded shadow transition-colors">
-                   Confirmar Saída
+                   {editingCashMovementId ? 'Salvar alterações' : 'Confirmar Saída'}
                  </button>
               </div>
             </form>

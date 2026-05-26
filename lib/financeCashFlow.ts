@@ -4,6 +4,13 @@ export type CashFlowItem = {
   id: string;
   source: "finance_receipts" | "cash_movements" | "broker_commissions";
   cashMovementId: string | null;
+  receiptId: string | null;
+  contractId: string | null;
+  blockId: string | null;
+  projectId: string | null;
+  saleId: string | null;
+  brokerId: string | null;
+  commissionId: string | null;
   movement_date: string;
   tipo: "entrada" | "saida";
   category: string;
@@ -181,10 +188,13 @@ export function buildCashFlowItems(
       p.sales?.projects?.name ||
       p.blocks?.projects?.name ||
       "Geral/Outros";
+    const saleContracts = p.sales?.contracts;
+    const firstSaleContract = Array.isArray(saleContracts)
+      ? saleContracts[0]
+      : saleContracts;
     const contractNumber = displayContractNumber(
       p.contracts?.contract_number ||
-        p.sales?.contracts?.[0]?.contract_number ||
-        p.sales?.contracts?.contract_number ||
+        firstSaleContract?.contract_number ||
         "",
     );
 
@@ -192,6 +202,13 @@ export function buildCashFlowItems(
       id: `rec_${p.id}`,
       source: "finance_receipts",
       cashMovementId: null,
+      receiptId: p.id,
+      contractId: p.contract_id || firstSaleContract?.id || null,
+      blockId: p.block_id || p.blocks?.id || null,
+      projectId: p.project_id || p.projects?.id || p.sales?.project_id || null,
+      saleId: p.sale_id || null,
+      brokerId: p.broker_id || null,
+      commissionId: null,
       movement_date: p.paid_at || p.due_date || p.created_at || "",
       tipo: "entrada",
       category:
@@ -231,6 +248,21 @@ export function buildCashFlowItems(
       id: `cash_${c.id}`,
       source: "cash_movements",
       cashMovementId: c.id,
+      receiptId: c.finance_receipt_id || null,
+      contractId: c.contract_id || c.contracts?.id || null,
+      blockId:
+        c.contracts?.block_id ||
+        c.sales?.block_id ||
+        c.sales?.blocks?.id ||
+        null,
+      projectId:
+        c.project_id ||
+        c.contracts?.project_id ||
+        c.sales?.project_id ||
+        null,
+      saleId: c.sale_id || null,
+      brokerId: c.broker_id || null,
+      commissionId: null,
       movement_date: c.movement_date || c.created_at?.split("T")[0] || "",
       tipo: isSaida ? "saida" : "entrada",
       category: c.category || (isSaida ? "Despesa" : "Entrada manual"),
@@ -287,6 +319,17 @@ export function buildCashFlowItems(
       id: `comm_${cm.id}`,
       source: "broker_commissions",
       cashMovementId: null,
+      receiptId: null,
+      contractId: firstContract.id || cm.contract_id || cm.contracts?.id || null,
+      blockId: firstBlock.id || cm.sales?.block_id || null,
+      projectId:
+        cm.sales?.project_id ||
+        cm.contracts?.project_id ||
+        cm.sales?.projects?.id ||
+        null,
+      saleId: cm.sale_id || null,
+      brokerId: cm.broker_id || null,
+      commissionId: cm.id,
       movement_date: cm.paid_at || cm.created_at || "",
       tipo: "saida",
       category: "Comissão",
