@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, MonitorPlay, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, MonitorPlay, AlertTriangle, ShieldCheck, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
@@ -15,8 +16,10 @@ interface NewCompanyModalProps {
 export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [cnpjHint, setCnpjHint] = useState('');
   const [activeTab, setActiveTab] = useState<'geral' | 'seguranca'>('geral');
 
   const [formData, setFormData] = useState({
@@ -35,6 +38,73 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
   });
 
   if (!isOpen) return null;
+
+  const handleCnpjChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, cnpj: value }));
+    const digitsLen = value.replace(/\D/g, '').length;
+    if (digitsLen === 11) {
+      setCnpjHint('Consulta automática disponível apenas para CNPJ.');
+    } else if (digitsLen === 14) {
+      setCnpjHint('CNPJ completo. Clique em Buscar CNPJ para preencher os dados.');
+    } else {
+      setCnpjHint('');
+    }
+  };
+
+  const handleLookupCnpj = async () => {
+    setError('');
+    setSuccessMsg('');
+
+    if (isCpfDocument(formData.cnpj)) {
+      setCnpjHint('Consulta automática disponível apenas para CNPJ.');
+      return;
+    }
+
+    if (!isCnpjDocument(formData.cnpj)) {
+      setCnpjHint('Informe os 14 dígitos do CNPJ para buscar.');
+      return;
+    }
+
+    setCnpjLookupLoading(true);
+    setCnpjHint('Consultando CNPJ...');
+
+    try {
+      const digits = formData.cnpj.replace(/\D/g, '');
+      const res = await fetch(`/api/company-lookup?cnpj=${digits}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg =
+          data?.error ||
+          (res.status === 404
+            ? 'CNPJ não encontrado. Preencha manualmente.'
+            : 'Não foi possível consultar o CNPJ.');
+        setCnpjHint(msg);
+        return;
+      }
+
+      const company = data.company;
+      if (company) {
+        setFormData((prev) => ({
+          ...prev,
+          name: company.name || prev.name,
+          cnpj: company.cnpj || prev.cnpj,
+          email: company.email || prev.email,
+          phone: company.phone || prev.phone,
+          address: company.address || prev.address,
+          city: company.city || prev.city,
+          state: company.state || prev.state,
+          cep: company.cep || prev.cep,
+        }));
+        setCnpjHint('Dados preenchidos. Revise e clique em Salvar Configurações.');
+        setSuccessMsg('Dados do CNPJ carregados com sucesso.');
+      }
+    } catch {
+      setCnpjHint('Erro na consulta. Preencha manualmente.');
+    } finally {
+      setCnpjLookupLoading(false);
+    }
+  };
 
   const handleResetPassword = async () => {
     if (!initialData) return;
@@ -269,13 +339,47 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
               <div>
                 <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">CNPJ / CPF</label>
-                <input 
-                  type="text" 
-                  value={formData.cnpj}
-                  onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-                  placeholder="00.000.000/0001-00"
-                  className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={formData.cnpj}
+                    onChange={(e) => handleCnpjChange(e.target.value)}
+                    placeholder="00.000.000/0001-00"
+                    className="flex-1 min-w-0 bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLookupCnpj}
+                    disabled={cnpjLookupLoading || loading || !isCnpjDocument(formData.cnpj)}
+                    className="shrink-0 px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 border border-blue-500/30"
+                    title="Consultar CNPJ na Receita Federal via BrasilAPI"
+                  >
+                    {cnpjLookupLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="hidden sm:inline">Consultando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" />
+                        <span className="hidden sm:inline">Buscar CNPJ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {cnpjHint && (
+                  <p
+                    className={`text-xs mt-1.5 ${
+                      cnpjHint.includes('não encontrado') || cnpjHint.includes('Erro')
+                        ? 'text-amber-400'
+                        : cnpjHint.includes('Consultando')
+                          ? 'text-blue-400'
+                          : 'text-gray-500'
+                    }`}
+                  >
+                    {cnpjHint}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -507,7 +611,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
           <button 
             type="submit"
             form="new-company-form"
-            disabled={loading || activeTab !== 'geral'}
+            disabled={loading || cnpjLookupLoading || activeTab !== 'geral'}
             className="w-full sm:w-auto px-6 py-2.5 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar Configurações"}
