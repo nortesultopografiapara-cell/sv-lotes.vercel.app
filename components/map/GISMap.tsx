@@ -19,7 +19,10 @@ import L from "leaflet";
 import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { allocateContractNumber } from "@/lib/contractNumber";
+import {
+  getNextContractNumber,
+  isValidStoredContractNumber,
+} from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import {
   chanfreTooltipText,
@@ -75,6 +78,31 @@ const BLOCKS_SALE_SELECT = `
   "Lado Dir.",
   "Lado Esq."
 `;
+
+/** Numeração via API (service role) — evita RLS vazio no browser. */
+async function fetchNextContractNumberFromApi(
+  tenantId: string,
+  companyId: string,
+): Promise<string> {
+  const res = await fetch("/api/contracts/next-number", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tenantId, companyId }),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      json?.error || `Falha ao gerar número do contrato (${res.status})`,
+    );
+  }
+
+  const num = String(json.contract_number || "").trim();
+  if (!isValidStoredContractNumber(num)) {
+    throw new Error("Número de contrato retornado em formato inválido");
+  }
+  return num;
+}
 
 async function fetchBlockForContract(lotId: string) {
   const { data, error } = await supabase
@@ -2076,10 +2104,31 @@ export default function GISMap({
               projectId: finalProjectId,
             });
 
-            const contractNumber = await allocateContractNumber(
-              supabase,
-              finalTenantId,
-            );
+            let contractNumber: string;
+            try {
+              contractNumber = await fetchNextContractNumberFromApi(
+                finalTenantId,
+                finalTenantId,
+              );
+            } catch (apiNumErr) {
+              console.warn(
+                "[VENDA] API next-number falhou, tentando client",
+                apiNumErr,
+              );
+              contractNumber = await getNextContractNumber(
+                supabase,
+                finalTenantId,
+                finalTenantId,
+              );
+            }
+
+            if (!isValidStoredContractNumber(contractNumber)) {
+              throw new Error(
+                `Número de contrato inválido gerado: ${contractNumber}`,
+              );
+            }
+
+            console.log("[VENDA] contract_number gerado", contractNumber);
 
             const blockRow = (await fetchBlockForContract(lot.id)) || lot;
             const contractHtml = generateContractHTML({
@@ -2147,6 +2196,22 @@ export default function GISMap({
               );
             } else {
               newContractData = insertedContract;
+
+              if (
+                insertedContract.contract_number !== contractNumber &&
+                insertedContract.id
+              ) {
+                const { data: fixedRow, error: fixNumErr } = await supabase
+                  .from("contracts")
+                  .update({ contract_number: contractNumber })
+                  .eq("id", insertedContract.id)
+                  .select("*")
+                  .single();
+                if (!fixNumErr && fixedRow) {
+                  newContractData = fixedRow;
+                  console.log("[VENDA] contract_number corrigido no banco");
+                }
+              }
 
               if (contractHtml && !insertedContract.generated_html) {
                 const { error: htmlUpdErr } = await supabase

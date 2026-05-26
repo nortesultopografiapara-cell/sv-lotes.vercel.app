@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { generateContractHTML } from '@/lib/contractTemplate';
-import { createClient } from '@supabase/supabase-js';
+import {
+  ensureValidContractNumber,
+  isValidStoredContractNumber,
+} from '@/lib/contractNumber';
+import { createAdminSupabase } from '@/lib/supabase/server';
 
 export async function GET() {
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const { client: supabaseAdmin, configError } = createAdminSupabase();
+  if (!supabaseAdmin || configError) {
+    return NextResponse.json({ error: configError }, { status: 503 });
+  }
 
   const { data: contracts, error } = await supabaseAdmin.from('contracts').select(`
     *,
@@ -19,7 +23,7 @@ export async function GET() {
   if (error) return NextResponse.json({ error }, { status: 500 });
   
   let updatedCount = 0;
-  for (const contract of contracts) {
+  for (const contract of contracts || []) {
       let fetchedProject = contract.projects;
       const pid = contract.project_id || contract.sales?.project_id || contract.blocks?.project_id;
       if (pid) {
@@ -37,8 +41,22 @@ export async function GET() {
          project_uf_snapshot: isValid(contract.project_uf_snapshot) ? contract.project_uf_snapshot : (projData.uf || null),
          forum_city_snapshot: isValid(contract.forum_city_snapshot) ? contract.forum_city_snapshot : (projData.forum_city || projData.city || null),
       };
+
+      let contractNumber = contract.contract_number;
+      if (!isValidStoredContractNumber(contractNumber)) {
+        contractNumber = await ensureValidContractNumber(supabaseAdmin, {
+          id: contract.id,
+          contract_number: contractNumber,
+          tenant_id: contract.tenant_id,
+          company_id: contract.company_id,
+        });
+      }
       
-      const updatedContract = { ...contract, ...contractPayloadPartial };
+      const updatedContract = {
+        ...contract,
+        ...contractPayloadPartial,
+        contract_number: contractNumber,
+      };
       
       let receipts_sum = 0;
       if (contract.sale_id) {
@@ -62,7 +80,11 @@ export async function GET() {
          contractDate: updatedContract.created_at,
       });
       
-      await supabaseAdmin.from("contracts").update({ generated_html: newHtml, ...contractPayloadPartial }).eq("id", contract.id);
+      await supabaseAdmin.from("contracts").update({
+        generated_html: newHtml,
+        contract_number: contractNumber,
+        ...contractPayloadPartial,
+      }).eq("id", contract.id);
       updatedCount++;
   }
 

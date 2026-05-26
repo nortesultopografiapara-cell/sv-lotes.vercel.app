@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Remove prefixos legados CTR- para leitura/exibição. */
+const CONTRACT_NUMBER_PATTERN = /^\d{9}\/\d{4}$/;
+
+/** Remove prefixos legados CTR- (não usar na geração). */
 export function stripContractNumberPrefix(raw: string): string {
   let s = String(raw || "").trim();
   while (/^CTR-/i.test(s)) {
@@ -9,134 +11,92 @@ export function stripContractNumberPrefix(raw: string): string {
   return s;
 }
 
-/** Extrai sequencial e ano de formatos como 000000001/2026 ou CTR-000000001/2026. */
-export function parseContractSequential(
+/** Valor salvo no formato oficial 000000001/2026 */
+export function isValidStoredContractNumber(
   contractNumber: string | null | undefined,
-): { seq: number; year: number } | null {
-  if (!contractNumber) return null;
-  const cleaned = stripContractNumberPrefix(contractNumber);
-  const match = cleaned.match(/^(\d{1,9})\/(\d{4})$/);
-  if (!match) return null;
-  const seq = parseInt(match[1], 10);
-  const year = parseInt(match[2], 10);
-  if (!Number.isFinite(seq) || !Number.isFinite(year) || seq < 1) return null;
-  return { seq, year };
+): boolean {
+  if (!contractNumber) return false;
+  return CONTRACT_NUMBER_PATTERN.test(stripContractNumberPrefix(contractNumber));
 }
 
-/** Formato salvo: 000000001/2026 (sem prefixo CTR). */
-export function formatContractNumber(seq: number, year: number): string {
-  return `${String(seq).padStart(9, "0")}/${year}`;
-}
-
-/** Normaliza para exibição (9 dígitos + ano, sem CTR). */
-export function formatContractNumberDisplay(
+/** Exibição: só o valor do banco se estiver no formato correto (nunca timestamp legado). */
+export function displayContractNumber(
   contractNumber: string | null | undefined,
 ): string {
   if (!contractNumber) return "S/N";
-  const parsed = parseContractSequential(contractNumber);
-  if (parsed) return formatContractNumber(parsed.seq, parsed.year);
   const cleaned = stripContractNumberPrefix(contractNumber);
-  return cleaned || "S/N";
+  if (CONTRACT_NUMBER_PATTERN.test(cleaned)) return cleaned;
+  return "S/N";
 }
 
 /**
  * Próximo número sequencial por empresa/tenant e ano vigente.
- * Busca o maior sequencial existente no ano e soma +1.
+ * Formato salvo: 000000001/2026
  */
 export async function getNextContractNumber(
   supabase: SupabaseClient,
-  companyOrTenantId: string,
-  year: number = new Date().getFullYear(),
+  tenantId: string,
+  companyId: string,
 ): Promise<string> {
-  if (!companyOrTenantId) {
-    throw new Error("tenant_id/company_id obrigatório para numerar contrato");
+  const year = new Date().getFullYear();
+  const tid = tenantId || companyId;
+  const cid = companyId || tenantId;
+
+  if (!tid || !cid) {
+    throw new Error("tenant_id e company_id obrigatórios para numerar contrato");
   }
 
   const { data, error } = await supabase
     .from("contracts")
     .select("contract_number")
-    .or(
-      `tenant_id.eq.${companyOrTenantId},company_id.eq.${companyOrTenantId}`,
-    );
+    .or(`tenant_id.eq.${tid},company_id.eq.${cid}`)
+    .like("contract_number", `%/${year}`)
+    .order("created_at", { ascending: false });
 
   if (error) {
     console.error("[contractNumber] erro ao buscar contratos", error);
     throw error;
   }
 
-  let maxSeq = 0;
-  for (const row of data || []) {
-    const parsed = parseContractSequential(row.contract_number);
-    if (parsed && parsed.year === year && parsed.seq > maxSeq) {
-      maxSeq = parsed.seq;
-    }
-  }
+  const numbers = (data || [])
+    .map((c) => stripContractNumberPrefix(String(c.contract_number || "")))
+    .map((n) => {
+      const match = n.match(/^(\d+)\/(\d{4})$/);
+      return match ? Number(match[1]) : 0;
+    });
 
-  return formatContractNumber(maxSeq + 1, year);
+  const next = Math.max(0, ...numbers, 0) + 1;
+
+  return `${String(next).padStart(9, "0")}/${year}`;
 }
 
-/** Verifica se o número já existe na mesma empresa/tenant. */
-export async function contractNumberExists(
+/** Garante número válido; se legado (timestamp/CTR), gera o próximo sequencial. */
+export async function ensureValidContractNumber(
   supabase: SupabaseClient,
-  companyOrTenantId: string,
-  contractNumber: string,
-): Promise<boolean> {
-  const display = formatContractNumberDisplay(contractNumber);
-  const { data, error } = await supabase
-    .from("contracts")
-    .select("id, contract_number")
-    .or(
-      `tenant_id.eq.${companyOrTenantId},company_id.eq.${companyOrTenantId}`,
-    );
-
-  if (error) return false;
-
-  return (data || []).some(
-    (row) =>
-      formatContractNumberDisplay(row.contract_number) === display,
-  );
-}
-
-/**
- * Aloca número com re-tentativa em caso de corrida (duplicidade).
- */
-export async function allocateContractNumber(
-  supabase: SupabaseClient,
-  companyOrTenantId: string,
-  maxAttempts = 8,
+  contract: {
+    id?: string;
+    contract_number?: string | null;
+    tenant_id?: string | null;
+    company_id?: string | null;
+  },
 ): Promise<string> {
-  const year = new Date().getFullYear();
-  let bump = 0;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const { data, error } = await supabase
-      .from("contracts")
-      .select("contract_number")
-      .or(
-        `tenant_id.eq.${companyOrTenantId},company_id.eq.${companyOrTenantId}`,
-      );
-
-    if (error) throw error;
-
-    let maxSeq = 0;
-    for (const row of data || []) {
-      const parsed = parseContractSequential(row.contract_number);
-      if (parsed && parsed.year === year && parsed.seq > maxSeq) {
-        maxSeq = parsed.seq;
-      }
-    }
-
-    const candidate = formatContractNumber(maxSeq + 1 + bump, year);
-    const exists = await contractNumberExists(
-      supabase,
-      companyOrTenantId,
-      candidate,
-    );
-    if (!exists) return candidate;
-    bump += 1;
+  if (isValidStoredContractNumber(contract.contract_number)) {
+    return stripContractNumberPrefix(contract.contract_number!);
   }
 
-  throw new Error(
-    "Não foi possível gerar número de contrato único. Tente novamente.",
-  );
+  const tenantId = contract.tenant_id || contract.company_id || "";
+  const companyId = contract.company_id || contract.tenant_id || "";
+  const next = await getNextContractNumber(supabase, tenantId, companyId);
+
+  if (contract.id) {
+    const { error } = await supabase
+      .from("contracts")
+      .update({ contract_number: next })
+      .eq("id", contract.id);
+    if (error) {
+      console.error("[contractNumber] erro ao atualizar número legado", error);
+    }
+  }
+
+  return next;
 }

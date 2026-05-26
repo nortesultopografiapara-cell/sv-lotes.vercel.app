@@ -1,6 +1,6 @@
 const extenso = require("extenso");
 
-import { formatContractNumberDisplay } from "@/lib/contractNumber";
+import { displayContractNumber } from "@/lib/contractNumber";
 import {
   formatChanfreClause,
   resolveLotMeasuresFromBlock,
@@ -334,7 +334,7 @@ export function generateContractHTML({
 
   const projectDescString = projectDescParts.length > 0 ? `, ${projectDescParts.join(', ')}` : '';
 
-  const contratoNumero = formatContractNumberDisplay(
+  const contratoNumero = displayContractNumber(
     contractSnapshot?.contract_number,
   );
   const contratoNumeroLinha =

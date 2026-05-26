@@ -25,7 +25,10 @@ import {
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import jsPDF from "jspdf";
-import { formatContractNumberDisplay } from "@/lib/contractNumber";
+import {
+  displayContractNumber,
+  isValidStoredContractNumber,
+} from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 
@@ -563,7 +566,7 @@ export default function ContractsPage() {
           pdf.setFontSize(8);
           pdf.setTextColor(100);
           pdf.text(
-            `Contrato nº ${formatContractNumberDisplay(selectedContract.contract_number)}`,
+            `Contrato nº ${displayContractNumber(selectedContract.contract_number)}`,
             rightX,
             13,
             { align: "right" },
@@ -1058,7 +1061,7 @@ export default function ContractsPage() {
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(60);
           pdf.text(
-            `Contrato: ${formatContractNumberDisplay(selectedContract.contract_number)}`,
+            `Contrato: ${displayContractNumber(selectedContract.contract_number)}`,
             rightX,
             ryPos,
             { align: "right" },
@@ -1144,7 +1147,36 @@ export default function ContractsPage() {
       forum_city_snapshot: isValid(selectedContract.forum_city_snapshot) ? selectedContract.forum_city_snapshot : (projData.forum_city || projData.city || null),
     };
     
-    const updatedContract = { ...selectedContract, ...contractPayloadPartial };
+    let contractNumber = selectedContract.contract_number;
+    if (!isValidStoredContractNumber(contractNumber)) {
+      try {
+        const tid =
+          selectedContract.tenant_id ||
+          selectedContract.company_id ||
+          user?.tenant_id;
+        const cid = selectedContract.company_id || tid;
+        const res = await fetch("/api/contracts/next-number", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenantId: tid, companyId: cid }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Falha ao numerar contrato");
+        contractNumber = json.contract_number;
+        await supabase
+          .from("contracts")
+          .update({ contract_number: contractNumber })
+          .eq("id", selectedContract.id);
+      } catch (numErr) {
+        console.error("[Regenerar contrato] Falha ao corrigir número", numErr);
+      }
+    }
+
+    const updatedContract = {
+      ...selectedContract,
+      ...contractPayloadPartial,
+      contract_number: contractNumber,
+    };
 
     const blockId =
       selectedContract.block_id ||
@@ -1192,7 +1224,13 @@ export default function ContractsPage() {
 
     const { data, error } = await supabase
       .from("contracts")
-      .update({ generated_html: newHtml, ...contractPayloadPartial })
+      .update({
+        generated_html: newHtml,
+        ...contractPayloadPartial,
+        ...(isValidStoredContractNumber(contractNumber)
+          ? { contract_number: contractNumber }
+          : {}),
+      })
       .eq("id", selectedContract.id)
       .select()
       .single();
@@ -1201,10 +1239,14 @@ export default function ContractsPage() {
       console.error("Erro recriando", error);
       alert("Erro ao regenerar contrato");
     } else {
-      setSelectedContract({ ...selectedContract, generated_html: newHtml });
+      const patched = data || {
+        ...updatedContract,
+        generated_html: newHtml,
+      };
+      setSelectedContract(patched);
       setContracts(
         contracts.map((c) =>
-          c.id === selectedContract.id ? { ...c, generated_html: newHtml } : c,
+          c.id === selectedContract.id ? { ...c, ...patched } : c,
         ),
       );
       alert("Contrato regenerado com sucesso!");
@@ -1335,7 +1377,7 @@ export default function ContractsPage() {
             ) : (
               filteredContracts.map((c) => {
                 const isSelected = selectedContract?.id === c.id;
-                const cnum = formatContractNumberDisplay(c.contract_number);
+                const cnum = displayContractNumber(c.contract_number);
                 const projName =
                   c.project_name_snapshot ||
                   c.sales?.projects?.name ||
@@ -1440,9 +1482,7 @@ export default function ContractsPage() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold flex items-center gap-3">
-                        {formatContractNumberDisplay(
-                          selectedContract.contract_number,
-                        )}
+                        {displayContractNumber(selectedContract.contract_number)}
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}
                         >
@@ -1691,7 +1731,9 @@ export default function ContractsPage() {
                             Número do Contrato
                           </p>
                           <p className="font-semibold text-gray-200">
-                            {selectedContract.contract_number}
+                            {displayContractNumber(
+                              selectedContract.contract_number,
+                            )}
                           </p>
                         </div>
                         <div>
