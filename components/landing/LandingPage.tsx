@@ -24,11 +24,12 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { LandingScreenshot } from './LandingScreenshot';
+import { LandingMapDemo } from './LandingMapDemo';
+import { LandingPricing } from './LandingPricing';
 import {
   LANDING_CONTACT,
   LANDING_SERVICES,
   SCREEN_LABELS,
-  type ScreenId,
 } from './ScreenMocks';
 import './landing.css';
 
@@ -314,43 +315,37 @@ export function LandingPage() {
           </div>
         </section>
 
+        {/* Demonstração do mapa */}
+        <RevealSection>
+          <LandingMapDemo />
+        </RevealSection>
+
+        {/* Planos & Assinaturas */}
+        <RevealSection>
+          <LandingPricing />
+        </RevealSection>
+
         {/* Benefícios */}
         <section className="landing-section border-t border-[var(--color-border)]/40">
-          <div className="grid lg:grid-cols-2 gap-10 items-center">
-            <RevealSection>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
-                Benefícios para loteadoras
-              </h2>
-              <p className="text-[var(--color-text-muted)] mb-8 leading-relaxed">
-                O SV LOTES centraliza vendas, jurídico e financeiro para você focar no crescimento
-                do empreendimento — não em planilhas dispersas.
-              </p>
-              <ul className="space-y-4">
-                {BENEFITS.map((text) => (
-                  <li key={text} className="flex items-start gap-3">
-                    <span className="mt-1 w-5 h-5 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
-                      <Shield className="w-3 h-3 text-[var(--color-primary)]" />
-                    </span>
-                    <span className="text-slate-300 text-sm sm:text-base">{text}</span>
-                  </li>
-                ))}
-              </ul>
-            </RevealSection>
-            <RevealSection>
-              <div className="grid grid-cols-2 gap-3">
-                {(['map', 'finance'] as ScreenId[]).map((id) => (
-                  <div
-                    key={id}
-                    className="landing-glass p-1 rounded-xl overflow-hidden shadow-lg even:translate-y-4"
-                  >
-                    <div className="aspect-[4/3] relative rounded-lg overflow-hidden">
-                      <LandingScreenshot id={id} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </RevealSection>
-          </div>
+          <RevealSection className="max-w-3xl mx-auto text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+              Benefícios para loteadoras
+            </h2>
+            <p className="text-[var(--color-text-muted)] mb-10 leading-relaxed">
+              O SV LOTES centraliza vendas, jurídico e financeiro para você focar no crescimento
+              do empreendimento — não em planilhas dispersas.
+            </p>
+            <ul className="space-y-4 text-left max-w-xl mx-auto">
+              {BENEFITS.map((text) => (
+                <li key={text} className="flex items-start gap-3">
+                  <span className="mt-1 w-5 h-5 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
+                    <Shield className="w-3 h-3 text-[var(--color-primary)]" />
+                  </span>
+                  <span className="text-slate-300 text-sm sm:text-base">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </RevealSection>
         </section>
 
         {/* CTA final */}
