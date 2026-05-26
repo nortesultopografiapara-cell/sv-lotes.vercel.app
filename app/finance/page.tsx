@@ -2,7 +2,7 @@
 // VERCEL SYNC FORCE - FINANCE PAGE PREMIUM UPDATED
 'use client';
 
-import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, Receipt, ScrollText } from 'lucide-react';
+import { Banknote, Search, Download, Filter, TrendingDown, TrendingUp, AlertCircle, Loader2, Eye, CheckCircle, MessageCircle, FileText, ChevronLeft, ChevronRight, BookOpen, Trash2, X, Bell, Wallet, PieChart, Pencil, RotateCcw, ReceiptText, FileSignature } from 'lucide-react';
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -115,36 +115,34 @@ const CONFIRM_DELETE_LANCAMENTO =
 const CONFIRM_ESTORNAR_PAGAMENTO =
   'Tem certeza que deseja estornar este pagamento?';
 
+type FlowActionVariant = 'view' | 'edit' | 'receipt' | 'delete' | 'reverse' | 'contract';
+
+const FLOW_ACTION_STYLES: Record<FlowActionVariant, string> = {
+  view: 'text-blue-400 hover:bg-blue-500/10',
+  edit: 'text-yellow-400 hover:bg-yellow-500/10',
+  receipt: 'text-green-400 hover:bg-green-500/10',
+  delete: 'text-red-400 hover:bg-red-500/10',
+  reverse: 'text-orange-400 hover:bg-orange-500/10',
+  contract: 'text-blue-400 hover:bg-blue-500/10',
+};
+
 function FlowIconBtn({
   title,
   onClick,
+  variant,
   children,
-  tone = 'default',
-  disabled = false,
 }: {
   title: string;
   onClick: () => void;
+  variant: FlowActionVariant;
   children: ReactNode;
-  tone?: 'default' | 'blue' | 'orange' | 'red' | 'green';
-  disabled?: boolean;
 }) {
-  const hoverClass =
-    tone === 'blue'
-      ? 'hover:text-[#4999e9]'
-      : tone === 'orange'
-        ? 'hover:text-orange-400'
-        : tone === 'red'
-          ? 'hover:text-[#f04449]'
-          : tone === 'green'
-            ? 'hover:text-[#2ad271]'
-            : 'hover:text-white';
   return (
     <button
       type="button"
       title={title}
-      disabled={disabled}
       onClick={onClick}
-      className={`p-1.5 text-gray-500 ${hoverClass} transition-colors rounded hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none`}
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors ${FLOW_ACTION_STYLES[variant]}`}
     >
       {children}
     </button>
@@ -1248,10 +1246,18 @@ export default function FinancePage() {
   };
 
   const flowActionBar = (buttons: ReactNode) => (
-    <div className="flex items-center justify-end gap-0.5 min-h-[28px] min-w-[100px] opacity-70 group-hover:opacity-100 transition-opacity">
+    <div className="flex items-center justify-end gap-1 min-h-[32px]">
       {buttons}
     </div>
   );
+
+  const guardEstornado = (item: CashFlowItem, action: () => void) => {
+    if (item.status === 'estornado') {
+      alert('Esta movimentação está estornada.');
+      return;
+    }
+    action();
+  };
 
   const renderFlowActions = (item: CashFlowItem) => {
     const isActive = item.status !== 'estornado';
@@ -1265,9 +1271,6 @@ export default function FinancePage() {
       item.source === 'cash_movements' &&
       !!item.cashMovementId;
     const isManualSaida = isSaidaCash && item.isManual;
-    const canEditManual = isManualSaida && isActive;
-    const canDeleteManual = isManualSaida && isActive;
-    const canGerarReciboSaida = isSaidaCash && isActive;
     const isLinkedParcel =
       item.tipo === 'entrada' && item.source === 'finance_receipts';
     const canEstornar =
@@ -1279,43 +1282,80 @@ export default function FinancePage() {
     if (item.tipo === 'entrada') {
       return flowActionBar(
         <>
-          <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
-            <Eye className="w-4 h-4" />
+          <FlowIconBtn
+            title="Visualizar"
+            variant="view"
+            onClick={() => handleFlowView(item)}
+          >
+            <Eye size={16} />
           </FlowIconBtn>
-          {canContract ? (
-            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
-              <ScrollText className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Abrir contrato" disabled>
-              <ScrollText className="w-4 h-4 opacity-20" />
-            </FlowIconBtn>
-          )}
-          {canReceiptPdf ? (
+          {canReceiptPdf && (
             <FlowIconBtn
-              title="Baixar recibo"
-              tone="blue"
+              title="Recibo/PDF"
+              variant="receipt"
               onClick={() => {
                 const p = payments.find((pay) => pay.id === item.receiptId);
                 if (p) handleGenerateCarne(p);
               }}
             >
-              <Receipt className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Baixar recibo" disabled>
-              <Receipt className="w-4 h-4 opacity-20" />
+              <FileText size={16} />
             </FlowIconBtn>
           )}
-          {canEstornar ? (
-            <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
-              <RotateCcw className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Estornar pagamento" disabled>
-              <RotateCcw className="w-4 h-4 opacity-20" />
+          {canContract && (
+            <FlowIconBtn
+              title="Abrir contrato"
+              variant="contract"
+              onClick={() => handleFlowOpenContract(item)}
+            >
+              <FileSignature size={16} />
             </FlowIconBtn>
           )}
+          {canEstornar && (
+            <FlowIconBtn
+              title="Estornar"
+              variant="reverse"
+              onClick={() => handleFlowReverse(item)}
+            >
+              <RotateCcw size={16} />
+            </FlowIconBtn>
+          )}
+        </>,
+      );
+    }
+
+    if (isManualSaida) {
+      return flowActionBar(
+        <>
+          <FlowIconBtn
+            title="Visualizar"
+            variant="view"
+            onClick={() => handleFlowView(item)}
+          >
+            <Eye size={16} />
+          </FlowIconBtn>
+          <FlowIconBtn
+            title="Editar"
+            variant="edit"
+            onClick={() => guardEstornado(item, () => handleFlowEditSaida(item))}
+          >
+            <Pencil size={16} />
+          </FlowIconBtn>
+          <FlowIconBtn
+            title="Gerar recibo"
+            variant="receipt"
+            onClick={() =>
+              guardEstornado(item, () => handleGenerateExpenseReceipt(item))
+            }
+          >
+            <ReceiptText size={16} />
+          </FlowIconBtn>
+          <FlowIconBtn
+            title="Excluir"
+            variant="delete"
+            onClick={() => guardEstornado(item, () => handleFlowDeleteSaida(item))}
+          >
+            <Trash2 size={16} />
+          </FlowIconBtn>
         </>,
       );
     }
@@ -1323,58 +1363,38 @@ export default function FinancePage() {
     if (isSaidaCash) {
       return flowActionBar(
         <>
-          <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
-            <Eye className="w-4 h-4" />
+          <FlowIconBtn
+            title="Visualizar"
+            variant="view"
+            onClick={() => handleFlowView(item)}
+          >
+            <Eye size={16} />
           </FlowIconBtn>
-          {isManualSaida ? (
-            canEditManual ? (
-              <FlowIconBtn title="Editar lançamento" tone="blue" onClick={() => handleFlowEditSaida(item)}>
-                <Pencil className="w-4 h-4" />
-              </FlowIconBtn>
-            ) : (
-              <FlowIconBtn title="Editar lançamento" disabled>
-                <Pencil className="w-4 h-4 opacity-20" />
-              </FlowIconBtn>
-            )
-          ) : canContract ? (
-            <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
-              <ScrollText className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Abrir contrato" disabled>
-              <ScrollText className="w-4 h-4 opacity-20" />
-            </FlowIconBtn>
-          )}
-          {canGerarReciboSaida ? (
+          <FlowIconBtn
+            title="Gerar recibo"
+            variant="receipt"
+            onClick={() =>
+              guardEstornado(item, () => handleGenerateExpenseReceipt(item))
+            }
+          >
+            <ReceiptText size={16} />
+          </FlowIconBtn>
+          {canContract && (
             <FlowIconBtn
-              title="Gerar recibo"
-              tone="blue"
-              onClick={() => handleGenerateExpenseReceipt(item)}
+              title="Abrir contrato"
+              variant="contract"
+              onClick={() => handleFlowOpenContract(item)}
             >
-              <Receipt className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Gerar recibo" disabled>
-              <Receipt className="w-4 h-4 opacity-20" />
+              <FileSignature size={16} />
             </FlowIconBtn>
           )}
-          {isManualSaida ? (
-            canDeleteManual ? (
-              <FlowIconBtn title="Excluir lançamento" tone="red" onClick={() => handleFlowDeleteSaida(item)}>
-                <Trash2 className="w-4 h-4" />
-              </FlowIconBtn>
-            ) : (
-              <FlowIconBtn title="Excluir lançamento" disabled>
-                <Trash2 className="w-4 h-4 opacity-20" />
-              </FlowIconBtn>
-            )
-          ) : canEstornar ? (
-            <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
-              <RotateCcw className="w-4 h-4" />
-            </FlowIconBtn>
-          ) : (
-            <FlowIconBtn title="Estornar pagamento" disabled>
-              <RotateCcw className="w-4 h-4 opacity-20" />
+          {canEstornar && (
+            <FlowIconBtn
+              title="Estornar"
+              variant="reverse"
+              onClick={() => handleFlowReverse(item)}
+            >
+              <RotateCcw size={16} />
             </FlowIconBtn>
           )}
         </>,
@@ -1383,28 +1403,29 @@ export default function FinancePage() {
 
     return flowActionBar(
       <>
-        <FlowIconBtn title="Visualizar detalhes" onClick={() => handleFlowView(item)}>
-          <Eye className="w-4 h-4" />
+        <FlowIconBtn
+          title="Visualizar"
+          variant="view"
+          onClick={() => handleFlowView(item)}
+        >
+          <Eye size={16} />
         </FlowIconBtn>
-        {canContract ? (
-          <FlowIconBtn title="Abrir contrato" tone="blue" onClick={() => handleFlowOpenContract(item)}>
-            <ScrollText className="w-4 h-4" />
-          </FlowIconBtn>
-        ) : (
-          <FlowIconBtn title="Abrir contrato" disabled>
-            <ScrollText className="w-4 h-4 opacity-20" />
+        {canContract && (
+          <FlowIconBtn
+            title="Abrir contrato"
+            variant="contract"
+            onClick={() => handleFlowOpenContract(item)}
+          >
+            <FileSignature size={16} />
           </FlowIconBtn>
         )}
-        <FlowIconBtn title="Baixar recibo" disabled>
-          <Receipt className="w-4 h-4 opacity-20" />
-        </FlowIconBtn>
-        {canEstornar ? (
-          <FlowIconBtn title="Estornar pagamento" tone="orange" onClick={() => handleFlowReverse(item)}>
-            <RotateCcw className="w-4 h-4" />
-          </FlowIconBtn>
-        ) : (
-          <FlowIconBtn title="Estornar pagamento" disabled>
-            <RotateCcw className="w-4 h-4 opacity-20" />
+        {canEstornar && (
+          <FlowIconBtn
+            title="Estornar"
+            variant="reverse"
+            onClick={() => handleFlowReverse(item)}
+          >
+            <RotateCcw size={16} />
           </FlowIconBtn>
         )}
       </>,
