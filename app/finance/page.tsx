@@ -111,7 +111,7 @@ const INITIAL_SAIDA_FORM = {
 };
 
 const CONFIRM_DELETE_LANCAMENTO =
-  'Tem certeza que deseja excluir este lançamento?';
+  'Tem certeza que deseja excluir este lançamento? Essa ação atualizará os totais financeiros.';
 const CONFIRM_ESTORNAR_PAGAMENTO =
   'Tem certeza que deseja estornar este pagamento?';
 
@@ -1206,7 +1206,10 @@ export default function FinancePage() {
   };
 
   const handleFlowEditSaida = (item: CashFlowItem) => {
-    if (!item.cashMovementId || !item.isManual) return;
+    if (!item.cashMovementId) return;
+    const isManualDespesa =
+      item.isManual || (!item.contractId && !item.saleId);
+    if (!isManualDespesa) return;
     const cm = cashMovements.find((c) => c.id === item.cashMovementId);
     if (!cm) return;
     console.log('[FINANCEIRO] editar saída', item.cashMovementId);
@@ -1241,19 +1244,90 @@ export default function FinancePage() {
     setShowSaidaModal(true);
   };
 
-  const handleFlowDeleteSaida = async (item: CashFlowItem) => {
-    if (!item.cashMovementId || !item.isManual) return;
+  const handleFlowDeleteLancamento = async (item: CashFlowItem) => {
+    if (item.tipo === 'entrada') {
+      alert('Para entradas/parcelas, use Estornar em vez de excluir.');
+      return;
+    }
     if (!window.confirm(CONFIRM_DELETE_LANCAMENTO)) return;
+
+    const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+    console.log('[FINANCEIRO] excluir lançamento', item.id, item.source);
+
     try {
-      const { error } = await supabase
-        .from('cash_movements')
-        .delete()
-        .eq('id', item.cashMovementId);
-      if (error) throw error;
+      if (item.source === 'broker_commissions' && item.commissionId) {
+        const linkedCash = cashMovements.filter((c) => {
+          const typeStr = (c.type || '').toLowerCase();
+          const isSaidaStr = ['saida', 'saída', 'saida ', 'despesa', 'expense'].some(
+            (v) => typeStr.includes(v),
+          );
+          if (!isSaidaStr) return false;
+          return (
+            (c.sale_id && item.saleId && c.sale_id === item.saleId) ||
+            (c.broker_id && item.brokerId && c.broker_id === item.brokerId)
+          ) && Math.abs(Number(c.amount) - item.amount) < 1;
+        });
+
+        for (const cm of linkedCash) {
+          const { error: cashErr } = await supabase
+            .from('cash_movements')
+            .delete()
+            .eq('id', cm.id);
+          if (cashErr) {
+            await supabase
+              .from('cash_movements')
+              .update({ status: 'estornado' })
+              .eq('id', cm.id);
+          }
+        }
+
+        const { error: commErr } = await supabase
+          .from('broker_commissions')
+          .delete()
+          .eq('id', item.commissionId);
+
+        if (commErr) {
+          const { error: commUpdErr } = await supabase
+            .from('broker_commissions')
+            .update({ status: 'cancelado' })
+            .eq('id', item.commissionId);
+          if (commUpdErr) throw commUpdErr;
+        }
+
+        console.log('[FINANCEIRO] comissão removida', item.commissionId);
+      } else if (item.cashMovementId && item.source === 'cash_movements') {
+        const { error } = await supabase
+          .from('cash_movements')
+          .delete()
+          .eq('id', item.cashMovementId);
+        if (error) throw error;
+        console.log('[FINANCEIRO] despesa removida', item.cashMovementId);
+      } else {
+        alert('Não foi possível localizar o registro para exclusão.');
+        return;
+      }
+
+      try {
+        await supabase.from('audit_logs').insert([
+          {
+            tenant_id: resolvedTenantId,
+            company_id: resolvedTenantId,
+            user_id: user?.id,
+            action: 'CASH_FLOW_DELETE',
+            module: 'FINANCE',
+            description: `Exclusão fluxo: ${item.id}`,
+          },
+        ]);
+      } catch (auditErr) {
+        console.warn(auditErr);
+      }
+
       await loadFinance();
-      alert('Saída excluída.');
+      console.log('[FINANCEIRO] cards recalculados');
+      alert('Lançamento excluído. Totais e fluxo de caixa atualizados.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error('[FINANCEIRO] excluir lançamento erro', err);
       alert('Erro ao excluir: ' + message);
     }
   };
@@ -1282,14 +1356,19 @@ export default function FinancePage() {
     const isSaida = item.tipo === 'saida';
     const isSaidaCash =
       isSaida && item.source === 'cash_movements' && !!item.cashMovementId;
-    const isManualSaida = isSaidaCash && item.isManual;
+    const isCommissionSaida =
+      isSaida && item.source === 'broker_commissions' && !!item.commissionId;
+    const isManualDespesa =
+      isSaidaCash &&
+      (item.isManual || (!item.contractId && !item.saleId));
+    const isLinkedSaidaCash = isSaidaCash && !isManualDespesa;
     const isLinkedParcel =
       item.tipo === 'entrada' && item.source === 'finance_receipts';
+    const canDeleteSaida =
+      isActive && (isManualDespesa || isCommissionSaida);
     const canEstornar =
       isActive &&
-      (isLinkedParcel ||
-        item.source === 'broker_commissions' ||
-        (isSaidaCash && !isManualSaida));
+      (isLinkedParcel || isLinkedSaidaCash);
 
     if (item.tipo === 'entrada') {
       return flowActionBar(
@@ -1345,7 +1424,7 @@ export default function FinancePage() {
           >
             <Eye size={16} />
           </FlowIconBtn>
-          {isManualSaida && (
+          {isManualDespesa && (
             <FlowIconBtn
               title="Editar"
               variant="edit"
@@ -1363,11 +1442,11 @@ export default function FinancePage() {
           >
             <ReceiptText size={16} />
           </FlowIconBtn>
-          {isManualSaida ? (
+          {canDeleteSaida ? (
             <FlowIconBtn
-              title="Excluir"
+              title="Excluir lançamento"
               variant="delete"
-              onClick={() => guardEstornado(item, () => handleFlowDeleteSaida(item))}
+              onClick={() => handleFlowDeleteLancamento(item)}
             >
               <Trash2 size={16} />
             </FlowIconBtn>
