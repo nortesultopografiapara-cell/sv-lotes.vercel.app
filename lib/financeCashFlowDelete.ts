@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CashFlowItem } from "@/lib/financeCashFlow";
+import { getCashMovementMetadata } from "@/lib/financeCashFlow";
 
 const ORIGIN_ERROR =
   "Não foi possível identificar a origem deste lançamento.";
@@ -55,9 +56,12 @@ function findLinkedCashForCommission(
     ) {
       return true;
     }
+    const cMd = getCashMovementMetadata(c);
+    const brokerMatch =
+      item.brokerId &&
+      (cMd.broker_id === item.brokerId || c.broker_id === item.brokerId);
     return (
-      ((c.sale_id && item.saleId && c.sale_id === item.saleId) ||
-        (c.broker_id && item.brokerId && c.broker_id === item.brokerId)) &&
+      ((c.sale_id && item.saleId && c.sale_id === item.saleId) || brokerMatch) &&
       Math.abs(Number(c.amount) - item.amount) < 1
     );
   });

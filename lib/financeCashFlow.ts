@@ -28,6 +28,7 @@ export type CashFlowItem = {
   contractNumber: string;
   brokerName: string;
   isManual: boolean;
+  metadata: CashMovementMetadata | null;
 };
 
 const MANUAL_LABEL = "Lançamento manual";
@@ -41,6 +42,97 @@ export type CashMovementManualMeta = {
   manual_contract?: string;
   manual_broker?: string;
 };
+
+/** Metadados persistidos em cash_movements.metadata (jsonb). */
+export type CashMovementMetadata = {
+  broker_id?: string | null;
+  broker_name?: string | null;
+  contract_manual?: string | null;
+  customer_manual?: string | null;
+  quadra_manual?: string | null;
+  lote_manual?: string | null;
+};
+
+function normalizeCashMovementMetadata(raw: unknown): CashMovementMetadata {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const m = raw as Record<string, unknown>;
+  const pick = (key: keyof CashMovementMetadata) => {
+    const v = m[key];
+    if (v === undefined || v === null) return undefined;
+    const s = String(v).trim();
+    return s.length > 0 ? s : undefined;
+  };
+  return {
+    broker_id: pick("broker_id"),
+    broker_name: pick("broker_name"),
+    contract_manual: pick("contract_manual"),
+    customer_manual: pick("customer_manual"),
+    quadra_manual: pick("quadra_manual"),
+    lote_manual: pick("lote_manual"),
+  };
+}
+
+/** Lê metadata da coluna jsonb ou legado em description [[sv_meta]]. */
+export function getCashMovementMetadata(row: {
+  metadata?: unknown;
+  description?: string | null;
+}): CashMovementMetadata {
+  const fromColumn = normalizeCashMovementMetadata(row?.metadata);
+  const hasColumn = Object.values(fromColumn).some(Boolean);
+  if (hasColumn) return fromColumn;
+
+  const { meta: legacy } = splitCashMovementDescription(row?.description);
+  if (!legacy) return {};
+  return normalizeCashMovementMetadata({
+    broker_name: legacy.manual_broker,
+    customer_manual: legacy.manual_customer,
+    contract_manual: legacy.manual_contract,
+    quadra_manual: legacy.manual_quadra,
+    lote_manual: legacy.manual_lote,
+  });
+}
+
+/** Monta jsonb metadata para insert/update de saída manual. */
+export function buildSaidaCashMovementMetadata(input: {
+  contractId?: string;
+  customerId?: string;
+  brokerId?: string;
+  brokerManual?: string;
+  brokerNameFromList?: string;
+  customerManual?: string;
+  contractManual?: string;
+  quadraManual?: string;
+  loteManual?: string;
+}): CashMovementMetadata | null {
+  const meta: CashMovementMetadata = {};
+  const brokerId = emptyUuidToNull(input.brokerId);
+  if (brokerId) meta.broker_id = brokerId;
+
+  const brokerManual = String(input.brokerManual ?? "").trim();
+  const brokerListName = String(input.brokerNameFromList ?? "").trim();
+  if (brokerManual) meta.broker_name = brokerManual;
+  else if (brokerListName) meta.broker_name = brokerListName;
+
+  if (!input.contractId) {
+    const customerManual = String(input.customerManual ?? "").trim();
+    if (!emptyUuidToNull(input.customerId)) {
+      /* cliente vinculado por customer_id */
+    } else if (customerManual) {
+      meta.customer_manual = customerManual;
+    }
+    const contractManual = String(input.contractManual ?? "").trim();
+    if (contractManual) meta.contract_manual = contractManual;
+    const quadra = String(input.quadraManual ?? "").trim();
+    if (quadra) meta.quadra_manual = quadra;
+    const lote = String(input.loteManual ?? "").trim();
+    if (lote) meta.lote_manual = lote;
+  }
+
+  const hasValues = Object.values(meta).some(
+    (v) => v !== undefined && v !== null && String(v).trim() !== "",
+  );
+  return hasValues ? meta : null;
+}
 
 /** Converte "5685,37" / "5.685,37" / "5685.37" para número. */
 export function parseMoneyAmount(raw: string | number | null | undefined): number | null {
@@ -135,6 +227,14 @@ function formatManualLocation(meta: CashMovementManualMeta | null): string {
   return "";
 }
 
+function formatManualLocationFromMetadata(md: CashMovementMetadata): string {
+  if (!md.quadra_manual && !md.lote_manual) return "";
+  return formatManualLocation({
+    manual_quadra: md.quadra_manual ?? undefined,
+    manual_lote: md.lote_manual ?? undefined,
+  });
+}
+
 export const SAIDA_CATEGORIES = [
   "Comissão",
   "Despesa administrativa",
@@ -224,21 +324,21 @@ function resolveCashMovementMeta(c: any): {
   isManual: boolean;
   descriptionText: string;
 } {
-  const { text: descriptionText, meta: manualMeta } = splitCashMovementDescription(
-    c.description,
-  );
+  const { text: descriptionText } = splitCashMovementDescription(c.description);
+  const md = getCashMovementMetadata(c);
 
   const hasDbLink = !!(
     c.customer_id ||
     c.contract_id ||
     c.sale_id ||
-    c.broker_id
+    md.broker_id
   );
   const hasManualMeta = !!(
-    manualMeta?.manual_customer ||
-    manualMeta?.manual_quadra ||
-    manualMeta?.manual_lote ||
-    manualMeta?.manual_contract
+    md.customer_manual ||
+    md.quadra_manual ||
+    md.lote_manual ||
+    md.contract_manual ||
+    md.broker_name
   );
 
   const customer =
@@ -266,21 +366,21 @@ function resolveCashMovementMeta(c: any): {
     c.contracts?.contract_number || saleContractNum || "";
 
   let customerName = customer?.name || customer?.full_name || "";
-  if (!customerName && manualMeta?.manual_customer) {
-    customerName = manualMeta.manual_customer.trim();
+  if (!customerName && md.customer_manual) {
+    customerName = md.customer_manual.trim();
   }
 
   let brokerName = c.brokers?.name || c.brokers?.full_name || "";
-  if (!brokerName && manualMeta?.manual_broker) {
-    brokerName = manualMeta.manual_broker.trim();
+  if (!brokerName && md.broker_name) {
+    brokerName = md.broker_name.trim();
   }
   let locationLabel = resolveBlockLocation(block);
   if (!locationLabel) {
-    locationLabel = formatManualLocation(manualMeta);
+    locationLabel = formatManualLocationFromMetadata(md);
   }
 
-  if (!contractRaw && manualMeta?.manual_contract) {
-    contractRaw = manualMeta.manual_contract.trim();
+  if (!contractRaw && md.contract_manual) {
+    contractRaw = md.contract_manual.trim();
   }
 
   const contractNumber = contractRaw
@@ -370,6 +470,7 @@ export function buildCashFlowItems(
       contractNumber: contractNumber === "S/N" ? "" : contractNumber,
       brokerName: p.brokers?.name || "",
       isManual: false,
+      metadata: null,
     });
   });
 
@@ -387,6 +488,8 @@ export function buildCashFlowItems(
     if (amount <= 0) return;
 
     const meta = resolveCashMovementMeta(c);
+    const movementMd = getCashMovementMetadata(c);
+    const mdKeys = Object.keys(movementMd).length > 0 ? movementMd : null;
 
     items.push({
       id: `cash_${c.id}`,
@@ -408,7 +511,7 @@ export function buildCashFlowItems(
         c.sales?.project_id ||
         null,
       saleId: c.sale_id || null,
-      brokerId: c.broker_id || null,
+      brokerId: movementMd.broker_id || null,
       commissionId: null,
       movement_date: c.movement_date || c.created_at?.split("T")[0] || "",
       tipo: isSaida ? "saida" : "entrada",
@@ -422,6 +525,7 @@ export function buildCashFlowItems(
       contractNumber: meta.contractNumber,
       brokerName: meta.brokerName,
       isManual: meta.isManual,
+      metadata: mdKeys,
     });
   });
 
@@ -439,7 +543,9 @@ export function buildCashFlowItems(
       const typeStr = (c.type || "").toLowerCase();
       if (!isCashMovementSaida(typeStr)) return false;
       return (
-        (c.sale_id === cm.sale_id || c.broker_id === cm.broker_id) &&
+        (c.sale_id === cm.sale_id ||
+          getCashMovementMetadata(c).broker_id === cm.broker_id ||
+          c.broker_id === cm.broker_id) &&
         Math.abs(Number(c.amount) - amount) < 1
       );
     });
@@ -498,6 +604,7 @@ export function buildCashFlowItems(
       contractNumber: contractNumber === "S/N" ? "" : contractNumber,
       brokerName,
       isManual: false,
+      metadata: null,
     });
   });
 

@@ -14,14 +14,14 @@ import {
   formatFlowDate,
   flowDisplayLabel,
   SAIDA_CATEGORIES,
-  buildCashMovementDescription,
   splitCashMovementDescription,
+  getCashMovementMetadata,
+  buildSaidaCashMovementMetadata,
   parseMoneyAmount,
   emptyUuidToNull,
   stripUndefinedFields,
   formatSupabaseFinanceError,
   type CashFlowItem,
-  type CashMovementManualMeta,
 } from '@/lib/financeCashFlow';
 import { deleteCashFlowItem } from '@/lib/financeCashFlowDelete';
 import { displayContractNumber } from '@/lib/contractNumber';
@@ -442,7 +442,6 @@ export default function FinancePage() {
                  *,
                  projects(name),
                  customers:customer_id(id, name, full_name),
-                 brokers:broker_id(id, name, full_name),
                  contracts:contract_id(
                    id, contract_number, customer_id, block_id, project_id,
                    customers(id, name, full_name),
@@ -854,28 +853,6 @@ export default function FinancePage() {
      ];
   };
 
-  const buildSaidaManualMeta = (): CashMovementManualMeta | null => {
-    const meta: CashMovementManualMeta = {};
-    if (!saidaForm.contract_id) {
-      if (!saidaForm.customer_id && saidaForm.customer_manual.trim()) {
-        meta.manual_customer = saidaForm.customer_manual.trim();
-      }
-      if (saidaForm.contract_number_manual.trim()) {
-        meta.manual_contract = saidaForm.contract_number_manual.trim();
-      }
-      if (saidaForm.quadra_manual.trim()) {
-        meta.manual_quadra = saidaForm.quadra_manual.trim();
-      }
-      if (saidaForm.lote_manual.trim()) {
-        meta.manual_lote = saidaForm.lote_manual.trim();
-      }
-    }
-    if (!saidaForm.broker_id && saidaForm.broker_manual.trim()) {
-      meta.manual_broker = saidaForm.broker_manual.trim();
-    }
-    return Object.keys(meta).length > 0 ? meta : null;
-  };
-
   const applyContractToSaidaForm = (contractId: string) => {
     if (!contractId) {
       setSaidaForm((prev) => ({
@@ -932,11 +909,23 @@ export default function FinancePage() {
     }
 
     try {
-      const manualMeta = buildSaidaManualMeta();
+      const brokerFromList = financeBrokers.find((b) => b.id === saidaForm.broker_id);
+      const movementMetadata = buildSaidaCashMovementMetadata({
+        contractId: saidaForm.contract_id,
+        customerId: saidaForm.customer_id,
+        brokerId: saidaForm.broker_id,
+        brokerManual: saidaForm.broker_manual,
+        brokerNameFromList: brokerFromList?.name || brokerFromList?.full_name,
+        customerManual: saidaForm.customer_manual,
+        contractManual: saidaForm.contract_number_manual,
+        quadraManual: saidaForm.quadra_manual,
+        loteManual: saidaForm.lote_manual,
+      });
+
       const coreFields = stripUndefinedFields({
         type: 'saida',
         category: saidaForm.category.trim(),
-        description: buildCashMovementDescription(desc, manualMeta),
+        description: desc,
         amount,
         movement_date: movementDate,
         status: 'ativo',
@@ -944,7 +933,7 @@ export default function FinancePage() {
         contract_id: emptyUuidToNull(saidaForm.contract_id),
         sale_id: emptyUuidToNull(saidaForm.sale_id),
         customer_id: emptyUuidToNull(saidaForm.customer_id),
-        broker_id: emptyUuidToNull(saidaForm.broker_id),
+        metadata: movementMetadata,
       });
 
       const payload = editingCashMovementId
@@ -1267,7 +1256,8 @@ export default function FinancePage() {
     const cm = cashMovements.find((c) => c.id === item.cashMovementId);
     if (!cm) return;
     console.log('[FINANCEIRO] editar saída', item.cashMovementId);
-    const { text, meta } = splitCashMovementDescription(cm.description);
+    const { text } = splitCashMovementDescription(cm.description);
+    const md = getCashMovementMetadata(cm);
     const block = cm.contracts?.blocks || cm.sales?.blocks;
     const quadFromBlock = block?.block_name || block?.name || '';
     const lotFromBlock = block?.lot_number || block?.number || '';
@@ -1278,22 +1268,22 @@ export default function FinancePage() {
       amount: String(cm.amount ?? ''),
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
-      broker_id: cm.broker_id || '',
-      broker_manual: meta?.manual_broker || '',
+      broker_id: md.broker_id || '',
+      broker_manual: md.broker_name || '',
       customer_id: cm.customer_id || '',
       sale_id: cm.sale_id || '',
       customer_manual:
-        meta?.manual_customer ||
+        md.customer_manual ||
         (!cm.customer_id
           ? cm.customers?.name || cm.customers?.full_name || ''
           : ''),
       contract_number_manual:
-        meta?.manual_contract ||
+        md.contract_manual ||
         (cm.contracts?.contract_number
           ? displayContractNumber(cm.contracts.contract_number)
           : ''),
-      quadra_manual: meta?.manual_quadra || quadFromBlock,
-      lote_manual: meta?.manual_lote || lotFromBlock,
+      quadra_manual: md.quadra_manual || quadFromBlock,
+      lote_manual: md.lote_manual || lotFromBlock,
       movement_date: (cm.movement_date || '').split('T')[0] || new Date().toISOString().split('T')[0],
     });
     setShowSaidaModal(true);
@@ -1308,11 +1298,13 @@ export default function FinancePage() {
           typeStr.includes(v),
         );
         if (!isSaidaStr) return;
+        const cMd = getCashMovementMetadata(c);
         const matches =
           (c.source_table === 'broker_commissions' &&
             c.source_id === item.commissionId) ||
           (((c.sale_id && item.saleId && c.sale_id === item.saleId) ||
-            (c.broker_id && item.brokerId && c.broker_id === item.brokerId)) &&
+            (item.brokerId &&
+              (cMd.broker_id === item.brokerId || c.broker_id === item.brokerId))) &&
             Math.abs(Number(c.amount) - item.amount) < 1);
         if (matches) linkedCashIds.add(c.id);
       });
