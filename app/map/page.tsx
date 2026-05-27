@@ -591,8 +591,8 @@ export default function MapPage() {
     );
   };
 
-  const openEditProjectModal = (project: Record<string, unknown>) => {
-    console.log('[PROJETOS] abrir edição', { projectId: project.id, name: project.name });
+  const handleEditProject = (project: Record<string, unknown>) => {
+    console.log('[PROJETOS] clique editar', project);
     const initialData = projectToFormInitialData(project);
     setSelectedProjectToEdit(project);
     setProjectModalMode('edit');
@@ -1227,9 +1227,139 @@ export default function MapPage() {
       }
   };
 
+  const renderProjectFormModal = () => {
+    if (!isProjectModalOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
+          <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
+            <h3 className="font-bold text-white text-lg">
+              {projectModalMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
+            </h3>
+            <button
+              type="button"
+              onClick={closeProjectModal}
+              className="text-[var(--color-text-muted)] hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleProjectFormSubmit} className="p-6 flex flex-col gap-4 overflow-y-auto">
+            {projectFeedback && (
+              <div
+                role="alert"
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  projectFeedback.type === 'success'
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-red-500/40 bg-red-500/10 text-red-300'
+                }`}
+              >
+                {projectFeedback.message}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Nome do Projeto *
+              </label>
+              <input
+                type="text"
+                required
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Ex: Loteamento Bosque das Árvores"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                  Cidade *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newProjectCity}
+                  onChange={(e) => setNewProjectCity(e.target.value)}
+                  placeholder="Ex: Parauapebas"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                  UF *
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={2}
+                  value={newProjectUf}
+                  onChange={(e) => setNewProjectUf(e.target.value.toUpperCase())}
+                  placeholder="Ex: PA"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Bairro/Localidade
+              </label>
+              <input
+                type="text"
+                value={newProjectNbhd}
+                onChange={(e) => setNewProjectNbhd(e.target.value)}
+                placeholder="Ex: Centro"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Endereço/Referência
+              </label>
+              <input
+                type="text"
+                value={newProjectAddr}
+                onChange={(e) => setNewProjectAddr(e.target.value)}
+                placeholder="Endereço principal da área"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                Município / Foro do Contrato
+              </label>
+              <input
+                type="text"
+                value={newProjectForum}
+                onChange={(e) => setNewProjectForum(e.target.value)}
+                placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={projectFormSubmitting}
+              className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+            >
+              {projectFormSubmitting ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : projectModalMode === 'edit' ? (
+                'Salvar Alterações'
+              ) : (
+                'Criar Projeto'
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   // Se um projeto foi selecionado, exibe o Mapa
   if (selectedProject) {
     return (
+      <>
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
         <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
@@ -1487,11 +1617,14 @@ export default function MapPage() {
            </div>
         )}
       </div>
+      {renderProjectFormModal()}
+      </>
     );
   }
 
   // Lista de Projetos (quando map não está selecionado)
   return (
+    <>
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in-up">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -1548,7 +1681,7 @@ export default function MapPage() {
                    project={p} 
                    user={user}
                    onOpen={() => handleOpenProject(p)} 
-                   onEdit={() => openEditProjectModal(p)}
+                   onEditProject={handleEditProject}
                    onDelete={() => handleDeleteProject(p.id)}
                  />
                ))}
@@ -1561,109 +1694,9 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Modal unificado: Novo Projeto / Editar Projeto */}
-      {isProjectModalOpen && (
-         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
-               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-                  <h3 className="font-bold text-white text-lg">
-                    {projectModalMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
-                  </h3>
-                  <button type="button" onClick={closeProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
-                     <X className="w-5 h-5" />
-                  </button>
-               </div>
-               <form
-                 onSubmit={handleProjectFormSubmit}
-                 className="p-6 flex flex-col gap-4 overflow-y-auto"
-               >
-                  {projectFeedback && (
-                    <div
-                      role="alert"
-                      className={`rounded-lg border px-3 py-2 text-sm ${
-                        projectFeedback.type === 'success'
-                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                          : 'border-red-500/40 bg-red-500/10 text-red-300'
-                      }`}
-                    >
-                      {projectFeedback.message}
-                    </div>
-                  )}
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do Projeto *</label>
-                     <input 
-                       type="text" required
-                       value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
-                       placeholder="Ex: Loteamento Bosque das Árvores"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Cidade *</label>
-                       <input 
-                         type="text" required
-                         value={newProjectCity} onChange={e => setNewProjectCity(e.target.value)}
-                         placeholder="Ex: Parauapebas"
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                       />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">UF *</label>
-                       <input 
-                         type="text" required maxLength={2}
-                         value={newProjectUf} onChange={e => setNewProjectUf(e.target.value.toUpperCase())}
-                         placeholder="Ex: PA"
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
-                       />
-                    </div>
-                  </div>
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Bairro/Localidade</label>
-                     <input 
-                       type="text"
-                       value={newProjectNbhd} onChange={e => setNewProjectNbhd(e.target.value)}
-                       placeholder="Ex: Centro"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Endereço/Referência</label>
-                     <input 
-                       type="text"
-                       value={newProjectAddr} onChange={e => setNewProjectAddr(e.target.value)}
-                       placeholder="Endereço principal da área"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Município / Foro do Contrato</label>
-                     <input 
-                       type="text"
-                       value={newProjectForum} onChange={e => setNewProjectForum(e.target.value)}
-                       placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-
-                  <button 
-                     type="submit" 
-                     disabled={projectFormSubmitting}
-                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
-                  >
-                     {projectFormSubmitting ? (
-                       <Loader2 className="w-5 h-5 animate-spin" />
-                     ) : projectModalMode === 'edit' ? (
-                       'Salvar Alterações'
-                     ) : (
-                       'Criar Projeto'
-                     )}
-                  </button>
-               </form>
-            </div>
-         </div>
-      )}
+      {renderProjectFormModal()}
     </div>
+    </>
   );
 }
 
@@ -1671,13 +1704,13 @@ function ProjectCard({
   project,
   user,
   onOpen,
-  onEdit,
+  onEditProject,
   onDelete,
 }: {
   project: any;
   user: any;
   onOpen: () => void;
-  onEdit: () => void;
+  onEditProject: (project: Record<string, unknown>) => void;
   onDelete: () => void;
 }) {
   const total = project.blocks?.length || 0;
@@ -1698,28 +1731,40 @@ function ProjectCard({
              </div>
           </div>
           {user?.role !== 'BROKER' && (
-            <div className="flex items-center gap-1">
+            <div className="relative z-20 flex items-center gap-1 pointer-events-auto">
                <button
                  type="button"
-                 title="Editar loteamento"
+                 title="Editar"
+                 aria-label="Editar projeto"
                  onClick={(e) => {
+                   e.preventDefault();
                    e.stopPropagation();
-                   onEdit();
+                   onEditProject(project);
                  }}
-                 className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors"
+                 onMouseDown={(e) => {
+                   e.preventDefault();
+                   e.stopPropagation();
+                 }}
+                 className="relative z-20 p-2 text-[var(--color-text-muted)] hover:text-white transition-colors cursor-pointer pointer-events-auto"
                >
-                 <Edit2 className="w-4 h-4" />
+                 <Edit2 className="w-4 h-4 pointer-events-none" />
                </button>
                <button
                  type="button"
                  title="Excluir"
+                 aria-label="Excluir projeto"
                  onClick={(e) => {
+                   e.preventDefault();
                    e.stopPropagation();
                    onDelete();
                  }}
-                 className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors"
+                 onMouseDown={(e) => {
+                   e.preventDefault();
+                   e.stopPropagation();
+                 }}
+                 className="relative z-20 p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors cursor-pointer pointer-events-auto"
                >
-                 <Trash2 className="w-4 h-4" />
+                 <Trash2 className="w-4 h-4 pointer-events-none" />
                </button>
             </div>
           )}
@@ -1745,8 +1790,12 @@ function ProjectCard({
               </span>
             )}
             
-            <button 
-              onClick={onOpen}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
               className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
             >
               <MapIcon className="w-4 h-4" /> Abrir Mapa
