@@ -18,6 +18,7 @@ import {
   projectToFormInitialData,
 } from '@/lib/project-form';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
+import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -175,9 +176,7 @@ function applyTenantFilterToProjectsQuery(
   user: AuthUser,
   tenantId: string | null,
 ) {
-  if (user.role === 'SUPER_ADMIN') return query;
-  if (!tenantId) return query;
-  return query.or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`);
+  return applyTenantFilter(query, { tenantId, isSuperAdmin: isPlatformAdmin(user.role) }, 'projects');
 }
 
 /** Cria projeto via API Next.js (evita fetch direto ao Supabase com URL mock / CORS). */
@@ -491,10 +490,10 @@ export default function MapPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const activeTenantId =
-        saasTenantId ?? (await resolveActiveTenantId(user));
+      const rlsCtx = await resolveRlsContext(user);
+      const activeTenantId = saasTenantId ?? rlsCtx.tenantId ?? (await resolveActiveTenantId(user));
 
-      if (user.role !== 'SUPER_ADMIN' && !activeTenantId) {
+      if (!rlsCtx.isSuperAdmin && !activeTenantId) {
         setProjects([]);
         return;
       }

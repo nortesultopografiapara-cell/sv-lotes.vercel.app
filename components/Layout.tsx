@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
 import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
@@ -49,10 +50,9 @@ function NotificationBell({ user }: { user: any }) {
     async function loadAlerts() {
       if (!user) return;
       try {
+        const rlsCtx = await resolveRlsContext(user);
         let query = supabase.from('finance_receipts').select('amount, due_date, status, sale_id');
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
-        }
+        query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
         const { data, error } = await query;
         if (error || !data) return;
 

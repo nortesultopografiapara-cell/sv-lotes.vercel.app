@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { logRlsCompany, logRlsTenant } from '@/lib/rls';
 import { useRouter } from 'next/navigation';
 
 export interface UserProfile {
@@ -97,10 +98,13 @@ export function useAuth() {
           }
         } else {
           if (mounted) {
+            const companyId = userData.company_id ?? userData.tenant_id ?? null;
+            logRlsCompany(companyId);
+            logRlsTenant(userData.tenant_id ?? companyId);
             setUser({
               id: session.user.id,
               tenant_id: userData.tenant_id,
-              company_id: userData.company_id ?? userData.tenant_id ?? null,
+              company_id: companyId,
               role: (userData.role || '').toUpperCase(),
               email: session.user.email || '',
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',

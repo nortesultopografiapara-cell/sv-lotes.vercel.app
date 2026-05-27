@@ -4,6 +4,7 @@ import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Ed
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 
 export default function CustomersPage() {
   const { user, loading: authLoading } = useAuth();
@@ -27,14 +28,16 @@ export default function CustomersPage() {
     async function fetchCustomers() {
       if (!user) return;
       try {
+        const rlsCtx = await resolveRlsContext(user);
+        if (!rlsCtx.isSuperAdmin && !rlsCtx.tenantId) {
+          setCustomers([]);
+          return;
+        }
         let query = supabase.from('customers').select(`
             *,
             blocks (id, block_name, name, number, status, projects(name))
         `).order('created_at', { ascending: false });
-        
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-        }
+        query = applyTenantFilter(query, rlsCtx, 'customers');
         
         const { data, error } = await query;
         if (!isMounted) return;
@@ -64,13 +67,16 @@ export default function CustomersPage() {
      if (!user) return;
      try {
        setLoading(true);
+       const rlsCtx = await resolveRlsContext(user);
+       if (!rlsCtx.isSuperAdmin && !rlsCtx.tenantId) {
+         setCustomers([]);
+         return;
+       }
        let query = supabase.from('customers').select(`
            *,
            blocks (id, block_name, name, number, status, projects(name))
        `).order('created_at', { ascending: false });
-       if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-          query = query.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-       }
+       query = applyTenantFilter(query, rlsCtx, 'customers');
        const { data, error } = await query;
        if (error) {
           setCustomers([]);
@@ -94,22 +100,21 @@ export default function CustomersPage() {
       const addressUpper = formData.address?.trim().toUpperCase() || '';
       const phoneClean = formData.phone?.trim() || '';
 
+      const rlsCtx = await resolveRlsContext(user);
+      const tenantId = rlsCtx.tenantId;
       let customerId = formData.id || null;
 
       if (!customerId && cpfCnpjValue) {
           let checkQuery = supabase.from('customers').select('id').eq('document', cpfCnpjValue);
-          if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-              checkQuery = checkQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-          }
+          checkQuery = applyTenantFilter(checkQuery, rlsCtx, 'customers');
           const { data: existingCustomer } = await checkQuery.maybeSingle();
           if (existingCustomer) {
               customerId = existingCustomer.id;
           }
       }
 
-      const payload = {
+      let payload: Record<string, unknown> = {
         name: nameUpper,
-        ...(user?.tenant_id && !customerId ? { tenant_id: user.tenant_id } : {}),
         cpf_cnpj: cpfCnpjValue,
         document: cpfCnpjValue,
         phone: phoneClean,
@@ -122,14 +127,15 @@ export default function CustomersPage() {
         city: formData.city?.trim().toUpperCase() || null,
         state: formData.state?.trim().toUpperCase() || null,
         cep: formData.cep?.trim() || null,
-        status: formData.status || 'ativo'
+        status: formData.status || 'ativo',
       };
+      if (!customerId && tenantId) {
+        payload = withTenantFields(payload, tenantId, 'customers');
+      }
 
       if (customerId) {
           let updateQuery = supabase.from('customers').update(payload).eq('id', customerId);
-          if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-              updateQuery = updateQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-          }
+          updateQuery = applyTenantFilter(updateQuery, rlsCtx, 'customers');
           const { error: custError } = await updateQuery;
           if (custError) throw custError;
       } else {
@@ -196,10 +202,9 @@ export default function CustomersPage() {
       }
 
       if (confirm('Tem certeza que deseja apagar este cliente definitivamente? Ação irreversível.')) {
+        const rlsCtx = await resolveRlsContext(user!);
         let deleteQuery = supabase.from('customers').delete().eq('id', customer.id);
-        if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-            deleteQuery = deleteQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-        }
+        deleteQuery = applyTenantFilter(deleteQuery, rlsCtx, 'customers');
         const { error } = await deleteQuery;
         if (error) throw error;
         await loadCustomers();
@@ -241,10 +246,9 @@ export default function CustomersPage() {
          supabase.from('sales').update({ customer_id: null }).eq('customer_id', cid)
        ]);
 
+       const rlsCtx = await resolveRlsContext(user!);
        let deleteQuery = supabase.from('customers').delete().eq('id', cid);
-       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
-           deleteQuery = deleteQuery.or(`tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`);
-       }
+       deleteQuery = applyTenantFilter(deleteQuery, rlsCtx, 'customers');
        const { error: delError } = await deleteQuery;
        if (delError) throw delError;
 

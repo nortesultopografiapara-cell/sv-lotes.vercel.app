@@ -4,6 +4,7 @@ import { Users, Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2 } fro
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 
 export default function CRMPage() {
   const { user, loading: authLoading } = useAuth();
@@ -15,10 +16,13 @@ export default function CRMPage() {
     async function loadClients() {
       if (!user) return;
       try {
-        let query = supabase.from('clients').select(`*, reservations(id), sales(id)`).order('created_at', { ascending: false });
-        if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
-           query = query.eq('tenant_id', user.tenant_id);
+        const rlsCtx = await resolveRlsContext(user);
+        if (!rlsCtx.isSuperAdmin && !rlsCtx.tenantId) {
+          setClients([]);
+          return;
         }
+        let query = supabase.from('clients').select(`*, reservations(id), sales(id)`).order('created_at', { ascending: false });
+        query = applyTenantFilter(query, rlsCtx, 'clients');
         
         const { data, error } = await query;
         if (error) throw error;

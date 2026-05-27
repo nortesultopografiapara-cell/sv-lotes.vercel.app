@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
+import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
   fetchCompanySaasByTenantId,
   getCompanySaasPlan,
@@ -59,8 +60,9 @@ export default function CorretoresPage() {
   const loadBrokers = useCallback(async () => {
     if (!user) return;
     try {
+      const rlsCtx = await resolveRlsContext(user);
       const resolvedTenantId =
-        (await resolveActiveTenantId(user)) ||
+        rlsCtx.tenantId ||
         user?.tenant_id ||
         (user as { company_id?: string }).company_id ||
         null;
@@ -81,14 +83,13 @@ export default function CorretoresPage() {
 
       console.log("BROKERS_CURRENT_COMPANY", resolvedTenantId);
 
-      let query = supabase.from('brokers').select('*').is('deleted_at', null).order('created_at', { ascending: false });
-      
-      if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-         query = query.or(`company_id.eq.${resolvedTenantId},tenant_id.eq.${resolvedTenantId}`);
-      } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+      if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
          setLoading(false);
          return;
       }
+
+      let query = supabase.from('brokers').select('*').is('deleted_at', null).order('created_at', { ascending: false });
+      query = applyTenantFilter(query, rlsCtx, 'brokers');
       
       const { data: rawBrokers, error } = await query;
       if (error) throw error;
@@ -96,27 +97,33 @@ export default function CorretoresPage() {
       const safeBrokers = rawBrokers || [];
       console.log("BROKERS_RAW_FROM_DB", safeBrokers.length, safeBrokers);
       
-      if (safeBrokers.length === 0 && user.role !== 'SUPER_ADMIN') {
-         console.warn("DIAGNÓSTICO: Zero brokers para currentCompany.id =", resolvedTenantId);
-         const { data: allBrokers } = await supabase.from('brokers').select('id, name, company_id, tenant_id');
-         console.warn("DB TOTAL BROKERS (sem filtro):", allBrokers);
+      if (safeBrokers.length === 0 && !rlsCtx.isSuperAdmin) {
+         console.warn("DIAGNÓSTICO: Zero brokers para tenant =", resolvedTenantId);
       }
 
-      const { data: s } = await supabase.from('sales').select('*');
+      const { data: s } = await applyTenantFilter(supabase.from('sales').select('*'), rlsCtx, 'sales');
       const salesData = s || [];
       console.log("BROKERS_SALES_RAW", salesData.length);
       
-      const { data: c } = await supabase.from('broker_commissions').select('*');
+      const { data: c } = await applyTenantFilter(
+        supabase.from('broker_commissions').select('*'),
+        rlsCtx,
+        'broker_commissions',
+      );
       const commData = c || [];
       console.log("BROKERS_COMMISSIONS_RAW", commData.length);
       
-      const { data: bld } = await supabase.from('blocks').select('*');
+      const { data: bld } = await applyTenantFilter(supabase.from('blocks').select('*'), rlsCtx, 'blocks');
       const blockData = bld || [];
       
-      const { data: prj } = await supabase.from('projects').select('id, name');
+      const { data: prj } = await applyTenantFilter(
+        supabase.from('projects').select('id, name'),
+        rlsCtx,
+        'projects',
+      );
       const projectsData = prj || [];
       
-      const { data: ctr } = await supabase.from('contracts').select('*');
+      const { data: ctr } = await applyTenantFilter(supabase.from('contracts').select('*'), rlsCtx, 'contracts');
       const contractsData = ctr || [];
       
       let hasMissingCommission = false;
@@ -616,7 +623,11 @@ export default function CorretoresPage() {
     setIsSubmitting(true);
 
     try {
-      const resolvedTenantId = user?.tenant_id || (user as any)?.company_id;
+      const resolvedTenantId =
+        (await resolveActiveTenantId(user)) ||
+        user?.tenant_id ||
+        (user as { company_id?: string })?.company_id ||
+        null;
 
       const response = await fetch('/api/users/create', {
         method: 'POST',
@@ -638,7 +649,7 @@ export default function CorretoresPage() {
 
       // Tentativa de inserção usando os nomes de coluna antigos e novos (o q não falhar)
       // Neste caso, se a migration já passou, tenant_id e name serão os corretos
-      let payload: any = {
+      let payload: any = withTenantFields({
          id: result.userId,
          auth_user_id: result.userId,
          cpf: formData.cpf,
@@ -648,14 +659,12 @@ export default function CorretoresPage() {
          role: 'BROKER',
          level: 'broker',
          commission_percent: formData.commission_percent,
-         company_id: resolvedTenantId,
-         tenant_id: resolvedTenantId,
          name: formData.fullName,
          full_name: formData.fullName,
          active: true,
          status: 'ativo',
          deleted_at: null
-      };
+      }, resolvedTenantId, 'brokers');
 
       console.log("BROKER_CREATE_PAYLOAD", payload);
       const { data: brokerData, error: brokerError } = await supabase.from('brokers').upsert([payload], { onConflict: 'id' }).select();

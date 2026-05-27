@@ -15,6 +15,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
   buildCashFlowItems,
   calculateFinancialTotals,
@@ -249,7 +250,14 @@ export default function FinancePage() {
   const loadFinance = async () => {
       if (!user) return;
       try {
-        const resolvedTenantId = user.tenant_id || (user as any).company_id;
+        const rlsCtx = await resolveRlsContext(user);
+        const resolvedTenantId =
+          rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string }).company_id || null;
+
+        if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
+           setLoading(false);
+           return;
+        }
         
         let query = supabase
            .from('finance_receipts')
@@ -262,12 +270,7 @@ export default function FinancePage() {
            `)
            .order('due_date', { ascending: true });
            
-        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-           query = query.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-        } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
-           setLoading(false);
-           return;
-        }
+        query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
         
         let { data, error } = await query;
         console.log("FINANCE TENANT:", resolvedTenantId);
@@ -281,12 +284,7 @@ export default function FinancePage() {
                 .select('*, customers!finance_receipts_customer_id_fkey(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
                 .order('due_date', { ascending: true });
             
-            if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-                fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-            } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
-                setLoading(false);
-                return;
-            }
+            fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'finance_receipts');
             
             const fallbackRes = await fallbackQuery;
             data = fallbackRes.data;
@@ -297,9 +295,7 @@ export default function FinancePage() {
         if (error) throw error;
         
         let pQuery = supabase.from('projects').select('id, name');
-        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-            pQuery = pQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-        }
+        pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
         const { data: projData } = await pQuery;
         if (projData) {
             console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', projData.length);
@@ -409,9 +405,7 @@ export default function FinancePage() {
                `)
                .order('movement_date', { ascending: false });
                
-           if (resolvedTenantId) {
-               queryCash = queryCash.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-           }
+           queryCash = applyTenantFilter(queryCash, rlsCtx, 'cash_movements');
            
            const { data: cData, error: cErr } = await queryCash;
            
@@ -419,9 +413,7 @@ export default function FinancePage() {
                console.error("ERRO JOIN CASH_MOVEMENTS", cErr);
                
                let fallbackQuery = supabase.from('cash_movements').select('*').order('movement_date', { ascending: false });
-               if (resolvedTenantId) {
-                   fallbackQuery = fallbackQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-               }
+               fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
                const { data: fallbackData } = await fallbackQuery;
                if (fallbackData) {
                    cashData = fallbackData;
@@ -436,14 +428,13 @@ export default function FinancePage() {
         let commsData: any[] = [];
         try {
            let queryComms = supabase.from('broker_commissions').select('*, brokers(*), sales(projects(*), contracts(*), customers(*), blocks(*)), contracts(projects(*))');
-           if (resolvedTenantId) {
-               queryComms = queryComms.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-           }
+           queryComms = applyTenantFilter(queryComms, rlsCtx, 'broker_commissions');
            const { data: comms, error: commsErr } = await queryComms;
            if (commsErr) {
                console.error("ERRO JOIN BROKER_COMMISSIONS:", commsErr);
-               // fallback to simple
-               const { data: fallbackComms } = await supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']).or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
+               let fallbackCommsQuery = supabase.from('broker_commissions').select('*').in('status', ['pago', 'paga', 'paid', 'aprovado', 'aprovada']);
+               fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
+               const { data: fallbackComms } = await fallbackCommsQuery;
                if (fallbackComms) {
                    commsData = fallbackComms;
                    setBrokerCommissions(fallbackComms);
@@ -574,10 +565,9 @@ export default function FinancePage() {
         .eq('id', p.id);
       if (error) throw error;
       
-      const resolvedTenantId = user?.tenant_id || ((user as any)?.company_id);
-      await supabase.from('cash_movements').insert({
-          tenant_id: resolvedTenantId,
-          company_id: resolvedTenantId,
+      const rlsCtx = await resolveRlsContext(user);
+      const insertPayload = withTenantFields(
+        {
           type: 'entrada',
           category: 'Venda de Lote',
           description: `Pagamento de Parcela ${p.installment_number || '1'} - CT ${p.sales?.contracts?.[0]?.contract_number || 'S/N'}`,
@@ -586,8 +576,12 @@ export default function FinancePage() {
           sale_id: p.sale_id,
           finance_receipt_id: p.id,
           movement_date: new Date().toISOString().split('T')[0],
-          created_by: user.id
-      });
+          created_by: user.id,
+        },
+        rlsCtx.tenantId,
+        'cash_movements',
+      );
+      await supabase.from('cash_movements').insert(insertPayload);
       
       await loadFinance();
       window.dispatchEvent(new Event('finance_updated'));

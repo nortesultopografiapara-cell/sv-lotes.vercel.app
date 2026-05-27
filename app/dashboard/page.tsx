@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { calculateFinancialTotals } from '@/lib/financeCashFlow';
 import dynamic from 'next/dynamic';
 import SuperAdminDashboard from './SuperAdminDashboard';
@@ -95,18 +96,19 @@ function OperationalDashboard({ user }: { user: any }) {
       if (!user) return;
       
       try {
-        const resolvedTenantId = user.tenant_id || (user as any)?.company_id;
-        
-        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
-        let projectsQuery = supabase.from('projects').select('id, name');
-        
-        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-          query = query.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-          projectsQuery = projectsQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
-        } else if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+        const rlsCtx = await resolveRlsContext(user);
+        const resolvedTenantId =
+          rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string })?.company_id || null;
+
+        if (!rlsCtx.isSuperAdmin && !resolvedTenantId) {
           setLoading(false);
           return;
         }
+
+        let query = supabase.from('blocks').select('project_id, status, price', { count: 'exact' });
+        let projectsQuery = supabase.from('projects').select('id, name');
+        query = applyTenantFilter(query, rlsCtx, 'blocks');
+        projectsQuery = applyTenantFilter(projectsQuery, rlsCtx, 'projects');
 
         const { data, error } = await query;
         const { data: projectsData } = await projectsQuery;
@@ -157,27 +159,15 @@ function OperationalDashboard({ user }: { user: any }) {
             const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
 
             let recQuery = supabase.from('finance_receipts').select('*');
-            if (resolvedTenantId) {
-              recQuery = recQuery.or(
-                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
-              );
-            }
+            recQuery = applyTenantFilter(recQuery, rlsCtx, 'finance_receipts');
             const { data: receiptsData } = await recQuery;
 
             let cashQuery = supabase.from('cash_movements').select('*');
-            if (resolvedTenantId) {
-              cashQuery = cashQuery.or(
-                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
-              );
-            }
+            cashQuery = applyTenantFilter(cashQuery, rlsCtx, 'cash_movements');
             const { data: cashData } = await cashQuery;
 
             let commQuery = supabase.from('broker_commissions').select('*');
-            if (resolvedTenantId) {
-              commQuery = commQuery.or(
-                `tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`,
-              );
-            }
+            commQuery = applyTenantFilter(commQuery, rlsCtx, 'broker_commissions');
             const { data: commsData } = await commQuery;
 
             const totals = calculateFinancialTotals(
@@ -229,9 +219,13 @@ function OperationalDashboard({ user }: { user: any }) {
         }
 
         // Load Activities / Logs
-        let logsQuery = supabase.from('logs').select('*, users(full_name)').order('created_at', { ascending: false }).limit(5);
-        if (user.role !== 'SUPER_ADMIN' && resolvedTenantId) {
-          logsQuery = logsQuery.eq('tenant_id', resolvedTenantId);
+        let logsQuery = supabase
+          .from('logs')
+          .select('*, users(full_name)')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!rlsCtx.isSuperAdmin && resolvedTenantId) {
+          logsQuery = logsQuery.or(`tenant_id.eq.${resolvedTenantId},company_id.eq.${resolvedTenantId}`);
         }
         
         const { data: logsData } = await logsQuery;

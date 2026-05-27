@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { withTenantFields } from '@/lib/rls';
 
 interface AuditLogOptions {
   action: string;
@@ -28,16 +29,21 @@ export async function logAudit({
 
     const tenantId = userData?.tenant_id;
 
-    await supabase.from('audit_logs').insert({
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      old_data: oldData,
-      new_data: newData,
-      tenant_id: tenantId,
-      user_id: session.user.id,
-      user_agent: window.navigator.userAgent,
-    });
+    await supabase.from('audit_logs').insert(
+      withTenantFields(
+        {
+          action,
+          entity_type: entityType,
+          entity_id: entityId,
+          old_data: oldData,
+          new_data: newData,
+          user_id: session.user.id,
+          user_agent: window.navigator.userAgent,
+        },
+        tenantId ?? null,
+        'audit_logs',
+      ),
+    );
   } catch (err) {
     console.error('Failed to log audit event', err);
   }

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
+import { resolveActiveTenantId } from '@/lib/activeTenant';
+import { withTenantFields } from '@/lib/rls';
 import { FileText, Plus, Loader2, ArrowLeft, Save, Trash2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -39,13 +41,14 @@ export default function TemplatesPage() {
   }, [user]);
 
   async function loadTemplates() {
-      if (!user?.tenant_id) {
+      const tenantId = user ? await resolveActiveTenantId(user) : null;
+      if (!tenantId) {
           setLoading(false);
           return;
       }
       const { data, error } = await supabase.from('contract_templates')
            .select('*')
-           .eq('tenant_id', user.tenant_id)
+           .eq('tenant_id', tenantId)
            .order('name');
       
       if (data) setTemplates(data);
@@ -68,14 +71,14 @@ export default function TemplatesPage() {
 
   const handleSave = async () => {
       if (!editName.trim()) return alert("O nome é obrigatório");
-      if (!user?.tenant_id) return;
+      const tenantId = user ? await resolveActiveTenantId(user) : null;
+      if (!tenantId) return;
 
       setSaving(true);
-      const payload = {
-          tenant_id: user.tenant_id,
+      const payload = withTenantFields({
           name: editName,
           content: editContent
-      };
+      }, tenantId, 'contract_templates');
 
       if (selectedTemplate?.id) {
           await supabase.from('contract_templates').update(payload).eq('id', selectedTemplate.id);
