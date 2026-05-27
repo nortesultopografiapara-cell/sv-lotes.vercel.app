@@ -21,6 +21,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
 
+/** Identificador de build — confirma deploy de app/companies/page.tsx */
+const MASTER_COMPANIES_ROUTE = 'app/companies/page.tsx';
+const MASTER_COMPANIES_BUILD = '2026-05-27-no-filter';
+
 export default function CompaniesPage() {
   return (
     <Suspense
@@ -49,6 +53,10 @@ function CompaniesPageContent() {
   const [dataLoading, setDataLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  useEffect(() => {
+    console.log('[MASTER_COMPANIES_NOVO] rota:', MASTER_COMPANIES_ROUTE, 'build:', MASTER_COMPANIES_BUILD);
+  }, []);
+
   const loadCompanies = useCallback(async () => {
     if (!user) return;
     setDataLoading(true);
@@ -60,8 +68,10 @@ function CompaniesPageContent() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      console.log('[MASTER_COMPANIES] empresas retornadas:', data?.length ?? 0);
-      console.log('[MASTER_COMPANIES] erro:', error);
+      const total = data?.length ?? 0;
+      console.log('[MASTER_COMPANIES_NOVO] total empresas:', total);
+      console.log('[MASTER_COMPANIES_NOVO] erro:', error);
+      console.log('[MASTER_COMPANIES_NOVO] nomes:', (data ?? []).map((c: { name?: string }) => c.name));
 
       if (error) {
         setLoadError(`Erro ao carregar empresas: ${error.message}`);
@@ -105,7 +115,7 @@ function CompaniesPageContent() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.log('[MASTER_COMPANIES] erro:', err);
+      console.log('[MASTER_COMPANIES_NOVO] erro:', err);
       setLoadError(`Erro ao carregar empresas: ${message}`);
       setCompanies([]);
     } finally {
@@ -247,6 +257,9 @@ function CompaniesPageContent() {
           </h1>
           <p className="text-sm text-slate-500 mt-1 max-w-lg">
             Gerencie tenants, planos e acesso ao workspace de cada loteadora.
+          </p>
+          <p className="text-[10px] font-mono text-cyan-500/80 mt-2">
+            {MASTER_COMPANIES_ROUTE} · {MASTER_COMPANIES_BUILD}
           </p>
         </div>
         <div className="flex items-center gap-2">

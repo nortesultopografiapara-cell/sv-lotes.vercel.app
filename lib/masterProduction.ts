@@ -1,5 +1,6 @@
 /**
- * Utilitários do painel Master — listagem usa APENAS flags de teste no banco.
+ * Utilitários do painel Master.
+ * Listagem de empresas: NÃO filtrar — usar badge REAL/TESTE na UI.
  */
 
 import { getCompanySaasPlan } from '@/lib/saasPlans';
@@ -21,41 +22,23 @@ export function isProductionRuntime(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
-/** Único critério de listagem Master: flags explícitas no registro. */
 export function isCompanyMarkedAsTest(company: CompanyLike): boolean {
   return company?.is_test_company === true || company?.is_test === true;
 }
 
-/**
- * Listagem Master — não filtra por nome, slug, email ou texto.
- * Oculta somente is_test_company === true ou is_test === true (salvo toggle).
- */
+/** @deprecated Não remove empresas — retorna a lista inteira (compatibilidade). */
 export function filterRealCompanies<T extends CompanyLike>(
   companies: T[],
-  options?: { showTestCompanies?: boolean },
+  _options?: { showTestCompanies?: boolean },
 ): T[] {
-  const show = options?.showTestCompanies ?? false;
-  const list = companies || [];
-
-  console.log('[MASTER] companies raw length', list.length);
-
-  const real = show ? list : list.filter((c) => !isCompanyMarkedAsTest(c));
-  const removed = list.length - real.length;
-
-  if (removed > 0) {
-    console.log('[MASTER] empresas teste removidas', removed);
-  }
-  console.log('[MASTER] empresas reais exibidas', real.length);
-
-  return real;
+  return companies || [];
 }
 
-/** @deprecated use isCompanyMarkedAsTest — mantido para imports antigos na listagem */
 export function isTestCompany(company: CompanyLike): boolean {
   return isCompanyMarkedAsTest(company);
 }
 
-/** Heurística só para API de limpeza de cadastros (não usar na listagem). */
+/** Heurística só para API de limpeza de cadastros. */
 export function isTestCompanyForCleanup(company: CompanyLike): boolean {
   if (isCompanyMarkedAsTest(company)) return true;
 
@@ -73,12 +56,9 @@ export function isTestCompanyForCleanup(company: CompanyLike): boolean {
   return false;
 }
 
-export function masterLog(
-  message: 'dados reais carregados' | 'nenhum dado real encontrado',
-  detail?: Record<string, unknown>,
-) {
-  const payload = detail ? ` ${JSON.stringify(detail)}` : '';
-  console.log(`[MASTER] ${message}${payload}`);
+/** @deprecated logs antigos removidos — no-op */
+export function masterLog(_message?: string, _detail?: Record<string, unknown>) {
+  /* intencionalmente vazio */
 }
 
 export const PLAN_MRR: Record<string, number> = {

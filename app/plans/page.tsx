@@ -11,11 +11,7 @@ import {
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import {
-  calculateMrrFromCompanies,
-  filterRealCompanies,
-  masterLog,
-} from '@/lib/masterProduction';
+import { calculateMrrFromCompanies } from '@/lib/masterProduction';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -142,11 +138,10 @@ export default function PlansPage() {
         setLoadError(compErr.message);
         setCompanies([]);
         setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
-        masterLog('nenhum dado real encontrado');
         return;
       }
 
-      const finalCompanies = filterRealCompanies(companiesData || []);
+      const finalCompanies = companiesData || [];
       setCompanies(finalCompanies);
 
       const activeCompaniesCount = finalCompanies.filter(
@@ -184,7 +179,6 @@ export default function PlansPage() {
       setLoadError('Falha ao carregar dados do Supabase.');
       setCompanies([]);
       setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
-      masterLog('nenhum dado real encontrado');
     } finally {
       setDataLoading(false);
     }

@@ -4,11 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import {
-  augmentCompanyBilling,
-  filterRealCompanies,
-  masterLog,
-} from '@/lib/masterProduction';
+import { augmentCompanyBilling } from '@/lib/masterProduction';
 import { 
    Wallet, TrendingUp, Users, Target, AlertCircle, 
    Search, Filter, Download, RefreshCw, X, Eye, Edit2, 
@@ -59,15 +55,12 @@ export default function SaaSFinancePage() {
          if (error) {
              console.error('[MASTER] Erro ao buscar empresas', error);
              setCompanies([]);
-             masterLog('nenhum dado real encontrado');
          } else {
-             const real = filterRealCompanies(data || []);
-             setCompanies(real.map((c) => augmentCompanyBilling(c)));
+             setCompanies((data || []).map((c) => augmentCompanyBilling(c)));
          }
       } catch (err) {
          console.error('[MASTER] Erro geral', err);
          setCompanies([]);
-         masterLog('nenhum dado real encontrado');
       } finally {
          setLoading(false);
       }
