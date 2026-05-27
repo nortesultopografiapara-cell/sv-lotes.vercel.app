@@ -12,7 +12,9 @@ export type CompanyLike = {
   email?: string | null;
   status_operacional?: string | null;
   is_test?: boolean | null;
+  is_test_company?: boolean | null;
   is_master?: boolean | null;
+  tenant_id?: string | null;
 };
 
 const REAL_COMPANY_HINTS = [
@@ -23,6 +25,7 @@ const REAL_COMPANY_HINTS = [
   'norte sul topografia',
 ];
 
+/** Usado apenas em rotinas de limpeza (cleanup), não na listagem Master. */
 const TEST_HINTS = [
   'teste',
   'test',
@@ -30,7 +33,6 @@ const TEST_HINTS = [
   'mock',
   'fake',
   'sandbox',
-  'meneses',
   'empresa teste',
   'loteadora paraiso',
   'vale verde empreendimentos',
@@ -83,18 +85,47 @@ export function isTestCompany(company: CompanyLike): boolean {
   return false;
 }
 
-export function filterRealCompanies<T extends CompanyLike>(companies: T[]): T[] {
-  const real = (companies || []).filter((c) => !isTestCompany(c));
-  const removed = (companies?.length || 0) - real.length;
+/** Listagem Master: oculta só empresas com flag explícita de teste (salvo toggle). */
+export function filterRealCompanies<T extends CompanyLike>(
+  companies: T[],
+  options?: { showTestCompanies?: boolean },
+): T[] {
+  const show = options?.showTestCompanies ?? false;
+  const list = companies || [];
+  const real = show
+    ? list
+    : list.filter((c) => c.is_test_company !== true && c.is_test !== true);
+
+  const removed = list.length - real.length;
   if (removed > 0) {
     masterLog('mocks removidos', { removidos: removed, exibidos: real.length });
   }
   if (real.length > 0) {
     masterLog('dados reais carregados', { total: real.length });
+  } else if (list.length > 0) {
+    masterLog('nenhum dado real encontrado', { totalBruto: list.length, somenteTeste: true });
   } else {
     masterLog('nenhum dado real encontrado');
   }
   return real;
+}
+
+export function masterCompaniesLog(
+  message:
+    | 'usuario'
+    | 'isSuperAdmin'
+    | 'query sem tenant'
+    | 'empresas retornadas'
+    | 'erro Supabase',
+  detail?: Record<string, unknown> | string | boolean,
+) {
+  const extra =
+    detail === undefined
+      ? ''
+      : typeof detail === 'string' || typeof detail === 'boolean'
+        ? ` ${detail}`
+        : ` ${JSON.stringify(detail)}`;
+  console.log(`[MASTER_COMPANIES] ${message}${extra}`);
 }
 
 export const PLAN_MRR: Record<string, number> = {

@@ -18,7 +18,8 @@ import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
-import { filterRealCompanies } from '@/lib/masterProduction';
+import { filterRealCompanies, masterCompaniesLog } from '@/lib/masterProduction';
+import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
 
 export default function CompaniesPage() {
@@ -47,49 +48,85 @@ function CompaniesPageContent() {
   
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [showTestCompanies, setShowTestCompanies] = useState(false);
 
   const loadCompanies = useCallback(async () => {
+    if (!user) return;
     setDataLoading(true);
+    setLoadError(null);
+
+    const isSuperAdmin = isPlatformAdmin(user.role);
+    masterCompaniesLog('usuario', { id: user.id, role: user.role, email: user.email });
+    masterCompaniesLog('isSuperAdmin', { isSuperAdmin });
+
     try {
-      const [ { data: companiesData, error: companiesError }, { data: projectsData, error: projectsError } ] = await Promise.all([
-         supabase
-          .from('companies')
-          .select(`
-            *,
-            users(count)
-          `)
-          .order('created_at', { ascending: false }),
-         supabase
-          .from('projects')
-          .select('tenant_id')
-      ]);
-        
-      if (companiesError) {
-        console.error('SUPABASE_ERROR fetching companies:', companiesError);
-        throw companiesError;
+      if (isSuperAdmin) {
+        masterCompaniesLog('query sem tenant', true);
       }
-      
+
+      const [
+        { data: companiesData, error: companiesError },
+        { data: projectsData, error: projectsError },
+      ] = await Promise.all([
+        supabase
+          .from('companies')
+          .select(`*, users(count)`)
+          .order('created_at', { ascending: false }),
+        supabase.from('projects').select('tenant_id, company_id'),
+      ]);
+
+      if (companiesError) {
+        masterCompaniesLog('erro Supabase', {
+          message: companiesError.message,
+          code: companiesError.code,
+          details: companiesError.details,
+          hint: companiesError.hint,
+        });
+        setLoadError(companiesError.message || 'Erro ao carregar empresas (RLS ou permissão).');
+        setCompanies([]);
+        return;
+      }
+
+      if (projectsError) {
+        masterCompaniesLog('erro Supabase', {
+          context: 'projects',
+          message: projectsError.message,
+          code: projectsError.code,
+        });
+      }
+
+      masterCompaniesLog('empresas retornadas', {
+        total: companiesData?.length ?? 0,
+        nomes: (companiesData || []).map((c: { name?: string }) => c.name),
+      });
+
       const counts: Record<string, number> = {};
       if (projectsData) {
-         projectsData.forEach((p: any) => {
-            if (p.tenant_id) {
-               counts[p.tenant_id] = (counts[p.tenant_id] || 0) + 1;
-            }
-         });
+        projectsData.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
+          const key = p.tenant_id || p.company_id;
+          if (key) {
+            counts[key] = (counts[key] || 0) + 1;
+          }
+        });
       }
 
-      const mergedData = (companiesData || []).map((c: any) => ({
-         ...c,
-         project_count: counts[c.id] || 0
+      const mergedData = (companiesData || []).map((c: { id: string }) => ({
+        ...c,
+        project_count: counts[c.id] || 0,
       }));
 
-      setCompanies(filterRealCompanies(mergedData));
+      setCompanies(filterRealCompanies(mergedData, { showTestCompanies }));
     } catch (err) {
-      console.error('ERROR in loadCompanies:', err);
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      masterCompaniesLog('erro Supabase', { message });
+      console.error('[MASTER_COMPANIES] erro Supabase', err);
+      setLoadError(message);
+      setCompanies([]);
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [user, showTestCompanies]);
 
   const handleEdit = (company: any) => {
     setCompanyToEdit(company);
@@ -171,7 +208,7 @@ function CompaniesPageContent() {
     if (!authLoading) {
       if (!user) {
         router.push('/login');
-      } else if (user.role !== 'SUPER_ADMIN') {
+      } else if (!isPlatformAdmin(user.role)) {
         router.push('/');
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -179,6 +216,12 @@ function CompaniesPageContent() {
       }
     }
   }, [authLoading, user, router, loadCompanies]);
+
+  useEffect(() => {
+    if (!authLoading && user && isPlatformAdmin(user.role)) {
+      loadCompanies();
+    }
+  }, [showTestCompanies, authLoading, user, loadCompanies]);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -274,8 +317,8 @@ function CompaniesPageContent() {
         <StatCard title="Usuários" value={totalUsers} icon={Users} accent="text-purple-400" />
       </div>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="relative max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
@@ -285,9 +328,36 @@ function CompaniesPageContent() {
             className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[var(--color-primary)]/40 transition-colors"
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer shrink-0">
+          <input
+            type="checkbox"
+            checked={showTestCompanies}
+            onChange={(e) => setShowTestCompanies(e.target.checked)}
+            className="rounded border-white/20"
+          />
+          Mostrar empresas de teste
+        </label>
       </div>
 
-      {companies.length === 0 ? (
+      {loadError ? (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <p className="font-semibold">Erro ao carregar empresas</p>
+          <p className="mt-1 text-red-200/90">{loadError}</p>
+          <p className="mt-2 text-xs text-red-300/80">
+            Verifique o console: [MASTER_COMPANIES] erro Supabase. Confirme a migration{' '}
+            <code className="text-red-100">20260527180000_fix_master_companies_rls.sql</code> no Supabase.
+          </p>
+          <button
+            type="button"
+            onClick={() => loadCompanies()}
+            className="mt-3 text-xs font-semibold text-red-100 underline hover:no-underline"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+
+      {companies.length === 0 && !loadError ? (
         <MasterEmptyState
           title="Nenhuma empresa real cadastrada ainda"
           description="Cadastre a primeira empresa para iniciar a operação SaaS com assinaturas e cobranças reais."
