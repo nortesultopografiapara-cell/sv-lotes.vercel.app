@@ -11,6 +11,7 @@ import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 import proj4 from 'proj4';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { logSaasCompanyContext } from '@/lib/saasPlans';
+import { updateProjectWithFallback } from '@/lib/projects-update';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
@@ -320,6 +321,16 @@ export default function MapPage() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
+  const [isEditProjectModalOpen, setIsEditProjectModalOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editProjectCity, setEditProjectCity] = useState('');
+  const [editProjectUf, setEditProjectUf] = useState('');
+  const [editProjectAddr, setEditProjectAddr] = useState('');
+  const [editProjectNotes, setEditProjectNotes] = useState('');
+  const [savingProjectEdit, setSavingProjectEdit] = useState(false);
+  const [editProjectFeedback, setEditProjectFeedback] = useState<ProjectFeedback | null>(null);
+
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
   // Street Guides States
@@ -563,6 +574,128 @@ export default function MapPage() {
     setIsNewProjectModalOpen(false);
     setProjectFeedback(null);
     resetNewProjectForm();
+  };
+
+  const fillEditFormFromProject = (project: Record<string, unknown>) => {
+    let city = String(project.city || '').trim();
+    let uf = String(project.uf || '').trim().toUpperCase();
+    const location = String(project.location || '').trim();
+
+    if ((!city || !uf) && location.includes('-')) {
+      const parts = location.split('-').map((s) => s.trim());
+      if (parts.length >= 2) {
+        const maybeUf = parts[parts.length - 1].slice(0, 2).toUpperCase();
+        if (maybeUf.length === 2) {
+          uf = uf || maybeUf;
+          city = city || parts.slice(0, -1).join(' - ').trim();
+        }
+      }
+    }
+
+    setEditProjectName(String(project.name || ''));
+    setEditProjectCity(city);
+    setEditProjectUf(uf);
+    setEditProjectAddr(
+      String(project.address || project.address_reference || location || '').trim(),
+    );
+    setEditProjectNotes(
+      String(project.description || project.observations || project.notes || '').trim(),
+    );
+  };
+
+  const openEditProjectModal = (project: Record<string, unknown>) => {
+    console.log('[PROJETOS] editar aberto', { projectId: project.id, name: project.name });
+    setEditingProjectId(String(project.id));
+    fillEditFormFromProject(project);
+    setEditProjectFeedback(null);
+    setIsEditProjectModalOpen(true);
+  };
+
+  const closeEditProjectModal = () => {
+    setIsEditProjectModalOpen(false);
+    setEditingProjectId(null);
+    setEditProjectFeedback(null);
+    setEditProjectName('');
+    setEditProjectCity('');
+    setEditProjectUf('');
+    setEditProjectAddr('');
+    setEditProjectNotes('');
+  };
+
+  const applyProjectPatchToList = (projectId: string, patch: Record<string, unknown>) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, ...patch, blocks: p.blocks } : p)),
+    );
+    setSelectedProject((prev) =>
+      prev?.id === projectId ? { ...prev, ...patch, blocks: prev.blocks } : prev,
+    );
+  };
+
+  const handleSaveEditProject = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!editingProjectId) return;
+
+    setEditProjectFeedback(null);
+
+    const name = editProjectName.trim();
+    const city = editProjectCity.trim();
+    const uf = editProjectUf.trim().toUpperCase();
+    const address = editProjectAddr.trim();
+    const notes = editProjectNotes.trim();
+
+    if (!name) {
+      setEditProjectFeedback({ type: 'error', message: 'Informe o nome do loteamento.' });
+      return;
+    }
+    if (!city) {
+      setEditProjectFeedback({ type: 'error', message: 'Informe a cidade.' });
+      return;
+    }
+    if (!uf || uf.length !== 2) {
+      setEditProjectFeedback({ type: 'error', message: 'Informe a UF com 2 letras.' });
+      return;
+    }
+
+    const existing = projects.find((p) => p.id === editingProjectId);
+    const location = [city, uf].filter(Boolean).join(' - ');
+
+    setSavingProjectEdit(true);
+    try {
+      const { data, error } = await updateProjectWithFallback(supabase, editingProjectId, {
+        name,
+        city,
+        uf,
+        address: address || null,
+        location,
+        description: notes || null,
+        forum_city: String(existing?.forum_city || city),
+        neighborhood: existing?.neighborhood ?? null,
+      });
+
+      if (error || !data) {
+        throw new Error(error?.message || 'Não foi possível salvar o loteamento.');
+      }
+
+      const patch = {
+        name: String(data.name ?? name),
+        city: String(data.city ?? city),
+        uf: String(data.uf ?? uf),
+        address: data.address != null ? String(data.address) : address || null,
+        location: String(data.location ?? location),
+        description: data.description != null ? String(data.description) : notes || null,
+      };
+
+      applyProjectPatchToList(editingProjectId, patch);
+      console.log('[PROJETOS] projeto atualizado', { projectId: editingProjectId, name: patch.name });
+
+      setEditProjectFeedback({ type: 'success', message: 'Loteamento atualizado com sucesso.' });
+      setTimeout(() => closeEditProjectModal(), 700);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao salvar alterações.';
+      setEditProjectFeedback({ type: 'error', message });
+    } finally {
+      setSavingProjectEdit(false);
+    }
   };
 
   const openNewProjectModal = () => {
@@ -1443,6 +1576,7 @@ export default function MapPage() {
                    project={p} 
                    user={user}
                    onOpen={() => handleOpenProject(p)} 
+                   onEdit={() => openEditProjectModal(p)}
                    onDelete={() => handleDeleteProject(p.id)}
                  />
                ))}
@@ -1454,6 +1588,97 @@ export default function MapPage() {
           )}
         </div>
       </div>
+
+      {/* Modal Editar Loteamento */}
+      {isEditProjectModalOpen && (
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
+               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
+                  <h3 className="font-bold text-white text-lg">Editar Loteamento</h3>
+                  <button type="button" onClick={closeEditProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                     <X className="w-5 h-5" />
+                  </button>
+               </div>
+               <form
+                 onSubmit={handleSaveEditProject}
+                 className="p-6 flex flex-col gap-4 overflow-y-auto"
+               >
+                  {editProjectFeedback && (
+                    <div
+                      role="alert"
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        editProjectFeedback.type === 'success'
+                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                          : 'border-red-500/40 bg-red-500/10 text-red-300'
+                      }`}
+                    >
+                      {editProjectFeedback.message}
+                    </div>
+                  )}
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do loteamento *</label>
+                     <input
+                       type="text"
+                       required
+                       value={editProjectName}
+                       onChange={(e) => setEditProjectName(e.target.value)}
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Endereço / Localização</label>
+                     <input
+                       type="text"
+                       value={editProjectAddr}
+                       onChange={(e) => setEditProjectAddr(e.target.value)}
+                       placeholder="Endereço ou referência da área"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Cidade *</label>
+                       <input
+                         type="text"
+                         required
+                         value={editProjectCity}
+                         onChange={(e) => setEditProjectCity(e.target.value)}
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">UF *</label>
+                       <input
+                         type="text"
+                         required
+                         maxLength={2}
+                         value={editProjectUf}
+                         onChange={(e) => setEditProjectUf(e.target.value.toUpperCase())}
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                       />
+                    </div>
+                  </div>
+                  <div>
+                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Observações</label>
+                     <textarea
+                       rows={3}
+                       value={editProjectNotes}
+                       onChange={(e) => setEditProjectNotes(e.target.value)}
+                       placeholder="Anotações internas sobre o loteamento"
+                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] resize-y"
+                     />
+                  </div>
+                  <button
+                     type="submit"
+                     disabled={savingProjectEdit}
+                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                  >
+                     {savingProjectEdit ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar alterações'}
+                  </button>
+               </form>
+            </div>
+         </div>
+      )}
 
       {/* Modal Novo Projeto */}
       {isNewProjectModalOpen && (
@@ -1553,7 +1778,19 @@ export default function MapPage() {
   );
 }
 
-function ProjectCard({ project, user, onOpen, onDelete }: { project: any, user: any, onOpen: () => void, onDelete: () => void }) {
+function ProjectCard({
+  project,
+  user,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  project: any;
+  user: any;
+  onOpen: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const total = project.blocks?.length || 0;
   const sold = project.blocks?.filter((l: any) => l.status === 'Vendido').length || 0;
   const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
@@ -1573,10 +1810,26 @@ function ProjectCard({ project, user, onOpen, onDelete }: { project: any, user: 
           </div>
           {user?.role !== 'BROKER' && (
             <div className="flex items-center gap-1">
-               <button title="Editar" className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors">
+               <button
+                 type="button"
+                 title="Editar loteamento"
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   onEdit();
+                 }}
+                 className="p-2 text-[var(--color-text-muted)] hover:text-white transition-colors"
+               >
                  <Edit2 className="w-4 h-4" />
                </button>
-               <button title="Excluir" onClick={onDelete} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors">
+               <button
+                 type="button"
+                 title="Excluir"
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   onDelete();
+                 }}
+                 className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors"
+               >
                  <Trash2 className="w-4 h-4" />
                </button>
             </div>
