@@ -1,0 +1,54 @@
+export type ProjectModalMode = 'create' | 'edit';
+
+export type ProjectFormInitialData = {
+  name: string;
+  city: string;
+  state: string;
+  neighborhood: string;
+  address: string;
+  contract_city: string;
+};
+
+export const EMPTY_PROJECT_FORM: ProjectFormInitialData = {
+  name: '',
+  city: '',
+  state: '',
+  neighborhood: '',
+  address: '',
+  contract_city: '',
+};
+
+/** Converte registro do Supabase para o formulário unificado (criar/editar). */
+export function projectToFormInitialData(
+  project: Record<string, unknown>,
+): ProjectFormInitialData {
+  let city = String(project.city || '').trim();
+  let state = String(project.uf || project.state || '').trim().toUpperCase();
+  const location = String(project.location || '').trim();
+
+  if ((!city || !state) && location.includes('-')) {
+    const parts = location.split('-').map((s) => s.trim());
+    if (parts.length >= 2) {
+      const maybeState = parts[parts.length - 1].slice(0, 2).toUpperCase();
+      if (maybeState.length === 2) {
+        state = state || maybeState;
+        city = city || parts.slice(0, -1).join(' - ').trim();
+      }
+    }
+  }
+
+  const contractCity = String(
+    project.forum_city || project.contract_city || city || '',
+  ).trim();
+
+  return {
+    name: String(project.name || '').trim(),
+    city,
+    state,
+    neighborhood: String(project.neighborhood || '').trim(),
+    address: String(
+      project.address || project.address_reference || '',
+    ).trim(),
+    contract_city: contractCity,
+  };
+}

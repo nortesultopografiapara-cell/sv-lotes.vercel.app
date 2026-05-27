@@ -6,7 +6,6 @@ export type ProjectUpdateInput = {
   uf: string;
   address?: string | null;
   location?: string | null;
-  description?: string | null;
   neighborhood?: string | null;
   forum_city?: string | null;
 };
@@ -22,7 +21,6 @@ export async function updateProjectWithFallback(
     uf: input.uf,
     location: input.location,
     address: input.address ?? undefined,
-    description: input.description ?? undefined,
     neighborhood: input.neighborhood ?? undefined,
     forum_city: input.forum_city ?? undefined,
     updated_at: new Date().toISOString(),

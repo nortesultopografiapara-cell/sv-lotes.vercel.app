@@ -12,6 +12,12 @@ import proj4 from 'proj4';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { logSaasCompanyContext } from '@/lib/saasPlans';
 import { updateProjectWithFallback } from '@/lib/projects-update';
+import {
+  EMPTY_PROJECT_FORM,
+  type ProjectFormInitialData,
+  type ProjectModalMode,
+  projectToFormInitialData,
+} from '@/lib/project-form';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
@@ -310,26 +316,20 @@ export default function MapPage() {
   const [measureActive, setMeasureActive] = useState(false);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
 
-  // New Project States
-  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  // Modal unificado: criar / editar projeto
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectModalMode, setProjectModalMode] = useState<ProjectModalMode>('create');
+  const [selectedProjectToEdit, setSelectedProjectToEdit] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCity, setNewProjectCity] = useState('');
   const [newProjectUf, setNewProjectUf] = useState('');
   const [newProjectNbhd, setNewProjectNbhd] = useState('');
   const [newProjectAddr, setNewProjectAddr] = useState('');
   const [newProjectForum, setNewProjectForum] = useState('');
-  const [creatingProject, setCreatingProject] = useState(false);
+  const [projectFormSubmitting, setProjectFormSubmitting] = useState(false);
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
-
-  const [isEditProjectModalOpen, setIsEditProjectModalOpen] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [editProjectName, setEditProjectName] = useState('');
-  const [editProjectCity, setEditProjectCity] = useState('');
-  const [editProjectUf, setEditProjectUf] = useState('');
-  const [editProjectAddr, setEditProjectAddr] = useState('');
-  const [editProjectNotes, setEditProjectNotes] = useState('');
-  const [savingProjectEdit, setSavingProjectEdit] = useState(false);
-  const [editProjectFeedback, setEditProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
@@ -561,65 +561,25 @@ export default function MapPage() {
     setSelectedProject(null);
   };
 
-  const resetNewProjectForm = () => {
-    setNewProjectName('');
-    setNewProjectCity('');
-    setNewProjectUf('');
-    setNewProjectNbhd('');
-    setNewProjectAddr('');
-    setNewProjectForum('');
+  const applyProjectFormInitialData = (initialData: ProjectFormInitialData) => {
+    setNewProjectName(initialData.name);
+    setNewProjectCity(initialData.city);
+    setNewProjectUf(initialData.state);
+    setNewProjectNbhd(initialData.neighborhood);
+    setNewProjectAddr(initialData.address);
+    setNewProjectForum(initialData.contract_city);
   };
 
-  const closeNewProjectModal = () => {
-    setIsNewProjectModalOpen(false);
+  const resetProjectForm = () => {
+    applyProjectFormInitialData(EMPTY_PROJECT_FORM);
+  };
+
+  const closeProjectModal = () => {
+    setIsProjectModalOpen(false);
+    setProjectModalMode('create');
+    setSelectedProjectToEdit(null);
     setProjectFeedback(null);
-    resetNewProjectForm();
-  };
-
-  const fillEditFormFromProject = (project: Record<string, unknown>) => {
-    let city = String(project.city || '').trim();
-    let uf = String(project.uf || '').trim().toUpperCase();
-    const location = String(project.location || '').trim();
-
-    if ((!city || !uf) && location.includes('-')) {
-      const parts = location.split('-').map((s) => s.trim());
-      if (parts.length >= 2) {
-        const maybeUf = parts[parts.length - 1].slice(0, 2).toUpperCase();
-        if (maybeUf.length === 2) {
-          uf = uf || maybeUf;
-          city = city || parts.slice(0, -1).join(' - ').trim();
-        }
-      }
-    }
-
-    setEditProjectName(String(project.name || ''));
-    setEditProjectCity(city);
-    setEditProjectUf(uf);
-    setEditProjectAddr(
-      String(project.address || project.address_reference || location || '').trim(),
-    );
-    setEditProjectNotes(
-      String(project.description || project.observations || project.notes || '').trim(),
-    );
-  };
-
-  const openEditProjectModal = (project: Record<string, unknown>) => {
-    console.log('[PROJETOS] editar aberto', { projectId: project.id, name: project.name });
-    setEditingProjectId(String(project.id));
-    fillEditFormFromProject(project);
-    setEditProjectFeedback(null);
-    setIsEditProjectModalOpen(true);
-  };
-
-  const closeEditProjectModal = () => {
-    setIsEditProjectModalOpen(false);
-    setEditingProjectId(null);
-    setEditProjectFeedback(null);
-    setEditProjectName('');
-    setEditProjectCity('');
-    setEditProjectUf('');
-    setEditProjectAddr('');
-    setEditProjectNotes('');
+    resetProjectForm();
   };
 
   const applyProjectPatchToList = (projectId: string, patch: Record<string, unknown>) => {
@@ -631,71 +591,14 @@ export default function MapPage() {
     );
   };
 
-  const handleSaveEditProject = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!editingProjectId) return;
-
-    setEditProjectFeedback(null);
-
-    const name = editProjectName.trim();
-    const city = editProjectCity.trim();
-    const uf = editProjectUf.trim().toUpperCase();
-    const address = editProjectAddr.trim();
-    const notes = editProjectNotes.trim();
-
-    if (!name) {
-      setEditProjectFeedback({ type: 'error', message: 'Informe o nome do loteamento.' });
-      return;
-    }
-    if (!city) {
-      setEditProjectFeedback({ type: 'error', message: 'Informe a cidade.' });
-      return;
-    }
-    if (!uf || uf.length !== 2) {
-      setEditProjectFeedback({ type: 'error', message: 'Informe a UF com 2 letras.' });
-      return;
-    }
-
-    const existing = projects.find((p) => p.id === editingProjectId);
-    const location = [city, uf].filter(Boolean).join(' - ');
-
-    setSavingProjectEdit(true);
-    try {
-      const { data, error } = await updateProjectWithFallback(supabase, editingProjectId, {
-        name,
-        city,
-        uf,
-        address: address || null,
-        location,
-        description: notes || null,
-        forum_city: String(existing?.forum_city || city),
-        neighborhood: existing?.neighborhood ?? null,
-      });
-
-      if (error || !data) {
-        throw new Error(error?.message || 'Não foi possível salvar o loteamento.');
-      }
-
-      const patch = {
-        name: String(data.name ?? name),
-        city: String(data.city ?? city),
-        uf: String(data.uf ?? uf),
-        address: data.address != null ? String(data.address) : address || null,
-        location: String(data.location ?? location),
-        description: data.description != null ? String(data.description) : notes || null,
-      };
-
-      applyProjectPatchToList(editingProjectId, patch);
-      console.log('[PROJETOS] projeto atualizado', { projectId: editingProjectId, name: patch.name });
-
-      setEditProjectFeedback({ type: 'success', message: 'Loteamento atualizado com sucesso.' });
-      setTimeout(() => closeEditProjectModal(), 700);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao salvar alterações.';
-      setEditProjectFeedback({ type: 'error', message });
-    } finally {
-      setSavingProjectEdit(false);
-    }
+  const openEditProjectModal = (project: Record<string, unknown>) => {
+    console.log('[PROJETOS] abrir edição', { projectId: project.id, name: project.name });
+    const initialData = projectToFormInitialData(project);
+    setSelectedProjectToEdit(project);
+    setProjectModalMode('edit');
+    applyProjectFormInitialData(initialData);
+    setProjectFeedback(null);
+    setIsProjectModalOpen(true);
   };
 
   const openNewProjectModal = () => {
@@ -711,31 +614,90 @@ export default function MapPage() {
       });
       return;
     }
+    setSelectedProjectToEdit(null);
+    setProjectModalMode('create');
     setProjectFeedback(null);
-    resetNewProjectForm();
-    setIsNewProjectModalOpen(true);
+    resetProjectForm();
+    setIsProjectModalOpen(true);
   };
 
-  const handleCreateProject = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    setProjectFeedback(null);
-
+  const validateProjectForm = (): boolean => {
     const projectNameStr = newProjectName.trim();
     const cityStr = newProjectCity.trim();
     const ufStr = newProjectUf.trim().toUpperCase();
 
     if (!projectNameStr) {
       setProjectFeedback({ type: 'error', message: 'Informe o nome do projeto.' });
-      return;
+      return false;
     }
     if (!cityStr) {
       setProjectFeedback({ type: 'error', message: 'Informe a cidade do loteamento.' });
-      return;
+      return false;
     }
     if (!ufStr || ufStr.length !== 2) {
       setProjectFeedback({ type: 'error', message: 'Informe a UF com 2 letras (ex: PA).' });
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handleSaveProjectEdit = async () => {
+    if (!selectedProjectToEdit?.id) return;
+
+    const projectId = String(selectedProjectToEdit.id);
+    const name = newProjectName.trim();
+    const city = newProjectCity.trim();
+    const uf = newProjectUf.trim().toUpperCase();
+    const neighborhood = newProjectNbhd.trim() || null;
+    const address = newProjectAddr.trim() || null;
+    const forumCity = newProjectForum.trim() || city;
+    const location = [city, uf].filter(Boolean).join(' - ');
+
+    console.log('[PROJETOS] salvar edição', { projectId, name });
+
+    setProjectFormSubmitting(true);
+    try {
+      const { data, error } = await updateProjectWithFallback(supabase, projectId, {
+        name,
+        city,
+        uf,
+        neighborhood,
+        address,
+        location,
+        forum_city: forumCity,
+      });
+
+      if (error || !data) {
+        throw new Error(error?.message || 'Não foi possível salvar o projeto.');
+      }
+
+      const patch = {
+        name: String(data.name ?? name),
+        city: String(data.city ?? city),
+        uf: String(data.uf ?? uf),
+        neighborhood: data.neighborhood != null ? String(data.neighborhood) : neighborhood,
+        address: data.address != null ? String(data.address) : address,
+        forum_city: String(data.forum_city ?? forumCity),
+        location: String(data.location ?? location),
+      };
+
+      applyProjectPatchToList(projectId, patch);
+      console.log('[PROJETOS] projeto atualizado', { projectId, name: patch.name });
+
+      setProjectFeedback({ type: 'success', message: 'Projeto atualizado com sucesso.' });
+      setTimeout(() => closeProjectModal(), 600);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao salvar alterações.';
+      setProjectFeedback({ type: 'error', message });
+    } finally {
+      setProjectFormSubmitting(false);
+    }
+  };
+
+  const handleCreateProject = async () => {
+    const projectNameStr = newProjectName.trim();
+    const cityStr = newProjectCity.trim();
+    const ufStr = newProjectUf.trim().toUpperCase();
 
     if (!user) {
       setProjectFeedback({ type: 'error', message: 'Sessão não carregada. Aguarde ou faça login novamente.' });
@@ -755,7 +717,7 @@ export default function MapPage() {
       return;
     }
 
-    setCreatingProject(true);
+    setProjectFormSubmitting(true);
 
     try {
       let createTenantId = await resolveActiveTenantId(user);
@@ -795,9 +757,7 @@ export default function MapPage() {
       await loadProjects();
 
       setProjectFeedback({ type: 'success', message: 'Projeto criado com sucesso!' });
-      setTimeout(() => {
-        closeNewProjectModal();
-      }, 600);
+      setTimeout(() => closeProjectModal(), 600);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Erro desconhecido';
@@ -813,8 +773,20 @@ export default function MapPage() {
         message: friendly,
       });
     } finally {
-      setCreatingProject(false);
+      setProjectFormSubmitting(false);
     }
+  };
+
+  const handleProjectFormSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setProjectFeedback(null);
+    if (!validateProjectForm()) return;
+
+    if (projectModalMode === 'edit') {
+      await handleSaveProjectEdit();
+      return;
+    }
+    await handleCreateProject();
   };
 
   const handleDeleteProject = async (projectId: string) => {
@@ -1589,109 +1561,20 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Modal Editar Loteamento */}
-      {isEditProjectModalOpen && (
+      {/* Modal unificado: Novo Projeto / Editar Projeto */}
+      {isProjectModalOpen && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
                <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-                  <h3 className="font-bold text-white text-lg">Editar Loteamento</h3>
-                  <button type="button" onClick={closeEditProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                  <h3 className="font-bold text-white text-lg">
+                    {projectModalMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
+                  </h3>
+                  <button type="button" onClick={closeProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
                      <X className="w-5 h-5" />
                   </button>
                </div>
                <form
-                 onSubmit={handleSaveEditProject}
-                 className="p-6 flex flex-col gap-4 overflow-y-auto"
-               >
-                  {editProjectFeedback && (
-                    <div
-                      role="alert"
-                      className={`rounded-lg border px-3 py-2 text-sm ${
-                        editProjectFeedback.type === 'success'
-                          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                          : 'border-red-500/40 bg-red-500/10 text-red-300'
-                      }`}
-                    >
-                      {editProjectFeedback.message}
-                    </div>
-                  )}
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Nome do loteamento *</label>
-                     <input
-                       type="text"
-                       required
-                       value={editProjectName}
-                       onChange={(e) => setEditProjectName(e.target.value)}
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Endereço / Localização</label>
-                     <input
-                       type="text"
-                       value={editProjectAddr}
-                       onChange={(e) => setEditProjectAddr(e.target.value)}
-                       placeholder="Endereço ou referência da área"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Cidade *</label>
-                       <input
-                         type="text"
-                         required
-                         value={editProjectCity}
-                         onChange={(e) => setEditProjectCity(e.target.value)}
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
-                       />
-                    </div>
-                    <div>
-                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">UF *</label>
-                       <input
-                         type="text"
-                         required
-                         maxLength={2}
-                         value={editProjectUf}
-                         onChange={(e) => setEditProjectUf(e.target.value.toUpperCase())}
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
-                       />
-                    </div>
-                  </div>
-                  <div>
-                     <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Observações</label>
-                     <textarea
-                       rows={3}
-                       value={editProjectNotes}
-                       onChange={(e) => setEditProjectNotes(e.target.value)}
-                       placeholder="Anotações internas sobre o loteamento"
-                       className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] resize-y"
-                     />
-                  </div>
-                  <button
-                     type="submit"
-                     disabled={savingProjectEdit}
-                     className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
-                  >
-                     {savingProjectEdit ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar alterações'}
-                  </button>
-               </form>
-            </div>
-         </div>
-      )}
-
-      {/* Modal Novo Projeto */}
-      {isNewProjectModalOpen && (
-         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
-               <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-                  <h3 className="font-bold text-white text-lg">Novo Projeto</h3>
-                  <button type="button" onClick={closeNewProjectModal} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
-                     <X className="w-5 h-5" />
-                  </button>
-               </div>
-               <form
-                 onSubmit={handleCreateProject}
+                 onSubmit={handleProjectFormSubmit}
                  className="p-6 flex flex-col gap-4 overflow-y-auto"
                >
                   {projectFeedback && (
@@ -1765,10 +1648,16 @@ export default function MapPage() {
 
                   <button 
                      type="submit" 
-                     disabled={creatingProject}
+                     disabled={projectFormSubmitting}
                      className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                   >
-                     {creatingProject ? <Loader2 className="w-5 h-5 animate-spin"/> : 'Criar Projeto'}
+                     {projectFormSubmitting ? (
+                       <Loader2 className="w-5 h-5 animate-spin" />
+                     ) : projectModalMode === 'edit' ? (
+                       'Salvar Alterações'
+                     ) : (
+                       'Criar Projeto'
+                     )}
                   </button>
                </form>
             </div>
