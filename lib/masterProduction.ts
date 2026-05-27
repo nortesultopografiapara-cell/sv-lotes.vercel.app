@@ -1,6 +1,6 @@
 /**
- * Utilitários do painel Master.
- * Listagem de empresas: NÃO filtrar — usar badge REAL/TESTE na UI.
+ * Utilitários do painel Master (MRR, billing, cleanup).
+ * Listagem de empresas: SEM filtro — ver app/companies/page.tsx
  */
 
 import { getCompanySaasPlan } from '@/lib/saasPlans';
@@ -26,19 +26,11 @@ export function isCompanyMarkedAsTest(company: CompanyLike): boolean {
   return company?.is_test_company === true || company?.is_test === true;
 }
 
-/** @deprecated Não remove empresas — retorna a lista inteira (compatibilidade). */
-export function filterRealCompanies<T extends CompanyLike>(
-  companies: T[],
-  _options?: { showTestCompanies?: boolean },
-): T[] {
-  return companies || [];
-}
-
 export function isTestCompany(company: CompanyLike): boolean {
   return isCompanyMarkedAsTest(company);
 }
 
-/** Heurística só para API de limpeza de cadastros. */
+/** Heurística apenas para API /api/companies/cleanup */
 export function isTestCompanyForCleanup(company: CompanyLike): boolean {
   if (isCompanyMarkedAsTest(company)) return true;
 
@@ -54,11 +46,6 @@ export function isTestCompanyForCleanup(company: CompanyLike): boolean {
   if (/\bteste\b/.test(blob) && !blob.includes('topografia')) return true;
 
   return false;
-}
-
-/** @deprecated logs antigos removidos — no-op */
-export function masterLog(_message?: string, _detail?: Record<string, unknown>) {
-  /* intencionalmente vazio */
 }
 
 export const PLAN_MRR: Record<string, number> = {

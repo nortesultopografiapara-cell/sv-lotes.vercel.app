@@ -21,9 +21,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
 
-/** Identificador de build — confirma deploy de app/companies/page.tsx */
-const MASTER_COMPANIES_ROUTE = 'app/companies/page.tsx';
-const MASTER_COMPANIES_BUILD = '2026-05-27-no-filter';
+const BUILD_ID = 'MASTER_COMPANIES_FINAL-2026-05-27';
 
 export default function CompaniesPage() {
   return (
@@ -53,10 +51,6 @@ function CompaniesPageContent() {
   const [dataLoading, setDataLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('[MASTER_COMPANIES_NOVO] rota:', MASTER_COMPANIES_ROUTE, 'build:', MASTER_COMPANIES_BUILD);
-  }, []);
-
   const loadCompanies = useCallback(async () => {
     if (!user) return;
     setDataLoading(true);
@@ -68,24 +62,16 @@ function CompaniesPageContent() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      const total = data?.length ?? 0;
-      console.log('[MASTER_COMPANIES_NOVO] total empresas:', total);
-      console.log('[MASTER_COMPANIES_NOVO] erro:', error);
-      console.log('[MASTER_COMPANIES_NOVO] nomes:', (data ?? []).map((c: { name?: string }) => c.name));
+      console.log('[MASTER_COMPANIES_FINAL] total', data?.length);
+      console.log('[MASTER_COMPANIES_FINAL] dados', data);
 
       if (error) {
-        setLoadError(`Erro ao carregar empresas: ${error.message}`);
+        setLoadError(error.message);
         setCompanies([]);
         return;
       }
 
-      const list = (data ?? []).map((c) => ({
-        ...c,
-        project_count: 0,
-        users: [{ count: 0 }],
-      }));
-
-      setCompanies(list);
+      setCompanies(data ?? []);
 
       const { data: projectsData } = await supabase
         .from('projects')
@@ -115,8 +101,8 @@ function CompaniesPageContent() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.log('[MASTER_COMPANIES_NOVO] erro:', err);
-      setLoadError(`Erro ao carregar empresas: ${message}`);
+      console.log('[MASTER_COMPANIES_FINAL] erro', err);
+      setLoadError(message);
       setCompanies([]);
     } finally {
       setDataLoading(false);
@@ -136,7 +122,7 @@ function CompaniesPageContent() {
     const isActivating = newStatus === 'Ativa';
     let confirmMsg = isActivating
       ? `Ativar empresa?\nOs usuários desta empresa voltarão a acessar o sistema.`
-      : `Desativar empresa?\nOs usuários desta empresa não conseguirão acessar o sistema, mas nenhum dado será apagado.`;
+      : `Desativar empresa?\nOs usuários desta empresa não conseguirão acessar o sistema.`;
 
     if (
       !isActivating &&
@@ -145,7 +131,7 @@ function CompaniesPageContent() {
         company.slug?.toLowerCase() === 'master' ||
         company.name?.toLowerCase().includes('master'))
     ) {
-      confirmMsg = `⚠️ ATENÇÃO: Esta é uma empresa Master ou a sua empresa atual.\nDesativar esta empresa pode impossibilitar o seu próprio acesso!\n\nTem certeza absoluta que deseja desativar?`;
+      confirmMsg = `⚠️ ATENÇÃO: Esta é uma empresa Master ou a sua empresa atual.\nDesativar pode impossibilitar seu acesso!`;
     }
 
     if (confirm(confirmMsg)) {
@@ -159,13 +145,8 @@ function CompaniesPageContent() {
             userId: user?.id,
           }),
         });
-
         const resData = await res.json();
-
-        if (!res.ok) {
-          throw new Error(resData.error || 'Erro ao atualizar status');
-        }
-
+        if (!res.ok) throw new Error(resData.error || 'Erro ao atualizar status');
         alert(`Empresa ${isActivating ? 'ativada' : 'desativada'} com sucesso.`);
         loadCompanies();
       } catch (err: unknown) {
@@ -175,45 +156,28 @@ function CompaniesPageContent() {
   };
 
   const handleImpersonate = async (company: any) => {
-    if (confirm(`Tem certeza que deseja "Entrar como Empresa" na tenant: ${company.name}?`)) {
+    if (confirm(`Entrar como empresa: ${company.name}?`)) {
       try {
         const { error } = await supabase
           .from('users')
           .update({ tenant_id: company.id })
           .eq('id', user?.id)
           .eq('role', 'SUPER_ADMIN');
-
         if (error) throw error;
-
         localStorage.setItem('impersonating_tenant_id', company.id);
         localStorage.setItem('impersonating_company_name', company.name);
-
-        supabase
-          .from('audit_logs')
-          .insert({
-            tenant_id: company.id,
-            user_id: user?.id,
-            action: 'COMPANY_IMPERSONATED',
-            details: JSON.stringify({ company_name: company.name }),
-          })
-          .then();
-
         window.location.assign('/dashboard');
       } catch (err: unknown) {
-        alert('Erro ao personificar empresa: ' + (err instanceof Error ? err.message : ''));
+        alert('Erro: ' + (err instanceof Error ? err.message : ''));
       }
     }
   };
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        router.push('/login');
-      } else if (!isPlatformAdmin(user.role)) {
-        router.push('/');
-      } else {
-        loadCompanies();
-      }
+      if (!user) router.push('/login');
+      else if (!isPlatformAdmin(user.role)) router.push('/');
+      else loadCompanies();
     }
   }, [authLoading, user, router, loadCompanies]);
 
@@ -225,7 +189,7 @@ function CompaniesPageContent() {
     }
   }, [searchParams, router]);
 
-  if (authLoading || (dataLoading && companies.length === 0 && !loadError)) {
+  if (authLoading) {
     return (
       <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
         <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
@@ -233,16 +197,21 @@ function CompaniesPageContent() {
     );
   }
 
-  const activeCompanies = companies.filter((c) => c.active === true).length;
-  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
+  const activeCount = companies.filter((c) => c.active === true).length;
   const totalProjects = companies.reduce((acc, c) => acc + (c.project_count || 0), 0);
+  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
 
-  const filteredCompanies = companies.filter((c) => {
-    const q = search.toLowerCase();
-    const name = (c.name || '').toLowerCase();
-    const slug = (c.slug || '').toLowerCase();
-    return name.includes(q) || slug.includes(q);
-  });
+  const searchFiltered = search.trim()
+    ? companies.filter((c) => {
+        const q = search.toLowerCase();
+        return (
+          (c.name || '').toLowerCase().includes(q) ||
+          (c.slug || '').toLowerCase().includes(q)
+        );
+      })
+    : companies;
+
+  const isEmpty = companies.length === 0 && !dataLoading && !loadError;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
@@ -255,43 +224,23 @@ function CompaniesPageContent() {
             <Building2 className="w-7 h-7 text-[var(--color-primary)]" />
             Empresas
           </h1>
-          <p className="text-sm text-slate-500 mt-1 max-w-lg">
-            Gerencie tenants, planos e acesso ao workspace de cada loteadora.
-          </p>
-          <p className="text-[10px] font-mono text-cyan-500/80 mt-2">
-            {MASTER_COMPANIES_ROUTE} · {MASTER_COMPANIES_BUILD}
-          </p>
+          <p className="text-sm text-slate-500 mt-1">app/companies/page.tsx</p>
+          <p className="text-[10px] font-mono text-emerald-400/90 mt-1">{BUILD_ID}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={async () => {
-              if (
-                confirm(
-                  'Atenção: Esta ação irá limpar cadastros de teste. Deseja continuar?'
-                )
-              ) {
-                try {
-                  const res = await fetch('/api/companies/cleanup', { method: 'POST' });
-                  if (!res.ok) throw new Error('Falha ao limpar cadastros');
-                  alert('Cadastros de teste limpos com sucesso!');
-                  loadCompanies();
-                } catch (e: unknown) {
-                  alert(e instanceof Error ? e.message : 'Erro');
-                }
-              }
-            }}
-            className="h-9 px-3 rounded-lg text-xs font-medium text-red-400/80 hover:text-red-300 border border-red-500/20 hover:bg-red-500/10 transition-colors flex items-center gap-2"
-            title="Limpar cadastros incompletos"
+            type="button"
+            onClick={() => loadCompanies()}
+            className="h-9 px-3 rounded-lg text-xs text-slate-400 border border-white/10 hover:bg-white/5"
           >
-            <AlertCircle className="w-4 h-4" />
-            <span className="hidden sm:inline">Limpar testes</span>
+            Recarregar
           </button>
           <button
             onClick={() => {
               setCompanyToEdit(null);
               setIsModalOpen(true);
             }}
-            className="h-9 px-4 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-semibold flex items-center gap-2 transition-colors"
+            className="h-9 px-4 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-semibold flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Nova empresa
@@ -301,59 +250,53 @@ function CompaniesPageContent() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <StatCard title="Empresas" value={companies.length} icon={Database} accent="text-[var(--color-primary)]" />
-        <StatCard title="Ativas" value={activeCompanies} icon={CheckCircle2} accent="text-emerald-400" />
+        <StatCard title="Ativas" value={activeCount} icon={CheckCircle2} accent="text-emerald-400" />
         <StatCard title="Projetos" value={totalProjects} icon={MapIcon} accent="text-cyan-400" />
         <StatCard title="Usuários" value={totalUsers} icon={Users} accent="text-purple-400" />
       </div>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Buscar por nome ou slug..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[var(--color-primary)]/40 transition-colors"
-          />
-        </div>
-      </div>
-
-      {loadError ? (
-        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <p className="font-semibold">{loadError}</p>
-          <button
-            type="button"
-            onClick={() => loadCompanies()}
-            className="mt-3 text-xs font-semibold text-red-100 underline hover:no-underline"
-          >
-            Tentar novamente
-          </button>
+      {dataLoading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
         </div>
       ) : null}
 
-      {companies.length === 0 && !loadError ? (
-        <MasterEmptyState
-          title="Nenhuma empresa cadastrada ainda"
-          description="Cadastre a primeira empresa para iniciar a operação SaaS."
-        />
-      ) : filteredCompanies.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center rounded-2xl border border-dashed border-white/10 py-16">
-          <p className="text-sm text-slate-500">Nenhuma empresa encontrada para esta busca.</p>
+      {loadError ? (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          Erro ao carregar empresas: {loadError}
         </div>
-      ) : (
+      ) : null}
+
+      {!dataLoading && !loadError && (
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Buscar por nome ou slug..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white"
+            />
+          </div>
+        </div>
+      )}
+
+      {isEmpty ? (
+        <MasterEmptyState
+          title="Nenhuma empresa cadastrada"
+          description="A query retornou zero registros. Verifique RLS ou permissões no Supabase."
+        />
+      ) : !dataLoading && !loadError && searchFiltered.length === 0 ? (
+        <p className="text-sm text-slate-500 text-center py-12">Nenhum resultado para a busca.</p>
+      ) : !dataLoading && !loadError ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pb-8">
-          {filteredCompanies.map((c, idx) => (
+          {searchFiltered.map((c) => (
             <CompanyCard
               key={c.id}
               company={c}
               user={user}
-              isMaster={
-                idx === 0 ||
-                c.is_master ||
-                c.slug?.toLowerCase() === 'master' ||
-                c.name?.toLowerCase().includes('master')
-              }
+              isMaster={!!c.is_master}
               onEdit={() => handleEdit(c)}
               onView={() => setCompanyToView(c)}
               onDelete={() => handleDelete(c)}
@@ -362,7 +305,7 @@ function CompaniesPageContent() {
             />
           ))}
         </div>
-      )}
+      ) : null}
 
       <NewCompanyModal
         key={isModalOpen ? (companyToEdit ? companyToEdit.id : 'new') : 'closed'}
@@ -377,45 +320,21 @@ function CompaniesPageContent() {
         user={user}
         onClose={() => setCompanyToDelete(null)}
         onSuccess={() => {
-          alert('Empresa excluída com sucesso.');
           setCompanyToDelete(null);
           loadCompanies();
         }}
       />
       {companyToView && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-[#1f232b]">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-purple-400" /> Detalhes da Empresa
-              </h2>
-              <button
-                onClick={() => setCompanyToView(null)}
-                className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-gray-800 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-              <div>
-                <p className="text-xs font-mono text-gray-500 uppercase font-bold">Nome</p>
-                <p className="text-sm font-semibold text-white">{companyToView.name}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs font-mono text-gray-500 uppercase font-bold">CNPJ</p>
-                  <p className="text-sm text-gray-300">{companyToView.cnpj || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-mono text-gray-500 uppercase font-bold">Status</p>
-                  <p className="text-sm text-gray-300">{companyToView.status_operacional || '—'}</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-mono text-gray-500 uppercase font-bold">Projetos</p>
-                <p className="text-sm text-gray-300">{companyToView.project_count || 0}</p>
-              </div>
-            </div>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl w-full max-w-lg p-6">
+            <h2 className="text-lg font-bold text-white mb-4">{companyToView.name}</h2>
+            <button
+              type="button"
+              onClick={() => setCompanyToView(null)}
+              className="text-sm text-slate-400 hover:text-white"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       )}
