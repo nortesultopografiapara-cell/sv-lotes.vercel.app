@@ -18,9 +18,17 @@ import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
-import { filterRealCompanies, masterCompaniesLog } from '@/lib/masterProduction';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
+
+/** Oculta só empresas com flag explícita de teste (nunca por nome). */
+function applyMasterTestFilter<T extends { is_test_company?: boolean | null; is_test?: boolean | null }>(
+  list: T[],
+  showTestCompanies: boolean,
+): T[] {
+  if (showTestCompanies) return list;
+  return list.filter((c) => c.is_test_company !== true && c.is_test !== true);
+}
 
 export default function CompaniesPage() {
   return (
@@ -56,72 +64,67 @@ function CompaniesPageContent() {
     setDataLoading(true);
     setLoadError(null);
 
-    const isSuperAdmin = isPlatformAdmin(user.role);
-    masterCompaniesLog('usuario', { id: user.id, role: user.role, email: user.email });
-    masterCompaniesLog('isSuperAdmin', { isSuperAdmin });
+    console.log('[MASTER_COMPANIES] usuario', {
+      id: user.id,
+      role: user.role,
+      isSuperAdmin: isPlatformAdmin(user.role),
+    });
+    console.log('[MASTER_COMPANIES] query sem tenant');
 
     try {
-      if (isSuperAdmin) {
-        masterCompaniesLog('query sem tenant', true);
-      }
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      const [
-        { data: companiesData, error: companiesError },
-        { data: projectsData, error: projectsError },
-      ] = await Promise.all([
-        supabase
-          .from('companies')
-          .select(`*, users(count)`)
-          .order('created_at', { ascending: false }),
-        supabase.from('projects').select('tenant_id, company_id'),
-      ]);
+      console.log('[MASTER_COMPANIES] RAW companies', data);
+      console.log('[MASTER_COMPANIES] ERROR companies', error);
 
-      if (companiesError) {
-        masterCompaniesLog('erro Supabase', {
-          message: companiesError.message,
-          code: companiesError.code,
-          details: companiesError.details,
-          hint: companiesError.hint,
-        });
-        setLoadError(companiesError.message || 'Erro ao carregar empresas (RLS ou permissão).');
+      if (error) {
+        setLoadError(`Erro ao carregar empresas: ${error.message}`);
         setCompanies([]);
         return;
       }
 
-      if (projectsError) {
-        masterCompaniesLog('erro Supabase', {
-          context: 'projects',
-          message: projectsError.message,
-          code: projectsError.code,
-        });
-      }
+      const raw = data || [];
+      console.log('[MASTER_COMPANIES] RAW companies length:', raw.length);
 
-      masterCompaniesLog('empresas retornadas', {
-        total: companiesData?.length ?? 0,
-        nomes: (companiesData || []).map((c: { name?: string }) => c.name),
-      });
+      const filtered = applyMasterTestFilter(raw, showTestCompanies);
+      console.log('[MASTER_COMPANIES] after filter length:', filtered.length);
 
-      const counts: Record<string, number> = {};
-      if (projectsData) {
+      const withCounts = filtered.map((c) => ({ ...c, project_count: 0, users: [{ count: 0 }] }));
+      setCompanies(withCounts);
+
+      const { data: projectsData } = await supabase
+        .from('projects')
+        .select('tenant_id, company_id');
+
+      if (projectsData?.length) {
+        const counts: Record<string, number> = {};
         projectsData.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
           const key = p.tenant_id || p.company_id;
-          if (key) {
-            counts[key] = (counts[key] || 0) + 1;
-          }
+          if (key) counts[key] = (counts[key] || 0) + 1;
         });
+        setCompanies((prev) =>
+          prev.map((c) => ({ ...c, project_count: counts[c.id] || 0 })),
+        );
       }
 
-      const mergedData = (companiesData || []).map((c: { id: string }) => ({
-        ...c,
-        project_count: counts[c.id] || 0,
-      }));
-
-      setCompanies(filterRealCompanies(mergedData, { showTestCompanies }));
+      const { data: usersData } = await supabase.from('users').select('tenant_id, company_id');
+      if (usersData?.length) {
+        const userCounts: Record<string, number> = {};
+        usersData.forEach((u: { tenant_id?: string | null; company_id?: string | null }) => {
+          const key = u.tenant_id || u.company_id;
+          if (key) userCounts[key] = (userCounts[key] || 0) + 1;
+        });
+        setCompanies((prev) =>
+          prev.map((c) => ({ ...c, users: [{ count: userCounts[c.id] || 0 }] })),
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      masterCompaniesLog('erro Supabase', { message });
-      console.error('[MASTER_COMPANIES] erro Supabase', err);
-      setLoadError(message);
+      console.error('[MASTER_COMPANIES] ERROR companies', err);
+      setLoadError(`Erro ao carregar empresas: ${message}`);
       setCompanies([]);
     } finally {
       setDataLoading(false);
@@ -341,11 +344,9 @@ function CompaniesPageContent() {
 
       {loadError ? (
         <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <p className="font-semibold">Erro ao carregar empresas</p>
-          <p className="mt-1 text-red-200/90">{loadError}</p>
+          <p className="font-semibold">{loadError}</p>
           <p className="mt-2 text-xs text-red-300/80">
-            Verifique o console: [MASTER_COMPANIES] erro Supabase. Confirme a migration{' '}
-            <code className="text-red-100">20260527180000_fix_master_companies_rls.sql</code> no Supabase.
+            Verifique o console: [MASTER_COMPANIES] RAW companies / ERROR companies
           </p>
           <button
             type="button"
