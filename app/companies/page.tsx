@@ -18,7 +18,6 @@ import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
-import { filterRealCompanies } from '@/lib/masterProduction';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
 
@@ -49,7 +48,6 @@ function CompaniesPageContent() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showTestCompanies, setShowTestCompanies] = useState(false);
 
   const loadCompanies = useCallback(async () => {
     if (!user) return;
@@ -62,33 +60,37 @@ function CompaniesPageContent() {
         .select('*')
         .order('created_at', { ascending: false });
 
+      console.log('[MASTER_COMPANIES] empresas retornadas:', data?.length ?? 0);
+      console.log('[MASTER_COMPANIES] erro:', error);
+
       if (error) {
-        console.error('[MASTER] companies error', error);
         setLoadError(`Erro ao carregar empresas: ${error.message}`);
         setCompanies([]);
         return;
       }
 
-      const raw = data ?? [];
-      const displayed = filterRealCompanies(raw, { showTestCompanies });
+      const list = (data ?? []).map((c) => ({
+        ...c,
+        project_count: 0,
+        users: [{ count: 0 }],
+      }));
+
+      setCompanies(list);
 
       const { data: projectsData } = await supabase
         .from('projects')
         .select('tenant_id, company_id');
 
-      const counts: Record<string, number> = {};
-      projectsData?.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
-        const key = p.tenant_id || p.company_id;
-        if (key) counts[key] = (counts[key] || 0) + 1;
-      });
-
-      const withProjects = displayed.map((c) => ({
-        ...c,
-        project_count: counts[c.id] || 0,
-        users: [{ count: 0 }],
-      }));
-
-      setCompanies(withProjects);
+      if (projectsData?.length) {
+        const counts: Record<string, number> = {};
+        projectsData.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
+          const key = p.tenant_id || p.company_id;
+          if (key) counts[key] = (counts[key] || 0) + 1;
+        });
+        setCompanies((prev) =>
+          prev.map((c) => ({ ...c, project_count: counts[c.id] || 0 })),
+        );
+      }
 
       const { data: usersData } = await supabase.from('users').select('tenant_id, company_id');
       if (usersData?.length) {
@@ -103,13 +105,13 @@ function CompaniesPageContent() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.error('[MASTER] companies error', err);
+      console.log('[MASTER_COMPANIES] erro:', err);
       setLoadError(`Erro ao carregar empresas: ${message}`);
       setCompanies([]);
     } finally {
       setDataLoading(false);
     }
-  }, [user, showTestCompanies]);
+  }, [user]);
 
   const handleEdit = (company: any) => {
     setCompanyToEdit(company);
@@ -221,9 +223,7 @@ function CompaniesPageContent() {
     );
   }
 
-  const activeCompanies = companies.filter(
-    (c) => c.active === true || c.status_operacional === 'Ativa',
-  ).length;
+  const activeCompanies = companies.filter((c) => c.active === true).length;
   const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
   const totalProjects = companies.reduce((acc, c) => acc + (c.project_count || 0), 0);
 
@@ -293,8 +293,8 @@ function CompaniesPageContent() {
         <StatCard title="Usuários" value={totalUsers} icon={Users} accent="text-purple-400" />
       </div>
 
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="relative max-w-md flex-1">
+      <div className="mb-6">
+        <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
@@ -304,15 +304,6 @@ function CompaniesPageContent() {
             className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[var(--color-primary)]/40 transition-colors"
           />
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer shrink-0">
-          <input
-            type="checkbox"
-            checked={showTestCompanies}
-            onChange={(e) => setShowTestCompanies(e.target.checked)}
-            className="rounded border-white/20"
-          />
-          Mostrar empresas de teste
-        </label>
       </div>
 
       {loadError ? (

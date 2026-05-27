@@ -20,6 +20,21 @@ function planLabel(plan?: string) {
   return getCompanySaasPlan({ plan }).displayName;
 }
 
+function CompanyTypeBadge({ company }: { company: { is_test_company?: boolean; is_test?: boolean } }) {
+  const isTest = company.is_test_company === true || company.is_test === true;
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border shrink-0 ${
+        isTest
+          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+          : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/25'
+      }`}
+    >
+      {isTest ? 'TESTE' : 'REAL'}
+    </span>
+  );
+}
+
 function StatusBadge({ status, legacyActive }: { status?: string; legacyActive?: boolean }) {
   let resolved = status || (legacyActive ? 'Ativa' : 'Inativa');
   const styles: Record<string, string> = {
@@ -91,7 +106,10 @@ export function CompanyCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-white text-sm leading-snug truncate">{company.name}</h3>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <h3 className="font-semibold text-white text-sm leading-snug truncate">{company.name}</h3>
+              <CompanyTypeBadge company={company} />
+            </div>
             <div className="relative shrink-0" ref={menuRef}>
               <button
                 type="button"
