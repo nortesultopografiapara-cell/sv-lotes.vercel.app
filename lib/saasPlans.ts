@@ -223,7 +223,7 @@ export function logSaasCompanyContext(
     companyId: company?.id ?? null,
     companyName: company?.name ?? null,
   });
-  console.log('[SAAS] plano bruto', resolved.rawPlan ?? resolved.allRawPlans.join(' | ') || '(vazio)');
+  console.log('[SAAS] plano bruto', (resolved.rawPlan ?? resolved.allRawPlans.join(' | ')) || '(vazio)');
   console.log('[SAAS] plano normalizado', resolved.planKey);
   console.log('[SAAS] limite aplicado', resolved.maxProjects);
   if (usedProjects !== undefined) {

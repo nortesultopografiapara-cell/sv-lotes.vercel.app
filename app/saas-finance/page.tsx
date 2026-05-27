@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import { augmentCompanyBilling } from '@/lib/masterProduction';
+import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { 
    Wallet, TrendingUp, Users, Target, AlertCircle, 
    Search, Filter, Download, RefreshCw, X, Eye, Edit2, 
@@ -53,13 +53,13 @@ export default function SaaSFinancePage() {
          const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
          
          if (error) {
-             console.error('[MASTER] Erro ao buscar empresas', error);
+             console.error('SAAS_FINANCE_LOAD_ERROR', error);
              setCompanies([]);
          } else {
              setCompanies((data || []).map((c) => augmentCompanyBilling(c)));
          }
       } catch (err) {
-         console.error('[MASTER] Erro geral', err);
+         console.error('SAAS_FINANCE_LOAD_ERROR', err);
          setCompanies([]);
       } finally {
          setLoading(false);

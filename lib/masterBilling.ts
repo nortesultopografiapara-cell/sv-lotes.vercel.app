@@ -1,52 +1,16 @@
 /**
- * Utilitários do painel Master (MRR, billing, cleanup).
- * Listagem de empresas: SEM filtro — ver app/companies/page.tsx
+ * Utilitários de billing/MRR do painel Master.
+ * Sem filtro de empresas — listagem em app/companies/page.tsx
  */
 
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 
 export type CompanyLike = {
   id?: string;
-  name?: string | null;
-  fantasy_name?: string | null;
-  slug?: string | null;
-  email?: string | null;
   status_operacional?: string | null;
-  is_test?: boolean | null;
-  is_test_company?: boolean | null;
-  is_master?: boolean | null;
-  tenant_id?: string | null;
+  plan?: string | null;
+  active?: boolean | null;
 };
-
-export function isProductionRuntime(): boolean {
-  return process.env.NODE_ENV === 'production';
-}
-
-export function isCompanyMarkedAsTest(company: CompanyLike): boolean {
-  return company?.is_test_company === true || company?.is_test === true;
-}
-
-export function isTestCompany(company: CompanyLike): boolean {
-  return isCompanyMarkedAsTest(company);
-}
-
-/** Heurística apenas para API /api/companies/cleanup */
-export function isTestCompanyForCleanup(company: CompanyLike): boolean {
-  if (isCompanyMarkedAsTest(company)) return true;
-
-  const status = (company.status_operacional || '').toLowerCase().trim();
-  if (status === 'teste') return true;
-
-  const blob = [company.name, company.fantasy_name, company.slug, company.email]
-    .map((v) => (v || '').toLowerCase().trim())
-    .join(' ');
-
-  const cleanupHints = ['demo', 'mock', 'fake', 'sandbox', 'preview.local', 'tenant-test'];
-  if (cleanupHints.some((hint) => blob.includes(hint))) return true;
-  if (/\bteste\b/.test(blob) && !blob.includes('topografia')) return true;
-
-  return false;
-}
 
 export const PLAN_MRR: Record<string, number> = {
   starter: 329.99,
@@ -70,21 +34,25 @@ export function calculateMrrFromCompanies(companies: CompanyLike[]): number {
     const active =
       (c.status_operacional || '').toLowerCase() !== 'inativo' &&
       (c.status_operacional || '').toLowerCase() !== 'inativa' &&
-      (c as { active?: boolean }).active !== false;
+      c.active !== false;
     if (!active) return sum;
-    return sum + planMrrForCompany((c as { plan?: string }).plan);
+    return sum + planMrrForCompany(c.plan);
   }, 0);
 }
 
 export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   const status = (company.status_operacional || '').toLowerCase().trim();
   if (['inativo', 'inativa', 'bloqueada', 'suspensa'].includes(status)) return false;
-  return (company as { active?: boolean }).active !== false;
+  return company.active !== false;
 }
 
-export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | null }>(
-  company: T,
-) {
+export function augmentCompanyBilling<
+  T extends CompanyLike & {
+    plan?: string | null;
+    vencimento_plano?: string | null;
+    due_date?: string | null;
+  },
+>(company: T) {
   const planKey = getCompanySaasPlan(company).planKey;
   const uiPlan =
     planKey === 'profissional'
@@ -95,9 +63,7 @@ export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | 
 
   const price = planMrrForCompany(company.plan);
   const active = isActiveSubscriptionCompany(company);
-  const rawDue =
-    (company as { vencimento_plano?: string }).vencimento_plano ||
-    (company as { due_date?: string }).due_date;
+  const rawDue = company.vencimento_plano || company.due_date;
 
   return {
     ...company,

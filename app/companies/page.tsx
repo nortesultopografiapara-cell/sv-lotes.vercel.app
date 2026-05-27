@@ -1,17 +1,14 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, type ComponentType } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Building2,
   Search,
   Plus,
   CheckCircle2,
-  Map as MapIcon,
   Database,
-  Users,
   Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
@@ -20,8 +17,6 @@ import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
-
-const BUILD_ID = 'MASTER_COMPANIES_FINAL-2026-05-27';
 
 export default function CompaniesPage() {
   return (
@@ -57,13 +52,9 @@ function CompaniesPageContent() {
     setLoadError(null);
 
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('companies').select('*');
 
-      console.log('[MASTER_COMPANIES_FINAL] total', data?.length);
-      console.log('[MASTER_COMPANIES_FINAL] dados', data);
+      console.log('MASTER_COMPANIES_RENDER', data);
 
       if (error) {
         setLoadError(error.message);
@@ -72,36 +63,8 @@ function CompaniesPageContent() {
       }
 
       setCompanies(data ?? []);
-
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('tenant_id, company_id');
-
-      if (projectsData?.length) {
-        const counts: Record<string, number> = {};
-        projectsData.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
-          const key = p.tenant_id || p.company_id;
-          if (key) counts[key] = (counts[key] || 0) + 1;
-        });
-        setCompanies((prev) =>
-          prev.map((c) => ({ ...c, project_count: counts[c.id] || 0 })),
-        );
-      }
-
-      const { data: usersData } = await supabase.from('users').select('tenant_id, company_id');
-      if (usersData?.length) {
-        const userCounts: Record<string, number> = {};
-        usersData.forEach((u: { tenant_id?: string | null; company_id?: string | null }) => {
-          const key = u.tenant_id || u.company_id;
-          if (key) userCounts[key] = (userCounts[key] || 0) + 1;
-        });
-        setCompanies((prev) =>
-          prev.map((c) => ({ ...c, users: [{ count: userCounts[c.id] || 0 }] })),
-        );
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.log('[MASTER_COMPANIES_FINAL] erro', err);
       setLoadError(message);
       setCompanies([]);
     } finally {
@@ -198,8 +161,6 @@ function CompaniesPageContent() {
   }
 
   const activeCount = companies.filter((c) => c.active === true).length;
-  const totalProjects = companies.reduce((acc, c) => acc + (c.project_count || 0), 0);
-  const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
 
   const searchFiltered = search.trim()
     ? companies.filter((c) => {
@@ -211,21 +172,20 @@ function CompaniesPageContent() {
       })
     : companies;
 
-  const isEmpty = companies.length === 0 && !dataLoading && !loadError;
+  const isEmpty = (companies ?? []).length === 0 && !dataLoading && !loadError;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
+      <p className="text-xs font-mono font-bold text-emerald-400 mb-4 tracking-wide">
+        MASTER_COMPANIES_RENDER_OK
+      </p>
+
       <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
-            Principal · Multi-tenant
-          </p>
           <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
             <Building2 className="w-7 h-7 text-[var(--color-primary)]" />
             Empresas
           </h1>
-          <p className="text-sm text-slate-500 mt-1">app/companies/page.tsx</p>
-          <p className="text-[10px] font-mono text-emerald-400/90 mt-1">{BUILD_ID}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -248,11 +208,18 @@ function CompaniesPageContent() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <StatCard title="Empresas" value={companies.length} icon={Database} accent="text-[var(--color-primary)]" />
-        <StatCard title="Ativas" value={activeCount} icon={CheckCircle2} accent="text-emerald-400" />
-        <StatCard title="Projetos" value={totalProjects} icon={MapIcon} accent="text-cyan-400" />
-        <StatCard title="Usuários" value={totalUsers} icon={Users} accent="text-purple-400" />
+      <div className="grid grid-cols-2 gap-3 mb-8 max-w-md">
+        <div className="rounded-xl border border-white/8 bg-[var(--color-surface)]/50 px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Empresas</p>
+          <p className="text-2xl font-bold text-white tabular-nums mt-1">{companies.length}</p>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-[var(--color-surface)]/50 px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Ativas</p>
+          <p className="text-2xl font-bold text-white tabular-nums mt-1 flex items-center gap-2">
+            {activeCount}
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 opacity-80" />
+          </p>
+        </div>
       </div>
 
       {dataLoading ? (
@@ -338,30 +305,6 @@ function CompaniesPageContent() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  title: string;
-  value: number;
-  icon: ComponentType<{ className?: string }>;
-  accent: string;
-}) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-[var(--color-surface)]/50 px-4 py-3.5">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{title}</p>
-          <p className="text-2xl font-bold text-white tabular-nums mt-1">{value}</p>
-        </div>
-        <Icon className={`w-5 h-5 ${accent} opacity-80`} />
-      </div>
     </div>
   );
 }

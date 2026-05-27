@@ -11,7 +11,7 @@ import {
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import { calculateMrrFromCompanies } from '@/lib/masterProduction';
+import { calculateMrrFromCompanies } from '@/lib/masterBilling';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -134,7 +134,7 @@ export default function PlansPage() {
       ]);
 
       if (compErr) {
-        console.error('[MASTER] erro ao carregar companies', compErr);
+        console.error('PLANS_LOAD_ERROR companies', compErr);
         setLoadError(compErr.message);
         setCompanies([]);
         setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
@@ -175,7 +175,7 @@ export default function PlansPage() {
          activeUsers: usersCountVal,
       });
     } catch (error) {
-      console.error('[MASTER] Error loading companies:', error);
+      console.error('PLANS_LOAD_ERROR', error);
       setLoadError('Falha ao carregar dados do Supabase.');
       setCompanies([]);
       setStats({ mrr: 0, activeCompanies: 0, activeUsers: 0 });
