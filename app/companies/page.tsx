@@ -16,7 +16,9 @@ import {
 import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
+import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { useAuth } from '@/hooks/useAuth';
+import { filterRealCompanies } from '@/lib/masterProduction';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
 
@@ -47,57 +49,67 @@ function CompaniesPageContent() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [queryEmpty, setQueryEmpty] = useState(false);
-  const [debugSession, setDebugSession] = useState<unknown>(null);
-  const [debugAuthUser, setDebugAuthUser] = useState<unknown>(null);
+  const [showTestCompanies, setShowTestCompanies] = useState(false);
 
   const loadCompanies = useCallback(async () => {
+    if (!user) return;
     setDataLoading(true);
     setLoadError(null);
-    setQueryEmpty(false);
-
-    console.log('[MASTER] user', user);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session ?? null;
-      console.log('[MASTER] session', session);
-      setDebugSession(session);
-
-      const { data: authUser, error: authError } = await supabase.auth.getUser();
-      console.log('[MASTER] auth user', authUser);
-      if (authError) {
-        console.log('[MASTER] auth user error', authError);
-      }
-      setDebugAuthUser(authUser);
-
-      const { data, error } = await supabase.from('companies').select('*');
-
-      console.log('[MASTER] companies raw', data);
-      console.log('[MASTER] companies error', error);
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) {
-        setLoadError(error.message);
+        console.error('[MASTER] companies error', error);
+        setLoadError(`Erro ao carregar empresas: ${error.message}`);
         setCompanies([]);
-        setQueryEmpty(false);
         return;
       }
 
       const raw = data ?? [];
-      if (raw.length === 0) {
-        setQueryEmpty(true);
-      }
+      const displayed = filterRealCompanies(raw, { showTestCompanies });
 
-      setCompanies(raw);
+      const { data: projectsData } = await supabase
+        .from('projects')
+        .select('tenant_id, company_id');
+
+      const counts: Record<string, number> = {};
+      projectsData?.forEach((p: { tenant_id?: string | null; company_id?: string | null }) => {
+        const key = p.tenant_id || p.company_id;
+        if (key) counts[key] = (counts[key] || 0) + 1;
+      });
+
+      const withProjects = displayed.map((c) => ({
+        ...c,
+        project_count: counts[c.id] || 0,
+        users: [{ count: 0 }],
+      }));
+
+      setCompanies(withProjects);
+
+      const { data: usersData } = await supabase.from('users').select('tenant_id, company_id');
+      if (usersData?.length) {
+        const userCounts: Record<string, number> = {};
+        usersData.forEach((u: { tenant_id?: string | null; company_id?: string | null }) => {
+          const key = u.tenant_id || u.company_id;
+          if (key) userCounts[key] = (userCounts[key] || 0) + 1;
+        });
+        setCompanies((prev) =>
+          prev.map((c) => ({ ...c, users: [{ count: userCounts[c.id] || 0 }] })),
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.log('[MASTER] companies error', err);
-      setLoadError(message);
+      console.error('[MASTER] companies error', err);
+      setLoadError(`Erro ao carregar empresas: ${message}`);
       setCompanies([]);
     } finally {
       setDataLoading(false);
     }
-  }, [user]);
+  }, [user, showTestCompanies]);
 
   const handleEdit = (company: any) => {
     setCompanyToEdit(company);
@@ -201,7 +213,7 @@ function CompaniesPageContent() {
     }
   }, [searchParams, router]);
 
-  if (authLoading) {
+  if (authLoading || (dataLoading && companies.length === 0 && !loadError)) {
     return (
       <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--color-background)]">
         <Loader2 className="w-8 h-8 text-[#06b6d4] animate-spin" />
@@ -209,14 +221,23 @@ function CompaniesPageContent() {
     );
   }
 
-  const activeCompanies = companies.filter((c) => c.active === true).length;
+  const activeCompanies = companies.filter(
+    (c) => c.active === true || c.status_operacional === 'Ativa',
+  ).length;
   const totalUsers = companies.reduce((acc, c) => acc + (c.users?.[0]?.count || 0), 0);
   const totalProjects = companies.reduce((acc, c) => acc + (c.project_count || 0), 0);
 
+  const filteredCompanies = companies.filter((c) => {
+    const q = search.toLowerCase();
+    const name = (c.name || '').toLowerCase();
+    const slug = (c.slug || '').toLowerCase();
+    return name.includes(q) || slug.includes(q);
+  });
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
-      <header className="mb-4 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div className="flex-1">
+      <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
             Principal · Multi-tenant
           </p>
@@ -227,42 +248,13 @@ function CompaniesPageContent() {
           <p className="text-sm text-slate-500 mt-1 max-w-lg">
             Gerencie tenants, planos e acesso ao workspace de cada loteadora.
           </p>
-
-          <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-950/30 p-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-300 mb-2">
-              DEBUG MASTER (temporário)
-            </p>
-            {dataLoading ? (
-              <p className="text-sm text-amber-200/80 mb-2">Carregando query...</p>
-            ) : null}
-            {loadError ? (
-              <p className="text-sm text-red-300 font-mono mb-2">{loadError}</p>
-            ) : null}
-            {queryEmpty && !loadError ? (
-              <p className="text-sm text-yellow-300 font-bold mb-2">QUERY RETORNOU ARRAY VAZIO</p>
-            ) : null}
-            <p className="text-[10px] text-slate-500 mb-1">session.user.id: {(debugSession as { user?: { id?: string } })?.user?.id ?? '—'}</p>
-            <p className="text-[10px] text-slate-500 mb-2">
-              auth.user.id: {(debugAuthUser as { user?: { id?: string } })?.user?.id ?? '—'}
-            </p>
-            <pre className="text-xs text-slate-300 overflow-auto max-h-[min(50vh,480px)] whitespace-pre-wrap break-words font-mono bg-black/30 rounded-lg p-3 border border-white/5">
-              {JSON.stringify(companies, null, 2)}
-            </pre>
-          </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => loadCompanies()}
-            className="h-9 px-3 rounded-lg text-xs font-medium text-amber-200 border border-amber-500/30 hover:bg-amber-500/10"
-          >
-            Recarregar debug
-          </button>
+        <div className="flex items-center gap-2">
           <button
             onClick={async () => {
               if (
                 confirm(
-                  'Atenção: Esta ação irá limpar todos os usuários do AUTH que não possuem empresa, além de empresas de teste sem usuários. Deseja continuar?'
+                  'Atenção: Esta ação irá limpar cadastros de teste. Deseja continuar?'
                 )
               ) {
                 try {
@@ -301,32 +293,56 @@ function CompaniesPageContent() {
         <StatCard title="Usuários" value={totalUsers} icon={Users} accent="text-purple-400" />
       </div>
 
-      <div className="mb-6">
-        <div className="relative max-w-md">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="relative max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
-            placeholder="Buscar (debug: lista não filtrada)"
+            placeholder="Buscar por nome ou slug..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            disabled
-            className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white/50 placeholder:text-slate-600 opacity-60"
+            className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[var(--color-primary)]/40 transition-colors"
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer shrink-0">
+          <input
+            type="checkbox"
+            checked={showTestCompanies}
+            onChange={(e) => setShowTestCompanies(e.target.checked)}
+            className="rounded border-white/20"
+          />
+          Mostrar empresas de teste
+        </label>
       </div>
 
-      {companies.length === 0 && !dataLoading ? (
+      {loadError ? (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <p className="font-semibold">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => loadCompanies()}
+            className="mt-3 text-xs font-semibold text-red-100 underline hover:no-underline"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+
+      {companies.length === 0 && !loadError ? (
+        <MasterEmptyState
+          title="Nenhuma empresa cadastrada ainda"
+          description="Cadastre a primeira empresa para iniciar a operação SaaS."
+        />
+      ) : filteredCompanies.length === 0 ? (
         <div className="flex-1 flex items-center justify-center rounded-2xl border border-dashed border-white/10 py-16">
-          <p className="text-sm text-slate-400">
-            {queryEmpty ? 'QUERY RETORNOU ARRAY VAZIO' : loadError || 'Sem empresas no state'}
-          </p>
+          <p className="text-sm text-slate-500">Nenhuma empresa encontrada para esta busca.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pb-8">
-          {companies.map((c, idx) => (
+          {filteredCompanies.map((c, idx) => (
             <CompanyCard
               key={c.id}
-              company={{ ...c, project_count: c.project_count || 0, users: c.users || [{ count: 0 }] }}
+              company={c}
               user={user}
               isMaster={
                 idx === 0 ||
@@ -363,7 +379,7 @@ function CompaniesPageContent() {
         }}
       />
       {companyToView && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-[#1f232b]">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -373,23 +389,27 @@ function CompaniesPageContent() {
                 onClick={() => setCompanyToView(null)}
                 className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-gray-800 rounded-lg"
               >
-                <span className="sr-only">Fechar</span>✕
+                ✕
               </button>
             </div>
             <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
               <div>
-                <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Nome</p>
+                <p className="text-xs font-mono text-gray-500 uppercase font-bold">Nome</p>
                 <p className="text-sm font-semibold text-white">{companyToView.name}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">CNPJ</p>
-                  <p className="text-sm font-semibold text-gray-300">{companyToView.cnpj || '—'}</p>
+                  <p className="text-xs font-mono text-gray-500 uppercase font-bold">CNPJ</p>
+                  <p className="text-sm text-gray-300">{companyToView.cnpj || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-mono text-gray-500 uppercase tracking-widest font-bold">Telefone</p>
-                  <p className="text-sm font-semibold text-gray-300">{companyToView.phone || '—'}</p>
+                  <p className="text-xs font-mono text-gray-500 uppercase font-bold">Status</p>
+                  <p className="text-sm text-gray-300">{companyToView.status_operacional || '—'}</p>
                 </div>
+              </div>
+              <div>
+                <p className="text-xs font-mono text-gray-500 uppercase font-bold">Projetos</p>
+                <p className="text-sm text-gray-300">{companyToView.project_count || 0}</p>
               </div>
             </div>
           </div>

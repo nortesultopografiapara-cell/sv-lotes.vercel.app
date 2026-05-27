@@ -53,7 +53,6 @@ export default function SaaSFinancePage() {
 
    const loadData = async () => {
       setLoading(true);
-      masterLog('mocks removidos');
       try {
          const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
          

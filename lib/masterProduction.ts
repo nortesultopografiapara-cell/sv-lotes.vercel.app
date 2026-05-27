@@ -1,8 +1,8 @@
 /**
- * Filtros e utilitários do painel Master — produção sem mocks/dados de teste.
+ * Utilitários do painel Master — listagem usa APENAS flags de teste no banco.
  */
 
-import { getCompanySaasPlan, normalizeSaasPlanKey } from '@/lib/saasPlans';
+import { getCompanySaasPlan } from '@/lib/saasPlans';
 
 export type CompanyLike = {
   id?: string;
@@ -17,115 +17,68 @@ export type CompanyLike = {
   tenant_id?: string | null;
 };
 
-const REAL_COMPANY_HINTS = [
-  's.v topografia',
-  'sv topografia',
-  'norte e sul topografia',
-  'nortesul',
-  'norte sul topografia',
-];
-
-/** Usado apenas em rotinas de limpeza (cleanup), não na listagem Master. */
-const TEST_HINTS = [
-  'teste',
-  'test',
-  'demo',
-  'mock',
-  'fake',
-  'sandbox',
-  'empresa teste',
-  'loteadora paraiso',
-  'vale verde empreendimentos',
-  'paraiso loteadora',
-  'saas.com.br',
-  'preview.local',
-  'tenant-test',
-];
-
 export function isProductionRuntime(): boolean {
   return process.env.NODE_ENV === 'production';
 }
 
-export function masterLog(
-  message: 'dados reais carregados' | 'nenhum dado real encontrado' | 'mocks removidos',
-  detail?: Record<string, unknown>
-) {
-  const payload = detail ? ` ${JSON.stringify(detail)}` : '';
-  console.log(`[MASTER] ${message}${payload}`);
+/** Único critério de listagem Master: flags explícitas no registro. */
+export function isCompanyMarkedAsTest(company: CompanyLike): boolean {
+  return company?.is_test_company === true || company?.is_test === true;
 }
 
-function normalize(value?: string | null): string {
-  return (value || '').toLowerCase().trim();
-}
-
-/** Empresas operacionais reais da SV (sempre mantidas na listagem). */
-export function isKnownRealCompany(company: CompanyLike): boolean {
-  const blob = [company.name, company.fantasy_name, company.slug, company.email]
-    .map(normalize)
-    .join(' ');
-  return REAL_COMPANY_HINTS.some((hint) => blob.includes(hint));
-}
-
-export function isTestCompany(company: CompanyLike): boolean {
-  if (!company) return true;
-  if (company.is_test === true) return true;
-
-  if (isKnownRealCompany(company)) return false;
-
-  const status = normalize(company.status_operacional);
-  if (status === 'teste') return true;
-
-  const blob = [company.name, company.fantasy_name, company.slug, company.email]
-    .map(normalize)
-    .join(' ');
-
-  if (TEST_HINTS.some((hint) => blob.includes(hint))) return true;
-  if (/\bteste\b/.test(blob) && !blob.includes('topografia')) return true;
-
-  return false;
-}
-
-/** Listagem Master: oculta só empresas com flag explícita de teste (salvo toggle). */
+/**
+ * Listagem Master — não filtra por nome, slug, email ou texto.
+ * Oculta somente is_test_company === true ou is_test === true (salvo toggle).
+ */
 export function filterRealCompanies<T extends CompanyLike>(
   companies: T[],
   options?: { showTestCompanies?: boolean },
 ): T[] {
   const show = options?.showTestCompanies ?? false;
   const list = companies || [];
-  const real = show
-    ? list
-    : list.filter((c) => c.is_test_company !== true && c.is_test !== true);
 
+  console.log('[MASTER] companies raw length', list.length);
+
+  const real = show ? list : list.filter((c) => !isCompanyMarkedAsTest(c));
   const removed = list.length - real.length;
+
   if (removed > 0) {
-    masterLog('mocks removidos', { removidos: removed, exibidos: real.length });
+    console.log('[MASTER] empresas teste removidas', removed);
   }
-  if (real.length > 0) {
-    masterLog('dados reais carregados', { total: real.length });
-  } else if (list.length > 0) {
-    masterLog('nenhum dado real encontrado', { totalBruto: list.length, somenteTeste: true });
-  } else {
-    masterLog('nenhum dado real encontrado');
-  }
+  console.log('[MASTER] empresas reais exibidas', real.length);
+
   return real;
 }
 
-export function masterCompaniesLog(
-  message:
-    | 'usuario'
-    | 'isSuperAdmin'
-    | 'query sem tenant'
-    | 'empresas retornadas'
-    | 'erro Supabase',
-  detail?: Record<string, unknown> | string | boolean,
+/** @deprecated use isCompanyMarkedAsTest — mantido para imports antigos na listagem */
+export function isTestCompany(company: CompanyLike): boolean {
+  return isCompanyMarkedAsTest(company);
+}
+
+/** Heurística só para API de limpeza de cadastros (não usar na listagem). */
+export function isTestCompanyForCleanup(company: CompanyLike): boolean {
+  if (isCompanyMarkedAsTest(company)) return true;
+
+  const status = (company.status_operacional || '').toLowerCase().trim();
+  if (status === 'teste') return true;
+
+  const blob = [company.name, company.fantasy_name, company.slug, company.email]
+    .map((v) => (v || '').toLowerCase().trim())
+    .join(' ');
+
+  const cleanupHints = ['demo', 'mock', 'fake', 'sandbox', 'preview.local', 'tenant-test'];
+  if (cleanupHints.some((hint) => blob.includes(hint))) return true;
+  if (/\bteste\b/.test(blob) && !blob.includes('topografia')) return true;
+
+  return false;
+}
+
+export function masterLog(
+  message: 'dados reais carregados' | 'nenhum dado real encontrado',
+  detail?: Record<string, unknown>,
 ) {
-  const extra =
-    detail === undefined
-      ? ''
-      : typeof detail === 'string' || typeof detail === 'boolean'
-        ? ` ${detail}`
-        : ` ${JSON.stringify(detail)}`;
-  console.log(`[MASTER_COMPANIES] ${message}${extra}`);
+  const payload = detail ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[MASTER] ${message}${payload}`);
 }
 
 export const PLAN_MRR: Record<string, number> = {
@@ -141,15 +94,15 @@ export const PLAN_MRR: Record<string, number> = {
 };
 
 export function planMrrForCompany(plan?: string | null): number {
-  const key = normalize(plan);
+  const key = (plan || '').toLowerCase().trim();
   return PLAN_MRR[key] ?? 0;
 }
 
 export function calculateMrrFromCompanies(companies: CompanyLike[]): number {
   return companies.reduce((sum, c) => {
     const active =
-      normalize(c.status_operacional) !== 'inativo' &&
-      normalize(c.status_operacional) !== 'inativa' &&
+      (c.status_operacional || '').toLowerCase() !== 'inativo' &&
+      (c.status_operacional || '').toLowerCase() !== 'inativa' &&
       (c as { active?: boolean }).active !== false;
     if (!active) return sum;
     return sum + planMrrForCompany((c as { plan?: string }).plan);
@@ -157,14 +110,13 @@ export function calculateMrrFromCompanies(companies: CompanyLike[]): number {
 }
 
 export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
-  const status = normalize(company.status_operacional);
+  const status = (company.status_operacional || '').toLowerCase().trim();
   if (['inativo', 'inativa', 'bloqueada', 'suspensa'].includes(status)) return false;
   return (company as { active?: boolean }).active !== false;
 }
 
-/** Dados de cobrança derivados apenas do cadastro real (sem simulação). */
 export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | null }>(
-  company: T
+  company: T,
 ) {
   const planKey = getCompanySaasPlan(company).planKey;
   const uiPlan =
@@ -176,8 +128,9 @@ export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | 
 
   const price = planMrrForCompany(company.plan);
   const active = isActiveSubscriptionCompany(company);
-  const rawDue = (company as { vencimento_plano?: string; due_date?: string }).vencimento_plano
-    || (company as { due_date?: string }).due_date;
+  const rawDue =
+    (company as { vencimento_plano?: string }).vencimento_plano ||
+    (company as { due_date?: string }).due_date;
 
   return {
     ...company,
@@ -185,7 +138,7 @@ export function augmentCompanyBilling<T extends CompanyLike & { plan?: string | 
     price,
     payment_status: active ? ('Aguardando cobrança' as const) : ('Inativo' as const),
     subscription_status:
-      normalize(company.status_operacional) === 'inadimplente'
+      (company.status_operacional || '').toLowerCase() === 'inadimplente'
         ? ('Inadimplente' as const)
         : active
           ? ('Ativa' as const)

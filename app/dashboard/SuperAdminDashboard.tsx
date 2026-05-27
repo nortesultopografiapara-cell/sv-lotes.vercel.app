@@ -91,7 +91,6 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
          supabase.from('blocks').select('*', { count: 'exact', head: true })
       ]);
 
-      masterLog('mocks removidos');
       const comps = filterRealCompanies(companies || []);
       
       const active = comps.filter(c => c.status_operacional === 'Ativa').length || comps.filter(c => c.active === true).length;

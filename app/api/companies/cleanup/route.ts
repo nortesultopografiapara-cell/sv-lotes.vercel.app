@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { isTestCompany } from '@/lib/masterProduction';
+import { isTestCompanyForCleanup } from '@/lib/masterProduction';
 
 export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     let testCompaniesRemoved = 0;
     if (companies) {
       for (const comp of companies) {
-        if (isTestCompany(comp)) {
+        if (isTestCompanyForCleanup(comp)) {
           console.log(`[CLEANUP] Removendo empresa de teste: ${comp.name || comp.id}`);
           await supabaseAdmin.from('companies').delete().eq('id', comp.id);
           companyIds.delete(comp.id);

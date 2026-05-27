@@ -125,7 +125,6 @@ export default function PlansPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
-    masterLog('mocks removidos');
     setLoadError(null);
     try {
       const [
