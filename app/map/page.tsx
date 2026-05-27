@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Edit2, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
@@ -317,11 +318,9 @@ export default function MapPage() {
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
 
   // Modal unificado: criar / editar projeto
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalMode, setProjectModalMode] = useState<ProjectModalMode>('create');
-  const [selectedProjectToEdit, setSelectedProjectToEdit] = useState<Record<string, unknown> | null>(
-    null,
-  );
+  const [editingProject, setEditingProject] = useState<Record<string, unknown> | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCity, setNewProjectCity] = useState('');
   const [newProjectUf, setNewProjectUf] = useState('');
@@ -575,9 +574,9 @@ export default function MapPage() {
   };
 
   const closeProjectModal = () => {
-    setIsProjectModalOpen(false);
+    setProjectModalOpen(false);
     setProjectModalMode('create');
-    setSelectedProjectToEdit(null);
+    setEditingProject(null);
     setProjectFeedback(null);
     resetProjectForm();
   };
@@ -591,15 +590,15 @@ export default function MapPage() {
     );
   };
 
-  const handleEditProject = (project: Record<string, unknown>) => {
-    console.log('[PROJETOS] clique editar', project);
+  const handleEditProject = useCallback((project: Record<string, unknown>) => {
+    console.log('[PROJETOS] CLIQUE REAL EDITAR', project);
     const initialData = projectToFormInitialData(project);
-    setSelectedProjectToEdit(project);
+    setEditingProject(project);
     setProjectModalMode('edit');
     applyProjectFormInitialData(initialData);
     setProjectFeedback(null);
-    setIsProjectModalOpen(true);
-  };
+    setProjectModalOpen(true);
+  }, []);
 
   const openNewProjectModal = () => {
     if (
@@ -614,12 +613,17 @@ export default function MapPage() {
       });
       return;
     }
-    setSelectedProjectToEdit(null);
+    setEditingProject(null);
     setProjectModalMode('create');
     setProjectFeedback(null);
     resetProjectForm();
-    setIsProjectModalOpen(true);
+    setProjectModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!projectModalOpen || projectModalMode !== 'edit' || !editingProject) return;
+    applyProjectFormInitialData(projectToFormInitialData(editingProject));
+  }, [projectModalOpen, projectModalMode, editingProject]);
 
   const validateProjectForm = (): boolean => {
     const projectNameStr = newProjectName.trim();
@@ -642,9 +646,9 @@ export default function MapPage() {
   };
 
   const handleSaveProjectEdit = async () => {
-    if (!selectedProjectToEdit?.id) return;
+    if (!editingProject?.id) return;
 
-    const projectId = String(selectedProjectToEdit.id);
+    const projectId = String(editingProject.id);
     const name = newProjectName.trim();
     const city = newProjectCity.trim();
     const uf = newProjectUf.trim().toUpperCase();
@@ -1227,11 +1231,8 @@ export default function MapPage() {
       }
   };
 
-  const renderProjectFormModal = () => {
-    if (!isProjectModalOpen) return null;
-
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+  const renderProjectFormModal = () => (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
             <h3 className="font-bold text-white text-lg">
@@ -1353,8 +1354,12 @@ export default function MapPage() {
           </form>
         </div>
       </div>
-    );
-  };
+  );
+
+  const projectModalPortal =
+    projectModalOpen && typeof document !== 'undefined'
+      ? createPortal(renderProjectFormModal(), document.body)
+      : null;
 
   // Se um projeto foi selecionado, exibe o Mapa
   if (selectedProject) {
@@ -1617,7 +1622,7 @@ export default function MapPage() {
            </div>
         )}
       </div>
-      {renderProjectFormModal()}
+      {projectModalPortal}
       </>
     );
   }
@@ -1625,7 +1630,7 @@ export default function MapPage() {
   // Lista de Projetos (quando map não está selecionado)
   return (
     <>
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in-up">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in-up relative z-0">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
@@ -1674,13 +1679,13 @@ export default function MapPage() {
                  <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
              </div>
           ) : filteredProjects.length > 0 ? (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-               {filteredProjects.map(p => (
-                 <ProjectCard 
-                   key={p.id} 
-                   project={p} 
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-0">
+               {filteredProjects.map((p) => (
+                 <ProjectCard
+                   key={p.id}
+                   project={p}
                    user={user}
-                   onOpen={() => handleOpenProject(p)} 
+                   onOpen={() => handleOpenProject(p)}
                    onEditProject={handleEditProject}
                    onDelete={() => handleDeleteProject(p.id)}
                  />
@@ -1694,12 +1699,13 @@ export default function MapPage() {
         </div>
       </div>
 
-      {renderProjectFormModal()}
+      {projectModalPortal}
     </div>
     </>
   );
 }
 
+/** Card de projeto — botões de ação com z-index alto para não serem bloqueados por overlays. */
 function ProjectCard({
   project,
   user,
@@ -1707,101 +1713,101 @@ function ProjectCard({
   onEditProject,
   onDelete,
 }: {
-  project: any;
-  user: any;
+  project: Record<string, unknown> & { id: string; name?: string; location?: string; blocks?: unknown[] };
+  user: { role?: string } | null;
   onOpen: () => void;
   onEditProject: (project: Record<string, unknown>) => void;
   onDelete: () => void;
 }) {
-  const total = project.blocks?.length || 0;
-  const sold = project.blocks?.filter((l: any) => l.status === 'Vendido').length || 0;
-  const hasGis = project.blocks?.some((l: any) => l.geometry != null) || false;
+  const blocks = (project.blocks as { status?: string; geometry?: unknown }[]) || [];
+  const total = blocks.length;
+  const sold = blocks.filter((l) => l.status === 'Vendido').length;
+  const hasGis = blocks.some((l) => l.geometry != null);
   const pct = total > 0 ? (sold / total) * 100 : 0;
 
   return (
-    <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors group flex flex-col">
-       <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-3">
-             <div className="w-12 h-12 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
-               <FolderOpen className="w-6 h-6" />
-             </div>
-             <div>
-                <h3 className="font-bold text-white text-lg leading-tight">{project.name}</h3>
-                <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1">{project.location || 'Sem localização'}</p>
-             </div>
+    <div className="relative z-0 bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors flex flex-col">
+      <div className="flex justify-between items-start mb-4 gap-2">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-12 h-12 shrink-0 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
+            <FolderOpen className="w-6 h-6" />
           </div>
-          {user?.role !== 'BROKER' && (
-            <div className="relative z-20 flex items-center gap-1 pointer-events-auto">
-               <button
-                 type="button"
-                 title="Editar"
-                 aria-label="Editar projeto"
-                 onClick={(e) => {
-                   e.preventDefault();
-                   e.stopPropagation();
-                   onEditProject(project);
-                 }}
-                 onMouseDown={(e) => {
-                   e.preventDefault();
-                   e.stopPropagation();
-                 }}
-                 className="relative z-20 p-2 text-[var(--color-text-muted)] hover:text-white transition-colors cursor-pointer pointer-events-auto"
-               >
-                 <Edit2 className="w-4 h-4 pointer-events-none" />
-               </button>
-               <button
-                 type="button"
-                 title="Excluir"
-                 aria-label="Excluir projeto"
-                 onClick={(e) => {
-                   e.preventDefault();
-                   e.stopPropagation();
-                   onDelete();
-                 }}
-                 onMouseDown={(e) => {
-                   e.preventDefault();
-                   e.stopPropagation();
-                 }}
-                 className="relative z-20 p-2 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors cursor-pointer pointer-events-auto"
-               >
-                 <Trash2 className="w-4 h-4 pointer-events-none" />
-               </button>
-            </div>
-          )}
-       </div>
-
-       <div className="mt-auto">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">Progresso de Vendas</span>
-            <span className="text-xs font-mono text-white">{sold} / {total}</span>
+          <div className="min-w-0">
+            <h3 className="font-bold text-white text-lg leading-tight truncate">{String(project.name || '')}</h3>
+            <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1 truncate">
+              {String(project.location || 'Sem localização')}
+            </p>
           </div>
-          <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
-             <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
-          </div>
-
-          <div className="flex items-center justify-between">
-            {hasGis ? (
-              <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
-                Sincronizado
-              </span>
-            ) : (
-              <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
-                Falta KML
-              </span>
-            )}
-            
+        </div>
+        {user?.role !== 'BROKER' && (
+          <div className="relative z-[100] flex shrink-0 items-center gap-1">
             <button
               type="button"
+              title="Editar"
+              aria-label="Editar projeto"
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                onOpen();
+                console.log('[PROJETOS] CLIQUE REAL EDITAR', project);
+                onEditProject(project);
               }}
-              className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
+              className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white cursor-pointer"
             >
-              <MapIcon className="w-4 h-4" /> Abrir Mapa
+              <Pencil className="w-4 h-4 shrink-0" />
+            </button>
+            <button
+              type="button"
+              title="Excluir"
+              aria-label="Excluir projeto"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)] cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 shrink-0" />
             </button>
           </div>
-       </div>
+        )}
+      </div>
+
+      <div className="mt-auto">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+            Progresso de Vendas
+          </span>
+          <span className="text-xs font-mono text-white">
+            {sold} / {total}
+          </span>
+        </div>
+        <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
+          <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          {hasGis ? (
+            <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
+              Sincronizado
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
+              Falta KML
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen();
+            }}
+            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
+          >
+            <MapIcon className="w-4 h-4" /> Abrir Mapa
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
