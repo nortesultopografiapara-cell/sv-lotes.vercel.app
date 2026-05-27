@@ -71,36 +71,46 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
     try {
       const digits = formData.cnpj.replace(/\D/g, '');
-      const res = await fetch(`/api/company-lookup?cnpj=${digits}`);
-      const data = await res.json();
+      const res = await fetch(`/api/company-lookup?cnpj=${encodeURIComponent(digits)}`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         const msg =
           data?.error ||
           (res.status === 404
             ? 'CNPJ não encontrado. Preencha manualmente.'
-            : 'Não foi possível consultar o CNPJ.');
+            : 'Não foi possível consultar o CNPJ. Tente novamente.');
+        console.error('[COMPANY_LOOKUP] erro frontend', { status: res.status, error: msg, data });
         setCnpjHint(msg);
         return;
       }
 
-      const company = data.company;
-      if (company) {
+      const company = data.company ?? data;
+      const resolvedName = company.name || company.fantasy_name || '';
+      if (resolvedName || company.cnpj) {
         setFormData((prev) => ({
           ...prev,
-          name: company.name || prev.name,
+          name: resolvedName || prev.name,
           cnpj: company.cnpj || prev.cnpj,
           email: company.email || prev.email,
           phone: company.phone || prev.phone,
           address: company.address || prev.address,
           city: company.city || prev.city,
           state: company.state || prev.state,
-          cep: company.cep || prev.cep,
+          cep: company.cep || company.zip_code || prev.cep,
         }));
         setCnpjHint('Dados preenchidos. Revise e clique em Salvar Configurações.');
         setSuccessMsg('Dados do CNPJ carregados com sucesso.');
+      } else {
+        console.error('[COMPANY_LOOKUP] erro frontend', { motivo: 'resposta_vazia', data });
+        setCnpjHint('Resposta vazia da consulta. Preencha manualmente.');
       }
-    } catch {
+    } catch (err) {
+      console.error('[COMPANY_LOOKUP] erro frontend', err);
       setCnpjHint('Erro na consulta. Preencha manualmente.');
     } finally {
       setCnpjLookupLoading(false);
