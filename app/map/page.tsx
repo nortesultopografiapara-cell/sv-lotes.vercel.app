@@ -12,11 +12,9 @@ import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 import proj4 from 'proj4';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { logSaasCompanyContext } from '@/lib/saasPlans';
-import { updateProjectWithFallback } from '@/lib/projects-update';
 import {
   EMPTY_PROJECT_FORM,
   type ProjectFormInitialData,
-  type ProjectModalMode,
   projectToFormInitialData,
 } from '@/lib/project-form';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
@@ -317,10 +315,10 @@ export default function MapPage() {
   const [measureActive, setMeasureActive] = useState(false);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
 
-  // Modal unificado: criar / editar projeto
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalMode, setProjectModalMode] = useState<ProjectModalMode>('create');
-  const [editingProject, setEditingProject] = useState<Record<string, unknown> | null>(null);
+  // Formulário unificado: criar / editar projeto
+  const [isProjectFormOpen, setIsProjectFormOpen] = useState(false);
+  const [projectFormMode, setProjectFormMode] = useState<'create' | 'edit'>('create');
+  const [editingProject, setEditingProject] = useState<any | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectCity, setNewProjectCity] = useState('');
   const [newProjectUf, setNewProjectUf] = useState('');
@@ -573,9 +571,9 @@ export default function MapPage() {
     applyProjectFormInitialData(EMPTY_PROJECT_FORM);
   };
 
-  const closeProjectModal = () => {
-    setProjectModalOpen(false);
-    setProjectModalMode('create');
+  const closeProjectForm = () => {
+    setIsProjectFormOpen(false);
+    setProjectFormMode('create');
     setEditingProject(null);
     setProjectFeedback(null);
     resetProjectForm();
@@ -590,17 +588,16 @@ export default function MapPage() {
     );
   };
 
-  const handleEditProject = useCallback((project: Record<string, unknown>) => {
-    console.log('[PROJETOS] CLIQUE REAL EDITAR', project);
-    const initialData = projectToFormInitialData(project);
+  const openEditProject = (project: any) => {
+    console.log('[PROJETOS] abrir editor', project);
+    applyProjectFormInitialData(projectToFormInitialData(project));
     setEditingProject(project);
-    setProjectModalMode('edit');
-    applyProjectFormInitialData(initialData);
+    setProjectFormMode('edit');
     setProjectFeedback(null);
-    setProjectModalOpen(true);
-  }, []);
+    setIsProjectFormOpen(true);
+  };
 
-  const openNewProjectModal = () => {
+  const openCreateProject = () => {
     if (
       projectLimit != null &&
       projectLimit > 0 &&
@@ -614,16 +611,11 @@ export default function MapPage() {
       return;
     }
     setEditingProject(null);
-    setProjectModalMode('create');
+    setProjectFormMode('create');
     setProjectFeedback(null);
     resetProjectForm();
-    setProjectModalOpen(true);
+    setIsProjectFormOpen(true);
   };
-
-  useEffect(() => {
-    if (!projectModalOpen || projectModalMode !== 'edit' || !editingProject) return;
-    applyProjectFormInitialData(projectToFormInitialData(editingProject));
-  }, [projectModalOpen, projectModalMode, editingProject]);
 
   const validateProjectForm = (): boolean => {
     const projectNameStr = newProjectName.trim();
@@ -648,48 +640,96 @@ export default function MapPage() {
   const handleSaveProjectEdit = async () => {
     if (!editingProject?.id) return;
 
-    const projectId = String(editingProject.id);
     const name = newProjectName.trim();
     const city = newProjectCity.trim();
-    const uf = newProjectUf.trim().toUpperCase();
+    const state = newProjectUf.trim().toUpperCase();
     const neighborhood = newProjectNbhd.trim() || null;
     const address = newProjectAddr.trim() || null;
-    const forumCity = newProjectForum.trim() || city;
-    const location = [city, uf].filter(Boolean).join(' - ');
-
-    console.log('[PROJETOS] salvar edição', { projectId, name });
+    const contract_city = newProjectForum.trim() || city;
+    const location = [city, state].filter(Boolean).join(' - ');
 
     setProjectFormSubmitting(true);
     try {
-      const { data, error } = await updateProjectWithFallback(supabase, projectId, {
-        name,
-        city,
-        uf,
-        neighborhood,
-        address,
-        location,
-        forum_city: forumCity,
-      });
+      const payloads: Record<string, unknown>[] = [
+        {
+          name,
+          city,
+          state,
+          uf: state,
+          neighborhood,
+          address,
+          contract_city,
+          forum_city: contract_city,
+          location,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          name,
+          city,
+          uf: state,
+          neighborhood,
+          address,
+          forum_city: contract_city,
+          location,
+          updated_at: new Date().toISOString(),
+        },
+        { name, city, uf: state, location, updated_at: new Date().toISOString() },
+      ];
 
-      if (error || !data) {
-        throw new Error(error?.message || 'Não foi possível salvar o projeto.');
+      let saved: Record<string, unknown> | null = null;
+      let lastError: { message: string } | null = null;
+
+      for (const payload of payloads) {
+        const cleaned = Object.fromEntries(
+          Object.entries(payload).filter(([, v]) => v !== undefined && v !== ''),
+        );
+        const { data, error } = await supabase
+          .from('projects')
+          .update(cleaned)
+          .eq('id', editingProject.id)
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          saved = data as Record<string, unknown>;
+          break;
+        }
+        lastError = error;
+        const missingCol = error?.message?.match(/Could not find the '(\w+)' column/i)?.[1];
+        if (!missingCol) break;
       }
 
-      const patch = {
-        name: String(data.name ?? name),
-        city: String(data.city ?? city),
-        uf: String(data.uf ?? uf),
-        neighborhood: data.neighborhood != null ? String(data.neighborhood) : neighborhood,
-        address: data.address != null ? String(data.address) : address,
-        forum_city: String(data.forum_city ?? forumCity),
-        location: String(data.location ?? location),
+      if (!saved) {
+        throw new Error(lastError?.message || 'Não foi possível salvar o projeto.');
+      }
+
+      const updatedFields = {
+        name,
+        city,
+        uf: state,
+        state,
+        neighborhood,
+        address,
+        forum_city: contract_city,
+        contract_city,
+        location,
       };
 
-      applyProjectPatchToList(projectId, patch);
-      console.log('[PROJETOS] projeto atualizado', { projectId, name: patch.name });
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === editingProject.id ? { ...p, ...updatedFields, blocks: p.blocks } : p,
+        ),
+      );
+      setSelectedProject((prev) =>
+        prev?.id === editingProject.id
+          ? { ...prev, ...updatedFields, blocks: prev.blocks }
+          : prev,
+      );
 
       setProjectFeedback({ type: 'success', message: 'Projeto atualizado com sucesso.' });
-      setTimeout(() => closeProjectModal(), 600);
+      setTimeout(() => {
+        closeProjectForm();
+      }, 500);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao salvar alterações.';
       setProjectFeedback({ type: 'error', message });
@@ -761,7 +801,7 @@ export default function MapPage() {
       await loadProjects();
 
       setProjectFeedback({ type: 'success', message: 'Projeto criado com sucesso!' });
-      setTimeout(() => closeProjectModal(), 600);
+      setTimeout(() => closeProjectForm(), 600);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Erro desconhecido';
@@ -786,7 +826,7 @@ export default function MapPage() {
     setProjectFeedback(null);
     if (!validateProjectForm()) return;
 
-    if (projectModalMode === 'edit') {
+    if (projectFormMode === 'edit') {
       await handleSaveProjectEdit();
       return;
     }
@@ -1236,11 +1276,11 @@ export default function MapPage() {
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
             <h3 className="font-bold text-white text-lg">
-              {projectModalMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
+              {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
             </h3>
             <button
               type="button"
-              onClick={closeProjectModal}
+              onClick={closeProjectForm}
               className="text-[var(--color-text-muted)] hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
@@ -1345,19 +1385,19 @@ export default function MapPage() {
             >
               {projectFormSubmitting ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
-              ) : projectModalMode === 'edit' ? (
-                'Salvar Alterações'
-              ) : (
-                'Criar Projeto'
-              )}
+                     ) : projectFormMode === 'edit' ? (
+                       'Salvar Alterações'
+                     ) : (
+                       'Criar Projeto'
+                     )}
             </button>
           </form>
         </div>
       </div>
   );
 
-  const projectModalPortal =
-    projectModalOpen && typeof document !== 'undefined'
+  const projectFormPortal =
+    isProjectFormOpen && typeof document !== 'undefined'
       ? createPortal(renderProjectFormModal(), document.body)
       : null;
 
@@ -1622,7 +1662,7 @@ export default function MapPage() {
            </div>
         )}
       </div>
-      {projectModalPortal}
+      {projectFormPortal}
       </>
     );
   }
@@ -1648,7 +1688,7 @@ export default function MapPage() {
         </div>
         {user?.role !== 'BROKER' && (
           <button 
-            onClick={openNewProjectModal}
+            onClick={openCreateProject}
             className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
           >
             <Plus className="w-5 h-5" />
@@ -1680,16 +1720,97 @@ export default function MapPage() {
              </div>
           ) : filteredProjects.length > 0 ? (
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-0">
-               {filteredProjects.map((p) => (
-                 <ProjectCard
-                   key={p.id}
-                   project={p}
-                   user={user}
-                   onOpen={() => handleOpenProject(p)}
-                   onEditProject={handleEditProject}
-                   onDelete={() => handleDeleteProject(p.id)}
-                 />
-               ))}
+               {filteredProjects.map((p) => {
+                 const blocks = p.blocks || [];
+                 const total = blocks.length;
+                 const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
+                 const hasGis = blocks.some((l: any) => l.geometry != null);
+                 const pct = total > 0 ? (sold / total) * 100 : 0;
+
+                 return (
+                   <div
+                     key={p.id}
+                     className="relative bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors flex flex-col"
+                   >
+                     <div className="flex justify-between items-start mb-4 gap-2">
+                       <div className="flex items-center gap-3 min-w-0 flex-1">
+                         <div className="w-12 h-12 shrink-0 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
+                           <FolderOpen className="w-6 h-6" />
+                         </div>
+                         <div className="min-w-0">
+                           <h3 className="font-bold text-white text-lg leading-tight truncate">{p.name}</h3>
+                           <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1 truncate">
+                             {p.location || 'Sem localização'}
+                           </p>
+                         </div>
+                       </div>
+                       {user?.role !== 'BROKER' && (
+                         <div className="relative z-[100] flex shrink-0 items-center gap-1">
+                           <button
+                             type="button"
+                             title="Editar"
+                             onClick={(e) => {
+                               e.preventDefault();
+                               e.stopPropagation();
+                               openEditProject(p);
+                             }}
+                             className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white cursor-pointer"
+                           >
+                             <Pencil className="w-4 h-4 shrink-0" />
+                           </button>
+                           <button
+                             type="button"
+                             title="Excluir"
+                             onClick={(e) => {
+                               e.preventDefault();
+                               e.stopPropagation();
+                               handleDeleteProject(p.id);
+                             }}
+                             className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)] cursor-pointer"
+                           >
+                             <Trash2 className="w-4 h-4 shrink-0" />
+                           </button>
+                         </div>
+                       )}
+                     </div>
+
+                     <div className="mt-auto">
+                       <div className="flex items-center justify-between mb-2">
+                         <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                           Progresso de Vendas
+                         </span>
+                         <span className="text-xs font-mono text-white">
+                           {sold} / {total}
+                         </span>
+                       </div>
+                       <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
+                         <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
+                       </div>
+                       <div className="flex items-center justify-between gap-2">
+                         {hasGis ? (
+                           <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
+                             Sincronizado
+                           </span>
+                         ) : (
+                           <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
+                             Falta KML
+                           </span>
+                         )}
+                         <button
+                           type="button"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             handleOpenProject(p);
+                           }}
+                           className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
+                         >
+                           <MapIcon className="w-4 h-4" /> Abrir Mapa
+                         </button>
+                       </div>
+                     </div>
+                   </div>
+                 );
+               })}
              </div>
           ) : (
              <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)] text-sm">
@@ -1699,115 +1820,8 @@ export default function MapPage() {
         </div>
       </div>
 
-      {projectModalPortal}
+      {projectFormPortal}
     </div>
     </>
-  );
-}
-
-/** Card de projeto — botões de ação com z-index alto para não serem bloqueados por overlays. */
-function ProjectCard({
-  project,
-  user,
-  onOpen,
-  onEditProject,
-  onDelete,
-}: {
-  project: Record<string, unknown> & { id: string; name?: string; location?: string; blocks?: unknown[] };
-  user: { role?: string } | null;
-  onOpen: () => void;
-  onEditProject: (project: Record<string, unknown>) => void;
-  onDelete: () => void;
-}) {
-  const blocks = (project.blocks as { status?: string; geometry?: unknown }[]) || [];
-  const total = blocks.length;
-  const sold = blocks.filter((l) => l.status === 'Vendido').length;
-  const hasGis = blocks.some((l) => l.geometry != null);
-  const pct = total > 0 ? (sold / total) * 100 : 0;
-
-  return (
-    <div className="relative z-0 bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors flex flex-col">
-      <div className="flex justify-between items-start mb-4 gap-2">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-12 h-12 shrink-0 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
-            <FolderOpen className="w-6 h-6" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-bold text-white text-lg leading-tight truncate">{String(project.name || '')}</h3>
-            <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1 truncate">
-              {String(project.location || 'Sem localização')}
-            </p>
-          </div>
-        </div>
-        {user?.role !== 'BROKER' && (
-          <div className="relative z-[100] flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              title="Editar"
-              aria-label="Editar projeto"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('[PROJETOS] CLIQUE REAL EDITAR', project);
-                onEditProject(project);
-              }}
-              className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white cursor-pointer"
-            >
-              <Pencil className="w-4 h-4 shrink-0" />
-            </button>
-            <button
-              type="button"
-              title="Excluir"
-              aria-label="Excluir projeto"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)] cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4 shrink-0" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-auto">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
-            Progresso de Vendas
-          </span>
-          <span className="text-xs font-mono text-white">
-            {sold} / {total}
-          </span>
-        </div>
-        <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
-          <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-          {hasGis ? (
-            <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
-              Sincronizado
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
-              Falta KML
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen();
-            }}
-            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
-          >
-            <MapIcon className="w-4 h-4" /> Abrir Mapa
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
