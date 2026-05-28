@@ -122,6 +122,7 @@ export async function POST(
 
     const contract = await generateAndStoreSaasContract(supabaseAdmin, companyId, {
       forceRegenerate,
+      regeneratedByUserId: body.userId,
     });
 
     const { listCompanyContracts } = await import('@/lib/saasContractService');

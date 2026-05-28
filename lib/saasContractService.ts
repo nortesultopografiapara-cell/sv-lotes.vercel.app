@@ -47,6 +47,10 @@ export type CompanyContractRow = {
   version: number;
   generated_at: string;
   status: string;
+  superseded_by?: string | null;
+  regenerated_from?: string | null;
+  regenerated_at?: string | null;
+  regenerated_by?: string | null;
 };
 
 const SAAS_CONTRACT_BUCKET = 'company-assets';
@@ -55,10 +59,15 @@ function sanitizeContractFileName(contractNumber: string): string {
   return contractNumber.replace(/[^\w-]+/g, '_');
 }
 
-/** contracts/saas/{company_id}/{contract_number}.pdf */
-function buildSaasContractStoragePath(companyId: string, contractNumber: string): string {
+/** contracts/saas/{company_id}/{contract_number}[_vN].pdf */
+function buildSaasContractStoragePath(
+  companyId: string,
+  contractNumber: string,
+  version?: number,
+): string {
   const safeName = sanitizeContractFileName(contractNumber);
-  return `contracts/saas/${companyId}/${safeName}.pdf`;
+  const suffix = version && version > 1 ? `_v${version}` : '';
+  return `contracts/saas/${companyId}/${safeName}${suffix}.pdf`;
 }
 
 async function uploadContractPdf(
@@ -66,8 +75,9 @@ async function uploadContractPdf(
   companyId: string,
   contractNumber: string,
   pdfBytes: Uint8Array,
+  version?: number,
 ): Promise<string> {
-  const storagePath = buildSaasContractStoragePath(companyId, contractNumber);
+  const storagePath = buildSaasContractStoragePath(companyId, contractNumber, version);
   const fileBody = Buffer.from(pdfBytes);
 
   console.log('SAAS_CONTRACT_STORAGE_UPLOAD', {
@@ -205,8 +215,9 @@ export async function listCompanyContracts(
 }
 
 export type GenerateSaasContractOptions = {
-  /** Regenerar: novo número, novo PDF, contratos antigos superseded */
+  /** Regenerar com dados atuais; mantém histórico */
   forceRegenerate?: boolean;
+  regeneratedByUserId?: string | null;
 };
 
 export async function generateAndStoreSaasContract(
@@ -242,15 +253,38 @@ export async function generateAndStoreSaasContract(
   const forceRegenerate =
     options?.forceRegenerate === true || Boolean(subscription.contract_pdf_url);
 
-  const contractNumber = forceRegenerate
-    ? generateSaasContractNumber()
-    : subscription.contract_number || generateSaasContractNumber();
+  if (forceRegenerate) {
+    console.log('CONTRACT_REGENERATE_CLICK', { companyId });
+  }
+
+  const { data: activeContract } = await supabaseAdmin
+    .from('company_contracts')
+    .select('id, version, contract_number')
+    .eq('company_id', companyId)
+    .eq('status', 'active')
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const previousActiveId = activeContract?.id || null;
+  if (forceRegenerate && previousActiveId) {
+    console.log('CONTRACT_REGENERATE_OLD_VERSION', {
+      id: previousActiveId,
+      version: activeContract?.version,
+    });
+  }
+
+  const contractNumber =
+    subscription.contract_number ||
+    activeContract?.contract_number ||
+    generateSaasContractNumber();
 
   if (forceRegenerate) {
     await supersedeCompanyContracts(supabaseAdmin, companyId);
   }
 
   const version = await getNextContractVersion(supabaseAdmin, companyId);
+  const generatedAt = new Date().toISOString();
 
   let pdfBytes: Uint8Array;
   try {
@@ -281,14 +315,13 @@ export async function generateAndStoreSaasContract(
       company.id,
       contractNumber,
       pdfBytes,
+      version,
     );
   } catch (err) {
     if (err instanceof SaasContractStepError) throw err;
     const message = err instanceof Error ? err.message : 'Erro no upload';
     throw new SaasContractStepError('storage_upload', message);
   }
-
-  const generatedAt = new Date().toISOString();
 
   if (!forceRegenerate) {
     const { error: supersedeErr } = await supabaseAdmin
@@ -312,6 +345,9 @@ export async function generateAndStoreSaasContract(
       version,
       status: 'active',
       generated_at: generatedAt,
+      regenerated_from: forceRegenerate ? previousActiveId : null,
+      regenerated_at: forceRegenerate ? generatedAt : null,
+      regenerated_by: forceRegenerate ? options?.regeneratedByUserId || null : null,
     })
     .select('*')
     .single();
@@ -321,6 +357,21 @@ export async function generateAndStoreSaasContract(
       'db_save',
       `Falha ao salvar company_contracts: ${insertErr.message}. Execute a migration 20260601120000_company_contracts.sql`,
     );
+  }
+
+  if (forceRegenerate && previousActiveId && contractRecord?.id) {
+    await supabaseAdmin
+      .from('company_contracts')
+      .update({ superseded_by: contractRecord.id })
+      .eq('id', previousActiveId);
+    console.log('CONTRACT_REGENERATE_NEW_VERSION', {
+      id: contractRecord.id,
+      version,
+    });
+    console.log('CONTRACT_REGENERATE_SUCCESS', {
+      oldId: previousActiveId,
+      newId: contractRecord.id,
+    });
   }
 
   const { data: updatedSub, error: subUpdateErr } = await supabaseAdmin

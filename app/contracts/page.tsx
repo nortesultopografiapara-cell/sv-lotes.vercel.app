@@ -22,8 +22,10 @@ import {
   MoreVertical,
   RefreshCw,
   Trash2,
+  History,
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
+import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import jsPDF from "jspdf";
 import {
   displayContractNumber,
@@ -158,9 +160,10 @@ async function loadContractsList(
   return merged;
 }
 
-/** Status exibidos na lista — sem ocultar por customer/project nulo ou status ativo. */
-function isContractVisibleInList(_c: any): boolean {
-  return true;
+/** Oculta versões substituídas na lista principal (histórico fica na aba do contrato). */
+function isContractVisibleInList(c: any): boolean {
+  const st = normalizeContractStatus(c?.status);
+  return st !== "superseded";
 }
 
 function looksLikeUuidFragment(value: string): boolean {
@@ -423,6 +426,9 @@ export default function ContractsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("Visualização");
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [contractVersions, setContractVersions] = useState<any[]>([]);
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [regeneratingContract, setRegeneratingContract] = useState(false);
 
   const [stats, setStats] = useState({
     ativos: 0,
@@ -486,45 +492,14 @@ export default function ContractsPage() {
           statuses: rows.map((c) => c.status),
         });
 
-        processContracts(rows);
+        setContracts(rows);
+        processContractsFromRows(rows);
       } catch (e) {
         console.error("[CONTRATOS] erro", e);
         setContracts([]);
       } finally {
         setLoading(false);
       }
-    }
-
-    function processContracts(data: any[]) {
-      setContracts(data);
-
-      let ativos = 0,
-        assinados = 0,
-        pendentes = 0,
-        cancelados = 0,
-        valorTotal = 0;
-
-      data.forEach((c) => {
-        const st = normalizeContractStatus(c.status);
-        const val =
-          Number(c.sale_value_display) ||
-          resolveContractSaleValue(c, c.sales, c.blocks);
-
-        valorTotal += val;
-
-        if (st === "assinado" || st === "signed") {
-          assinados++;
-          ativos++;
-        } else if (st === "cancelado" || st === "cancelled") {
-          cancelados++;
-        } else {
-          // ativo, active, pendente, pending, null, rascunho, etc.
-          pendentes++;
-          ativos++;
-        }
-      });
-
-      setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
     }
 
     if (user && !authLoading) {
@@ -549,6 +524,34 @@ export default function ContractsPage() {
     fetchReceipts();
     return () => { active = false; };
   }, [selectedContract]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadVersions() {
+      if (!selectedContract?.id) {
+        if (active) setContractVersions([]);
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/contracts/${selectedContract.id}/versions`,
+          { credentials: "include" },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (active && res.ok) {
+          setContractVersions(json.versions || []);
+        } else if (active) {
+          setContractVersions([]);
+        }
+      } catch {
+        if (active) setContractVersions([]);
+      }
+    }
+    void loadVersions();
+    return () => {
+      active = false;
+    };
+  }, [selectedContract?.id]);
 
   const filteredContracts = contracts.filter(isContractVisibleInList).filter((c) => {
     const p =
@@ -596,6 +599,8 @@ export default function ContractsPage() {
       return "text-[var(--color-danger)] bg-[var(--color-danger)]/10 border-[var(--color-danger)]/20";
     if (st === "ativo" || st === "active")
       return "text-[var(--color-primary)] bg-[var(--color-primary)]/10 border-[var(--color-primary)]/20";
+    if (st === "superseded")
+      return "text-gray-400 bg-gray-500/10 border-gray-500/20";
     return "text-[var(--color-warning)] bg-[var(--color-warning)]/10 border-[var(--color-warning)]/20";
   };
 
@@ -604,9 +609,49 @@ export default function ContractsPage() {
     if (st === "assinado" || st === "signed") return "Assinado";
     if (st === "cancelado" || st === "cancelled") return "Cancelado";
     if (st === "ativo" || st === "active") return "Ativo";
+    if (st === "superseded") return "Substituído";
     if (st === "pending" || st === "pendente") return "Pendente";
     if (st === "rascunho" || st === "draft") return "Rascunho";
     return st ? st.charAt(0).toUpperCase() + st.slice(1) : "Ativo";
+  };
+
+  const isSupersededContract = (c: any) =>
+    normalizeContractStatus(c?.status) === "superseded";
+
+  const reloadContractsList = async () => {
+    if (!user) return [];
+    const resolvedTenantId = await resolveContractsTenantWithDb(user);
+    const rawRows = await loadContractsList(user, resolvedTenantId);
+    const visible = rawRows.filter(isContractVisibleInList);
+    return enrichContractsWithRelations(visible);
+  };
+
+  const handleDownloadVersion = async (ver: {
+    generated_html?: string | null;
+    contract_number?: string;
+    version?: number;
+  }) => {
+    if (!ver?.generated_html) {
+      alert("Esta versão não possui conteúdo para download.");
+      return;
+    }
+    try {
+      const { default: html2pdf } = await import("html2pdf.js");
+      const element = document.createElement("div");
+      element.innerHTML = ver.generated_html;
+      await html2pdf()
+        .from(element)
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`,
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        })
+        .save();
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao baixar PDF desta versão.");
+    }
   };
 
   const handleBaixarPDF = async () => {
@@ -1286,149 +1331,79 @@ export default function ContractsPage() {
     }
   };
 
-  const handleRegenerarContrato = async () => {
+  const openRegenerateModal = () => {
+    if (!selectedContract || isSupersededContract(selectedContract)) return;
+    console.log("CONTRACT_REGENERATE_CLICK", { contractId: selectedContract.id });
+    setShowRegenerateModal(true);
+  };
+
+  const confirmRegenerateContract = async () => {
     if (!selectedContract) return;
-    if (
-      !confirm(
-        "Isso irá recriar o visual do contrato com os dados atuais. Deseja continuar?",
-      )
-    )
-      return;
-
-    let receipts_sum = 0;
-    if (selectedContract.sale_id) {
-      const { data: recs } = await supabase
-        .from("finance_receipts")
-        .select("amount")
-        .eq("sale_id", selectedContract.sale_id)
-        .neq("status", "cancelled");
-      if (recs && recs.length)
-        receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
-    }
-
-    let fetchedProject = selectedContract.projects;
-    const pid = selectedContract.project_id || selectedContract.sales?.project_id || selectedContract.blocks?.project_id;
-    
-    if (pid) {
-       const { data: pj } = await supabase.from('projects').select('*').eq('id', pid).maybeSingle();
-       if (pj) fetchedProject = pj;
-    }
-
-    const projData = fetchedProject || selectedContract.sales?.projects || selectedContract.blocks?.projects || {};
-
-    const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.includes('não informad');
-    
-    const contractPayloadPartial = {
-      project_name_snapshot: isValid(selectedContract.project_name_snapshot) ? selectedContract.project_name_snapshot : (projData.name || null),
-      project_city_snapshot: isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : (projData.city || null),
-      project_uf_snapshot: isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : (projData.uf || null),
-      forum_city_snapshot: isValid(selectedContract.forum_city_snapshot) ? selectedContract.forum_city_snapshot : (projData.forum_city || projData.city || null),
-    };
-    
-    let contractNumber = selectedContract.contract_number;
-    if (!isValidStoredContractNumber(contractNumber)) {
-      try {
-        const tid =
-          selectedContract.tenant_id ||
-          selectedContract.company_id ||
-          user?.tenant_id;
-        const cid = selectedContract.company_id || tid;
-        const res = await fetch("/api/contracts/next-number", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenantId: tid, companyId: cid }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || "Falha ao numerar contrato");
-        contractNumber = json.contract_number;
-        await supabase
-          .from("contracts")
-          .update({ contract_number: contractNumber })
-          .eq("id", selectedContract.id);
-      } catch (numErr) {
-        console.error("[Regenerar contrato] Falha ao corrigir número", numErr);
+    setRegeneratingContract(true);
+    try {
+      const res = await fetch(
+        `/api/contracts/${selectedContract.id}/regenerate`,
+        { method: "POST", credentials: "include" },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Erro ao regenerar contrato");
       }
-    }
 
-    const updatedContract = {
-      ...selectedContract,
-      ...contractPayloadPartial,
-      contract_number: contractNumber,
-    };
+      setContractVersions(json.versions || []);
 
-    const blockId =
-      selectedContract.block_id ||
-      updatedContract.blocks?.id ||
-      updatedContract.sales?.blocks?.id ||
-      updatedContract.sales?.block_id;
+      const rows = await reloadContractsList();
+      setContracts(rows);
+      processContractsFromRows(rows);
 
-    let blockForTemplate =
-      updatedContract.blocks || updatedContract.sales?.blocks || {};
-
-    if (blockId) {
-      const { data: freshBlock, error: blockFetchError } = await supabase
-        .from("blocks")
-        .select(BLOCKS_CONTRACT_SELECT)
-        .eq("id", blockId)
-        .maybeSingle();
-
-      if (blockFetchError) {
-        console.error("[Regenerar contrato] Erro ao buscar block:", blockFetchError);
-      } else if (freshBlock) {
-        console.log("[Regenerar contrato] Block medidas:", {
-          frente: freshBlock.frente,
-          area: freshBlock.area,
-          Fundo: freshBlock["Fundo"] ?? freshBlock.fundo,
-          "Lado Dir.": freshBlock["Lado Dir."] ?? freshBlock.lado_direito,
-          "Lado Esq.": freshBlock["Lado Esq."] ?? freshBlock.lado_esquerdo,
-        });
-        blockForTemplate = freshBlock;
+      const newId = json.contract?.id;
+      const enriched = rows.find((c: any) => c.id === newId);
+      if (enriched) {
+        setSelectedContract(enriched);
+      } else if (json.contract) {
+        const [one] = await enrichContractsWithRelations([json.contract]);
+        setSelectedContract(one || json.contract);
       }
-    }
 
-    const newHtml = generateContractHTML({
-      tenant: tenantData || {},
-      customer:
-        updatedContract.customers ||
-        (updatedContract.customer_id
-          ? { id: updatedContract.customer_id }
-          : {}),
-      project: projData,
-      block: enrichBlockForContract(blockForTemplate),
-      sale: { ...(updatedContract.sales || {}), receipts_sum },
-      contractSnapshot: updatedContract,
-      contractDate: updatedContract.created_at,
+      alert("Contrato regenerado com sucesso! A versão anterior foi mantida no histórico.");
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error ? e.message : "Erro ao regenerar contrato";
+      console.error("[Regenerar contrato]", msg);
+      alert(msg);
+    } finally {
+      setRegeneratingContract(false);
+      setShowRegenerateModal(false);
+    }
+  };
+
+  const processContractsFromRows = (data: any[]) => {
+    let ativos = 0,
+      assinados = 0,
+      pendentes = 0,
+      cancelados = 0,
+      valorTotal = 0;
+
+    data.forEach((c) => {
+      const st = normalizeContractStatus(c.status);
+      const val =
+        Number(c.sale_value_display) ||
+        resolveContractSaleValue(c, c.sales, c.blocks);
+
+      valorTotal += val;
+
+      if (st === "assinado" || st === "signed") {
+        assinados++;
+        ativos++;
+      } else if (st === "cancelado" || st === "cancelled") {
+        cancelados++;
+      } else if (st !== "superseded") {
+        pendentes++;
+        ativos++;
+      }
     });
 
-    const { data, error } = await supabase
-      .from("contracts")
-      .update({
-        generated_html: newHtml,
-        ...contractPayloadPartial,
-        ...(isValidStoredContractNumber(contractNumber)
-          ? { contract_number: contractNumber }
-          : {}),
-      })
-      .eq("id", selectedContract.id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Erro recriando", error);
-      alert("Erro ao regenerar contrato");
-    } else {
-      const patched = data || {
-        ...updatedContract,
-        generated_html: newHtml,
-      };
-      setSelectedContract(patched);
-      setContracts(
-        contracts.map((c) =>
-          c.id === selectedContract.id ? { ...c, ...patched } : c,
-        ),
-      );
-      alert("Contrato regenerado com sucesso!");
-    }
+    setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
   };
 
   if (authLoading) return null;
@@ -1640,14 +1615,24 @@ export default function ContractsPage() {
                       <FileText className="w-5 h-5 text-[var(--color-primary)]" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold flex items-center gap-3">
+                      <h2 className="text-xl font-bold flex items-center gap-3 flex-wrap">
                         {displayContractNumber(selectedContract.contract_number)}
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-white/10 bg-white/5 text-gray-300">
+                          Versão {selectedContract.version ?? 1}
+                        </span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(selectedContract.status)}`}
                         >
                           {getStatusLabel(selectedContract.status)}
                         </span>
                       </h2>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Gerado em:{" "}
+                        {new Date(
+                          selectedContract.regenerated_at ||
+                            selectedContract.created_at,
+                        ).toLocaleString("pt-BR")}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1690,6 +1675,27 @@ export default function ContractsPage() {
                         </button>
                       </div>
                     </div>
+                    {!isSupersededContract(selectedContract) && (
+                      <button
+                        type="button"
+                        onClick={openRegenerateModal}
+                        disabled={regeneratingContract}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
+                        />
+                        Regenerar contrato
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleBaixarPDF()}
+                      className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] text-gray-200 rounded-lg hover:bg-[#1a1f2b] transition-colors text-sm font-medium"
+                    >
+                      <Download className="w-4 h-4" />
+                      Baixar PDF
+                    </button>
                     <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[#1f6b9c] transition-colors text-sm font-medium shadow-sm">
                       <Send className="w-4 h-4" />
                       Assinar via WhatsApp
@@ -1796,7 +1802,8 @@ export default function ContractsPage() {
                             </p>
                           </div>
                           <button
-                            onClick={handleRegenerarContrato}
+                            type="button"
+                            onClick={openRegenerateModal}
                             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors"
                           >
                             Regenerar Contrato
@@ -1823,6 +1830,45 @@ export default function ContractsPage() {
 
                     {/* Timeline Sidebar inside preview */}
                     <div className="w-[300px] border-l border-[#1f232b] bg-[#11151c] p-6 overflow-y-auto hidden xl:block">
+                      <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                        <History className="w-4 h-4 text-gray-400" />
+                        Histórico de versões
+                      </h3>
+                      <div className="space-y-2 mb-6">
+                        {(contractVersions.length > 0
+                          ? contractVersions
+                          : [selectedContract]
+                        ).map((ver: any) => (
+                          <div
+                            key={ver.id}
+                            className="flex items-center justify-between gap-2 p-3 rounded-lg bg-[#0b0e14] border border-[#2d3340] text-xs"
+                          >
+                            <div>
+                              <p className="font-semibold text-gray-200">
+                                Versão {ver.version ?? 1}
+                                <span
+                                  className={`ml-2 px-1.5 py-0.5 rounded text-[10px] border ${getStatusColor(ver.status)}`}
+                                >
+                                  {getStatusLabel(ver.status)}
+                                </span>
+                              </p>
+                              <p className="text-gray-500 mt-0.5">
+                                {new Date(
+                                  ver.regenerated_at || ver.created_at,
+                                ).toLocaleString("pt-BR")}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleDownloadVersion(ver)}
+                              className="text-[var(--color-primary)] hover:underline shrink-0 flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" />
+                              Baixar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                       <h3 className="text-sm font-bold text-white mb-6">
                         Linha do Tempo
                       </h3>
@@ -2150,7 +2196,46 @@ export default function ContractsPage() {
 
                 {activeTab === "Histórico" && (
                   <div className="flex-1 p-6 overflow-y-auto">
-                    <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                    <div className="max-w-[800px] mx-auto space-y-6">
+                      <div className="bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                          <History className="w-5 h-5 text-gray-400" />
+                          Histórico de versões
+                        </h3>
+                        <div className="space-y-2">
+                          {(contractVersions.length > 0
+                            ? contractVersions
+                            : [selectedContract]
+                          ).map((ver: any) => (
+                            <div
+                              key={ver.id}
+                              className="flex items-center justify-between gap-3 p-4 rounded-lg bg-[#11151c] border border-[#2d3340]"
+                            >
+                              <div>
+                                <p className="text-sm font-semibold text-gray-200">
+                                  Versão {ver.version ?? 1} —{" "}
+                                  {getStatusLabel(ver.status)}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Gerado em:{" "}
+                                  {new Date(
+                                    ver.regenerated_at || ver.created_at,
+                                  ).toLocaleString("pt-BR")}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleDownloadVersion(ver)}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--color-primary)]/30 text-[var(--color-primary)] text-sm hover:bg-[var(--color-primary)]/10"
+                              >
+                                <Download className="w-4 h-4" />
+                                Baixar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    <div className="bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Linha do Tempo
                       </h3>
@@ -2232,6 +2317,7 @@ export default function ContractsPage() {
                         )}
                       </div>
                     </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2297,6 +2383,13 @@ export default function ContractsPage() {
           )}
         </div>
       </div>
+
+      <RegenerateContractModal
+        open={showRegenerateModal}
+        busy={regeneratingContract}
+        onCancel={() => setShowRegenerateModal(false)}
+        onConfirm={() => void confirmRegenerateContract()}
+      />
 
       {/* Modal de Senha para Exclusão */}
       {showPasswordModal && (

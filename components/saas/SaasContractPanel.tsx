@@ -19,6 +19,7 @@ import {
 } from '@/lib/saasSubscription';
 import type { CompanyContractRow } from '@/lib/saasContractService';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
+import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
@@ -44,6 +45,7 @@ export function SaasContractPanel({
   const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [localContracts, setLocalContracts] = useState<CompanyContractRow[]>([]);
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
 
   const companyId = (company as { id?: string } | null)?.id;
   const sub =
@@ -116,7 +118,7 @@ export function SaasContractPanel({
     );
   }
 
-  const handleGenerateClick = async () => {
+  const runGenerateContract = async (regenerate: boolean) => {
     if (!companyId) {
       const msg = 'Não foi possível gerar o contrato';
       setError(msg);
@@ -133,9 +135,13 @@ export function SaasContractPanel({
 
     setError(null);
 
+    if (regenerate) {
+      console.log('CONTRACT_REGENERATE_CLICK', { companyId });
+    }
+
     if (onGenerateContract) {
       try {
-        await onGenerateContract({ regenerate: contractReady });
+        await onGenerateContract({ regenerate });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
         setError(msg);
@@ -146,6 +152,27 @@ export function SaasContractPanel({
     const msg = 'Geração de contrato não configurada. Recarregue a página.';
     setError(msg);
     alert(msg);
+  };
+
+  const handleGenerateClick = () => {
+    if (contractReady) {
+      setShowRegenerateModal(true);
+      return;
+    }
+    void runGenerateContract(false);
+  };
+
+  const confirmRegenerate = () => {
+    setShowRegenerateModal(false);
+    void runGenerateContract(true);
+  };
+
+  const saasVersionStatusLabel = (status?: string | null) => {
+    const st = String(status ?? '').toLowerCase();
+    if (st === 'active' || st === 'ativo') return 'Ativo';
+    if (st === 'superseded') return 'Substituído';
+    if (st === 'pending' || st === 'pendente') return 'Pendente';
+    return status || '—';
   };
 
   const contractStatusLabel =
@@ -196,11 +223,11 @@ export function SaasContractPanel({
           <button
             type="button"
             disabled={busy || !companyId || !(validation?.ok ?? true)}
-            onClick={() => void handleGenerateClick()}
+            onClick={handleGenerateClick}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-            {contractReady ? 'Regenerar' : 'Gerar contrato agora'}
+            {contractReady ? 'Regenerar contrato' : 'Gerar contrato agora'}
           </button>
         </div>
       </div>
@@ -266,6 +293,10 @@ export function SaasContractPanel({
           )}
         />
         <Info label="Status do contrato" value={contractStatusLabel} />
+        <Info
+          label="Versão ativa"
+          value={activeContract ? `Versão ${activeContract.version ?? 1}` : '—'}
+        />
         <Info label="Nº do contrato" value={sub?.contract_number || activeContract?.contract_number || '—'} />
         <Info label="Data de geração" value={generatedAtLabel} />
         <Info label="Pagamento" value={company.payment_status} />
@@ -288,13 +319,15 @@ export function SaasContractPanel({
               >
                 <div>
                   <span className="text-white font-medium">{c.contract_number}</span>
-                  <span className="text-gray-500 ml-2">v{c.version}</span>
+                  <span className="text-gray-500 ml-2">Versão {c.version ?? 1}</span>
                   <span
                     className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
-                      c.status === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-500/20 text-gray-400'
+                      c.status === 'active'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-gray-500/20 text-gray-400'
                     }`}
                   >
-                    {c.status}
+                    {saasVersionStatusLabel(c.status)}
                   </span>
                   <p className="text-gray-500 mt-0.5">
                     {formatDateBr(c.generated_at?.split('T')[0])}
@@ -304,15 +337,24 @@ export function SaasContractPanel({
                   href={c.contract_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-300 hover:underline shrink-0"
+                  download
+                  className="text-blue-300 hover:underline shrink-0 flex items-center gap-1"
                 >
-                  Abrir PDF
+                  <Download className="w-3 h-3" />
+                  Baixar
                 </a>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <RegenerateContractModal
+        open={showRegenerateModal}
+        busy={busy}
+        onCancel={() => setShowRegenerateModal(false)}
+        onConfirm={confirmRegenerate}
+      />
     </div>
   );
 }
