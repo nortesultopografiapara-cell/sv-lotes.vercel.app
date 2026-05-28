@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
+  ContractNotFoundError,
   loadSaleContractContext,
   regenerateSaleContract,
   resolveRegenerationSession,
@@ -38,10 +39,35 @@ export async function POST(
     const callerTenant = profile?.tenant_id || profile?.company_id || null;
 
     const { id: contractId } = await params;
+    console.log('REGENERATE_ID_RECEIVED', contractId);
     console.log('REGENERATE_CONTRACT_START', contractId);
     console.log('CONTRACT_REGENERATE_CONFIRM', { contractId, userId: user.id });
 
-    const contract = await loadSaleContractContext(supabase, contractId);
+    let contract: Record<string, unknown>;
+    try {
+      contract = await loadSaleContractContext(supabase, contractId);
+    } catch (lookupErr) {
+      if (lookupErr instanceof ContractNotFoundError) {
+        console.error('CONTRACT_REGENERATE_NOT_FOUND', {
+          receivedId: lookupErr.receivedId,
+          lookup: lookupErr.lookup,
+          supabaseCode: lookupErr.supabaseCode,
+          supabaseMessage: lookupErr.supabaseMessage,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Contrato não encontrado',
+            receivedId: lookupErr.receivedId || contractId,
+            lookup: lookupErr.lookup,
+            supabaseCode: lookupErr.supabaseCode,
+            supabaseMessage: lookupErr.supabaseMessage,
+          },
+          { status: 404 },
+        );
+      }
+      throw lookupErr;
+    }
 
     let body: { impersonatingTenantId?: string; activeTenantId?: string } = {};
     try {
@@ -61,8 +87,10 @@ export async function POST(
       impersonatingTenantId: body.impersonatingTenantId || null,
     });
 
+    const resolvedContractId = String(contract.id || contractId);
+
     const result = await regenerateSaleContract(supabase, {
-      contractId,
+      contractId: resolvedContractId,
       regeneratedByUserId: user.id,
       session,
     });
@@ -75,12 +103,25 @@ export async function POST(
       newVersion: result.newContract.version,
     });
   } catch (e: unknown) {
+    const { id: receivedId } = await params;
+    if (e instanceof ContractNotFoundError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Contrato não encontrado',
+          receivedId: e.receivedId || receivedId,
+        },
+        { status: 404 },
+      );
+    }
+
     const error = e instanceof Error ? e : new Error('Erro ao regenerar contrato');
     console.error('CONTRACT_REGENERATE_ERROR', error.message, error.stack);
     return NextResponse.json(
       {
         success: false,
         error: error.message,
+        receivedId,
         stack: error.stack,
       },
       { status: 500 },

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
+  ContractNotFoundError,
   loadSaleContractContext,
   listSaleContractVersions,
 } from '@/lib/contractRegeneration';
@@ -56,7 +57,22 @@ export async function GET(
     const versions = await listSaleContractVersions(supabase, saleId);
     return NextResponse.json({ versions, active: versions.find((v) => v.status === 'ativo') });
   } catch (e: unknown) {
+    const { id: receivedId } = await params;
+    if (e instanceof ContractNotFoundError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Contrato não encontrado',
+          receivedId: e.receivedId || receivedId,
+        },
+        { status: 404 },
+      );
+    }
     const message = e instanceof Error ? e.message : 'Erro ao listar versões';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('CONTRACT_VERSIONS_ERROR', message, e);
+    return NextResponse.json(
+      { success: false, error: message, receivedId },
+      { status: 500 },
+    );
   }
 }

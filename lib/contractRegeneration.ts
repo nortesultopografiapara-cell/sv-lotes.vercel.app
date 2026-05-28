@@ -22,6 +22,37 @@ const PLATFORM_ADMIN_ROLES = new Set([
   'MASTER-ADMIN',
 ]);
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export class ContractNotFoundError extends Error {
+  readonly receivedId: string;
+  readonly lookup: 'id' | 'contract_number';
+  readonly supabaseCode?: string;
+  readonly supabaseMessage?: string;
+
+  constructor(
+    receivedId: string,
+    options?: {
+      lookup?: 'id' | 'contract_number';
+      supabaseCode?: string;
+      supabaseMessage?: string;
+      detail?: string;
+    },
+  ) {
+    super(options?.detail || 'Contrato não encontrado.');
+    this.name = 'ContractNotFoundError';
+    this.receivedId = receivedId;
+    this.lookup = options?.lookup || 'id';
+    this.supabaseCode = options?.supabaseCode;
+    this.supabaseMessage = options?.supabaseMessage;
+  }
+}
+
+function isUuid(value: string): boolean {
+  return UUID_RE.test(String(value || '').trim());
+}
+
 export type RegenerationSession = {
   contractTenantId: string;
   activeTenantId: string;
@@ -191,24 +222,90 @@ export function validateSaleContractRegeneration(ctx: {
   return { ok: true, missing: [] };
 }
 
-/** Apenas IDs do contrato — sem HTML/PDF embutidos para regeneração. */
+/**
+ * Busca contrato por UUID (id) ou, em fallback, por contract_number.
+ * Usa select('*') para não falhar quando colunas opcionais não existem no schema.
+ */
 export async function loadSaleContractContext(
   supabase: SupabaseClient,
   contractId: string,
-) {
-  const { data: contract, error } = await supabase
-    .from('contracts')
-    .select(
-      'id, tenant_id, company_id, sale_id, customer_id, project_id, block_id, broker_id, contract_number, version, status, sale_value, down_payment, installments',
-    )
-    .eq('id', contractId)
-    .single();
+): Promise<Record<string, unknown>> {
+  const receivedId = String(contractId || '').trim();
+  console.log('REGENERATE_ID_RECEIVED', receivedId);
 
-  if (error || !contract) {
-    throw new Error('Contrato não encontrado.');
+  if (!receivedId) {
+    throw new ContractNotFoundError(receivedId, { detail: 'ID do contrato vazio.' });
   }
 
-  return contract as Record<string, unknown>;
+  const runLookup = async (
+    field: 'id' | 'contract_number',
+    value: string,
+  ) => {
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*')
+      .eq(field, value)
+      .maybeSingle();
+
+    console.log('CONTRACT_QUERY_RESULT', {
+      field,
+      value,
+      found: !!data,
+      error: error?.message,
+      code: error?.code,
+      id: (data as Record<string, unknown> | null)?.id,
+      contract_number: (data as Record<string, unknown> | null)?.contract_number,
+      tenant_id: (data as Record<string, unknown> | null)?.tenant_id,
+      company_id: (data as Record<string, unknown> | null)?.company_id,
+    });
+    console.log('CONTRACT_EXISTS', !!data);
+
+    if (error) {
+      console.error('CONTRACT_QUERY_ERROR', {
+        field,
+        value,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      throw new ContractNotFoundError(receivedId, {
+        lookup: field,
+        supabaseCode: error.code,
+        supabaseMessage: error.message,
+        detail: `Erro ao buscar contrato: ${error.message}`,
+      });
+    }
+
+    return data as Record<string, unknown> | null;
+  };
+
+  let contract: Record<string, unknown> | null = null;
+
+  if (isUuid(receivedId)) {
+    contract = await runLookup('id', receivedId);
+  }
+
+  if (!contract) {
+    console.warn('REGENERATE_CONTRACT_FALLBACK_NUMBER', { receivedId });
+    contract = await runLookup('contract_number', receivedId);
+  }
+
+  if (!contract && !isUuid(receivedId)) {
+    contract = await runLookup('id', receivedId);
+  }
+
+  if (!contract) {
+    throw new ContractNotFoundError(receivedId, {
+      detail: 'Contrato não encontrado.',
+    });
+  }
+
+  if (!contract.tenant_id && contract.company_id) {
+    contract.tenant_id = contract.company_id;
+  }
+
+  return contract;
 }
 
 /**
@@ -361,19 +458,31 @@ export async function listSaleContractVersions(
   supabase: SupabaseClient,
   saleId: string,
 ): Promise<SaleContractVersionRow[]> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('contracts')
-    .select(
-      'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
-    )
+    .select('*')
     .eq('sale_id', saleId)
     .order('version', { ascending: false });
+
+  if (error?.message?.match(/version|Could not find/i)) {
+    ({ data, error } = await supabase
+      .from('contracts')
+      .select('*')
+      .eq('sale_id', saleId)
+      .order('created_at', { ascending: false }));
+  }
 
   if (error) {
     console.warn('[CONTRACT_VERSIONS]', error.message);
     return [];
   }
-  return (data || []) as SaleContractVersionRow[];
+
+  const rows = (data || []) as SaleContractVersionRow[];
+  return rows.sort(
+    (a, b) =>
+      Number(b.version) - Number(a.version) ||
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
 }
 
 /** Busca entidades atuais no banco — isoladas por tenant_id; sem HTML/PDF antigo. */
