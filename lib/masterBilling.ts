@@ -3,6 +3,7 @@
  * Preços efetivos: lib/companyPricing.ts
  */
 
+import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
 import {
   formatSaasPaymentStatus,
   type CompanySubscription,
@@ -40,8 +41,11 @@ export function augmentCompanyBilling<T extends CompanyLike>(
         : 'BÁSICO';
 
   const active = isActiveSubscriptionCompany(company);
+  const companyDates = resolveCompanySubscriptionDates(company);
   const rawDue =
     subscription?.next_due_date ||
+    (company as { next_payment_date?: string | null }).next_payment_date ||
+    companyDates.next_payment_date ||
     (company as { vencimento_plano?: string | null }).vencimento_plano ||
     (company as { due_date?: string | null }).due_date;
 
@@ -74,6 +78,10 @@ export function augmentCompanyBilling<T extends CompanyLike>(
     payment_status,
     payment_status_raw: paymentRaw || null,
     subscription_status,
+    subscription_start_date:
+      subscription?.start_date || companyDates.subscription_start_date,
+    subscription_due_day: companyDates.subscription_due_day,
+    next_payment_date: rawDue || null,
     next_billing: rawDue || null,
     next_charge: subscription?.next_due_date || rawDue || null,
     contract_number: subscription?.contract_number || null,

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FileText, Download, RefreshCw, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
+import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
 import {
   formatDateBr,
   hasSaasContractReady,
@@ -47,6 +48,17 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
       return;
     }
     if (busy) return;
+
+    const validation = validateSaasContractGeneration(
+      company as CompanyPricingSource,
+      sub,
+    );
+    if (!validation.ok) {
+      const msg = validation.error || 'Não foi possível gerar o contrato';
+      setError(msg);
+      alert(msg);
+      return;
+    }
 
     console.log('GENERATE_SAAS_CONTRACT_CLICK', company, sub);
     setBusy(true);
@@ -158,7 +170,14 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
         <Info label="Plano" value={company.ui_plan} />
         <Info label="Valor contratado" value={formatSaasCurrency(pricing.appliedPrice)} />
         <Info label="Data de início" value={formatDateBr(sub?.start_date)} />
-        <Info label="Próximo vencimento" value={formatDateBr(sub?.next_due_date)} />
+        <Info
+          label="Dia de vencimento"
+          value={sub ? `Dia ${company.subscription_due_day ?? '—'}` : '—'}
+        />
+        <Info
+          label="Próximo vencimento"
+          value={formatDateBr(sub?.next_due_date || company.next_payment_date)}
+        />
         <Info label="Status do contrato" value={contractStatusLabel} />
         <Info label="Nº do contrato" value={sub?.contract_number || '—'} />
         <Info label="Pagamento" value={company.payment_status} />

@@ -6,6 +6,10 @@ import {
   resolveCompanyPricing,
 } from '@/lib/companyPricing';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import {
+  buildCompanySubscriptionDatePayload,
+  resolveCompanySubscriptionDates,
+} from '@/lib/companySubscriptionDates';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function parseCustomPrice(raw: unknown): number | null {
@@ -87,6 +91,18 @@ export async function PATCH(request: Request) {
     if (body.cep) updatePayload.cep = body.cep;
     if (body.slug) updatePayload.slug = body.slug;
 
+    if (body.is_test_company !== true && body.subscription_start_date) {
+      const subDates = buildCompanySubscriptionDatePayload({
+        subscription_start_date: body.subscription_start_date,
+        subscription_due_day: body.subscription_due_day,
+        next_payment_date: body.next_payment_date,
+      });
+      updatePayload.subscription_start_date = subDates.subscription_start_date;
+      updatePayload.subscription_due_day = subDates.subscription_due_day;
+      updatePayload.next_payment_date = subDates.next_payment_date;
+      updatePayload.vencimento_plano = subDates.next_payment_date;
+    }
+
     let { data, error } = await supabaseAdmin
       .from('companies')
       .update(updatePayload)
@@ -156,6 +172,7 @@ export async function PATCH(request: Request) {
         .maybeSingle();
 
       if (existingSub?.id) {
+        const dates = resolveCompanySubscriptionDates(companyRow);
         await supabaseAdmin
           .from('company_subscriptions')
           .update({
@@ -165,6 +182,8 @@ export async function PATCH(request: Request) {
             custom_monthly_price: isCustomPriceEnabled(companyRow)
               ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
               : null,
+            start_date: dates.subscription_start_date,
+            next_due_date: dates.next_payment_date,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingSub.id);

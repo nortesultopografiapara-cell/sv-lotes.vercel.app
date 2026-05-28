@@ -12,7 +12,10 @@ import {
 } from '@/lib/companyPricing';
 import { buildSaasContractPdf } from '@/lib/saasContractPdf';
 import {
-  addDaysFromToday,
+  resolveCompanySubscriptionDates,
+  type CompanySubscriptionDatesSource,
+} from '@/lib/companySubscriptionDates';
+import {
   contractDownloadPath,
   generateSaasContractNumber,
   type CompanySubscription,
@@ -33,13 +36,14 @@ export function isRealSaasCompany(company: {
 }
 
 function buildSubscriptionRow(
-  company: CompanyPricingSource & { id: string },
+  company: CompanyPricingSource & CompanySubscriptionDatesSource & { id: string },
   existing?: CompanySubscription | null,
 ) {
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
-  const startDate = existing?.start_date || new Date().toISOString().split('T')[0];
-  const nextDueDate = existing?.next_due_date || addDaysFromToday(30);
+  const dates = resolveCompanySubscriptionDates(company);
+  const startDate = existing?.start_date || dates.subscription_start_date;
+  const nextDueDate = existing?.next_due_date || dates.next_payment_date;
 
   return {
     company_id: company.id,
@@ -87,7 +91,9 @@ export async function ensureSaasSubscription(
 
   if (existing) {
     const patch: Record<string, unknown> = { ...row };
-    if (!existing.next_due_date) patch.next_due_date = addDaysFromToday(30);
+    const dates = resolveCompanySubscriptionDates(company);
+    if (!existing.next_due_date) patch.next_due_date = dates.next_payment_date;
+    if (!existing.start_date) patch.start_date = dates.subscription_start_date;
     if (!existing.monthly_price || Number(existing.monthly_price) === 0) {
       patch.monthly_price = row.monthly_price;
     }
@@ -117,10 +123,19 @@ export async function ensureSaasSubscription(
     created = true;
   }
 
+  const syncedDates = resolveCompanySubscriptionDates({
+    ...company,
+    subscription_start_date: subscription.start_date,
+    next_payment_date: subscription.next_due_date,
+  });
+
   await supabaseAdmin
     .from('companies')
     .update({
       vencimento_plano: subscription.next_due_date,
+      subscription_start_date: subscription.start_date,
+      subscription_due_day: syncedDates.subscription_due_day,
+      next_payment_date: subscription.next_due_date,
       updated_at: new Date().toISOString(),
     })
     .eq('id', company.id);

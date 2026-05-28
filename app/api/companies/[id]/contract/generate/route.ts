@@ -5,6 +5,8 @@ import {
   generateAndStoreSaasContract,
   getSubscriptionByCompanyId,
 } from '@/lib/saasSubscriptionService';
+import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
+import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
 export async function POST(
@@ -62,6 +64,11 @@ export async function POST(
       return NextResponse.json({ error: 'subscription_id inválido.' }, { status: 400 });
     }
 
+    const validation = validateSaasContractGeneration(company, subscription);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -71,6 +78,11 @@ export async function POST(
       if (Number.isFinite(price)) patch.monthly_price = price;
     }
     if (body.next_due_date) patch.next_due_date = String(body.next_due_date);
+    if (body.start_date) patch.start_date = String(body.start_date);
+
+    const companyDates = resolveCompanySubscriptionDates(company);
+    if (!patch.start_date) patch.start_date = companyDates.subscription_start_date;
+    if (!patch.next_due_date) patch.next_due_date = companyDates.next_payment_date;
 
     if (Object.keys(patch).length > 1) {
       const { data: patched, error: patchErr } = await supabaseAdmin

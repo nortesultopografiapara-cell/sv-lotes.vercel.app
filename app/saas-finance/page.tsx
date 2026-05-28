@@ -14,6 +14,8 @@ import {
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import { useAuth } from '@/hooks/useAuth';
+import { resolvePaymentDisplayDate } from '@/lib/companySubscriptionDates';
+import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
 import {
   formatDateBr,
   hasSaasContractReady,
@@ -236,6 +238,15 @@ export default function SaaSFinancePage() {
       console.log('GENERATE_SAAS_CONTRACT_CLICK', company, subscription);
       setLoadingContractId(loadingKey);
       setContractToast(null);
+
+      const validation = validateSaasContractGeneration(company, subscription);
+      if (!validation.ok) {
+        const msg = validation.error || 'Não foi possível gerar o contrato';
+        setContractToast(msg);
+        alert(msg);
+        setLoadingContractId(null);
+        return;
+      }
 
       const pricing = resolveCompanyPricing(company);
 
@@ -534,7 +545,11 @@ export default function SaaSFinancePage() {
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
                   const companyId = (c as { id?: string }).id;
                   const sub = c.saas_subscription as CompanySubscription | null;
-                  const dueDate = sub?.next_due_date || c.next_billing;
+                  const dueDate =
+                    resolvePaymentDisplayDate(c, sub?.next_due_date) ||
+                    c.next_payment_date ||
+                    c.next_billing;
+                  const canGenerateContract = validateSaasContractGeneration(c, sub).ok;
                   const contractReady = hasSaasContractReady(sub);
                   const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
                     ? sub.contract_pdf_url
@@ -640,7 +655,12 @@ export default function SaaSFinancePage() {
                           ) : isRealSaasCompany(c) ? (
                             <button
                               type="button"
-                              disabled={isGeneratingContract || !companyId}
+                              disabled={isGeneratingContract || !companyId || !canGenerateContract}
+                              title={
+                                !canGenerateContract
+                                  ? 'Preencha plano, valor e datas de assinatura na empresa'
+                                  : undefined
+                              }
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();

@@ -10,6 +10,7 @@ import {
   resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
+import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 
 export const SAAS_PROVIDER = {
@@ -27,6 +28,7 @@ export type SaasContractPdfInput = {
     address?: string | null;
     city?: string | null;
     state?: string | null;
+    subscription_due_day?: number | string | null;
   };
   subscription: Pick<
     CompanySubscription,
@@ -108,9 +110,13 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
     rows.push(['Desconto / condição especial', formatSaasCurrency(standardPrice - applied)]);
   }
 
+  const dates = resolveCompanySubscriptionDates(company);
+  const dueDay = dates.subscription_due_day;
+
   rows.push(
-    ['Início da assinatura', formatDateBr(subscription.start_date)],
-    ['Próximo vencimento', formatDateBr(subscription.next_due_date)],
+    ['Data de início', formatDateBr(subscription.start_date || dates.subscription_start_date)],
+    ['Dia de vencimento mensal', `Dia ${dueDay} de cada mês`],
+    ['Próximo vencimento', formatDateBr(subscription.next_due_date || dates.next_payment_date)],
     ['Ciclo de cobrança', 'Mensal'],
   );
 

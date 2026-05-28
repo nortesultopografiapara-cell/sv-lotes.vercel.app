@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, MonitorPlay, AlertTriangle, ShieldCheck, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -12,12 +12,28 @@ import {
   parseCustomMonthlyPrice,
   resolveCompanyPricing,
 } from '@/lib/companyPricing';
+import {
+  computeNextPaymentDate,
+  defaultNewCompanySubscriptionDates,
+  resolveCompanySubscriptionDates,
+} from '@/lib/companySubscriptionDates';
+import { formatDateBr } from '@/lib/saasSubscription';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
   initialData?: any;
+}
+
+function initSubscriptionFormFields(initialData?: { subscription_start_date?: string; subscription_due_day?: number; created_at?: string }) {
+  const dates = initialData
+    ? resolveCompanySubscriptionDates(initialData)
+    : defaultNewCompanySubscriptionDates();
+  return {
+    subscription_start_date: dates.subscription_start_date,
+    subscription_due_day: String(dates.subscription_due_day),
+  };
 }
 
 export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
@@ -46,7 +62,41 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       initialData?.custom_monthly_price != null ? String(initialData.custom_monthly_price) : '',
     custom_price_badge: initialData?.custom_price_badge || 'desconto_especial',
     password: '', // Only used for creation now, not update.
+    ...initSubscriptionFormFields(initialData),
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const dates = initialData
+      ? resolveCompanySubscriptionDates(initialData)
+      : defaultNewCompanySubscriptionDates();
+    setFormData((prev) => ({
+      ...prev,
+      subscription_start_date: dates.subscription_start_date,
+      subscription_due_day: String(dates.subscription_due_day),
+    }));
+  }, [isOpen, initialData?.id]);
+
+  const computedNextPayment = useMemo(() => {
+    if (!formData.subscription_start_date) return '';
+    const dueDay = parseInt(formData.subscription_due_day, 10) || 1;
+    return computeNextPaymentDate(formData.subscription_start_date, dueDay);
+  }, [formData.subscription_start_date, formData.subscription_due_day]);
+
+  const subscriptionDatesPayload = useMemo(() => {
+    if (formData.is_test_company) return null;
+    const dueDay = parseInt(formData.subscription_due_day, 10) || 1;
+    return {
+      subscription_start_date: formData.subscription_start_date,
+      subscription_due_day: dueDay,
+      next_payment_date: computedNextPayment,
+    };
+  }, [
+    formData.is_test_company,
+    formData.subscription_start_date,
+    formData.subscription_due_day,
+    computedNextPayment,
+  ]);
 
   const pricingPreview = useMemo(
     () =>
@@ -244,6 +294,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            plan_type: formData.plan,
            is_test_company: formData.is_test_company,
            ...customPricePayload,
+           ...(subscriptionDatesPayload || {}),
            slug: !initialData.slug ? slug : undefined,
          };
 
@@ -305,6 +356,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  custom_price_badge: formData.custom_price_enabled
                    ? formData.custom_price_badge
                    : null,
+                 ...(subscriptionDatesPayload || {}),
                  password: formData.password,
                  adminName: `Admin - ${formData.name}`,
                  adminEmail: formData.email,
@@ -557,6 +609,55 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   <option value="Inadimplente">⚫ Inadimplente</option>
                 </select>
               </div>
+
+              {!formData.is_test_company && (
+                <div className="md:col-span-2 p-4 bg-[#1a1f29] border border-blue-500/20 rounded-xl space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Assinatura SaaS</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Define início, dia de vencimento e próxima cobrança exibidos no Financeiro SaaS e no contrato.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Data de início da assinatura
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.subscription_start_date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, subscription_start_date: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Dia de vencimento mensal
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={formData.subscription_due_day}
+                        onChange={(e) =>
+                          setFormData({ ...formData, subscription_due_day: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Próximo vencimento (calculado)
+                      </label>
+                      <div className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-emerald-300 font-semibold">
+                        {computedNextPayment ? formatDateBr(computedNextPayment) : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="md:col-span-2 p-4 mt-2 bg-[#1a1f29] border border-purple-500/20 rounded-xl space-y-4">
                 <div>

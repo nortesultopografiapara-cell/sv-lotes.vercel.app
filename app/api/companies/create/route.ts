@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import {
+  buildCompanySubscriptionDatePayload,
+  defaultNewCompanySubscriptionDates,
+} from '@/lib/companySubscriptionDates';
 import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function generateSlug(name: string) {
@@ -99,6 +103,19 @@ export async function POST(req: Request) {
     if (body.cep) companyPayload.cep = body.cep;
     
     companyPayload.is_test_company = body.is_test_company === true;
+
+    if (!companyPayload.is_test_company) {
+      const subDates = body.subscription_start_date
+        ? buildCompanySubscriptionDatePayload({
+            subscription_start_date: body.subscription_start_date,
+            subscription_due_day: body.subscription_due_day,
+            next_payment_date: body.next_payment_date,
+          })
+        : defaultNewCompanySubscriptionDates();
+      companyPayload.subscription_start_date = subDates.subscription_start_date;
+      companyPayload.subscription_due_day = subDates.subscription_due_day;
+      companyPayload.next_payment_date = subDates.next_payment_date;
+    }
 
     if (body.custom_price_enabled === true) {
       const custom = Number(body.custom_monthly_price);
