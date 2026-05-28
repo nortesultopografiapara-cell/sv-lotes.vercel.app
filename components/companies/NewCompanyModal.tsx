@@ -8,6 +8,7 @@ import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
 import {
   formatSaasCurrency,
+  isCustomPriceEnabled,
   parseCustomMonthlyPrice,
   resolveCompanyPricing,
 } from '@/lib/companyPricing';
@@ -40,7 +41,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     status_operacional: initialData?.status_operacional || 'Ativa',
     plan: initialData?.plan || 'basic',
     is_test_company: initialData?.is_test_company || false,
-    custom_price_enabled: initialData?.custom_price_enabled === true,
+    custom_price_enabled: initialData ? isCustomPriceEnabled(initialData) : false,
     custom_monthly_price:
       initialData?.custom_monthly_price != null ? String(initialData.custom_monthly_price) : '',
     custom_price_badge: initialData?.custom_price_badge || 'desconto_especial',

@@ -48,9 +48,20 @@ export function parseCustomMonthlyPrice(raw: unknown): number | null {
   return Math.round(n * 100) / 100;
 }
 
+/** Aceita boolean Postgres, string ou número vindos do Supabase/API */
+export function isCustomPriceEnabled(company: CompanyPricingSource): boolean {
+  const v = company.custom_price_enabled as unknown;
+  if (v === true || v === 1) return true;
+  if (typeof v === 'string') {
+    const s = v.toLowerCase().trim();
+    return s === 'true' || s === 't' || s === '1' || s === 'yes' || s === 'sim';
+  }
+  return false;
+}
+
 /** Valor efetivo de cobrança/MRR */
 export function getCompanyMonthlyPrice(company: CompanyPricingSource): number {
-  if (company.custom_price_enabled === true) {
+  if (isCustomPriceEnabled(company)) {
     const custom = parseCustomMonthlyPrice(company.custom_monthly_price);
     if (custom != null) return custom;
   }
@@ -81,7 +92,7 @@ export function resolveCompanyPricing(company: CompanyPricingSource) {
 
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const appliedPrice = getCompanyMonthlyPrice(company);
-  const customEnabled = company.custom_price_enabled === true;
+  const customEnabled = isCustomPriceEnabled(company);
   const badge = normalizeCustomPriceBadge(company.custom_price_badge);
 
   return {
@@ -91,7 +102,7 @@ export function resolveCompanyPricing(company: CompanyPricingSource) {
     standardPrice,
     appliedPrice,
     customEnabled,
-    hasCustomPrice: customEnabled && appliedPrice !== standardPrice,
+    hasCustomPrice: customEnabled && Math.abs(appliedPrice - standardPrice) > 0.009,
     badge,
     badgeLabel: customPriceBadgeLabel(badge),
     savings: Math.max(0, standardPrice - appliedPrice),
@@ -99,9 +110,9 @@ export function resolveCompanyPricing(company: CompanyPricingSource) {
 }
 
 export function isBillableCompany(company: CompanyPricingSource): boolean {
-  if (company.active !== true) return false;
+  if (company.active === false) return false;
   const status = (company.status_operacional || '').toLowerCase();
-  return !['suspensa', 'bloqueada', 'inadimplente', 'inativo', 'inativa'].includes(status);
+  return !['suspensa', 'bloqueada', 'inativo', 'inativa'].includes(status);
 }
 
 export function calculateMrrFromCompanies(companies: CompanyPricingSource[]): number {

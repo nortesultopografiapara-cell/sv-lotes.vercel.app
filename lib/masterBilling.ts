@@ -10,6 +10,7 @@ import {
   getStandardPlanMonthlyPrice,
   PLAN_MRR,
   planMrrForCompany,
+  resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 
@@ -24,19 +25,13 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
 }
 
 export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
-  const saas = getCompanySaasPlan(company);
+  const resolved = resolveCompanyPricing(company);
   const uiPlan =
-    saas.planKey === 'profissional'
+    resolved.planKey === 'profissional'
       ? 'PROFISSIONAL'
-      : saas.planKey === 'business'
+      : resolved.planKey === 'business'
         ? 'BUSINESS'
         : 'BÁSICO';
-
-  const pricing = {
-    standardPrice: getStandardPlanMonthlyPrice(company),
-    appliedPrice: getCompanyMonthlyPrice(company),
-    customEnabled: company.custom_price_enabled === true,
-  };
 
   const active = isActiveSubscriptionCompany(company);
   const rawDue =
@@ -46,10 +41,11 @@ export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
   return {
     ...company,
     ui_plan: uiPlan,
-    price: pricing.appliedPrice,
-    standard_price: pricing.standardPrice,
-    custom_price_enabled: pricing.customEnabled,
-    has_custom_price: pricing.customEnabled && pricing.appliedPrice !== pricing.standardPrice,
+    pricing: resolved,
+    price: resolved.appliedPrice,
+    standard_price: resolved.standardPrice,
+    custom_price_enabled: resolved.customEnabled,
+    has_custom_price: resolved.hasCustomPrice,
     payment_status: active ? ('Aguardando cobrança' as const) : ('Inativo' as const),
     subscription_status:
       (company.status_operacional || '').toLowerCase() === 'inadimplente'
