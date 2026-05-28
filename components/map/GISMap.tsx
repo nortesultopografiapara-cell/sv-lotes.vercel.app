@@ -24,6 +24,8 @@ import {
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
+import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
+import { resolveOrCreateCustomer } from "@/lib/customerIdentity";
 import {
   chanfreTooltipText,
   formatChanfreMeters,
@@ -422,556 +424,6 @@ function MeasureInteraction({
   );
 }
 
-function CustomerFormModal({
-  lot,
-  actionName,
-  price,
-  onClose,
-  onConfirm,
-}: {
-  lot: any;
-  actionName: string;
-  price: number;
-  onClose: () => void;
-  onConfirm: (data: any) => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: "",
-    cpf_cnpj: "",
-    rg: "",
-    profession: "",
-    civil_state: "",
-    phone: "",
-    email: "",
-    address: "",
-    neighborhood: "",
-    city: "",
-    state_uf: "",
-    zip_code: "",
-    payment_type: "À vista",
-    discount_value: "",
-    down_payment: "",
-    down_payment_due_date: "",
-    installments_count: "1",
-    first_installment_due_date: "",
-  });
-  const [submitting, setSubmitting] = useState(false);
-
-  // Derived financial values
-  const discountValue = Number(formData.discount_value) || 0;
-  const finalValue = Math.max(0, price - discountValue);
-  const downPayment = Number(formData.down_payment) || 0;
-  const installmentsCount = Math.max(
-    1,
-    Number(formData.installments_count) || 1,
-  );
-  const installmentValue = Math.max(
-    0,
-    (price - downPayment) / installmentsCount,
-  );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    alert("BOTÃO CONFIRMAR VENDA CLICADO");
-
-    // Validations
-    if (actionName === "Vendido") {
-      if (formData.payment_type === "À vista") {
-        if (discountValue > price) {
-          alert("O desconto não pode ser maior que o valor do lote.");
-          return;
-        }
-        if (finalValue <= 0) {
-          alert("O valor final não pode ser zero ou negativo.");
-          return;
-        }
-        if (!formData.down_payment_due_date) {
-          alert("Por favor, preencha a data de vencimento.");
-          return;
-        }
-      } else {
-        if (downPayment > price) {
-          alert("A entrada não pode ser maior que o valor do lote.");
-          return;
-        }
-        if (installmentsCount <= 0) {
-          alert("A quantidade de parcelas deve ser maior que 0.");
-          return;
-        }
-        if (downPayment > 0 && !formData.down_payment_due_date) {
-          alert("Por favor, preencha a data de vencimento da entrada.");
-          return;
-        }
-        if (!formData.first_installment_due_date) {
-          alert(
-            "Por favor, preencha a data de vencimento da primeira parcela.",
-          );
-          return;
-        }
-      }
-    }
-
-    setSubmitting(true);
-    try {
-      await onConfirm({
-        ...formData,
-        // send derived financial info as well
-        lot_value: price,
-        final_value: finalValue,
-        installment_value: installmentValue,
-      });
-    } catch (e) {
-      console.error("error submitting", e);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto sm:p-4 font-sans">
-      <div className="bg-white w-full max-w-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl">
-        <div className="sticky top-0 z-20 p-4 border-b border-gray-100 flex items-center justify-between bg-white flex-none shadow-sm">
-          <div>
-            <h3 className="font-bold text-lg text-gray-900">
-              Novo Cliente {actionName === "Vendido" && "- Venda de Lote"}
-            </h3>
-            <p className="text-xs text-gray-500">
-              Lot {lot.number} - Quadra {lot.block} ({actionName})
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5">
-          <form
-            id="customer-form"
-            onSubmit={handleSubmit}
-            className="space-y-6"
-          >
-            {/* DADOS DO CLIENTE */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
-                DADOS DO CLIENTE
-              </h4>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Nome Completo *
-                </label>
-                <input
-                  required
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder="Ex: João da Silva"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    CPF / CNPJ
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.cpf_cnpj}
-                    onChange={(e) =>
-                      setFormData({ ...formData, cpf_cnpj: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="000.000.000-00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    RG
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.rg}
-                    onChange={(e) =>
-                      setFormData({ ...formData, rg: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="00.000.000-0"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Telefone
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="(11) 99999-9999"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    E-mail
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="joao@exemplo.com"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Profissão
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.profession}
-                    onChange={(e) =>
-                      setFormData({ ...formData, profession: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="Ex: Empresário"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Estado Civil
-                  </label>
-                  <select
-                    value={formData.civil_state}
-                    onChange={(e) =>
-                      setFormData({ ...formData, civil_state: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Solteiro(a)">Solteiro(a)</option>
-                    <option value="Casado(a)">Casado(a)</option>
-                    <option value="Divorciado(a)">Divorciado(a)</option>
-                    <option value="Viúvo(a)">Viúvo(a)</option>
-                    <option value="União Estável">União Estável</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Endereço (Rua e Número)
-                </label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) =>
-                    setFormData({ ...formData, address: e.target.value })
-                  }
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder="Rua Exemplo, 123"
-                />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Bairro
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.neighborhood}
-                    onChange={(e) =>
-                      setFormData({ ...formData, neighborhood: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="Bairro"
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Cidade
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) =>
-                      setFormData({ ...formData, city: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="Ex: São Paulo"
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    UF
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.state_uf}
-                    onChange={(e) =>
-                      setFormData({ ...formData, state_uf: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="SP"
-                    maxLength={2}
-                  />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    CEP
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.zip_code}
-                    onChange={(e) =>
-                      setFormData({ ...formData, zip_code: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="00000-000"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* DADOS DA VENDA */}
-            {actionName === "Vendido" && (
-              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
-                  DADOS DA VENDA
-                </h4>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Valor do Lote
-                    </label>
-                    <input
-                      readOnly
-                      type="text"
-                      value={new Intl.NumberFormat("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      }).format(price)}
-                      className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm text-gray-900 font-medium cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Forma de Pagamento
-                    </label>
-                    <select
-                      value={formData.payment_type}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payment_type: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    >
-                      <option value="À vista">À vista</option>
-                      <option value="Parcelado">Parcelado</option>
-                    </select>
-                  </div>
-                </div>
-
-                {formData.payment_type === "À vista" && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4 border-gray-200 mt-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Desconto (R$)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.discount_value}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            discount_value: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Valor Final
-                      </label>
-                      <input
-                        readOnly
-                        type="text"
-                        value={new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(finalValue)}
-                        className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm text-green-700 font-bold cursor-not-allowed"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Data de Vencimento *
-                      </label>
-                      <input
-                        type="date"
-                        required={
-                          actionName === "Vendido" &&
-                          formData.payment_type === "À vista"
-                        }
-                        value={formData.down_payment_due_date}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            down_payment_due_date: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {formData.payment_type === "Parcelado" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4 border-gray-200 mt-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Valor da Entrada (R$)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.down_payment}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            down_payment: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Venc. Entrada
-                      </label>
-                      <input
-                        type="date"
-                        required={
-                          actionName === "Vendido" &&
-                          formData.payment_type === "Parcelado" &&
-                          downPayment > 0
-                        }
-                        value={formData.down_payment_due_date}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            down_payment_due_date: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Qtd de Parcelas *
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        required={
-                          actionName === "Vendido" &&
-                          formData.payment_type === "Parcelado"
-                        }
-                        value={formData.installments_count}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            installments_count: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Vencimento 1ª Parcela *
-                      </label>
-                      <input
-                        type="date"
-                        required={
-                          actionName === "Vendido" &&
-                          formData.payment_type === "Parcelado"
-                        }
-                        value={formData.first_installment_due_date}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            first_installment_due_date: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                      />
-                    </div>
-                    <div className="col-span-1 md:col-span-2 mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-blue-900">
-                        Valor de cada parcela:
-                      </span>
-                      <span className="text-base font-bold text-blue-800">
-                        {new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(installmentValue)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </form>
-        </div>
-
-        <div className="sticky bottom-0 z-20 p-4 pb-8 sm:pb-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white flex-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full sm:w-1/2 px-4 py-3 sm:py-2 flex items-center justify-center bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold rounded-lg transition-colors text-sm"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            form="customer-form"
-            disabled={submitting}
-            className={`w-full sm:w-1/2 px-4 py-3 sm:py-2 text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${actionName === "Reservado" ? "bg-yellow-500 hover:bg-yellow-600" : "bg-green-600 hover:bg-green-700"}`}
-          >
-            {submitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : actionName === "Vendido" ? (
-              "Confirmar Venda"
-            ) : (
-              "Confirmar"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function LotPopupContent({
   lot,
@@ -1503,7 +955,20 @@ export default function GISMap({
     lot: any;
     action: string;
     price: number;
+    prefillFromReservation?: boolean;
   } | null>(null);
+
+  const openCustomerForm = (lot: any, action: string, price: number) => {
+    const isReserved =
+      String(lot.status || "").toLowerCase() === "reservado" ||
+      lot.status === "Reservado";
+    setCustomerForm({
+      lot,
+      action,
+      price,
+      prefillFromReservation: action === "Vendido" && isReserved && Boolean(lot.customerId),
+    });
+  };
 
   // Clear Confirm Modal
   const [clearConfirmModal, setClearConfirmModal] = useState<{
@@ -1600,10 +1065,15 @@ export default function GISMap({
 
               return {
                 id: b.id,
+                project_id: b.project_id,
                 block: b.block_name || b.name || "?",
                 projectName: b.projects?.name || "?",
                 customerName: b.customers?.name || null,
                 customerId: b.customer_id || null,
+                signal_amount: b.signal_amount,
+                signal_date: b.signal_date,
+                signal_payment_method: b.signal_payment_method,
+                signal_notes: b.signal_notes,
                 number: b.number || "0",
                 status: b.status || "Disponível",
                 area:
@@ -1734,7 +1204,6 @@ export default function GISMap({
     finalPrice: number,
     customerData: any,
   ) => {
-    alert("FUNÇÃO REAL DE VENDA CHAMADA");
     if (!user) return;
 
     let finalBrokerId = null;
@@ -1773,180 +1242,26 @@ export default function GISMap({
     }
 
     try {
-      // Upsert Customer (verify by cpf_cnpj)
-      const cpfCnpjValue = customerData.cpf_cnpj?.trim()
-        ? customerData.cpf_cnpj.trim()
-        : null;
-      const nameUpper = customerData.name?.trim().toUpperCase() || "";
-      const emailUpper = customerData.email?.trim().toUpperCase() || "";
-      const addressUpper = customerData.address?.trim().toUpperCase() || "";
-      const phoneClean = customerData.phone?.trim() || "";
+      const { customerId, clientId, reused } = await resolveOrCreateCustomer(supabase, {
+        form: customerData,
+        tenantId: finalTenantId,
+        projectId: finalProjectId,
+        isSuperAdmin: user.role === "SUPER_ADMIN",
+        lotTenantId: lot.tenant_id,
+      });
 
-      let customerId = null;
-      let clientId = null;
-
-      if (cpfCnpjValue) {
-        let customerCheckQuery = supabase
-          .from("customers")
-          .select("id")
-          .eq("document", cpfCnpjValue);
-
-        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-          customerCheckQuery = customerCheckQuery.eq("tenant_id", user.tenant_id);
-        }
-
-        const { data: existingCustomer } = await customerCheckQuery.maybeSingle();
-
-        if (existingCustomer) customerId = existingCustomer.id;
-
-        let clientCheckQuery = supabase
-          .from("clients")
-          .select("id")
-          .eq("cpf_cnpj", cpfCnpjValue);
-
-        if (user.role !== "SUPER_ADMIN" && user.tenant_id) {
-          clientCheckQuery = clientCheckQuery.eq("tenant_id", user.tenant_id);
-        }
-
-        const { data: existingClient } = await clientCheckQuery.maybeSingle();
-
-        if (existingClient) clientId = existingClient.id;
+      if (reused) {
+        console.log("CUSTOMER_REUSED", { customerId });
+      }
+      if (isVendidoStatus(newStatus)) {
+        console.log("SALE_CREATED_WITH_EXISTING_CUSTOMER", { customerId, reused });
       }
 
-      const customerPayload = {
-        name: nameUpper,
-        cpf_cnpj: cpfCnpjValue,
-        document: cpfCnpjValue,
-        phone: phoneClean,
-        email: emailUpper,
-        rg: customerData.rg?.trim() || null,
-        profession: customerData.profession?.trim() || null,
-        marital_status: customerData.civil_state?.trim() || null,
-        civil_state: customerData.civil_state?.trim() || null,
-        address: addressUpper,
-        neighborhood: customerData.neighborhood?.trim().toUpperCase() || null,
-        city: customerData.city?.trim().toUpperCase() || null,
-        state: customerData.state_uf?.trim().toUpperCase() || null,
-        state_uf: customerData.state_uf?.trim().toUpperCase() || null,
-        cep: customerData.zip_code?.trim() || null,
-        zip_code: customerData.zip_code?.trim() || null,
-        status: 'ativo',
-        company_id: finalTenantId,
-        project_id: finalProjectId,
-      };
-
-      if (!customerId) {
-        console.log("CUSTOMER_CREATED_OR_FOUND: Creating new");
-        const { data: newCustomer, error: custError } = await supabase
-          .from("customers")
-          .insert([
-            {
-              ...(user.tenant_id || lot.tenant_id
-                ? { tenant_id: user.tenant_id || lot.tenant_id }
-                : {}),
-              ...customerPayload,
-            },
-          ])
-          .select("id")
-          .single();
-
-        if (custError) {
-           console.error("Error creating customer:", custError);
-           // Fallback to minimal payload if schema complains
-           const minimalPayload = {
-              name: nameUpper,
-              cpf_cnpj: cpfCnpjValue,
-              document: cpfCnpjValue,
-              phone: phoneClean,
-              email: emailUpper,
-              address: addressUpper,
-              tenant_id: user.tenant_id || lot.tenant_id,
-              company_id: finalTenantId,
-              project_id: finalProjectId,
-              status: 'ativo'
-           };
-           const { data: fbCustomer, error: fbErr } = await supabase.from("customers").insert([minimalPayload]).select('id').single();
-           if(fbCustomer) customerId = fbCustomer.id;
-        }
-        else if (newCustomer) {
-            customerId = newCustomer.id;
-        }
-      } else {
-        console.log("CUSTOMER_CREATED_OR_FOUND: Found existing", customerId);
-        const { error: updErr } = await supabase
-          .from("customers")
-          .update(customerPayload)
-          .eq("id", customerId);
-          
-        if(updErr) {
-           console.error("Error updating existing customer:", updErr);
-           const minimalPayload = {
-              name: nameUpper,
-              cpf_cnpj: cpfCnpjValue,
-              document: cpfCnpjValue,
-              phone: phoneClean,
-              email: emailUpper,
-              address: addressUpper,
-              company_id: finalTenantId,
-              project_id: finalProjectId,
-              status: 'ativo'
-           };
-           await supabase.from("customers").update(minimalPayload).eq("id", customerId);
-        }
-      }
-
-      if(!customerId) {
-        alert("Erro fatal: Cliente não pôde ser criado nem localizado. A venda será abortada.");
-        return;
-      }
-
-      if (!clientId) {
-        const { data: newClient, error: clientErr } = await supabase
-          .from("clients")
-          .insert([
-            {
-              ...(user.tenant_id || lot.tenant_id
-                ? { tenant_id: user.tenant_id || lot.tenant_id }
-                : {}),
-              full_name: nameUpper,
-              cpf_cnpj: cpfCnpjValue,
-              phone: phoneClean,
-              email: emailUpper,
-              rg: customerData.rg?.trim() || null,
-              profession: customerData.profession?.trim() || null,
-              civil_state: customerData.civil_state?.trim() || null,
-              address: addressUpper,
-              neighborhood:
-                customerData.neighborhood?.trim().toUpperCase() || null,
-              city: customerData.city?.trim().toUpperCase() || null,
-              state_uf: customerData.state_uf?.trim().toUpperCase() || null,
-              zip_code: customerData.zip_code?.trim() || null,
-            },
-          ])
-          .select("id")
-          .single();
-
-        if (!clientErr && newClient) clientId = newClient.id;
-      } else {
-        await supabase
-          .from("clients")
-          .update({
-            full_name: nameUpper,
-            cpf_cnpj: cpfCnpjValue,
-            phone: phoneClean,
-            email: emailUpper,
-            rg: customerData.rg?.trim() || null,
-            profession: customerData.profession?.trim() || null,
-            civil_state: customerData.civil_state?.trim() || null,
-            address: addressUpper,
-            neighborhood:
-              customerData.neighborhood?.trim().toUpperCase() || null,
-            city: customerData.city?.trim().toUpperCase() || null,
-            state_uf: customerData.state_uf?.trim().toUpperCase() || null,
-            zip_code: customerData.zip_code?.trim() || null,
-          })
-          .eq("id", clientId);
-      }
+      const reservationSignalPaid = Number(customerData.reservation_signal_paid) || 0;
+      const signalAmount =
+        customerData.signal_amount != null && customerData.signal_amount !== ""
+          ? Number(customerData.signal_amount)
+          : null;
 
       let newSaleData: any = null;
       let newContractData: any = null;
@@ -2006,9 +1321,19 @@ export default function GISMap({
 
           const financePayloads: any[] = [];
           const pmtType = customerData.payment_type || "À vista";
-          const downPayment = customerData.down_payment || 0;
+          const grossDownPayment = Number(customerData.down_payment) || 0;
+          let downPayment = grossDownPayment;
           const instCount = Math.max(1, customerData.installments_count || 1);
           const fValue = customerData.final_value || finalPrice;
+
+          if (reservationSignalPaid > 0 && pmtType === "Parcelado") {
+            downPayment = Math.max(0, grossDownPayment - reservationSignalPaid);
+            console.log("SIGNAL_APPLIED_TO_DOWN_PAYMENT", {
+              reservationSignalPaid,
+              grossDownPayment,
+              netDownPayment: downPayment,
+            });
+          }
 
           if (pmtType === "À vista") {
             financePayloads.push({
@@ -2027,6 +1352,25 @@ export default function GISMap({
             });
           } else if (pmtType === "Parcelado") {
             let currentInst = 1;
+            if (reservationSignalPaid > 0) {
+              financePayloads.push({
+                tenant_id: finalTenantId,
+                company_id: finalTenantId,
+                sale_id: saleId,
+                customer_id: customerId,
+                broker_id: finalBrokerId,
+                project_id: lot.project_id || null,
+                block_id: lot.id,
+                installment_number: -1,
+                amount: reservationSignalPaid,
+                due_date:
+                  customerData.signal_date ||
+                  customerData.down_payment_due_date ||
+                  new Date().toISOString().split("T")[0],
+                status: "pago",
+                paid_at: new Date().toISOString(),
+              });
+            }
             if (downPayment > 0 && customerData.down_payment_due_date) {
               financePayloads.push({
                 tenant_id: finalTenantId,
@@ -2362,6 +1706,10 @@ export default function GISMap({
             broker_id: finalBrokerId,
             reservation_expires_at: expirationTime,
             reservation_date: newStatus === "Reservado" ? new Date().toISOString() : null,
+            signal_amount: signalAmount,
+            signal_date: customerData.signal_date || null,
+            signal_payment_method: customerData.signal_payment_method || null,
+            signal_notes: customerData.signal_notes || null,
           })
           .eq("id", lot.id)
           .eq("tenant_id", finalTenantId)
@@ -2379,7 +1727,11 @@ export default function GISMap({
                block_id: lot.id,
                customer_id: customerId,
                expiration_time: expirationTime,
-               status: 'active'
+               status: 'active',
+               signal_amount: signalAmount,
+               signal_date: customerData.signal_date || null,
+               signal_payment_method: customerData.signal_payment_method || null,
+               signal_notes: customerData.signal_notes || null,
             });
          }
       } catch(e) {}
@@ -2517,9 +1869,7 @@ export default function GISMap({
                   <LotPopupContent
                     lot={lot}
                     onAction={handleLotAction}
-                    onRequestCustomerForm={(l, a, p) =>
-                      setCustomerForm({ lot: l, action: a, price: p })
-                    }
+                    onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
                     onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                     actionLoading={actionLoading}
                   />
@@ -2586,7 +1936,7 @@ export default function GISMap({
                   lot={block}
                   onAction={handleLotAction}
                   onRequestCustomerForm={(l, a, p) =>
-                    setCustomerForm({ lot: l, action: a, price: p })
+                    openCustomerForm(l, a, p)
                   }
                   onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                   actionLoading={actionLoading}
@@ -2687,13 +2037,22 @@ export default function GISMap({
         </div>
       )}
 
-      {customerForm && (
-        <CustomerFormModal
+      {customerForm && user && (
+        <CustomerLotFormModal
           lot={customerForm.lot}
           actionName={customerForm.action}
           price={customerForm.price}
+          tenantId={user.tenant_id || null}
+          isSuperAdmin={user.role === "SUPER_ADMIN"}
+          prefillFromReservation={customerForm.prefillFromReservation}
           onClose={() => setCustomerForm(null)}
           onConfirm={async (data) => {
+            if (customerForm.prefillFromReservation) {
+              console.log("RESERVATION_TO_SALE_PREFILL", {
+                customerId: data.selected_customer_id,
+                lotId: customerForm.lot.id,
+              });
+            }
             await handleSaveCustomerAndLot(
               customerForm.lot,
               customerForm.action,
