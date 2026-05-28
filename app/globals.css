@@ -35,6 +35,38 @@
   }
 }
 
+/* Inputs em modais comerciais do mapa GIS (fundo claro — não herdam texto claro do tema dark) */
+@layer components {
+  .form-input-light {
+    @apply bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300;
+  }
+
+  .form-input-light:disabled {
+    @apply bg-slate-100 text-slate-700 opacity-100 cursor-not-allowed;
+  }
+
+  .form-input-light[readonly] {
+    @apply bg-slate-100 text-slate-700 cursor-not-allowed;
+  }
+
+  select.form-input-light {
+    @apply bg-white text-slate-900;
+  }
+
+  select.form-input-light option {
+    @apply bg-white text-slate-900;
+  }
+
+  textarea.form-input-light {
+    @apply bg-white text-slate-900 placeholder:text-slate-400;
+  }
+
+  input.form-input-light[type='date'] {
+    @apply text-slate-900 bg-white;
+    color-scheme: light;
+  }
+}
+
 /* Scrollbar styles to match the premium look */
 ::-webkit-scrollbar {
   width: 6px;

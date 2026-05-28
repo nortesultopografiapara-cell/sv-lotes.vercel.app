@@ -147,7 +147,7 @@ export function CustomerSearchPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Digite nome, CPF, telefone ou e-mail..."
-              className="w-full pl-9 pr-9 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="form-input-light w-full pl-9 pr-9 py-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed"
             />
             {query && (
               <button

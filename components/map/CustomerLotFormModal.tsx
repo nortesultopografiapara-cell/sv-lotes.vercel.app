@@ -28,6 +28,14 @@ export type LotFormConfirmPayload = LotFormState & {
   installment_value: number;
 };
 
+/** Campos legíveis em modais GIS (fundo claro; evita herdar text-white do tema global). */
+const GIS_INPUT =
+  'form-input-light w-full px-3 py-2 rounded-lg text-sm disabled:cursor-not-allowed';
+const GIS_INPUT_DATE =
+  'form-input-light w-full px-3 py-2 rounded-lg text-sm [color-scheme:light] disabled:cursor-not-allowed';
+const GIS_INPUT_READONLY =
+  'form-input-light w-full px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700 border-slate-300 cursor-not-allowed';
+
 function emptyLotFormState(): LotFormState {
   return {
     ...emptyCustomerFormValues(),
@@ -285,7 +293,7 @@ export function CustomerLotFormModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="gis-commercial-modal flex-1 overflow-y-auto p-5 text-slate-900">
           {prefillLoading && (
             <div className="mb-4 flex items-center gap-2 text-sm text-blue-700">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -318,7 +326,7 @@ export function CustomerLotFormModal({
                   type="text"
                   value={formData.name}
                   onChange={(e) => setField({ name: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                  className={GIS_INPUT}
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -328,7 +336,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.cpf_cnpj}
                     onChange={(e) => setField({ cpf_cnpj: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -337,7 +345,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.rg}
                     onChange={(e) => setField({ rg: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
               </div>
@@ -348,7 +356,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.rg_issuer}
                     onChange={(e) => setField({ rg_issuer: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -358,7 +366,7 @@ export function CustomerLotFormModal({
                     maxLength={2}
                     value={formData.rg_issuer_state}
                     onChange={(e) => setField({ rg_issuer_state: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
               </div>
@@ -369,7 +377,7 @@ export function CustomerLotFormModal({
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setField({ phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -378,7 +386,7 @@ export function CustomerLotFormModal({
                     type="email"
                     value={formData.email}
                     onChange={(e) => setField({ email: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
               </div>
@@ -389,7 +397,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.profession}
                     onChange={(e) => setField({ profession: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -397,7 +405,7 @@ export function CustomerLotFormModal({
                   <select
                     value={formData.civil_state}
                     onChange={(e) => setField({ civil_state: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   >
                     <option value="">Selecione...</option>
                     <option value="Solteiro(a)">Solteiro(a)</option>
@@ -414,7 +422,7 @@ export function CustomerLotFormModal({
                   type="text"
                   value={formData.address}
                   onChange={(e) => setField({ address: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                  className={GIS_INPUT}
                 />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -424,7 +432,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.neighborhood}
                     onChange={(e) => setField({ neighborhood: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -433,7 +441,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.city}
                     onChange={(e) => setField({ city: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -443,7 +451,7 @@ export function CustomerLotFormModal({
                     maxLength={2}
                     value={formData.state_uf}
                     onChange={(e) => setField({ state_uf: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
                 <div>
@@ -452,7 +460,7 @@ export function CustomerLotFormModal({
                     type="text"
                     value={formData.zip_code}
                     onChange={(e) => setField({ zip_code: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900"
+                    className={GIS_INPUT}
                   />
                 </div>
               </div>
@@ -470,7 +478,7 @@ export function CustomerLotFormModal({
                       step="0.01"
                       value={formData.signal_amount || ''}
                       onChange={(e) => setField({ signal_amount: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                      className={GIS_INPUT}
                     />
                   </div>
                   <div>
@@ -479,7 +487,7 @@ export function CustomerLotFormModal({
                       type="date"
                       value={formData.signal_date || ''}
                       onChange={(e) => setField({ signal_date: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                      className={GIS_INPUT_DATE}
                     />
                   </div>
                   <div>
@@ -488,7 +496,7 @@ export function CustomerLotFormModal({
                       type="text"
                       value={formData.signal_payment_method || ''}
                       onChange={(e) => setField({ signal_payment_method: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                      className={GIS_INPUT}
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -497,7 +505,7 @@ export function CustomerLotFormModal({
                       type="text"
                       value={formData.signal_notes || ''}
                       onChange={(e) => setField({ signal_notes: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                      className={GIS_INPUT}
                     />
                   </div>
                 </div>
@@ -520,7 +528,7 @@ export function CustomerLotFormModal({
                       readOnly
                       type="text"
                       value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price)}
-                      className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm font-medium cursor-not-allowed"
+                      className={`${GIS_INPUT_READONLY} font-medium`}
                     />
                   </div>
                   <div>
@@ -528,7 +536,7 @@ export function CustomerLotFormModal({
                     <select
                       value={paymentType}
                       onChange={(e) => setField({ payment_type: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                      className={GIS_INPUT}
                     >
                       <option value="À vista">À vista</option>
                       <option value="Parcelado">Parcelado</option>
@@ -545,7 +553,7 @@ export function CustomerLotFormModal({
                         step="0.01"
                         value={formData.discount_value}
                         onChange={(e) => setField({ discount_value: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT}
                       />
                     </div>
                     <div>
@@ -554,7 +562,7 @@ export function CustomerLotFormModal({
                         readOnly
                         type="text"
                         value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(finalValue)}
-                        className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded-lg text-sm font-bold text-green-700 cursor-not-allowed"
+                        className={`${GIS_INPUT_READONLY} font-bold text-green-700`}
                       />
                     </div>
                     <div>
@@ -564,7 +572,7 @@ export function CustomerLotFormModal({
                         required
                         value={formData.down_payment_due_date}
                         onChange={(e) => setField({ down_payment_due_date: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT_DATE}
                       />
                     </div>
                   </div>
@@ -579,7 +587,7 @@ export function CustomerLotFormModal({
                         step="0.01"
                         value={downPaymentStr}
                         onChange={(e) => setField({ down_payment: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT}
                       />
                     </div>
                     <div>
@@ -589,7 +597,7 @@ export function CustomerLotFormModal({
                         required={downPayment > 0}
                         value={formData.down_payment_due_date}
                         onChange={(e) => setField({ down_payment_due_date: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT_DATE}
                       />
                     </div>
                     <div>
@@ -600,7 +608,7 @@ export function CustomerLotFormModal({
                         required
                         value={installmentsCountStr}
                         onChange={(e) => setField({ installments_count: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT}
                       />
                     </div>
                     <div>
@@ -610,7 +618,7 @@ export function CustomerLotFormModal({
                         required
                         value={formData.first_installment_due_date}
                         onChange={(e) => setField({ first_installment_due_date: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                        className={GIS_INPUT_DATE}
                       />
                     </div>
                   </div>
@@ -621,7 +629,7 @@ export function CustomerLotFormModal({
                     <select
                       value={formData.broker_id}
                       onChange={(e) => setField({ broker_id: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                      className={GIS_INPUT}
                     >
                       <option value="">Nenhum / não informado</option>
                       {brokers.map((b) => (
@@ -637,7 +645,7 @@ export function CustomerLotFormModal({
                       rows={2}
                       value={formData.notes}
                       onChange={(e) => setField({ notes: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm resize-none"
+                      className={`${GIS_INPUT} resize-none`}
                       placeholder="Observações da venda"
                     />
                   </div>
