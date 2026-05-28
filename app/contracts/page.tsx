@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
+import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import jsPDF from "jspdf";
 import {
   displayContractNumber,
@@ -624,6 +625,19 @@ export default function ContractsPage() {
 
   const isSupersededContract = (c: any) =>
     normalizeContractStatus(c?.status) === "superseded";
+
+  const canShowRegenerateContract = isPartnerPanelAdmin(user?.role);
+
+  useEffect(() => {
+    if (selectedContract?.id) {
+      console.log(
+        "SHOW_REGENERATE_CONTRACT_BUTTON",
+        selectedContract.id,
+        user?.role,
+        canShowRegenerateContract,
+      );
+    }
+  }, [selectedContract?.id, user?.role, canShowRegenerateContract]);
 
   const reloadContractsList = async () => {
     if (!user) return [];
@@ -1339,7 +1353,11 @@ export default function ContractsPage() {
   };
 
   const openRegenerateModal = () => {
-    if (!selectedContract || isSupersededContract(selectedContract)) return;
+    if (!selectedContract) return;
+    if (!canShowRegenerateContract) {
+      alert("Apenas administradores podem regenerar contratos.");
+      return;
+    }
     console.log("CONTRACT_REGENERATE_CLICK", { contractId: selectedContract.id });
     setShowRegenerateModal(true);
   };
@@ -1686,7 +1704,7 @@ export default function ContractsPage() {
                         </button>
                       </div>
                     </div>
-                    {!isSupersededContract(selectedContract) && (
+                    {canShowRegenerateContract && (
                       <button
                         type="button"
                         onClick={openRegenerateModal}
@@ -2375,19 +2393,6 @@ export default function ContractsPage() {
 
               {/* BOTTOM ACTION BAR */}
               <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
-                {!isSupersededContract(selectedContract) && (
-                  <ActionBtn
-                    onClick={openRegenerateModal}
-                    icon={
-                      <RefreshCw
-                        className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
-                      />
-                    }
-                    label="Regenerar Contrato"
-                    color="amber"
-                    disabled={regeneratingContract}
-                  />
-                )}
                 <ActionBtn
                   onClick={handleBaixarPDF}
                   icon={<Download />}
@@ -2412,6 +2417,19 @@ export default function ContractsPage() {
                   label="Editar Modelo"
                   color="warning"
                 />
+                {canShowRegenerateContract && (
+                  <ActionBtn
+                    onClick={openRegenerateModal}
+                    icon={
+                      <RefreshCw
+                        className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
+                      />
+                    }
+                    label="Regenerar Contrato"
+                    color="amber"
+                    disabled={regeneratingContract}
+                  />
+                )}
                 <ActionBtn
                   onClick={handleCancelar}
                   icon={<X />}

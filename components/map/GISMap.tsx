@@ -38,6 +38,7 @@ import {
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { resolveOrCreateCustomer } from "@/lib/customerIdentity";
+import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
   loadSaleEditContext,
@@ -453,6 +454,7 @@ function LotPopupContent({
   onRegenerateContract,
   onViewFinance,
   canEditSale,
+  userRole,
   actionLoading,
 }: {
   lot: any;
@@ -464,10 +466,17 @@ function LotPopupContent({
   onRegenerateContract?: (lot: any) => void;
   onViewFinance?: (lot: any) => void;
   canEditSale?: boolean;
+  userRole?: string | null;
   actionLoading: string | null;
 }) {
   const color = getStatusColor(lot.status);
   const isSold = isLotSold(lot.status);
+
+  useEffect(() => {
+    if (isSold) {
+      console.log("SHOW_EDIT_SALE_BUTTON", lot.status, userRole, canEditSale);
+    }
+  }, [isSold, lot.status, userRole, canEditSale]);
 
   const area = lot.area || 0;
   const currentPrice = Number(lot.price) || 0;
@@ -638,12 +647,24 @@ function LotPopupContent({
             Venda concluída
           </span>
           <div className="grid grid-cols-2 gap-1.5">
-            {canEditSale && onEditSale && (
+            {onEditSale && (
               <button
                 type="button"
-                onClick={() => onEditSale(lot)}
+                onClick={() => {
+                  if (!canEditSale) {
+                    alert(
+                      "Apenas administradores podem editar vendas concluídas.",
+                    );
+                    return;
+                  }
+                  onEditSale(lot);
+                }}
                 disabled={actionLoading === lot.id}
-                className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50"
+                className={`col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 ${
+                  canEditSale
+                    ? "bg-orange-500 hover:bg-orange-600"
+                    : "bg-orange-400/60 cursor-not-allowed"
+                }`}
               >
                 <Pencil className="w-3.5 h-3.5" />
                 Editar Venda
@@ -1044,7 +1065,7 @@ export default function GISMap({
   );
   const [editSaleLoading, setEditSaleLoading] = useState<string | null>(null);
 
-  const userCanEditSale = canEditCompletedSale(user?.role);
+  const userCanEditSale = isPartnerPanelAdmin(user?.role);
 
   useEffect(() => {
     async function loadBrokers() {
@@ -2058,6 +2079,7 @@ export default function GISMap({
                     onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
                     onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                     canEditSale={userCanEditSale}
+                    userRole={user?.role}
                     onEditSale={(l) => void openEditSaleForm(l)}
                     onViewContract={handleViewContract}
                     onRegenerateContract={(l) =>
@@ -2133,6 +2155,7 @@ export default function GISMap({
                   }
                   onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                   canEditSale={userCanEditSale}
+                  userRole={user?.role}
                   onEditSale={(l) => void openEditSaleForm(l)}
                   onViewContract={handleViewContract}
                   onRegenerateContract={(l) =>

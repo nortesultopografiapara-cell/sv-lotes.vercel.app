@@ -10,18 +10,10 @@ import {
 } from '@/lib/customerIdentity';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 
-const EDIT_SALE_ROLES = new Set([
-  'SUPER_ADMIN',
-  'MASTER',
-  'MASTER_ADMIN',
-  'MASTER-ADMIN',
-  'ADMIN',
-  'ADMIN_EMPRESA',
-]);
+import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 
 export function canEditCompletedSale(role?: string | null): boolean {
-  const r = String(role || '').toUpperCase().trim();
-  return EDIT_SALE_ROLES.has(r);
+  return isPartnerPanelAdmin(role);
 }
 
 export type SaleEditLoadedContext = {
