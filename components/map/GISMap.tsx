@@ -444,6 +444,7 @@ function MeasureInteraction({
 }
 
 
+/** Único popup comercial do mapa GIS (Disponibilizar / Reservar / Vender / Editar Venda). */
 function LotPopupContent({
   lot,
   onAction,
@@ -469,13 +470,20 @@ function LotPopupContent({
   userRole?: string | null;
   actionLoading: string | null;
 }) {
+  console.log("GIS_POPUP_RENDER", {
+    lotId: lot?.id,
+    status: lot?.status,
+    component: "LotPopupContent",
+    file: "components/map/GISMap.tsx",
+  });
+
   const color = getStatusColor(lot.status);
   const isSold = isLotSold(lot.status);
 
+  console.log("LOT_STATUS", lot?.status, "isSold=", isSold);
+
   useEffect(() => {
-    if (isSold) {
-      console.log("SHOW_EDIT_SALE_BUTTON", lot.status, userRole, canEditSale);
-    }
+    console.log("SHOW_EDIT_SALE_BUTTON", lot.status, userRole, canEditSale, "isSold=", isSold);
   }, [isSold, lot.status, userRole, canEditSale]);
 
   const area = lot.area || 0;
@@ -647,6 +655,15 @@ function LotPopupContent({
             Venda concluída
           </span>
           <div className="grid grid-cols-2 gap-1.5">
+            {(() => {
+              console.log("SHOW_EDIT_SALE_BUTTON", {
+                lotStatus: lot.status,
+                userRole,
+                canEditSale,
+                hasHandler: Boolean(onEditSale),
+              });
+              return null;
+            })()}
             {onEditSale && (
               <button
                 type="button"
@@ -2071,7 +2088,6 @@ export default function GISMap({
                     </div>
                   </Tooltip>
                 )}
-                {labelsMinZoom == null && (
                 <Popup>
                   <LotPopupContent
                     lot={lot}
@@ -2089,7 +2105,6 @@ export default function GISMap({
                     actionLoading={editSaleLoading || actionLoading}
                   />
                 </Popup>
-                )}
               </Polygon>
             );
           })}
@@ -2145,7 +2160,6 @@ export default function GISMap({
                   </div>
                 </Tooltip>
               )}
-              {labelsMinZoom == null && (
               <Popup>
                 <LotPopupContent
                   lot={block}
@@ -2165,7 +2179,6 @@ export default function GISMap({
                   actionLoading={editSaleLoading || actionLoading}
                 />
               </Popup>
-              )}
             </Polygon>
           );
         })}
