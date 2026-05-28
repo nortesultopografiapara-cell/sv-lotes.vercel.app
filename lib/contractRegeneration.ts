@@ -9,6 +9,7 @@ import {
   isValidStoredContractNumber,
 } from '@/lib/contractNumber';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
+import { normalizeSellerFromCompany } from '@/lib/contractSeller';
 
 export const BLOCKS_CONTRACT_SELECT = `
   *,
@@ -165,6 +166,110 @@ export async function listSaleContractVersions(
   return (data || []) as SaleContractVersionRow[];
 }
 
+/** Busca entidades atuais no banco — não reutiliza HTML nem snapshots do contrato anterior. */
+export async function loadFreshRegenerationEntities(
+  supabase: SupabaseClient,
+  contract: Record<string, unknown>,
+) {
+  const companyId = (contract.company_id || contract.tenant_id) as
+    | string
+    | undefined;
+  const customerId = contract.customer_id as string | undefined;
+  const saleId = contract.sale_id as string | undefined;
+
+  let company: Record<string, unknown> = {};
+  if (companyId) {
+    const { data } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('id', companyId)
+      .maybeSingle();
+    if (data) company = data as Record<string, unknown>;
+  }
+
+  let customer: Record<string, unknown> = {};
+  if (customerId) {
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (data) customer = data as Record<string, unknown>;
+  }
+
+  let sale: Record<string, unknown> = {};
+  if (saleId) {
+    const { data } = await supabase
+      .from('sales')
+      .select('*')
+      .eq('id', saleId)
+      .maybeSingle();
+    if (data) sale = data as Record<string, unknown>;
+  }
+
+  let receipts_sum = 0;
+  if (saleId) {
+    const { data: recs } = await supabase
+      .from('finance_receipts')
+      .select('amount, due_date, status, installment_number')
+      .eq('sale_id', saleId)
+      .neq('status', 'cancelled');
+    if (recs?.length) {
+      receipts_sum = recs.reduce(
+        (a, b) => a + Number((b as { amount?: number }).amount || 0),
+        0,
+      );
+    }
+  }
+
+  const blockId =
+    (contract.block_id as string) ||
+    (sale.block_id as string) ||
+    undefined;
+
+  let block: Record<string, unknown> = {};
+  if (blockId) {
+    const { data } = await supabase
+      .from('blocks')
+      .select(BLOCKS_CONTRACT_SELECT)
+      .eq('id', blockId)
+      .maybeSingle();
+    if (data) block = data as Record<string, unknown>;
+  }
+
+  const projectId =
+    (contract.project_id as string) ||
+    (sale.project_id as string) ||
+    (block.project_id as string) ||
+    undefined;
+
+  let project: Record<string, unknown> = {};
+  if (projectId) {
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .maybeSingle();
+    if (data) project = data as Record<string, unknown>;
+  }
+
+  const seller = normalizeSellerFromCompany(company);
+  console.log('REGENERATE_CONTRACT_COMPANY_DATA', company);
+  console.log('REGENERATE_CONTRACT_SELLER_NORMALIZED', seller);
+  console.log('REGENERATE_CONTRACT_CUSTOMER_DATA', customer);
+  console.log('REGENERATE_CONTRACT_SALE_DATA', { ...sale, receipts_sum });
+
+  return {
+    company,
+    customer,
+    sale,
+    block: enrichBlockForContract(block),
+    project,
+    receipts_sum,
+    seller,
+  };
+}
+
 export async function buildFreshSaleContractHtml(
   supabase: SupabaseClient,
   contract: Record<string, unknown>,
@@ -179,60 +284,16 @@ export async function buildFreshSaleContractHtml(
   tenant: Record<string, unknown>;
   receipts_sum: number;
 }> {
-  const sale = (contract.sales as Record<string, unknown>) || {};
-  const customer =
-    (contract.customers as Record<string, unknown>) ||
-    (contract.customer_id ? { id: contract.customer_id } : {});
+  const fresh = await loadFreshRegenerationEntities(supabase, contract);
+  const { company, customer, sale, block, project, receipts_sum } = fresh;
 
-  let receipts_sum = 0;
-  if (contract.sale_id) {
-    const { data: recs } = await supabase
-      .from('finance_receipts')
-      .select('amount')
-      .eq('sale_id', contract.sale_id as string)
-      .neq('status', 'cancelled');
-    if (recs?.length) {
-      receipts_sum = recs.reduce(
-        (a, b) => a + Number((b as { amount?: number }).amount || 0),
-        0,
-      );
-    }
-  }
-
-  let fetchedProject = contract.projects as Record<string, unknown> | undefined;
-  const pid =
-    (contract.project_id as string) ||
-    (sale.project_id as string) ||
-    ((sale.blocks as Record<string, unknown>)?.project_id as string);
-
-  if (pid) {
-    const { data: pj } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', pid)
-      .maybeSingle();
-    if (pj) fetchedProject = pj as Record<string, unknown>;
-  }
-
-  const projData =
-    fetchedProject ||
-    (sale.projects as Record<string, unknown>) ||
-    ((contract.blocks as Record<string, unknown>)?.projects as Record<string, unknown>) ||
-    {};
-
+  const projData = project;
   const contractPayloadPartial = {
-    project_name_snapshot: isValidSnapshot(contract.project_name_snapshot)
-      ? contract.project_name_snapshot
-      : (projData.name as string) || null,
-    project_city_snapshot: isValidSnapshot(contract.project_city_snapshot)
-      ? contract.project_city_snapshot
-      : (projData.city as string) || null,
-    project_uf_snapshot: isValidSnapshot(contract.project_uf_snapshot)
-      ? contract.project_uf_snapshot
-      : (projData.uf as string) || null,
-    forum_city_snapshot: isValidSnapshot(contract.forum_city_snapshot)
-      ? contract.forum_city_snapshot
-      : (projData.forum_city as string) || (projData.city as string) || null,
+    project_name_snapshot: (projData.name as string) || null,
+    project_city_snapshot: (projData.city as string) || null,
+    project_uf_snapshot: (projData.uf as string) || null,
+    forum_city_snapshot:
+      (projData.forum_city as string) || (projData.city as string) || null,
   };
 
   let contractNumber = String(contract.contract_number || '');
@@ -245,47 +306,15 @@ export async function buildFreshSaleContractHtml(
     });
   }
 
-  const blockId =
-    (contract.block_id as string) ||
-    ((contract.blocks as Record<string, unknown>)?.id as string) ||
-    ((sale.blocks as Record<string, unknown>)?.id as string) ||
-    (sale.block_id as string);
-
-  let blockForTemplate =
-    (contract.blocks as Record<string, unknown>) ||
-    (sale.blocks as Record<string, unknown>) ||
-    {};
-
-  if (blockId) {
-    const { data: freshBlock } = await supabase
-      .from('blocks')
-      .select(BLOCKS_CONTRACT_SELECT)
-      .eq('id', blockId)
-      .maybeSingle();
-    if (freshBlock) blockForTemplate = freshBlock as Record<string, unknown>;
-  }
-
-  let tenant: Record<string, unknown> = {};
-  const tid = (contract.tenant_id || contract.company_id) as string;
-  if (tid) {
-    const { data: t } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('id', tid)
-      .maybeSingle();
-    if (t) tenant = t as Record<string, unknown>;
-  }
-
   const html = generateContractHTML({
-    tenant,
+    tenant: company,
     customer,
     project: projData,
-    block: enrichBlockForContract(blockForTemplate),
+    block,
     sale: { ...sale, receipts_sum },
     contractSnapshot: {
-      ...contract,
-      ...contractPayloadPartial,
       contract_number: contractNumber,
+      ...contractPayloadPartial,
     },
     contractDate: new Date().toISOString(),
   });
@@ -294,11 +323,11 @@ export async function buildFreshSaleContractHtml(
     html,
     contractNumber,
     contractPayloadPartial,
-    customer: customer as Record<string, unknown>,
-    sale: sale as Record<string, unknown>,
-    block: enrichBlockForContract(blockForTemplate),
+    customer,
+    sale,
+    block,
     project: projData,
-    tenant,
+    tenant: company,
     receipts_sum,
   };
 }
@@ -324,16 +353,16 @@ export async function regenerateSaleContract(
     saleId,
   });
 
-  const { customer, sale, block, project, tenant } = await (async () => {
-    const built = await buildFreshSaleContractHtml(supabase, contract);
-    return {
-      customer: built.customer,
-      sale: built.sale,
-      block: built.block,
-      project: built.project,
-      tenant: built.tenant,
-    };
-  })();
+  const {
+    html,
+    contractNumber,
+    contractPayloadPartial,
+    customer,
+    sale,
+    block,
+    project,
+    tenant,
+  } = await buildFreshSaleContractHtml(supabase, contract);
 
   const validation = validateSaleContractRegeneration({
     contract,
@@ -355,9 +384,6 @@ export async function regenerateSaleContract(
     id: contract.id,
     version: oldVersion,
   });
-
-  const { html, contractNumber, contractPayloadPartial } =
-    await buildFreshSaleContractHtml(supabase, contract);
 
   const { data: newRow, error: insertErr } = await supabase
     .from('contracts')
@@ -431,6 +457,7 @@ export async function regenerateSaleContract(
     id: newRow.id,
     version: newVersion,
   });
+  console.log('REGENERATE_CONTRACT_SUCCESS', newRow);
   console.log('CONTRACT_REGENERATE_SUCCESS', {
     oldId: contract.id,
     newId: newRow.id,

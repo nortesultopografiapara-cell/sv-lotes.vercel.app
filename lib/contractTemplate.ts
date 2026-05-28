@@ -4,6 +4,10 @@ import {
   formatChanfreClause,
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
+import {
+  formatSellerInstallationClause,
+  normalizeSellerFromCompany,
+} from "@/lib/contractSeller";
 
 const formatMeasure = (val: any) => {
   if (val === null || val === undefined || val === "") {
@@ -98,17 +102,35 @@ export function generateContractHTML({
   // Extenso support for currency
   const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
 
-  const empresaNome =
-    (isValid(tenant?.razao_social) ? tenant?.razao_social : null) || 
-    (isValid(tenant?.name) ? tenant?.name : null) || 
-    "";
-  const empresaCnpj = formatCNPJCPF((isValid(tenant?.cnpj) ? tenant?.cnpj : null) || (isValid(tenant?.document) ? tenant?.document : null) || "");
-  const empresaEndereco = toTitleCase((isValid(tenant?.address) ? tenant?.address : null) || "");
-  const empresaCidade = toTitleCase((isValid(tenant?.city) ? tenant?.city : null) || "");
-  const empresaTelefone = (isValid(tenant?.phone) ? tenant?.phone : null) || "";
-  const empresaEmail = (isValid(tenant?.email) ? tenant?.email : null) || "";
-  const empresaLogoSrc = tenant?.logo_url || '/logo-sv-lotes.png';
-  const empresaLogo = `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>`;
+  const seller = normalizeSellerFromCompany(tenant);
+  const empresaNome = toTitleCase(
+    seller.razaoSocial !== "Não informado" ? seller.razaoSocial : seller.name,
+  );
+  const empresaNomeFantasia =
+    seller.name !== "Não informado" && seller.name !== empresaNome
+      ? toTitleCase(seller.name)
+      : "";
+  const empresaCnpj =
+    seller.cnpj !== "Não informado"
+      ? formatCNPJCPF(seller.cnpj)
+      : "Não informado";
+  const empresaEndereco = toTitleCase(seller.address);
+  const empresaCidade = toTitleCase(seller.city);
+  const empresaUf = seller.state.toUpperCase();
+  const empresaCep = seller.zip;
+  const empresaTelefone = seller.phone;
+  const empresaEmail = seller.email;
+  const empresaRepresentante = toTitleCase(seller.representative);
+  const empresaRepresentanteCpf =
+    seller.representativeCpf !== "Não informado"
+      ? formatCNPJCPF(seller.representativeCpf)
+      : "Não informado";
+  const empresaInstalacao = formatSellerInstallationClause(seller);
+  const empresaLogoSrc = seller.logoUrl;
+  const empresaLogo = `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 12px;" alt="Logo ${empresaNome}"/>`;
+  const empresaAssinatura = seller.signatureUrl
+    ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
+    : "";
 
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");
@@ -202,16 +224,24 @@ export function generateContractHTML({
     ""
   ).toUpperCase();
 
-  const foroCidade = toTitleCase(
-    (isValid(tenant?.city) ? tenant?.city : null) ||
-    ""
-  );
-  
-  const foroUf = (
-    (isValid(tenant?.uf) ? tenant?.uf : null) || 
-    (isValid(tenant?.state) ? tenant?.state : null) || 
-    ""
-  ).toUpperCase();
+  const foroCidade =
+    empresaCidade !== "Não Informado" && empresaCidade
+      ? empresaCidade
+      : toTitleCase(
+          (isValid(project?.forum_city) ? project.forum_city : null) ||
+            (isValid(project?.city) ? project.city : null) ||
+            (isValid(empreendimentoCidade) ? empreendimentoCidade : null) ||
+            "",
+        );
+
+  const foroUf =
+    empresaUf && empresaUf !== "NÃO INFORMADO"
+      ? empresaUf
+      : (
+          (isValid(project?.uf) ? project.uf : null) ||
+          empreendimentoUf ||
+          ""
+        ).toUpperCase();
 
   let foroText = "";
   if (foroCidade && foroUf) {
@@ -221,8 +251,6 @@ export function generateContractHTML({
   } else {
       foroText = "competente";
   }
-
-  const empresaUf = foroUf;
 
   let valTotal =
     Number(sale?.total_value) ||
@@ -332,16 +360,29 @@ export function generateContractHTML({
 
   const projectDescString = projectDescParts.length > 0 ? `, ${projectDescParts.join(', ')}` : '';
 
+  const vendedorContato = [
+    empresaTelefone !== "Não informado" ? `Tel.: ${empresaTelefone}` : "",
+    empresaEmail !== "Não informado" ? `E-mail: ${empresaEmail}` : "",
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
             
-            <div style="text-align: center; margin-top: 15px; margin-bottom: 25px; page-break-inside: avoid;">
+            <div style="text-align: center; margin-top: 10px; margin-bottom: 20px; page-break-inside: avoid;">
+                 ${empresaLogo}
+                 <p style="margin: 0 0 4px 0; font-size: 11pt; font-weight: bold;">${empresaNome}${empresaNomeFantasia ? ` (${empresaNomeFantasia})` : ""}</p>
+                 <p style="margin: 0; font-size: 10pt;">CNPJ: ${empresaCnpj}${vendedorContato ? ` — ${vendedorContato}` : ""}</p>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 25px; page-break-inside: avoid;">
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
             </div>
             
             <div style="page-break-inside: avoid; margin-bottom: 25px;">
                 <p style="margin-bottom: 10px;">
-                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, Empresa Constituída e Instalada na ${empresaEndereco}, ${empresaCidade} - ${empresaUf || 'PA'}.
+                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>${empresaNomeFantasia ? `, nome fantasia <strong>${empresaNomeFantasia}</strong>` : ""}, pessoa jurídica inscrita no CNPJ sob o n° <strong>${empresaCnpj}</strong>, ${empresaInstalacao} Representante legal: <strong>${empresaRepresentante}</strong>${empresaRepresentanteCpf !== "Não informado" ? `, CPF n° <strong>${empresaRepresentanteCpf}</strong>` : ""}.
                 </p>
                 <p style="margin-bottom: 10px;">
                     <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}, Portador cédula de identidade n° ${clienteRg}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
@@ -431,15 +472,17 @@ export function generateContractHTML({
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
                 <div style="text-align: right; margin-bottom: 30px;">
-                    <p style="margin: 0;">${empresaCidade}${empresaUf ? ' - ' + empresaUf : ''}, ${dataContratoFmt}</p>
+                    <p style="margin: 0;">${empresaCidade} - ${empresaUf}, ${dataContratoFmt}</p>
                 </div>
             </div>
 
             <div style="page-break-inside: avoid; margin-top: 40px; text-align: center;">
                 <div style="margin-bottom: 65px;">
+                    ${empresaAssinatura}
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
+                    <p style="margin: 4px 0 0 0; font-size: 9pt;">${empresaRepresentante}${empresaRepresentanteCpf !== "Não informado" ? ` — CPF: ${empresaRepresentanteCpf}` : ""}</p>
                 </div>
 
                 <div style="margin-bottom: 65px;">
@@ -461,6 +504,12 @@ export function generateContractHTML({
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
+            </div>
+
+            <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #444; text-align: center;">
+                <p style="margin: 0;">${empresaNome} — CNPJ ${empresaCnpj}</p>
+                <p style="margin: 4px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
+                ${vendedorContato ? `<p style="margin: 4px 0 0 0;">${vendedorContato}</p>` : ""}
             </div>
         </div>
     `;
