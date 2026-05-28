@@ -3,7 +3,11 @@ import {
   loadSaleContractContext,
   regenerateSaleContract,
 } from '@/lib/contractRegeneration';
-import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+import {
+  createAdminSupabase,
+  getRequestAuthUser,
+  resolveCallerProfile,
+} from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
@@ -28,16 +32,33 @@ export async function POST(
       );
     }
 
+    const profile = await resolveCallerProfile(supabase, user.id);
+    const callerRole = String(profile?.role || '').toUpperCase();
+    const callerTenant = profile?.tenant_id || profile?.company_id || null;
+
     const { id: contractId } = await params;
+    console.log('CONTRACT_REGENERATE_CONFIRM', { contractId, userId: user.id });
+
     const contract = await loadSaleContractContext(supabase, contractId);
 
     const contractTenant =
       (contract.tenant_id as string) || (contract.company_id as string);
-    const userTenant = user.tenant_id || user.company_id;
-    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    const isSuperAdmin =
+      callerRole === 'SUPER_ADMIN' ||
+      callerRole === 'MASTER' ||
+      callerRole === 'MASTER_ADMIN' ||
+      callerRole === 'MASTER-ADMIN';
 
-    if (!isSuperAdmin && contractTenant && userTenant && contractTenant !== userTenant) {
-      return NextResponse.json({ error: 'Sem permissão para este contrato.' }, { status: 403 });
+    if (
+      !isSuperAdmin &&
+      contractTenant &&
+      callerTenant &&
+      contractTenant !== callerTenant
+    ) {
+      return NextResponse.json(
+        { error: 'Sem permissão para este contrato.' },
+        { status: 403 },
+      );
     }
 
     const result = await regenerateSaleContract(supabase, {
@@ -49,10 +70,12 @@ export async function POST(
       success: true,
       contract: result.newContract,
       versions: result.versions,
+      oldVersion: result.oldContract.version,
+      newVersion: result.newContract.version,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao regenerar contrato';
-    console.error('[API contract regenerate]', message);
+    console.error('CONTRACT_REGENERATE_ERROR', message);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

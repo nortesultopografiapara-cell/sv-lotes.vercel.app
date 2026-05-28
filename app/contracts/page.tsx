@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useSessionGuard } from "@/hooks/useSessionGuard";
 import {
@@ -429,6 +429,7 @@ export default function ContractsPage() {
   const [contractVersions, setContractVersions] = useState<any[]>([]);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regeneratingContract, setRegeneratingContract] = useState(false);
+  const [contractToast, setContractToast] = useState<string | null>(null);
 
   const [stats, setStats] = useState({
     ativos: 0,
@@ -552,6 +553,12 @@ export default function ContractsPage() {
       active = false;
     };
   }, [selectedContract?.id]);
+
+  useEffect(() => {
+    if (!contractToast) return;
+    const t = setTimeout(() => setContractToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [contractToast]);
 
   const filteredContracts = contracts.filter(isContractVisibleInList).filter((c) => {
     const p =
@@ -1339,6 +1346,9 @@ export default function ContractsPage() {
 
   const confirmRegenerateContract = async () => {
     if (!selectedContract) return;
+    console.log("CONTRACT_REGENERATE_CONFIRM", {
+      contractId: selectedContract.id,
+    });
     setRegeneratingContract(true);
     try {
       const res = await fetch(
@@ -1365,12 +1375,13 @@ export default function ContractsPage() {
         setSelectedContract(one || json.contract);
       }
 
-      alert("Contrato regenerado com sucesso! A versão anterior foi mantida no histórico.");
+      setContractToast("Contrato regenerado com sucesso.");
+      setActiveTab("Visualização");
     } catch (e: unknown) {
       const msg =
         e instanceof Error ? e.message : "Erro ao regenerar contrato";
-      console.error("[Regenerar contrato]", msg);
-      alert(msg);
+      console.error("CONTRACT_REGENERATE_ERROR", msg);
+      setContractToast(msg);
     } finally {
       setRegeneratingContract(false);
       setShowRegenerateModal(false);
@@ -1857,6 +1868,13 @@ export default function ContractsPage() {
                                   ver.regenerated_at || ver.created_at,
                                 ).toLocaleString("pt-BR")}
                               </p>
+                              {ver.regenerated_from && (
+                                <p className="text-amber-400/90 mt-0.5">
+                                  Regenerado (v
+                                  {Math.max(1, (ver.version ?? 2) - 1)} → v
+                                  {ver.version ?? 1})
+                                </p>
+                              )}
                             </div>
                             <button
                               type="button"
@@ -2222,6 +2240,13 @@ export default function ContractsPage() {
                                     ver.regenerated_at || ver.created_at,
                                   ).toLocaleString("pt-BR")}
                                 </p>
+                                {ver.regenerated_from && (
+                                  <p className="text-xs text-amber-400/90 mt-0.5">
+                                    Contrato regenerado (v
+                                    {Math.max(1, (ver.version ?? 2) - 1)} → v
+                                    {ver.version ?? 1})
+                                  </p>
+                                )}
                               </div>
                               <button
                                 type="button"
@@ -2279,6 +2304,32 @@ export default function ContractsPage() {
                           subtitle="Sistema"
                           active={!!selectedContract.generated_html}
                         />
+                        {(contractVersions.length > 0
+                          ? contractVersions
+                          : [selectedContract]
+                        )
+                          .filter((ver: any) => ver.regenerated_from)
+                          .sort(
+                            (a: any, b: any) =>
+                              (a.version ?? 0) - (b.version ?? 0),
+                          )
+                          .map((ver: any) => {
+                            const prevVer = Math.max(1, (ver.version ?? 2) - 1);
+                            return (
+                              <TimelineItem
+                                key={`regen-${ver.id}`}
+                                icon={<RefreshCw />}
+                                color="warning"
+                                title="Contrato regenerado"
+                                subtitle={`Versão anterior: v${prevVer} → Nova versão: v${ver.version ?? 1}`}
+                                date={new Date(
+                                  ver.regenerated_at || ver.created_at,
+                                ).toLocaleString("pt-BR")}
+                                author={user?.name || "Usuário"}
+                                active
+                              />
+                            );
+                          })}
                         {selectedContract.status === "assinado" && (
                           <TimelineItem
                             icon={<CheckCircle2 />}
@@ -2324,6 +2375,19 @@ export default function ContractsPage() {
 
               {/* BOTTOM ACTION BAR */}
               <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
+                {!isSupersededContract(selectedContract) && (
+                  <ActionBtn
+                    onClick={openRegenerateModal}
+                    icon={
+                      <RefreshCw
+                        className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
+                      />
+                    }
+                    label="Regenerar Contrato"
+                    color="amber"
+                    disabled={regeneratingContract}
+                  />
+                )}
                 <ActionBtn
                   onClick={handleBaixarPDF}
                   icon={<Download />}
@@ -2383,6 +2447,12 @@ export default function ContractsPage() {
           )}
         </div>
       </div>
+
+      {contractToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-3 rounded-xl bg-[#1a1f2b] border border-amber-500/40 text-amber-100 text-sm font-medium shadow-xl max-w-md text-center">
+          {contractToast}
+        </div>
+      )}
 
       <RegenerateContractModal
         open={showRegenerateModal}
@@ -2496,7 +2566,19 @@ function TimelineItem({
   );
 }
 
-function ActionBtn({ icon, label, color, onClick }: any) {
+function ActionBtn({
+  icon,
+  label,
+  color,
+  onClick,
+  disabled,
+}: {
+  icon: ReactNode;
+  label: string;
+  color: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
   const colorClasses: Record<string, string> = {
     primary:
       "border-[var(--color-primary)]/30 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10",
@@ -2504,14 +2586,18 @@ function ActionBtn({ icon, label, color, onClick }: any) {
     purple: "border-purple-500/30 text-purple-400 hover:bg-purple-500/10",
     warning:
       "border-[var(--color-warning)]/30 text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10",
+    amber:
+      "border-amber-500/40 text-amber-300 hover:bg-amber-500/15 bg-amber-600/10",
     danger:
       "border-[var(--color-danger)]/30 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10",
   };
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors ${colorClasses[color]}`}
+      disabled={disabled}
+      className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${colorClasses[color] || colorClasses.primary}`}
     >
       <div className="w-4 h-4">{icon}</div>
       <span className="hidden sm:inline">{label}</span>

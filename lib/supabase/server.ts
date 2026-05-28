@@ -81,6 +81,22 @@ export async function getRequestAuthUser(request: Request) {
   return { user: data.user, configError: null };
 }
 
+/** Perfil em public.users (tenant_id, role) para APIs de empresa parceira. */
+export async function resolveCallerProfile(
+  supabase: SupabaseClient,
+  authUserId: string,
+) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, role, tenant_id, company_id, name, email')
+    .eq('id', authUserId)
+    .maybeSingle();
+  if (error) {
+    console.warn('[resolveCallerProfile]', error.message);
+  }
+  return data;
+}
+
 export function logSupabaseConfigDebug(context: string) {
   const status = getSupabaseConfigStatus();
   console.log(`[${context}] Supabase config`, {

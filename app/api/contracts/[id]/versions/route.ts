@@ -3,7 +3,11 @@ import {
   loadSaleContractContext,
   listSaleContractVersions,
 } from '@/lib/contractRegeneration';
-import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+import {
+  createAdminSupabase,
+  getRequestAuthUser,
+  resolveCallerProfile,
+} from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
@@ -22,8 +26,28 @@ export async function GET(
       return NextResponse.json({ error: adminError || 'Supabase não configurado' }, { status: 503 });
     }
 
+    const profile = await resolveCallerProfile(supabase, user.id);
+    const callerTenant = profile?.tenant_id || profile?.company_id || null;
+    const callerRole = String(profile?.role || '').toUpperCase();
+    const isSuperAdmin =
+      callerRole === 'SUPER_ADMIN' ||
+      callerRole === 'MASTER' ||
+      callerRole === 'MASTER_ADMIN' ||
+      callerRole === 'MASTER-ADMIN';
+
     const { id: contractId } = await params;
     const contract = await loadSaleContractContext(supabase, contractId);
+
+    const contractTenant =
+      (contract.tenant_id as string) || (contract.company_id as string);
+    if (
+      !isSuperAdmin &&
+      contractTenant &&
+      callerTenant &&
+      contractTenant !== callerTenant
+    ) {
+      return NextResponse.json({ error: 'Sem permissão.' }, { status: 403 });
+    }
     const saleId = contract.sale_id as string;
     if (!saleId) {
       return NextResponse.json({ versions: [contract] });

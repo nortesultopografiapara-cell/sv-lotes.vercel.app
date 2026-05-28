@@ -40,6 +40,7 @@ export type SaleContractVersionRow = {
   regenerated_by?: string | null;
   regenerated_from?: string | null;
   superseded_by?: string | null;
+  is_current?: boolean | null;
 };
 
 export function enrichBlockForContract(
@@ -152,7 +153,7 @@ export async function listSaleContractVersions(
   const { data, error } = await supabase
     .from('contracts')
     .select(
-      'id, contract_number, version, status, generated_html, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by',
+      'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
     )
     .eq('sale_id', saleId)
     .order('version', { ascending: false });
@@ -318,6 +319,11 @@ export async function regenerateSaleContract(
   const contract = await loadSaleContractContext(supabase, params.contractId);
   const saleId = contract.sale_id as string;
 
+  console.log('CONTRACT_REGENERATE_LOAD_DATA', {
+    contractId: params.contractId,
+    saleId,
+  });
+
   const { customer, sale, block, project, tenant } = await (async () => {
     const built = await buildFreshSaleContractHtml(supabase, contract);
     return {
@@ -369,7 +375,10 @@ export async function regenerateSaleContract(
       broker_id: contract.broker_id || sale.broker_id || null,
       contract_number: contractNumber,
       generated_html: html,
+      html_content: html,
       status: 'ativo',
+      is_current: true,
+      needs_regenerar: false,
       version: newVersion,
       regenerated_from: contract.id,
       regenerated_at: now,
@@ -381,7 +390,7 @@ export async function regenerateSaleContract(
       created_at: now,
     })
     .select(
-      'id, contract_number, version, status, generated_html, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by',
+      'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
     )
     .single();
 
@@ -393,6 +402,7 @@ export async function regenerateSaleContract(
     .from('contracts')
     .update({
       status: 'superseded',
+      is_current: false,
       superseded_by: newRow.id,
       regenerated_at: now,
     })
@@ -401,6 +411,12 @@ export async function regenerateSaleContract(
   if (supersedeErr) {
     console.warn('[CONTRACT_SUPERSEDE]', supersedeErr.message);
   }
+
+  await supabase
+    .from('contracts')
+    .update({ is_current: false })
+    .eq('sale_id', saleId)
+    .neq('id', newRow.id);
 
   if (contract.block_id || block.id) {
     await supabase

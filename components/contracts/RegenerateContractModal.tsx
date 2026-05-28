@@ -13,8 +13,8 @@ type Props = {
 
 export function RegenerateContractModal({
   open,
-  title = 'Regenerar contrato',
-  message = 'Tem certeza que deseja regenerar este contrato?\nO contrato anterior será mantido no histórico como versão antiga.',
+  title = 'Regenerar contrato?',
+  message = 'O contrato será recriado com os dados atuais do cliente, lote, venda, parcelas e empresa.\nA versão anterior será mantida no histórico.',
   busy = false,
   onCancel,
   onConfirm,
