@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
-import { generateAndStoreSaasContract } from '@/lib/saasContractService';
+import {
+  generateAndStoreSaasContract,
+  loadFreshSaasContractContext,
+} from '@/lib/saasContractService';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
-import { normalizeSubscriptionDates } from '@/lib/companySubscriptionDates';
 import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
 import {
   ensureSaasSubscription,
   getSubscriptionByCompanyId,
 } from '@/lib/saasSubscriptionService';
-import type { CompanySubscription } from '@/lib/saasSubscription';
 
 export const runtime = 'nodejs';
 
@@ -42,8 +43,9 @@ export async function POST(
 
   try {
     const body = await request.json().catch(() => ({}));
+    const forceRegenerate = body.regenerate === true;
 
-    console.log('SAAS_CONTRACT_GENERATE_START', { companyId });
+    console.log('SAAS_CONTRACT_GENERATE_START', { companyId, forceRegenerate });
 
     const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
     if (!auth.ok) {
@@ -54,20 +56,16 @@ export async function POST(
       return contractErrorResponse('company_id não confere com a URL.', 'validation', 400);
     }
 
-    const { data: company, error: companyErr } = await supabaseAdmin
-      .from('companies')
-      .select('*')
-      .eq('id', companyId)
-      .single();
-
-    if (companyErr || !company) {
-      return contractErrorResponse('Empresa não encontrada.', 'validation', 404);
-    }
-
-    console.log('SAAS_CONTRACT_COMPANY_DATA', company);
-
     let subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
     if (!subscription) {
+      const { data: company } = await supabaseAdmin
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .single();
+      if (!company) {
+        return contractErrorResponse('Empresa não encontrada.', 'validation', 404);
+      }
       const created = await ensureSaasSubscription(supabaseAdmin, company);
       if (created.error) {
         return contractErrorResponse(created.error, 'db_save', 500);
@@ -83,20 +81,8 @@ export async function POST(
       );
     }
 
-    console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', subscription);
-
     if (body.subscription_id && body.subscription_id !== subscription.id) {
       return contractErrorResponse('subscription_id inválido.', 'validation', 400);
-    }
-
-    const validation = validateSaasContractGeneration(company, subscription);
-    if (!validation.ok) {
-      return contractErrorResponse(
-        validation.error || 'Dados inválidos',
-        'validation',
-        400,
-        { missing: validation.missingLabels },
-      );
     }
 
     const patch: Record<string, unknown> = {
@@ -107,51 +93,46 @@ export async function POST(
       const price = Number(body.monthly_price);
       if (Number.isFinite(price)) patch.monthly_price = price;
     }
-    const billing = normalizeSubscriptionDates(company, subscription);
-    patch.start_date = billing.start_date;
-    patch.first_payment_date = billing.first_payment_date;
-    patch.next_due_date = billing.next_due_date;
 
-    {
-      const { data: patched, error: patchErr } = await supabaseAdmin
+    if (Object.keys(patch).length > 1) {
+      const { error: patchErr } = await supabaseAdmin
         .from('company_subscriptions')
         .update(patch)
-        .eq('id', subscription.id)
-        .select('*')
-        .single();
+        .eq('id', subscription.id);
 
       if (patchErr) {
         return contractErrorResponse(patchErr.message, 'db_save', 500);
       }
-      subscription = patched as CompanySubscription;
     }
 
-    await supabaseAdmin
-      .from('companies')
-      .update({
-        subscription_start_date: billing.start_date,
-        next_payment_date: billing.next_due_date,
-        vencimento_plano: billing.next_due_date,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', companyId);
+    const { company, subscription: freshSub } = await loadFreshSaasContractContext(
+      supabaseAdmin,
+      companyId,
+    );
 
-    const contract = await generateAndStoreSaasContract(supabaseAdmin, company, subscription);
+    const validation = validateSaasContractGeneration(company, freshSub);
+    if (!validation.ok) {
+      return contractErrorResponse(
+        validation.error || 'Dados inválidos',
+        'validation',
+        400,
+        { missing: validation.missingLabels },
+      );
+    }
 
-    const { data: refreshed } = await supabaseAdmin
-      .from('company_subscriptions')
-      .select('*')
-      .eq('id', subscription.id)
-      .single();
+    const contract = await generateAndStoreSaasContract(supabaseAdmin, companyId, {
+      forceRegenerate,
+    });
 
     const { listCompanyContracts } = await import('@/lib/saasContractService');
     const contracts = await listCompanyContracts(supabaseAdmin, companyId);
 
     const result = {
       success: true,
+      regenerated: forceRegenerate,
       contract_number: contract.contractNumber,
       contract_pdf_url: contract.contractPdfUrl,
-      subscription: refreshed,
+      subscription: contract.subscription,
       contracts,
     };
 

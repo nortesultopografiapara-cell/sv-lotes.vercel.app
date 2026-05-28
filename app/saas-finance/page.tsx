@@ -261,7 +261,11 @@ export default function SaaSFinancePage() {
   );
 
   const handleGenerateSaasContract = useCallback(
-    async (company: EnrichedCompany, subscription: CompanySubscription | null) => {
+    async (
+      company: EnrichedCompany,
+      subscription: CompanySubscription | null,
+      options?: { regenerate?: boolean },
+    ) => {
       const companyId = (company as { id?: string }).id;
       if (!companyId) {
         alert('Não foi possível gerar o contrato');
@@ -298,8 +302,8 @@ export default function SaaSFinancePage() {
       }
 
       const pricing = resolveCompanyPricing(company);
-      const firstPayment = resolveFirstPaymentDate(company, subscription);
-      const nextDue = resolveNextDueDate(company, subscription);
+      const regenerate =
+        options?.regenerate === true || hasSaasContractReady(subscription);
 
       try {
         const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
@@ -309,14 +313,9 @@ export default function SaaSFinancePage() {
             userId: user.id,
             subscription_id: subscription?.id ?? null,
             company_id: companyId,
+            regenerate,
             plan_type: subscription?.plan_type || company.plan_type || company.plan,
             monthly_price: subscription?.monthly_price ?? pricing.appliedPrice,
-            start_date:
-              subscription?.start_date || company.subscription_start_date || firstPayment,
-            first_payment_date:
-              subscription?.first_payment_date || firstPayment,
-            next_due_date:
-              subscription?.next_due_date ?? company.next_payment_date ?? nextDue,
           }),
         });
 
@@ -595,12 +594,13 @@ export default function SaaSFinancePage() {
                 ? () => loadCompanyContracts(selectedCompanyId)
                 : undefined
             }
-            onGenerateContract={async () => {
+            onGenerateContract={async (opts) => {
               if (!selectedCompany) return;
-              console.log('SAAS_CONTRACT_CLICK_FROM_TAB');
+              console.log('SAAS_CONTRACT_CLICK_FROM_TAB', opts);
               await handleGenerateSaasContract(
                 selectedCompany,
                 selectedSubscription,
+                opts,
               );
             }}
           />

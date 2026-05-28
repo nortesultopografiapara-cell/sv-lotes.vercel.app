@@ -9,7 +9,10 @@ import {
   resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
-import { dueDayFromDate, resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
+import {
+  dueDayFromDate,
+  subscriptionDatesForContractPdf,
+} from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
@@ -123,13 +126,7 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
   const saas = getCompanySaasPlan(company);
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const applied = Number(subscription.monthly_price) || pricing.appliedPrice;
-  const dates = resolveCompanySubscriptionDates(company);
-  const billing = {
-    start_date: subscription.start_date,
-    first_payment_date:
-      subscription.first_payment_date || subscription.start_date,
-    next_due_date: subscription.next_due_date || dates.next_payment_date,
-  };
+  const billing = subscriptionDatesForContractPdf(subscription);
   const dueDay = dueDayFromDate(billing.start_date);
   const responsible =
     company.legal_representative || company.responsible_name || 'Representante legal';

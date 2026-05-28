@@ -29,7 +29,7 @@ type Props = {
   generating?: boolean;
   onRefresh: () => void;
   onContractsReload?: () => void | Promise<void>;
-  onGenerateContract?: () => void | Promise<void>;
+  onGenerateContract?: (options?: { regenerate?: boolean }) => void | Promise<void>;
 };
 
 export function SaasContractPanel({
@@ -135,7 +135,7 @@ export function SaasContractPanel({
 
     if (onGenerateContract) {
       try {
-        await onGenerateContract();
+        await onGenerateContract({ regenerate: contractReady });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
         setError(msg);

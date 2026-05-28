@@ -6,13 +6,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import { buildSaasContractPdf } from '@/lib/saasContractPdf';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
-import { normalizeSubscriptionDates } from '@/lib/companySubscriptionDates';
+import {
+  dueDayFromDate,
+  subscriptionDatesForContractPdf,
+} from '@/lib/companySubscriptionDates';
 import {
   validateSaasContractGeneration,
   type SaasContractCompanyInput,
 } from '@/lib/saasContractValidation';
 import {
-  contractDownloadPath,
   generateSaasContractNumber,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
@@ -133,6 +135,58 @@ async function getNextContractVersion(
   return (data?.version ?? 0) + 1;
 }
 
+/** Busca empresa + assinatura direto do Supabase (sem cache do cliente). */
+export async function loadFreshSaasContractContext(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+): Promise<{
+  company: SaasContractCompanyInput & { id: string };
+  subscription: CompanySubscription;
+}> {
+  const { data: company, error: companyErr } = await supabaseAdmin
+    .from('companies')
+    .select('*')
+    .eq('id', companyId)
+    .single();
+
+  if (companyErr || !company) {
+    throw new SaasContractStepError('validation', 'Empresa não encontrada.');
+  }
+
+  const subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
+  if (!subscription) {
+    throw new SaasContractStepError('validation', 'Assinatura não encontrada.');
+  }
+
+  console.log('SAAS_CONTRACT_FRESH_DB_COMPANY', company);
+  console.log('SAAS_CONTRACT_FRESH_DB_SUBSCRIPTION', subscription);
+
+  return {
+    company: company as SaasContractCompanyInput & { id: string },
+    subscription,
+  };
+}
+
+export async function supersedeCompanyContracts(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('company_contracts')
+    .update({ status: 'superseded' })
+    .eq('company_id', companyId)
+    .neq('status', 'superseded');
+
+  if (error) {
+    throw new SaasContractStepError(
+      'db_save',
+      `Falha ao marcar contratos anteriores como superseded: ${error.message}`,
+    );
+  }
+
+  console.log('SAAS_CONTRACT_SUPERSEDED', { companyId });
+}
+
 export async function listCompanyContracts(
   supabaseAdmin: SupabaseClient,
   companyId: string,
@@ -150,18 +204,30 @@ export async function listCompanyContracts(
   return (data || []) as CompanyContractRow[];
 }
 
+export type GenerateSaasContractOptions = {
+  /** Regenerar: novo número, novo PDF, contratos antigos superseded */
+  forceRegenerate?: boolean;
+};
+
 export async function generateAndStoreSaasContract(
   supabaseAdmin: SupabaseClient,
-  company: SaasContractCompanyInput & { id: string },
-  subscription: CompanySubscription,
+  companyId: string,
+  options?: GenerateSaasContractOptions,
 ): Promise<{
   contractNumber: string;
   contractPdfUrl: string;
   contractRecord: CompanyContractRow | null;
+  subscription: CompanySubscription;
 }> {
-  console.log('SAAS_CONTRACT_GENERATE_START');
-  console.log('SAAS_CONTRACT_COMPANY_DATA', company);
-  console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', subscription);
+  const { company, subscription } = await loadFreshSaasContractContext(
+    supabaseAdmin,
+    companyId,
+  );
+
+  console.log('SAAS_CONTRACT_GENERATE_START', {
+    companyId,
+    forceRegenerate: options?.forceRegenerate,
+  });
 
   const validation = validateSaasContractGeneration(company, subscription);
   if (!validation.ok) {
@@ -171,10 +237,20 @@ export async function generateAndStoreSaasContract(
     );
   }
 
-  const contractNumber = subscription.contract_number || generateSaasContractNumber();
-  const version = await getNextContractVersion(supabaseAdmin, company.id);
+  const pdfDates = subscriptionDatesForContractPdf(subscription);
 
-  const billing = normalizeSubscriptionDates(company, subscription);
+  const forceRegenerate =
+    options?.forceRegenerate === true || Boolean(subscription.contract_pdf_url);
+
+  const contractNumber = forceRegenerate
+    ? generateSaasContractNumber()
+    : subscription.contract_number || generateSaasContractNumber();
+
+  if (forceRegenerate) {
+    await supersedeCompanyContracts(supabaseAdmin, companyId);
+  }
+
+  const version = await getNextContractVersion(supabaseAdmin, companyId);
 
   let pdfBytes: Uint8Array;
   try {
@@ -184,9 +260,9 @@ export async function generateAndStoreSaasContract(
         contract_number: contractNumber,
         plan_type: subscription.plan_type,
         monthly_price: subscription.monthly_price,
-        start_date: billing.start_date,
-        first_payment_date: billing.first_payment_date,
-        next_due_date: billing.next_due_date,
+        start_date: pdfDates.start_date,
+        first_payment_date: pdfDates.first_payment_date,
+        next_due_date: pdfDates.next_due_date,
       },
     });
   } catch (err) {
@@ -214,14 +290,16 @@ export async function generateAndStoreSaasContract(
 
   const generatedAt = new Date().toISOString();
 
-  const { error: supersedeErr } = await supabaseAdmin
-    .from('company_contracts')
-    .update({ status: 'superseded' })
-    .eq('company_id', company.id)
-    .eq('status', 'active');
+  if (!forceRegenerate) {
+    const { error: supersedeErr } = await supabaseAdmin
+      .from('company_contracts')
+      .update({ status: 'superseded' })
+      .eq('company_id', company.id)
+      .eq('status', 'active');
 
-  if (supersedeErr) {
-    console.warn('[SAAS_CONTRACT] supersede', supersedeErr.message);
+    if (supersedeErr) {
+      console.warn('[SAAS_CONTRACT] supersede active', supersedeErr.message);
+    }
   }
 
   const { data: contractRecord, error: insertErr } = await supabaseAdmin
@@ -245,32 +323,32 @@ export async function generateAndStoreSaasContract(
     );
   }
 
-  const { error: subUpdateErr } = await supabaseAdmin
+  const { data: updatedSub, error: subUpdateErr } = await supabaseAdmin
     .from('company_subscriptions')
     .update({
       contract_number: contractNumber,
       contract_pdf_url: contractPdfUrl,
       contract_status: 'active',
-      start_date: billing.start_date,
-      first_payment_date: billing.first_payment_date,
-      next_due_date: billing.next_due_date,
       updated_at: generatedAt,
     })
-    .eq('id', subscription.id);
+    .eq('id', subscription.id)
+    .select('*')
+    .single();
 
-  if (subUpdateErr) {
+  if (subUpdateErr || !updatedSub) {
     throw new SaasContractStepError(
       'db_save',
-      `Falha ao atualizar company_subscriptions: ${subUpdateErr.message}`,
+      `Falha ao atualizar company_subscriptions: ${subUpdateErr?.message || 'sem retorno'}`,
     );
   }
 
   await supabaseAdmin
     .from('companies')
     .update({
-      subscription_start_date: billing.start_date,
-      next_payment_date: billing.next_due_date,
-      vencimento_plano: billing.next_due_date,
+      subscription_start_date: pdfDates.start_date,
+      next_payment_date: pdfDates.next_due_date,
+      vencimento_plano: pdfDates.next_due_date,
+      subscription_due_day: dueDayFromDate(pdfDates.start_date),
       updated_at: generatedAt,
     })
     .eq('id', company.id);
@@ -279,12 +357,15 @@ export async function generateAndStoreSaasContract(
     contractNumber,
     contractPdfUrl,
     version,
+    forceRegenerate,
+    pdfDates,
   });
 
   return {
     contractNumber,
     contractPdfUrl,
     contractRecord: (contractRecord as CompanyContractRow) || null,
+    subscription: updatedSub as CompanySubscription,
   };
 }
 
@@ -298,17 +379,18 @@ export async function tryAutoGenerateSaasContract(
   }
 
   try {
-    let subscription = await getSubscriptionByCompanyId(supabaseAdmin, company.id);
-    if (!subscription) {
+    const existing = await getSubscriptionByCompanyId(supabaseAdmin, company.id);
+    if (!existing) {
       const { ensureSaasSubscription } = await import('@/lib/saasSubscriptionService');
       const ensured = await ensureSaasSubscription(supabaseAdmin, company);
-      subscription = ensured.subscription;
-    }
-    if (!subscription) {
-      return { ok: false, error: 'Assinatura não encontrada' };
+      if (!ensured.subscription) {
+        return { ok: false, error: 'Assinatura não encontrada' };
+      }
     }
 
-    await generateAndStoreSaasContract(supabaseAdmin, company, subscription);
+    await generateAndStoreSaasContract(supabaseAdmin, company.id, {
+      forceRegenerate: false,
+    });
     return { ok: true };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao gerar contrato';

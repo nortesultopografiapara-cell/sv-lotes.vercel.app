@@ -1,6 +1,7 @@
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import {
   normalizeSubscriptionDates,
+  subscriptionDatesForContractPdf,
   validateSubscriptionDateOrder,
 } from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
@@ -109,7 +110,17 @@ export function validateSaasContractGeneration(
     missingLabels.push('Valor mensal aplicado');
   }
 
-  const billing = normalizeSubscriptionDates(company, subscription);
+  let billing;
+  try {
+    billing =
+      subscription?.start_date &&
+      subscription?.first_payment_date &&
+      subscription?.next_due_date
+        ? subscriptionDatesForContractPdf(subscription)
+        : normalizeSubscriptionDates(company, subscription);
+  } catch {
+    billing = normalizeSubscriptionDates(company, subscription);
+  }
   const startDate = billing.start_date;
   const firstPayment = billing.first_payment_date;
   const nextDue = billing.next_due_date;

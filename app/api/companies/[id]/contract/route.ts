@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { buildSaasContractPdf } from '@/lib/saasContractPdf';
+import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import { getSubscriptionByCompanyId } from '@/lib/saasSubscriptionService';
 import { generateSaasContractNumber } from '@/lib/saasSubscription';
 
@@ -41,9 +42,14 @@ export async function GET(
   }
 
   if (download) {
+    const pdfDates = subscriptionDatesForContractPdf(subscription);
     const subForPdf = {
-      ...subscription,
       contract_number: subscription.contract_number || generateSaasContractNumber(),
+      plan_type: subscription.plan_type,
+      monthly_price: subscription.monthly_price,
+      start_date: pdfDates.start_date,
+      first_payment_date: pdfDates.first_payment_date,
+      next_due_date: pdfDates.next_due_date,
     };
     const pdfBytes = buildSaasContractPdf({ company, subscription: subForPdf });
     return new NextResponse(pdfBytes, {

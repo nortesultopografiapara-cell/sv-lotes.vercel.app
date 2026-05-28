@@ -135,6 +135,30 @@ export function validateSubscriptionDateOrder(
   return null;
 }
 
+/** Datas do PDF: somente campos gravados em company_subscriptions (sem created_at / new Date). */
+export function subscriptionDatesForContractPdf(subscription: {
+  start_date?: string | null;
+  first_payment_date?: string | null;
+  next_due_date?: string | null;
+}): SubscriptionBillingDates {
+  const start_date = toIsoDateOnly(subscription.start_date);
+  const first_payment_date = toIsoDateOnly(subscription.first_payment_date);
+  const next_due_date = toIsoDateOnly(subscription.next_due_date);
+
+  if (!start_date || !first_payment_date || !next_due_date) {
+    throw new Error(
+      'Datas da assinatura incompletas no banco (start_date, first_payment_date, next_due_date).',
+    );
+  }
+
+  const dates = { start_date, first_payment_date, next_due_date };
+  const orderError = validateSubscriptionDateOrder(dates);
+  if (orderError) throw new Error(orderError);
+
+  console.log('SAAS_CONTRACT_PDF_DATES_FROM_SUBSCRIPTION', dates);
+  return dates;
+}
+
 /** Datas canônicas sincronizadas (contrato, tabela, ensureSaasSubscription). */
 export function normalizeSubscriptionDates(
   company?: CompanySubscriptionDatesSource | null,
