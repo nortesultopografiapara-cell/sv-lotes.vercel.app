@@ -12,16 +12,60 @@ export type SaasContractCompanyInput = CompanyPricingSource & {
   cnpj?: string | null;
   email?: string | null;
   phone?: string | null;
+  telefone?: string | null;
   address?: string | null;
+  endereco?: string | null;
+  logradouro?: string | null;
   city?: string | null;
+  cidade?: string | null;
   state?: string | null;
+  uf?: string | null;
+  state_uf?: string | null;
   plan?: string | null;
   plan_type?: string | null;
 };
 
+export type NormalizedCompanyContractData = {
+  address: string;
+  city: string;
+  state: string;
+  email: string;
+  phone: string;
+};
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (value == null) continue;
+    const s = String(value).trim();
+    if (s.length > 0) return s;
+  }
+  return '';
+}
+
 function isBlank(value: unknown): boolean {
   if (value == null) return true;
   return String(value).trim().length === 0;
+}
+
+/** Unifica aliases de cadastro (address/endereco, city/cidade, state/uf). */
+export function normalizeCompanyContractData(
+  company: SaasContractCompanyInput | Record<string, unknown>,
+): NormalizedCompanyContractData {
+  const c = company as Record<string, unknown>;
+  const logradouro = pickString(c.logradouro);
+  const numero = pickString(c.numero);
+  const complemento = pickString(c.complemento);
+  const streetParts = [logradouro, numero, complemento].filter(Boolean);
+
+  return {
+    address:
+      pickString(c.address, c.endereco) ||
+      (streetParts.length > 0 ? streetParts.join(', ') : ''),
+    city: pickString(c.city, c.cidade),
+    state: pickString(c.state, c.uf, c.state_uf),
+    email: pickString(c.email),
+    phone: pickString(c.phone, c.telefone),
+  };
 }
 
 export function validateSaasContractGeneration(
@@ -33,10 +77,14 @@ export function validateSaasContractGeneration(
   missing: string[];
   missingLabels: string[];
   warnings: string[];
+  normalized: NormalizedCompanyContractData;
 } {
   const missing: string[] = [];
   const missingLabels: string[] = [];
   const warnings: string[] = [];
+
+  const normalized = normalizeCompanyContractData(company);
+  console.log('SAAS_CONTRACT_NORMALIZED_COMPANY', normalized);
 
   const require = (key: string, label: string, value: unknown) => {
     if (isBlank(value)) {
@@ -80,11 +128,7 @@ export function validateSaasContractGeneration(
     'Data de início da assinatura',
     startDate || firstPayment,
   );
-  require(
-    'first_payment_date',
-    'Primeira cobrança',
-    firstPayment || startDate,
-  );
+  require('first_payment_date', 'Primeira cobrança', firstPayment || startDate);
   require(
     'next_due_date',
     'Próximo vencimento',
@@ -92,17 +136,23 @@ export function validateSaasContractGeneration(
   );
 
   for (const { key, label, value } of [
-    { key: 'email', label: 'E-mail', value: company.email },
-    { key: 'phone', label: 'Telefone', value: company.phone },
-    { key: 'address', label: 'Endereço', value: company.address },
-    { key: 'city', label: 'Cidade', value: company.city },
-    { key: 'state', label: 'Estado (UF)', value: company.state },
+    { key: 'email', label: 'E-mail', value: normalized.email },
+    { key: 'phone', label: 'Telefone', value: normalized.phone },
+    { key: 'address', label: 'Endereço', value: normalized.address },
+    { key: 'city', label: 'Cidade', value: normalized.city },
+    { key: 'state', label: 'Estado (UF)', value: normalized.state },
   ]) {
     if (isBlank(value)) {
       warnings.push(label);
       void key;
     }
   }
+
+  console.log('SAAS_CONTRACT_MISSING_FIELDS', {
+    missing,
+    missingLabels,
+    warnings,
+  });
 
   if (missing.length > 0) {
     const bulletList = missingLabels.map((l) => `• ${l}`).join('\n');
@@ -111,14 +161,26 @@ export function validateSaasContractGeneration(
       missing,
       missingLabels,
       warnings,
+      normalized,
       error: `Dados obrigatórios ausentes para gerar o contrato:\n${bulletList}`,
     };
   }
 
-  return { ok: true, missing: [], missingLabels: [], warnings };
+  return { ok: true, missing: [], missingLabels: [], warnings, normalized };
 }
 
 export function saasContractOptionalFieldsWarning(warnings: string[]): string | null {
   if (!warnings.length) return null;
-  return `Recomendamos completar no cadastro da empresa: ${warnings.join(', ')}. O contrato será gerado com "Não informado" onde faltar.`;
+  return (
+    'Alguns dados complementares não foram preenchidos.\n' +
+    'O contrato será gerado normalmente utilizando\n' +
+    "'Não informado' onde necessário."
+  );
+}
+
+export function saasContractHasOnlyOptionalWarnings(validation: {
+  ok: boolean;
+  warnings: string[];
+}): boolean {
+  return validation.ok && validation.warnings.length > 0;
 }

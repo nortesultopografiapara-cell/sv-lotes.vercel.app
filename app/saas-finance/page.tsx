@@ -79,7 +79,10 @@ export default function SaaSFinancePage() {
   const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [loadingContractId, setLoadingContractId] = useState<string | null>(null);
-  const [contractToast, setContractToast] = useState<string | null>(null);
+  const [contractToast, setContractToast] = useState<{
+    type: 'error' | 'warning';
+    message: string;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -250,7 +253,7 @@ export default function SaaSFinancePage() {
       const validation = validateSaasContractGeneration(company, subscription);
       if (!validation.ok) {
         const msg = validation.error || 'Não foi possível gerar o contrato';
-        setContractToast(msg);
+        setContractToast({ type: 'error', message: msg });
         alert(msg);
         setLoadingContractId(null);
         return;
@@ -258,7 +261,9 @@ export default function SaaSFinancePage() {
 
       const optionalWarn = saasContractOptionalFieldsWarning(validation.warnings);
       if (optionalWarn) {
-        setContractToast(optionalWarn);
+        setContractToast({ type: 'warning', message: optionalWarn });
+      } else {
+        setContractToast(null);
       }
 
       const pricing = resolveCompanyPricing(company);
@@ -313,7 +318,7 @@ export default function SaaSFinancePage() {
       } catch (err) {
         console.error('GENERATE_SAAS_CONTRACT_ERROR', err);
         const msg = 'Não foi possível gerar o contrato';
-        setContractToast(msg);
+        setContractToast({ type: 'error', message: msg });
         alert(msg);
       } finally {
         setLoadingContractId(null);
@@ -546,8 +551,14 @@ export default function SaaSFinancePage() {
           </div>
 
           {contractToast && (
-            <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm whitespace-pre-line">
-              {contractToast}
+            <div
+              className={`mx-5 mt-4 p-3 rounded-lg text-sm whitespace-pre-line ${
+                contractToast.type === 'warning'
+                  ? 'bg-amber-500/10 border border-amber-500/25 text-amber-100'
+                  : 'bg-red-500/10 border border-red-500/20 text-red-300'
+              }`}
+            >
+              {contractToast.message}
             </div>
           )}
 

@@ -197,7 +197,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
       )}
 
       {validation?.ok && validation.warnings.length > 0 && (
-        <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm">
+        <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-100 text-sm whitespace-pre-line">
           {saasContractOptionalFieldsWarning(validation.warnings)}
         </div>
       )}

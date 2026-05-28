@@ -16,6 +16,7 @@ import {
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
+import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
 
 export const SAAS_PROVIDER = {
   legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
@@ -111,7 +112,16 @@ function ensureSpace(doc: jsPDF, y: number, need: number): number {
 }
 
 export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
-  const { company, subscription } = input;
+  const { company: rawCompany, subscription } = input;
+  const normalized = normalizeCompanyContractData(rawCompany);
+  const company = {
+    ...rawCompany,
+    address: normalized.address || rawCompany.address,
+    city: normalized.city || rawCompany.city,
+    state: normalized.state || rawCompany.state,
+    email: normalized.email || rawCompany.email,
+    phone: normalized.phone || rawCompany.phone,
+  };
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
   const standardPrice = getStandardPlanMonthlyPrice(company);
@@ -213,10 +223,10 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
   row('Responsável', displayField(responsible));
   row('Telefone', displayField(company.phone));
   row('E-mail', displayField(company.email));
-  row('Endereço', displayField(company.address));
+  row('Endereço', displayField(normalized.address || company.address));
   row(
     'Cidade/UF',
-    `${displayField(company.city)}/${displayField(company.state)}`,
+    `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
   );
   if (company.cep) row('CEP', company.cep);
   y += 4;
