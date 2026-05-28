@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
-import { provisionSaasSubscription } from '@/lib/saasSubscriptionService';
+import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 export async function POST(
   request: Request,
@@ -30,9 +30,7 @@ export async function POST(
       return NextResponse.json({ error: 'Empresa não encontrada.' }, { status: 404 });
     }
 
-    const result = await provisionSaasSubscription(supabaseAdmin, company, {
-      regenerateContract: body.regenerateContract === true,
-    });
+    const result = await ensureSaasSubscription(supabaseAdmin, company);
 
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: 500 });

@@ -3,7 +3,7 @@
  */
 
 export type SaasPaymentStatus = 'pending' | 'paid' | 'overdue' | 'canceled';
-export type SaasContractStatus = 'active' | 'suspended' | 'canceled';
+export type SaasContractStatus = 'pending' | 'active' | 'suspended' | 'canceled';
 
 export type CompanySubscription = {
   id: string;
@@ -56,4 +56,16 @@ export function generateSaasContractNumber(): string {
 
 export function contractDownloadPath(companyId: string): string {
   return `/api/companies/${companyId}/contract?download=1`;
+}
+
+export function isRealSaasCompany(company: {
+  is_test_company?: boolean | null;
+  is_test?: boolean | null;
+}): boolean {
+  return company.is_test_company !== true && company.is_test !== true;
+}
+
+export function hasSaasContractReady(sub?: CompanySubscription | null): boolean {
+  if (!sub) return false;
+  return (sub.contract_status || '').toLowerCase() === 'active' && Boolean(sub.contract_pdf_url);
 }

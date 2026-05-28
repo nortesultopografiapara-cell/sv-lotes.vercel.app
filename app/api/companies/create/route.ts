@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
-import { provisionSaasSubscription } from '@/lib/saasSubscriptionService';
+import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function generateSlug(name: string) {
   return name
@@ -198,7 +198,7 @@ export async function POST(req: Request) {
 
     if (!companyPayload.is_test_company && newCompany) {
       console.log('[ETAPA 4] Provisionando assinatura SaaS e contrato...');
-      const subResult = await provisionSaasSubscription(supabaseAdmin, newCompany);
+      const subResult = await ensureSaasSubscription(supabaseAdmin, newCompany);
       if (subResult.error) {
         console.warn('[SAAS_SUBSCRIPTION] Aviso ao provisionar:', subResult.error);
       } else {

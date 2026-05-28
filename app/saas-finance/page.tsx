@@ -14,7 +14,12 @@ import {
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
+import {
+  formatDateBr,
+  hasSaasContractReady,
+  isRealSaasCompany,
+  type CompanySubscription,
+} from '@/lib/saasSubscription';
 import {
   Wallet,
   TrendingUp,
@@ -56,7 +61,7 @@ function enrichCompany(
 }
 
 export default function SaaSFinancePage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [companies, setCompanies] = useState<EnrichedCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -65,9 +70,14 @@ export default function SaaSFinancePage() {
   const [filterPayment, setFilterPayment] = useState('all');
   const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [provisioningId, setProvisioningId] = useState<string | null>(null);
+  const [generatingContractId, setGeneratingContractId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -83,27 +93,36 @@ export default function SaaSFinancePage() {
 
       const rows = (data || []) as CompanyPricingSource[];
 
-      const { data: subs, error: subsError } = await supabase.from('company_subscriptions').select('*');
-      if (subsError) {
-        console.warn('SAAS_FINANCE_SUBSCRIPTIONS_WARN', subsError.message);
+      let subscriptions: CompanySubscription[] = [];
+      const syncRes = await fetch('/api/saas/subscriptions/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      if (syncRes.ok) {
+        const syncJson = await syncRes.json();
+        subscriptions = (syncJson.subscriptions || []) as CompanySubscription[];
+        if (syncJson.created > 0) {
+          console.log('SAAS_SUBSCRIPTIONS_SYNC_CREATED', syncJson.created);
+        }
+      } else {
+        const syncErr = await syncRes.json().catch(() => ({}));
+        console.warn('SAAS_SUBSCRIPTIONS_SYNC_FAILED', syncErr.error || syncRes.status);
       }
 
-      const subMap = new Map(
-        ((subs || []) as CompanySubscription[]).map((s) => [s.company_id, s]),
-      );
+      const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
 
-      console.log(
-        'SAAS_FINANCE_PRICING',
-        rows.map((c) => ({
-          name: c.name,
-          plan: c.plan_type || c.plan,
-          custom_price_enabled: c.custom_price_enabled,
-          custom_monthly_price: c.custom_monthly_price,
-          applied: resolveCompanyPricing(c).appliedPrice,
-          next_due: subMap.get(c.id)?.next_due_date,
-          payment: subMap.get(c.id)?.payment_status,
-        })),
-      );
+      rows.forEach((company) => {
+        if (!isRealSaasCompany(company)) return;
+        const subscription = subMap.get(company.id) ?? null;
+        console.log('SAAS_SUBSCRIPTION_DYNAMIC', {
+          company: { id: company.id, name: company.name },
+          subscription,
+          next_due_date: subscription?.next_due_date ?? null,
+          payment_status: subscription?.payment_status ?? 'pending',
+        });
+      });
 
       setCompanies(rows.map((c) => enrichCompany(c, subMap.get(c.id))));
     } catch (err) {
@@ -112,11 +131,12 @@ export default function SaaSFinancePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
+    if (authLoading) return;
     loadData();
-  }, [loadData]);
+  }, [loadData, authLoading]);
 
   const stats = useMemo(() => {
     let mrr = 0;
@@ -197,22 +217,22 @@ export default function SaaSFinancePage() {
     [companies, selectedCompanyId],
   );
 
-  async function provisionSubscription(companyId: string) {
+  async function generateContract(companyId: string) {
     if (!user?.id) return;
-    setProvisioningId(companyId);
+    setGeneratingContractId(companyId);
     try {
-      const res = await fetch(`/api/companies/${companyId}/subscription/create`, {
+      const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha ao criar assinatura');
+      if (!res.ok) throw new Error(json.error || 'Falha ao gerar contrato');
       await loadData();
     } catch (err) {
-      console.error('SAAS_PROVISION_ERROR', err);
+      console.error('SAAS_CONTRACT_GENERATE_ERROR', err);
     } finally {
-      setProvisioningId(null);
+      setGeneratingContractId(null);
     }
   }
 
@@ -458,6 +478,12 @@ export default function SaaSFinancePage() {
                 {filteredCompanies.map((c) => {
                   const pricing = resolveCompanyPricing(c);
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
+                  const sub = c.saas_subscription as CompanySubscription | null;
+                  const dueDate = sub?.next_due_date || c.next_billing;
+                  const contractReady = hasSaasContractReady(sub);
+                  const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
+                    ? sub.contract_pdf_url
+                    : `/api/companies/${c.id}/contract?download=1`;
 
                   return (
                     <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.02]">
@@ -509,10 +535,10 @@ export default function SaaSFinancePage() {
                       </td>
                       <td className="p-4 text-[13px] text-gray-400">Mensal</td>
                       <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(c.next_charge || c.next_billing)}
+                        {formatDateBr(dueDate)}
                       </td>
                       <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(c.next_billing)}
+                        {formatDateBr(dueDate)}
                       </td>
                       <td className="p-4 text-[12px]">
                         <span
@@ -528,24 +554,46 @@ export default function SaaSFinancePage() {
                         </span>
                       </td>
                       <td className="p-4">
-                        {c.saas_subscription || c.contract_number ? (
-                          <button
-                            type="button"
-                            onClick={() => openContractTab(c.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-[12px] text-blue-300 hover:bg-white/5"
-                          >
-                            <FileText className="w-3.5 h-3.5" /> Contrato
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={provisioningId === c.id}
-                            onClick={() => provisionSubscription(c.id)}
-                            className="px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 text-[12px] hover:bg-blue-600/30 disabled:opacity-50"
-                          >
-                            {provisioningId === c.id ? 'Gerando…' : 'Gerar'}
-                          </button>
-                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                          {contractReady ? (
+                            <>
+                              <a
+                                href={contractViewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-blue-300 hover:bg-white/5"
+                              >
+                                Ver contrato
+                              </a>
+                              <a
+                                href={contractViewUrl}
+                                download
+                                className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
+                              >
+                                Baixar PDF
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => openContractTab(c.id)}
+                                className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-400 hover:bg-white/5"
+                              >
+                                Detalhes
+                              </button>
+                            </>
+                          ) : isRealSaasCompany(c) ? (
+                            <button
+                              type="button"
+                              disabled={generatingContractId === c.id}
+                              onClick={() => generateContract(c.id)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-200 text-[12px] hover:bg-amber-600/30 disabled:opacity-50"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              {generatingContractId === c.id ? 'Gerando…' : 'Gerar contrato'}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-gray-500">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -6,7 +6,7 @@ import {
   resolveCompanyPricing,
 } from '@/lib/companyPricing';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
-import { provisionSaasSubscription } from '@/lib/saasSubscriptionService';
+import { ensureSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function parseCustomPrice(raw: unknown): number | null {
   if (raw == null || raw === '') return null;
@@ -169,7 +169,7 @@ export async function PATCH(request: Request) {
           })
           .eq('id', existingSub.id);
       } else {
-        await provisionSaasSubscription(supabaseAdmin, companyRow);
+        await ensureSaasSubscription(supabaseAdmin, companyRow);
       }
     }
 

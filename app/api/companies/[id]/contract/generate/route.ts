@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
+  ensureSaasSubscription,
   generateAndStoreSaasContract,
   getSubscriptionByCompanyId,
-  provisionSaasSubscription,
 } from '@/lib/saasSubscriptionService';
 
 export async function POST(
@@ -36,7 +36,7 @@ export async function POST(
 
     let subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
     if (!subscription) {
-      const created = await provisionSaasSubscription(supabaseAdmin, company);
+      const created = await ensureSaasSubscription(supabaseAdmin, company);
       subscription = created.subscription;
     }
 

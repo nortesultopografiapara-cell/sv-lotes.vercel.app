@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS public.company_subscriptions (
   start_date date NOT NULL DEFAULT (CURRENT_DATE),
   next_due_date date,
   payment_status text NOT NULL DEFAULT 'pending',
-  contract_status text NOT NULL DEFAULT 'active',
+  contract_status text NOT NULL DEFAULT 'pending',
   contract_number text,
   contract_pdf_url text,
   created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),

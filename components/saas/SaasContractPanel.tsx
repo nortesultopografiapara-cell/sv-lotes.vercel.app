@@ -4,7 +4,11 @@ import { useState } from 'react';
 import { FileText, Download, RefreshCw, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
-import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
+import {
+  formatDateBr,
+  hasSaasContractReady,
+  type CompanySubscription,
+} from '@/lib/saasSubscription';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
@@ -29,17 +33,12 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
 
   const sub = company.saas_subscription as CompanySubscription | null;
   const pricing = resolveCompanyPricing(company as CompanyPricingSource);
-
-  const contractUrl =
-    sub?.contract_pdf_url?.startsWith('http')
-      ? sub.contract_pdf_url
-      : `/api/companies/${company.id}/contract?download=1`;
-
-  const viewUrl = sub?.contract_pdf_url?.startsWith('http')
+  const contractReady = hasSaasContractReady(sub);
+  const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
     ? sub.contract_pdf_url
     : `/api/companies/${company.id}/contract?download=1`;
 
-  async function callApi(path: string, method = 'POST') {
+  async function generateContract() {
     if (!user?.id) {
       setError('Usuário não autenticado.');
       return;
@@ -47,13 +46,13 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(path, {
-        method,
+      const res = await fetch(`/api/companies/${company.id}/contract/generate`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha na operação');
+      if (!res.ok) throw new Error(json.error || 'Falha ao gerar contrato');
       onRefresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido');
@@ -62,22 +61,16 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
     }
   }
 
-  async function createSubscription() {
-    await callApi(`/api/companies/${company.id}/subscription/create`);
-  }
-
-  async function regenerateContract() {
-    await callApi(`/api/companies/${company.id}/contract/generate`);
-  }
-
   const contractStatusLabel =
     sub?.contract_status === 'active'
       ? 'Ativo'
-      : sub?.contract_status === 'suspended'
-        ? 'Suspenso'
-        : sub?.contract_status === 'canceled'
-          ? 'Cancelado'
-          : '—';
+      : sub?.contract_status === 'pending'
+        ? 'Pendente (aguardando PDF)'
+        : sub?.contract_status === 'suspended'
+          ? 'Suspenso'
+          : sub?.contract_status === 'canceled'
+            ? 'Cancelado'
+            : '—';
 
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
@@ -92,20 +85,10 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!sub && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={createSubscription}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-[13px] hover:bg-blue-500 disabled:opacity-50"
-            >
-              Criar assinatura e contrato
-            </button>
-          )}
-          {sub && (
+          {contractReady ? (
             <>
               <a
-                href={viewUrl}
+                href={contractViewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5"
@@ -113,7 +96,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
                 <ExternalLink className="w-4 h-4" /> Ver contrato
               </a>
               <a
-                href={contractUrl}
+                href={contractViewUrl}
                 download
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5"
               >
@@ -122,13 +105,22 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
               <button
                 type="button"
                 disabled={busy}
-                onClick={regenerateContract}
+                onClick={generateContract}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-500/30 text-amber-300 text-[13px] hover:bg-amber-500/10 disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
                 Regerar contrato
               </button>
             </>
+          ) : (
+            <button
+              type="button"
+              disabled={busy || !sub}
+              onClick={generateContract}
+              className="px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
+            >
+              {busy ? 'Gerando…' : 'Gerar contrato'}
+            </button>
           )}
         </div>
       </div>
@@ -144,14 +136,11 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
         <Info label="Plano" value={company.ui_plan} />
         <Info label="Valor contratado" value={formatSaasCurrency(pricing.appliedPrice)} />
         <Info label="Data de início" value={formatDateBr(sub?.start_date)} />
-        <Info label="Próximo vencimento" value={formatDateBr(sub?.next_due_date || company.next_billing)} />
+        <Info label="Próximo vencimento" value={formatDateBr(sub?.next_due_date)} />
         <Info label="Status do contrato" value={contractStatusLabel} />
-        <Info label="Nº do contrato" value={sub?.contract_number || company.contract_number || '—'} />
+        <Info label="Nº do contrato" value={sub?.contract_number || '—'} />
         <Info label="Pagamento" value={company.payment_status} />
-        <Info
-          label="PDF"
-          value={sub?.contract_pdf_url ? 'Disponível' : 'Não gerado'}
-        />
+        <Info label="PDF" value={contractReady ? 'Disponível' : 'Não gerado'} />
       </div>
     </div>
   );
