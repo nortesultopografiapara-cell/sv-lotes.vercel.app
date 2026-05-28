@@ -18,6 +18,8 @@ export type LotFormState = CustomerFormValues & {
   down_payment_due_date: string;
   installments_count: string;
   first_installment_due_date: string;
+  broker_id: string;
+  notes: string;
 };
 
 export type LotFormConfirmPayload = LotFormState & {
@@ -35,6 +37,8 @@ function emptyLotFormState(): LotFormState {
     down_payment_due_date: '',
     installments_count: '1',
     first_installment_due_date: '',
+    broker_id: '',
+    notes: '',
   };
 }
 
@@ -56,6 +60,9 @@ type Props = {
   tenantId: string | null;
   isSuperAdmin: boolean;
   prefillFromReservation?: boolean;
+  mode?: 'create' | 'edit';
+  initialFormData?: Partial<LotFormState>;
+  brokers?: { id: string; name: string }[];
   onClose: () => void;
   onConfirm: (data: LotFormConfirmPayload) => Promise<void>;
 };
@@ -67,18 +74,34 @@ export function CustomerLotFormModal({
   tenantId,
   isSuperAdmin,
   prefillFromReservation,
+  mode = 'create',
+  initialFormData,
+  brokers = [],
   onClose,
   onConfirm,
 }: Props) {
-  const [formData, setFormData] = useState<LotFormState>(emptyLotFormState());
+  const isEditMode = mode === 'edit';
+  const [formData, setFormData] = useState<LotFormState>(() => ({
+    ...emptyLotFormState(),
+    ...initialFormData,
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(false);
-  const [prefillBanner, setPrefillBanner] = useState<string | null>(null);
+  const [prefillBanner, setPrefillBanner] = useState<string | null>(
+    isEditMode ? 'Dados da venda carregados para edição.' : null,
+  );
+
+  useEffect(() => {
+    if (initialFormData) {
+      setFormData((prev) => ({ ...prev, ...initialFormData }));
+    }
+  }, [initialFormData]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadPrefill() {
+      if (isEditMode) return;
       const customerId = lot.customerId;
       if (!prefillFromReservation || !customerId) return;
 
@@ -160,7 +183,7 @@ export function CustomerLotFormModal({
     return () => {
       cancelled = true;
     };
-  }, [lot.id, lot.customerId, lot.signal_amount, prefillFromReservation, actionName]);
+  }, [lot.id, lot.customerId, lot.signal_amount, prefillFromReservation, actionName, isEditMode]);
 
   const discountValue = Number(formData.discount_value) || 0;
   const paymentType = formData.payment_type || 'À vista';
@@ -175,7 +198,7 @@ export function CustomerLotFormModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (actionName === 'Vendido') {
+    if (actionName === 'Vendido' || isEditMode) {
       if (paymentType === 'À vista') {
         if (discountValue > price) {
           alert('O desconto não pode ser maior que o valor do lote.');
@@ -235,8 +258,9 @@ export function CustomerLotFormModal({
     setFormData((prev) => ({ ...prev, ...data }));
   };
 
-  const title =
-    formData.selected_customer_id || prefillFromReservation
+  const title = isEditMode
+    ? 'Editar Venda do Lote'
+    : formData.selected_customer_id || prefillFromReservation
       ? actionName === 'Vendido'
         ? 'Venda de Lote'
         : 'Reserva de Lote'
@@ -275,13 +299,15 @@ export function CustomerLotFormModal({
           )}
 
           <form id="customer-lot-form" onSubmit={handleSubmit} className="space-y-6">
-            <CustomerSearchPicker
-              tenantId={tenantId}
-              isSuperAdmin={isSuperAdmin}
-              formData={formData}
-              onFormChange={onCustomerFormChange}
-              disabled={submitting || prefillLoading}
-            />
+            {!isEditMode && (
+              <CustomerSearchPicker
+                tenantId={tenantId}
+                isSuperAdmin={isSuperAdmin}
+                formData={formData}
+                onFormChange={onCustomerFormChange}
+                disabled={submitting || prefillLoading}
+              />
+            )}
 
             <div className="space-y-4">
               <h4 className="text-sm font-bold text-gray-900 border-b pb-1">DADOS DO CLIENTE</h4>
@@ -478,7 +504,7 @@ export function CustomerLotFormModal({
               </div>
             )}
 
-            {actionName === 'Vendido' && (
+            {(actionName === 'Vendido' || isEditMode) && (
               <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
                 <h4 className="text-sm font-bold text-gray-900 border-b pb-1">DADOS DA VENDA</h4>
                 {(formData.reservation_signal_paid || 0) > 0 && (
@@ -589,6 +615,33 @@ export function CustomerLotFormModal({
                     </div>
                   </div>
                 )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Corretor</label>
+                    <select
+                      value={formData.broker_id}
+                      onChange={(e) => setField({ broker_id: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="">Nenhum / não informado</option>
+                      {brokers.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Observações</label>
+                    <textarea
+                      rows={2}
+                      value={formData.notes}
+                      onChange={(e) => setField({ notes: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm resize-none"
+                      placeholder="Observações da venda"
+                    />
+                  </div>
+                </div>
               </div>
             )}
           </form>
@@ -612,6 +665,8 @@ export function CustomerLotFormModal({
           >
             {submitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isEditMode ? (
+              'Salvar'
             ) : actionName === 'Vendido' ? (
               'Confirmar Venda'
             ) : (

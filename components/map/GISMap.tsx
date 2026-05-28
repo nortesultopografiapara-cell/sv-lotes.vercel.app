@@ -16,7 +16,19 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Layers, Map as MapIcon, Loader2, X, Trash2, Eye, EyeOff } from "lucide-react";
+import {
+  Layers,
+  Map as MapIcon,
+  Loader2,
+  X,
+  Trash2,
+  Eye,
+  EyeOff,
+  Pencil,
+  FileText,
+  RefreshCw,
+  Wallet,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -26,6 +38,12 @@ import {
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { resolveOrCreateCustomer } from "@/lib/customerIdentity";
+import {
+  canEditCompletedSale,
+  loadSaleEditContext,
+  updateSaleFromEdit,
+  type SaleEditLoadedContext,
+} from "@/lib/saleEdit";
 import {
   chanfreTooltipText,
   formatChanfreMeters,
@@ -430,12 +448,22 @@ function LotPopupContent({
   onAction,
   onRequestCustomerForm,
   onRequestClear,
+  onEditSale,
+  onViewContract,
+  onRegenerateContract,
+  onViewFinance,
+  canEditSale,
   actionLoading,
 }: {
   lot: any;
   onAction: (lot: any, action: string, newPrice?: number) => void;
   onRequestCustomerForm: (lot: any, action: string, newPrice: number) => void;
   onRequestClear: (lot: any, newPrice: number) => void;
+  onEditSale?: (lot: any) => void;
+  onViewContract?: (lot: any) => void;
+  onRegenerateContract?: (lot: any) => void;
+  onViewFinance?: (lot: any) => void;
+  canEditSale?: boolean;
   actionLoading: string | null;
 }) {
   const color = getStatusColor(lot.status);
@@ -603,6 +631,58 @@ function LotPopupContent({
           </div>
         </div>
       </div>
+
+      {isSold && (
+        <div className="mb-3 space-y-2">
+          <span className="text-sm font-semibold text-gray-800 block">
+            Venda concluída
+          </span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {canEditSale && onEditSale && (
+              <button
+                type="button"
+                onClick={() => onEditSale(lot)}
+                disabled={actionLoading === lot.id}
+                className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Editar Venda
+              </button>
+            )}
+            {onViewContract && (
+              <button
+                type="button"
+                onClick={() => onViewContract(lot)}
+                className="flex items-center justify-center gap-1 px-2 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg"
+              >
+                <FileText className="w-3 h-3" />
+                Ver Contrato
+              </button>
+            )}
+            {onRegenerateContract && lot.contractId && (
+              <button
+                type="button"
+                onClick={() => onRegenerateContract(lot)}
+                disabled={actionLoading === `regen-${lot.id}`}
+                className="flex items-center justify-center gap-1 px-2 py-2 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${actionLoading === `regen-${lot.id}` ? "animate-spin" : ""}`} />
+                Regenerar contrato
+              </button>
+            )}
+            {onViewFinance && lot.saleId && (
+              <button
+                type="button"
+                onClick={() => onViewFinance(lot)}
+                className="col-span-2 flex items-center justify-center gap-1 px-2 py-2 border border-gray-300 text-gray-800 hover:bg-gray-50 text-[10px] font-bold rounded-lg"
+              >
+                <Wallet className="w-3 h-3" />
+                Ver Financeiro
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mb-2">
         <span className="text-sm font-semibold text-gray-800">
@@ -956,7 +1036,111 @@ export default function GISMap({
     action: string;
     price: number;
     prefillFromReservation?: boolean;
+    mode?: "create" | "edit";
+    editContext?: SaleEditLoadedContext;
   } | null>(null);
+  const [brokersList, setBrokersList] = useState<{ id: string; name: string }[]>(
+    [],
+  );
+  const [editSaleLoading, setEditSaleLoading] = useState<string | null>(null);
+
+  const userCanEditSale = canEditCompletedSale(user?.role);
+
+  useEffect(() => {
+    async function loadBrokers() {
+      if (!user?.tenant_id) return;
+      const { data } = await supabase
+        .from("brokers")
+        .select("id, name")
+        .eq("tenant_id", user.tenant_id)
+        .eq("active", true)
+        .order("name");
+      setBrokersList(
+        (data || []).map((b) => ({ id: b.id, name: b.name || "Corretor" })),
+      );
+    }
+    if (user) void loadBrokers();
+  }, [user?.tenant_id, user?.id]);
+
+  const openEditSaleForm = async (lot: any) => {
+    if (!userCanEditSale) {
+      alert("Apenas administradores podem editar vendas concluídas.");
+      return;
+    }
+    setEditSaleLoading(lot.id);
+    try {
+      const ctx = await loadSaleEditContext(supabase, {
+        blockId: lot.id,
+        saleId: lot.saleId,
+      });
+      setCustomerForm({
+        lot: {
+          ...lot,
+          customerId: ctx.customerId,
+          saleId: ctx.saleId,
+          contractId: ctx.contractId,
+        },
+        action: "Vendido",
+        price: ctx.lotPrice || lot.price,
+        mode: "edit",
+        editContext: ctx,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erro ao carregar venda";
+      alert(msg);
+    } finally {
+      setEditSaleLoading(null);
+    }
+  };
+
+  const handleViewContract = (lot: any) => {
+    if (lot.contractId) {
+      window.open(`/contracts?highlight=${lot.contractId}`, "_blank");
+    } else {
+      window.open("/contracts", "_blank");
+    }
+  };
+
+  const handleViewFinance = (lot: any) => {
+    window.open("/finance", "_blank");
+  };
+
+  const handleRegenerateContractFromMap = async (lot: any) => {
+    if (!lot.contractId) {
+      alert("Contrato não encontrado para este lote.");
+      return;
+    }
+    if (
+      !confirm(
+        "Regenerar o contrato com os dados atuais? A versão anterior será mantida no histórico.",
+      )
+    ) {
+      return;
+    }
+    setActionLoading(`regen-${lot.id}`);
+    try {
+      const res = await fetch(`/api/contracts/${lot.contractId}/regenerate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Falha ao regenerar contrato");
+      }
+      alert("Contrato regenerado com sucesso.");
+      if (json.contract?.id) {
+        setLots((prev) =>
+          prev.map((l) =>
+            l.id === lot.id ? { ...l, contractId: json.contract.id } : l,
+          ),
+        );
+      }
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Erro ao regenerar contrato");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const openCustomerForm = (lot: any, action: string, price: number) => {
     const isReserved =
@@ -1070,6 +1254,8 @@ export default function GISMap({
                 projectName: b.projects?.name || "?",
                 customerName: b.customers?.name || null,
                 customerId: b.customer_id || null,
+                saleId: b.sale_id || null,
+                contractId: b.contract_id || null,
                 signal_amount: b.signal_amount,
                 signal_date: b.signal_date,
                 signal_payment_method: b.signal_payment_method,
@@ -1871,7 +2057,14 @@ export default function GISMap({
                     onAction={handleLotAction}
                     onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
                     onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                    actionLoading={actionLoading}
+                    canEditSale={userCanEditSale}
+                    onEditSale={(l) => void openEditSaleForm(l)}
+                    onViewContract={handleViewContract}
+                    onRegenerateContract={(l) =>
+                      void handleRegenerateContractFromMap(l)
+                    }
+                    onViewFinance={handleViewFinance}
+                    actionLoading={editSaleLoading || actionLoading}
                   />
                 </Popup>
                 )}
@@ -1939,7 +2132,14 @@ export default function GISMap({
                     openCustomerForm(l, a, p)
                   }
                   onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                  actionLoading={actionLoading}
+                  canEditSale={userCanEditSale}
+                  onEditSale={(l) => void openEditSaleForm(l)}
+                  onViewContract={handleViewContract}
+                  onRegenerateContract={(l) =>
+                    void handleRegenerateContractFromMap(l)
+                  }
+                  onViewFinance={handleViewFinance}
+                  actionLoading={editSaleLoading || actionLoading}
                 />
               </Popup>
               )}
@@ -2045,8 +2245,79 @@ export default function GISMap({
           tenantId={user.tenant_id || null}
           isSuperAdmin={user.role === "SUPER_ADMIN"}
           prefillFromReservation={customerForm.prefillFromReservation}
+          mode={customerForm.mode}
+          initialFormData={customerForm.editContext?.form}
+          brokers={brokersList}
           onClose={() => setCustomerForm(null)}
           onConfirm={async (data) => {
+            if (customerForm.mode === "edit" && customerForm.editContext) {
+              const ctx = customerForm.editContext;
+              if (!user.tenant_id) {
+                alert("Empresa não identificada.");
+                return;
+              }
+              try {
+                await updateSaleFromEdit(supabase, {
+                  lot: {
+                    id: customerForm.lot.id,
+                    project_id: customerForm.lot.project_id,
+                    price: customerForm.price,
+                    saleId: ctx.saleId,
+                    contractId: ctx.contractId,
+                  },
+                  tenantId: user.tenant_id,
+                  userId: user.id,
+                  data,
+                  saleBefore: ctx.saleBefore,
+                  customerBefore: ctx.customerBefore,
+                  customerId: ctx.customerId,
+                });
+                const { data: refreshedBlock } = await supabase
+                  .from("blocks")
+                  .select("*, customers(name)")
+                  .eq("id", customerForm.lot.id)
+                  .maybeSingle();
+                if (refreshedBlock) {
+                  setLots((prev) =>
+                    prev.map((l) =>
+                      l.id === refreshedBlock.id
+                        ? {
+                            ...l,
+                            customerName:
+                              refreshedBlock.customers?.name || l.customerName,
+                            customerId: refreshedBlock.customer_id,
+                            price: Number(refreshedBlock.price) || l.price,
+                            saleId: refreshedBlock.sale_id,
+                            contractId: refreshedBlock.contract_id,
+                          }
+                        : l,
+                    ),
+                  );
+                }
+                setCustomerForm(null);
+                const regen =
+                  ctx.contractId &&
+                  confirm(
+                    "Venda atualizada com sucesso.\n\nRegere o contrato para refletir as alterações?\n\n(O contrato anterior permanece no histórico.)",
+                  );
+                if (regen && ctx.contractId) {
+                  await handleRegenerateContractFromMap({
+                    ...customerForm.lot,
+                    contractId: ctx.contractId,
+                  });
+                } else {
+                  alert(
+                    "Venda atualizada. Regere o contrato em Contratos ou pelo botão Regenerar no mapa.",
+                  );
+                }
+              } catch (e: unknown) {
+                alert(
+                  e instanceof Error ? e.message : "Erro ao salvar alterações",
+                );
+                throw e;
+              }
+              return;
+            }
             if (customerForm.prefillFromReservation) {
               console.log("RESERVATION_TO_SALE_PREFILL", {
                 customerId: data.selected_customer_id,
