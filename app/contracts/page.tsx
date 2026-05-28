@@ -34,20 +34,8 @@ import {
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
+import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
-
-/** Campos de medidas do lote — colunas com e sem aspas no Postgres/Supabase */
-const BLOCKS_CONTRACT_SELECT = `
-  *,
-  frente,
-  area,
-  fundo,
-  lado_direito,
-  lado_esquerdo,
-  "Fundo",
-  "Lado Dir.",
-  "Lado Esq."
-`;
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
@@ -377,37 +365,23 @@ function normalizeContractStatus(status?: string | null): string {
   return st;
 }
 
-/** Unifica nomes de colunas (snake_case e Civil3D) para o contractTemplate */
+/** Unifica medidas do lote sem depender de colunas fixas no schema. */
 function enrichBlockForContract(block: Record<string, any> | null | undefined): Record<string, any> {
   if (!block || typeof block !== "object") return {};
-  const normalized = {
-    ...block,
-    frente: block.frente ?? block.Frente ?? "",
-    area: block.area,
-    segments_json: block.segments_json,
-    Fundo: block["Fundo"] ?? block.Fundo ?? block.fundo ?? "",
-    "Lado Dir.":
-      block["Lado Dir."] ??
-      block["Lado Dir"] ??
-      block.ladoDireito ??
-      block.lado_dir ??
-      block.lado_direito ??
-      "",
-    "Lado Esq.":
-      block["Lado Esq."] ??
-      block["Lado Esq"] ??
-      block.ladoEsquerdo ??
-      block.lado_esq ??
-      block.lado_esquerdo ??
-      "",
-  };
+  const normalized = normalizeBlockForContractRegeneration(block);
   const lotMeasures = resolveLotMeasuresFromBlock(normalized);
+  const display = {
+    frente: normalized.frente || "Não informado",
+    fundo: normalized.Fundo || normalized.fundo || "Não informado",
+    ladoDireito: normalized["Lado Dir."] || "Não informado",
+    ladoEsquerdo: normalized["Lado Esq."] || "Não informado",
+  };
   return {
     ...normalized,
-    frente: lotMeasures.sides.frente ?? normalized.frente,
-    Fundo: lotMeasures.sides.fundo ?? normalized.Fundo,
-    "Lado Dir.": lotMeasures.sides.ladoDireito ?? normalized["Lado Dir."],
-    "Lado Esq.": lotMeasures.sides.ladoEsquerdo ?? normalized["Lado Esq."],
+    frente: lotMeasures.sides.frente ?? normalized.frente ?? display.frente,
+    Fundo: lotMeasures.sides.fundo ?? normalized.Fundo ?? display.fundo,
+    "Lado Dir.": lotMeasures.sides.ladoDireito ?? normalized["Lado Dir."] ?? display.ladoDireito,
+    "Lado Esq.": lotMeasures.sides.ladoEsquerdo ?? normalized["Lado Esq."] ?? display.ladoEsquerdo,
     chanfre: lotMeasures.chanfre?.total ?? null,
     chanfre_segments: lotMeasures.chanfre?.segments ?? [],
   };

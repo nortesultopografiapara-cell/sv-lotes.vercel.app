@@ -1,3 +1,5 @@
+import { pickBlockSideRaw } from '@/lib/blockLotNormalize';
+
 /**
  * Chanfre: segmentos extras quando há mais de 4 lados em segments_json.
  * Cada lado oficial recebe exatamente 1 segmento; o restante é chanfre (sem somar no lado).
@@ -71,20 +73,10 @@ export function parseSegmentLengthsFromJson(segmentsJson: unknown): number[] {
 
 function getColumnTargets(block: Record<string, unknown>): LotSideMeasures {
   return {
-    frente: parseBlockSideLength(block.frente ?? block.Frente),
-    fundo: parseBlockSideLength(block.Fundo ?? block.fundo),
-    ladoDireito: parseBlockSideLength(
-      block["Lado Dir."] ??
-        block["Lado Dir"] ??
-        block.lado_direito ??
-        block.ladoDireito,
-    ),
-    ladoEsquerdo: parseBlockSideLength(
-      block["Lado Esq."] ??
-        block["Lado Esq"] ??
-        block.lado_esquerdo ??
-        block.ladoEsquerdo,
-    ),
+    frente: parseBlockSideLength(pickBlockSideRaw(block, 'frente')),
+    fundo: parseBlockSideLength(pickBlockSideRaw(block, 'fundo')),
+    ladoDireito: parseBlockSideLength(pickBlockSideRaw(block, 'ladoDireito')),
+    ladoEsquerdo: parseBlockSideLength(pickBlockSideRaw(block, 'ladoEsquerdo')),
   };
 }
 

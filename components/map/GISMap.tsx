@@ -88,18 +88,6 @@ const isVendidoStatus = (status: string) => {
   return s === "vendido" || s === "sold";
 };
 
-const BLOCKS_SALE_SELECT = `
-  *,
-  frente,
-  area,
-  fundo,
-  lado_direito,
-  lado_esquerdo,
-  "Fundo",
-  "Lado Dir.",
-  "Lado Esq."
-`;
-
 /** Numeração via API (service role) — evita RLS vazio no browser. */
 async function fetchNextContractNumberFromApi(
   tenantId: string,
@@ -128,7 +116,7 @@ async function fetchNextContractNumberFromApi(
 async function fetchBlockForContract(lotId: string) {
   const { data, error } = await supabase
     .from("blocks")
-    .select(BLOCKS_SALE_SELECT)
+    .select("*")
     .eq("id", lotId)
     .maybeSingle();
   if (error) {

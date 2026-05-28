@@ -8,6 +8,10 @@ import {
   ensureValidContractNumber,
   isValidStoredContractNumber,
 } from '@/lib/contractNumber';
+import {
+  getNormalizedLotMeasuresDisplay,
+  normalizeBlockForContractRegeneration,
+} from '@/lib/blockLotNormalize';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import {
   auditMissingCompanyFields,
@@ -99,18 +103,6 @@ export function resolveRegenerationSession(
   return { contractTenantId, activeTenantId, callerRole: role };
 }
 
-export const BLOCKS_CONTRACT_SELECT = `
-  *,
-  frente,
-  area,
-  fundo,
-  lado_direito,
-  lado_esquerdo,
-  "Fundo",
-  "Lado Dir.",
-  "Lado Esq."
-`;
-
 export type ContractRegenerateValidation = {
   ok: boolean;
   missing: string[];
@@ -136,38 +128,104 @@ export function enrichBlockForContract(
   block: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
   if (!block || typeof block !== 'object') return {};
-  const b = block as Record<string, unknown>;
-  const normalized = {
-    ...b,
-    frente: b.frente ?? b.Frente ?? '',
-    area: b.area,
-    segments_json: b.segments_json,
-    Fundo: b['Fundo'] ?? b.Fundo ?? b.fundo ?? '',
-    'Lado Dir.':
-      b['Lado Dir.'] ??
-      b['Lado Dir'] ??
-      b.ladoDireito ??
-      b.lado_dir ??
-      b.lado_direito ??
-      '',
-    'Lado Esq.':
-      b['Lado Esq.'] ??
-      b['Lado Esq'] ??
-      b.ladoEsquerdo ??
-      b.lado_esq ??
-      b.lado_esquerdo ??
-      '',
-  };
+
+  console.log('REGENERATE_LOT_RAW_DATA', block);
+
+  const normalized = normalizeBlockForContractRegeneration(block);
   const lotMeasures = resolveLotMeasuresFromBlock(normalized);
-  return {
+  const display = getNormalizedLotMeasuresDisplay(normalized);
+
+  const enriched = {
     ...normalized,
-    frente: lotMeasures.sides.frente ?? normalized.frente,
-    Fundo: lotMeasures.sides.fundo ?? normalized.Fundo,
-    'Lado Dir.': lotMeasures.sides.ladoDireito ?? normalized['Lado Dir.'],
-    'Lado Esq.': lotMeasures.sides.ladoEsquerdo ?? normalized['Lado Esq.'],
+    frente:
+      lotMeasures.sides.frente ??
+      normalized.frente ??
+      display.frente,
+    Fundo:
+      lotMeasures.sides.fundo ??
+      normalized.Fundo ??
+      display.fundo,
+    fundo:
+      lotMeasures.sides.fundo ??
+      normalized.fundo ??
+      display.fundo,
+    'Lado Dir.':
+      lotMeasures.sides.ladoDireito ??
+      normalized['Lado Dir.'] ??
+      display.ladoDireito,
+    'Lado Esq.':
+      lotMeasures.sides.ladoEsquerdo ??
+      normalized['Lado Esq.'] ??
+      display.ladoEsquerdo,
+    lado_direito:
+      lotMeasures.sides.ladoDireito ??
+      normalized.lado_direito ??
+      display.ladoDireito,
+    lado_esquerdo:
+      lotMeasures.sides.ladoEsquerdo ??
+      normalized.lado_esquerdo ??
+      display.ladoEsquerdo,
     chanfre: lotMeasures.chanfre?.total ?? null,
     chanfre_segments: lotMeasures.chanfre?.segments ?? [],
   };
+
+  console.log('REGENERATE_LOT_MEASURES_NORMALIZED', {
+    display,
+    resolved: lotMeasures.sides,
+    chanfre: lotMeasures.chanfre,
+    enriched: {
+      frente: enriched.frente,
+      fundo: enriched.fundo,
+      lado_direito: enriched.lado_direito,
+      lado_esquerdo: enriched.lado_esquerdo,
+    },
+  });
+
+  return enriched;
+}
+
+/** Carrega bloco/lote por ID — select('*') para compatibilidade com schema de produção. */
+export async function fetchBlockForContractRegeneration(
+  supabase: SupabaseClient,
+  blockId: string,
+  tenantId: string,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('*')
+    .eq('id', blockId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('REGENERATE_BLOCK_QUERY_WARN', {
+      blockId,
+      message: error.message,
+      code: error.code,
+    });
+    return {};
+  }
+
+  if (!data) {
+    console.warn('REGENERATE_BLOCK_NOT_FOUND', { blockId, tenantId });
+    return {};
+  }
+
+  const row = data as Record<string, unknown>;
+  const rowTenant = row.tenant_id ? String(row.tenant_id) : '';
+  if (rowTenant && rowTenant !== tenantId) {
+    throw new Error(
+      `Lote não pertence à empresa do contrato (tenant ${tenantId}).`,
+    );
+  }
+  if (!rowTenant) {
+    console.warn('REGENERATE_ENTITY_LEGACY_NO_TENANT', {
+      table: 'blocks',
+      id: blockId,
+      tenantId,
+    });
+  }
+
+  return row;
 }
 
 function isValidSnapshot(val: unknown): boolean {
@@ -550,29 +608,11 @@ export async function loadFreshRegenerationEntities(
 
   let block: Record<string, unknown> = {};
   if (blockId) {
-    const { data, error } = await supabase
-      .from('blocks')
-      .select(BLOCKS_CONTRACT_SELECT)
-      .eq('id', blockId)
-      .maybeSingle();
-    if (error) throw new Error(`Erro ao carregar lote: ${error.message}`);
-    if (data) {
-      const row = data as Record<string, unknown>;
-      const rowTenant = row.tenant_id ? String(row.tenant_id) : '';
-      if (rowTenant && rowTenant !== tenantId) {
-        throw new Error(
-          `Lote não pertence à empresa do contrato (tenant ${tenantId}).`,
-        );
-      }
-      if (!rowTenant) {
-        console.warn('REGENERATE_ENTITY_LEGACY_NO_TENANT', {
-          table: 'blocks',
-          id: blockId,
-          tenantId,
-        });
-      }
-      block = row;
-    }
+    block = await fetchBlockForContractRegeneration(
+      supabase,
+      blockId,
+      tenantId,
+    );
   }
 
   const projectId =
