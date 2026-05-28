@@ -39,23 +39,45 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
     : `/api/companies/${company.id}/contract?download=1`;
 
   async function generateContract() {
-    if (!user?.id) {
-      setError('Usuário não autenticado.');
+    const companyId = (company as { id?: string }).id;
+    if (!companyId || !user?.id) {
+      const msg = 'Não foi possível gerar o contrato';
+      setError(msg);
+      alert(msg);
       return;
     }
+    if (busy) return;
+
+    console.log('GENERATE_SAAS_CONTRACT_CLICK', company, sub);
     setBusy(true);
     setError(null);
+
+    const pricing = resolveCompanyPricing(company as CompanyPricingSource);
+
     try {
-      const res = await fetch(`/api/companies/${company.id}/contract/generate`, {
+      const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
+        body: JSON.stringify({
+          userId: user.id,
+          subscription_id: sub?.id ?? null,
+          company_id: companyId,
+          plan_type: sub?.plan_type || company.plan_type || company.plan,
+          monthly_price: sub?.monthly_price ?? pricing.appliedPrice,
+          next_due_date: sub?.next_due_date ?? company.next_billing,
+        }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha ao gerar contrato');
+      const result = await res.json().catch(() => ({}));
+      console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || 'Falha ao gerar contrato');
+      }
       onRefresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro desconhecido');
+      const msg = 'Não foi possível gerar o contrato';
+      setError(msg);
+      alert(msg);
+      console.error('GENERATE_SAAS_CONTRACT_ERROR', e);
     } finally {
       setBusy(false);
     }

@@ -70,7 +70,8 @@ export default function SaaSFinancePage() {
   const [filterPayment, setFilterPayment] = useState('all');
   const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [generatingContractId, setGeneratingContractId] = useState<string | null>(null);
+  const [loadingContractId, setLoadingContractId] = useState<string | null>(null);
+  const [contractToast, setContractToast] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -217,24 +218,71 @@ export default function SaaSFinancePage() {
     [companies, selectedCompanyId],
   );
 
-  async function generateContract(companyId: string) {
-    if (!user?.id) return;
-    setGeneratingContractId(companyId);
-    try {
-      const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha ao gerar contrato');
-      await loadData();
-    } catch (err) {
-      console.error('SAAS_CONTRACT_GENERATE_ERROR', err);
-    } finally {
-      setGeneratingContractId(null);
-    }
-  }
+  const handleGenerateSaasContract = useCallback(
+    async (company: EnrichedCompany, subscription: CompanySubscription | null) => {
+      const companyId = (company as { id?: string }).id;
+      if (!companyId) {
+        alert('Não foi possível gerar o contrato');
+        return;
+      }
+      if (!user?.id) {
+        alert('Não foi possível gerar o contrato');
+        return;
+      }
+
+      const loadingKey = subscription?.id || companyId;
+      if (loadingContractId === loadingKey) return;
+
+      console.log('GENERATE_SAAS_CONTRACT_CLICK', company, subscription);
+      setLoadingContractId(loadingKey);
+      setContractToast(null);
+
+      const pricing = resolveCompanyPricing(company);
+
+      try {
+        const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            subscription_id: subscription?.id ?? null,
+            company_id: companyId,
+            plan_type: subscription?.plan_type || company.plan_type || company.plan,
+            monthly_price: subscription?.monthly_price ?? pricing.appliedPrice,
+            next_due_date: subscription?.next_due_date ?? company.next_billing,
+          }),
+        });
+
+        const result = await res.json().catch(() => ({}));
+        console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
+
+        if (!res.ok || !result.success) {
+          throw new Error(result.error || 'Falha ao gerar contrato');
+        }
+
+        const updatedSub = result.subscription as CompanySubscription | undefined;
+        if (updatedSub) {
+          setCompanies((prev) =>
+            prev.map((row) => {
+              const rowId = (row as { id?: string }).id;
+              if (rowId !== companyId) return row;
+              return enrichCompany(row as CompanyPricingSource, updatedSub);
+            }),
+          );
+        } else {
+          await loadData();
+        }
+      } catch (err) {
+        console.error('GENERATE_SAAS_CONTRACT_ERROR', err);
+        const msg = 'Não foi possível gerar o contrato';
+        setContractToast(msg);
+        alert(msg);
+      } finally {
+        setLoadingContractId(null);
+      }
+    },
+    [user?.id, loadingContractId, loadData],
+  );
 
   function openContractTab(companyId: string) {
     setSelectedCompanyId(companyId);
@@ -459,6 +507,12 @@ export default function SaaSFinancePage() {
             </div>
           </div>
 
+          {contractToast && (
+            <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+              {contractToast}
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left min-w-[1100px]">
               <thead>
@@ -478,15 +532,18 @@ export default function SaaSFinancePage() {
                 {filteredCompanies.map((c) => {
                   const pricing = resolveCompanyPricing(c);
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
+                  const companyId = (c as { id?: string }).id;
                   const sub = c.saas_subscription as CompanySubscription | null;
                   const dueDate = sub?.next_due_date || c.next_billing;
                   const contractReady = hasSaasContractReady(sub);
                   const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
                     ? sub.contract_pdf_url
-                    : `/api/companies/${c.id}/contract?download=1`;
+                    : `/api/companies/${companyId}/contract?download=1`;
+                  const contractLoadingKey = sub?.id || companyId || '';
+                  const isGeneratingContract = loadingContractId === contractLoadingKey;
 
                   return (
-                    <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                    <tr key={companyId || c.name} className="border-b border-white/5 hover:bg-white/[0.02]">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div
@@ -583,12 +640,16 @@ export default function SaaSFinancePage() {
                           ) : isRealSaasCompany(c) ? (
                             <button
                               type="button"
-                              disabled={generatingContractId === c.id}
-                              onClick={() => generateContract(c.id)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-200 text-[12px] hover:bg-amber-600/30 disabled:opacity-50"
+                              disabled={isGeneratingContract || !companyId}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void handleGenerateSaasContract(c, sub);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-200 text-[12px] hover:bg-amber-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <FileText className="w-3.5 h-3.5" />
-                              {generatingContractId === c.id ? 'Gerando…' : 'Gerar contrato'}
+                              {isGeneratingContract ? 'Gerando…' : 'Gerar'}
                             </button>
                           ) : (
                             <span className="text-[11px] text-gray-500">—</span>
