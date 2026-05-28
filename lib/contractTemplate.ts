@@ -107,9 +107,8 @@ export function generateContractHTML({
   const empresaCidade = toTitleCase((isValid(tenant?.city) ? tenant?.city : null) || "");
   const empresaTelefone = (isValid(tenant?.phone) ? tenant?.phone : null) || "";
   const empresaEmail = (isValid(tenant?.email) ? tenant?.email : null) || "";
-  const empresaLogo = tenant?.logo_url
-    ? `<img src="${tenant?.logo_url}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>`
-    : "";
+  const empresaLogoSrc = tenant?.logo_url || '/logo-sv-lotes.png';
+  const empresaLogo = `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 20px;" alt="Logo"/>`;
 
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");

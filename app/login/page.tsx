@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Map as MapIcon, Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -120,10 +121,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md bg-[var(--color-surface)]/80 backdrop-blur-xl rounded-2xl border border-[var(--color-border)] shadow-2xl p-8 transform transition-all relative z-10">
         
         <div className="flex flex-col items-center justify-center mb-8">
-          <div className="w-16 h-16 bg-[var(--color-primary)]/10 rounded-2xl flex items-center justify-center mb-4 text-[var(--color-primary)] border border-[var(--color-primary)]/20 shadow-[0_0_15px_rgba(242,125,38,0.2)]">
-            <MapIcon className="w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">SV_LOTES</h1>
+          <SvLotesLogo size={72} showText={false} className="mb-4" />
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">SV LOTES</h1>
           <p className="text-sm text-[var(--color-text-muted)] font-mono text-center uppercase tracking-widest">
             Gestão & GIS
           </p>

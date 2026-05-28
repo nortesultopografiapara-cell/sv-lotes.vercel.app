@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { Building2, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -101,11 +102,8 @@ export default function OnboardingPage() {
         <div className="absolute top-0 left-0 w-full h-[500px] bg-[#06b6d4]/10 blur-[100px] rounded-full -translate-y-1/2 -translate-x-1/4" />
         
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-16">
-            <div className="w-10 h-10 rounded-xl bg-[#06b6d4]/20 flex items-center justify-center border border-[#06b6d4]">
-              <Building2 className="w-6 h-6 text-[#06b6d4]" />
-            </div>
-            <span className="font-sans font-bold text-2xl tracking-wider text-white">SV_LOTES</span>
+          <div className="mb-16">
+            <SvLotesLogo size={48} showText subtitle="Gestão Imobiliária & GIS" />
           </div>
 
           <h1 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-6">

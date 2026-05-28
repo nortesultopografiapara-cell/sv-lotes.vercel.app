@@ -14,8 +14,14 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SV_LOTES | Gestão Imobiliária e GIS',
+  title: 'SV LOTES | Gestão Imobiliária e GIS',
   description: 'Plataforma completa de gestão imobiliária, loteamentos e GIS em tempo real.',
+  icons: {
+    icon: '/logo-sv-lotes.png',
+    apple: '/logo-sv-lotes.png',
+    shortcut: '/logo-sv-lotes.png',
+  },
+  manifest: '/manifest.webmanifest',
 };
 
 export default function RootLayout({

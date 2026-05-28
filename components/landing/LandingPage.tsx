@@ -26,6 +26,7 @@ import {
 import { LandingScreenshot } from './LandingScreenshot';
 import { LandingMapDemo } from './LandingMapDemo';
 import { LandingPricing } from './LandingPricing';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import {
   LANDING_CONTACT,
   LANDING_SERVICES,
@@ -157,12 +158,7 @@ export function LandingPage() {
   return (
     <div className="landing-page">
       <header className={`landing-header ${headerScrolled ? 'is-scrolled' : ''}`}>
-        <Link href="/" className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-[var(--color-primary)]/15 border border-[var(--color-primary)]/25 flex items-center justify-center text-[var(--color-primary)] shrink-0">
-            <MapIcon className="w-5 h-5" />
-          </div>
-          <span className="font-bold text-white tracking-tight truncate">SV LOTES</span>
-        </Link>
+        <SvLotesLogo href="/" size={40} showText subtitle="Gestão para loteadoras" />
         <Link href="/login" className="landing-btn-primary text-sm py-2 px-4 shrink-0">
           Entrar no Sistema
         </Link>

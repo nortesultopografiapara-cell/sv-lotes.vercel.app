@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut, Map as MapIcon, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { SUPER_ADMIN_NAV, isSuperAdminNavActive } from '@/lib/superAdminNav';
 import './admin-shell.css';
 
@@ -33,17 +34,13 @@ export function SuperAdminSidebar({
           showLabels ? 'h-16 px-4 justify-between' : 'h-16 justify-center'
         }`}
       >
-        <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0" onClick={onClose}>
-          <div className="w-8 h-8 rounded-lg bg-[var(--color-primary)]/15 border border-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
-            <MapIcon className="w-4 h-4 text-[var(--color-primary)]" />
-          </div>
-          {showLabels && (
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-white tracking-tight truncate">SV LOTES</p>
-              <p className="text-[10px] text-slate-500 font-medium">Master Console</p>
-            </div>
-          )}
-        </Link>
+        <SvLotesLogo
+          href="/dashboard"
+          size={showLabels ? 36 : 32}
+          showText={showLabels}
+          subtitle="Master Console"
+          onClick={onClose}
+        />
         {isMobile && (
           <button
             type="button"

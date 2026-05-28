@@ -1,9 +1,8 @@
 /**
- * Geração do contrato SaaS em PDF (server-side).
+ * Contrato SaaS profissional em PDF (server-side).
  */
 
 import { jsPDF } from 'jspdf';
-import { getCompanySaasPlan } from '@/lib/saasPlans';
 import {
   formatSaasCurrency,
   getStandardPlanMonthlyPrice,
@@ -11,13 +10,36 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
+import { getCompanySaasPlan } from '@/lib/saasPlans';
+import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 
 export const SAAS_PROVIDER = {
-  legalName: 'S.V TOPOGRAFIA E PROJETOS LTDA',
+  legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+  tradeName: 'NORTE & SUL TOPOGRAFIA',
   cnpj: '12.631.238/0001-02',
-  product: 'SV LOTES — Gestão Imobiliária e GIS',
+  city: 'Parauapebas/PA',
+  product: 'SV LOTES — Plataforma SaaS de Gestão Imobiliária',
+  services: [
+    'Plataforma SaaS SV LOTES',
+    'Gestão imobiliária',
+    'CRM loteadora',
+    'Dashboard financeiro',
+    'GIS / mapas',
+    'Contratos automáticos',
+  ],
 };
+
+const CLAUSES = [
+  '1. LICENCIAMENTO SAAS — A CONTRATADA concede ao CONTRATANTE licença de uso não exclusiva, mensal e intransferível da plataforma SV LOTES, nos limites do plano contratado.',
+  '2. USO MENSAL DA PLATAFORMA — O acesso é concedido mediante pagamento recorrente. O CONTRATANTE utilizará o sistema conforme políticas de uso aceitável e legislação vigente.',
+  '3. ACESSO MULTIUSUÁRIO — O plano inclui usuários conforme limites comerciais (corretores e projetos). Credenciais são pessoais e intransferíveis.',
+  '4. COBRANÇA RECORRENTE — O valor mensal negociado será cobrado na data de vencimento indicada neste instrumento, com reajuste conforme política comercial da CONTRATADA.',
+  '5. SUSPENSÃO POR INADIMPLÊNCIA — O atraso superior a 10 (dez) dias úteis autoriza a suspensão do acesso até a regularização dos débitos.',
+  '6. BACKUP E SEGURANÇA — A CONTRATADA adota medidas técnicas razoáveis de disponibilidade, backup e proteção. O CONTRATANTE é responsável pelos dados inseridos.',
+  '7. LGPD — As partes comprometem-se a tratar dados pessoais conforme a Lei nº 13.709/2018, na qualidade de controlador/operador conforme o caso.',
+  '8. FORO — Fica eleito o foro da comarca de Parauapebas/PA para dirimir controvérsias oriundas deste contrato.',
+];
 
 export type SaasContractPdfInput = {
   company: CompanyPricingSource & {
@@ -28,7 +50,10 @@ export type SaasContractPdfInput = {
     address?: string | null;
     city?: string | null;
     state?: string | null;
+    cep?: string | null;
     subscription_due_day?: number | string | null;
+    responsible_name?: string | null;
+    legal_representative?: string | null;
   };
   subscription: Pick<
     CompanySubscription,
@@ -36,21 +61,40 @@ export type SaasContractPdfInput = {
   >;
 };
 
-const CLAUSES = [
-  '1. OBJETO — O presente contrato tem por objeto a licença de uso não exclusiva da plataforma SV LOTES, incluindo módulos de gestão de loteamentos, mapa GIS, contratos, financeiro e CRM, conforme plano contratado.',
-  '2. PLANO E LIMITES — O CONTRATANTE adere ao plano indicado neste instrumento, com limites de empreendimentos (projetos) e corretores conforme tabela comercial vigente na data de assinatura.',
-  '3. VALOR E PAGAMENTO — O valor mensal aplicável é o descrito neste contrato (podendo refletir condição comercial personalizada). O vencimento ocorre mensalmente na data indicada. Atraso superior a 10 dias úteis poderá suspender o acesso.',
-  '4. SUPORTE — A CONTRATADA prestará suporte em horário comercial via canais oficiais (e-mail e sistema de tickets), para incidentes e dúvidas de uso da plataforma.',
-  '5. USO DO SISTEMA — O CONTRATANTE compromete-se a utilizar o sistema de forma lícita, mantendo sigilo de credenciais e responsabilizando-se pelos dados inseridos por seus usuários.',
-  '6. CANCELAMENTO — Qualquer das partes poderá rescindir mediante aviso prévio de 30 dias. Valores já faturados permanecem devidos.',
-  '7. INADIMPLÊNCIA — O não pagamento na data de vencimento autoriza a CONTRATADA a suspender o acesso, sem prejuízo da cobrança dos valores em aberto.',
-  '8. DISPOSIÇÕES GERAIS — Este contrato é regido pelas leis brasileiras. Foro: comarca da sede da CONTRATADA.',
-];
-
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
   doc.text(lines, x, y);
-  return y + lines.length * 5.5;
+  return y + lines.length * 5.2;
+}
+
+function drawLogoBadge(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  title: string,
+  subtitle: string,
+  fill: [number, number, number],
+) {
+  doc.setFillColor(...fill);
+  doc.roundedRect(x, y, w, h, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(title, x + 4, y + 8);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.text(subtitle, x + 4, y + 14);
+}
+
+function ensureSpace(doc: jsPDF, y: number, need: number): number {
+  const pageH = doc.internal.pageSize.getHeight();
+  if (y + need > pageH - 20) {
+    doc.addPage();
+    return 22;
+  }
+  return y;
 }
 
 export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
@@ -59,109 +103,154 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
   const saas = getCompanySaasPlan(company);
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const applied = Number(subscription.monthly_price) || pricing.appliedPrice;
+  const dates = resolveCompanySubscriptionDates(company);
+  const dueDay = dates.subscription_due_day;
+  const responsible =
+    company.legal_representative || company.responsible_name || 'Representante legal';
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
-  const margin = 18;
+  const margin = 16;
   const contentW = pageW - margin * 2;
-  let y = 22;
+  let y = 14;
 
-  doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, pageW, 32, 'F');
+  doc.setFillColor(8, 15, 30);
+  doc.rect(0, 0, pageW, 38, 'F');
+  const platformLogo = loadSvLotesLogoDataUrl();
+  if (platformLogo) {
+    doc.addImage(platformLogo, 'PNG', margin, 5, 30, 30);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(SAAS_PROVIDER.tradeName, margin + 36, 14);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(SAAS_PROVIDER.legalName, margin + 36, 20);
+  } else {
+    drawLogoBadge(doc, margin, 8, 42, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
+    drawLogoBadge(doc, margin + 48, 8, 52, 18, 'NORTE & SUL', 'Topografia', [16, 120, 100]);
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('CONTRATO DE LICENÇA DE SOFTWARE (SaaS)', margin, 18);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(SAAS_PROVIDER.product, margin, 26);
+  doc.setFontSize(14);
+  doc.text('CONTRATO DE LICENÇA DE SOFTWARE (SaaS)', pageW / 2, 32, { align: 'center' });
 
   doc.setTextColor(30, 30, 30);
-  y = 42;
+  y = 46;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Contrato nº ${subscription.contract_number || '—'}`, margin, y);
-  y += 8;
-
+  doc.text(`Nº ${subscription.contract_number || '—'}`, margin, y);
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW - margin, y, { align: 'right' });
+  y += 10;
+
   y = writeWrapped(
     doc,
-    `Pelo presente instrumento, de um lado ${SAAS_PROVIDER.legalName}, CNPJ ${SAAS_PROVIDER.cnpj}, doravante CONTRATADA, e de outro ${company.name || 'CONTRATANTE'}, CNPJ ${company.cnpj || '—'}, doravante CONTRATANTE, firmam o seguinte:`,
+    `Pelo presente instrumento particular, as partes abaixo qualificadas celebram contrato de licenciamento SaaS da plataforma SV LOTES, nos termos a seguir.`,
     margin,
     y,
     contentW,
   );
-  y += 10;
+  y += 8;
 
-  doc.setFont('helvetica', 'bold');
-  doc.text('DADOS DO CONTRATO', margin, y);
-  y += 7;
-  doc.setFont('helvetica', 'normal');
+  const section = (title: string) => {
+    y = ensureSpace(doc, y, 12);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(title, margin, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(40, 40, 40);
+  };
 
-  const rows: [string, string][] = [
-    ['Plano contratado', saas.displayName.toUpperCase()],
-    ['Projetos (limite)', String(saas.maxProjects)],
-    ['Corretores (limite)', String(saas.maxBrokers)],
-    ['Preço padrão do plano', formatSaasCurrency(standardPrice)],
-    ['Preço mensal aplicado', formatSaasCurrency(applied)],
-  ];
-
-  if (pricing.hasCustomPrice) {
-    rows.push(['Desconto / condição especial', formatSaasCurrency(standardPrice - applied)]);
-  }
-
-  const dates = resolveCompanySubscriptionDates(company);
-  const dueDay = dates.subscription_due_day;
-
-  rows.push(
-    ['Data de início', formatDateBr(subscription.start_date || dates.subscription_start_date)],
-    ['Dia de vencimento mensal', `Dia ${dueDay} de cada mês`],
-    ['Próximo vencimento', formatDateBr(subscription.next_due_date || dates.next_payment_date)],
-    ['Ciclo de cobrança', 'Mensal'],
-  );
-
-  rows.forEach(([label, value]) => {
+  const row = (label: string, value: string) => {
+    y = ensureSpace(doc, y, 8);
     doc.setFont('helvetica', 'bold');
     doc.text(`${label}:`, margin, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(value, margin + 52, y);
-    y += 6;
-  });
+    doc.text(value, margin + 48, y);
+    y += 5.5;
+  };
 
-  y += 6;
+  section('DADOS DA FORNECEDORA');
+  row('Razão social', SAAS_PROVIDER.legalName);
+  row('Nome fantasia', SAAS_PROVIDER.tradeName);
+  row('CNPJ', SAAS_PROVIDER.cnpj);
+  row('Cidade', SAAS_PROVIDER.city);
+  y += 2;
   doc.setFont('helvetica', 'bold');
-  doc.text('CLÁUSULAS CONTRATUAIS', margin, y);
-  y += 8;
+  doc.text('Serviços:', margin, y);
+  y += 5;
   doc.setFont('helvetica', 'normal');
+  for (const s of SAAS_PROVIDER.services) {
+    y = ensureSpace(doc, y, 6);
+    doc.text(`• ${s}`, margin + 4, y);
+    y += 5;
+  }
+  y += 4;
 
+  section('DADOS DA CONTRATANTE');
+  row('Empresa', company.name || '—');
+  row('CNPJ', company.cnpj || '—');
+  row('Responsável', responsible);
+  row('Telefone', company.phone || '—');
+  row('E-mail', company.email || '—');
+  row('Endereço', company.address || '—');
+  row('Cidade/UF', `${company.city || '—'}/${company.state || '—'}`);
+  if (company.cep) row('CEP', company.cep);
+  y += 4;
+
+  section('DADOS DO PLANO E COBRANÇA');
+  row('Plano contratado', saas.displayName.toUpperCase());
+  row('Valor padrão', formatSaasCurrency(standardPrice));
+  row('Valor negociado', formatSaasCurrency(applied));
+  if (pricing.hasCustomPrice && standardPrice > applied) {
+    row('Desconto aplicado', formatSaasCurrency(standardPrice - applied));
+  }
+  row('Dia de vencimento', `Dia ${dueDay} de cada mês`);
+  row('Data de início', formatDateBr(subscription.start_date || dates.subscription_start_date));
+  row('Próximo vencimento', formatDateBr(subscription.next_due_date || dates.next_payment_date));
+  row('Ciclo', 'Mensal');
+  y += 4;
+
+  section('CLÁUSULAS CONTRATUAIS');
   for (const clause of CLAUSES) {
-    if (y > 260) {
-      doc.addPage();
-      y = 20;
-    }
+    y = ensureSpace(doc, y, 20);
     y = writeWrapped(doc, clause, margin, y, contentW);
-    y += 4;
+    y += 3;
   }
 
-  if (y > 230) {
-    doc.addPage();
-    y = 30;
-  }
-
-  y += 10;
-  doc.setDrawColor(200);
-  doc.line(margin, y, margin + 70, y);
-  doc.line(pageW - margin - 70, y, pageW - margin, y);
+  y = ensureSpace(doc, y, 50);
+  y += 8;
+  const signDate = new Date().toLocaleDateString('pt-BR');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('ASSINATURA DIGITAL', margin, y);
   y += 8;
   doc.setFontSize(9);
-  doc.text('CONTRATADA', margin, y);
-  doc.text('CONTRATANTE', pageW - margin - 70, y);
-  y += 20;
-  doc.text(SAAS_PROVIDER.legalName, margin, y);
-  doc.text(company.name || '', pageW - margin - 70, y);
+  doc.setFont('helvetica', 'normal');
+
+  const colW = (contentW - 10) / 2;
+  doc.setDrawColor(180);
+  doc.line(margin, y + 18, margin + colW, y + 18);
+  doc.line(margin + colW + 10, y + 18, margin + contentW, y + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('ASSINATURA DA CONTRATANTE', margin, y);
+  doc.text('ASSINATURA DA FORNECEDORA', margin + colW + 10, y);
+  y += 22;
+  doc.setFont('helvetica', 'normal');
+  doc.text(company.name || '', margin, y);
+  doc.text(SAAS_PROVIDER.legalName, margin + colW + 10, y);
   y += 5;
-  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj}`, margin, y);
-  doc.text(`CNPJ ${company.cnpj || ''}`, pageW - margin - 70, y);
+  doc.text(`CNPJ ${company.cnpj || ''}`, margin, y);
+  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj}`, margin + colW + 10, y);
+  y += 8;
+  doc.text(`Data: ${signDate}`, margin, y);
+  doc.text(`Data: ${signDate}`, margin + colW + 10, y);
 
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
@@ -169,7 +258,7 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
     doc.setFontSize(7);
     doc.setTextColor(120);
     doc.text(
-      `SV LOTES · Documento gerado em ${new Date().toLocaleString('pt-BR')}`,
+      `${SAAS_PROVIDER.product} · ${SAAS_PROVIDER.tradeName} · Página ${i}/${pageCount}`,
       pageW / 2,
       290,
       { align: 'center' },

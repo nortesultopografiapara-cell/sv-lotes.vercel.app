@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { FileText, Download, RefreshCw, ExternalLink } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { FileText, Download, RefreshCw, ExternalLink, History } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
@@ -10,6 +10,7 @@ import {
   hasSaasContractReady,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
+import type { CompanyContractRow } from '@/lib/saasContractService';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
@@ -23,6 +24,38 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contracts, setContracts] = useState<CompanyContractRow[]>([]);
+
+  const companyId = (company as { id?: string } | null)?.id;
+  const sub = company?.saas_subscription as CompanySubscription | null;
+  const pricing = company ? resolveCompanyPricing(company as CompanyPricingSource) : null;
+  const validation = company
+    ? validateSaasContractGeneration(company as CompanyPricingSource, sub)
+    : null;
+  const contractReady = hasSaasContractReady(sub);
+  const contractViewUrl =
+    sub?.contract_pdf_url?.startsWith('http')
+      ? sub.contract_pdf_url
+      : companyId
+        ? `/api/companies/${companyId}/contract?download=1`
+        : '#';
+
+  const loadContracts = useCallback(async () => {
+    if (!companyId || !user?.id) return;
+    try {
+      const res = await fetch(
+        `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}`,
+      );
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setContracts(json.contracts || []);
+    } catch {
+      setContracts([]);
+    }
+  }, [companyId, user?.id]);
+
+  useEffect(() => {
+    loadContracts();
+  }, [loadContracts]);
 
   if (!company) {
     return (
@@ -32,15 +65,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
     );
   }
 
-  const sub = company.saas_subscription as CompanySubscription | null;
-  const pricing = resolveCompanyPricing(company as CompanyPricingSource);
-  const contractReady = hasSaasContractReady(sub);
-  const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
-    ? sub.contract_pdf_url
-    : `/api/companies/${company.id}/contract?download=1`;
-
   async function generateContract() {
-    const companyId = (company as { id?: string }).id;
     if (!companyId || !user?.id) {
       const msg = 'Não foi possível gerar o contrato';
       setError(msg);
@@ -49,22 +74,17 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
     }
     if (busy) return;
 
-    const validation = validateSaasContractGeneration(
-      company as CompanyPricingSource,
-      sub,
-    );
-    if (!validation.ok) {
-      const msg = validation.error || 'Não foi possível gerar o contrato';
-      setError(msg);
-      alert(msg);
+    if (validation && !validation.ok) {
+      setError(validation.error || 'Dados incompletos');
+      alert(validation.error || 'Preencha os dados da empresa antes de gerar o contrato.');
       return;
     }
 
-    console.log('GENERATE_SAAS_CONTRACT_CLICK', company, sub);
+    console.log('SAAS_CONTRACT_GENERATE_START');
+    console.log('SAAS_CONTRACT_COMPANY_DATA', company);
+    console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', sub);
     setBusy(true);
     setError(null);
-
-    const pricing = resolveCompanyPricing(company as CompanyPricingSource);
 
     try {
       const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
@@ -75,18 +95,29 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           subscription_id: sub?.id ?? null,
           company_id: companyId,
           plan_type: sub?.plan_type || company.plan_type || company.plan,
-          monthly_price: sub?.monthly_price ?? pricing.appliedPrice,
-          next_due_date: sub?.next_due_date ?? company.next_billing,
+          monthly_price: sub?.monthly_price ?? pricing?.appliedPrice,
+          start_date: sub?.start_date || company.subscription_start_date,
+          next_due_date: sub?.next_due_date || company.next_payment_date,
         }),
       });
       const result = await res.json().catch(() => ({}));
       console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
+
       if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Falha ao gerar contrato');
+        const msg =
+          result.error ||
+          (Array.isArray(result.missing)
+            ? `Preencha: ${result.missing.join(', ')}`
+            : 'Não foi possível gerar o contrato');
+        throw new Error(msg);
       }
+
+      console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
+      setContracts(result.contracts || []);
       onRefresh();
+      await loadContracts();
     } catch (e: unknown) {
-      const msg = 'Não foi possível gerar o contrato';
+      const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
       setError(msg);
       alert(msg);
       console.error('GENERATE_SAAS_CONTRACT_ERROR', e);
@@ -108,18 +139,18 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
 
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
-      <div className="p-5 border-b border-white/5 flex items-center justify-between gap-4">
+      <div className="p-5 border-b border-white/5 flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h3 className="text-[16px] font-bold text-white flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-400" />
             Contrato SaaS — {company.name}
           </h3>
           <p className="text-[12px] text-gray-400 mt-1">
-            Licença de uso SV LOTES · S.V TOPOGRAFIA E PROJETOS LTDA
+            S.V TOPOGRAFIA E PROJETO LTDA · NORTE &amp; SUL TOPOGRAFIA · Parauapebas/PA
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {contractReady ? (
+          {contractReady && (
             <>
               <a
                 href={contractViewUrl}
@@ -136,31 +167,28 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
               >
                 <Download className="w-4 h-4" /> Baixar PDF
               </a>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={generateContract}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-500/30 text-amber-300 text-[13px] hover:bg-amber-500/10 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-                Regerar contrato
-              </button>
             </>
-          ) : (
-            <button
-              type="button"
-              disabled={busy || !sub}
-              onClick={generateContract}
-              className="px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
-            >
-              {busy ? 'Gerando…' : 'Gerar contrato'}
-            </button>
           )}
+          <button
+            type="button"
+            disabled={busy || !sub}
+            onClick={generateContract}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
+            {contractReady ? 'Regenerar contrato' : 'Gerar contrato'}
+          </button>
         </div>
       </div>
 
+      {validation && !validation.ok && (
+        <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm whitespace-pre-line">
+          {validation.error}
+        </div>
+      )}
+
       {error && (
-        <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+        <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm whitespace-pre-line">
           {error}
         </div>
       )}
@@ -168,20 +196,56 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Info label="Empresa" value={company.name || '—'} />
         <Info label="Plano" value={company.ui_plan} />
-        <Info label="Valor contratado" value={formatSaasCurrency(pricing.appliedPrice)} />
-        <Info label="Data de início" value={formatDateBr(sub?.start_date)} />
-        <Info
-          label="Dia de vencimento"
-          value={sub ? `Dia ${company.subscription_due_day ?? '—'}` : '—'}
-        />
-        <Info
-          label="Próximo vencimento"
-          value={formatDateBr(sub?.next_due_date || company.next_payment_date)}
-        />
+        <Info label="Valor contratado" value={pricing ? formatSaasCurrency(pricing.appliedPrice) : '—'} />
+        <Info label="Data de início" value={formatDateBr(sub?.start_date || company.subscription_start_date)} />
+        <Info label="Dia de vencimento" value={`Dia ${company.subscription_due_day ?? '—'}`} />
+        <Info label="Próximo vencimento" value={formatDateBr(sub?.next_due_date || company.next_payment_date)} />
         <Info label="Status do contrato" value={contractStatusLabel} />
         <Info label="Nº do contrato" value={sub?.contract_number || '—'} />
         <Info label="Pagamento" value={company.payment_status} />
         <Info label="PDF" value={contractReady ? 'Disponível' : 'Não gerado'} />
+      </div>
+
+      <div className="px-5 pb-5">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+          <History className="w-4 h-4 text-gray-400" />
+          Histórico de versões
+        </h4>
+        {contracts.length === 0 ? (
+          <p className="text-xs text-gray-500">Nenhuma versão registrada ainda.</p>
+        ) : (
+          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            {contracts.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[#0B0E14] border border-white/5 text-[12px]"
+              >
+                <div>
+                  <span className="text-white font-medium">{c.contract_number}</span>
+                  <span className="text-gray-500 ml-2">v{c.version}</span>
+                  <span
+                    className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
+                      c.status === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-500/20 text-gray-400'
+                    }`}
+                  >
+                    {c.status}
+                  </span>
+                  <p className="text-gray-500 mt-0.5">
+                    {formatDateBr(c.generated_at?.split('T')[0])}
+                  </p>
+                </div>
+                <a
+                  href={c.contract_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-300 hover:underline shrink-0"
+                >
+                  Abrir PDF
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

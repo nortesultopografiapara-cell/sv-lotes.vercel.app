@@ -235,7 +235,9 @@ export default function SaaSFinancePage() {
       const loadingKey = subscription?.id || companyId;
       if (loadingContractId === loadingKey) return;
 
-      console.log('GENERATE_SAAS_CONTRACT_CLICK', company, subscription);
+      console.log('SAAS_CONTRACT_GENERATE_START');
+      console.log('SAAS_CONTRACT_COMPANY_DATA', company);
+      console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', subscription);
       setLoadingContractId(loadingKey);
       setContractToast(null);
 
@@ -260,7 +262,8 @@ export default function SaaSFinancePage() {
             company_id: companyId,
             plan_type: subscription?.plan_type || company.plan_type || company.plan,
             monthly_price: subscription?.monthly_price ?? pricing.appliedPrice,
-            next_due_date: subscription?.next_due_date ?? company.next_billing,
+            start_date: subscription?.start_date || company.subscription_start_date,
+            next_due_date: subscription?.next_due_date ?? company.next_payment_date ?? company.next_billing,
           }),
         });
 
@@ -268,8 +271,15 @@ export default function SaaSFinancePage() {
         console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
 
         if (!res.ok || !result.success) {
-          throw new Error(result.error || 'Falha ao gerar contrato');
+          const msg =
+            result.error ||
+            (Array.isArray(result.missing)
+              ? `Preencha: ${result.missing.join(', ')}`
+              : 'Falha ao gerar contrato');
+          throw new Error(msg);
         }
+
+        console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
 
         const updatedSub = result.subscription as CompanySubscription | undefined;
         if (updatedSub) {
@@ -519,7 +529,7 @@ export default function SaaSFinancePage() {
           </div>
 
           {contractToast && (
-            <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+            <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm whitespace-pre-line">
               {contractToast}
             </div>
           )}

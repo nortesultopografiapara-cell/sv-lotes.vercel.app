@@ -219,7 +219,7 @@ export async function POST(req: Request) {
       if (subResult.error) {
         console.warn('[SAAS_SUBSCRIPTION] Aviso ao provisionar:', subResult.error);
       } else {
-        console.log('[SAAS_SUBSCRIPTION] Assinatura e contrato provisionados.', subResult.subscription?.id);
+        console.log('[SAAS_SUBSCRIPTION] Assinatura e contrato (se dados completos) provisionados.', subResult.subscription?.id);
       }
     }
 

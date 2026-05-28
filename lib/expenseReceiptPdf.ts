@@ -7,7 +7,9 @@ import {
   type CashFlowItem,
   type CashMovementMetadata,
 } from "@/lib/financeCashFlow";
+import { SV_LOTES_BRAND } from "@/lib/brand";
 import { getReceiptValidationUrl } from "@/lib/pdfValidation";
+import { getSvLotesLogoAbsoluteUrl } from "@/lib/reportBranding";
 
 /** Item normalizado para PDF — campos explícitos, sem "Lançamento manual". */
 export type ExpenseReceiptItem = CashFlowItem & {
@@ -398,13 +400,16 @@ export async function generateExpenseReceiptPdf(
   doc.setFillColor(19, 22, 28);
   doc.rect(0, 0, pageWidth, 96, "F");
 
-  const logo = tenantData?.logo_url
-    ? await loadLogoBase64(tenantData.logo_url)
-    : null;
+  const logo =
+    (tenantData?.logo_url ? await loadLogoBase64(tenantData.logo_url) : null) ||
+    (await loadLogoBase64(getSvLotesLogoAbsoluteUrl()));
   const headerTextX = logo ? 104 : margin;
 
   if (logo) {
     doc.addImage(logo, "PNG", margin, 20, 56, 30, undefined, "FAST");
+  } else {
+    doc.setFontSize(8);
+    doc.text(SV_LOTES_BRAND.name, margin, 28);
   }
 
   doc.setTextColor(255, 255, 255);

@@ -12,6 +12,7 @@ import {
   logSaasCompanyContext,
 } from '@/lib/saasPlans';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
@@ -390,7 +391,7 @@ export default function CorretoresPage() {
           const title = `RELATÓRIO DE CORRETORES`;
           let startY = 35;
           
-          if (tenantData?.logo_url) {
+          if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
              try {
                  const imgBase64 = await new Promise<string>((resolve, reject) => {
                      const img = new Image();
@@ -405,7 +406,7 @@ export default function CorretoresPage() {
                          } else reject();
                      };
                      img.onerror = reject;
-                     img.src = tenantData.logo_url;
+                     img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
                  });
                  doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
                  

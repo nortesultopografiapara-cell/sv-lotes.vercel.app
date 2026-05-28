@@ -60,6 +60,7 @@ export { buildCashFlowItems, calculateFinancialTotals };
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 
 const INITIAL_SAIDA_FORM = {
   category: 'Despesa administrativa',
@@ -1613,7 +1614,7 @@ export default function FinancePage() {
      const ws = workbook.addWorksheet('Relatório', { views: [{ state: 'frozen', ySplit: 6 }] });
      
      // Fetch Logo if exists
-     if (tenantData?.logo_url) {
+     if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
          try {
              const base64Image = await new Promise<string>((resolve, reject) => {
                  const img = new Image();
@@ -1629,7 +1630,7 @@ export default function FinancePage() {
                      } else reject();
                  };
                  img.onerror = reject;
-                 img.src = tenantData.logo_url;
+                 img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
              });
              const imageId = workbook.addImage({
                  base64: base64Image,
@@ -1933,7 +1934,7 @@ export default function FinancePage() {
        const title = `RELATÓRIO RESUMIDO`;
        let startY = 35;
        
-       if (tenantData?.logo_url) {
+       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
           try {
               const imgBase64 = await new Promise<string>((resolve, reject) => {
                   const img = new Image();
@@ -1949,7 +1950,7 @@ export default function FinancePage() {
                       } else reject();
                   };
                   img.onerror = reject;
-                  img.src = tenantData.logo_url;
+                  img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
               });
               doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
               doc.setFontSize(14); doc.setTextColor(40); doc.text(title, 50, 15);
@@ -2063,7 +2064,7 @@ export default function FinancePage() {
      // === ABA 1: Resumo (Lista) ===
      const ws = workbook.addWorksheet('Resumo', { views: [{ state: 'frozen', ySplit: 6 }] });
      
-     if (tenantData?.logo_url) {
+     if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
          try {
              const base64Image = await new Promise<string>((resolve, reject) => {
                  const img = new Image();
@@ -2074,7 +2075,7 @@ export default function FinancePage() {
                      const ctx = canvas.getContext('2d');
                      if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
                  };
-                 img.onerror = reject; img.src = tenantData.logo_url;
+                 img.onerror = reject; img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
              });
              const imageId = workbook.addImage({ base64: base64Image, extension: 'png' });
              ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 120, height: 60 } });
@@ -2182,7 +2183,7 @@ export default function FinancePage() {
       let startY = 35;
       
       // Try to load logo
-      if (tenantData?.logo_url) {
+      if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
          try {
              const imgBase64 = await new Promise<string>((resolve, reject) => {
                  const img = new Image();
@@ -2198,7 +2199,7 @@ export default function FinancePage() {
                      } else reject();
                  };
                  img.onerror = reject;
-                 img.src = tenantData.logo_url;
+                 img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
              });
              doc.addImage(imgBase64, 'PNG', 14, 10, 30, 15, undefined, 'FAST');
              
@@ -2449,7 +2450,7 @@ export default function FinancePage() {
 
               let yOffset = 42;
               
-              if (tenantData?.logo_url) {
+              if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
                   try {
                       const imgBase64 = await new Promise<string>((resolve, reject) => {
                           const img = new Image();
@@ -2465,7 +2466,7 @@ export default function FinancePage() {
                               } else reject();
                           };
                           img.onerror = reject;
-                          img.src = tenantData.logo_url;
+                          img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
                       });
                       doc.addImage(imgBase64, 'PNG', 14, 12, 28, 14, undefined, 'FAST');
                       renderHeader(true);

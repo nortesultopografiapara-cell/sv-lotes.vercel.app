@@ -1,0 +1,17 @@
+{
+  "name": "SV LOTES",
+  "short_name": "SV LOTES",
+  "description": "Gestão imobiliária, loteamentos e GIS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#f27d26",
+  "icons": [
+    {
+      "src": "/logo-sv-lotes.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

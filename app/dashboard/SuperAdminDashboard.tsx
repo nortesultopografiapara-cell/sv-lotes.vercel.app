@@ -41,6 +41,7 @@ import {
   Cell,
 } from 'recharts';
 import { useRouter } from 'next/navigation';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import {
   exportMasterDashboardCsv,
   loadMasterDashboardData,
@@ -186,8 +187,9 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111]">
-      <div className="md:hidden flex justify-between items-start mb-6 pt-2">
-        <div>
+      <div className="md:hidden flex justify-between items-start mb-6 pt-2 gap-3">
+        <div className="min-w-0 flex-1">
+          <SvLotesLogo size={36} showText subtitle="Painel Master SaaS" className="mb-3" />
           <h1 className="text-lg font-medium text-white">
             <span className="text-[var(--color-text-muted)]">Olá,</span>{' '}
             <strong>{user?.name || 'Super Admin'}</strong>
@@ -200,7 +202,10 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
       </div>
 
       <div className="hidden md:flex justify-between items-center mb-6">
-        <p className="text-xs font-mono text-emerald-400/90">MASTER_DASHBOARD_REAL_DATA</p>
+        <div className="flex items-center gap-4 min-w-0">
+          <SvLotesLogo size={44} showText subtitle="Painel Master SaaS" />
+          <p className="text-xs font-mono text-emerald-400/90 hidden xl:block">MASTER_DASHBOARD_REAL_DATA</p>
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs font-mono text-gray-300 bg-[#151a23] py-2 px-4 rounded-xl border border-[#1f232b]">
             <Calendar className="w-4 h-4 text-gray-400" />

@@ -10,16 +10,11 @@ import {
   resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
-import { buildSaasContractPdf } from '@/lib/saasContractPdf';
 import {
   resolveCompanySubscriptionDates,
   type CompanySubscriptionDatesSource,
 } from '@/lib/companySubscriptionDates';
-import {
-  contractDownloadPath,
-  generateSaasContractNumber,
-  type CompanySubscription,
-} from '@/lib/saasSubscription';
+import { type CompanySubscription } from '@/lib/saasSubscription';
 
 export function isTestCompany(company: {
   is_test_company?: boolean | null;
@@ -148,6 +143,11 @@ export async function ensureSaasSubscription(
     monthly_price: subscription.monthly_price,
   });
 
+  if (created) {
+    const { tryAutoGenerateSaasContract } = await import('@/lib/saasContractService');
+    await tryAutoGenerateSaasContract(supabaseAdmin, company);
+  }
+
   return { subscription, created };
 }
 
@@ -197,62 +197,6 @@ export async function syncMissingSaasSubscriptions(supabaseAdmin: SupabaseClient
     created,
     subscriptions: (allSubs || []) as CompanySubscription[],
   };
-}
-
-export async function uploadSaasContractPdf(
-  supabaseAdmin: SupabaseClient,
-  companyId: string,
-  pdfBytes: Uint8Array,
-): Promise<string | null> {
-  const path = `saas-contracts/${companyId}/contrato.pdf`;
-  const fileBody = Buffer.from(pdfBytes);
-
-  const { error } = await supabaseAdmin.storage.from('company-assets').upload(path, fileBody, {
-    contentType: 'application/pdf',
-    upsert: true,
-    cacheControl: '3600',
-  });
-
-  if (error) {
-    console.warn('[SAAS_CONTRACT] upload storage falhou, usando URL da API', error.message);
-    return null;
-  }
-
-  const { data } = supabaseAdmin.storage.from('company-assets').getPublicUrl(path);
-  return data.publicUrl;
-}
-
-export async function generateAndStoreSaasContract(
-  supabaseAdmin: SupabaseClient,
-  company: CompanyPricingSource & { id: string; name?: string | null },
-  subscription: CompanySubscription,
-): Promise<{ contractNumber: string; contractPdfUrl: string }> {
-  const contractNumber = subscription.contract_number || generateSaasContractNumber();
-  const pdfBytes = buildSaasContractPdf({
-    company,
-    subscription: {
-      contract_number: contractNumber,
-      plan_type: subscription.plan_type,
-      monthly_price: subscription.monthly_price,
-      start_date: subscription.start_date,
-      next_due_date: subscription.next_due_date,
-    },
-  });
-
-  const publicUrl = await uploadSaasContractPdf(supabaseAdmin, company.id, pdfBytes);
-  const contractPdfUrl = publicUrl || contractDownloadPath(company.id);
-
-  await supabaseAdmin
-    .from('company_subscriptions')
-    .update({
-      contract_number: contractNumber,
-      contract_pdf_url: contractPdfUrl,
-      contract_status: 'active',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', subscription.id);
-
-  return { contractNumber, contractPdfUrl };
 }
 
 export async function getSubscriptionByCompanyId(

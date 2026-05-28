@@ -30,6 +30,7 @@ import {
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
+import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 
 /** Campos de medidas do lote — colunas com e sem aspas no Postgres/Supabase */
@@ -667,7 +668,7 @@ export default function ContractsPage() {
       const lotNumber = selectedContract.blocks?.lot || selectedContract.blocks?.number || selectedContract.sales?.lot_number || selectedContract.sales?.blocks?.number || "?";
 
       let logoBase64: string | null = null;
-      if (tenantData?.logo_url) {
+      if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
           try {
               logoBase64 = await new Promise<string>((resolve, reject) => {
                   const img = new Image();
@@ -678,7 +679,7 @@ export default function ContractsPage() {
                       const ctx = canvas.getContext('2d');
                       if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
                   };
-                  img.onerror = reject; img.src = tenantData.logo_url;
+                  img.onerror = reject; img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
               });
           } catch (err) {}
       }
@@ -1159,7 +1160,7 @@ export default function ContractsPage() {
       const lotNumber = selectedContract.blocks?.lot || selectedContract.blocks?.number || selectedContract.sales?.lot_number || selectedContract.sales?.blocks?.number || "?";
 
       let logoBase64: string | null = null;
-      if (tenantData?.logo_url) {
+      if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
           try {
               logoBase64 = await new Promise<string>((resolve, reject) => {
                   const img = new Image();
@@ -1170,7 +1171,7 @@ export default function ContractsPage() {
                       const ctx = canvas.getContext('2d');
                       if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
                   };
-                  img.onerror = reject; img.src = tenantData.logo_url;
+                  img.onerror = reject; img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
               });
           } catch (err) {}
       }

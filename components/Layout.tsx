@@ -28,6 +28,7 @@ import {
   X
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
@@ -380,19 +381,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </button>
             <div className="flex items-center gap-2 min-w-0">
               {isSuperAdmin ? (
-                <>
-                  <MapIcon className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-                  <span className="font-semibold text-sm text-white truncate">Master Console</span>
-                </>
+                <SvLotesLogo size={32} showText subtitle="Master Console" />
               ) : company?.logo_url ? (
                 <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
               ) : (
-                <>
-                  <MapIcon className="w-5 h-5 text-[var(--color-primary)]" />
-                  <span className="font-semibold text-sm text-white truncate">
-                    {company?.fantasy_name || company?.name || 'SV_LOTES'}
-                  </span>
-                </>
+                <SvLotesLogo size={32} showText={false} />
               )}
             </div>
           </div>
@@ -425,10 +418,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
              {company?.logo_url ? (
                   <img src={company.logo_url} alt="Logo" className="max-h-12 w-full object-contain object-left" />
               ) : (
-                  <>
-                    <MapIcon className="w-7 h-7 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wider text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
-                  </>
+                  <SvLotesLogo size={44} showText subtitle={company?.fantasy_name || company?.name || undefined} />
               )}
           </div>
 
@@ -472,10 +462,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               {company?.logo_url ? (
                   <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
               ) : (
-                  <>
-                    <MapIcon className="w-6 h-6 text-[var(--color-primary)]" />
-                    <span className="font-sans font-bold text-xl tracking-wide text-white">{company?.fantasy_name || company?.name || 'SV_LOTES'}</span>
-                  </>
+                  <SvLotesLogo size={36} showText subtitle={company?.fantasy_name || company?.name || undefined} />
               )}
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">

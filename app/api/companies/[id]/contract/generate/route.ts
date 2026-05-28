@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
-import {
-  ensureSaasSubscription,
-  generateAndStoreSaasContract,
-  getSubscriptionByCompanyId,
-} from '@/lib/saasSubscriptionService';
+import { generateAndStoreSaasContract } from '@/lib/saasContractService';
 import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
 import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
+import {
+  ensureSaasSubscription,
+  getSubscriptionByCompanyId,
+} from '@/lib/saasSubscriptionService';
 import type { CompanySubscription } from '@/lib/saasSubscription';
+
+export const runtime = 'nodejs';
 
 export async function POST(
   request: Request,
@@ -23,7 +25,7 @@ export async function POST(
   try {
     const body = await request.json().catch(() => ({}));
 
-    console.log('[GENERATE_SAAS_CONTRACT_API]', { companyId, body });
+    console.log('SAAS_CONTRACT_GENERATE_START', { companyId });
 
     const auth = await assertSuperAdmin(supabaseAdmin, body.userId);
     if (!auth.ok) {
@@ -44,6 +46,8 @@ export async function POST(
       return NextResponse.json({ error: 'Empresa não encontrada.' }, { status: 404 });
     }
 
+    console.log('SAAS_CONTRACT_COMPANY_DATA', company);
+
     let subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
     if (!subscription) {
       const created = await ensureSaasSubscription(supabaseAdmin, company);
@@ -60,13 +64,21 @@ export async function POST(
       );
     }
 
+    console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', subscription);
+
     if (body.subscription_id && body.subscription_id !== subscription.id) {
       return NextResponse.json({ error: 'subscription_id inválido.' }, { status: 400 });
     }
 
     const validation = validateSaasContractGeneration(company, subscription);
     if (!validation.ok) {
-      return NextResponse.json({ error: validation.error }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: validation.error,
+          missing: validation.missingLabels,
+        },
+        { status: 400 },
+      );
     }
 
     const patch: Record<string, unknown> = {
@@ -100,24 +112,24 @@ export async function POST(
 
     const contract = await generateAndStoreSaasContract(supabaseAdmin, company, subscription);
 
-    const { data: refreshed, error: refreshErr } = await supabaseAdmin
+    const { data: refreshed } = await supabaseAdmin
       .from('company_subscriptions')
       .select('*')
       .eq('id', subscription.id)
       .single();
 
-    if (refreshErr) {
-      return NextResponse.json({ error: refreshErr.message }, { status: 500 });
-    }
+    const { listCompanyContracts } = await import('@/lib/saasContractService');
+    const contracts = await listCompanyContracts(supabaseAdmin, companyId);
 
     const result = {
       success: true,
       contract_number: contract.contractNumber,
       contract_pdf_url: contract.contractPdfUrl,
       subscription: refreshed,
+      contracts,
     };
 
-    console.log('[GENERATE_SAAS_CONTRACT_API_OK]', result);
+    console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
 
     return NextResponse.json(result);
   } catch (e: unknown) {

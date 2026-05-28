@@ -229,7 +229,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                    ) : (
                        <>
                            <div className="text-center mb-8">
-                               {company?.logo_url && <img src={company.logo_url} alt="Logo da Empresa" className="h-16 object-contain mx-auto mb-4" />}
+                               <img src={company?.logo_url || '/logo-sv-lotes.png'} alt="Logo" className="h-16 object-contain mx-auto mb-4" />
                                <h1 className="text-xl font-bold uppercase underline mb-1">Instrumento Particular de Compromisso de Compra e Venda</h1>
                            </div>
 
