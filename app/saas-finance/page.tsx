@@ -12,19 +12,18 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
+import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
+import { useAuth } from '@/hooks/useAuth';
+import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import {
   Wallet,
   TrendingUp,
   Users,
   AlertCircle,
   Search,
-  Filter,
   Download,
   RefreshCw,
-  X,
-  Eye,
-  Edit2,
-  MoreHorizontal,
+  FileText,
   DollarSign,
 } from 'lucide-react';
 import {
@@ -49,17 +48,24 @@ const PLAN_COLORS: Record<string, string> = {
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
-function enrichCompany(raw: CompanyPricingSource): EnrichedCompany {
-  return augmentCompanyBilling(raw);
+function enrichCompany(
+  raw: CompanyPricingSource,
+  subscription?: CompanySubscription | null,
+): EnrichedCompany {
+  return augmentCompanyBilling(raw, subscription);
 }
 
 export default function SaaSFinancePage() {
+  const { user } = useAuth();
   const [companies, setCompanies] = useState<EnrichedCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterPlan, setFilterPlan] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPayment, setFilterPayment] = useState('all');
+  const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [provisioningId, setProvisioningId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +83,15 @@ export default function SaaSFinancePage() {
 
       const rows = (data || []) as CompanyPricingSource[];
 
+      const { data: subs, error: subsError } = await supabase.from('company_subscriptions').select('*');
+      if (subsError) {
+        console.warn('SAAS_FINANCE_SUBSCRIPTIONS_WARN', subsError.message);
+      }
+
+      const subMap = new Map(
+        ((subs || []) as CompanySubscription[]).map((s) => [s.company_id, s]),
+      );
+
       console.log(
         'SAAS_FINANCE_PRICING',
         rows.map((c) => ({
@@ -85,10 +100,12 @@ export default function SaaSFinancePage() {
           custom_price_enabled: c.custom_price_enabled,
           custom_monthly_price: c.custom_monthly_price,
           applied: resolveCompanyPricing(c).appliedPrice,
+          next_due: subMap.get(c.id)?.next_due_date,
+          payment: subMap.get(c.id)?.payment_status,
         })),
       );
 
-      setCompanies(rows.map(enrichCompany));
+      setCompanies(rows.map((c) => enrichCompany(c, subMap.get(c.id))));
     } catch (err) {
       console.error('SAAS_FINANCE_LOAD_ERROR', err);
       setCompanies([]);
@@ -174,6 +191,35 @@ export default function SaaSFinancePage() {
   }, [companies]);
 
   const mrrTrendData = stats.mrr > 0 ? [{ name: 'Atual', value: stats.mrr }] : [];
+
+  const selectedCompany = useMemo(
+    () => companies.find((c) => c.id === selectedCompanyId) || null,
+    [companies, selectedCompanyId],
+  );
+
+  async function provisionSubscription(companyId: string) {
+    if (!user?.id) return;
+    setProvisioningId(companyId);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/subscription/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Falha ao criar assinatura');
+      await loadData();
+    } catch (err) {
+      console.error('SAAS_PROVISION_ERROR', err);
+    } finally {
+      setProvisioningId(null);
+    }
+  }
+
+  function openContractTab(companyId: string) {
+    setSelectedCompanyId(companyId);
+    setMainTab('contrato');
+  }
 
   const handleExport = () => {
     const lines = [
@@ -332,12 +378,45 @@ export default function SaaSFinancePage() {
         </ChartCard>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6 mb-8">
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setMainTab('assinaturas')}
+          className={`px-4 py-2 rounded-lg text-[13px] font-medium ${
+            mainTab === 'assinaturas'
+              ? 'bg-blue-600 text-white'
+              : 'bg-[#11161d] border border-white/10 text-gray-400'
+          }`}
+        >
+          Assinaturas
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('contrato')}
+          className={`px-4 py-2 rounded-lg text-[13px] font-medium flex items-center gap-2 ${
+            mainTab === 'contrato'
+              ? 'bg-blue-600 text-white'
+              : 'bg-[#11161d] border border-white/10 text-gray-400'
+          }`}
+        >
+          <FileText className="w-4 h-4" /> Contrato
+        </button>
+      </div>
+
+      {mainTab === 'contrato' && (
+        <div className="mb-8">
+          <SaasContractPanel company={selectedCompany} onRefresh={loadData} />
+        </div>
+      )}
+
+      <div className={`flex flex-col lg:flex-row gap-6 mb-8 ${mainTab === 'contrato' ? 'hidden' : ''}`}>
         <div className="flex-1 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
           <div className="p-5 border-b border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <h3 className="text-[16px] font-bold text-white">Assinaturas das Empresas</h3>
-              <p className="text-[12px] text-gray-400">Valor = preço aplicado (custom ou padrão).</p>
+              <p className="text-[12px] text-gray-400">
+                Vencimento e pagamento vêm da assinatura SaaS (company_subscriptions).
+              </p>
             </div>
             <div className="flex items-center gap-3 w-full md:w-auto">
               <div className="relative flex-1 md:w-[250px]">
@@ -361,7 +440,7 @@ export default function SaaSFinancePage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[900px]">
+            <table className="w-full text-left min-w-[1100px]">
               <thead>
                 <tr className="border-b border-white/5">
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
@@ -369,8 +448,10 @@ export default function SaaSFinancePage() {
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Valor (R$)</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Ciclo</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Próxima cobrança</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Vencimento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Contrato</th>
                 </tr>
               </thead>
               <tbody>
@@ -427,18 +508,51 @@ export default function SaaSFinancePage() {
                         )}
                       </td>
                       <td className="p-4 text-[13px] text-gray-400">Mensal</td>
-                      <td className="p-4 text-[12px] text-gray-400">
-                        {c.next_billing
-                          ? new Date(c.next_billing).toLocaleDateString('pt-BR')
-                          : '—'}
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatDateBr(c.next_charge || c.next_billing)}
                       </td>
-                      <td className="p-4 text-[12px]">{c.payment_status}</td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatDateBr(c.next_billing)}
+                      </td>
+                      <td className="p-4 text-[12px]">
+                        <span
+                          className={
+                            c.payment_status === 'Vencido'
+                              ? 'text-red-400'
+                              : c.payment_status === 'Pago'
+                                ? 'text-emerald-400'
+                                : 'text-gray-300'
+                          }
+                        >
+                          {c.payment_status}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        {c.saas_subscription || c.contract_number ? (
+                          <button
+                            type="button"
+                            onClick={() => openContractTab(c.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-[12px] text-blue-300 hover:bg-white/5"
+                          >
+                            <FileText className="w-3.5 h-3.5" /> Contrato
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={provisioningId === c.id}
+                            onClick={() => provisionSubscription(c.id)}
+                            className="px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 text-[12px] hover:bg-blue-600/30 disabled:opacity-50"
+                          >
+                            {provisioningId === c.id ? 'Gerando…' : 'Gerar'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
                 {filteredCompanies.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={7} className="p-6">
+                    <td colSpan={9} className="p-6">
                       <MasterEmptyState
                         title="Nenhuma assinatura cadastrada"
                         description="Cadastre empresas em /companies para ver faturamento SaaS."
@@ -464,6 +578,13 @@ export default function SaaSFinancePage() {
               <option value="all">Todos</option>
               <option value="ativa">Ativa</option>
               <option value="inadimplente">Inadimplente</option>
+            </FilterSelect>
+            <FilterSelect label="Pagamento" value={filterPayment} onChange={setFilterPayment}>
+              <option value="all">Todos</option>
+              <option value="aguardando cobrança">Aguardando cobrança</option>
+              <option value="pago">Pago</option>
+              <option value="vencido">Vencido</option>
+              <option value="cancelado">Cancelado</option>
             </FilterSelect>
           </div>
           <button

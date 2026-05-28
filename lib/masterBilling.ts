@@ -3,7 +3,10 @@
  * Preços efetivos: lib/companyPricing.ts
  */
 
-import { getCompanySaasPlan } from '@/lib/saasPlans';
+import {
+  formatSaasPaymentStatus,
+  type CompanySubscription,
+} from '@/lib/saasSubscription';
 import {
   calculateMrrFromCompanies,
   getCompanyMonthlyPrice,
@@ -24,7 +27,10 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   return company.active !== false;
 }
 
-export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
+export function augmentCompanyBilling<T extends CompanyLike>(
+  company: T,
+  subscription?: CompanySubscription | null,
+) {
   const resolved = resolveCompanyPricing(company);
   const uiPlan =
     resolved.planKey === 'profissional'
@@ -35,8 +41,26 @@ export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
 
   const active = isActiveSubscriptionCompany(company);
   const rawDue =
+    subscription?.next_due_date ||
     (company as { vencimento_plano?: string | null }).vencimento_plano ||
     (company as { due_date?: string | null }).due_date;
+
+  const paymentRaw = subscription?.payment_status;
+  const payment_status = subscription
+    ? formatSaasPaymentStatus(paymentRaw)
+    : active
+      ? ('Aguardando cobrança' as const)
+      : ('Inativo' as const);
+
+  const opStatus = (company.status_operacional || '').toLowerCase();
+  const subscription_status =
+    paymentRaw === 'overdue' || opStatus === 'inadimplente'
+      ? ('Inadimplente' as const)
+      : subscription?.contract_status === 'canceled'
+        ? ('Cancelada' as const)
+        : active
+          ? ('Ativa' as const)
+          : ('Inativa' as const);
 
   return {
     ...company,
@@ -46,14 +70,15 @@ export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
     standard_price: resolved.standardPrice,
     custom_price_enabled: resolved.customEnabled,
     has_custom_price: resolved.hasCustomPrice,
-    payment_status: active ? ('Aguardando cobrança' as const) : ('Inativo' as const),
-    subscription_status:
-      (company.status_operacional || '').toLowerCase() === 'inadimplente'
-        ? ('Inadimplente' as const)
-        : active
-          ? ('Ativa' as const)
-          : ('Inativa' as const),
+    saas_subscription: subscription ?? null,
+    payment_status,
+    payment_status_raw: paymentRaw || null,
+    subscription_status,
     next_billing: rawDue || null,
+    next_charge: subscription?.next_due_date || rawDue || null,
+    contract_number: subscription?.contract_number || null,
+    contract_pdf_url: subscription?.contract_pdf_url || null,
+    contract_status: subscription?.contract_status || null,
     last_billing: null as string | null,
   };
 }

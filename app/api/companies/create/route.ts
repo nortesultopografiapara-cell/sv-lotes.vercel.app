@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import { provisionSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function generateSlug(name: string) {
   return name
@@ -195,7 +196,17 @@ export async function POST(req: Request) {
 
     console.log(`[SUCESSO] Perfil criado em public.users e vinculado à empresa!`);
 
-    console.log(`[ETAPA 4] Conclusão...`);
+    if (!companyPayload.is_test_company && newCompany) {
+      console.log('[ETAPA 4] Provisionando assinatura SaaS e contrato...');
+      const subResult = await provisionSaasSubscription(supabaseAdmin, newCompany);
+      if (subResult.error) {
+        console.warn('[SAAS_SUBSCRIPTION] Aviso ao provisionar:', subResult.error);
+      } else {
+        console.log('[SAAS_SUBSCRIPTION] Assinatura e contrato provisionados.', subResult.subscription?.id);
+      }
+    }
+
+    console.log(`[ETAPA 5] Conclusão...`);
     // Agora o e-mail é enviado nativamente pelo Supabase via inviteUserByEmail.
     console.log('[PROVISIONAMENTO CONCLUÍDO COM SUCESSO]');
     

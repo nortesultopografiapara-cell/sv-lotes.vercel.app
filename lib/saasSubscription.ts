@@ -1,0 +1,59 @@
+/**
+ * Assinaturas SaaS — tipos, labels e helpers de data.
+ */
+
+export type SaasPaymentStatus = 'pending' | 'paid' | 'overdue' | 'canceled';
+export type SaasContractStatus = 'active' | 'suspended' | 'canceled';
+
+export type CompanySubscription = {
+  id: string;
+  company_id: string;
+  plan_type: string;
+  monthly_price: number;
+  custom_price_enabled: boolean;
+  custom_monthly_price?: number | null;
+  billing_cycle: string;
+  start_date: string;
+  next_due_date?: string | null;
+  payment_status: SaasPaymentStatus | string;
+  contract_status: SaasContractStatus | string;
+  contract_number?: string | null;
+  contract_pdf_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const SAAS_PAYMENT_LABELS: Record<string, string> = {
+  pending: 'Aguardando cobrança',
+  paid: 'Pago',
+  overdue: 'Vencido',
+  canceled: 'Cancelado',
+};
+
+export function formatSaasPaymentStatus(status?: string | null): string {
+  const key = (status || 'pending').toLowerCase().trim();
+  return SAAS_PAYMENT_LABELS[key] || status || 'Aguardando cobrança';
+}
+
+export function addDaysFromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+export function formatDateBr(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('pt-BR');
+}
+
+export function generateSaasContractNumber(): string {
+  const y = new Date().getFullYear();
+  const seq = String(Math.floor(100000 + Math.random() * 899999));
+  return `SAAS-${y}-${seq}`;
+}
+
+export function contractDownloadPath(companyId: string): string {
+  return `/api/companies/${companyId}/contract?download=1`;
+}

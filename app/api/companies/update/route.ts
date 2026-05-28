@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  isCustomPriceEnabled,
+  parseCustomMonthlyPrice,
+  resolveCompanyPricing,
+} from '@/lib/companyPricing';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import { provisionSaasSubscription } from '@/lib/saasSubscriptionService';
 
 function parseCustomPrice(raw: unknown): number | null {
   if (raw == null || raw === '') return null;
@@ -139,6 +145,33 @@ export async function PATCH(request: Request) {
       .single();
 
     console.log('REFRESHED_COMPANY_AFTER_SAVE', refreshedCompany, refreshErr);
+
+    const companyRow = refreshedCompany || data;
+    if (companyRow && companyRow.is_test_company !== true) {
+      const pricing = resolveCompanyPricing(companyRow);
+      const { data: existingSub } = await supabaseAdmin
+        .from('company_subscriptions')
+        .select('id')
+        .eq('company_id', companyId)
+        .maybeSingle();
+
+      if (existingSub?.id) {
+        await supabaseAdmin
+          .from('company_subscriptions')
+          .update({
+            plan_type: limits.plan,
+            monthly_price: pricing.appliedPrice,
+            custom_price_enabled: isCustomPriceEnabled(companyRow),
+            custom_monthly_price: isCustomPriceEnabled(companyRow)
+              ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
+              : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingSub.id);
+      } else {
+        await provisionSaasSubscription(supabaseAdmin, companyRow);
+      }
+    }
 
     return NextResponse.json({
       success: true,
