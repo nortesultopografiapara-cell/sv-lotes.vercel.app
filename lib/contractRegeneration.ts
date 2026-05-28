@@ -8,7 +8,7 @@ import {
   ensureValidContractNumber,
   isValidStoredContractNumber,
 } from '@/lib/contractNumber';
-import { resolveLotMeasuresFromBlock } from '@/lib/lotMeasures';
+import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 
 export const BLOCKS_CONTRACT_SELECT = `
   *,
