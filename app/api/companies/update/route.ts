@@ -85,10 +85,12 @@ export async function PATCH(request: Request) {
       ...customPricePayload,
     };
 
-    if (body.address) updatePayload.address = body.address;
-    if (body.city) updatePayload.city = body.city;
-    if (body.state) updatePayload.state = body.state;
-    if (body.cep) updatePayload.cep = body.cep;
+    if (body.address !== undefined) updatePayload.address = body.address || null;
+    if (body.city !== undefined) updatePayload.city = body.city || null;
+    if (body.state !== undefined) updatePayload.state = body.state || null;
+    if (body.cep !== undefined) updatePayload.cep = body.cep || null;
+    if (body.phone !== undefined) updatePayload.phone = body.phone || null;
+    if (body.email !== undefined) updatePayload.email = body.email || null;
     if (body.slug) updatePayload.slug = body.slug;
 
     if (body.is_test_company !== true && body.subscription_start_date) {
@@ -102,6 +104,13 @@ export async function PATCH(request: Request) {
       updatePayload.next_payment_date = subDates.next_payment_date;
       updatePayload.vencimento_plano = subDates.next_payment_date;
     }
+
+    console.log('SAVE_COMPANY_SUBSCRIPTION_PAYLOAD', {
+      companyId,
+      subscription_start_date: updatePayload.subscription_start_date,
+      subscription_due_day: updatePayload.subscription_due_day,
+      next_payment_date: updatePayload.next_payment_date,
+    });
 
     let { data, error } = await supabaseAdmin
       .from('companies')
@@ -163,43 +172,62 @@ export async function PATCH(request: Request) {
     console.log('REFRESHED_COMPANY_AFTER_SAVE', refreshedCompany, refreshErr);
 
     const companyRow = refreshedCompany || data;
+    let subscriptionRow = null;
+
     if (companyRow && companyRow.is_test_company !== true) {
       const pricing = resolveCompanyPricing(companyRow);
+      const startDate = companyRow.subscription_start_date;
+      const nextDue = companyRow.next_payment_date;
+
+      const subscriptionPayload = {
+        plan_type: limits.plan,
+        monthly_price: pricing.appliedPrice,
+        custom_price_enabled: isCustomPriceEnabled(companyRow),
+        custom_monthly_price: isCustomPriceEnabled(companyRow)
+          ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
+          : null,
+        billing_cycle: 'monthly',
+        start_date: startDate,
+        first_payment_date: startDate,
+        next_due_date: nextDue,
+        updated_at: new Date().toISOString(),
+      };
+
       const { data: existingSub } = await supabaseAdmin
         .from('company_subscriptions')
-        .select('id')
+        .select('id, payment_status')
         .eq('company_id', companyId)
         .maybeSingle();
 
       if (existingSub?.id) {
-        const { normalizeSubscriptionBillingDates } = await import(
-          '@/lib/companySubscriptionDates'
-        );
-        const billing = normalizeSubscriptionBillingDates(companyRow);
-        await supabaseAdmin
+        const { data: updatedSub, error: subUpdateErr } = await supabaseAdmin
           .from('company_subscriptions')
           .update({
-            plan_type: limits.plan,
-            monthly_price: pricing.appliedPrice,
-            custom_price_enabled: isCustomPriceEnabled(companyRow),
-            custom_monthly_price: isCustomPriceEnabled(companyRow)
-              ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
-              : null,
-            start_date: billing.start_date,
-            first_payment_date: billing.first_payment_date,
-            next_due_date: billing.next_due_date,
-            updated_at: new Date().toISOString(),
+            ...subscriptionPayload,
+            payment_status: existingSub.payment_status || 'pending',
           })
-          .eq('id', existingSub.id);
+          .eq('id', existingSub.id)
+          .select('*')
+          .single();
+
+        console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', updatedSub, subUpdateErr);
+        subscriptionRow = updatedSub;
       } else {
-        await ensureSaasSubscription(supabaseAdmin, companyRow);
+        const ensured = await ensureSaasSubscription(supabaseAdmin, companyRow);
+        subscriptionRow = ensured.subscription;
+        console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', subscriptionRow, ensured.error);
       }
     }
 
-    return NextResponse.json({
+    const result = {
       success: true,
       company: refreshedCompany || data,
-    });
+      subscription: subscriptionRow,
+    };
+
+    console.log('REFRESH_COMPANY_AFTER_SAVE', result);
+
+    return NextResponse.json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Erro interno';
     return NextResponse.json({ error: message }, { status: 500 });

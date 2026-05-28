@@ -15,66 +15,109 @@ import {
 import {
   computeNextPaymentDate,
   defaultNewCompanySubscriptionDates,
-  resolveCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
+import { loadCompanyForEdit, type CompanyForEditMerged } from '@/lib/loadCompanyForEdit';
 import { formatDateBr } from '@/lib/saasSubscription';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
-  initialData?: any;
+  onSuccess?: (refreshed?: CompanyForEditMerged) => void;
+  initialData?: { id?: string } | null;
 }
 
-function initSubscriptionFormFields(initialData?: { subscription_start_date?: string; subscription_due_day?: number; created_at?: string }) {
-  const dates = initialData
-    ? resolveCompanySubscriptionDates(initialData)
-    : defaultNewCompanySubscriptionDates();
+function initSubscriptionFormFields() {
+  const dates = defaultNewCompanySubscriptionDates();
   return {
     subscription_start_date: dates.subscription_start_date,
     subscription_due_day: String(dates.subscription_due_day),
+    next_payment_date: dates.next_payment_date,
+  };
+}
+
+function buildFormStateFromMerged(merged: CompanyForEditMerged) {
+  return {
+    name: merged.name,
+    cnpj: merged.cnpj,
+    phone: merged.phone,
+    email: merged.email,
+    address: merged.address,
+    city: merged.city,
+    state: merged.state,
+    cep: merged.cep,
+    status_operacional: merged.status_operacional,
+    plan: merged.plan,
+    is_test_company: merged.is_test_company,
+    custom_price_enabled: merged.custom_price_enabled,
+    custom_monthly_price: merged.custom_monthly_price,
+    custom_price_badge: merged.custom_price_badge,
+    password: '',
+    subscription_start_date: merged.subscription_start_date,
+    subscription_due_day: merged.subscription_due_day,
+    next_payment_date: merged.next_payment_date,
+  };
+}
+
+function defaultFormState() {
+  return {
+    name: '',
+    cnpj: '',
+    phone: '',
+    email: '',
+    address: '',
+    city: '',
+    state: '',
+    cep: '',
+    status_operacional: 'Ativa',
+    plan: 'basic',
+    is_test_company: false,
+    custom_price_enabled: false,
+    custom_monthly_price: '',
+    custom_price_badge: 'desconto_especial',
+    password: '',
+    ...initSubscriptionFormFields(),
   };
 }
 
 export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialData }: NewCompanyModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [loadingCompany, setLoadingCompany] = useState(false);
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [cnpjHint, setCnpjHint] = useState('');
   const [activeTab, setActiveTab] = useState<'geral' | 'seguranca'>('geral');
 
-  const [formData, setFormData] = useState({
-    name: initialData?.name || '',
-    cnpj: initialData?.cnpj || '',
-    phone: initialData?.phone || '',
-    email: initialData?.email || '',
-    address: initialData?.address || '',
-    city: initialData?.city || '',
-    state: initialData?.state || '',
-    cep: initialData?.cep || '',
-    status_operacional: initialData?.status_operacional || 'Ativa',
-    plan: initialData?.plan || 'basic',
-    is_test_company: initialData?.is_test_company || false,
-    custom_price_enabled: initialData ? isCustomPriceEnabled(initialData) : false,
-    custom_monthly_price:
-      initialData?.custom_monthly_price != null ? String(initialData.custom_monthly_price) : '',
-    custom_price_badge: initialData?.custom_price_badge || 'desconto_especial',
-    password: '', // Only used for creation now, not update.
-    ...initSubscriptionFormFields(initialData),
-  });
+  const [formData, setFormData] = useState(defaultFormState);
 
   useEffect(() => {
     if (!isOpen) return;
-    const dates = initialData
-      ? resolveCompanySubscriptionDates(initialData)
-      : defaultNewCompanySubscriptionDates();
-    setFormData((prev) => ({
-      ...prev,
-      subscription_start_date: dates.subscription_start_date,
-      subscription_due_day: String(dates.subscription_due_day),
-    }));
+
+    if (!initialData?.id) {
+      setFormData(defaultFormState());
+      setError('');
+      setSuccessMsg('');
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setLoadingCompany(true);
+      setError('');
+      const { merged, error: loadErr } = await loadCompanyForEdit(initialData.id!);
+      if (cancelled) return;
+      if (loadErr || !merged) {
+        setError(loadErr || 'Não foi possível carregar a empresa.');
+      } else {
+        setFormData(buildFormStateFromMerged(merged));
+      }
+      setLoadingCompany(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, initialData?.id]);
 
   const computedNextPayment = useMemo(() => {
@@ -83,19 +126,22 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     return computeNextPaymentDate(formData.subscription_start_date, dueDay);
   }, [formData.subscription_start_date, formData.subscription_due_day]);
 
+  const displayNextPayment =
+    formData.next_payment_date || computedNextPayment;
+
   const subscriptionDatesPayload = useMemo(() => {
     if (formData.is_test_company) return null;
     const dueDay = parseInt(formData.subscription_due_day, 10) || 1;
     return {
       subscription_start_date: formData.subscription_start_date,
       subscription_due_day: dueDay,
-      next_payment_date: computedNextPayment,
+      next_payment_date: displayNextPayment,
     };
   }, [
     formData.is_test_company,
     formData.subscription_start_date,
     formData.subscription_due_day,
-    computedNextPayment,
+    displayNextPayment,
   ]);
 
   const pricingPreview = useMemo(
@@ -285,10 +331,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            cnpj: formData.cnpj,
            phone: formData.phone,
            email: formData.email,
-           address: formData.address || undefined,
-           city: formData.city || undefined,
-           state: formData.state || undefined,
-           cep: formData.cep || undefined,
+           address: formData.address,
+           city: formData.city,
+           state: formData.state,
+           cep: formData.cep,
            status_operacional: formData.status_operacional,
            plan: formData.plan,
            plan_type: formData.plan,
@@ -298,6 +344,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            slug: !initialData.slug ? slug : undefined,
          };
 
+         console.log('SAVE_COMPANY_SUBSCRIPTION_PAYLOAD', apiBody);
+
          const res = await fetch('/api/companies/update', {
            method: 'PATCH',
            headers: { 'Content-Type': 'application/json' },
@@ -305,23 +353,25 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          });
          const result = await res.json();
 
-         console.log('SAVE_COMPANY_CUSTOM_PRICE_RESULT', result.company, result.error);
+         console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', result);
 
          if (!res.ok || result.error) {
            throw new Error(result.error || 'Erro ao salvar empresa.');
          }
 
-         const { data: refreshedCompany, error: refreshError } = await supabase
-           .from('companies')
-           .select('*')
-           .eq('id', initialData.id)
-           .single();
+         const refreshed = await loadCompanyForEdit(initialData.id);
+         console.log('REFRESH_COMPANY_AFTER_SAVE', refreshed);
 
-         console.log('REFRESHED_COMPANY_AFTER_SAVE', refreshedCompany, refreshError);
-
-         if (refreshError) {
-           console.warn('Refresh após save falhou (lista será recarregada):', refreshError.message);
+         if (refreshed.error || !refreshed.merged) {
+           throw new Error(
+             refreshed.error || 'Salvo, mas não foi possível recarregar os dados no modal.',
+           );
          }
+
+         setFormData(buildFormStateFromMerged(refreshed.merged));
+         setSuccessMsg('Configurações salvas e recarregadas com sucesso.');
+         if (onSuccess) onSuccess(refreshed.merged);
+         return;
       } else {
          if (!formData.email) {
             throw new Error('E-mail é obrigatório para novos cadastros.');
@@ -425,6 +475,13 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-6" style={{ maxHeight: '65vh' }}>
+
+          {loadingCompany && initialData?.id && (
+            <div className="mb-4 flex items-center gap-2 text-sm text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Carregando dados atualizados…
+            </div>
+          )}
           
           {error && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-500 text-sm flex items-center gap-2">
@@ -437,7 +494,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
               </div>
           )}
 
-          <form id="new-company-form" onSubmit={handleSubmit} className={`space-y-4 ${activeTab !== 'geral' ? 'hidden' : ''}`}>
+          <form
+            id="new-company-form"
+            onSubmit={handleSubmit}
+            className={`space-y-4 ${activeTab !== 'geral' ? 'hidden' : ''} ${loadingCompany ? 'pointer-events-none opacity-60' : ''}`}
+          >
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
@@ -626,9 +687,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                       <input
                         type="date"
                         value={formData.subscription_start_date}
-                        onChange={(e) =>
-                          setFormData({ ...formData, subscription_start_date: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const start = e.target.value;
+                          const dueDay = parseInt(formData.subscription_due_day, 10) || 1;
+                          setFormData({
+                            ...formData,
+                            subscription_start_date: start,
+                            next_payment_date: start
+                              ? computeNextPaymentDate(start, dueDay)
+                              : '',
+                          });
+                        }}
                         className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
                       />
                     </div>
@@ -641,9 +710,20 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                         min={1}
                         max={31}
                         value={formData.subscription_due_day}
-                        onChange={(e) =>
-                          setFormData({ ...formData, subscription_due_day: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const dueDay = e.target.value;
+                          const start = formData.subscription_start_date;
+                          setFormData({
+                            ...formData,
+                            subscription_due_day: dueDay,
+                            next_payment_date: start
+                              ? computeNextPaymentDate(
+                                  start,
+                                  parseInt(dueDay, 10) || 1,
+                                )
+                              : '',
+                          });
+                        }}
                         className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500"
                       />
                     </div>
@@ -652,7 +732,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                         Próximo vencimento (calculado)
                       </label>
                       <div className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-emerald-300 font-semibold">
-                        {computedNextPayment ? formatDateBr(computedNextPayment) : '—'}
+                        {displayNextPayment ? formatDateBr(displayNextPayment) : '—'}
                       </div>
                     </div>
                   </div>

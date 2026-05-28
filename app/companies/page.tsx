@@ -278,8 +278,16 @@ function CompaniesPageContent() {
         key={isModalOpen ? (companyToEdit ? companyToEdit.id : 'new') : 'closed'}
         isOpen={isModalOpen}
         initialData={companyToEdit}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={loadCompanies}
+        onClose={() => {
+          setIsModalOpen(false);
+          setCompanyToEdit(null);
+        }}
+        onSuccess={(refreshed) => {
+          void loadCompanies();
+          if (refreshed?.id) {
+            setCompanyToEdit(refreshed);
+          }
+        }}
       />
       <CompanyDeleteModal
         isOpen={!!companyToDelete}
