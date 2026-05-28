@@ -35,8 +35,8 @@ export function normalizeSellerFromCompany(
 ): NormalizedSeller {
   const c = company && typeof company === 'object' ? company : {};
 
-  const name = pickString(c.fantasy_name, c.name, c.razao_social);
-  const razaoSocial = pickString(c.razao_social, c.name, c.fantasy_name);
+  const name = pickString(c.fantasy_name, c.name);
+  const razaoSocial = pickString(c.razao_social, c.fantasy_name, c.name);
   const cnpj = pickString(c.cnpj, c.document);
   const address = pickString(c.address, c.endereco);
   const city = pickString(c.city, c.cidade);
@@ -72,7 +72,17 @@ export function normalizeSellerFromCompany(
   };
 }
 
-/** Frase de qualificação do vendedor (sem vírgulas vazias). */
+/**
+ * Texto padrão do contrato (ex.: 000000014/2026):
+ * "Empresa Constituída e Instalada na Rua..., Cidade - UF."
+ */
+export function formatClassicSellerInstallationText(
+  seller: NormalizedSeller,
+): string {
+  return `Empresa Constituída e Instalada na ${seller.address}, ${seller.city} - ${seller.state}.`;
+}
+
+/** @deprecated Use formatClassicSellerInstallationText */
 export function formatSellerInstallationClause(seller: NormalizedSeller): string {
-  return `Empresa constituída e instalada na cidade de ${seller.city}/${seller.state}, com endereço em ${seller.address}, CEP ${seller.zip}.`;
+  return formatClassicSellerInstallationText(seller);
 }

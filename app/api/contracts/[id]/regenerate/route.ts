@@ -37,6 +37,7 @@ export async function POST(
     const callerTenant = profile?.tenant_id || profile?.company_id || null;
 
     const { id: contractId } = await params;
+    console.log('REGENERATE_CONTRACT_START', contractId);
     console.log('CONTRACT_REGENERATE_CONFIRM', { contractId, userId: user.id });
 
     const contract = await loadSaleContractContext(supabase, contractId);
@@ -74,8 +75,15 @@ export async function POST(
       newVersion: result.newContract.version,
     });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Erro ao regenerar contrato';
-    console.error('CONTRACT_REGENERATE_ERROR', message);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const error = e instanceof Error ? e : new Error('Erro ao regenerar contrato');
+    console.error('CONTRACT_REGENERATE_ERROR', error.message, error.stack);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      },
+      { status: 500 },
+    );
   }
 }

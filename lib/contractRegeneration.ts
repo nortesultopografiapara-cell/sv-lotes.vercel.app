@@ -9,7 +9,10 @@ import {
   isValidStoredContractNumber,
 } from '@/lib/contractNumber';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
-import { normalizeSellerFromCompany } from '@/lib/contractSeller';
+import {
+  formatClassicSellerInstallationText,
+  normalizeSellerFromCompany,
+} from '@/lib/contractSeller';
 
 export const BLOCKS_CONTRACT_SELECT = `
   *,
@@ -99,12 +102,19 @@ export function validateSaleContractRegeneration(ctx: {
   tenant: Record<string, unknown> | null;
 }): ContractRegenerateValidation {
   const missing: string[] = [];
-  if (!ctx.contract?.id) missing.push('Contrato');
-  if (!ctx.sale?.id) missing.push('Venda');
-  if (!ctx.customer?.id && !ctx.contract.customer_id) missing.push('Cliente');
-  if (!ctx.block?.id && !ctx.contract.block_id) missing.push('Lote');
-  if (!ctx.project?.id && !ctx.contract.project_id) missing.push('Projeto');
-  if (!ctx.tenant?.id && !ctx.contract.tenant_id) missing.push('Empresa');
+  const contract = ctx.contract;
+  if (!contract?.id) missing.push('Contrato');
+  if (!ctx.sale?.id && !contract.sale_id) missing.push('Venda');
+  if (!ctx.customer?.id && !contract.customer_id) missing.push('Cliente');
+  if (!ctx.block?.id && !contract.block_id) missing.push('Lote');
+  if (!ctx.project?.id && !contract.project_id) missing.push('Projeto');
+  if (
+    !ctx.tenant?.id &&
+    !contract.tenant_id &&
+    !contract.company_id
+  ) {
+    missing.push('Empresa');
+  }
 
   const customerName =
     (ctx.customer?.name as string) ||
@@ -122,6 +132,7 @@ export function validateSaleContractRegeneration(ctx: {
   return { ok: true, missing: [] };
 }
 
+/** Apenas IDs do contrato — sem HTML/PDF embutidos para regeneração. */
 export async function loadSaleContractContext(
   supabase: SupabaseClient,
   contractId: string,
@@ -129,13 +140,7 @@ export async function loadSaleContractContext(
   const { data: contract, error } = await supabase
     .from('contracts')
     .select(
-      `
-      *,
-      customers:customer_id(*),
-      sales:sale_id(*, projects:project_id(*), blocks:block_id(*)),
-      projects:project_id(*),
-      blocks:block_id(*, projects:project_id(*))
-    `,
+      'id, tenant_id, company_id, sale_id, customer_id, project_id, block_id, broker_id, contract_number, version, status, sale_value, down_payment, installments',
     )
     .eq('id', contractId)
     .single();
@@ -145,6 +150,73 @@ export async function loadSaleContractContext(
   }
 
   return contract as Record<string, unknown>;
+}
+
+async function fetchCompanyForRegeneration(
+  supabase: SupabaseClient,
+  contract: Record<string, unknown>,
+  sale: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const ids = [
+    contract.company_id,
+    contract.tenant_id,
+    sale.company_id,
+    sale.tenant_id,
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.warn('[REGENERATE] companies fetch', id, error.message);
+      continue;
+    }
+    if (data) return data as Record<string, unknown>;
+  }
+  return {};
+}
+
+async function insertRegeneratedContractRow(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  let cleaned: Record<string, unknown> = Object.fromEntries(
+    Object.entries(payload).filter(([, v]) => v !== undefined),
+  );
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const { data, error } = await supabase
+      .from('contracts')
+      .insert([cleaned])
+      .select(
+        'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
+      )
+      .single();
+
+    if (!error && data) {
+      return data as Record<string, unknown>;
+    }
+
+    const missingCol = error?.message?.match(
+      /Could not find the '(\w+)' column/i,
+    )?.[1];
+    if (missingCol && missingCol in cleaned) {
+      const { [missingCol]: _removed, ...rest } = cleaned;
+      cleaned = rest;
+      console.warn('[REGENERATE] insert retry sem coluna', missingCol);
+      continue;
+    }
+
+    throw new Error(error?.message || 'Falha ao criar nova versão do contrato');
+  }
+
+  throw new Error('Falha ao criar nova versão do contrato após várias tentativas');
 }
 
 export async function listSaleContractVersions(
@@ -171,31 +243,8 @@ export async function loadFreshRegenerationEntities(
   supabase: SupabaseClient,
   contract: Record<string, unknown>,
 ) {
-  const companyId = (contract.company_id || contract.tenant_id) as
-    | string
-    | undefined;
   const customerId = contract.customer_id as string | undefined;
   const saleId = contract.sale_id as string | undefined;
-
-  let company: Record<string, unknown> = {};
-  if (companyId) {
-    const { data } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('id', companyId)
-      .maybeSingle();
-    if (data) company = data as Record<string, unknown>;
-  }
-
-  let customer: Record<string, unknown> = {};
-  if (customerId) {
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', customerId)
-      .maybeSingle();
-    if (data) customer = data as Record<string, unknown>;
-  }
 
   let sale: Record<string, unknown> = {};
   if (saleId) {
@@ -205,6 +254,18 @@ export async function loadFreshRegenerationEntities(
       .eq('id', saleId)
       .maybeSingle();
     if (data) sale = data as Record<string, unknown>;
+  }
+
+  const company = await fetchCompanyForRegeneration(supabase, contract, sale);
+
+  let customer: Record<string, unknown> = {};
+  if (customerId) {
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customerId)
+      .maybeSingle();
+    if (data) customer = data as Record<string, unknown>;
   }
 
   let receipts_sum = 0;
@@ -254,8 +315,9 @@ export async function loadFreshRegenerationEntities(
   }
 
   const seller = normalizeSellerFromCompany(company);
-  console.log('REGENERATE_CONTRACT_COMPANY_DATA', company);
-  console.log('REGENERATE_CONTRACT_SELLER_NORMALIZED', seller);
+  const sellerText = formatClassicSellerInstallationText(seller);
+  console.log('REGENERATE_COMPANY_DATA', company);
+  console.log('REGENERATE_SELLER_TEXT', sellerText);
   console.log('REGENERATE_CONTRACT_CUSTOMER_DATA', customer);
   console.log('REGENERATE_CONTRACT_SALE_DATA', { ...sale, receipts_sum });
 
@@ -287,7 +349,31 @@ export async function buildFreshSaleContractHtml(
   const fresh = await loadFreshRegenerationEntities(supabase, contract);
   const { company, customer, sale, block, project, receipts_sum } = fresh;
 
-  const projData = project;
+  const tenant = {
+    ...company,
+    id:
+      (company.id as string) ||
+      (contract.company_id as string) ||
+      (contract.tenant_id as string),
+  };
+  const saleWithId = {
+    ...sale,
+    id: (sale.id as string) || (contract.sale_id as string),
+  };
+  const customerWithId = {
+    ...customer,
+    id: (customer.id as string) || (contract.customer_id as string),
+  };
+  const blockWithId = {
+    ...block,
+    id: (block.id as string) || (contract.block_id as string),
+  };
+  const projectWithId = {
+    ...project,
+    id: (project.id as string) || (contract.project_id as string),
+  };
+
+  const projData = projectWithId;
   const contractPayloadPartial = {
     project_name_snapshot: (projData.name as string) || null,
     project_city_snapshot: (projData.city as string) || null,
@@ -306,12 +392,14 @@ export async function buildFreshSaleContractHtml(
     });
   }
 
+  console.log('REGENERATE_TEMPLATE_USED', 'current_contract_template');
+
   const html = generateContractHTML({
-    tenant: company,
-    customer,
+    tenant,
+    customer: customerWithId,
     project: projData,
-    block,
-    sale: { ...sale, receipts_sum },
+    block: blockWithId,
+    sale: { ...saleWithId, receipts_sum },
     contractSnapshot: {
       contract_number: contractNumber,
       ...contractPayloadPartial,
@@ -323,11 +411,11 @@ export async function buildFreshSaleContractHtml(
     html,
     contractNumber,
     contractPayloadPartial,
-    customer,
-    sale,
-    block,
+    customer: customerWithId,
+    sale: saleWithId,
+    block: blockWithId,
     project: projData,
-    tenant: company,
+    tenant,
     receipts_sum,
   };
 }
@@ -385,44 +473,35 @@ export async function regenerateSaleContract(
     version: oldVersion,
   });
 
-  const { data: newRow, error: insertErr } = await supabase
-    .from('contracts')
-    .insert({
-      tenant_id: contract.tenant_id,
-      company_id: contract.company_id || contract.tenant_id,
-      sale_id: saleId,
-      customer_id: contract.customer_id,
-      project_id:
-        contract.project_id ||
-        sale.project_id ||
-        (block.id as string) ||
-        null,
-      block_id: contract.block_id || block.id || sale.block_id,
-      broker_id: contract.broker_id || sale.broker_id || null,
-      contract_number: contractNumber,
-      generated_html: html,
-      html_content: html,
-      status: 'ativo',
-      is_current: true,
-      needs_regenerar: false,
-      version: newVersion,
-      regenerated_from: contract.id,
-      regenerated_at: now,
-      regenerated_by: params.regeneratedByUserId || null,
-      sale_value: sale.total_value ?? sale.agreed_price ?? contract.sale_value,
-      down_payment: sale.down_payment ?? contract.down_payment,
-      installments: sale.installments_count ?? contract.installments,
-      ...contractPayloadPartial,
-      created_at: now,
-    })
-    .select(
-      'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
-    )
-    .single();
-
-  if (insertErr || !newRow) {
-    throw new Error(insertErr?.message || 'Falha ao criar nova versão do contrato');
-  }
+  const newRow = await insertRegeneratedContractRow(supabase, {
+    tenant_id: contract.tenant_id,
+    company_id: contract.company_id || contract.tenant_id,
+    sale_id: saleId,
+    customer_id: contract.customer_id,
+    project_id:
+      contract.project_id ||
+      sale.project_id ||
+      (block.id as string) ||
+      null,
+    block_id: contract.block_id || block.id || sale.block_id,
+    broker_id: contract.broker_id || sale.broker_id || null,
+    contract_number: contractNumber,
+    generated_html: html,
+    html_content: html,
+    pdf_url: null,
+    status: 'ativo',
+    is_current: true,
+    needs_regenerar: false,
+    version: newVersion,
+    regenerated_from: contract.id,
+    regenerated_at: now,
+    regenerated_by: params.regeneratedByUserId || null,
+    sale_value: sale.total_value ?? sale.agreed_price ?? contract.sale_value,
+    down_payment: sale.down_payment ?? contract.down_payment,
+    installments: sale.installments_count ?? contract.installments,
+    ...contractPayloadPartial,
+    created_at: now,
+  });
 
   const { error: supersedeErr } = await supabase
     .from('contracts')

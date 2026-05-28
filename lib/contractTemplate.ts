@@ -5,7 +5,7 @@ import {
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
 import {
-  formatSellerInstallationClause,
+  formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from "@/lib/contractSeller";
 
@@ -104,19 +104,22 @@ export function generateContractHTML({
 
   const seller = normalizeSellerFromCompany(tenant);
   const empresaNome = toTitleCase(
-    seller.razaoSocial !== "Não informado" ? seller.razaoSocial : seller.name,
+    seller.name !== "Não informado" ? seller.name : seller.razaoSocial,
   );
-  const empresaNomeFantasia =
-    seller.name !== "Não informado" && seller.name !== empresaNome
-      ? toTitleCase(seller.name)
-      : "";
   const empresaCnpj =
     seller.cnpj !== "Não informado"
       ? formatCNPJCPF(seller.cnpj)
       : "Não informado";
-  const empresaEndereco = toTitleCase(seller.address);
-  const empresaCidade = toTitleCase(seller.city);
-  const empresaUf = seller.state.toUpperCase();
+  const empresaEndereco =
+    seller.address !== "Não informado"
+      ? toTitleCase(seller.address)
+      : "Não informado";
+  const empresaCidade =
+    seller.city !== "Não informado" ? toTitleCase(seller.city) : "Não informado";
+  const empresaUf =
+    seller.state !== "Não informado"
+      ? seller.state.toUpperCase()
+      : "Não informado";
   const empresaCep = seller.zip;
   const empresaTelefone = seller.phone;
   const empresaEmail = seller.email;
@@ -125,7 +128,7 @@ export function generateContractHTML({
     seller.representativeCpf !== "Não informado"
       ? formatCNPJCPF(seller.representativeCpf)
       : "Não informado";
-  const empresaInstalacao = formatSellerInstallationClause(seller);
+  const sellerText = formatClassicSellerInstallationText(seller);
   const empresaLogoSrc = seller.logoUrl;
   const empresaLogo = `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 12px;" alt="Logo ${empresaNome}"/>`;
   const empresaAssinatura = seller.signatureUrl
@@ -225,7 +228,7 @@ export function generateContractHTML({
   ).toUpperCase();
 
   const foroCidade =
-    empresaCidade !== "Não Informado" && empresaCidade
+    empresaCidade && !/^não informado$/i.test(empresaCidade)
       ? empresaCidade
       : toTitleCase(
           (isValid(project?.forum_city) ? project.forum_city : null) ||
@@ -235,7 +238,7 @@ export function generateContractHTML({
         );
 
   const foroUf =
-    empresaUf && empresaUf !== "NÃO INFORMADO"
+    empresaUf && !/^não informado$/i.test(empresaUf)
       ? empresaUf
       : (
           (isValid(project?.uf) ? project.uf : null) ||
@@ -370,11 +373,7 @@ export function generateContractHTML({
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
             
-            <div style="text-align: center; margin-top: 10px; margin-bottom: 20px; page-break-inside: avoid;">
-                 ${empresaLogo}
-                 <p style="margin: 0 0 4px 0; font-size: 11pt; font-weight: bold;">${empresaNome}${empresaNomeFantasia ? ` (${empresaNomeFantasia})` : ""}</p>
-                 <p style="margin: 0; font-size: 10pt;">CNPJ: ${empresaCnpj}${vendedorContato ? ` — ${vendedorContato}` : ""}</p>
-            </div>
+            ${empresaLogoSrc && empresaLogoSrc !== "/logo-sv-lotes.png" ? `<div style="text-align: center; margin-top: 10px; margin-bottom: 16px; page-break-inside: avoid;">${empresaLogo}</div>` : ""}
 
             <div style="text-align: center; margin-bottom: 25px; page-break-inside: avoid;">
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
@@ -382,7 +381,7 @@ export function generateContractHTML({
             
             <div style="page-break-inside: avoid; margin-bottom: 25px;">
                 <p style="margin-bottom: 10px;">
-                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>${empresaNomeFantasia ? `, nome fantasia <strong>${empresaNomeFantasia}</strong>` : ""}, pessoa jurídica inscrita no CNPJ sob o n° <strong>${empresaCnpj}</strong>, ${empresaInstalacao} Representante legal: <strong>${empresaRepresentante}</strong>${empresaRepresentanteCpf !== "Não informado" ? `, CPF n° <strong>${empresaRepresentanteCpf}</strong>` : ""}.
+                    <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
                 </p>
                 <p style="margin-bottom: 10px;">
                     <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}, Portador cédula de identidade n° ${clienteRg}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
