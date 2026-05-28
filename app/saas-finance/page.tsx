@@ -14,6 +14,7 @@ import {
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import type { CompanyContractRow } from '@/lib/saasContractService';
+import { formatSaasContractApiError } from '@/lib/saasContractErrors';
 import { useAuth } from '@/hooks/useAuth';
 import {
   resolveFirstPaymentDate,
@@ -320,29 +321,25 @@ export default function SaaSFinancePage() {
         });
 
         const result = await res.json().catch(() => ({}));
-        console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
+        console.log('SAAS_CONTRACT_API_RESPONSE', result);
 
-        if (!res.ok || !result.success) {
-          const msg =
-            result.error ||
-            (Array.isArray(result.missing)
-              ? `Preencha: ${result.missing.join(', ')}`
-              : 'Falha ao gerar contrato');
-          throw new Error(msg);
+        if (!res.ok || result.success === false) {
+          throw new Error(formatSaasContractApiError(result));
         }
 
+        console.log('SAAS_CONTRACT_PDF_URL', result.contract_pdf_url);
         console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
 
         const updatedSub: CompanySubscription | null =
           (result.subscription as CompanySubscription | undefined) ??
-          (sub
+          (subscription
             ? {
-                ...sub,
+                ...subscription,
                 contract_status: 'active',
                 contract_number:
-                  result.contract_number ?? sub.contract_number ?? null,
+                  result.contract_number ?? subscription.contract_number ?? null,
                 contract_pdf_url:
-                  result.contract_pdf_url ?? sub.contract_pdf_url ?? null,
+                  result.contract_pdf_url ?? subscription.contract_pdf_url ?? null,
               }
             : null);
 
@@ -378,9 +375,11 @@ export default function SaaSFinancePage() {
         setContractToast(null);
       } catch (err) {
         console.error('GENERATE_SAAS_CONTRACT_ERROR', err);
-        const msg = 'Não foi possível gerar o contrato';
+        const msg =
+          err instanceof Error ? err.message : 'Não foi possível gerar o contrato';
         setContractToast({ type: 'error', message: msg });
         alert(msg);
+        throw err;
       } finally {
         setLoadingContractId(null);
       }
@@ -585,17 +584,24 @@ export default function SaaSFinancePage() {
             company={selectedCompany}
             subscription={selectedSubscription}
             contracts={contractHistory}
+            generating={
+              !!selectedCompanyId &&
+              loadingContractId ===
+                (selectedSubscription?.id || selectedCompanyId)
+            }
             onRefresh={loadData}
             onContractsReload={
               selectedCompanyId
                 ? () => loadCompanyContracts(selectedCompanyId)
                 : undefined
             }
-            onGenerateSuccess={async (companyId) => {
-              setSelectedCompanyId(companyId);
-              setMainTab('contrato');
-              await loadCompanyContracts(companyId);
-              await loadData();
+            onGenerateContract={async () => {
+              if (!selectedCompany) return;
+              console.log('SAAS_CONTRACT_CLICK_FROM_TAB');
+              await handleGenerateSaasContract(
+                selectedCompany,
+                selectedSubscription,
+              );
             }}
           />
         </div>

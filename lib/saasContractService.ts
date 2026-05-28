@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import { buildSaasContractPdf } from '@/lib/saasContractPdf';
+import { SaasContractStepError } from '@/lib/saasContractErrors';
 import {
   validateSaasContractGeneration,
   type SaasContractCompanyInput,
@@ -14,6 +15,7 @@ import {
   generateSaasContractNumber,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
+
 function isTestCompany(company: {
   is_test_company?: boolean | null;
   is_test?: boolean | null;
@@ -44,46 +46,88 @@ export type CompanyContractRow = {
   status: string;
 };
 
-const STORAGE_BUCKETS = ['contracts', 'company-assets'] as const;
+const SAAS_CONTRACT_BUCKET = 'company-assets';
+
+function sanitizeContractFileName(contractNumber: string): string {
+  return contractNumber.replace(/[^\w-]+/g, '_');
+}
+
+/** contracts/saas/{company_id}/{contract_number}.pdf */
+function buildSaasContractStoragePath(companyId: string, contractNumber: string): string {
+  const safeName = sanitizeContractFileName(contractNumber);
+  return `contracts/saas/${companyId}/${safeName}.pdf`;
+}
 
 async function uploadContractPdf(
   supabaseAdmin: SupabaseClient,
   companyId: string,
   contractNumber: string,
-  version: number,
   pdfBytes: Uint8Array,
-): Promise<string | null> {
-  const relativePath = `saas/${companyId}/${contractNumber}-v${version}.pdf`;
+): Promise<string> {
+  const storagePath = buildSaasContractStoragePath(companyId, contractNumber);
   const fileBody = Buffer.from(pdfBytes);
 
-  for (const bucket of STORAGE_BUCKETS) {
-    const storagePath = bucket === 'contracts' ? relativePath : `contracts/${relativePath}`;
-    const { error } = await supabaseAdmin.storage.from(bucket).upload(storagePath, fileBody, {
+  console.log('SAAS_CONTRACT_STORAGE_UPLOAD', {
+    bucket: SAAS_CONTRACT_BUCKET,
+    path: storagePath,
+    bytes: fileBody.length,
+  });
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(SAAS_CONTRACT_BUCKET)
+    .upload(storagePath, fileBody, {
       contentType: 'application/pdf',
       upsert: true,
       cacheControl: '3600',
     });
-    if (!error) {
-      const { data } = supabaseAdmin.storage.from(bucket).getPublicUrl(storagePath);
-      return data.publicUrl;
-    }
-    console.warn(`[SAAS_CONTRACT] upload falhou bucket=${bucket}`, error.message);
+
+  if (uploadError) {
+    throw new SaasContractStepError(
+      'storage_upload',
+      `Falha ao enviar PDF ao Storage: ${uploadError.message}`,
+    );
   }
 
-  return null;
+  const { data: publicData } = supabaseAdmin.storage
+    .from(SAAS_CONTRACT_BUCKET)
+    .getPublicUrl(storagePath);
+
+  const { data: signedData, error: signError } = await supabaseAdmin.storage
+    .from(SAAS_CONTRACT_BUCKET)
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+  if (signError) {
+    console.warn('[SAAS_CONTRACT] signed url', signError.message);
+  }
+
+  const contractPdfUrl = signedData?.signedUrl || publicData?.publicUrl || '';
+  if (!contractPdfUrl) {
+    throw new SaasContractStepError(
+      'storage_upload',
+      'Upload concluído, mas não foi possível obter URL do PDF.',
+    );
+  }
+
+  console.log('SAAS_CONTRACT_PDF_URL', contractPdfUrl);
+  return contractPdfUrl;
 }
 
 async function getNextContractVersion(
   supabaseAdmin: SupabaseClient,
   companyId: string,
 ): Promise<number> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('company_contracts')
     .select('version')
     .eq('company_id', companyId)
     .order('version', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (error) {
+    console.warn('[SAAS_CONTRACT] version lookup', error.message);
+    return 1;
+  }
 
   return (data?.version ?? 0) + 1;
 }
@@ -120,37 +164,62 @@ export async function generateAndStoreSaasContract(
 
   const validation = validateSaasContractGeneration(company, subscription);
   if (!validation.ok) {
-    throw new Error(validation.error || 'Dados insuficientes para gerar o contrato.');
+    throw new SaasContractStepError(
+      'validation',
+      validation.error || 'Dados insuficientes para gerar o contrato.',
+    );
   }
 
   const contractNumber = subscription.contract_number || generateSaasContractNumber();
   const version = await getNextContractVersion(supabaseAdmin, company.id);
 
-  const pdfBytes = buildSaasContractPdf({
-    company,
-    subscription: {
-      contract_number: contractNumber,
-      plan_type: subscription.plan_type,
-      monthly_price: subscription.monthly_price,
-      start_date: subscription.start_date,
-      next_due_date: subscription.next_due_date,
-    },
-  });
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = buildSaasContractPdf({
+      company,
+      subscription: {
+        contract_number: contractNumber,
+        plan_type: subscription.plan_type,
+        monthly_price: subscription.monthly_price,
+        start_date: subscription.start_date,
+        first_payment_date: subscription.first_payment_date,
+        next_due_date: subscription.next_due_date,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro ao montar PDF';
+    throw new SaasContractStepError('pdf_generation', message);
+  }
 
-  const publicUrl = await uploadContractPdf(
-    supabaseAdmin,
-    company.id,
-    contractNumber,
-    version,
-    pdfBytes,
-  );
-  const contractPdfUrl = publicUrl || contractDownloadPath(company.id);
+  if (!pdfBytes?.length) {
+    throw new SaasContractStepError('pdf_generation', 'PDF gerado está vazio.');
+  }
 
-  await supabaseAdmin
+  let contractPdfUrl: string;
+  try {
+    contractPdfUrl = await uploadContractPdf(
+      supabaseAdmin,
+      company.id,
+      contractNumber,
+      pdfBytes,
+    );
+  } catch (err) {
+    if (err instanceof SaasContractStepError) throw err;
+    const message = err instanceof Error ? err.message : 'Erro no upload';
+    throw new SaasContractStepError('storage_upload', message);
+  }
+
+  const generatedAt = new Date().toISOString();
+
+  const { error: supersedeErr } = await supabaseAdmin
     .from('company_contracts')
     .update({ status: 'superseded' })
     .eq('company_id', company.id)
     .eq('status', 'active');
+
+  if (supersedeErr) {
+    console.warn('[SAAS_CONTRACT] supersede', supersedeErr.message);
+  }
 
   const { data: contractRecord, error: insertErr } = await supabaseAdmin
     .from('company_contracts')
@@ -161,24 +230,34 @@ export async function generateAndStoreSaasContract(
       contract_number: contractNumber,
       version,
       status: 'active',
-      generated_at: new Date().toISOString(),
+      generated_at: generatedAt,
     })
     .select('*')
     .single();
 
   if (insertErr) {
-    console.warn('[SAAS_CONTRACT] company_contracts insert', insertErr.message);
+    throw new SaasContractStepError(
+      'db_save',
+      `Falha ao salvar company_contracts: ${insertErr.message}. Execute a migration 20260601120000_company_contracts.sql`,
+    );
   }
 
-  await supabaseAdmin
+  const { error: subUpdateErr } = await supabaseAdmin
     .from('company_subscriptions')
     .update({
       contract_number: contractNumber,
       contract_pdf_url: contractPdfUrl,
       contract_status: 'active',
-      updated_at: new Date().toISOString(),
+      updated_at: generatedAt,
     })
     .eq('id', subscription.id);
+
+  if (subUpdateErr) {
+    throw new SaasContractStepError(
+      'db_save',
+      `Falha ao atualizar company_subscriptions: ${subUpdateErr.message}`,
+    );
+  }
 
   console.log('SAAS_CONTRACT_GENERATED_SUCCESS', {
     contractNumber,
@@ -213,12 +292,6 @@ export async function tryAutoGenerateSaasContract(
       return { ok: false, error: 'Assinatura não encontrada' };
     }
 
-    const validation = validateSaasContractGeneration(company, subscription);
-    if (!validation.ok) {
-      console.warn('[SAAS_CONTRACT_AUTO_SKIP]', validation.error);
-      return { ok: false, error: validation.error };
-    }
-
     await generateAndStoreSaasContract(supabaseAdmin, company, subscription);
     return { ok: true };
   } catch (e: unknown) {
@@ -227,3 +300,5 @@ export async function tryAutoGenerateSaasContract(
     return { ok: false, error: message };
   }
 }
+
+export { getSubscriptionByCompanyId };

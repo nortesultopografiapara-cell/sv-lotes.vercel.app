@@ -26,21 +26,22 @@ type Props = {
   company: EnrichedCompany | null;
   subscription?: CompanySubscription | null;
   contracts?: CompanyContractRow[];
+  generating?: boolean;
   onRefresh: () => void;
   onContractsReload?: () => void | Promise<void>;
-  onGenerateSuccess?: (companyId: string) => void | Promise<void>;
+  onGenerateContract?: () => void | Promise<void>;
 };
 
 export function SaasContractPanel({
   company,
   subscription: subscriptionProp,
   contracts: contractsProp,
+  generating = false,
   onRefresh,
   onContractsReload,
-  onGenerateSuccess,
+  onGenerateContract,
 }: Props) {
   const { user } = useAuth();
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localContracts, setLocalContracts] = useState<CompanyContractRow[]>([]);
 
@@ -49,6 +50,7 @@ export function SaasContractPanel({
     subscriptionProp ??
     ((company?.saas_subscription as CompanySubscription | null) ?? null);
   const contracts = contractsProp ?? localContracts;
+  const busy = generating;
 
   const pricing = company ? resolveCompanyPricing(company as CompanyPricingSource) : null;
   const validation = company
@@ -102,6 +104,10 @@ export function SaasContractPanel({
     void loadContracts();
   }, [contractsProp, loadContracts]);
 
+  useEffect(() => {
+    if (hasSaasContractReady(sub)) setError(null);
+  }, [sub?.contract_pdf_url, sub?.contract_status]);
+
   if (!company) {
     return (
       <div className="bg-[#11161d] border border-white/5 rounded-2xl p-8 text-center text-gray-400 text-sm">
@@ -110,8 +116,8 @@ export function SaasContractPanel({
     );
   }
 
-  async function generateContract() {
-    if (!companyId || !user?.id) {
+  const handleGenerateClick = async () => {
+    if (!companyId) {
       const msg = 'Não foi possível gerar o contrato';
       setError(msg);
       alert(msg);
@@ -125,57 +131,22 @@ export function SaasContractPanel({
       return;
     }
 
-    console.log('SAAS_CONTRACT_GENERATE_START');
-    console.log('SAAS_CONTRACT_COMPANY_DATA', company);
-    console.log('SAAS_CONTRACT_SUBSCRIPTION_DATA', sub);
-    setBusy(true);
     setError(null);
 
-    try {
-      const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          subscription_id: sub?.id ?? null,
-          company_id: companyId,
-          plan_type: sub?.plan_type || company.plan_type || company.plan,
-          monthly_price: sub?.monthly_price ?? pricing?.appliedPrice,
-          start_date: sub?.start_date || company.subscription_start_date,
-          first_payment_date:
-            sub?.first_payment_date || resolveFirstPaymentDate(company, sub),
-          next_due_date: sub?.next_due_date || resolveNextDueDate(company, sub),
-        }),
-      });
-      const result = await res.json().catch(() => ({}));
-      console.log('GENERATE_SAAS_CONTRACT_RESPONSE', result);
-
-      if (!res.ok || !result.success) {
-        const msg =
-          result.error ||
-          (Array.isArray(result.missing)
-            ? `Preencha: ${result.missing.join(', ')}`
-            : 'Não foi possível gerar o contrato');
-        throw new Error(msg);
+    if (onGenerateContract) {
+      try {
+        await onGenerateContract();
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
+        setError(msg);
       }
-
-      console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
-      const list = (result.contracts || []) as CompanyContractRow[];
-      setLocalContracts(list);
-      onRefresh();
-      await loadContracts();
-      if (onGenerateSuccess) {
-        await onGenerateSuccess(companyId);
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
-      setError(msg);
-      alert(msg);
-      console.error('GENERATE_SAAS_CONTRACT_ERROR', e);
-    } finally {
-      setBusy(false);
+      return;
     }
-  }
+
+    const msg = 'Geração de contrato não configurada. Recarregue a página.';
+    setError(msg);
+    alert(msg);
+  };
 
   const contractStatusLabel =
     sub?.contract_status === 'active'
@@ -211,7 +182,7 @@ export function SaasContractPanel({
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5"
               >
-                <ExternalLink className="w-4 h-4" /> Ver contrato
+                <ExternalLink className="w-4 h-4" /> Ver PDF
               </a>
               <a
                 href={contractViewUrl}
@@ -225,7 +196,7 @@ export function SaasContractPanel({
           <button
             type="button"
             disabled={busy || !companyId || !(validation?.ok ?? true)}
-            onClick={generateContract}
+            onClick={() => void handleGenerateClick()}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
@@ -260,7 +231,7 @@ export function SaasContractPanel({
           <button
             type="button"
             disabled={busy || !companyId}
-            onClick={generateContract}
+            onClick={() => void handleGenerateClick()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <FileText className="w-4 h-4" />
