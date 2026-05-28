@@ -1,44 +1,21 @@
 /**
  * Utilitários de billing/MRR do painel Master.
- * Sem filtro de empresas — listagem em app/companies/page.tsx
+ * Preços efetivos: lib/companyPricing.ts
  */
 
 import { getCompanySaasPlan } from '@/lib/saasPlans';
+import {
+  calculateMrrFromCompanies,
+  getCompanyMonthlyPrice,
+  getStandardPlanMonthlyPrice,
+  PLAN_MRR,
+  planMrrForCompany,
+  type CompanyPricingSource,
+} from '@/lib/companyPricing';
 
-export type CompanyLike = {
-  id?: string;
-  status_operacional?: string | null;
-  plan?: string | null;
-  active?: boolean | null;
-};
+export type CompanyLike = CompanyPricingSource;
 
-export const PLAN_MRR: Record<string, number> = {
-  starter: 329.99,
-  basic: 329.99,
-  basico: 329.99,
-  business: 549.99,
-  standard: 549.99,
-  professional: 1099.99,
-  profissional: 1099.99,
-  enterprise: 1099.99,
-  premium: 1099.99,
-};
-
-export function planMrrForCompany(plan?: string | null): number {
-  const key = (plan || '').toLowerCase().trim();
-  return PLAN_MRR[key] ?? 0;
-}
-
-export function calculateMrrFromCompanies(companies: CompanyLike[]): number {
-  return companies.reduce((sum, c) => {
-    const active =
-      (c.status_operacional || '').toLowerCase() !== 'inativo' &&
-      (c.status_operacional || '').toLowerCase() !== 'inativa' &&
-      c.active !== false;
-    if (!active) return sum;
-    return sum + planMrrForCompany(c.plan);
-  }, 0);
-}
+export { calculateMrrFromCompanies, getCompanyMonthlyPrice, getStandardPlanMonthlyPrice, PLAN_MRR, planMrrForCompany };
 
 export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   const status = (company.status_operacional || '').toLowerCase().trim();
@@ -46,29 +23,33 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   return company.active !== false;
 }
 
-export function augmentCompanyBilling<
-  T extends CompanyLike & {
-    plan?: string | null;
-    vencimento_plano?: string | null;
-    due_date?: string | null;
-  },
->(company: T) {
-  const planKey = getCompanySaasPlan(company).planKey;
+export function augmentCompanyBilling<T extends CompanyLike>(company: T) {
+  const saas = getCompanySaasPlan(company);
   const uiPlan =
-    planKey === 'profissional'
+    saas.planKey === 'profissional'
       ? 'PROFISSIONAL'
-      : planKey === 'business'
+      : saas.planKey === 'business'
         ? 'BUSINESS'
         : 'BÁSICO';
 
-  const price = planMrrForCompany(company.plan);
+  const pricing = {
+    standardPrice: getStandardPlanMonthlyPrice(company),
+    appliedPrice: getCompanyMonthlyPrice(company),
+    customEnabled: company.custom_price_enabled === true,
+  };
+
   const active = isActiveSubscriptionCompany(company);
-  const rawDue = company.vencimento_plano || company.due_date;
+  const rawDue =
+    (company as { vencimento_plano?: string | null }).vencimento_plano ||
+    (company as { due_date?: string | null }).due_date;
 
   return {
     ...company,
     ui_plan: uiPlan,
-    price,
+    price: pricing.appliedPrice,
+    standard_price: pricing.standardPrice,
+    custom_price_enabled: pricing.customEnabled,
+    has_custom_price: pricing.customEnabled && pricing.appliedPrice !== pricing.standardPrice,
     payment_status: active ? ('Aguardando cobrança' as const) : ('Inativo' as const),
     subscription_status:
       (company.status_operacional || '').toLowerCase() === 'inadimplente'

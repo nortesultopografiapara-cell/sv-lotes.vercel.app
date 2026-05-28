@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import '@/components/admin/admin-shell.css';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
+import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
+import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 
 function planLabel(plan?: string) {
   return getCompanySaasPlan({ plan }).displayName;
@@ -91,6 +93,7 @@ export function CompanyCard({
   const projectCount = company.project_count ?? 0;
   const protectedCompany =
     isMaster || company.id === user?.tenant_id || company.is_master || company.slug?.toLowerCase() === 'master';
+  const pricing = resolveCompanyPricing(company);
 
   return (
     <article className="sa-company-card rounded-2xl p-5 flex flex-col h-full">
@@ -109,6 +112,7 @@ export function CompanyCard({
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <h3 className="font-semibold text-white text-sm leading-snug truncate">{company.name}</h3>
               <CompanyTypeBadge company={company} />
+              <CustomPriceBadge company={company} />
             </div>
             <div className="relative shrink-0" ref={menuRef}>
               <button
@@ -193,6 +197,9 @@ export function CompanyCard({
         <StatusBadge status={company.status_operacional} legacyActive={company.active} />
         <span className="text-[10px] font-medium text-slate-500 px-2 py-0.5 rounded-md bg-white/5 border border-white/5">
           {planLabel(company.plan)}
+        </span>
+        <span className="text-[10px] font-semibold text-emerald-400/90 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+          {formatSaasCurrency(pricing.appliedPrice)}/mês
         </span>
       </div>
 

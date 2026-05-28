@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
+import { formatSaasCurrency } from '@/lib/companyPricing';
+import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { 
    Wallet, TrendingUp, Users, Target, AlertCircle, 
    Search, Filter, Download, RefreshCw, X, Eye, Edit2, 
@@ -340,7 +342,10 @@ export default function SaaSFinancePage() {
                                           {c.name?.charAt(0)?.toUpperCase() || 'E'}
                                        </div>
                                        <div>
-                                          <p className="text-[13px] font-medium text-white line-clamp-1 cursor-pointer hover:text-blue-400">{c.name}</p>
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <p className="text-[13px] font-medium text-white line-clamp-1">{c.name}</p>
+                                            <CustomPriceBadge company={c} />
+                                          </div>
                                           <p className="text-[11px] text-gray-500 line-clamp-1">{c.email}</p>
                                        </div>
                                     </div>
@@ -355,7 +360,20 @@ export default function SaaSFinancePage() {
                                        {c.subscription_status}
                                     </span>
                                  </td>
-                                 <td className="p-4 text-[13px] text-gray-300">{formatCurrency(c.price)}</td>
+                                 <td className="p-4 text-[13px] text-gray-300">
+                                    {c.has_custom_price ? (
+                                      <div>
+                                        <span className="line-through text-gray-500 text-[11px] block">
+                                          {formatSaasCurrency(c.standard_price)}
+                                        </span>
+                                        <span className="text-emerald-400 font-semibold">
+                                          {formatSaasCurrency(c.price)}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      formatCurrency(c.price)
+                                    )}
+                                 </td>
                                  <td className="p-4 text-[13px] text-gray-400">Mensal</td>
                                  <td className="p-4 text-[12px] text-gray-400">
                                     {c.next_billing ? new Date(c.next_billing).toLocaleDateString('pt-BR') : '—'}

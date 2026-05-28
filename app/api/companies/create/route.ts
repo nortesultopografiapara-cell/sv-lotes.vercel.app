@@ -99,6 +99,20 @@ export async function POST(req: Request) {
     
     companyPayload.is_test_company = body.is_test_company === true;
 
+    if (body.custom_price_enabled === true) {
+      const custom = Number(body.custom_monthly_price);
+      if (!Number.isFinite(custom) || custom < 0) {
+        throw new Error('Valor personalizado inválido.');
+      }
+      companyPayload.custom_price_enabled = true;
+      companyPayload.custom_monthly_price = Math.round(custom * 100) / 100;
+      companyPayload.custom_price_badge = body.custom_price_badge || 'desconto_especial';
+    } else {
+      companyPayload.custom_price_enabled = false;
+      companyPayload.custom_monthly_price = null;
+      companyPayload.custom_price_badge = null;
+    }
+
     let { data: newCompany, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert(companyPayload)

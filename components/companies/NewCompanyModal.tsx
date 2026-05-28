@@ -1,11 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, MonitorPlay, AlertTriangle, ShieldCheck, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import {
+  formatSaasCurrency,
+  parseCustomMonthlyPrice,
+  resolveCompanyPricing,
+} from '@/lib/companyPricing';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
@@ -35,8 +40,29 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
     status_operacional: initialData?.status_operacional || 'Ativa',
     plan: initialData?.plan || 'basic',
     is_test_company: initialData?.is_test_company || false,
-    password: '' // Only used for creation now, not update.
+    custom_price_enabled: initialData?.custom_price_enabled === true,
+    custom_monthly_price:
+      initialData?.custom_monthly_price != null ? String(initialData.custom_monthly_price) : '',
+    custom_price_badge: initialData?.custom_price_badge || 'desconto_especial',
+    password: '', // Only used for creation now, not update.
   });
+
+  const pricingPreview = useMemo(
+    () =>
+      resolveCompanyPricing({
+        plan: formData.plan,
+        plan_type: formData.plan,
+        custom_price_enabled: formData.custom_price_enabled,
+        custom_monthly_price: formData.custom_monthly_price,
+        custom_price_badge: formData.custom_price_badge,
+      }),
+    [
+      formData.plan,
+      formData.custom_price_enabled,
+      formData.custom_monthly_price,
+      formData.custom_price_badge,
+    ],
+  );
 
   if (!isOpen) return null;
 
@@ -207,6 +233,16 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          
          // Importante: is_test_company precisa ser forçado via boolean
          updatePayload.is_test_company = formData.is_test_company === true;
+         updatePayload.custom_price_enabled = formData.custom_price_enabled === true;
+         updatePayload.custom_price_badge = formData.custom_price_enabled
+           ? formData.custom_price_badge
+           : null;
+         const parsedCustom = parseCustomMonthlyPrice(formData.custom_monthly_price);
+         if (formData.custom_price_enabled && parsedCustom == null) {
+           throw new Error('Informe um valor personalizado válido (ex: 549.99).');
+         }
+         updatePayload.custom_monthly_price =
+           formData.custom_price_enabled && parsedCustom != null ? parsedCustom : null;
 
          let { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
          console.log('COMPANY_PLAN_AFTER_SAVE', formData.plan);
@@ -233,6 +269,9 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          if (!formData.password) {
             throw new Error('Senha é obrigatória para criarmos o auth inicial.');
          }
+         if (formData.custom_price_enabled && parseCustomMonthlyPrice(formData.custom_monthly_price) == null) {
+            throw new Error('Informe um valor personalizado válido (ex: 549.99).');
+         }
 
          const response = await fetch('/api/companies/create', {
              method: 'POST',
@@ -250,6 +289,13 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  status_operacional: formData.status_operacional,
                  plan_type: formData.plan,
                  is_test_company: formData.is_test_company,
+                 custom_price_enabled: formData.custom_price_enabled,
+                 custom_monthly_price: formData.custom_price_enabled
+                   ? parseCustomMonthlyPrice(formData.custom_monthly_price)
+                   : null,
+                 custom_price_badge: formData.custom_price_enabled
+                   ? formData.custom_price_badge
+                   : null,
                  password: formData.password,
                  adminName: `Admin - ${formData.name}`,
                  adminEmail: formData.email,
@@ -501,6 +547,89 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   <option value="Bloqueada">🔴 Bloqueada</option>
                   <option value="Inadimplente">⚫ Inadimplente</option>
                 </select>
+              </div>
+
+              <div className="md:col-span-2 p-4 mt-2 bg-[#1a1f29] border border-purple-500/20 rounded-xl space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Preço SaaS personalizado</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Mantém todos os recursos do plano selecionado; altera apenas o valor cobrado.
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-gray-600"
+                    checked={formData.custom_price_enabled}
+                    onChange={(e) =>
+                      setFormData({ ...formData, custom_price_enabled: e.target.checked })
+                    }
+                  />
+                  <span className="text-sm text-gray-200">Usar preço personalizado</span>
+                </label>
+
+                {formData.custom_price_enabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Valor personalizado (R$/mês)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={formData.custom_monthly_price}
+                        onChange={(e) =>
+                          setFormData({ ...formData, custom_monthly_price: e.target.value })
+                        }
+                        placeholder="549,99"
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Badge visual
+                      </label>
+                      <select
+                        value={formData.custom_price_badge}
+                        onChange={(e) =>
+                          setFormData({ ...formData, custom_price_badge: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white"
+                      >
+                        <option value="desconto_especial">DESCONTO ESPECIAL</option>
+                        <option value="founding_client">FOUNDING CLIENT</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="rounded-lg bg-[#0b1111] border border-[#2d3340] p-3">
+                    <p className="text-[10px] uppercase text-gray-500 font-semibold">Plano atual</p>
+                    <p className="text-white font-bold mt-1">{pricingPreview.planLabel}</p>
+                  </div>
+                  <div className="rounded-lg bg-[#0b1111] border border-[#2d3340] p-3">
+                    <p className="text-[10px] uppercase text-gray-500 font-semibold">Preço padrão</p>
+                    <p className="text-gray-300 font-semibold mt-1">
+                      {formatSaasCurrency(pricingPreview.standardPrice)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-[#0b1111] border border-purple-500/30 p-3">
+                    <p className="text-[10px] uppercase text-purple-400 font-semibold">Preço aplicado</p>
+                    <p className="text-purple-300 font-bold mt-1">
+                      {formatSaasCurrency(pricingPreview.appliedPrice)}
+                    </p>
+                  </div>
+                  {pricingPreview.hasCustomPrice && pricingPreview.savings > 0 ? (
+                    <div className="rounded-lg bg-[#0b1111] border border-emerald-500/30 p-3">
+                      <p className="text-[10px] uppercase text-emerald-500 font-semibold">Economia</p>
+                      <p className="text-emerald-400 font-semibold mt-1">
+                        {formatSaasCurrency(pricingPreview.savings)}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="md:col-span-2 flex items-center justify-between p-4 mt-2 bg-[#1a1f29] border border-[#2d3340] rounded-lg">

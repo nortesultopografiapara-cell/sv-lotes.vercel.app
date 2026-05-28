@@ -54,7 +54,7 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
 
 export const SUPER_ADMIN_QUICK_ACTIONS = [
   { label: 'Nova empresa', href: '/companies?new=1', description: 'Cadastrar tenant' },
-  { label: 'Nova assinatura', href: '/plans/new', description: 'Plano ou billing' },
+  { label: 'Nova assinatura', href: '/plans', description: 'Planos e assinaturas' },
   { label: 'Acessar como empresa', href: '/companies', description: 'Personificar tenant' },
   { label: 'Ver tickets', href: '/support/tickets', description: 'Fila de suporte' },
 ] as const;

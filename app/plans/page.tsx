@@ -11,7 +11,7 @@ import {
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import { calculateMrrFromCompanies } from '@/lib/masterBilling';
+import { calculateMrrFromCompanies } from '@/lib/companyPricing';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,

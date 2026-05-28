@@ -1,18 +1,13 @@
 'use client';
 
-import { 
-  Building2, 
-  Map as MapIcon, 
-  TrendingUp, 
-  TrendingDown,
+import {
+  Building2,
+  Map as MapIcon,
   Users,
-  Clock,
   Calendar,
   Tag,
   DollarSign,
   ExternalLink,
-  Plus,
-  Minus,
   Crosshair,
   FileText,
   Wallet,
@@ -20,561 +15,632 @@ import {
   Loader2,
   AlertTriangle,
   Lock,
-  Activity,
   CheckCircle,
   Eye,
   Edit2,
   MoreHorizontal,
   Banknote,
-  Settings
+  ScrollText,
+  Mail,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ReactNode, type ComponentType } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getCompanySaasPlan, getSaasPlanDisplayName, normalizeSaasPlanKey } from '@/lib/saasPlans';
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
 } from 'recharts';
 import { useRouter } from 'next/navigation';
+import {
+  exportMasterDashboardCsv,
+  loadMasterDashboardData,
+  type MasterDashboardAlert,
+  type MasterDashboardData,
+} from '@/lib/masterDashboardData';
+
+function pct(part: number, total: number): string {
+  if (total <= 0) return '—';
+  return `${((part / total) * 100).toFixed(1)}% do total`;
+}
+
+function formatCurrency(val: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+}
+
+function todayLabel() {
+  const d = new Date();
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function alertIcon(alert: MasterDashboardAlert) {
+  switch (alert.id) {
+    case 'no-email':
+      return <Mail className="w-4 h-4" />;
+    case 'inadimplente':
+    case 'expired-subscription':
+      return <Lock className="w-4 h-4" />;
+    case 'no-projects':
+      return <MapIcon className="w-4 h-4" />;
+    case 'no-users':
+      return <Users className="w-4 h-4" />;
+    default:
+      return <AlertTriangle className="w-4 h-4" />;
+  }
+}
+
+function alertStyles(severity: MasterDashboardAlert['severity']) {
+  if (severity === 'danger') return { color: 'text-red-400', bg: 'bg-red-500/10' };
+  if (severity === 'warning') return { color: 'text-orange-400', bg: 'bg-orange-500/10' };
+  return { color: 'text-cyan-400', bg: 'bg-cyan-500/10' };
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111] animate-pulse">
+      <div className="h-4 w-48 bg-white/5 rounded mb-8" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-28 bg-[#151a23] border border-[#1f232b] rounded-2xl" />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="h-20 bg-[#151a23] border border-[#1f232b] rounded-xl" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-80 bg-[#151a23] border border-[#1f232b] rounded-2xl" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function SuperAdminDashboard({ user }: { user: any }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalCompanies: 0,
-    activeCompanies: 0,
-    suspendedCompanies: 0,
-    inactiveCompanies: 0,
-    mrr: 0,
-    totalUsers: 0,
-    totalBrokers: 0,
-    totalProjects: 0,
-    totalContracts: 0,
-    totalLots: 0
-  });
-  const [recentCompanies, setRecentCompanies] = useState<any[]>([]);
-  const [planDistribution, setPlanDistribution] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<MasterDashboardData | null>(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await loadMasterDashboardData(supabase);
+      console.log('MASTER_DASHBOARD_REAL_DATA', data);
+      setDashboard(data);
+      if (data.errors.length > 0) {
+        setLoadError(data.errors.join(' · '));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Falha ao carregar dashboard';
+      setLoadError(msg);
+      setDashboard(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (user?.role !== 'SUPER_ADMIN') {
-       router.push('/dashboard/operational');
-       return;
-    }
-
-    async function loadData() {
-      setLoading(true);
-
-      const [
-         { data: companies, count: totalCompanies },
-         { count: totalUsers },
-         { count: totalBrokers },
-         { count: totalProjects },
-         { count: totalContracts },
-         { count: totalLots }
-      ] = await Promise.all([
-         supabase.from('companies').select('*', { count: 'exact' }),
-         supabase.from('users').select('*', { count: 'exact', head: true }),
-         supabase.from('brokers').select('*', { count: 'exact', head: true }),
-         supabase.from('projects').select('*', { count: 'exact', head: true }),
-         supabase.from('contracts').select('*', { count: 'exact', head: true }),
-         supabase.from('blocks').select('*', { count: 'exact', head: true })
-      ]);
-
-      const comps = companies || [];
-      
-      const active = comps.filter(c => c.status_operacional === 'Ativa').length || comps.filter(c => c.active === true).length;
-      const suspended = comps.filter(c => c.status_operacional === 'Suspensa').length;
-      const inactive = comps.filter(c => c.status_operacional === 'Inativa' || c.status_operacional === 'Inadimplente' || c.status_operacional === 'Bloqueada').length || comps.filter(c => c.active === false).length;
-      
-      setStats({
-        totalCompanies: comps.length,
-        activeCompanies: active,
-        suspendedCompanies: suspended,
-        inactiveCompanies: inactive,
-        mrr: 0,
-        totalUsers: totalUsers || 0,
-        totalBrokers: totalBrokers || 0,
-        totalProjects: totalProjects || 0,
-        totalContracts: totalContracts || 0,
-        totalLots: totalLots || 0
-      });
-
-      const plans = comps.reduce((acc, current) => {
-         const plan = getSaasPlanDisplayName(normalizeSaasPlanKey(current.plan || 'basic'));
-         acc[plan] = (acc[plan] || 0) + 1;
-         return acc;
-      }, {} as Record<string, number>);
-
-      const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6b7280'];
-      const pd = Object.keys(plans).map((key, i) => ({
-         name: key.charAt(0).toUpperCase() + key.slice(1),
-         value: plans[key],
-         color: colors[i % colors.length]
-      }));
-      setPlanDistribution(pd);
-
-      const computedAlerts = [];
-      const badStatusComps = comps.filter(c => ['Suspensa', 'Bloqueada', 'Inadimplente'].includes(c.status_operacional));
-      if (badStatusComps.length > 0) {
-         computedAlerts.push({
-            id: 'bad-status',
-            icon: <Lock className="w-4 h-4" />,
-            colorClass: 'text-red-500',
-            bgClass: 'bg-red-500/10',
-            title: `${badStatusComps.length} empresas restritas`,
-            desc: badStatusComps.map(c => c.name).join(', '),
-            time: 'Agora'
-         });
-      }
-      const noEmailComps = comps.filter(c => !c.email);
-      if (noEmailComps.length > 0) {
-         computedAlerts.push({
-            id: 'no-email',
-            icon: <AlertTriangle className="w-4 h-4" />,
-            colorClass: 'text-orange-500',
-            bgClass: 'bg-orange-500/10',
-            title: `${noEmailComps.length} empresas sem e-mail`,
-            desc: 'Verifique no cadastro',
-            time: 'Agora'
-         });
-      }
-      setAlerts(computedAlerts);
-
-      // Load recent companies with detailed counts
-      const { data: recent } = await supabase
-         .from('companies')
-         .select(`*, users(count), brokers(count), projects(count)`)
-         .order('created_at', { ascending: false })
-         .limit(5);
-
-      if (recent) {
-         const formattedRecent = recent.map((r: any) => {
-            const saas = getCompanySaasPlan(r);
-
-            return {
-               id: r.id,
-               name: r.name,
-               slug: r.slug,
-               plan: saas.displayName,
-               status: r.status_operacional || 'Ativa',
-               projects: [r.projects?.[0]?.count || 0, saas.maxProjects],
-               users: [r.users?.[0]?.count || 0, saas.maxBrokers],
-               brokers: [r.brokers?.[0]?.count || 0, saas.maxBrokers],
-               mrr: 0 // real MRR goes here when billing is ready
-            };
-         });
-         setRecentCompanies(formattedRecent);
-      }
-
-      setLoading(false);
+      router.push('/dashboard/operational');
+      return;
     }
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, router, loadData]);
 
-  const handleMissingFeature = () => {
-    alert('Módulo em preparação.');
+  const stats = dashboard?.stats;
+  const hasRevenue = useMemo(
+    () => (dashboard?.revenueByMonth.some((m) => m.value > 0) ?? false),
+    [dashboard],
+  );
+
+  const handleExport = () => {
+    if (!dashboard) return;
+    const csv = exportMasterDashboardCsv(dashboard);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `master-dashboard-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const revenueData = [
-    { name: 'Receitas', value: 0 },
-  ];
+  if (loading) return <DashboardSkeleton />;
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  };
+  if (!dashboard && loadError) {
+    return (
+      <div className="flex-1 p-8 flex flex-col items-center justify-center gap-4 bg-[#0b1111]">
+        <AlertTriangle className="w-10 h-10 text-red-400" />
+        <p className="text-red-300 text-sm text-center max-w-md">{loadError}</p>
+        <button
+          type="button"
+          onClick={loadData}
+          className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-semibold"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (!dashboard || !stats) return null;
+
+  const planChartData = dashboard.planDistribution
+    .filter((p) => p.count > 0)
+    .map((p) => ({ name: p.tier, value: p.count, color: p.color }));
+
+  const dateLabel = todayLabel();
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111]">
-      
-      {/* Mobile Top Header included for consistency if needed, but layout handles it mostly */}
       <div className="md:hidden flex justify-between items-start mb-6 pt-2">
-         <div>
-            <h1 className="text-lg font-medium text-white flex items-center gap-1">
-              <span className="text-[var(--color-text-muted)]">Olá,</span> <strong>{user?.name || 'Usuário'} (Super Admin)</strong>
-            </h1>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Painel de Controle da Plataforma</p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-             <div className="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)] py-1.5 px-3 rounded-lg border border-[var(--color-border)]">
-                21/05/2026 - 21/05/2026
-             </div>
-          </div>
+        <div>
+          <h1 className="text-lg font-medium text-white">
+            <span className="text-[var(--color-text-muted)]">Olá,</span>{' '}
+            <strong>{user?.name || 'Super Admin'}</strong>
+          </h1>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Painel SaaS · dados Supabase</p>
+        </div>
+        <div className="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)] py-1.5 px-3 rounded-lg border border-[var(--color-border)]">
+          {dateLabel}
+        </div>
       </div>
 
-      <div className="hidden md:flex justify-end mb-6">
-         <div className="flex items-center gap-3">
-           <div className="flex items-center gap-2 text-xs font-mono text-gray-300 bg-[#151a23] py-2 px-4 rounded-xl border border-[#1f232b]">
-              <Calendar className="w-4 h-4 text-gray-400" />
-              21/05/2026 - 21/05/2026
-           </div>
-           <button className="flex items-center gap-2 text-xs font-semibold text-gray-300 bg-[#151a23] hover:bg-[#1a1f29] transition-colors py-2 px-4 rounded-xl border border-[#1f232b]">
-              <ExternalLink className="w-4 h-4" /> Exportar Relatórios
-           </button>
-         </div>
+      <div className="hidden md:flex justify-between items-center mb-6">
+        <p className="text-xs font-mono text-emerald-400/90">MASTER_DASHBOARD_REAL_DATA</p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-mono text-gray-300 bg-[#151a23] py-2 px-4 rounded-xl border border-[#1f232b]">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            {dateLabel}
+          </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="flex items-center gap-2 text-xs font-semibold text-gray-300 bg-[#151a23] hover:bg-[#1a1f29] transition-colors py-2 px-4 rounded-xl border border-[#1f232b]"
+          >
+            <ExternalLink className="w-4 h-4" /> Exportar relatório
+          </button>
+          <button
+            type="button"
+            onClick={loadData}
+            className="flex items-center gap-2 text-xs font-semibold text-gray-300 bg-[#151a23] hover:bg-[#1a1f29] py-2 px-4 rounded-xl border border-[#1f232b]"
+          >
+            <Loader2 className="w-4 h-4" /> Atualizar
+          </button>
+        </div>
       </div>
 
-      {/* Main KPI Cards - Level 1 */}
+      {loadError ? (
+        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Algumas fontes retornaram aviso: {loadError}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
-        {/* Total Empresas */}
-        <div className="bg-[#151a23] border border-[#1f232b] p-5 rounded-2xl relative overflow-hidden group shadow-sm flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-               <p className="text-[13px] text-gray-400 font-medium">Total de Empresas</p>
-               <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
-                  <Building2 className="w-5 h-5" />
-               </div>
-            </div>
-            <div className="mt-2">
-               <h3 className="text-2xl font-bold text-white tracking-tight">{stats.totalCompanies}</h3>
-               <p className="text-[11px] font-medium text-blue-400 mt-1">+2 este mês</p>
-            </div>
-        </div>
-
-        {/* Empresas Ativas */}
-        <div className="bg-[#151a23] border border-[#1f232b] p-5 rounded-2xl relative overflow-hidden group shadow-sm flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-               <p className="text-[13px] text-gray-400 font-medium">Empresas Ativas</p>
-               <div className="p-2 rounded-xl bg-green-500/10 text-green-400">
-                  <CheckCircle className="w-5 h-5" />
-               </div>
-            </div>
-            <div className="mt-2">
-               <h3 className="text-2xl font-bold text-white tracking-tight">{stats.activeCompanies}</h3>
-               <p className="text-[11px] font-medium text-green-400 mt-1">78.6% do total</p>
-            </div>
-        </div>
-
-        {/* Empresas Suspensas */}
-        <div className="bg-[#151a23] border border-orange-500/20 p-5 rounded-2xl relative overflow-hidden group shadow-sm flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-               <p className="text-[13px] text-gray-400 font-medium">Empresas Suspensas</p>
-               <div className="p-2 rounded-xl bg-orange-500/10 text-orange-400">
-                  <AlertTriangle className="w-5 h-5" />
-               </div>
-            </div>
-            <div className="mt-2">
-               <h3 className="text-2xl font-bold text-white tracking-tight">{stats.suspendedCompanies}</h3>
-               <p className="text-[11px] font-medium text-orange-400 mt-1">14.3% do total</p>
-            </div>
-        </div>
-
-        {/* Empresas Inativas */}
-        <div className="bg-[#151a23] border border-red-500/20 p-5 rounded-2xl relative overflow-hidden group shadow-sm flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-               <p className="text-[13px] text-gray-400 font-medium">Empresas Inativas</p>
-               <div className="p-2 rounded-xl bg-red-500/10 text-red-500">
-                  <Minus className="w-5 h-5" />
-               </div>
-            </div>
-            <div className="mt-2">
-               <h3 className="text-2xl font-bold text-white tracking-tight">{stats.inactiveCompanies}</h3>
-               <p className="text-[11px] font-medium text-red-500 mt-1">7.1% do total</p>
-            </div>
-        </div>
-
-        {/* Receita MRR */}
-        <div className="bg-[#151a23] border border-[#1f232b] p-5 rounded-2xl relative overflow-hidden group shadow-sm flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-               <p className="text-[13px] text-gray-400 font-medium">Receita Mensal (MRR)</p>
-               <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
-                  <DollarSign className="w-5 h-5" />
-               </div>
-            </div>
-            <div className="mt-2">
-               <h3 className="text-2xl font-bold text-white tracking-tight">{formatCurrency(stats.mrr)}</h3>
-               <p className="text-[11px] font-medium text-purple-400 mt-1">+18.6% em relação ao mês anterior</p>
-            </div>
-        </div>
+        <KpiCard
+          title="Total de Empresas"
+          value={stats.totalCompanies}
+          sub={stats.totalCompanies === 0 ? 'Nenhum tenant' : 'Contagem real'}
+          icon={<Building2 className="w-5 h-5" />}
+          iconClass="bg-blue-500/10 text-blue-400"
+        />
+        <KpiCard
+          title="Empresas Ativas"
+          value={stats.activeCompanies}
+          sub={pct(stats.activeCompanies, stats.totalCompanies)}
+          icon={<CheckCircle className="w-5 h-5" />}
+          iconClass="bg-green-500/10 text-green-400"
+        />
+        <KpiCard
+          title="Empresas Suspensas"
+          value={stats.suspendedCompanies}
+          sub={pct(stats.suspendedCompanies, stats.totalCompanies)}
+          icon={<AlertTriangle className="w-5 h-5" />}
+          iconClass="bg-orange-500/10 text-orange-400"
+          borderClass="border-orange-500/20"
+        />
+        <KpiCard
+          title="Empresas Inativas"
+          value={stats.inactiveCompanies}
+          sub={pct(stats.inactiveCompanies, stats.totalCompanies)}
+          icon={<Minus className="w-5 h-5" />}
+          iconClass="bg-red-500/10 text-red-500"
+          borderClass="border-red-500/20"
+        />
+        <KpiCard
+          title="Receita Mensal (MRR)"
+          value={formatCurrency(stats.mrr)}
+          sub={stats.mrr === 0 ? 'Sem assinaturas ativas' : 'Planos ativos (companies)'}
+          icon={<DollarSign className="w-5 h-5" />}
+          iconClass="bg-purple-500/10 text-purple-400"
+          isCurrency
+        />
       </div>
 
-      {/* Main KPI Cards - Level 2 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
-            <div>
-               <p className="text-[12px] text-gray-500 mb-1 font-medium">Total de Usuários</p>
-               <p className="text-xl font-bold text-gray-200">{stats.totalUsers}</p>
-            </div>
-            <Users className="w-6 h-6 text-blue-500/50" />
-        </div>
-        <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
-            <div>
-               <p className="text-[12px] text-gray-500 mb-1 font-medium">Total de Corretores</p>
-               <p className="text-xl font-bold text-gray-200">{stats.totalBrokers}</p>
-            </div>
-            <UserPlus className="w-6 h-6 text-purple-500/50" />
-        </div>
-        <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
-            <div>
-               <p className="text-[12px] text-gray-500 mb-1 font-medium">Total de Empreendimentos</p>
-               <p className="text-xl font-bold text-gray-200">{stats.totalProjects}</p>
-            </div>
-            <MapIcon className="w-6 h-6 text-blue-300/50" />
-        </div>
-        <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
-            <div>
-               <p className="text-[12px] text-gray-500 mb-1 font-medium">Total de Contratos</p>
-               <p className="text-xl font-bold text-gray-200">{stats.totalContracts}</p>
-            </div>
-            <FileText className="w-6 h-6 text-green-500/50" />
-        </div>
-        <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
-            <div>
-               <p className="text-[12px] text-gray-500 mb-1 font-medium">Lotes Cadastrados</p>
-               <p className="text-xl font-bold text-gray-200">{stats.totalLots}</p>
-            </div>
-            <Crosshair className="w-6 h-6 text-orange-500/50" />
-        </div>
+        <OpCard label="Total de Usuários" value={stats.totalUsers} icon={Users} color="text-blue-500/50" />
+        <OpCard label="Total de Corretores" value={stats.totalBrokers} icon={UserPlus} color="text-purple-500/50" />
+        <OpCard label="Total de Empreendimentos" value={stats.totalProjects} icon={MapIcon} color="text-blue-300/50" />
+        <OpCard label="Total de Contratos" value={stats.totalContracts} icon={FileText} color="text-green-500/50" />
+        <OpCard label="Lotes Cadastrados" value={stats.totalLots} icon={Crosshair} color="text-orange-500/50" />
       </div>
 
-      {/* Middle Section: Charts & Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-         {/* Line Chart */}
-         <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-[15px] font-semibold text-gray-200">Receita dos Últimos 6 Meses</h3>
-               <select className="bg-[#1a1f29] border border-[#2d3340] text-gray-400 text-xs py-1 px-2 rounded-lg outline-none">
-                 <option>Últimos 6 meses</option>
-               </select>
-            </div>
-            <div className="h-64 w-full relative">
-               <ResponsiveContainer width="100%" height="100%">
-                 <LineChart data={revenueData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
-                   <CartesianGrid strokeDasharray="3 3" stroke="#2d3340" vertical={false} />
-                   <XAxis dataKey="name" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
-                   <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `R$ ${val/1000}k`} />
-                   <Tooltip 
-                     contentStyle={{ backgroundColor: '#1a1f29', borderColor: '#2d3340', borderRadius: '8px', color: '#fff' }}
-                     itemStyle={{ color: '#3b82f6' }}
-                     formatter={(value) => [`R$ ${value}`, 'Receita']}
-                   />
-                   <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', stroke: '#151a23', strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                 </LineChart>
-               </ResponsiveContainer>
-               <div className="absolute inset-0 flex items-center justify-center bg-[#151a23]/60 backdrop-blur-sm text-gray-400 font-medium rounded-lg">
-                  Financeiro SaaS ainda não configurado.
-               </div>
-            </div>
-         </div>
+        <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg">
+          <h3 className="text-[15px] font-semibold text-gray-200 mb-6">Receita dos Últimos 6 Meses</h3>
+          <div className="h-64 w-full relative">
+            {hasRevenue ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={dashboard.revenueByMonth}
+                  margin={{ top: 5, right: 20, bottom: 5, left: -10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2d3340" vertical={false} />
+                  <XAxis dataKey="label" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis
+                    stroke="#6b7280"
+                    fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1a1f29',
+                      borderColor: '#2d3340',
+                      borderRadius: '8px',
+                      color: '#fff',
+                    }}
+                    formatter={(value: number) => [formatCurrency(value), 'Recebido']}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: '#3b82f6', stroke: '#151a23', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center px-4">
+                <Wallet className="w-10 h-10 text-gray-600 mb-3" />
+                <p className="text-gray-400 text-sm font-medium">Sem recebimentos pagos nos últimos 6 meses</p>
+                <p className="text-gray-500 text-xs mt-1">Fonte: finance_receipts (status pago)</p>
+              </div>
+            )}
+          </div>
+        </div>
 
-         {/* Donut Chart */}
-         <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg flex flex-col">
-            <h3 className="text-[15px] font-semibold text-gray-200 mb-6">Distribuição de Planos</h3>
+        <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg flex flex-col">
+          <h3 className="text-[15px] font-semibold text-gray-200 mb-6">Distribuição de Planos</h3>
+          {planChartData.length > 0 ? (
             <div className="flex-1 flex items-center justify-between gap-4">
-                <div className="relative w-40 h-40 shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <PieChart>
-                       <Pie
-                         data={planDistribution}
-                         cx="50%"
-                         cy="50%"
-                         innerRadius={50}
-                         outerRadius={75}
-                         paddingAngle={5}
-                         dataKey="value"
-                         stroke="none"
-                       >
-                         {planDistribution.map((entry, index) => (
-                           <Cell key={`cell-${index}`} fill={entry.color} />
-                         ))}
-                       </Pie>
-                     </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                     <span className="text-2xl font-bold text-white">{stats.totalCompanies}</span>
-                     <span className="text-[10px] text-gray-400 uppercase tracking-widest">Total</span>
+              <div className="relative w-40 h-40 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={planChartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={75}
+                      paddingAngle={5}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {planChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-2xl font-bold text-white">{stats.totalCompanies}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest">Total</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4">
+                {dashboard.planDistribution.map((plan) => (
+                  <div key={plan.tier} className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: plan.color }} />
+                      <span className="text-sm font-medium text-gray-200">{plan.tier}</span>
+                    </div>
+                    <span className="text-xs text-gray-500 ml-5">
+                      {plan.count} {plan.count === 1 ? 'empresa' : 'empresas'}{' '}
+                      {stats.totalCompanies > 0 && `(${plan.percent.toFixed(1)}%)`}
+                    </span>
                   </div>
-                </div>
-                <div className="flex flex-col gap-4">
-                   {planDistribution.map((plan, i) => (
-                     <div key={i} className="flex flex-col">
-                       <div className="flex items-center gap-2">
-                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: plan.color }} />
-                         <span className="text-sm font-medium text-gray-200">{plan.name}</span>
-                       </div>
-                       <span className="text-xs text-gray-500 ml-5">{plan.value} empresas {stats.totalCompanies > 0 && `(${(plan.value / stats.totalCompanies * 100).toFixed(1)}%)`}</span>
-                     </div>
-                   ))}
-                </div>
+                ))}
+              </div>
             </div>
-         </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+              <Tag className="w-10 h-10 text-gray-600 mb-2" />
+              <p className="text-gray-400 text-sm">Nenhuma empresa cadastrada</p>
+            </div>
+          )}
+        </div>
 
-         {/* Alerts Panel */}
-         <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-[15px] font-semibold text-gray-200">Alertas e Notificações</h3>
-               <button className="text-xs font-semibold text-blue-500 hover:text-blue-400">Ver todos</button>
-            </div>
-            <div className="flex-1 flex flex-col gap-5 overflow-y-auto">
-               {alerts.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
-                     <CheckCircle className="w-10 h-10 text-gray-600 mb-2" />
-                     <p className="text-gray-400 text-sm font-medium">Nenhum alerta no momento.</p>
+        <div className="bg-[#151a23] border border-[#1f232b] p-6 rounded-2xl shadow-lg flex flex-col">
+          <h3 className="text-[15px] font-semibold text-gray-200 mb-6">Alertas Inteligentes</h3>
+          <div className="flex-1 flex flex-col gap-4 overflow-y-auto max-h-72">
+            {dashboard.alerts.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
+                <CheckCircle className="w-10 h-10 text-gray-600 mb-2" />
+                <p className="text-gray-400 text-sm font-medium">Nenhum alerta no momento.</p>
+              </div>
+            ) : (
+              dashboard.alerts.map((a) => {
+                const st = alertStyles(a.severity);
+                return (
+                  <div key={a.id} className="flex items-start gap-4">
+                    <div className={`p-2 rounded-full shrink-0 ${st.bg} ${st.color}`}>{alertIcon(a)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[13px] font-medium ${st.color}`}>{a.title}</p>
+                      <p className="text-[11px] text-gray-500 mt-1 line-clamp-2">{a.description}</p>
+                    </div>
                   </div>
-               ) : (
-                  alerts.map(a => (
-                   <div key={a.id} className="flex items-start gap-4">
-                      <div className={`p-2 rounded-full shrink-0 ${a.bgClass} ${a.colorClass}`}>
-                         {a.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                         <p className={`text-[13px] font-medium truncate ${a.colorClass}`}>{a.title}</p>
-                         <p className="text-[11px] text-gray-500 mt-1">{a.desc}</p>
-                      </div>
-                      <span className="text-[11px] text-gray-500 shrink-0">{a.time}</span>
-                   </div>
-                  ))
-               )}
-            </div>
-         </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Bottom Section: Table & Quick Actions */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8">
-         {/* Table */}
-         <div className="xl:col-span-3 bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-lg flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
-               <h3 className="text-[15px] font-semibold text-gray-200">Empresas Recentes</h3>
-               <button className="text-xs font-semibold text-blue-500 hover:text-blue-400">Ver todas</button>
-            </div>
-            <div className="overflow-x-auto">
-               <table className="w-full text-left border-collapse">
-                  <thead>
-                     <tr className="border-b border-[#1f232b] text-[10px] font-bold text-gray-500 tracking-wider uppercase">
-                        <th className="p-4 pl-6 font-semibold">Empresa</th>
-                        <th className="p-4 font-semibold">Plano</th>
-                        <th className="p-4 font-semibold">Status</th>
-                        <th className="p-4 font-semibold text-center">Projetos</th>
-                        <th className="p-4 font-semibold text-center">Usuários</th>
-                        <th className="p-4 font-semibold text-center">Corretores</th>
-                        <th className="p-4 font-semibold">Receita (Mensal)</th>
-                        <th className="p-4 pr-6 font-semibold text-right">Ações</th>
-                     </tr>
-                  </thead>
-                  <tbody className="text-sm">
-                     {recentCompanies.length === 0 ? (
-                        <tr>
-                           <td colSpan={8} className="p-8 text-center text-gray-500 font-medium">Nenhuma empresa cadastrada.</td>
-                        </tr>
-                     ) : (
-                      recentCompanies.map((c) => (
-                         <tr key={c.id} className="border-b border-[#1f232b]/50 hover:bg-[#1a1f29] transition-colors group">
-                           <td className="p-4 pl-6">
-                              <div className="flex items-center gap-3">
-                                 <div className="w-8 h-8 rounded-lg bg-gray-800 text-gray-300 flex items-center justify-center font-bold text-xs border border-gray-700">
-                                   {c.name.charAt(0)}
-                                 </div>
-                                 <div className="flex flex-col">
-                                    <span className="font-semibold text-gray-200 text-[13px]">{c.name}</span>
-                                    <span className="text-[11px] text-gray-500">{c.slug}</span>
-                                 </div>
-                              </div>
-                           </td>
-                           <td className="p-4">
-                              <span className={`px-2 py-1 rounded text-[10px] font-bold border ${c.plan === 'Profissional' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : c.plan === 'Standard' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
-                                {c.plan}
-                              </span>
-                           </td>
-                           <td className="p-4">
-                              <div className={`flex items-center gap-1.5 text-[11px] font-bold ${c.status === 'Ativa' ? 'text-green-500' : 'text-red-500'}`}>
-                                  <div className={`w-1.5 h-1.5 rounded-full ${c.status === 'Ativa' ? 'bg-green-500' : 'bg-red-500'}`} />
-                                 {c.status}
-                              </div>
-                           </td>
-                           <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.projects[0]} / {c.projects[1]}</span>
-                           </td>
-                           <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.users[0]} / {c.users[1]}</span>
-                           </td>
-                           <td className="p-4 text-center">
-                              <span className="text-gray-300 text-[12px]">{c.brokers[0]} / {c.brokers[1]}</span>
-                           </td>
-                           <td className="p-4">
-                              <span className="text-gray-200 font-medium text-[13px]">{formatCurrency(c.mrr)}</span>
-                           </td>
-                           <td className="p-4 pr-6 text-right space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Visualizar">
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Editar">
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors" title="Mais Opções">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </button>
-                           </td>
-                        </tr>
-                      ))
-                     )}
-                  </tbody>
-               </table>
-            </div>
-         </div>
+        <div className="xl:col-span-3 bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-lg flex flex-col overflow-hidden">
+          <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
+            <h3 className="text-[15px] font-semibold text-gray-200">Empresas Recentes</h3>
+            <Link href="/companies" className="text-xs font-semibold text-blue-500 hover:text-blue-400">
+              Ver todas
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#1f232b] text-[10px] font-bold text-gray-500 tracking-wider uppercase">
+                  <th className="p-4 pl-6">Empresa</th>
+                  <th className="p-4">Plano</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4 text-center">Projetos</th>
+                  <th className="p-4 text-center">Usuários</th>
+                  <th className="p-4 text-center">Corretores</th>
+                  <th className="p-4">MRR</th>
+                  <th className="p-4 pr-6 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {dashboard.recentCompanies.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-gray-500 font-medium">
+                      Nenhuma empresa cadastrada.
+                    </td>
+                  </tr>
+                ) : (
+                  dashboard.recentCompanies.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="border-b border-[#1f232b]/50 hover:bg-[#1a1f29] transition-colors group"
+                    >
+                      <td className="p-4 pl-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-gray-800 text-gray-300 flex items-center justify-center font-bold text-xs border border-gray-700">
+                            {c.name.charAt(0)}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-gray-200 text-[13px]">{c.name}</span>
+                            <span className="block text-[11px] text-gray-500">{c.slug || '—'}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                            c.planLabel === 'PROFESSIONAL'
+                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                              : c.planLabel === 'ENTERPRISE'
+                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                : 'bg-green-500/10 text-green-400 border-green-500/20'
+                          }`}
+                        >
+                          {c.planLabel}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className={`text-[11px] font-bold ${
+                            c.status === 'Ativa' ? 'text-green-500' : 'text-red-400'
+                          }`}
+                        >
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center text-gray-300 text-[12px]">
+                        {c.projectsUsed} / {c.projectsLimit}
+                      </td>
+                      <td className="p-4 text-center text-gray-300 text-[12px]">
+                        {c.usersUsed} / {c.usersLimit}
+                      </td>
+                      <td className="p-4 text-center text-gray-300 text-[12px]">
+                        {c.brokersUsed} / {c.brokersLimit}
+                      </td>
+                      <td className="p-4 text-gray-200 font-medium text-[13px]">
+                        {formatCurrency(c.mrr)}
+                      </td>
+                      <td className="p-4 pr-6 text-right space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Link
+                          href="/companies"
+                          className="inline-flex p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
+                          title="Ver empresas"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                        <Link
+                          href="/companies"
+                          className="inline-flex p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
+                          title="Gerenciar"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Link>
+                        <Link
+                          href="/plans"
+                          className="inline-flex p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-         {/* Quick Actions */}
-         <div className="bg-transparent flex flex-col gap-4">
-            <h3 className="text-[15px] font-semibold text-gray-200 px-1">Ações Rápidas</h3>
-            <div className="grid grid-cols-2 gap-4">
-               <Link href="/companies" className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
-                     <Building2 className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px]">Nova Empresa</span>
-               </Link>
-               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-purple-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-purple-500/10 text-purple-400 group-hover:scale-110 transition-transform">
-                     <Banknote className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px]">Novo Plano</span>
-               </button>
-               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-green-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-green-500/10 text-green-400 group-hover:scale-110 transition-transform">
-                     <Wallet className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px] leading-tight">Ver<br/>Assinaturas</span>
-               </button>
-               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-yellow-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-yellow-500/10 text-yellow-500 group-hover:scale-110 transition-transform">
-                     <DollarSign className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px] leading-tight">Relatório<br/>Financeiro</span>
-               </button>
-               <button onClick={handleMissingFeature} className="bg-[#151a23] border border-[#1f232b] hover:border-blue-500/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform">
-                     <AlertTriangle className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px] leading-tight">Logs de<br/>Auditoria</span>
-               </button>
-               <Link href="/settings/global" className="bg-[#151a23] border border-[#1f232b] hover:border-gray-400/50 hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm">
-                  <div className="p-3 rounded-full bg-gray-500/10 text-gray-400 group-hover:scale-110 transition-transform">
-                     <Settings className="w-6 h-6" />
-                  </div>
-                  <span className="text-gray-300 font-medium text-[13px]">Configurações</span>
-               </Link>
-            </div>
-         </div>
+        <div className="flex flex-col gap-4">
+          <h3 className="text-[15px] font-semibold text-gray-200 px-1">Ações Rápidas</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <QuickAction href="/companies?new=1" icon={Building2} label="Nova empresa" color="blue" />
+            <QuickAction href="/plans" icon={Banknote} label="Nova assinatura" color="purple" />
+            <QuickAction href="/saas-finance" icon={Wallet} label="Financeiro SaaS" color="green" />
+            <QuickAction
+              onClick={handleExport}
+              icon={ExternalLink}
+              label="Exportar relatório"
+              color="yellow"
+            />
+            <QuickAction href="/logs" icon={ScrollText} label="Abrir logs" color="blue" />
+            <QuickAction href="/companies" icon={Plus} label="Ver empresas" color="gray" />
+          </div>
+        </div>
       </div>
 
       <footer className="mt-8 pt-6 border-t border-[#1f232b] flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-gray-500">
-         <div>
-            <span className="font-semibold text-gray-400">© 2026 SV_LOTES</span> - Plataforma SaaS Imobiliária | Todos os direitos reservados
-         </div>
-         <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500/70" />
-            <span>Ambiente Seguro e Monitorado</span>
-         </div>
+        <span className="font-semibold text-gray-400">© 2026 SV_LOTES — Painel Master SaaS</span>
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-green-500/70" />
+          <span>Dados em tempo real do Supabase</span>
+        </div>
       </footer>
-
     </div>
+  );
+}
+
+function KpiCard({
+  title,
+  value,
+  sub,
+  icon,
+  iconClass,
+  borderClass = 'border-[#1f232b]',
+  isCurrency,
+}: {
+  title: string;
+  value: number | string;
+  sub: string;
+  icon: ReactNode;
+  iconClass: string;
+  borderClass?: string;
+  isCurrency?: boolean;
+}) {
+  return (
+    <div
+      className={`bg-[#151a23] border ${borderClass} p-5 rounded-2xl flex flex-col justify-between`}
+    >
+      <div className="flex justify-between items-start">
+        <p className="text-[13px] text-gray-400 font-medium">{title}</p>
+        <div className={`p-2 rounded-xl ${iconClass}`}>{icon}</div>
+      </div>
+      <div className="mt-2">
+        <h3
+          className={`font-bold text-white tracking-tight ${isCurrency ? 'text-xl' : 'text-2xl'}`}
+        >
+          {value}
+        </h3>
+        <p className="text-[11px] font-medium text-gray-500 mt-1">{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+function OpCard({
+  label,
+  value,
+  icon: Icon,
+  color,
+}: {
+  label: string;
+  value: number;
+  icon: ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  return (
+    <div className="bg-[#151a23] border border-[#1f232b] p-4 rounded-xl flex items-center justify-between">
+      <div>
+        <p className="text-[12px] text-gray-500 mb-1 font-medium">{label}</p>
+        <p className="text-xl font-bold text-gray-200">{value}</p>
+      </div>
+      <Icon className={`w-6 h-6 ${color}`} />
+    </div>
+  );
+}
+
+function QuickAction({
+  href,
+  onClick,
+  icon: Icon,
+  label,
+  color,
+}: {
+  href?: string;
+  onClick?: () => void;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  color: 'blue' | 'purple' | 'green' | 'yellow' | 'gray';
+}) {
+  const palette: Record<string, { icon: string; border: string }> = {
+    blue: { icon: 'bg-blue-500/10 text-blue-400', border: 'hover:border-blue-500/50' },
+    purple: { icon: 'bg-purple-500/10 text-purple-400', border: 'hover:border-purple-500/50' },
+    green: { icon: 'bg-green-500/10 text-green-400', border: 'hover:border-green-500/50' },
+    yellow: { icon: 'bg-yellow-500/10 text-yellow-500', border: 'hover:border-yellow-500/50' },
+    gray: { icon: 'bg-gray-500/10 text-gray-400', border: 'hover:border-gray-400/50' },
+  };
+  const p = palette[color];
+  const inner = (
+    <>
+      <div className={`p-3 rounded-full ${p.icon} group-hover:scale-110 transition-transform`}>
+        <Icon className="w-6 h-6" />
+      </div>
+      <span className="text-gray-300 font-medium text-[13px] text-center leading-tight">{label}</span>
+    </>
+  );
+  const cls = `bg-[#151a23] border border-[#1f232b] ${p.border} hover:bg-[#1a2130] transition-all p-5 rounded-2xl flex flex-col items-center justify-center gap-3 group text-center shadow-sm`;
+
+  if (href) {
+    return (
+      <Link href={href} className={cls}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={cls}>
+      {inner}
+    </button>
   );
 }

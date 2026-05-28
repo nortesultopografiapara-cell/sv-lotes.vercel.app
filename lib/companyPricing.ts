@@ -1,0 +1,112 @@
+/**
+ * Preço SaaS por empresa: padrão do plano ou valor personalizado negociado.
+ * O plano define limites (projetos/corretores); o preço é independente.
+ */
+
+import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
+
+export const PLAN_MRR: Record<string, number> = {
+  starter: 329.99,
+  basic: 329.99,
+  basico: 329.99,
+  business: 549.99,
+  standard: 549.99,
+  professional: 1099.99,
+  profissional: 1099.99,
+  enterprise: 1099.99,
+  premium: 1099.99,
+};
+
+export function planMrrForCompany(plan?: string | null): number {
+  const key = (plan || '').toLowerCase().trim();
+  return PLAN_MRR[key] ?? 0;
+}
+
+export type CustomPriceBadge = 'desconto_especial' | 'founding_client' | null;
+
+export type CompanyPricingSource = CompanySaasSource & {
+  custom_monthly_price?: number | string | null;
+  custom_price_enabled?: boolean | null;
+  custom_price_badge?: string | null;
+  active?: boolean | null;
+  status_operacional?: string | null;
+};
+
+export function formatSaasCurrency(value: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+}
+
+export function getStandardPlanMonthlyPrice(company: CompanySaasSource): number {
+  const saas = getCompanySaasPlan(company);
+  return planMrrForCompany(saas.legacyDbPlan);
+}
+
+export function parseCustomMonthlyPrice(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** Valor efetivo de cobrança/MRR */
+export function getCompanyMonthlyPrice(company: CompanyPricingSource): number {
+  if (company.custom_price_enabled === true) {
+    const custom = parseCustomMonthlyPrice(company.custom_monthly_price);
+    if (custom != null) return custom;
+  }
+  return getStandardPlanMonthlyPrice(company);
+}
+
+export function normalizeCustomPriceBadge(raw?: string | null): CustomPriceBadge {
+  const v = (raw || '').toLowerCase().trim();
+  if (v === 'founding_client' || v === 'founding') return 'founding_client';
+  if (v === 'desconto_especial' || v === 'desconto') return 'desconto_especial';
+  return null;
+}
+
+export function customPriceBadgeLabel(badge: CustomPriceBadge): string | null {
+  if (badge === 'founding_client') return 'FOUNDING CLIENT';
+  if (badge === 'desconto_especial') return 'DESCONTO ESPECIAL';
+  return null;
+}
+
+export function resolveCompanyPricing(company: CompanyPricingSource) {
+  const saas = getCompanySaasPlan(company);
+  const planLabel =
+    saas.planKey === 'profissional'
+      ? 'PROFESSIONAL'
+      : saas.planKey === 'business'
+        ? 'ENTERPRISE'
+        : 'STARTER';
+
+  const standardPrice = getStandardPlanMonthlyPrice(company);
+  const appliedPrice = getCompanyMonthlyPrice(company);
+  const customEnabled = company.custom_price_enabled === true;
+  const badge = normalizeCustomPriceBadge(company.custom_price_badge);
+
+  return {
+    planKey: saas.planKey,
+    planDisplayName: saas.displayName,
+    planLabel,
+    standardPrice,
+    appliedPrice,
+    customEnabled,
+    hasCustomPrice: customEnabled && appliedPrice !== standardPrice,
+    badge,
+    badgeLabel: customPriceBadgeLabel(badge),
+    savings: Math.max(0, standardPrice - appliedPrice),
+  };
+}
+
+export function isBillableCompany(company: CompanyPricingSource): boolean {
+  if (company.active !== true) return false;
+  const status = (company.status_operacional || '').toLowerCase();
+  return !['suspensa', 'bloqueada', 'inadimplente', 'inativo', 'inativa'].includes(status);
+}
+
+export function calculateMrrFromCompanies(companies: CompanyPricingSource[]): number {
+  return companies.reduce((sum, c) => {
+    if (!isBillableCompany(c)) return sum;
+    return sum + getCompanyMonthlyPrice(c);
+  }, 0);
+}
