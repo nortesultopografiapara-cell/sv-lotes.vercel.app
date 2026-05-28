@@ -29,6 +29,79 @@ const PLATFORM_ADMIN_ROLES = new Set([
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Colunas aceitas para persistir HTML (ordem de preferência). */
+const CONTRACT_HTML_STORAGE_COLUMNS = [
+  'generated_html',
+  'contract_html',
+  'content',
+  'html',
+] as const;
+
+/** Nunca enviar no insert/update — ausente em vários ambientes de produção. */
+const CONTRACT_HTML_SKIP_COLUMNS = new Set(['html_content']);
+
+/** Detecta coluna ausente (PostgREST e Postgres nativo). */
+export function parseMissingContractColumn(
+  errorMessage?: string | null,
+): string | null {
+  if (!errorMessage) return null;
+  const patterns = [
+    /Could not find the '(\w+)' column/i,
+    /column (?:contracts\.)?["']?(\w+)["']? does not exist/i,
+    /column "(\w+)" of relation "contracts" does not exist/i,
+  ];
+  for (const re of patterns) {
+    const m = errorMessage.match(re);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Monta campos de HTML para insert sem html_content.
+ * Usa a coluna já presente no contrato-fonte, se houver.
+ */
+export function buildRegeneratedContractHtmlFields(
+  html: string,
+  sourceContract?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (sourceContract && typeof sourceContract === 'object') {
+    for (const col of CONTRACT_HTML_STORAGE_COLUMNS) {
+      if (col in sourceContract) {
+        return { [col]: html };
+      }
+    }
+  }
+  return { generated_html: html };
+}
+
+function stripPayloadColumn(
+  payload: Record<string, unknown>,
+  missingCol: string,
+  op: 'insert' | 'update',
+): Record<string, unknown> {
+  if (missingCol === 'html_content') {
+    console.warn('REGENERATE_HTML_COLUMN_MISSING', { column: missingCol, op });
+    if (op === 'insert') {
+      console.warn('REGENERATE_INSERT_RETRY_WITHOUT_HTML_CONTENT');
+    }
+  }
+  const { [missingCol]: _removed, ...rest } = payload;
+  return rest;
+}
+
+function attachHtmlToContractRow(
+  row: Record<string, unknown>,
+  html: string,
+): Record<string, unknown> {
+  const hasStoredHtml = CONTRACT_HTML_STORAGE_COLUMNS.some((col) => {
+    const v = row[col];
+    return typeof v === 'string' && v.trim().length > 0;
+  });
+  if (hasStoredHtml) return row;
+  return { ...row, generated_html: html };
+}
+
 export class ContractNotFoundError extends Error {
   readonly receivedId: string;
   readonly lookup: 'id' | 'contract_number';
@@ -461,12 +534,9 @@ async function updateContractRowWithFallback(
 
     if (!error) return;
 
-    const missingCol = error.message?.match(
-      /Could not find the '(\w+)' column/i,
-    )?.[1];
+    const missingCol = parseMissingContractColumn(error.message);
     if (missingCol && missingCol in cleaned) {
-      const { [missingCol]: _removed, ...rest } = cleaned;
-      cleaned = rest;
+      cleaned = stripPayloadColumn(cleaned, missingCol, 'update');
       console.warn('[REGENERATE] update retry sem coluna', missingCol);
       continue;
     }
@@ -478,30 +548,32 @@ async function updateContractRowWithFallback(
 async function insertRegeneratedContractRow(
   supabase: SupabaseClient,
   payload: Record<string, unknown>,
+  htmlForResponse?: string,
 ): Promise<Record<string, unknown>> {
   let cleaned: Record<string, unknown> = Object.fromEntries(
-    Object.entries(payload).filter(([, v]) => v !== undefined),
+    Object.entries(payload).filter(
+      ([key, v]) =>
+        v !== undefined && !CONTRACT_HTML_SKIP_COLUMNS.has(key),
+    ),
   );
 
   for (let attempt = 0; attempt < 25; attempt++) {
     const { data, error } = await supabase
       .from('contracts')
       .insert([cleaned])
-      .select(
-        'id, contract_number, version, status, generated_html, html_content, pdf_url, created_at, regenerated_at, regenerated_by, regenerated_from, superseded_by, is_current',
-      )
+      .select('*')
       .single();
 
     if (!error && data) {
-      return data as Record<string, unknown>;
+      const row = data as Record<string, unknown>;
+      return htmlForResponse
+        ? attachHtmlToContractRow(row, htmlForResponse)
+        : row;
     }
 
-    const missingCol = error?.message?.match(
-      /Could not find the '(\w+)' column/i,
-    )?.[1];
+    const missingCol = parseMissingContractColumn(error?.message);
     if (missingCol && missingCol in cleaned) {
-      const { [missingCol]: _removed, ...rest } = cleaned;
-      cleaned = rest;
+      cleaned = stripPayloadColumn(cleaned, missingCol, 'insert');
       console.warn('[REGENERATE] insert retry sem coluna', missingCol);
       continue;
     }
@@ -810,7 +882,11 @@ export async function regenerateSaleContract(
     version: maxVersion,
   });
 
-  const newRow = await insertRegeneratedContractRow(supabase, {
+  const htmlFields = buildRegeneratedContractHtmlFields(html, contract);
+
+  const newRow = await insertRegeneratedContractRow(
+    supabase,
+    {
     tenant_id: tenantId,
     company_id: tenantId,
     sale_id: saleId,
@@ -823,8 +899,7 @@ export async function regenerateSaleContract(
     block_id: contract.block_id || block.id || sale.block_id,
     broker_id: contract.broker_id || sale.broker_id || null,
     contract_number: contractNumber,
-    generated_html: html,
-    html_content: html,
+    ...htmlFields,
     pdf_url: null,
     status: 'ativo',
     is_current: true,
@@ -838,7 +913,9 @@ export async function regenerateSaleContract(
     installments: sale.installments_count ?? contract.installments,
     ...contractPayloadPartial,
     created_at: now,
-  });
+    },
+    html,
+  );
 
   await updateContractRowWithFallback(supabase, contract.id as string, {
     status: 'superseded',

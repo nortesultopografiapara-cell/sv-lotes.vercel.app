@@ -116,6 +116,12 @@ export async function POST(
     }
 
     const error = e instanceof Error ? e : new Error('Erro ao regenerar contrato');
+    if (error.message?.includes('html_content')) {
+      console.warn('REGENERATE_HTML_COLUMN_MISSING', {
+        message: error.message,
+        receivedId,
+      });
+    }
     console.error('CONTRACT_REGENERATE_ERROR', error.message, error.stack);
     return NextResponse.json(
       {
