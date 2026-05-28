@@ -4,7 +4,7 @@
  */
 
 import {
-  normalizeSubscriptionBillingDates,
+  normalizeSubscriptionDates,
   resolveCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
 import {
@@ -45,14 +45,7 @@ export function augmentCompanyBilling<T extends CompanyLike>(
 
   const active = isActiveSubscriptionCompany(company);
   const companyDates = resolveCompanySubscriptionDates(company);
-  const billing = normalizeSubscriptionBillingDates(company, subscription);
-  const rawDue =
-    subscription?.next_due_date ||
-    (company as { next_payment_date?: string | null }).next_payment_date ||
-    billing.next_due_date ||
-    companyDates.next_payment_date ||
-    (company as { vencimento_plano?: string | null }).vencimento_plano ||
-    (company as { due_date?: string | null }).due_date;
+  const billing = normalizeSubscriptionDates(company, subscription);
 
   const paymentRaw = subscription?.payment_status;
   const payment_status = subscription
@@ -83,16 +76,12 @@ export function augmentCompanyBilling<T extends CompanyLike>(
     payment_status,
     payment_status_raw: paymentRaw || null,
     subscription_status,
-    subscription_start_date:
-      subscription?.start_date || billing.start_date || companyDates.subscription_start_date,
-    first_payment_date:
-      subscription?.first_payment_date ||
-      billing.first_payment_date ||
-      companyDates.first_payment_date,
+    subscription_start_date: billing.start_date,
+    first_payment_date: billing.first_payment_date,
     subscription_due_day: companyDates.subscription_due_day,
-    next_payment_date: rawDue || null,
-    next_billing: rawDue || null,
-    next_charge: billing.next_due_date || subscription?.next_due_date || rawDue || null,
+    next_payment_date: billing.next_due_date,
+    next_billing: billing.next_due_date,
+    next_charge: billing.next_due_date,
     contract_number: subscription?.contract_number || null,
     contract_pdf_url: subscription?.contract_pdf_url || null,
     contract_status: subscription?.contract_status || null,

@@ -244,17 +244,26 @@ export function SaasContractPanel({
         <Info label="Empresa" value={company.name || '—'} />
         <Info label="Plano" value={company.ui_plan} />
         <Info label="Valor contratado" value={pricing ? formatSaasCurrency(pricing.appliedPrice) : '—'} />
-        <Info label="Data de início" value={formatDateBr(sub?.start_date || company.subscription_start_date)} />
+        <Info
+          label="Data de início"
+          value={formatDateBr(
+            company.subscription_start_date ||
+              sub?.start_date ||
+              resolveFirstPaymentDate(company, sub),
+          )}
+        />
         <Info
           label="Primeira cobrança"
           value={formatDateBr(
-            sub?.first_payment_date || resolveFirstPaymentDate(company, sub),
+            company.first_payment_date || resolveFirstPaymentDate(company, sub),
           )}
         />
         <Info label="Dia de vencimento" value={`Dia ${company.subscription_due_day ?? '—'}`} />
         <Info
           label="Próximo vencimento"
-          value={formatDateBr(sub?.next_due_date || resolveNextDueDate(company, sub))}
+          value={formatDateBr(
+            company.next_payment_date || resolveNextDueDate(company, sub),
+          )}
         />
         <Info label="Status do contrato" value={contractStatusLabel} />
         <Info label="Nº do contrato" value={sub?.contract_number || activeContract?.contract_number || '—'} />

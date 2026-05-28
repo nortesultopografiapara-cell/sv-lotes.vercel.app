@@ -658,6 +658,7 @@ export default function SaaSFinancePage() {
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Valor (R$)</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Ciclo</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Data de início</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Primeira cobrança</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Próximo vencimento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
@@ -670,8 +671,9 @@ export default function SaaSFinancePage() {
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
                   const companyId = (c as { id?: string }).id;
                   const sub = c.saas_subscription as CompanySubscription | null;
-                  const firstPaymentDate = resolveFirstPaymentDate(c, sub);
-                  const nextDueDate = resolveNextDueDate(c, sub);
+                  const startDate = c.subscription_start_date || sub?.start_date;
+                  const firstPaymentDate = c.first_payment_date || resolveFirstPaymentDate(c, sub);
+                  const nextDueDate = c.next_payment_date || resolveNextDueDate(c, sub);
                   const contractValidation = validateSaasContractGeneration(c, sub);
                   const canGenerateContract = contractValidation.ok;
                   const contractWarn = saasContractOptionalFieldsWarning(
@@ -733,6 +735,9 @@ export default function SaaSFinancePage() {
                         )}
                       </td>
                       <td className="p-4 text-[13px] text-gray-400">Mensal</td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatDateBr(startDate)}
+                      </td>
                       <td className="p-4 text-[12px] text-gray-300">
                         {formatDateBr(firstPaymentDate)}
                       </td>

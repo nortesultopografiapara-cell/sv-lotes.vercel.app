@@ -11,7 +11,7 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import {
-  normalizeSubscriptionBillingDates,
+  normalizeSubscriptionDates,
   resolveCompanySubscriptionDates,
   type CompanySubscriptionDatesSource,
 } from '@/lib/companySubscriptionDates';
@@ -37,7 +37,7 @@ function buildSubscriptionRow(
 ) {
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
-  const billing = normalizeSubscriptionBillingDates(company, existing);
+  const billing = normalizeSubscriptionDates(company, existing);
 
   return {
     company_id: company.id,
@@ -86,16 +86,11 @@ export async function ensureSaasSubscription(
 
   if (existing) {
     const patch: Record<string, unknown> = { ...row };
-    const billing = normalizeSubscriptionBillingDates(company, existing);
-    const paymentPending =
-      !existing.payment_status ||
-      String(existing.payment_status).toLowerCase() === 'pending';
+    const billing = normalizeSubscriptionDates(company, existing);
 
     patch.start_date = billing.start_date;
     patch.first_payment_date = billing.first_payment_date;
-    if (paymentPending || !existing.next_due_date) {
-      patch.next_due_date = billing.next_due_date;
-    }
+    patch.next_due_date = billing.next_due_date;
     if (!existing.monthly_price || Number(existing.monthly_price) === 0) {
       patch.monthly_price = row.monthly_price;
     }
@@ -125,22 +120,30 @@ export async function ensureSaasSubscription(
     created = true;
   }
 
+  const billing = normalizeSubscriptionDates(company, subscription);
   const syncedDates = resolveCompanySubscriptionDates({
     ...company,
-    subscription_start_date: subscription.start_date,
-    next_payment_date: subscription.next_due_date,
+    subscription_start_date: billing.start_date,
+    next_payment_date: billing.next_due_date,
   });
 
   await supabaseAdmin
     .from('companies')
     .update({
-      vencimento_plano: subscription.next_due_date,
-      subscription_start_date: subscription.start_date,
+      vencimento_plano: billing.next_due_date,
+      subscription_start_date: billing.start_date,
       subscription_due_day: syncedDates.subscription_due_day,
-      next_payment_date: subscription.next_due_date,
+      next_payment_date: billing.next_due_date,
       updated_at: new Date().toISOString(),
     })
     .eq('id', company.id);
+
+  subscription = {
+    ...subscription,
+    start_date: billing.start_date,
+    first_payment_date: billing.first_payment_date,
+    next_due_date: billing.next_due_date,
+  };
 
   console.log('[SAAS_SUBSCRIPTION_ENSURED]', {
     companyId: company.id,

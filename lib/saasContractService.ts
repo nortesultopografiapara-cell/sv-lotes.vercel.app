@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import { buildSaasContractPdf } from '@/lib/saasContractPdf';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
+import { normalizeSubscriptionDates } from '@/lib/companySubscriptionDates';
 import {
   validateSaasContractGeneration,
   type SaasContractCompanyInput,
@@ -173,6 +174,8 @@ export async function generateAndStoreSaasContract(
   const contractNumber = subscription.contract_number || generateSaasContractNumber();
   const version = await getNextContractVersion(supabaseAdmin, company.id);
 
+  const billing = normalizeSubscriptionDates(company, subscription);
+
   let pdfBytes: Uint8Array;
   try {
     pdfBytes = buildSaasContractPdf({
@@ -181,9 +184,9 @@ export async function generateAndStoreSaasContract(
         contract_number: contractNumber,
         plan_type: subscription.plan_type,
         monthly_price: subscription.monthly_price,
-        start_date: subscription.start_date,
-        first_payment_date: subscription.first_payment_date,
-        next_due_date: subscription.next_due_date,
+        start_date: billing.start_date,
+        first_payment_date: billing.first_payment_date,
+        next_due_date: billing.next_due_date,
       },
     });
   } catch (err) {
@@ -248,6 +251,9 @@ export async function generateAndStoreSaasContract(
       contract_number: contractNumber,
       contract_pdf_url: contractPdfUrl,
       contract_status: 'active',
+      start_date: billing.start_date,
+      first_payment_date: billing.first_payment_date,
+      next_due_date: billing.next_due_date,
       updated_at: generatedAt,
     })
     .eq('id', subscription.id);
@@ -258,6 +264,16 @@ export async function generateAndStoreSaasContract(
       `Falha ao atualizar company_subscriptions: ${subUpdateErr.message}`,
     );
   }
+
+  await supabaseAdmin
+    .from('companies')
+    .update({
+      subscription_start_date: billing.start_date,
+      next_payment_date: billing.next_due_date,
+      vencimento_plano: billing.next_due_date,
+      updated_at: generatedAt,
+    })
+    .eq('id', company.id);
 
   console.log('SAAS_CONTRACT_GENERATED_SUCCESS', {
     contractNumber,

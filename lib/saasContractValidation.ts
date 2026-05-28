@@ -1,7 +1,7 @@
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import {
-  normalizeSubscriptionBillingDates,
-  resolveCompanySubscriptionDates,
+  normalizeSubscriptionDates,
+  validateSubscriptionDateOrder,
 } from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
@@ -109,31 +109,28 @@ export function validateSaasContractGeneration(
     missingLabels.push('Valor mensal aplicado');
   }
 
-  const billing = normalizeSubscriptionBillingDates(company, subscription);
-  const dates = resolveCompanySubscriptionDates(company);
-  const startDate =
-    subscription?.start_date ||
-    subscription?.first_payment_date ||
-    billing.start_date ||
-    dates.subscription_start_date;
-  const firstPayment =
-    subscription?.first_payment_date || billing.first_payment_date || startDate;
-  const nextDue =
-    subscription?.next_due_date ||
-    billing.next_due_date ||
-    dates.next_payment_date;
+  const billing = normalizeSubscriptionDates(company, subscription);
+  const startDate = billing.start_date;
+  const firstPayment = billing.first_payment_date;
+  const nextDue = billing.next_due_date;
 
-  require(
-    'subscription_start_date',
-    'Data de início da assinatura',
-    startDate || firstPayment,
-  );
-  require('first_payment_date', 'Primeira cobrança', firstPayment || startDate);
-  require(
-    'next_due_date',
-    'Próximo vencimento',
-    nextDue || (startDate ? dates.next_payment_date : null),
-  );
+  require('subscription_start_date', 'Data de início da assinatura', startDate);
+  require('first_payment_date', 'Primeira cobrança', firstPayment);
+  require('next_due_date', 'Próximo vencimento', nextDue);
+
+  const dateOrderError = validateSubscriptionDateOrder(billing);
+  if (dateOrderError) {
+    missing.push('first_payment_date');
+    missingLabels.push('Primeira cobrança');
+    return {
+      ok: false,
+      missing,
+      missingLabels,
+      warnings,
+      normalized,
+      error: dateOrderError,
+    };
+  }
 
   for (const { key, label, value } of [
     { key: 'email', label: 'E-mail', value: normalized.email },

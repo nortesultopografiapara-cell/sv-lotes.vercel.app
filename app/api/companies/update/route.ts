@@ -223,8 +223,8 @@ export async function PATCH(request: Request) {
 
     if (companyRow && companyRow.is_test_company !== true) {
       const pricing = resolveCompanyPricing(companyRow);
-      const startDate = companyRow.subscription_start_date;
-      const nextDue = companyRow.next_payment_date;
+      const { normalizeSubscriptionDates } = await import('@/lib/companySubscriptionDates');
+      const billing = normalizeSubscriptionDates(companyRow, null);
 
       const subscriptionPayload = {
         plan_type: limits.plan,
@@ -234,9 +234,9 @@ export async function PATCH(request: Request) {
           ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
           : null,
         billing_cycle: 'monthly',
-        start_date: startDate,
-        first_payment_date: startDate,
-        next_due_date: nextDue,
+        start_date: billing.start_date,
+        first_payment_date: billing.first_payment_date,
+        next_due_date: billing.next_due_date,
         updated_at: new Date().toISOString(),
       };
 
