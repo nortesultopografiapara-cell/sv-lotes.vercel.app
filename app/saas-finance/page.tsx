@@ -14,8 +14,14 @@ import {
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import { useAuth } from '@/hooks/useAuth';
-import { resolvePaymentDisplayDate } from '@/lib/companySubscriptionDates';
-import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
+import {
+  resolveFirstPaymentDate,
+  resolveNextDueDate,
+} from '@/lib/companySubscriptionDates';
+import {
+  saasContractOptionalFieldsWarning,
+  validateSaasContractGeneration,
+} from '@/lib/saasContractValidation';
 import {
   formatDateBr,
   hasSaasContractReady,
@@ -250,7 +256,14 @@ export default function SaaSFinancePage() {
         return;
       }
 
+      const optionalWarn = saasContractOptionalFieldsWarning(validation.warnings);
+      if (optionalWarn) {
+        setContractToast(optionalWarn);
+      }
+
       const pricing = resolveCompanyPricing(company);
+      const firstPayment = resolveFirstPaymentDate(company, subscription);
+      const nextDue = resolveNextDueDate(company, subscription);
 
       try {
         const res = await fetch(`/api/companies/${companyId}/contract/generate`, {
@@ -262,8 +275,12 @@ export default function SaaSFinancePage() {
             company_id: companyId,
             plan_type: subscription?.plan_type || company.plan_type || company.plan,
             monthly_price: subscription?.monthly_price ?? pricing.appliedPrice,
-            start_date: subscription?.start_date || company.subscription_start_date,
-            next_due_date: subscription?.next_due_date ?? company.next_payment_date ?? company.next_billing,
+            start_date:
+              subscription?.start_date || company.subscription_start_date || firstPayment,
+            first_payment_date:
+              subscription?.first_payment_date || firstPayment,
+            next_due_date:
+              subscription?.next_due_date ?? company.next_payment_date ?? nextDue,
           }),
         });
 
@@ -543,8 +560,8 @@ export default function SaaSFinancePage() {
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Valor (R$)</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Ciclo</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Próxima cobrança</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Vencimento</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Primeira cobrança</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Próximo vencimento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Contrato</th>
                 </tr>
@@ -555,11 +572,13 @@ export default function SaaSFinancePage() {
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
                   const companyId = (c as { id?: string }).id;
                   const sub = c.saas_subscription as CompanySubscription | null;
-                  const dueDate =
-                    resolvePaymentDisplayDate(c, sub?.next_due_date) ||
-                    c.next_payment_date ||
-                    c.next_billing;
-                  const canGenerateContract = validateSaasContractGeneration(c, sub).ok;
+                  const firstPaymentDate = resolveFirstPaymentDate(c, sub);
+                  const nextDueDate = resolveNextDueDate(c, sub);
+                  const contractValidation = validateSaasContractGeneration(c, sub);
+                  const canGenerateContract = contractValidation.ok;
+                  const contractWarn = saasContractOptionalFieldsWarning(
+                    contractValidation.warnings,
+                  );
                   const contractReady = hasSaasContractReady(sub);
                   const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
                     ? sub.contract_pdf_url
@@ -617,10 +636,10 @@ export default function SaaSFinancePage() {
                       </td>
                       <td className="p-4 text-[13px] text-gray-400">Mensal</td>
                       <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(dueDate)}
+                        {formatDateBr(firstPaymentDate)}
                       </td>
                       <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(dueDate)}
+                        {formatDateBr(nextDueDate)}
                       </td>
                       <td className="p-4 text-[12px]">
                         <span
@@ -668,8 +687,9 @@ export default function SaaSFinancePage() {
                               disabled={isGeneratingContract || !companyId || !canGenerateContract}
                               title={
                                 !canGenerateContract
-                                  ? 'Preencha plano, valor e datas de assinatura na empresa'
-                                  : undefined
+                                  ? contractValidation.error ||
+                                    'Preencha nome, CNPJ, plano, valor e datas de assinatura'
+                                  : contractWarn || undefined
                               }
                               onClick={(e) => {
                                 e.preventDefault();

@@ -172,7 +172,10 @@ export async function PATCH(request: Request) {
         .maybeSingle();
 
       if (existingSub?.id) {
-        const dates = resolveCompanySubscriptionDates(companyRow);
+        const { normalizeSubscriptionBillingDates } = await import(
+          '@/lib/companySubscriptionDates'
+        );
+        const billing = normalizeSubscriptionBillingDates(companyRow);
         await supabaseAdmin
           .from('company_subscriptions')
           .update({
@@ -182,8 +185,9 @@ export async function PATCH(request: Request) {
             custom_monthly_price: isCustomPriceEnabled(companyRow)
               ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
               : null,
-            start_date: dates.subscription_start_date,
-            next_due_date: dates.next_payment_date,
+            start_date: billing.start_date,
+            first_payment_date: billing.first_payment_date,
+            next_due_date: billing.next_due_date,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingSub.id);

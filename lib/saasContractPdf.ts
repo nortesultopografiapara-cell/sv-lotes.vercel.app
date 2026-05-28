@@ -9,7 +9,10 @@ import {
   resolveCompanyPricing,
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
-import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
+import {
+  normalizeSubscriptionBillingDates,
+  resolveCompanySubscriptionDates,
+} from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
@@ -57,9 +60,19 @@ export type SaasContractPdfInput = {
   };
   subscription: Pick<
     CompanySubscription,
-    'contract_number' | 'plan_type' | 'monthly_price' | 'start_date' | 'next_due_date'
+    | 'contract_number'
+    | 'plan_type'
+    | 'monthly_price'
+    | 'start_date'
+    | 'first_payment_date'
+    | 'next_due_date'
   >;
 };
+
+function displayField(value: string | null | undefined, fallback = 'Não informado'): string {
+  const v = String(value ?? '').trim();
+  return v.length > 0 ? v : fallback;
+}
 
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -104,6 +117,7 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const applied = Number(subscription.monthly_price) || pricing.appliedPrice;
   const dates = resolveCompanySubscriptionDates(company);
+  const billing = normalizeSubscriptionBillingDates(company, subscription);
   const dueDay = dates.subscription_due_day;
   const responsible =
     company.legal_representative || company.responsible_name || 'Representante legal';
@@ -194,26 +208,30 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
   y += 4;
 
   section('DADOS DA CONTRATANTE');
-  row('Empresa', company.name || '—');
-  row('CNPJ', company.cnpj || '—');
-  row('Responsável', responsible);
-  row('Telefone', company.phone || '—');
-  row('E-mail', company.email || '—');
-  row('Endereço', company.address || '—');
-  row('Cidade/UF', `${company.city || '—'}/${company.state || '—'}`);
+  row('Empresa', displayField(company.name));
+  row('CNPJ', displayField(company.cnpj));
+  row('Responsável', displayField(responsible));
+  row('Telefone', displayField(company.phone));
+  row('E-mail', displayField(company.email));
+  row('Endereço', displayField(company.address));
+  row(
+    'Cidade/UF',
+    `${displayField(company.city)}/${displayField(company.state)}`,
+  );
   if (company.cep) row('CEP', company.cep);
   y += 4;
 
   section('DADOS DO PLANO E COBRANÇA');
   row('Plano contratado', saas.displayName.toUpperCase());
+  row('Valor mensal', formatSaasCurrency(applied));
   row('Valor padrão', formatSaasCurrency(standardPrice));
-  row('Valor negociado', formatSaasCurrency(applied));
   if (pricing.hasCustomPrice && standardPrice > applied) {
     row('Desconto aplicado', formatSaasCurrency(standardPrice - applied));
   }
   row('Dia de vencimento', `Dia ${dueDay} de cada mês`);
-  row('Data de início', formatDateBr(subscription.start_date || dates.subscription_start_date));
-  row('Próximo vencimento', formatDateBr(subscription.next_due_date || dates.next_payment_date));
+  row('Data de início', formatDateBr(billing.start_date));
+  row('Primeira cobrança', formatDateBr(billing.first_payment_date));
+  row('Próximo vencimento', formatDateBr(billing.next_due_date));
   row('Ciclo', 'Mensal');
   y += 4;
 

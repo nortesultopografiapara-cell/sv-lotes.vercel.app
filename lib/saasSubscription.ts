@@ -14,6 +14,7 @@ export type CompanySubscription = {
   custom_monthly_price?: number | null;
   billing_cycle: string;
   start_date: string;
+  first_payment_date?: string | null;
   next_due_date?: string | null;
   payment_status: SaasPaymentStatus | string;
   contract_status: SaasContractStatus | string;

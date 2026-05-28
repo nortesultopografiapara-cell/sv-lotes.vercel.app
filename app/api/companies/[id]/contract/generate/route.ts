@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { generateAndStoreSaasContract } from '@/lib/saasContractService';
-import { resolveCompanySubscriptionDates } from '@/lib/companySubscriptionDates';
+import { normalizeSubscriptionBillingDates } from '@/lib/companySubscriptionDates';
 import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
 import {
   ensureSaasSubscription,
@@ -91,10 +91,12 @@ export async function POST(
     }
     if (body.next_due_date) patch.next_due_date = String(body.next_due_date);
     if (body.start_date) patch.start_date = String(body.start_date);
+    if (body.first_payment_date) patch.first_payment_date = String(body.first_payment_date);
 
-    const companyDates = resolveCompanySubscriptionDates(company);
-    if (!patch.start_date) patch.start_date = companyDates.subscription_start_date;
-    if (!patch.next_due_date) patch.next_due_date = companyDates.next_payment_date;
+    const billing = normalizeSubscriptionBillingDates(company, subscription);
+    if (!patch.start_date) patch.start_date = billing.start_date;
+    if (!patch.first_payment_date) patch.first_payment_date = billing.first_payment_date;
+    if (!patch.next_due_date) patch.next_due_date = billing.next_due_date;
 
     if (Object.keys(patch).length > 1) {
       const { data: patched, error: patchErr } = await supabaseAdmin

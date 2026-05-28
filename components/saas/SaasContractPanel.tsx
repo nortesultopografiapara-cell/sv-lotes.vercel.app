@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText, Download, RefreshCw, ExternalLink, History } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
-import { validateSaasContractGeneration } from '@/lib/saasContractValidation';
+import {
+  resolveFirstPaymentDate,
+  resolveNextDueDate,
+} from '@/lib/companySubscriptionDates';
+import {
+  saasContractOptionalFieldsWarning,
+  validateSaasContractGeneration,
+} from '@/lib/saasContractValidation';
 import {
   formatDateBr,
   hasSaasContractReady,
@@ -76,7 +83,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
 
     if (validation && !validation.ok) {
       setError(validation.error || 'Dados incompletos');
-      alert(validation.error || 'Preencha os dados da empresa antes de gerar o contrato.');
+      alert(validation.error || 'Dados obrigatórios ausentes para gerar o contrato.');
       return;
     }
 
@@ -97,7 +104,9 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           plan_type: sub?.plan_type || company.plan_type || company.plan,
           monthly_price: sub?.monthly_price ?? pricing?.appliedPrice,
           start_date: sub?.start_date || company.subscription_start_date,
-          next_due_date: sub?.next_due_date || company.next_payment_date,
+          first_payment_date:
+            sub?.first_payment_date || resolveFirstPaymentDate(company, sub),
+          next_due_date: sub?.next_due_date || resolveNextDueDate(company, sub),
         }),
       });
       const result = await res.json().catch(() => ({}));
@@ -171,7 +180,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           )}
           <button
             type="button"
-            disabled={busy || !sub}
+            disabled={busy || !companyId || !(validation?.ok ?? true)}
             onClick={generateContract}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
@@ -182,8 +191,14 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
       </div>
 
       {validation && !validation.ok && (
-        <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm whitespace-pre-line">
+        <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm whitespace-pre-line">
           {validation.error}
+        </div>
+      )}
+
+      {validation?.ok && validation.warnings.length > 0 && (
+        <div className="mx-5 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200 text-sm">
+          {saasContractOptionalFieldsWarning(validation.warnings)}
         </div>
       )}
 
@@ -198,8 +213,17 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
         <Info label="Plano" value={company.ui_plan} />
         <Info label="Valor contratado" value={pricing ? formatSaasCurrency(pricing.appliedPrice) : '—'} />
         <Info label="Data de início" value={formatDateBr(sub?.start_date || company.subscription_start_date)} />
+        <Info
+          label="Primeira cobrança"
+          value={formatDateBr(
+            sub?.first_payment_date || resolveFirstPaymentDate(company, sub),
+          )}
+        />
         <Info label="Dia de vencimento" value={`Dia ${company.subscription_due_day ?? '—'}`} />
-        <Info label="Próximo vencimento" value={formatDateBr(sub?.next_due_date || company.next_payment_date)} />
+        <Info
+          label="Próximo vencimento"
+          value={formatDateBr(sub?.next_due_date || resolveNextDueDate(company, sub))}
+        />
         <Info label="Status do contrato" value={contractStatusLabel} />
         <Info label="Nº do contrato" value={sub?.contract_number || '—'} />
         <Info label="Pagamento" value={company.payment_status} />

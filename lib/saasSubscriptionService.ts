@@ -11,6 +11,7 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import {
+  normalizeSubscriptionBillingDates,
   resolveCompanySubscriptionDates,
   type CompanySubscriptionDatesSource,
 } from '@/lib/companySubscriptionDates';
@@ -36,9 +37,7 @@ function buildSubscriptionRow(
 ) {
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
-  const dates = resolveCompanySubscriptionDates(company);
-  const startDate = existing?.start_date || dates.subscription_start_date;
-  const nextDueDate = existing?.next_due_date || dates.next_payment_date;
+  const billing = normalizeSubscriptionBillingDates(company, existing);
 
   return {
     company_id: company.id,
@@ -49,8 +48,9 @@ function buildSubscriptionRow(
       ? parseCustomMonthlyPrice(company.custom_monthly_price) ?? pricing.appliedPrice
       : null,
     billing_cycle: 'monthly',
-    start_date: startDate,
-    next_due_date: nextDueDate,
+    start_date: billing.start_date,
+    first_payment_date: billing.first_payment_date,
+    next_due_date: billing.next_due_date,
     payment_status: existing?.payment_status || 'pending',
     contract_status: existing?.contract_status || 'pending',
     contract_number: existing?.contract_number || null,
@@ -86,9 +86,16 @@ export async function ensureSaasSubscription(
 
   if (existing) {
     const patch: Record<string, unknown> = { ...row };
-    const dates = resolveCompanySubscriptionDates(company);
-    if (!existing.next_due_date) patch.next_due_date = dates.next_payment_date;
-    if (!existing.start_date) patch.start_date = dates.subscription_start_date;
+    const billing = normalizeSubscriptionBillingDates(company, existing);
+    const paymentPending =
+      !existing.payment_status ||
+      String(existing.payment_status).toLowerCase() === 'pending';
+
+    patch.start_date = billing.start_date;
+    patch.first_payment_date = billing.first_payment_date;
+    if (paymentPending || !existing.next_due_date) {
+      patch.next_due_date = billing.next_due_date;
+    }
     if (!existing.monthly_price || Number(existing.monthly_price) === 0) {
       patch.monthly_price = row.monthly_price;
     }
@@ -139,6 +146,8 @@ export async function ensureSaasSubscription(
     companyId: company.id,
     subscriptionId: subscription.id,
     created,
+    start_date: subscription.start_date,
+    first_payment_date: subscription.first_payment_date,
     next_due_date: subscription.next_due_date,
     monthly_price: subscription.monthly_price,
   });
