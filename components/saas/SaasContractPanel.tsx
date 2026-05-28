@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileText, Download, RefreshCw, ExternalLink, History } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
@@ -24,17 +24,32 @@ type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
 type Props = {
   company: EnrichedCompany | null;
+  subscription?: CompanySubscription | null;
+  contracts?: CompanyContractRow[];
   onRefresh: () => void;
+  onContractsReload?: () => void | Promise<void>;
+  onGenerateSuccess?: (companyId: string) => void | Promise<void>;
 };
 
-export function SaasContractPanel({ company, onRefresh }: Props) {
+export function SaasContractPanel({
+  company,
+  subscription: subscriptionProp,
+  contracts: contractsProp,
+  onRefresh,
+  onContractsReload,
+  onGenerateSuccess,
+}: Props) {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contracts, setContracts] = useState<CompanyContractRow[]>([]);
+  const [localContracts, setLocalContracts] = useState<CompanyContractRow[]>([]);
 
   const companyId = (company as { id?: string } | null)?.id;
-  const sub = company?.saas_subscription as CompanySubscription | null;
+  const sub =
+    subscriptionProp ??
+    ((company?.saas_subscription as CompanySubscription | null) ?? null);
+  const contracts = contractsProp ?? localContracts;
+
   const pricing = company ? resolveCompanyPricing(company as CompanyPricingSource) : null;
   const validation = company
     ? validateSaasContractGeneration(company as CompanyPricingSource, sub)
@@ -47,22 +62,45 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
         ? `/api/companies/${companyId}/contract?download=1`
         : '#';
 
+  const activeContract = useMemo(() => {
+    return (
+      contracts.find((c) => c.status === 'active') ??
+      contracts[0] ??
+      null
+    );
+  }, [contracts]);
+
+  const generatedAtLabel = useMemo(() => {
+    if (activeContract?.generated_at) {
+      return formatDateBr(activeContract.generated_at.split('T')[0]);
+    }
+    return '—';
+  }, [activeContract]);
+
   const loadContracts = useCallback(async () => {
     if (!companyId || !user?.id) return;
+    if (onContractsReload) {
+      await onContractsReload();
+      return;
+    }
     try {
       const res = await fetch(
         `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}`,
       );
       const json = await res.json().catch(() => ({}));
-      if (res.ok) setContracts(json.contracts || []);
+      if (res.ok) setLocalContracts(json.contracts || []);
     } catch {
-      setContracts([]);
+      setLocalContracts([]);
     }
-  }, [companyId, user?.id]);
+  }, [companyId, user?.id, onContractsReload]);
 
   useEffect(() => {
-    loadContracts();
-  }, [loadContracts]);
+    if (contractsProp) {
+      setLocalContracts(contractsProp);
+      return;
+    }
+    void loadContracts();
+  }, [contractsProp, loadContracts]);
 
   if (!company) {
     return (
@@ -122,9 +160,13 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
       }
 
       console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
-      setContracts(result.contracts || []);
+      const list = (result.contracts || []) as CompanyContractRow[];
+      setLocalContracts(list);
       onRefresh();
       await loadContracts();
+      if (onGenerateSuccess) {
+        await onGenerateSuccess(companyId);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Não foi possível gerar o contrato';
       setError(msg);
@@ -144,7 +186,9 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           ? 'Suspenso'
           : sub?.contract_status === 'canceled'
             ? 'Cancelado'
-            : '—';
+            : contractReady
+              ? 'Ativo'
+              : '—';
 
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
@@ -185,7 +229,7 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-            {contractReady ? 'Regenerar contrato' : 'Gerar contrato'}
+            {contractReady ? 'Regenerar' : 'Gerar contrato agora'}
           </button>
         </div>
       </div>
@@ -208,6 +252,23 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
         </div>
       )}
 
+      {!contractReady && validation?.ok && (
+        <div className="mx-5 mt-4 p-4 rounded-xl bg-[#0B0E14] border border-dashed border-amber-500/30 text-center">
+          <p className="text-sm text-gray-300 mb-3">
+            Nenhum contrato PDF gerado para esta empresa ainda.
+          </p>
+          <button
+            type="button"
+            disabled={busy || !companyId}
+            onClick={generateContract}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
+          >
+            <FileText className="w-4 h-4" />
+            Gerar contrato agora
+          </button>
+        </div>
+      )}
+
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Info label="Empresa" value={company.name || '—'} />
         <Info label="Plano" value={company.ui_plan} />
@@ -225,7 +286,8 @@ export function SaasContractPanel({ company, onRefresh }: Props) {
           value={formatDateBr(sub?.next_due_date || resolveNextDueDate(company, sub))}
         />
         <Info label="Status do contrato" value={contractStatusLabel} />
-        <Info label="Nº do contrato" value={sub?.contract_number || '—'} />
+        <Info label="Nº do contrato" value={sub?.contract_number || activeContract?.contract_number || '—'} />
+        <Info label="Data de geração" value={generatedAtLabel} />
         <Info label="Pagamento" value={company.payment_status} />
         <Info label="PDF" value={contractReady ? 'Disponível' : 'Não gerado'} />
       </div>

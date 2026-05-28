@@ -68,5 +68,7 @@ export function isRealSaasCompany(company: {
 
 export function hasSaasContractReady(sub?: CompanySubscription | null): boolean {
   if (!sub) return false;
-  return (sub.contract_status || '').toLowerCase() === 'active' && Boolean(sub.contract_pdf_url);
+  const status = (sub.contract_status || '').toLowerCase();
+  if (Boolean(sub.contract_pdf_url)) return true;
+  return status === 'active';
 }

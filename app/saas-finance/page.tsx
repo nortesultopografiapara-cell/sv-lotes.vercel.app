@@ -13,6 +13,7 @@ import {
 } from '@/lib/companyPricing';
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
+import type { CompanyContractRow } from '@/lib/saasContractService';
 import { useAuth } from '@/hooks/useAuth';
 import {
   resolveFirstPaymentDate,
@@ -78,6 +79,7 @@ export default function SaaSFinancePage() {
   const [filterPayment, setFilterPayment] = useState('all');
   const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [contractHistory, setContractHistory] = useState<CompanyContractRow[]>([]);
   const [loadingContractId, setLoadingContractId] = useState<string | null>(null);
   const [contractToast, setContractToast] = useState<{
     type: 'error' | 'warning';
@@ -225,8 +227,36 @@ export default function SaaSFinancePage() {
   const mrrTrendData = stats.mrr > 0 ? [{ name: 'Atual', value: stats.mrr }] : [];
 
   const selectedCompany = useMemo(
-    () => companies.find((c) => c.id === selectedCompanyId) || null,
+    () => companies.find((c) => (c as { id?: string }).id === selectedCompanyId) || null,
     [companies, selectedCompanyId],
+  );
+
+  const selectedSubscription = useMemo(
+    () =>
+      (selectedCompany?.saas_subscription as CompanySubscription | null) ?? null,
+    [selectedCompany],
+  );
+
+  const loadCompanyContracts = useCallback(
+    async (companyId: string): Promise<CompanyContractRow[]> => {
+      if (!user?.id) return [];
+      try {
+        const res = await fetch(
+          `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}`,
+        );
+        const json = await res.json().catch(() => ({}));
+        const list = (json.contracts || []) as CompanyContractRow[];
+        if (res.ok) {
+          setContractHistory(list);
+          return list;
+        }
+      } catch (err) {
+        console.error('LOAD_COMPANY_CONTRACTS_ERROR', err);
+      }
+      setContractHistory([]);
+      return [];
+    },
+    [user?.id],
   );
 
   const handleGenerateSaasContract = useCallback(
@@ -303,18 +333,49 @@ export default function SaaSFinancePage() {
 
         console.log('SAAS_CONTRACT_GENERATED_SUCCESS', result);
 
-        const updatedSub = result.subscription as CompanySubscription | undefined;
-        if (updatedSub) {
-          setCompanies((prev) =>
-            prev.map((row) => {
-              const rowId = (row as { id?: string }).id;
-              if (rowId !== companyId) return row;
-              return enrichCompany(row as CompanyPricingSource, updatedSub);
-            }),
-          );
-        } else {
-          await loadData();
+        const updatedSub: CompanySubscription | null =
+          (result.subscription as CompanySubscription | undefined) ??
+          (sub
+            ? {
+                ...sub,
+                contract_status: 'active',
+                contract_number:
+                  result.contract_number ?? sub.contract_number ?? null,
+                contract_pdf_url:
+                  result.contract_pdf_url ?? sub.contract_pdf_url ?? null,
+              }
+            : null);
+
+        const enrichedRow = enrichCompany(
+          company as CompanyPricingSource,
+          updatedSub,
+        );
+
+        setCompanies((prev) =>
+          prev.map((row) => {
+            const rowId = (row as { id?: string }).id;
+            if (rowId !== companyId) return row;
+            return enrichedRow;
+          }),
+        );
+
+        setSelectedCompanyId(companyId);
+
+        const contracts = Array.isArray(result.contracts)
+          ? (result.contracts as CompanyContractRow[])
+          : await loadCompanyContracts(companyId);
+        if (Array.isArray(result.contracts)) {
+          setContractHistory(result.contracts as CompanyContractRow[]);
         }
+
+        console.log('CONTRACT_GENERATE_SUCCESS_SELECTED', {
+          company: enrichedRow,
+          subscription: updatedSub,
+          contracts,
+        });
+
+        setMainTab('contrato');
+        setContractToast(null);
       } catch (err) {
         console.error('GENERATE_SAAS_CONTRACT_ERROR', err);
         const msg = 'Não foi possível gerar o contrato';
@@ -324,13 +385,17 @@ export default function SaaSFinancePage() {
         setLoadingContractId(null);
       }
     },
-    [user?.id, loadingContractId, loadData],
+    [user?.id, loadingContractId, loadCompanyContracts],
   );
 
-  function openContractTab(companyId: string) {
-    setSelectedCompanyId(companyId);
-    setMainTab('contrato');
-  }
+  const openContractTab = useCallback(
+    async (companyId: string) => {
+      setSelectedCompanyId(companyId);
+      setMainTab('contrato');
+      await loadCompanyContracts(companyId);
+    },
+    [loadCompanyContracts],
+  );
 
   const handleExport = () => {
     const lines = [
@@ -516,7 +581,23 @@ export default function SaaSFinancePage() {
 
       {mainTab === 'contrato' && (
         <div className="mb-8">
-          <SaasContractPanel company={selectedCompany} onRefresh={loadData} />
+          <SaasContractPanel
+            company={selectedCompany}
+            subscription={selectedSubscription}
+            contracts={contractHistory}
+            onRefresh={loadData}
+            onContractsReload={
+              selectedCompanyId
+                ? () => loadCompanyContracts(selectedCompanyId)
+                : undefined
+            }
+            onGenerateSuccess={async (companyId) => {
+              setSelectedCompanyId(companyId);
+              setMainTab('contrato');
+              await loadCompanyContracts(companyId);
+              await loadData();
+            }}
+          />
         </div>
       )}
 
@@ -686,7 +767,7 @@ export default function SaaSFinancePage() {
                               </a>
                               <button
                                 type="button"
-                                onClick={() => openContractTab(c.id)}
+                                onClick={() => void openContractTab(companyId!)}
                                 className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-400 hover:bg-white/5"
                               >
                                 Detalhes
