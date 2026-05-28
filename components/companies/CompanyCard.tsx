@@ -199,7 +199,16 @@ export function CompanyCard({
           {planLabel(company.plan)}
         </span>
         <span className="text-[10px] font-semibold text-emerald-400/90 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-          {formatSaasCurrency(pricing.appliedPrice)}/mês
+          {pricing.hasCustomPrice ? (
+            <span className="inline-flex flex-col leading-tight">
+              <span>{formatSaasCurrency(pricing.appliedPrice)}/mês</span>
+              <span className="line-through text-slate-500 text-[9px] font-normal">
+                {formatSaasCurrency(pricing.standardPrice)}
+              </span>
+            </span>
+          ) : (
+            <span>{formatSaasCurrency(pricing.appliedPrice)}/mês</span>
+          )}
         </span>
       </div>
 

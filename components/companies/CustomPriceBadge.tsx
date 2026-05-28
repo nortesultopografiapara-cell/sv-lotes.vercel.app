@@ -4,8 +4,9 @@ import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyP
 
 export function CustomPriceBadge({ company }: { company: CompanyPricingSource }) {
   const pricing = resolveCompanyPricing(company);
-  if (!pricing.badgeLabel) return null;
+  if (!pricing.hasCustomPrice && !pricing.customEnabled) return null;
 
+  const label = pricing.badgeLabel || 'DESCONTO ESPECIAL';
   const isFounding = pricing.badge === 'founding_client';
 
   return (
@@ -16,7 +17,7 @@ export function CustomPriceBadge({ company }: { company: CompanyPricingSource })
           : 'bg-amber-500/15 text-amber-300 border-amber-500/35'
       }`}
     >
-      {pricing.badgeLabel}
+      {label}
     </span>
   );
 }

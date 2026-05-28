@@ -209,59 +209,67 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const planLimitsPayload = saasLimitsDbPayload(formData.plan);
 
       if (initialData) {
-         const updatePayload: any = {
-            name: formData.name,
-            cnpj: formData.cnpj,
-            phone: formData.phone,
-            email: formData.email,
-            status_operacional: formData.status_operacional,
-            plan: planLimitsPayload.plan,
-            project_limit: planLimitsPayload.project_limit,
-            broker_limit: planLimitsPayload.broker_limit,
-            max_projects: planLimitsPayload.max_projects,
-            max_brokers: planLimitsPayload.max_brokers,
-         };
-
-         if (!initialData.slug) {
-             updatePayload.slug = slug;
-         }
-
-         // Apenas envia campos novos se estiverem preenchidos, minimizando erro de schema cache se a tabela estiver desatualizada, mas enviamos se tiver valor
-         if (formData.address) updatePayload.address = formData.address;
-         if (formData.city) updatePayload.city = formData.city;
-         if (formData.state) updatePayload.state = formData.state;
-         if (formData.cep) updatePayload.cep = formData.cep;
-         
-         // Importante: is_test_company precisa ser forçado via boolean
-         updatePayload.is_test_company = formData.is_test_company === true;
-         updatePayload.custom_price_enabled = formData.custom_price_enabled === true;
-         updatePayload.custom_price_badge = formData.custom_price_enabled
-           ? formData.custom_price_badge
-           : null;
          const parsedCustom = parseCustomMonthlyPrice(formData.custom_monthly_price);
          if (formData.custom_price_enabled && parsedCustom == null) {
-           throw new Error('Informe um valor personalizado válido (ex: 549.99).');
-         }
-         updatePayload.custom_monthly_price =
-           formData.custom_price_enabled && parsedCustom != null ? parsedCustom : null;
-
-         let { error: updateError } = await supabase.from('companies').update(updatePayload).eq('id', initialData.id);
-         console.log('COMPANY_PLAN_AFTER_SAVE', formData.plan);
-         
-         if (updateError && (updateError.code === 'PGRST204' || updateError.message.includes('schema cache'))) {
-             console.warn("Retrying minimal payload due to structure mismatch", updateError);
-             const minimalPayload = {
-                 is_test_company: formData.is_test_company === true,
-                 status_operacional: formData.status_operacional
-             };
-             const { error: retryError } = await supabase.from('companies').update(minimalPayload).eq('id', initialData.id);
-             updateError = retryError as any;
+           throw new Error('Informe um valor personalizado válido (ex: 649.99).');
          }
 
-         if (updateError) {
-             console.error("ERRO SUPABASE: ", updateError);
-             console.log("PAYLOAD_COMPANY_UPDATE", updatePayload);
-             throw new Error(`Erro: ${updateError.code} - ${updateError.message}`);
+         const customPricePayload = {
+           custom_price_enabled: formData.custom_price_enabled === true,
+           custom_monthly_price:
+             formData.custom_price_enabled && parsedCustom != null ? parsedCustom : null,
+           custom_price_badge: formData.custom_price_enabled
+             ? formData.custom_price_badge || 'desconto_especial'
+             : null,
+         };
+
+         console.log('SAVE_COMPANY_CUSTOM_PRICE_PAYLOAD', {
+           companyId: initialData.id,
+           ...customPricePayload,
+         });
+
+         const apiBody = {
+           companyId: initialData.id,
+           userId: user.id,
+           name: formData.name,
+           cnpj: formData.cnpj,
+           phone: formData.phone,
+           email: formData.email,
+           address: formData.address || undefined,
+           city: formData.city || undefined,
+           state: formData.state || undefined,
+           cep: formData.cep || undefined,
+           status_operacional: formData.status_operacional,
+           plan: formData.plan,
+           plan_type: formData.plan,
+           is_test_company: formData.is_test_company,
+           ...customPricePayload,
+           slug: !initialData.slug ? slug : undefined,
+         };
+
+         const res = await fetch('/api/companies/update', {
+           method: 'PATCH',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify(apiBody),
+         });
+         const result = await res.json();
+
+         console.log('SAVE_COMPANY_CUSTOM_PRICE_RESULT', result.company, result.error);
+
+         if (!res.ok || result.error) {
+           throw new Error(result.error || 'Erro ao salvar empresa.');
+         }
+
+         const { data: refreshedCompany, error: refreshError } = await supabase
+           .from('companies')
+           .select('*')
+           .eq('id', initialData.id)
+           .single();
+
+         console.log('REFRESHED_COMPANY_AFTER_SAVE', refreshedCompany, refreshError);
+
+         if (refreshError) {
+           console.warn('Refresh após save falhou (lista será recarregada):', refreshError.message);
          }
       } else {
          if (!formData.email) {
