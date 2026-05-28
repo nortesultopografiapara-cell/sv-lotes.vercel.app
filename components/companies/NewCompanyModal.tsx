@@ -44,7 +44,7 @@ function buildFormStateFromMerged(merged: CompanyForEditMerged) {
     address: merged.address,
     city: merged.city,
     state: merged.state,
-    cep: merged.cep,
+    zip_code: merged.zip_code,
     status_operacional: merged.status_operacional,
     plan: merged.plan,
     is_test_company: merged.is_test_company,
@@ -67,7 +67,7 @@ function defaultFormState() {
     address: '',
     city: '',
     state: '',
-    cep: '',
+    zip_code: '',
     status_operacional: 'Ativa',
     plan: 'basic',
     is_test_company: false,
@@ -224,7 +224,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
           address: company.address || prev.address,
           city: company.city || prev.city,
           state: company.state || prev.state,
-          cep: company.cep || company.zip_code || prev.cep,
+          zip_code: company.zip_code || company.cep || prev.zip_code,
         }));
         setCnpjHint('Dados preenchidos. Revise e clique em Salvar Configurações.');
         setSuccessMsg('Dados do CNPJ carregados com sucesso.');
@@ -324,6 +324,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            ...customPricePayload,
          });
 
+         const postalCode = formData.zip_code.trim();
+         const addressPayload = {
+           address: formData.address,
+           city: formData.city,
+           state: formData.state,
+           zip_code: postalCode,
+           cep: postalCode,
+         };
+
+         console.log('SAVE_COMPANY_ADDRESS_PAYLOAD', addressPayload);
+
          const apiBody = {
            companyId: initialData.id,
            userId: user.id,
@@ -331,10 +342,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            cnpj: formData.cnpj,
            phone: formData.phone,
            email: formData.email,
-           address: formData.address,
-           city: formData.city,
-           state: formData.state,
-           cep: formData.cep,
+           ...addressPayload,
            status_operacional: formData.status_operacional,
            plan: formData.plan,
            plan_type: formData.plan,
@@ -357,6 +365,23 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
          if (!res.ok || result.error) {
            throw new Error(result.error || 'Erro ao salvar empresa.');
+         }
+
+         const { data: refreshedRow, error: refreshRowErr } = await supabase
+           .from('companies')
+           .select('*')
+           .eq('id', initialData.id)
+           .single();
+
+         console.log('SAVE_COMPANY_ADDRESS_RESULT', refreshedRow, refreshRowErr);
+         if (refreshedRow) {
+           console.log('REFRESHED_COMPANY_ADDRESS', {
+             address: refreshedRow.address,
+             city: refreshedRow.city,
+             state: refreshedRow.state,
+             zip_code: refreshedRow.zip_code,
+             cep: refreshedRow.cep,
+           });
          }
 
          const refreshed = await loadCompanyForEdit(initialData.id);
@@ -394,7 +419,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  address: formData.address,
                  city: formData.city,
                  state: formData.state,
-                 cep: formData.cep,
+                 zip_code: formData.zip_code,
+                 cep: formData.zip_code,
                  active: true, // legacy
                  status_operacional: formData.status_operacional,
                  plan_type: formData.plan,
@@ -618,8 +644,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                   <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">CEP</label>
                   <input 
                     type="text" 
-                    value={formData.cep}
-                    onChange={(e) => setFormData({ ...formData, cep: e.target.value })}
+                    value={formData.zip_code}
+                    onChange={(e) => setFormData({ ...formData, zip_code: e.target.value })}
                     placeholder="00000-000"
                     className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                   />

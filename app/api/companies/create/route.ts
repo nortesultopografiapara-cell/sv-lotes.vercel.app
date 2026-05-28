@@ -97,10 +97,12 @@ export async function POST(req: Request) {
       max_brokers: limits.max_brokers,
     };
 
-    if (body.address) companyPayload.address = body.address;
-    if (body.city) companyPayload.city = body.city;
-    if (body.state) companyPayload.state = body.state;
-    if (body.cep) companyPayload.cep = body.cep;
+    const postalCode = String(body.zip_code ?? body.cep ?? '').trim();
+    companyPayload.address = body.address ?? '';
+    companyPayload.city = body.city ?? '';
+    companyPayload.state = body.state ?? '';
+    companyPayload.zip_code = postalCode;
+    companyPayload.cep = postalCode;
     
     companyPayload.is_test_company = body.is_test_company === true;
 

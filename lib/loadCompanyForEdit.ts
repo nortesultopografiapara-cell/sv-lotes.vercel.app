@@ -56,7 +56,7 @@ export type CompanyForEditMerged = {
   address: string;
   city: string;
   state: string;
-  cep: string;
+  zip_code: string;
   status_operacional: string;
   plan: string;
   is_test_company: boolean;
@@ -113,7 +113,7 @@ export function mapCompanyForEditForm(
     address: String(company.address ?? ''),
     city: String(company.city ?? ''),
     state: String(company.state ?? ''),
-    cep: String(company.cep ?? company.zip_code ?? ''),
+    zip_code: String(company.zip_code ?? company.cep ?? ''),
     status_operacional: String(company.status_operacional ?? 'Ativa'),
     plan: String(company.plan_type || company.plan || 'basic'),
     is_test_company: company.is_test_company === true,

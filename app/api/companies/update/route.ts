@@ -69,11 +69,25 @@ export async function PATCH(request: Request) {
       ...customPricePayload,
     });
 
+    const postalCode = String(body.zip_code ?? body.cep ?? '').trim();
+    const addressPayload = {
+      address: body.address ?? '',
+      city: body.city ?? '',
+      state: body.state ?? '',
+      zip_code: postalCode,
+      cep: postalCode,
+    };
+
+    console.log('SAVE_COMPANY_ADDRESS_PAYLOAD', {
+      companyId,
+      ...addressPayload,
+    });
+
     const updatePayload: Record<string, unknown> = {
       name: body.name,
       cnpj: body.cnpj,
-      phone: body.phone,
-      email: body.email,
+      phone: body.phone ?? '',
+      email: body.email ?? '',
       status_operacional: body.status_operacional,
       plan: limits.plan,
       plan_type: limits.plan,
@@ -83,14 +97,9 @@ export async function PATCH(request: Request) {
       max_brokers: limits.max_brokers,
       is_test_company: body.is_test_company === true,
       ...customPricePayload,
+      ...addressPayload,
     };
 
-    if (body.address !== undefined) updatePayload.address = body.address || null;
-    if (body.city !== undefined) updatePayload.city = body.city || null;
-    if (body.state !== undefined) updatePayload.state = body.state || null;
-    if (body.cep !== undefined) updatePayload.cep = body.cep || null;
-    if (body.phone !== undefined) updatePayload.phone = body.phone || null;
-    if (body.email !== undefined) updatePayload.email = body.email || null;
     if (body.slug) updatePayload.slug = body.slug;
 
     if (body.is_test_company !== true && body.subscription_start_date) {
@@ -119,7 +128,19 @@ export async function PATCH(request: Request) {
       .select('*')
       .single();
 
-    console.log('SAVE_COMPANY_CUSTOM_PRICE_RESULT', data, error);
+    if (error?.message?.toLowerCase().includes('cep')) {
+      const { cep: _omit, ...withoutCep } = updatePayload;
+      const retry = await supabaseAdmin
+        .from('companies')
+        .update(withoutCep)
+        .eq('id', companyId)
+        .select('*')
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
+
+    console.log('SAVE_COMPANY_ADDRESS_RESULT', data, error);
 
     if (error && (error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
       const { error: customOnlyErr } = await supabaseAdmin
@@ -138,21 +159,38 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const { data: partial, error: partialErr } = await supabaseAdmin
+      const partialPayload: Record<string, unknown> = {
+        name: body.name,
+        cnpj: body.cnpj,
+        phone: body.phone ?? '',
+        email: body.email ?? '',
+        status_operacional: body.status_operacional,
+        plan: limits.plan,
+        plan_type: limits.plan,
+        is_test_company: body.is_test_company === true,
+        address: addressPayload.address,
+        city: addressPayload.city,
+        state: addressPayload.state,
+        zip_code: addressPayload.zip_code,
+      };
+
+      let { data: partial, error: partialErr } = await supabaseAdmin
         .from('companies')
-        .update({
-          name: body.name,
-          cnpj: body.cnpj,
-          phone: body.phone,
-          email: body.email,
-          status_operacional: body.status_operacional,
-          plan: limits.plan,
-          plan_type: limits.plan,
-          is_test_company: body.is_test_company === true,
-        })
+        .update({ ...partialPayload, cep: addressPayload.cep })
         .eq('id', companyId)
         .select('*')
         .single();
+
+      if (partialErr?.message?.includes('cep')) {
+        const retry = await supabaseAdmin
+          .from('companies')
+          .update(partialPayload)
+          .eq('id', companyId)
+          .select('*')
+          .single();
+        partial = retry.data;
+        partialErr = retry.error;
+      }
 
       data = partial;
       error = partialErr;
@@ -170,6 +208,15 @@ export async function PATCH(request: Request) {
       .single();
 
     console.log('REFRESHED_COMPANY_AFTER_SAVE', refreshedCompany, refreshErr);
+    if (refreshedCompany) {
+      console.log('REFRESHED_COMPANY_ADDRESS', {
+        address: refreshedCompany.address,
+        city: refreshedCompany.city,
+        state: refreshedCompany.state,
+        zip_code: refreshedCompany.zip_code,
+        cep: refreshedCompany.cep,
+      });
+    }
 
     const companyRow = refreshedCompany || data;
     let subscriptionRow = null;
