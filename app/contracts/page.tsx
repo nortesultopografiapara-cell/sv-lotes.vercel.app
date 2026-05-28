@@ -1369,9 +1369,24 @@ export default function ContractsPage() {
     });
     setRegeneratingContract(true);
     try {
+      const impersonatingTenantId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("impersonating_tenant_id")
+          : null;
+      const activeTenantId = await resolveContractsTenantWithDb(user);
+
       const res = await fetch(
         `/api/contracts/${selectedContract.id}/regenerate`,
-        { method: "POST", credentials: "include" },
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            activeTenantId,
+            impersonatingTenantId:
+              user?.role === "SUPER_ADMIN" ? impersonatingTenantId : null,
+          }),
+        },
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {

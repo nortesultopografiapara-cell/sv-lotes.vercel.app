@@ -10,9 +10,63 @@ import {
 } from '@/lib/contractNumber';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import {
+  auditMissingCompanyFields,
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from '@/lib/contractSeller';
+
+const PLATFORM_ADMIN_ROLES = new Set([
+  'SUPER_ADMIN',
+  'MASTER',
+  'MASTER_ADMIN',
+  'MASTER-ADMIN',
+]);
+
+export type RegenerationSession = {
+  contractTenantId: string;
+  activeTenantId: string;
+  callerRole: string;
+};
+
+/** Empresa do contrato deve ser a mesma da sessão logada (ou impersonação ativa). */
+export function resolveRegenerationSession(
+  contract: Record<string, unknown>,
+  options: {
+    callerTenantId: string | null;
+    callerRole: string;
+    impersonatingTenantId?: string | null;
+  },
+): RegenerationSession {
+  const contractTenantId = String(contract.tenant_id || '').trim();
+  if (!contractTenantId) {
+    throw new Error('Contrato sem tenant_id — não é possível identificar a empresa.');
+  }
+
+  const role = String(options.callerRole || '').toUpperCase();
+  const isPlatformAdmin = PLATFORM_ADMIN_ROLES.has(role);
+
+  let activeTenantId = String(
+    options.callerTenantId || contract.company_id || '',
+  ).trim();
+
+  if (isPlatformAdmin && options.impersonatingTenantId) {
+    activeTenantId = String(options.impersonatingTenantId).trim();
+  }
+
+  if (!activeTenantId) {
+    throw new Error(
+      'Empresa logada não identificada. Faça login novamente ou selecione a empresa no painel.',
+    );
+  }
+
+  if (activeTenantId !== contractTenantId) {
+    throw new Error(
+      `Este contrato pertence a outra empresa (tenant ${contractTenantId}). Sessão ativa: ${activeTenantId}.`,
+    );
+  }
+
+  return { contractTenantId, activeTenantId, callerRole: role };
+}
 
 export const BLOCKS_CONTRACT_SELECT = `
   *,
@@ -107,7 +161,12 @@ export function validateSaleContractRegeneration(ctx: {
   if (!ctx.sale?.id && !contract.sale_id) missing.push('Venda');
   if (!ctx.customer?.id && !contract.customer_id) missing.push('Cliente');
   if (!ctx.block?.id && !contract.block_id) missing.push('Lote');
-  if (!ctx.project?.id && !contract.project_id) missing.push('Projeto');
+  const hasProject =
+    !!ctx.project?.id ||
+    !!contract.project_id ||
+    !!(ctx.sale as Record<string, unknown>)?.project_id ||
+    !!(ctx.block as Record<string, unknown>)?.project_id;
+  if (!hasProject) missing.push('Projeto');
   if (
     !ctx.tenant?.id &&
     !contract.tenant_id &&
@@ -152,34 +211,113 @@ export async function loadSaleContractContext(
   return contract as Record<string, unknown>;
 }
 
-async function fetchCompanyForRegeneration(
+/**
+ * Carrega entidade por ID; se tiver tenant_id, deve coincidir com o contrato.
+ * Registros legados sem tenant_id são aceitos quando o contrato já referencia o ID.
+ */
+async function fetchScopedEntity(
   supabase: SupabaseClient,
-  contract: Record<string, unknown>,
-  sale: Record<string, unknown>,
+  table: 'sales' | 'customers' | 'blocks' | 'projects',
+  id: string,
+  tenantId: string,
+  label: string,
 ): Promise<Record<string, unknown>> {
-  const ids = [
-    contract.company_id,
-    contract.tenant_id,
-    sale.company_id,
-    sale.tenant_id,
-  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
 
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const { data, error } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    if (error) {
-      console.warn('[REGENERATE] companies fetch', id, error.message);
+  if (error) {
+    throw new Error(`Erro ao carregar ${label}: ${error.message}`);
+  }
+  if (!data) {
+    console.warn('REGENERATE_ENTITY_NOT_FOUND', { table, id, tenantId });
+    return {};
+  }
+
+  const row = data as Record<string, unknown>;
+  const rowTenant = row.tenant_id ? String(row.tenant_id) : '';
+  if (rowTenant && rowTenant !== tenantId) {
+    throw new Error(
+      `${label} não pertence à empresa do contrato (tenant ${tenantId}).`,
+    );
+  }
+  if (!rowTenant) {
+    console.warn('REGENERATE_ENTITY_LEGACY_NO_TENANT', { table, id, tenantId });
+  }
+
+  return row;
+}
+
+/** Empresa vendedora: exclusivamente pelo tenant_id do contrato (= empresa logada). */
+async function fetchCompanyForTenant(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<Record<string, unknown>> {
+  console.log('REGENERATE_COMPANY_START', { tenantId });
+
+  const { data, error } = await supabase
+    .from('companies')
+    .select('*')
+    .eq('id', tenantId)
+    .single();
+
+  if (error || !data) {
+    console.error('REGENERATE_COMPANY_NOT_FOUND', {
+      tenantId,
+      message: error?.message,
+    });
+    throw new Error(
+      `Empresa não encontrada para tenant_id=${tenantId}. ${error?.message || ''}`.trim(),
+    );
+  }
+
+  const company = data as Record<string, unknown>;
+  console.log('REGENERATE_COMPANY_FOUND', {
+    id: company.id,
+    fantasy_name: company.fantasy_name,
+    razao_social: company.razao_social,
+    city: company.city,
+    state: company.state,
+  });
+
+  const missingFields = auditMissingCompanyFields(company);
+  if (missingFields.length > 0) {
+    console.warn('REGENERATE_COMPANY_MISSING_FIELDS', missingFields);
+  }
+
+  console.log('REGENERATE_COMPANY_DATA', company);
+  return company;
+}
+
+async function updateContractRowWithFallback(
+  supabase: SupabaseClient,
+  contractId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  let cleaned: Record<string, unknown> = { ...payload };
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const { error } = await supabase
+      .from('contracts')
+      .update(cleaned)
+      .eq('id', contractId);
+
+    if (!error) return;
+
+    const missingCol = error.message?.match(
+      /Could not find the '(\w+)' column/i,
+    )?.[1];
+    if (missingCol && missingCol in cleaned) {
+      const { [missingCol]: _removed, ...rest } = cleaned;
+      cleaned = rest;
+      console.warn('[REGENERATE] update retry sem coluna', missingCol);
       continue;
     }
-    if (data) return data as Record<string, unknown>;
+
+    throw new Error(error.message);
   }
-  return {};
 }
 
 async function insertRegeneratedContractRow(
@@ -238,44 +376,57 @@ export async function listSaleContractVersions(
   return (data || []) as SaleContractVersionRow[];
 }
 
-/** Busca entidades atuais no banco — não reutiliza HTML nem snapshots do contrato anterior. */
+/** Busca entidades atuais no banco — isoladas por tenant_id; sem HTML/PDF antigo. */
 export async function loadFreshRegenerationEntities(
   supabase: SupabaseClient,
   contract: Record<string, unknown>,
+  session: RegenerationSession,
 ) {
+  const tenantId = session.contractTenantId;
   const customerId = contract.customer_id as string | undefined;
   const saleId = contract.sale_id as string | undefined;
 
+  const company = await fetchCompanyForTenant(supabase, tenantId);
+
   let sale: Record<string, unknown> = {};
   if (saleId) {
-    const { data } = await supabase
-      .from('sales')
-      .select('*')
-      .eq('id', saleId)
-      .maybeSingle();
-    if (data) sale = data as Record<string, unknown>;
+    sale = await fetchScopedEntity(supabase, 'sales', saleId, tenantId, 'Venda');
   }
-
-  const company = await fetchCompanyForRegeneration(supabase, contract, sale);
 
   let customer: Record<string, unknown> = {};
   if (customerId) {
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', customerId)
-      .maybeSingle();
-    if (data) customer = data as Record<string, unknown>;
+    customer = await fetchScopedEntity(
+      supabase,
+      'customers',
+      customerId,
+      tenantId,
+      'Cliente',
+    );
   }
 
   let receipts_sum = 0;
   if (saleId) {
-    const { data: recs } = await supabase
+    let recQuery = supabase
       .from('finance_receipts')
       .select('amount, due_date, status, installment_number')
       .eq('sale_id', saleId)
-      .neq('status', 'cancelled');
-    if (recs?.length) {
+      .neq('status', 'cancelado');
+    recQuery = recQuery.eq('tenant_id', tenantId);
+    let { data: recs, error: recErr } = await recQuery;
+
+    if (recErr?.message?.includes('tenant_id')) {
+      const fallback = await supabase
+        .from('finance_receipts')
+        .select('amount, due_date, status, installment_number')
+        .eq('sale_id', saleId)
+        .neq('status', 'cancelado');
+      recs = fallback.data;
+      recErr = fallback.error;
+    }
+
+    if (recErr) {
+      console.warn('REGENERATE_RECEIPTS_LOAD', recErr.message);
+    } else if (recs?.length) {
       receipts_sum = recs.reduce(
         (a, b) => a + Number((b as { amount?: number }).amount || 0),
         0,
@@ -290,12 +441,29 @@ export async function loadFreshRegenerationEntities(
 
   let block: Record<string, unknown> = {};
   if (blockId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('blocks')
       .select(BLOCKS_CONTRACT_SELECT)
       .eq('id', blockId)
       .maybeSingle();
-    if (data) block = data as Record<string, unknown>;
+    if (error) throw new Error(`Erro ao carregar lote: ${error.message}`);
+    if (data) {
+      const row = data as Record<string, unknown>;
+      const rowTenant = row.tenant_id ? String(row.tenant_id) : '';
+      if (rowTenant && rowTenant !== tenantId) {
+        throw new Error(
+          `Lote não pertence à empresa do contrato (tenant ${tenantId}).`,
+        );
+      }
+      if (!rowTenant) {
+        console.warn('REGENERATE_ENTITY_LEGACY_NO_TENANT', {
+          table: 'blocks',
+          id: blockId,
+          tenantId,
+        });
+      }
+      block = row;
+    }
   }
 
   const projectId =
@@ -306,17 +474,17 @@ export async function loadFreshRegenerationEntities(
 
   let project: Record<string, unknown> = {};
   if (projectId) {
-    const { data } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .maybeSingle();
-    if (data) project = data as Record<string, unknown>;
+    project = await fetchScopedEntity(
+      supabase,
+      'projects',
+      projectId,
+      tenantId,
+      'Projeto',
+    );
   }
 
   const seller = normalizeSellerFromCompany(company);
   const sellerText = formatClassicSellerInstallationText(seller);
-  console.log('REGENERATE_COMPANY_DATA', company);
   console.log('REGENERATE_SELLER_TEXT', sellerText);
   console.log('REGENERATE_CONTRACT_CUSTOMER_DATA', customer);
   console.log('REGENERATE_CONTRACT_SALE_DATA', { ...sale, receipts_sum });
@@ -335,6 +503,7 @@ export async function loadFreshRegenerationEntities(
 export async function buildFreshSaleContractHtml(
   supabase: SupabaseClient,
   contract: Record<string, unknown>,
+  session: RegenerationSession,
 ): Promise<{
   html: string;
   contractNumber: string;
@@ -346,15 +515,12 @@ export async function buildFreshSaleContractHtml(
   tenant: Record<string, unknown>;
   receipts_sum: number;
 }> {
-  const fresh = await loadFreshRegenerationEntities(supabase, contract);
+  const fresh = await loadFreshRegenerationEntities(supabase, contract, session);
   const { company, customer, sale, block, project, receipts_sum } = fresh;
 
   const tenant = {
     ...company,
-    id:
-      (company.id as string) ||
-      (contract.company_id as string) ||
-      (contract.tenant_id as string),
+    id: session.contractTenantId,
   };
   const saleWithId = {
     ...sale,
@@ -407,6 +573,12 @@ export async function buildFreshSaleContractHtml(
     contractDate: new Date().toISOString(),
   });
 
+  console.log('REGENERATE_HTML_GENERATED', {
+    contractNumber,
+    htmlLength: html.length,
+    tenantId: session.contractTenantId,
+  });
+
   return {
     html,
     contractNumber,
@@ -425,20 +597,32 @@ export async function regenerateSaleContract(
   params: {
     contractId: string;
     regeneratedByUserId?: string | null;
+    session: RegenerationSession;
   },
 ): Promise<{
   oldContract: SaleContractVersionRow;
   newContract: SaleContractVersionRow;
   versions: SaleContractVersionRow[];
 }> {
+  console.log('REGENERATE_CONTRACT_START', {
+    contractId: params.contractId,
+    tenantId: params.session.contractTenantId,
+  });
   console.log('CONTRACT_REGENERATE_CLICK', { contractId: params.contractId });
 
   const contract = await loadSaleContractContext(supabase, params.contractId);
   const saleId = contract.sale_id as string;
+  const tenantId = params.session.contractTenantId;
+
+  if (!saleId) {
+    throw new Error('Contrato sem sale_id — não é possível regenerar.');
+  }
 
   console.log('CONTRACT_REGENERATE_LOAD_DATA', {
     contractId: params.contractId,
     saleId,
+    tenantId,
+    activeTenantId: params.session.activeTenantId,
   });
 
   const {
@@ -450,7 +634,7 @@ export async function regenerateSaleContract(
     block,
     project,
     tenant,
-  } = await buildFreshSaleContractHtml(supabase, contract);
+  } = await buildFreshSaleContractHtml(supabase, contract, params.session);
 
   const validation = validateSaleContractRegeneration({
     contract,
@@ -464,18 +648,22 @@ export async function regenerateSaleContract(
     throw new Error(validation.error || 'Validação falhou');
   }
 
-  const oldVersion = Number(contract.version) || 1;
-  const newVersion = oldVersion + 1;
+  const existingVersions = await listSaleContractVersions(supabase, saleId);
+  const maxVersion = existingVersions.reduce(
+    (max, row) => Math.max(max, Number(row.version) || 0),
+    Number(contract.version) || 0,
+  );
+  const newVersion = maxVersion + 1;
   const now = new Date().toISOString();
 
   console.log('CONTRACT_REGENERATE_OLD_VERSION', {
     id: contract.id,
-    version: oldVersion,
+    version: maxVersion,
   });
 
   const newRow = await insertRegeneratedContractRow(supabase, {
-    tenant_id: contract.tenant_id,
-    company_id: contract.company_id || contract.tenant_id,
+    tenant_id: tenantId,
+    company_id: tenantId,
     sale_id: saleId,
     customer_id: contract.customer_id,
     project_id:
@@ -503,25 +691,24 @@ export async function regenerateSaleContract(
     created_at: now,
   });
 
-  const { error: supersedeErr } = await supabase
-    .from('contracts')
-    .update({
-      status: 'superseded',
-      is_current: false,
-      superseded_by: newRow.id,
-      regenerated_at: now,
-    })
-    .eq('id', contract.id);
+  await updateContractRowWithFallback(supabase, contract.id as string, {
+    status: 'superseded',
+    is_current: false,
+    superseded_by: newRow.id,
+    regenerated_at: now,
+    pdf_url: null,
+  });
 
-  if (supersedeErr) {
-    console.warn('[CONTRACT_SUPERSEDE]', supersedeErr.message);
+  for (const ver of existingVersions) {
+    if (ver.id === newRow.id || ver.id === contract.id) continue;
+    try {
+      await updateContractRowWithFallback(supabase, ver.id, {
+        is_current: false,
+      });
+    } catch (e) {
+      console.warn('[REGENERATE] is_current em versão anterior', ver.id, e);
+    }
   }
-
-  await supabase
-    .from('contracts')
-    .update({ is_current: false })
-    .eq('sale_id', saleId)
-    .neq('id', newRow.id);
 
   if (contract.block_id || block.id) {
     await supabase
@@ -535,6 +722,11 @@ export async function regenerateSaleContract(
   console.log('CONTRACT_REGENERATE_NEW_VERSION', {
     id: newRow.id,
     version: newVersion,
+  });
+  console.log('REGENERATE_PDF_GENERATED', {
+    mode: 'client_html2pdf',
+    contractId: newRow.id,
+    note: 'PDF é gerado no navegador a partir do HTML atualizado (generated_html).',
   });
   console.log('REGENERATE_CONTRACT_SUCCESS', newRow);
   console.log('CONTRACT_REGENERATE_SUCCESS', {

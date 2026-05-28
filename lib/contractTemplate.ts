@@ -130,7 +130,9 @@ export function generateContractHTML({
       : "Não informado";
   const sellerText = formatClassicSellerInstallationText(seller);
   const empresaLogoSrc = seller.logoUrl;
-  const empresaLogo = `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 12px;" alt="Logo ${empresaNome}"/>`;
+  const empresaLogo = empresaLogoSrc
+    ? `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 12px;" alt="Logo ${empresaNome}"/>`
+    : "";
   const empresaAssinatura = seller.signatureUrl
     ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
     : "";
@@ -147,12 +149,14 @@ export function generateContractHTML({
   const clienteCep = customer?.zip_code || "cep não informado";
 
   const empreendimentoNome = toTitleCase(
-    (isValid(contractSnapshot?.project_name_snapshot) ? contractSnapshot.project_name_snapshot : null) ||
-    (isValid(sale?.project?.name) ? sale.project.name : null) ||
-    (isValid(sale?.projects?.name) ? sale.projects.name : null) ||
-    (isValid(block?.project?.name) ? block.project.name : null) ||
-    (isValid(block?.projects?.name) ? block.projects.name : null) ||
     (isValid(project?.name) ? project.name : null) ||
+    (isValid(sale?.projects?.name) ? sale.projects.name : null) ||
+    (isValid(sale?.project?.name) ? sale.project.name : null) ||
+    (isValid(block?.projects?.name) ? block.projects.name : null) ||
+    (isValid(block?.project?.name) ? block.project.name : null) ||
+    (isValid(contractSnapshot?.project_name_snapshot)
+      ? contractSnapshot.project_name_snapshot
+      : null) ||
     ""
   );
 
@@ -208,22 +212,26 @@ export function generateContractHTML({
 
   // Cidade, UF e Foro hierarquia correta
   const empreendimentoCidade = toTitleCase(
-    (isValid(contractSnapshot?.project_city_snapshot) ? contractSnapshot.project_city_snapshot : null) ||
-    (isValid(sale?.project?.city) ? sale.project.city : null) ||
-    (isValid(sale?.projects?.city) ? sale.projects.city : null) ||
-    (isValid(block?.project?.city) ? block.project.city : null) ||
-    (isValid(block?.projects?.city) ? block.projects.city : null) ||
     (isValid(project?.city) ? project.city : null) ||
+    (isValid(sale?.projects?.city) ? sale.projects.city : null) ||
+    (isValid(sale?.project?.city) ? sale.project.city : null) ||
+    (isValid(block?.projects?.city) ? block.projects.city : null) ||
+    (isValid(block?.project?.city) ? block.project.city : null) ||
+    (isValid(contractSnapshot?.project_city_snapshot)
+      ? contractSnapshot.project_city_snapshot
+      : null) ||
     ""
   );
 
   const empreendimentoUf = (
-    (isValid(contractSnapshot?.project_uf_snapshot) ? contractSnapshot.project_uf_snapshot : null) ||
-    (isValid(sale?.project?.uf) ? sale.project.uf : null) ||
-    (isValid(sale?.projects?.uf) ? sale.projects.uf : null) ||
-    (isValid(block?.project?.uf) ? block.project.uf : null) ||
-    (isValid(block?.projects?.uf) ? block.projects.uf : null) ||
     (isValid(project?.uf) ? project.uf : null) ||
+    (isValid(sale?.projects?.uf) ? sale.projects.uf : null) ||
+    (isValid(sale?.project?.uf) ? sale.project.uf : null) ||
+    (isValid(block?.projects?.uf) ? block.projects.uf : null) ||
+    (isValid(block?.project?.uf) ? block.project.uf : null) ||
+    (isValid(contractSnapshot?.project_uf_snapshot)
+      ? contractSnapshot.project_uf_snapshot
+      : null) ||
     ""
   ).toUpperCase();
 
@@ -373,7 +381,7 @@ export function generateContractHTML({
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
             
-            ${empresaLogoSrc && empresaLogoSrc !== "/logo-sv-lotes.png" ? `<div style="text-align: center; margin-top: 10px; margin-bottom: 16px; page-break-inside: avoid;">${empresaLogo}</div>` : ""}
+            ${empresaLogo ? `<div style="text-align: center; margin-top: 10px; margin-bottom: 16px; page-break-inside: avoid;">${empresaLogo}</div>` : ""}
 
             <div style="text-align: center; margin-bottom: 25px; page-break-inside: avoid;">
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   loadSaleContractContext,
   regenerateSaleContract,
+  resolveRegenerationSession,
 } from '@/lib/contractRegeneration';
 import {
   createAdminSupabase,
@@ -42,29 +43,28 @@ export async function POST(
 
     const contract = await loadSaleContractContext(supabase, contractId);
 
-    const contractTenant =
-      (contract.tenant_id as string) || (contract.company_id as string);
-    const isSuperAdmin =
-      callerRole === 'SUPER_ADMIN' ||
-      callerRole === 'MASTER' ||
-      callerRole === 'MASTER_ADMIN' ||
-      callerRole === 'MASTER-ADMIN';
-
-    if (
-      !isSuperAdmin &&
-      contractTenant &&
-      callerTenant &&
-      contractTenant !== callerTenant
-    ) {
-      return NextResponse.json(
-        { error: 'Sem permissão para este contrato.' },
-        { status: 403 },
-      );
+    let body: { impersonatingTenantId?: string; activeTenantId?: string } = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
     }
+
+    const session = resolveRegenerationSession(contract, {
+      callerTenantId:
+        body.activeTenantId ||
+        callerTenant ||
+        (profile?.tenant_id as string) ||
+        (profile?.company_id as string) ||
+        null,
+      callerRole,
+      impersonatingTenantId: body.impersonatingTenantId || null,
+    });
 
     const result = await regenerateSaleContract(supabase, {
       contractId,
       regeneratedByUserId: user.id,
+      session,
     });
 
     return NextResponse.json({
