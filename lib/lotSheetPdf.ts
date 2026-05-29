@@ -164,10 +164,22 @@ function edgeLengthsFromRing(localRing: [number, number][]): string[] {
   return out;
 }
 
-function segmentTextAngle(dx: number, dy: number): number {
-  let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  if (angle > 90 || angle <= -90) angle += 180;
-  return angle;
+/**
+ * Ângulo do texto paralelo à divisa (mesma regra AutoCAD/Civil 3D).
+ * Rotação apenas no plano; deslocamento só na normal interna.
+ */
+function computeSegmentLabelRotation(dx: number, dy: number): {
+  angleRad: number;
+  angleDeg: number;
+  textRotationDeg: number;
+} {
+  const angleRad = Math.atan2(dy, dx);
+  const angleDeg = (angleRad * 180) / Math.PI;
+  let textRotationDeg = angleDeg;
+  if (angleDeg > 90 || angleDeg < -90) {
+    textRotationDeg = angleDeg + 180;
+  }
+  return { angleRad, angleDeg, textRotationDeg };
 }
 
 function pointInsidePolygon(
@@ -202,6 +214,8 @@ function edgeInternalLabelPos(
   angle: number;
   mid: [number, number];
   offsetUsed: number;
+  dx: number;
+  dy: number;
 } {
   const mx = (p1[0] + p2[0]) / 2;
   const my = (p1[1] + p2[1]) / 2;
@@ -218,7 +232,7 @@ function edgeInternalLabelPos(
     ny = -ny;
   }
 
-  const angle = segmentTextAngle(dx, dy);
+  const { textRotationDeg } = computeSegmentLabelRotation(dx, dy);
   let offsetUsed = offsetMm;
   let x = mx + nx * offsetUsed;
   let y = my + ny * offsetUsed;
@@ -236,7 +250,15 @@ function edgeInternalLabelPos(
     }
   }
 
-  return { x, y, angle, mid: [mx, my], offsetUsed };
+  return {
+    x,
+    y,
+    angle: textRotationDeg,
+    mid: [mx, my],
+    offsetUsed,
+    dx,
+    dy,
+  };
 }
 
 /** Confrontantes: lado externo (afastado do centroide). */
@@ -261,8 +283,8 @@ function edgeExternalLabelPos(
     ny = -ny;
   }
 
-  const angle = segmentTextAngle(dx, dy);
-  return { x: mx + nx * offsetMm, y: my + ny * offsetMm, angle };
+  const { textRotationDeg } = computeSegmentLabelRotation(dx, dy);
+  return { x: mx + nx * offsetMm, y: my + ny * offsetMm, angle: textRotationDeg };
 }
 
 function lotSpanOnSheet(verts: [number, number][]): number {
@@ -300,10 +322,17 @@ function drawEdgeMeasures(
     const label = measures[i];
     if (!label || label === '—') continue;
 
-    const edgeLenMm = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const edgeLenMm = Math.hypot(dx, dy);
     const offsetMm = Math.min(baseOffset, Math.max(3, edgeLenMm * 0.12));
 
-    const { x, y, angle, mid, offsetUsed } = edgeInternalLabelPos(
+    const { angleRad, angleDeg, textRotationDeg } = computeSegmentLabelRotation(
+      dx,
+      dy,
+    );
+
+    const { x, y, mid, offsetUsed } = edgeInternalLabelPos(
       p1,
       p2,
       c,
@@ -311,19 +340,31 @@ function drawEdgeMeasures(
       offsetMm,
     );
 
-    console.log('LOT_SHEET_EDGE_LABEL_POSITION', {
+    console.log('LOT_SHEET_SEGMENT_ANGLE', {
       edgeIndex: i,
-      mid,
-      position: [x, y],
-      angleDeg: angle,
+      dx,
+      dy,
+      angleRad,
+      angleDeg,
+    });
+    console.log('LOT_SHEET_TEXT_ROTATION', {
+      edgeIndex: i,
+      textRotationDeg,
+    });
+    console.log('LOT_SHEET_MIDPOINT', {
+      edgeIndex: i,
+      midpoint: mid,
+      labelPosition: [x, y],
       offsetMm: offsetUsed,
+      perpendicularOnly: true,
       inside: pointInsidePolygon(x, y, verts),
       edgeLenMm,
     });
 
     doc.text(label, x, y, {
       align: 'center',
-      angle,
+      baseline: 'middle',
+      angle: textRotationDeg,
     });
   }
 }
