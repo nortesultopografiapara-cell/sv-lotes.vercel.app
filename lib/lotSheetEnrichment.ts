@@ -444,9 +444,13 @@ export function buildSideConfrontants(
   streetGuides: Record<string, unknown>[],
 ): LotSheetSideConfrontants {
   const rawFront = String(block.front_street_name || '').trim();
+  const frontDisplay = formatStreetDisplay(
+    block.front_street_type as string | undefined,
+    rawFront || undefined,
+  );
   const frente =
     rawFront && !/sem nome/i.test(rawFront)
-      ? rawFront
+      ? frontDisplay || rawFront
       : 'Rua / via de acesso';
 
   const cardinals = buildCardinalConfrontants(
