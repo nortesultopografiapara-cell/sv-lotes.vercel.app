@@ -37,6 +37,8 @@ import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
 import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
 import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext';
 import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
+import { setAppErrorContext } from '@/lib/appErrorReporting';
+import { resolveActiveTenantId } from '@/lib/activeTenant';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -308,6 +310,27 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     window.addEventListener('company_updated', handleCompanyUpdate);
     return () => window.removeEventListener('company_updated', handleCompanyUpdate);
   }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function syncErrorContext() {
+      if (!user) {
+        setAppErrorContext({ tenantId: null, userId: null });
+        return;
+      }
+      const tenantId = await resolveActiveTenantId(user);
+      if (!cancelled) {
+        setAppErrorContext({
+          tenantId,
+          userId: user.id,
+        });
+      }
+    }
+    void syncErrorContext();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, impersonatingTenantId]);
   
   // Guard checks are moved to useSessionGuard and Middleware
   

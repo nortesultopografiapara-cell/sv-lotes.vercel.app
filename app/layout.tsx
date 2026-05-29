@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/Layout';
+import { AppProviders } from '@/components/AppProviders';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -32,7 +33,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body suppressHydrationWarning>
-        <Sidebar>{children}</Sidebar>
+        <AppProviders>
+          <Sidebar>{children}</Sidebar>
+        </AppProviders>
       </body>
     </html>
   );
