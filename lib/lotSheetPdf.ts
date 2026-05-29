@@ -260,7 +260,7 @@ function edgeInternalLabelPos(
   mid: [number, number];
   offsetUsed: number;
 } {
-  const tries = [offsetMm, Math.max(8, offsetMm - 1), 8].filter(
+  const tries = [offsetMm, Math.max(3, offsetMm - 1), 3].filter(
     (v, idx, arr) => arr.indexOf(v) === idx,
   );
 
@@ -306,7 +306,7 @@ function drawEdgeMeasures(
   const n = Math.min(verts.length, measures.length);
   const narrow = lotSpanOnSheet(verts) < 38;
   const fontSize = narrow ? 5.5 : 6;
-  const baseOffset = narrow ? 8 : 10;
+  const baseOffset = narrow ? 3 : 4;
   const placed: { edgeIndex: number; x: number; y: number }[] = [];
 
   doc.setFont('helvetica', 'normal');
@@ -317,7 +317,7 @@ function drawEdgeMeasures(
     narrow,
     fontSize,
     baseOffsetMm: baseOffset,
-    rangeMm: '8-10',
+    rangeMm: '3-4',
     edges: n,
     frontEdgeIndex,
   });
