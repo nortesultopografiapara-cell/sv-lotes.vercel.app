@@ -88,30 +88,64 @@ function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
   doc.text('N', cx - 2, cy - r - 2);
 }
 
-function drawLotPolygon(doc: jsPDF, points: [number, number][]) {
-  if (points.length < 3) return;
-  doc.setDrawColor(...BLACK);
-  doc.setLineWidth(0.45);
-  doc.setFillColor(255, 255, 255);
+/** Remove vértice duplicado de fechamento e pontos colapsados (mm). */
+function preparePolygonVertices(points: [number, number][]): [number, number][] {
+  if (points.length < 2) return points;
 
-  const pathOps: Array<string | number> = ['M', points[0][0], points[0][1]];
-  for (let i = 1; i < points.length; i++) {
-    pathOps.push('L', points[i][0], points[i][1]);
-  }
-  pathOps.push('Z');
+  const eps = 0.05;
+  const verts: [number, number][] = [];
 
-  if (typeof (doc as jsPDF & { path?: Function }).path === 'function') {
-    (doc as jsPDF & { path: (ops: unknown[], style: string) => void }).path(
-      pathOps,
-      'FD',
-    );
-  } else {
-    for (let i = 0; i < points.length; i++) {
-      const [x1, y1] = points[i];
-      const [x2, y2] = points[(i + 1) % points.length];
-      doc.line(x1, y1, x2, y2);
+  for (const p of points) {
+    const last = verts[verts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > eps) {
+      verts.push(p);
     }
   }
+
+  if (verts.length > 2) {
+    const first = verts[0];
+    const last = verts[verts.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) <= eps) {
+      verts.pop();
+    }
+  }
+
+  return verts.length >= 3 ? verts : points;
+}
+
+/**
+ * Contorno do lote — sempre traço preto via line() (path() do jsPDF falha em vários builds).
+ */
+function drawLotPolygon(doc: jsPDF, points: [number, number][]): [number, number][] {
+  const verts = preparePolygonVertices(points);
+
+  console.log('LOT_SHEET_DRAW_POLYGON_POINTS', {
+    inputCount: points.length,
+    vertexCount: verts.length,
+    vertices: verts,
+  });
+
+  if (verts.length < 3) {
+    console.warn('LOT_SHEET_DRAW_POLYGON_SKIP', { vertexCount: verts.length });
+    return verts;
+  }
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.6);
+  doc.setFillColor(255, 255, 255);
+
+  for (let i = 0; i < verts.length; i++) {
+    const [x1, y1] = verts[i];
+    const [x2, y2] = verts[(i + 1) % verts.length];
+    doc.line(x1, y1, x2, y2);
+  }
+
+  console.log('LOT_SHEET_DRAW_POLYGON_SUCCESS', {
+    edges: verts.length,
+    closed: true,
+  });
+
+  return verts;
 }
 
 function drawEdgeMeasures(
@@ -362,11 +396,13 @@ export function generateLotSheetPdf(input: GenerateLotSheetPdfInput): jsPDF {
     .filter(Boolean)
     .join(' | ');
 
-  const sheetPts = projectRingToSheet(
+  const sheetPtsRaw = projectRingToSheet(
     input.geometry.localRing,
     input.geometry.bboxMeters,
     drawArea,
   );
+
+  const sheetPts = drawLotPolygon(doc, sheetPtsRaw);
 
   const edgeMeasures = [
     input.measures.frente,
@@ -375,7 +411,6 @@ export function generateLotSheetPdf(input: GenerateLotSheetPdfInput): jsPDF {
     input.measures.ladoEsquerdo,
   ];
 
-  drawLotPolygon(doc, sheetPts);
   drawEdgeMeasures(doc, sheetPts, edgeMeasures);
   drawAreaCenter(doc, sheetPts, input.measures.area);
   drawLotNumberBadge(doc, sheetPts, lotNum);
