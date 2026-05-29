@@ -182,6 +182,47 @@ function computeSegmentLabelRotation(dx: number, dy: number): {
   return { angleRad, angleDeg, textRotationDeg };
 }
 
+type DrawRotatedTextOptions = {
+  align?: 'center' | 'left' | 'right';
+  baseline?: 'middle' | 'top' | 'bottom';
+  maxWidth?: number;
+};
+
+/**
+ * Texto rotacionado via CTM (paralelo exato à divisa — não usa doc.text angle).
+ */
+function drawRotatedText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  angleDeg: number,
+  options: DrawRotatedTextOptions = {},
+): void {
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const matrix = doc.Matrix(cos, sin, -sin, cos, x, y);
+
+  console.log('LOT_SHEET_ROTATED_TEXT_MATRIX', {
+    text,
+    x,
+    y,
+    angleDeg,
+    matrix: [cos, sin, -sin, cos, x, y],
+  });
+  console.log('LOT_SHEET_FINAL_TEXT_ANGLE', { text, angleDeg });
+
+  doc.saveGraphicsState();
+  doc.setCurrentTransformationMatrix(matrix);
+  doc.text(text, 0, 0, {
+    align: options.align ?? 'center',
+    baseline: options.baseline ?? 'middle',
+    maxWidth: options.maxWidth,
+  });
+  doc.restoreGraphicsState();
+}
+
 function pointInsidePolygon(
   x: number,
   y: number,
@@ -327,10 +368,7 @@ function drawEdgeMeasures(
     const edgeLenMm = Math.hypot(dx, dy);
     const offsetMm = Math.min(baseOffset, Math.max(3, edgeLenMm * 0.12));
 
-    const { angleRad, angleDeg, textRotationDeg } = computeSegmentLabelRotation(
-      dx,
-      dy,
-    );
+    const { textRotationDeg } = computeSegmentLabelRotation(dx, dy);
 
     const { x, y, mid, offsetUsed } = edgeInternalLabelPos(
       p1,
@@ -340,17 +378,6 @@ function drawEdgeMeasures(
       offsetMm,
     );
 
-    console.log('LOT_SHEET_SEGMENT_ANGLE', {
-      edgeIndex: i,
-      dx,
-      dy,
-      angleRad,
-      angleDeg,
-    });
-    console.log('LOT_SHEET_TEXT_ROTATION', {
-      edgeIndex: i,
-      textRotationDeg,
-    });
     console.log('LOT_SHEET_MIDPOINT', {
       edgeIndex: i,
       midpoint: mid,
@@ -359,12 +386,12 @@ function drawEdgeMeasures(
       perpendicularOnly: true,
       inside: pointInsidePolygon(x, y, verts),
       edgeLenMm,
+      textRotationDeg,
     });
 
-    doc.text(label, x, y, {
+    drawRotatedText(doc, label, x, y, textRotationDeg, {
       align: 'center',
       baseline: 'middle',
-      angle: textRotationDeg,
     });
   }
 }
@@ -399,9 +426,9 @@ function labelAtEdge(
   const dx = p2[0] - p1[0];
   const dy = p2[1] - p1[1];
   const { x, y, angle } = edgeExternalLabelPos(p1, p2, c, offsetMm);
-  doc.text(text, x, y, {
+  drawRotatedText(doc, text, x, y, angle, {
     align: 'center',
-    angle,
+    baseline: 'middle',
     maxWidth: 52,
   });
 }
