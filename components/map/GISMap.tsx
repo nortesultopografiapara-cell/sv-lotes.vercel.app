@@ -2058,7 +2058,7 @@ export default function GISMap({
                 eventHandlers={{
                   click: () => {
                     if (sheetPickActive && onLotSheetLotPick) {
-                      console.log('LOT_SHEET_LOT_SELECTED', { id: lot.id, number: lot.number });
+                      console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
                       onLotSheetLotPick({
                         id: lot.id,
                         number: String(lot.number || ''),

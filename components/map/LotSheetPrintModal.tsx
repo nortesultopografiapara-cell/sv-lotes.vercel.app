@@ -20,18 +20,16 @@ type Props = {
   projectId: string;
   tenantId: string;
   lot: MapLot | null;
-  pickMode: boolean;
   onClose: () => void;
-  onRequestPick: () => void;
+  onSelectAnotherLot: () => void;
 };
 
 export function LotSheetPrintModal({
   projectId,
   tenantId,
   lot,
-  pickMode,
   onClose,
-  onRequestPick,
+  onSelectAnotherLot,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,18 +89,14 @@ export function LotSheetPrintModal({
         </div>
 
         <div className="p-4 space-y-4">
-          {pickMode ? (
-            <p className="text-sm text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-              Selecione o lote para gerar a prancha — clique em um lote no mapa.
-            </p>
-          ) : previewLot ? (
+          {previewLot ? (
             <p className="text-sm text-emerald-200 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
               Lote {previewLot.number || '—'}
               {previewLot.block ? ` · Quadra ${previewLot.block}` : ''} selecionado.
             </p>
           ) : (
             <p className="text-sm text-gray-400">
-              Nenhum lote selecionado. Clique em &quot;Selecionar no mapa&quot;.
+              Nenhum lote selecionado. Use &quot;Selecionar outro lote no mapa&quot;.
             </p>
           )}
 
@@ -115,7 +109,7 @@ export function LotSheetPrintModal({
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              disabled={loading}
+              disabled={loading || !previewLot}
               onClick={() => void runGenerate('download')}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4999e9] hover:bg-[#3b82d9] rounded-lg text-sm font-semibold disabled:opacity-50"
             >
@@ -137,7 +131,7 @@ export function LotSheetPrintModal({
             </button>
             <button
               type="button"
-              onClick={onRequestPick}
+              onClick={onSelectAnotherLot}
               className="w-full px-4 py-2 text-sm text-[#4999e9] hover:underline"
             >
               Selecionar outro lote no mapa

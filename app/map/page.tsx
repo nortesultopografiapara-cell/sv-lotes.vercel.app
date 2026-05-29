@@ -1508,12 +1508,14 @@ export default function MapPage() {
                 type="button"
                 onClick={() => {
                   console.log('LOT_SHEET_PRINT_CLICK');
-                  setLotSheetModalOpen(true);
+                  setLotSheetTarget(null);
+                  setLotSheetModalOpen(false);
                   setLotSheetPickMode(true);
                   setMeasureActive(false);
                   setDrawStreetActive(false);
+                  console.log('LOT_SHEET_SELECTION_MODE_ENABLED');
                 }}
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetModalOpen ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#c084fc]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetModalOpen || lotSheetPickMode ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#c084fc]'}`}
              >
                 <Printer className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha do Lote</span>
@@ -1587,24 +1589,42 @@ export default function MapPage() {
             onDeleteStreetGuide={handleDeleteStreetGuide}
             lotSheetPickMode={lotSheetPickMode}
             onLotSheetLotPick={(lot) => {
+              console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
               setLotSheetTarget(lot);
               setLotSheetPickMode(false);
+              setLotSheetModalOpen(true);
+              console.log('LOT_SHEET_SELECTED_LOT_UPDATED', { id: lot.id, number: lot.number });
             }}
           />
         </div>
+
+        {lotSheetPickMode && !lotSheetModalOpen && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none px-4">
+            <p className="text-sm font-semibold text-amber-100 bg-amber-500/20 border border-amber-500/40 rounded-lg px-4 py-2 shadow-lg backdrop-blur-sm text-center">
+              Clique em um lote no mapa para gerar a prancha.
+            </p>
+          </div>
+        )}
 
         {lotSheetModalOpen && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
           <LotSheetPrintModal
             projectId={selectedProject.id}
             tenantId={String(saasTenantId || user?.tenant_id || selectedProject.tenant_id)}
             lot={lotSheetTarget}
-            pickMode={lotSheetPickMode}
             onClose={() => {
               setLotSheetModalOpen(false);
               setLotSheetPickMode(false);
               setLotSheetTarget(null);
             }}
-            onRequestPick={() => setLotSheetPickMode(true)}
+            onSelectAnotherLot={() => {
+              console.log('LOT_SHEET_SELECT_ANOTHER_CLICK');
+              setLotSheetTarget(null);
+              setLotSheetPickMode(true);
+              setLotSheetModalOpen(false);
+              setMeasureActive(false);
+              setDrawStreetActive(false);
+              console.log('LOT_SHEET_SELECTION_MODE_ENABLED');
+            }}
           />
         )}
 
