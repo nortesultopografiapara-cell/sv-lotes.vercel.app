@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { Building2, Save, Upload, Loader2, ImagePlus } from 'lucide-react';
+import { Building2, Save, Upload, Loader2, ImagePlus, HardHat } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user, loading: authLoading } = useSessionGuard();
@@ -13,9 +13,21 @@ export default function SettingsPage() {
   
   const logoInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
+  const techSignatureInputRef = useRef<HTMLInputElement>(null);
   
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [uploadingTechSignature, setUploadingTechSignature] = useState(false);
+  const [technical, setTechnical] = useState<Record<string, string>>({
+    name: '',
+    title: '',
+    registry_type: 'CREA',
+    registry_number: '',
+    phone: '',
+    email: '',
+    signature_url: '',
+  });
+  const [technicalId, setTechnicalId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadCompany() {
@@ -33,6 +45,27 @@ export default function SettingsPage() {
       if (!error && data) {
         setCompany(data);
       }
+
+      const { data: tech, error: techErr } = await supabase
+        .from('technical_responsibles')
+        .select('*')
+        .eq('company_id', user.tenant_id)
+        .eq('active', true)
+        .maybeSingle();
+
+      if (!techErr && tech) {
+        setTechnicalId(tech.id);
+        setTechnical({
+          name: tech.name || '',
+          title: tech.title || '',
+          registry_type: tech.registry_type || 'CREA',
+          registry_number: tech.registry_number || '',
+          phone: tech.phone || '',
+          email: tech.email || '',
+          signature_url: tech.signature_url || '',
+        });
+      }
+
       setLoading(false);
     }
     
@@ -93,6 +126,18 @@ export default function SettingsPage() {
       setUploadingSignature(false);
   };
 
+  const handleTechChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setTechnical((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleTechSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length || !company?.id) return;
+    setUploadingTechSignature(true);
+    const url = await uploadImage(e.target.files[0], 'signature');
+    if (url) setTechnical((prev) => ({ ...prev, signature_url: url }));
+    setUploadingTechSignature(false);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!company?.id) return;
@@ -115,13 +160,40 @@ export default function SettingsPage() {
         })
         .eq('id', company.id);
 
-     setSubmitting(false);
      if (error) {
+        setSubmitting(false);
         alert("Erro ao salvar: " + error.message);
-     } else {
-        alert("Configurações salvas com sucesso!");
-        window.dispatchEvent(new Event('company_updated'));
+        return;
      }
+
+     if (technical.name.trim()) {
+       const techPayload = {
+         company_id: company.id,
+         name: technical.name.trim(),
+         title: technical.title || null,
+         registry_type: technical.registry_type || null,
+         registry_number: technical.registry_number || null,
+         phone: technical.phone || null,
+         email: technical.email || null,
+         signature_url: technical.signature_url || null,
+         active: true,
+         updated_at: new Date().toISOString(),
+       };
+       if (technicalId) {
+         await supabase.from('technical_responsibles').update(techPayload).eq('id', technicalId);
+       } else {
+         const { data: inserted } = await supabase
+           .from('technical_responsibles')
+           .insert([techPayload])
+           .select('id')
+           .single();
+         if (inserted?.id) setTechnicalId(inserted.id);
+       }
+     }
+
+     setSubmitting(false);
+     alert("Configurações salvas com sucesso!");
+     window.dispatchEvent(new Event('company_updated'));
   };
 
   if (loading || authLoading) {
@@ -253,6 +325,61 @@ export default function SettingsPage() {
               <div>
                  <label className="block text-xs font-semibold text-gray-400 mb-1">CEP</label>
                  <input type="text" name="zip_code" value={company?.zip_code || ''} onChange={handleChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+           </div>
+        </div>
+
+        <div className="space-y-4">
+           <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+             <HardHat className="w-5 h-5 text-amber-400" />
+             Responsável Técnico (Prancha de Lote)
+           </h2>
+           <p className="text-xs text-gray-500">Usado na geração automática da prancha PDF no Mapa GIS.</p>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Nome *</label>
+                 <input type="text" name="name" value={technical.name} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Título profissional</label>
+                 <input type="text" name="title" value={technical.title} onChange={handleTechChange} placeholder="Eng. Civil" className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">CFT / CREA / CAU</label>
+                 <select name="registry_type" value={technical.registry_type} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]">
+                    <option value="CREA">CREA</option>
+                    <option value="CAU">CAU</option>
+                    <option value="CFT">CFT</option>
+                 </select>
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Número do registro</label>
+                 <input type="text" name="registry_number" value={technical.registry_number} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Telefone</label>
+                 <input type="text" name="phone" value={technical.phone} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">E-mail</label>
+                 <input type="email" name="email" value={technical.email} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div className="md:col-span-2">
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Assinatura</label>
+                 <div className="flex items-center gap-4">
+                   <div className="w-28 h-14 rounded-md border border-[var(--color-border)] bg-black/20 flex items-center justify-center overflow-hidden">
+                     {technical.signature_url ? (
+                       <img src={technical.signature_url} alt="Assinatura RT" className="w-full h-full object-contain" />
+                     ) : (
+                       <span className="text-[10px] text-gray-500">Sem assinatura</span>
+                     )}
+                   </div>
+                   <input type="file" accept="image/*" className="hidden" ref={techSignatureInputRef} onChange={handleTechSignatureUpload} />
+                   <button type="button" onClick={() => techSignatureInputRef.current?.click()} disabled={uploadingTechSignature} className="px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg text-sm font-medium flex items-center gap-2">
+                     {uploadingTechSignature ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                     Upload assinatura
+                   </button>
+                 </div>
               </div>
            </div>
         </div>

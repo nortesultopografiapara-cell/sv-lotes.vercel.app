@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer } from 'lucide-react';
+import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
@@ -345,6 +346,13 @@ export default function MapPage() {
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const [lotSheetModalOpen, setLotSheetModalOpen] = useState(false);
+  const [lotSheetPickMode, setLotSheetPickMode] = useState(false);
+  const [lotSheetTarget, setLotSheetTarget] = useState<{
+    id: string;
+    number?: string;
+    block?: string;
+  } | null>(null);
 
   // Street Guides States
   const [streetGuides, setStreetGuides] = useState<any[]>([]);
@@ -1494,6 +1502,22 @@ export default function MapPage() {
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
              </button>
+
+             {/* Prancha PDF */}
+             <button
+                type="button"
+                onClick={() => {
+                  console.log('LOT_SHEET_PRINT_CLICK');
+                  setLotSheetModalOpen(true);
+                  setLotSheetPickMode(true);
+                  setMeasureActive(false);
+                  setDrawStreetActive(false);
+                }}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetModalOpen ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#c084fc]'}`}
+             >
+                <Printer className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha do Lote</span>
+             </button>
              
              {/* Map Style */}
              <button 
@@ -1561,8 +1585,28 @@ export default function MapPage() {
             drawStreetActive={drawStreetActive}
             onSaveStreetGuide={handleSaveStreetGuide}
             onDeleteStreetGuide={handleDeleteStreetGuide}
+            lotSheetPickMode={lotSheetPickMode}
+            onLotSheetLotPick={(lot) => {
+              setLotSheetTarget(lot);
+              setLotSheetPickMode(false);
+            }}
           />
         </div>
+
+        {lotSheetModalOpen && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
+          <LotSheetPrintModal
+            projectId={selectedProject.id}
+            tenantId={String(saasTenantId || user?.tenant_id || selectedProject.tenant_id)}
+            lot={lotSheetTarget}
+            pickMode={lotSheetPickMode}
+            onClose={() => {
+              setLotSheetModalOpen(false);
+              setLotSheetPickMode(false);
+              setLotSheetTarget(null);
+            }}
+            onRequestPick={() => setLotSheetPickMode(true)}
+          />
+        )}
 
         {/* Modal KML Import */}
         {isImportModalOpen && (

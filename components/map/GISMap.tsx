@@ -1027,6 +1027,8 @@ export default function GISMap({
   onSaveStreetGuide,
   onDeleteStreetGuide,
   labelsMinZoom,
+  lotSheetPickMode = false,
+  onLotSheetLotPick,
 }: {
   projectId?: string;
   activeLayer?: "streets" | "satellite" | "dark";
@@ -1040,6 +1042,13 @@ export default function GISMap({
   onDeleteStreetGuide?: (id: string) => void;
   /** Rótulos permanentes só quando zoom >= valor (ex.: 17 no dashboard). */
   labelsMinZoom?: number;
+  /** Modo seleção de lote para prancha PDF */
+  lotSheetPickMode?: boolean;
+  onLotSheetLotPick?: (lot: {
+    id: string;
+    number?: string;
+    block?: string;
+  }) => void;
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -1050,6 +1059,7 @@ export default function GISMap({
   const [mapZoom, setMapZoom] = useState(18);
   const showPermanentLabels =
     labelsMinZoom == null || mapZoom >= labelsMinZoom;
+  const sheetPickActive = Boolean(lotSheetPickMode);
 
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
@@ -2037,16 +2047,27 @@ export default function GISMap({
               <Polygon
                 key={lot.id}
                 positions={lot.bounds}
-                interactive={!(drawStreetActive || measureActive)}
+                interactive={sheetPickActive || !(drawStreetActive || measureActive)}
                 pathOptions={{
-                  color: "#000000",
-                  fillColor: getStatusColor(lot.status),
-                  fillOpacity: 0.75,
+                  color: sheetPickActive ? "#4999e9" : "#000000",
+                  fillColor: sheetPickActive ? "#4999e9" : getStatusColor(lot.status),
+                  fillOpacity: sheetPickActive ? 0.35 : 0.75,
                   stroke: true,
-                  weight: 1,
+                  weight: sheetPickActive ? 2 : 1,
                 }}
                 eventHandlers={{
+                  click: () => {
+                    if (sheetPickActive && onLotSheetLotPick) {
+                      console.log('LOT_SHEET_LOT_SELECTED', { id: lot.id, number: lot.number });
+                      onLotSheetLotPick({
+                        id: lot.id,
+                        number: String(lot.number || ''),
+                        block: String(lot.block || ''),
+                      });
+                    }
+                  },
                   mouseover: (e) => {
+                    if (sheetPickActive) return;
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 1,
@@ -2054,6 +2075,7 @@ export default function GISMap({
                     });
                   },
                   mouseout: (e) => {
+                    if (sheetPickActive) return;
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 0.75,
@@ -2062,7 +2084,7 @@ export default function GISMap({
                   },
                 }}
               >
-                {showPermanentLabels && displayNum && displayNum !== "0" && (
+                {showPermanentLabels && displayNum && displayNum !== "0" && !sheetPickActive && (
                   <Tooltip
                     permanent
                     direction="center"
@@ -2076,23 +2098,25 @@ export default function GISMap({
                     </div>
                   </Tooltip>
                 )}
-                <Popup>
-                  <LotPopupContent
-                    lot={lot}
-                    onAction={handleLotAction}
-                    onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
-                    onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                    canEditSale={userCanEditSale}
-                    userRole={user?.role}
-                    onEditSale={(l) => void openEditSaleForm(l)}
-                    onViewContract={handleViewContract}
-                    onRegenerateContract={(l) =>
-                      void handleRegenerateContractFromMap(l)
-                    }
-                    onViewFinance={handleViewFinance}
-                    actionLoading={editSaleLoading || actionLoading}
-                  />
-                </Popup>
+                {!sheetPickActive && (
+                  <Popup>
+                    <LotPopupContent
+                      lot={lot}
+                      onAction={handleLotAction}
+                      onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
+                      onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
+                      canEditSale={userCanEditSale}
+                      userRole={user?.role}
+                      onEditSale={(l) => void openEditSaleForm(l)}
+                      onViewContract={handleViewContract}
+                      onRegenerateContract={(l) =>
+                        void handleRegenerateContractFromMap(l)
+                      }
+                      onViewFinance={handleViewFinance}
+                      actionLoading={editSaleLoading || actionLoading}
+                    />
+                  </Popup>
+                )}
               </Polygon>
             );
           })}
