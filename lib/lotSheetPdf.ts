@@ -164,6 +164,12 @@ function edgeLengthsFromRing(localRing: [number, number][]): string[] {
   return out;
 }
 
+function segmentTextAngle(dx: number, dy: number): number {
+  let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (angle > 90 || angle <= -90) angle += 180;
+  return angle;
+}
+
 function edgeOutwardLabelPos(
   p1: [number, number],
   p2: [number, number],
@@ -183,7 +189,7 @@ function edgeOutwardLabelPos(
     nx = -nx;
     ny = -ny;
   }
-  const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const angle = segmentTextAngle(dx, dy);
   return { x: mx + nx * offsetMm, y: my + ny * offsetMm, angle };
 }
 
@@ -192,20 +198,23 @@ function drawEdgeMeasures(
   points: [number, number][],
   measures: string[],
 ) {
-  const c = centroid(points);
-  const n = Math.min(points.length, measures.length);
+  const verts = preparePolygonVertices(points);
+  const c = centroid(verts);
+  const n = Math.min(verts.length, measures.length);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...BLACK);
   for (let i = 0; i < n; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % points.length];
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % verts.length];
     const label = measures[i];
     if (!label || label === '—') continue;
-    const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, 6);
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, 5);
     doc.text(label, x, y, {
       align: 'center',
-      angle: angle > 90 || angle < -90 ? angle + 180 : angle,
+      angle,
     });
   }
 }
@@ -223,6 +232,30 @@ function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
   });
 }
 
+function labelAtEdge(
+  doc: jsPDF,
+  points: [number, number][],
+  edgeIndex: number,
+  text: string,
+  offsetMm: number,
+) {
+  const verts = preparePolygonVertices(points);
+  const n = verts.length;
+  if (!n || !text || text === '—') return;
+  const i = ((edgeIndex % n) + n) % n;
+  const p1 = verts[i];
+  const p2 = verts[(i + 1) % n];
+  const c = centroid(verts);
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, offsetMm);
+  doc.text(text, x, y, {
+    align: 'center',
+    angle,
+    maxWidth: 52,
+  });
+}
+
 function placeSideConfrontantLabels(
   doc: jsPDF,
   points: [number, number][],
@@ -232,57 +265,106 @@ function placeSideConfrontantLabels(
     ladoDireito: string;
     ladoEsquerdo: string;
   },
+  frontEdgeIndex: number,
 ) {
-  if (!points.length) return;
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const c = centroid(points);
+  const verts = preparePolygonVertices(points);
+  const n = verts.length;
+  if (n < 3) return;
 
-  const slots = [
-    { value: sides.frente, x: c[0], y: minY - 9, angle: 0 },
-    { value: sides.fundo, x: c[0], y: maxY + 9, angle: 0 },
-    { value: sides.ladoDireito, x: maxX + 11, y: c[1], angle: 90 },
-    { value: sides.ladoEsquerdo, x: minX - 11, y: c[1], angle: 90 },
-  ];
+  const frenteIdx = ((frontEdgeIndex % n) + n) % n;
+  const fundoIdx = (frenteIdx + Math.floor(n / 2)) % n;
+  const dirIdx = (frenteIdx + 1) % n;
+  const esqIdx = (frenteIdx + n - 1) % n;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(...BLACK);
 
-  for (const slot of slots) {
-    if (!slot.value || slot.value === '—') continue;
-    doc.text(slot.value, slot.x, slot.y, {
-      align: 'center',
-      angle: slot.angle,
-      maxWidth: 48,
-    });
-  }
+  labelAtEdge(doc, verts, frenteIdx, sides.frente, 9);
+  labelAtEdge(doc, verts, fundoIdx, sides.fundo, 9);
+  labelAtEdge(doc, verts, dirIdx, sides.ladoDireito, 9);
+  labelAtEdge(doc, verts, esqIdx, sides.ladoEsquerdo, 9);
 }
 
-function drawAreaCenter(doc: jsPDF, points: [number, number][], areaText: string) {
-  const c = centroid(points);
+function drawAreaCenter(
+  doc: jsPDF,
+  points: [number, number][],
+  areaText: string,
+  frontEdgeIndex: number,
+  lotBadgePos: [number, number],
+) {
+  const verts = preparePolygonVertices(points);
+  const c = centroid(verts);
+  let ax = c[0];
+  let ay = c[1];
+
+  const n = verts.length;
+  if (n >= 3) {
+    const fi = ((frontEdgeIndex % n) + n) % n;
+    const p1 = verts[fi];
+    const p2 = verts[(fi + 1) % n];
+    const midF = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number];
+    let vx = c[0] - midF[0];
+    let vy = c[1] - midF[1];
+    const len = Math.hypot(vx, vy) || 1;
+    vx /= len;
+    vy /= len;
+    const shift = 8;
+    ax = c[0] + vx * shift;
+    ay = c[1] + vy * shift;
+  }
+
+  if (Math.hypot(ax - lotBadgePos[0], ay - lotBadgePos[1]) < 12) {
+    const dx = ax - lotBadgePos[0];
+    const dy = ay - lotBadgePos[1];
+    const dlen = Math.hypot(dx, dy) || 1;
+    ax += (dx / dlen) * 10;
+    ay += (dy / dlen) * 10;
+  }
+
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BLUE);
   doc.setFontSize(13);
-  doc.text(areaText, c[0], c[1], { align: 'center' });
+  doc.text(areaText, ax, ay, { align: 'center' });
   doc.setTextColor(...BLACK);
 }
 
-function drawLotNumberBadge(doc: jsPDF, points: [number, number][], lotNum: string) {
-  const c = centroid(points);
+function drawLotNumberBadge(
+  doc: jsPDF,
+  points: [number, number][],
+  lotNum: string,
+  frontEdgeIndex: number,
+): [number, number] {
+  const verts = preparePolygonVertices(points);
+  const n = verts.length;
+  const c = centroid(verts);
+  if (n < 3) {
+    doc.text(lotNum, c[0], c[1], { align: 'center' });
+    return c;
+  }
+
+  const fi = ((frontEdgeIndex % n) + n) % n;
+  const p1 = verts[fi];
+  const p2 = verts[(fi + 1) % n];
+  const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number];
+  let vx = c[0] - mid[0];
+  let vy = c[1] - mid[1];
+  const len = Math.hypot(vx, vy) || 1;
+  vx /= len;
+  vy /= len;
+  const inset = 11;
+  const pos: [number, number] = [mid[0] + vx * inset, mid[1] + vy * inset];
+
   const r = 5.5;
   doc.setDrawColor(...BLACK);
   doc.setFillColor(255, 255, 255);
   doc.setLineWidth(0.45);
-  doc.circle(c[0], c[1], r, 'FD');
+  doc.circle(pos[0], pos[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...BLACK);
-  doc.text(lotNum, c[0], c[1] + 1.2, { align: 'center' });
+  doc.text(lotNum, pos[0], pos[1] + 1.2, { align: 'center' });
+  return pos;
 }
 
 function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
@@ -361,6 +443,10 @@ function drawMetricTable(
     ];
     cells.forEach((cell, ci) => {
       doc.rect(x, y, colWidths[ci], rowH);
+      const isCoordCol = ci >= 4;
+      const longMsg = cell.includes('não disponíveis');
+      if (isCoordCol && longMsg) doc.setFontSize(3.8);
+      else doc.setFontSize(5);
       doc.text(cell, x + colWidths[ci] / 2, y + 2.9, {
         align: 'center',
         maxWidth: colWidths[ci] - 1,
@@ -435,7 +521,7 @@ function drawQuadraLocation(
   if (!sketch?.lots.length) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
-    doc.text('Croqui da quadra indisponível', inner.x + inner.w / 2, inner.y + inner.h / 2, {
+    doc.text('Croqui indisponível — sem geometria na quadra', inner.x + inner.w / 2, inner.y + inner.h / 2, {
       align: 'center',
     });
     return;
@@ -450,11 +536,14 @@ function drawQuadraLocation(
       stroke: BLACK,
       lw: lot.isSelected ? 0.55 : 0.3,
     });
-    if (lot.isSelected) {
-      const c = centroid(pts);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6);
-      doc.text(lot.number, c[0], c[1] + 1, { align: 'center' });
+    const c = centroid(pts);
+    doc.setFont('helvetica', lot.isSelected ? 'bold' : 'normal');
+    doc.setFontSize(lot.isSelected ? 6 : 4.5);
+    doc.setTextColor(...BLACK);
+    doc.text(lot.number, c[0], c[1], { align: 'center' });
+    if (lot.areaLabel) {
+      doc.setFontSize(3.8);
+      doc.text(lot.areaLabel, c[0], c[1] + 2.8, { align: 'center' });
     }
   });
 
@@ -690,11 +779,12 @@ export async function generateLotSheetPdf(
     ),
   );
 
+  const frontEdge = input.frontEdgeIndex ?? 0;
   drawEdgeMeasures(doc, sheetPts, edgeLengthsFromRing(input.geometry.localRing));
   drawVertexMarkers(doc, sheetPts);
-  drawAreaCenter(doc, sheetPts, input.measures.area);
-  drawLotNumberBadge(doc, sheetPts, lotNum);
-  placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants);
+  const badgePos = drawLotNumberBadge(doc, sheetPts, lotNum, frontEdge);
+  drawAreaCenter(doc, sheetPts, input.measures.area, frontEdge, badgePos);
+  placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants, frontEdge);
   drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
 
   drawMetricTable(doc, tableBox, input.metricRows);

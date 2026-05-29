@@ -17,6 +17,7 @@ import {
   buildSegmentTable,
   buildSideConfrontants,
   buildVertexTable,
+  findFrontEdgeIndex,
   createLotSheetValidation,
   type LotSheetSideConfrontants,
   latLngRingFromBlock,
@@ -70,6 +71,8 @@ export type LotSheetPayload = {
   vertices: LotSheetVertexRow[];
   segments: LotSheetSegmentRow[];
   metricRows: LotSheetMetricRow[];
+  coordinatesAvailable: boolean;
+  frontEdgeIndex: number;
   quadraStreetNames: string[];
   validation: { code: string; url: string; emittedAt: string };
   version: string;
@@ -396,7 +399,9 @@ export async function loadLotSheetPayload(
 
   const { data: allBlocks } = await supabase
     .from('blocks')
-    .select('id, number, lot, block, block_name, quadra, geometry, bounds, status')
+    .select(
+      'id, number, lot, block, block_name, quadra, name, geometry, bounds, status, area',
+    )
     .eq('project_id', params.projectId);
 
   const { data: guides } = await supabase
@@ -466,7 +471,17 @@ export async function loadLotSheetPayload(
   const projectMap = buildProjectMap(params.blockId, blocksList);
   const vertices = buildVertexTable(localRing);
   const segments = buildSegmentTable(localRing);
-  const metricRows = buildMetricTable(localRing);
+  const { rows: metricRows, coordinatesAvailable } = buildMetricTable(
+    block as Record<string, unknown>,
+    localRing,
+    project as Record<string, unknown>,
+  );
+  const frontEdgeIndex = findFrontEdgeIndex(
+    localRing,
+    block as Record<string, unknown>,
+    guidesList,
+    ring,
+  );
   const validation = createLotSheetValidation();
   const sideConfrontants = buildSideConfrontants(
     block as Record<string, unknown>,
@@ -512,6 +527,8 @@ export async function loadLotSheetPayload(
     vertices,
     segments,
     metricRows,
+    coordinatesAvailable,
+    frontEdgeIndex,
     quadraStreetNames,
     validation,
     version: LOT_SHEET_VERSION,

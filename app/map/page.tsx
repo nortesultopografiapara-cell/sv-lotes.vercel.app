@@ -1258,7 +1258,13 @@ export default function MapPage() {
              'Lado Dir.': lado_direito !== null ? String(lado_direito).replace(/[^0-9.]/g, '') : null,
              'Lado Esq.': lado_esquerdo !== null ? String(lado_esquerdo).replace(/[^0-9.]/g, '') : null,
              segments_json: b.segments,
-             coordinates_utm_json: b.coords,
+             coordinates_utm_json:
+               b.segments?.length > 0
+                 ? b.segments.map((s: { easting: number; northing: number }) => [
+                     s.easting,
+                     s.northing,
+                   ])
+                 : null,
              source_import: 'TXT_CIVIL3D'
           };
       });

@@ -6,6 +6,10 @@ import bearing from '@turf/bearing';
 import { centroid, distance, booleanIntersects, nearestPointOnLine } from '@turf/turf';
 import { lineString, point, polygon as turfPolygon } from '@turf/helpers';
 import { createDocumentValidationCode, getValidationUrl } from '@/lib/pdfValidation';
+import {
+  coordinatesUnavailableMessage,
+  resolveRealCoordinateRing,
+} from '@/lib/lotSheetCoordinates';
 import { formatStreetDisplay } from '@/lib/streetGuide';
 
 export type CardinalDirection = 'NORTE' | 'SUL' | 'LESTE' | 'OESTE';
@@ -20,6 +24,7 @@ export type LotSheetSketchLot = {
   number: string;
   localRing: [number, number][];
   isSelected: boolean;
+  areaLabel: string;
 };
 
 export type LotSheetBlockSketch = {
@@ -126,7 +131,221 @@ export function toLocalMetersFromRing(ring: [number, number][]): {
 }
 
 function normalizeQuadra(block: Record<string, unknown>): string {
-  return String(block.block_name || block.block || block.quadra || '').trim();
+  const raw = String(
+    block.block_name || block.block || block.quadra || block.name || '',
+  ).trim();
+  if (!raw) return '';
+  return raw.replace(/^0+/, '').toUpperCase();
+}
+
+function formatSketchArea(block: Record<string, unknown>): string {
+  const a = block.area;
+  if (a === null || a === undefined || a === '') return '';
+  const n = Number(a);
+  if (!Number.isFinite(n)) return '';
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`;
+}
+
+/** Origem única para alinhar todos os lotes no croqui da quadra. */
+export function toSharedLocalMetersFromRings(rings: [number, number][][]): {
+  localRings: [number, number][][];
+  bbox: { minX: number; maxX: number; minY: number; maxY: number };
+} {
+  const all: [number, number][] = rings.filter((r) => r.length >= 3).flat();
+  if (!all.length) {
+    return {
+      localRings: [],
+      bbox: { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+    };
+  }
+  const origin: [number, number] = [all[0][0], all[0][1]];
+  const mPerDegLat = 111320;
+  const mPerDegLng = 111320 * Math.cos((origin[0] * Math.PI) / 180);
+
+  const localRings = rings.map((ring) =>
+    ring.map(
+      ([lat, lng]) =>
+        [(lng - origin[1]) * mPerDegLng, (lat - origin[0]) * mPerDegLat] as [
+          number,
+          number,
+        ],
+    ),
+  );
+
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const ring of localRings) {
+    for (const [x, y] of ring) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    return {
+      localRings,
+      bbox: { minX: 0, maxX: 1, minY: 0, maxY: 1 },
+    };
+  }
+  return { localRings, bbox: { minX, maxX, minY, maxY } };
+}
+
+function findNearbyBlocks(
+  target: Record<string, unknown>,
+  allBlocks: Record<string, unknown>[],
+  targetId: string,
+  maxMeters: number,
+): Record<string, unknown>[] {
+  const targetRing = latLngRingFromBlock(target);
+  if (targetRing.length < 3) return [target];
+
+  const targetPoly = turfPolygon([
+    targetRing.map(([lat, lng]) => [lng, lat]),
+  ]);
+  const targetC = centroid(targetPoly);
+
+  const nearby: Record<string, unknown>[] = [target];
+  for (const b of allBlocks) {
+    if (String(b.id) === targetId) continue;
+    const ring = latLngRingFromBlock(b);
+    if (ring.length < 3) continue;
+    try {
+      const otherPoly = turfPolygon([ring.map(([lat, lng]) => [lng, lat])]);
+      const d = distance(targetC, centroid(otherPoly), { units: 'meters' });
+      if (d <= maxMeters) nearby.push(b);
+    } catch {
+      /* ignore */
+    }
+  }
+  return nearby;
+}
+
+function blocksForQuadraSketch(
+  targetId: string,
+  targetBlock: Record<string, unknown>,
+  allBlocks: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const quadraKey = normalizeQuadra(targetBlock);
+  let list: Record<string, unknown>[] = [];
+
+  if (quadraKey) {
+    list = allBlocks.filter((b) => normalizeQuadra(b) === quadraKey);
+  }
+
+  if (list.length < 2) {
+    list = findNearbyBlocks(targetBlock, allBlocks, targetId, 120);
+  }
+
+  const withGeom = list.filter((b) => latLngRingFromBlock(b).length >= 3);
+  if (withGeom.length) return withGeom;
+
+  const selfRing = latLngRingFromBlock(targetBlock);
+  return selfRing.length >= 3 ? [targetBlock] : [];
+}
+
+/** Índice da aresta de frente no anel (para posicionar número do lote). */
+export function findFrontEdgeIndex(
+  localRing: [number, number][],
+  block: Record<string, unknown>,
+  streetGuides: Record<string, unknown>[],
+  latLngRing: [number, number][],
+): number {
+  const verts: [number, number][] = [];
+  for (const p of localRing) {
+    const last = verts[verts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.01) verts.push(p);
+  }
+  if (verts.length > 2) {
+    const f = verts[0];
+    const l = verts[verts.length - 1];
+    if (Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.01) verts.pop();
+  }
+  const n = verts.length;
+  if (n < 3) return 0;
+
+  const frontStreetId = String(block.front_street_id || '').trim();
+  let bestIdx = -1;
+  let bestDist = Infinity;
+
+  if (latLngRing.length >= 3) {
+    const targetPoly = turfPolygon([
+      latLngRing.map(([lat, lng]) => [lng, lat]),
+    ]);
+    const targetC = centroid(targetPoly);
+    const tc = targetC.geometry.coordinates as [number, number];
+
+    const guidePasses = [
+      frontStreetId
+        ? streetGuides.filter((g) => String(g.id) === frontStreetId)
+        : [],
+      streetGuides,
+    ];
+
+    for (const pass of guidePasses) {
+      for (const g of pass) {
+      const line = streetGuideToLine(g);
+      if (!line) continue;
+      try {
+        const np = nearestPointOnLine(line, point(tc));
+        const streetPt = np.geometry.coordinates as [number, number];
+        for (let i = 0; i < n; i++) {
+          const p1 = verts[i];
+          const p2 = verts[(i + 1) % n];
+          const midLocal = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [
+            number,
+            number,
+          ];
+          const midLat = latLngRing[i]
+            ? [
+                (latLngRing[i][0] + latLngRing[(i + 1) % latLngRing.length][0]) /
+                  2,
+                (latLngRing[i][1] + latLngRing[(i + 1) % latLngRing.length][1]) /
+                  2,
+              ]
+            : [0, 0];
+          const midLngLat = [midLat[1], midLat[0]] as [number, number];
+          const d = distance(point(midLngLat), point(streetPt), {
+            units: 'meters',
+          });
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      }
+      if (bestIdx >= 0 && bestDist < 80) break;
+    }
+  }
+
+  if (bestIdx >= 0 && bestDist < 80) return bestIdx;
+
+  let longest = 0;
+  let longestIdx = 0;
+  let lowestMidY = Infinity;
+  let lowestIdx = 0;
+
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const midY = (p1[1] + p2[1]) / 2;
+    if (len > longest) {
+      longest = len;
+      longestIdx = i;
+    }
+    if (midY < lowestMidY) {
+      lowestMidY = midY;
+      lowestIdx = i;
+    }
+  }
+
+  return longest > 0 ? longestIdx : lowestIdx;
 }
 
 function bearingToCardinal(deg: number): CardinalDirection {
@@ -318,42 +537,41 @@ export function buildBlockSketch(
   allBlocks: Record<string, unknown>[],
 ): LotSheetBlockSketch | null {
   const quadra = normalizeQuadra(targetBlock);
-  const sameQuadra = allBlocks.filter((b) => {
-    if (!quadra) return String(b.id) === targetId;
-    return normalizeQuadra(b) === quadra;
+  const blockList = blocksForQuadraSketch(targetId, targetBlock, allBlocks);
+  const pairs = blockList
+    .map((b) => ({ block: b, ring: latLngRingFromBlock(b) }))
+    .filter((p) => p.ring.length >= 3);
+
+  if (!pairs.length) return null;
+
+  const { localRings, bbox } = toSharedLocalMetersFromRings(
+    pairs.map((p) => p.ring),
+  );
+  const lots: LotSheetSketchLot[] = [];
+
+  pairs.forEach((p, idx) => {
+    if (!localRings[idx]?.length) return;
+    lots.push({
+      id: String(p.block.id),
+      number: String(p.block.number || p.block.lot || '—'),
+      localRing: localRings[idx],
+      isSelected: String(p.block.id) === targetId,
+      areaLabel: formatSketchArea(p.block),
+    });
   });
 
-  const lots: LotSheetSketchLot[] = [];
-  let globalBbox = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-
-  for (const b of sameQuadra) {
-    const ring = latLngRingFromBlock(b);
-    if (ring.length < 3) continue;
-    const { localRing, bbox } = toLocalMetersFromRing(ring);
-    if (!localRing.length) continue;
-    lots.push({
-      id: String(b.id),
-      number: String(b.number || b.lot || '—'),
-      localRing,
-      isSelected: String(b.id) === targetId,
-    });
-    globalBbox = {
-      minX: Math.min(globalBbox.minX, bbox.minX),
-      maxX: Math.max(globalBbox.maxX, bbox.maxX),
-      minY: Math.min(globalBbox.minY, bbox.minY),
-      maxY: Math.max(globalBbox.maxY, bbox.maxY),
-    };
-  }
-
   if (!lots.length) return null;
-  if (!Number.isFinite(globalBbox.minX)) {
-    globalBbox = { minX: 0, maxX: 1, minY: 0, maxY: 1 };
-  }
+
+  console.log('LOT_SHEET_BLOCK_SKETCH', {
+    quadra: quadra || 'proximidade',
+    lots: lots.length,
+    selected: targetId,
+  });
 
   return {
     quadra: quadra || '—',
     lots,
-    bbox: globalBbox,
+    bbox,
   };
 }
 
@@ -429,39 +647,59 @@ function vertexMarker(i: number): string {
   return `M-${String(i + 1).padStart(2, '0')}`;
 }
 
-export function buildMetricTable(localRing: [number, number][]): LotSheetMetricRow[] {
+export function buildMetricTable(
+  block: Record<string, unknown>,
+  localRing: [number, number][],
+  project?: Record<string, unknown> | null,
+): { rows: LotSheetMetricRow[]; coordinatesAvailable: boolean } {
   const rows: LotSheetMetricRow[] = [];
-  const verts: [number, number][] = [];
-  for (const p of localRing) {
-    const last = verts[verts.length - 1];
-    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.01) verts.push(p);
-  }
-  if (verts.length > 2) {
-    const f = verts[0];
-    const l = verts[verts.length - 1];
-    if (Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.01) verts.pop();
-  }
-  if (verts.length < 2) return rows;
+  const real = resolveRealCoordinateRing(block, project);
+  const unavailableMsg = coordinatesUnavailableMessage();
 
-  for (let i = 0; i < verts.length; i++) {
-    const p1 = verts[i];
-    const p2 = verts[(i + 1) % verts.length];
+  const localVerts: [number, number][] = [];
+  for (const p of localRing) {
+    const last = localVerts[localVerts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.01) {
+      localVerts.push(p);
+    }
+  }
+  if (localVerts.length > 2) {
+    const f = localVerts[0];
+    const l = localVerts[localVerts.length - 1];
+    if (Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.01) localVerts.pop();
+  }
+
+  const coordVerts = real.available ? real.ring : localVerts;
+  const n = Math.max(localVerts.length, coordVerts.length);
+  if (n < 2) return { rows, coordinatesAvailable: real.available };
+
+  const edgeCount = localVerts.length >= 2 ? localVerts.length : coordVerts.length;
+
+  for (let i = 0; i < edgeCount; i++) {
+    const p1 = localVerts[i] ?? localVerts[0];
+    const p2 = localVerts[(i + 1) % localVerts.length] ?? p1;
     const dx = p2[0] - p1[0];
     const dy = p2[1] - p1[1];
     const dist = Math.hypot(dx, dy);
-    if (dist < 0.01) continue;
-    const j = (i + 1) % verts.length;
+    if (dist < 0.01 && !real.available) continue;
+
+    const c2 = coordVerts[(i + 1) % coordVerts.length] ?? coordVerts[0];
+    const j = (i + 1) % edgeCount;
+
     rows.push({
       from: vertexMarker(i),
       to: vertexMarker(j),
       azimute: formatAzimuth(azimuthFromSegment(dx, dy)),
       distancia: `${dist.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
-      coordE: formatCoordValue(p2[0]),
-      coordN: formatCoordValue(p2[1]),
+      coordE: real.available
+        ? formatCoordValue(c2[0])
+        : unavailableMsg,
+      coordN: real.available ? formatCoordValue(c2[1]) : '—',
     });
     if (rows.length >= 20) break;
   }
-  return rows;
+
+  return { rows, coordinatesAvailable: real.available };
 }
 
 export function buildSegmentTable(localRing: [number, number][]): LotSheetSegmentRow[] {
