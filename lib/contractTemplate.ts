@@ -5,6 +5,10 @@ import {
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
 import {
+  buildLotAddressLine,
+  formatMemorialFrontClause,
+} from "@/lib/streetGuide";
+import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from "@/lib/contractSeller";
@@ -210,6 +214,12 @@ export function generateContractHTML({
       ? formatChanfreClause(chanfreInfo)
       : "";
 
+  const lotAddressLine = buildLotAddressLine(block || {});
+  const memorialFrontClause = formatMemorialFrontClause(block || {});
+  const lotLocationSuffix = lotAddressLine
+    ? `, situado em <strong>${lotAddressLine}</strong>`
+    : '';
+
   // Cidade, UF e Foro hierarquia correta
   const empreendimentoCidade = toTitleCase(
     (isValid(project?.city) ? project.city : null) ||
@@ -404,7 +414,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>${chanfreClause}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>${memorialFrontClause !== 'confrontando pela frente com via de acesso' ? ` (${memorialFrontClause})` : ''}, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>${chanfreClause}.
                 </p>
             </div>
 

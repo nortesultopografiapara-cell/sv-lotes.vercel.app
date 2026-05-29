@@ -6,6 +6,7 @@ import bearing from '@turf/bearing';
 import { centroid, distance, booleanIntersects, nearestPointOnLine } from '@turf/turf';
 import { lineString, point, polygon as turfPolygon } from '@turf/helpers';
 import { createDocumentValidationCode, getValidationUrl } from '@/lib/pdfValidation';
+import { formatStreetDisplay } from '@/lib/streetGuide';
 
 export type CardinalDirection = 'NORTE' | 'SUL' | 'LESTE' | 'OESTE';
 
@@ -165,9 +166,9 @@ function detectStreetDirection(
       const dir = bearingToCardinal(brg);
       const dist = distance(point(tc), point(nc), { units: 'meters' });
       if (dist > 80) continue;
-      const name = String(g.name || 'Rua').trim();
+      const name = formatStreetDisplay(g.type as string, g.name as string);
       if (!best || dist < best.dist) {
-        best = { direction: dir, name: name.startsWith('Rua') ? name : `Rua ${name}`, dist };
+        best = { direction: dir, name, dist };
       }
     } catch {
       /* ignore */
@@ -175,6 +176,74 @@ function detectStreetDirection(
   }
 
   return best ? { direction: best.direction, name: best.name } : null;
+}
+
+const OPPOSITE_CARDINAL: Record<CardinalDirection, CardinalDirection> = {
+  NORTE: 'SUL',
+  SUL: 'NORTE',
+  LESTE: 'OESTE',
+  OESTE: 'LESTE',
+};
+
+const RIGHT_CARDINAL: Record<CardinalDirection, CardinalDirection> = {
+  NORTE: 'LESTE',
+  LESTE: 'SUL',
+  SUL: 'OESTE',
+  OESTE: 'NORTE',
+};
+
+const LEFT_CARDINAL: Record<CardinalDirection, CardinalDirection> = {
+  NORTE: 'OESTE',
+  OESTE: 'SUL',
+  SUL: 'LESTE',
+  LESTE: 'NORTE',
+};
+
+export type LotSheetSideConfrontants = {
+  frente: string;
+  fundo: string;
+  ladoDireito: string;
+  ladoEsquerdo: string;
+};
+
+/** Confrontantes por lado do lote (frente = logradouro). */
+export function buildSideConfrontants(
+  block: Record<string, unknown>,
+  targetId: string,
+  targetRing: [number, number][],
+  blocks: Record<string, unknown>[],
+  streetGuides: Record<string, unknown>[],
+): LotSheetSideConfrontants {
+  const rawFront = String(block.front_street_name || '').trim();
+  const frente =
+    rawFront && !/sem nome/i.test(rawFront)
+      ? rawFront
+      : 'Rua / via de acesso';
+
+  const cardinals = buildCardinalConfrontants(
+    targetId,
+    targetRing,
+    blocks,
+    streetGuides,
+  );
+  const byDir = Object.fromEntries(
+    cardinals.map((c) => [c.direction, c.label]),
+  ) as Partial<Record<CardinalDirection, string>>;
+
+  const streetHit = detectStreetDirection(targetRing, streetGuides);
+  const frontDir: CardinalDirection = streetHit?.direction || 'NORTE';
+
+  const pick = (d: CardinalDirection) => {
+    const v = byDir[d];
+    return v && v !== '—' ? v : '—';
+  };
+
+  return {
+    frente,
+    fundo: pick(OPPOSITE_CARDINAL[frontDir]),
+    ladoDireito: pick(RIGHT_CARDINAL[frontDir]),
+    ladoEsquerdo: pick(LEFT_CARDINAL[frontDir]),
+  };
 }
 
 export function buildCardinalConfrontants(

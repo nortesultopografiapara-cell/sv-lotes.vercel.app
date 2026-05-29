@@ -5,12 +5,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import {
+  buildLotAddressLine,
+  formatMemorialFrontClause,
+  normalizeStreetGuideRow,
+} from '@/lib/streetGuide';
+import {
   buildBlockSketch,
   buildCardinalConfrontants,
   buildProjectMap,
   buildSegmentTable,
+  buildSideConfrontants,
   buildVertexTable,
   createLotSheetValidation,
+  type LotSheetSideConfrontants,
   latLngRingFromBlock,
   LOT_SHEET_VERSION,
   toLocalMetersFromRing,
@@ -59,6 +66,9 @@ export type LotSheetPayload = {
     area: string;
   };
   scaleLabel: string;
+  sideConfrontants: LotSheetSideConfrontants;
+  lotAddressLine: string;
+  memorialFrontClause: string;
 };
 
 function formatMeasure(val: unknown): string {
@@ -353,7 +363,9 @@ export async function loadLotSheetPayload(
   );
 
   const blocksList = (allBlocks || []) as Record<string, unknown>[];
-  const guidesList = (guides || []) as Record<string, unknown>[];
+  const guidesList = ((guides || []) as Record<string, unknown>[]).map(
+    normalizeStreetGuideRow,
+  );
 
   const cardinalConfrontants = buildCardinalConfrontants(
     params.blockId,
@@ -376,6 +388,17 @@ export async function loadLotSheetPayload(
   const vertices = buildVertexTable(localRing);
   const segments = buildSegmentTable(localRing);
   const validation = createLotSheetValidation();
+  const sideConfrontants = buildSideConfrontants(
+    block as Record<string, unknown>,
+    params.blockId,
+    ring,
+    blocksList,
+    guidesList,
+  );
+  const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
+  const memorialFrontClause = formatMemorialFrontClause(
+    block as Record<string, unknown>,
+  );
 
   console.log('LOT_SHEET_GEOMETRY_PROCESSED', {
     points: ring.length,
@@ -420,5 +443,8 @@ export async function loadLotSheetPayload(
         : '—',
     },
     scaleLabel: `1 : ${scaleDenom}`,
+    sideConfrontants,
+    lotAddressLine,
+    memorialFrontClause,
   };
 }

@@ -51,6 +51,7 @@ import {
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
+import { formatStreetDisplay } from "@/lib/streetGuide";
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -572,6 +573,16 @@ function LotPopupContent({
                   : "--"}
               </span>
             </div>
+            {lot.frontStreetDisplay && (
+              <div className="col-span-2 flex justify-between items-start border-t border-emerald-100 pt-1 mt-0.5 bg-emerald-50/80 -mx-1 px-1 rounded">
+                <span className="text-gray-600 text-[10px] font-semibold">
+                  Frente para:
+                </span>
+                <span className="text-emerald-800 text-[10px] font-bold text-right max-w-[160px] leading-tight">
+                  {lot.frontStreetDisplay}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
@@ -1024,7 +1035,8 @@ export default function GISMap({
   streetGuides = [],
   streetGuidesVisible = true,
   drawStreetActive = false,
-  onSaveStreetGuide,
+  onStreetLineDrawn,
+  onEditStreetGuide,
   onDeleteStreetGuide,
   labelsMinZoom,
   lotSheetPickMode = false,
@@ -1038,7 +1050,8 @@ export default function GISMap({
   streetGuides?: any[];
   streetGuidesVisible?: boolean;
   drawStreetActive?: boolean;
-  onSaveStreetGuide?: (latlngs: L.LatLng[]) => void;
+  onStreetLineDrawn?: (latlngs: L.LatLng[]) => void;
+  onEditStreetGuide?: (guide: Record<string, unknown>) => void;
   onDeleteStreetGuide?: (id: string) => void;
   /** Rótulos permanentes só quando zoom >= valor (ex.: 17 no dashboard). */
   labelsMinZoom?: number;
@@ -1312,6 +1325,12 @@ export default function GISMap({
                 "Lado Dir.": lotMeasures.sides.ladoDireito,
                 "Lado Esq.": lotMeasures.sides.ladoEsquerdo,
                 chanfreInfo: lotMeasures.chanfre,
+                frontStreetName: b.front_street_name || null,
+                frontStreetType: b.front_street_type || null,
+                frontStreetWidth: b.front_street_width ?? null,
+                frontStreetDisplay: b.front_street_name
+                  ? formatStreetDisplay(b.front_street_type, b.front_street_name)
+                  : null,
               };
             })
             .filter((b) => b.bounds.length > 0);
@@ -2197,39 +2216,78 @@ export default function GISMap({
 
         {streetGuidesVisible &&
           streetGuides.map((guide) => {
-            if (!guide.geometry_geojson || !guide.geometry_geojson.coordinates)
-              return null;
-            const pts = guide.geometry_geojson.coordinates.map((c: any[]) => [
-              c[1],
-              c[0],
-            ]); // GeoJSON is [lng, lat], Leaflet is [lat, lng]
+            const geo = guide.geometry_geojson || guide.geometry;
+            if (!geo?.coordinates) return null;
+            const pts = geo.coordinates.map((c: number[]) => [c[1], c[0]]);
+            const label =
+              guide.displayName ||
+              formatStreetDisplay(guide.type, guide.name);
+            const widthLabel =
+              guide.width != null && guide.width !== ''
+                ? `${Number(guide.width).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
+                : null;
             return (
               <Polyline
                 key={`guide-${guide.id}`}
                 positions={pts}
                 pathOptions={{
-                  color: "#10b981",
+                  color: guide.active === false ? "#9ca3af" : "#10b981",
                   weight: 4,
-                  dashArray: "10, 10",
+                  dashArray: guide.active === false ? "4, 6" : "10, 10",
                 }}
               >
-                <Tooltip direction="top" sticky>
-                  Linha-Guia: {guide.name}
+                <Tooltip permanent direction="center" className="street-guide-label">
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#047857",
+                      textShadow: "0 0 2px white, 0 0 4px white",
+                    }}
+                  >
+                    {label}
+                  </span>
                 </Tooltip>
                 <Popup>
-                  <div className="p-2 space-y-2 font-sans font-medium">
-                    <p className="text-gray-900 mb-2">
-                      <strong>Linha de Rua</strong>
+                  <div className="p-2 space-y-2 font-sans min-w-[200px]">
+                    <p className="text-gray-900 font-bold text-sm">Logradouro</p>
+                    <p className="text-xs text-gray-600">
+                      <strong>Tipo:</strong> {guide.type || "Rua"}
                     </p>
-                    <p className="text-sm text-gray-700">{guide.name}</p>
-                    {onDeleteStreetGuide && (
-                      <button
-                        onClick={() => onDeleteStreetGuide(guide.id)}
-                        className="w-full flex items-center justify-center gap-2 p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" /> Apagar Linha
-                      </button>
+                    <p className="text-sm text-gray-800 font-semibold">{label}</p>
+                    {guide.code && (
+                      <p className="text-xs text-gray-600">
+                        <strong>Código:</strong> {guide.code}
+                      </p>
                     )}
+                    {widthLabel && (
+                      <p className="text-xs text-gray-600">
+                        <strong>Largura:</strong> {widthLabel}
+                      </p>
+                    )}
+                    {guide.notes && (
+                      <p className="text-xs text-gray-500 italic">{guide.notes}</p>
+                    )}
+                    <div className="flex flex-col gap-1 pt-1">
+                      {onEditStreetGuide && (
+                        <button
+                          type="button"
+                          onClick={() => onEditStreetGuide(guide)}
+                          className="w-full p-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded text-xs font-semibold"
+                        >
+                          Editar
+                        </button>
+                      )}
+                      {onDeleteStreetGuide && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteStreetGuide(guide.id)}
+                          className="w-full flex items-center justify-center gap-2 p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs"
+                        >
+                          <Trash2 className="w-4 h-4" /> Apagar
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </Popup>
               </Polyline>
@@ -2250,7 +2308,7 @@ export default function GISMap({
           points={drawStreetPoints}
           setPoints={setDrawStreetPoints}
           onSaveLine={(line) => {
-            if (onSaveStreetGuide) onSaveStreetGuide(line);
+            if (onStreetLineDrawn) onStreetLineDrawn(line);
           }}
         />
       </MapContainer>
@@ -2260,8 +2318,8 @@ export default function GISMap({
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-emerald-600/90 backdrop-blur-sm border border-emerald-500 rounded-xl md:rounded-full px-4 py-2 shadow-lg flex fade-in-up w-auto min-w-[200px] text-center">
           <span className="text-[11px] md:text-sm font-bold text-white tracking-wider mx-auto">
             {drawStreetPoints.length === 0
-              ? "Clique no primeiro ponto da rua"
-              : "Clique no segundo ponto da rua"}
+              ? "Clique no início do logradouro"
+              : "Clique no fim do logradouro — abrirá o cadastro"}
           </span>
         </div>
       )}

@@ -7,7 +7,6 @@ import QRCode from 'qrcode';
 import type { LotSheetPayload } from '@/lib/lotSheetData';
 import type {
   LotSheetBlockSketch,
-  LotSheetCardinalConfrontant,
   LotSheetProjectMapLot,
   LotSheetSegmentRow,
   LotSheetVertexRow,
@@ -310,10 +309,16 @@ function drawEdgeMeasures(
   }
 }
 
-function placeCardinalLabels(
+/** Rótulos de confrontantes por lado (frente/fundo/laterais). */
+function placeSideConfrontantLabels(
   doc: jsPDF,
   points: [number, number][],
-  confrontants: LotSheetCardinalConfrontant[],
+  sides: {
+    frente: string;
+    fundo: string;
+    ladoDireito: string;
+    ladoEsquerdo: string;
+  },
 ) {
   if (!points.length) return;
   const xs = points.map((p) => p[0]);
@@ -324,29 +329,37 @@ function placeCardinalLabels(
   const maxY = Math.max(...ys);
   const c = centroid(points);
 
-  const slots: Record<
-    string,
-    { x: number; y: number; angle: number }
-  > = {
-    NORTE: { x: c[0], y: minY - 7, angle: 0 },
-    SUL: { x: c[0], y: maxY + 7, angle: 0 },
-    LESTE: { x: maxX + 9, y: c[1], angle: 90 },
-    OESTE: { x: minX - 9, y: c[1], angle: 90 },
-  };
+  const slots = [
+    { key: 'frente' as const, label: 'FRENTE', x: c[0], y: minY - 7, angle: 0 },
+    { key: 'fundo' as const, label: 'FUNDO', x: c[0], y: maxY + 7, angle: 0 },
+    {
+      key: 'ladoDireito' as const,
+      label: 'LADO DIR.',
+      x: maxX + 9,
+      y: c[1],
+      angle: 90,
+    },
+    {
+      key: 'ladoEsquerdo' as const,
+      label: 'LADO ESQ.',
+      x: minX - 9,
+      y: c[1],
+      angle: 90,
+    },
+  ];
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(...RED);
 
-  for (const item of confrontants) {
-    if (!item.label || item.label === '—') continue;
-    const slot = slots[item.direction];
-    if (!slot) continue;
-    const text = `${item.direction}: ${item.label}`;
+  for (const slot of slots) {
+    const value = sides[slot.key];
+    if (!value || value === '—') continue;
+    const text = `${slot.label}: ${value}`;
     doc.text(text, slot.x, slot.y, {
       align: 'center',
       angle: slot.angle,
-      maxWidth: 38,
+      maxWidth: 42,
     });
   }
   doc.setTextColor(...BLACK);
@@ -695,7 +708,7 @@ export async function generateLotSheetPdf(
   drawEdgeMeasures(doc, sheetPts, edgeMeasures);
   drawAreaCenter(doc, sheetPts, input.measures.area);
   drawLotNumberBadge(doc, sheetPts, lotNum);
-  placeCardinalLabels(doc, sheetPts, input.cardinalConfrontants);
+  placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants);
 
   drawCompassRose(doc, mainBox.x + mainBox.w - 12, mainBox.y + 12, 6);
 

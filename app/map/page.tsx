@@ -7,6 +7,13 @@ import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer } from 'lucide-react';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
+import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
+import {
+  buildStreetGuideInsertPayload,
+  formatStreetDisplay,
+  normalizeStreetGuideRow,
+  type StreetGuideFormValues,
+} from '@/lib/streetGuide';
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
@@ -357,13 +364,24 @@ export default function MapPage() {
   const [streetGuides, setStreetGuides] = useState<any[]>([]);
   const [drawStreetActive, setDrawStreetActive] = useState(false);
   const [streetGuidesVisible, setStreetGuidesVisible] = useState(true);
+  const [streetGuideModal, setStreetGuideModal] = useState<{
+    mode: 'create' | 'edit';
+    coordinates?: number[][];
+    guide?: Record<string, unknown>;
+  } | null>(null);
 
   const loadStreetGuides = useCallback(async () => {
     if (!selectedProject) return;
     try {
       const { data, error } = await supabase.from('street_guides').select('*').eq('project_id', selectedProject.id);
       if (error && error.code !== 'PGRST205') console.warn('Error loading street guides:', error);
-      if (data) setStreetGuides(data.map(g => ({ ...g, visible: true })));
+      if (data) {
+        setStreetGuides(
+          data.map((g) =>
+            normalizeStreetGuideRow({ ...g, visible: true } as Record<string, unknown>),
+          ),
+        );
+      }
     } catch (e) {}
   }, [selectedProject]);
 
@@ -384,6 +402,9 @@ export default function MapPage() {
     }
 
     try {
+       console.log('IDENTIFY_FRONTS_WITH_STREET_START', {
+         guides: visibleGuides.length,
+       });
        try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
        
        // Only dynamically import turf logic to avoid SSR issues if necessary or just await import
@@ -402,9 +423,13 @@ export default function MapPage() {
        if (!blocks || blocks.length === 0) return;
 
        // 2. Prepare guide lines
-       const guideLines = visibleGuides.map(g => turfHelpers.lineString(g.geometry_geojson.coordinates));
+       const guideLines = visibleGuides.map((g) => {
+         const geo = g.geometry_geojson || g.geometry;
+         return turfHelpers.lineString(geo.coordinates);
+       });
 
-       const updates = [];
+       const updates: Array<Record<string, unknown>> = [];
+       let streetApplied = 0;
 
        for (const block of blocks) {
           if (!block.geometry || block.geometry.type !== 'Polygon') continue;
@@ -417,12 +442,14 @@ export default function MapPage() {
           
           let bestSegment = null;
           let bestScore = Infinity;
+          let bestGuide: (typeof visibleGuides)[number] | null = null;
 
           for (const seg of segments) {
              const pA = turfHelpers.point(seg.p1);
              const pB = turfHelpers.point(seg.p2);
              
-             for (const guide of guideLines) {
+             for (let gi = 0; gi < guideLines.length; gi++) {
+                 const guide = guideLines[gi];
                  const nearestA = turfNearestOnLine.default(guide, pA);
                  const nearestB = turfNearestOnLine.default(guide, pB);
                  
@@ -438,11 +465,12 @@ export default function MapPage() {
                  if (score < bestScore) {
                      bestScore = score;
                      bestSegment = seg;
+                     bestGuide = visibleGuides[gi];
                  }
              }
           }
 
-          if (bestSegment) {
+          if (bestSegment && bestScore < 50) {
              // Set FRONT
              const frenteLength = bestSegment.length;
              
@@ -471,26 +499,62 @@ export default function MapPage() {
              const finalEsq = normalizeDimensions(sides.ladoEsquerdo, finalDir);
              
              if (!block.id) continue;
-             updates.push({
+             const row: Record<string, unknown> = {
                  id: block.id,
                  frente: finalFrente,
                  fundo: finalFundo,
                  lado_direito: finalDir,
-                 lado_esquerdo: finalEsq
-             });
+                 lado_esquerdo: finalEsq,
+             };
+             if (bestGuide) {
+               row.front_street_name = formatStreetDisplay(
+                 bestGuide.type,
+                 bestGuide.name,
+               );
+               row.front_street_type = String(bestGuide.type || 'Rua');
+               row.front_street_width =
+                 bestGuide.width != null && bestGuide.width !== ''
+                   ? Number(bestGuide.width)
+                   : null;
+               if (
+                 bestGuide.id &&
+                 typeof bestGuide.id === 'string' &&
+                 !bestGuide.id.startsWith('temp-')
+               ) {
+                 row.front_street_id = bestGuide.id;
+               }
+               streetApplied += 1;
+               console.log('LOT_FRONT_STREET_UPDATED', {
+                 blockId: block.id,
+                 street: row.front_street_name,
+               });
+             }
+             updates.push(row);
           }
        }
 
+       console.log('IDENTIFY_FRONTS_STREET_APPLIED', {
+         lots: updates.length,
+         withStreet: streetApplied,
+       });
+
        if (updates.length > 0) {
-           const updatePromises = updates.map(updateObj => {
+           const updatePromises = updates.map((updateObj) => {
               if (!updateObj.id) return Promise.resolve({ error: { message: "Mock error for no id" } });
-              return supabase.from('blocks').update({
+              const patch: Record<string, unknown> = {
                   frente: updateObj.frente !== null ? Number(updateObj.frente) : null,
                   'Fundo': updateObj.fundo !== null ? String(updateObj.fundo).replace(/[^0-9.]/g, '') : null,
                   'Lado Dir.': updateObj.lado_direito !== null ? String(updateObj.lado_direito).replace(/[^0-9.]/g, '') : null,
                   'Lado Esq.': updateObj.lado_esquerdo !== null ? String(updateObj.lado_esquerdo).replace(/[^0-9.]/g, '') : null,
-                  updated_at: new Date().toISOString()
-              }).eq('id', updateObj.id);
+                  updated_at: new Date().toISOString(),
+              };
+              if (updateObj.front_street_name) {
+                patch.front_street_name = updateObj.front_street_name;
+                patch.front_street_type = updateObj.front_street_type ?? 'Rua';
+                patch.front_street_width = updateObj.front_street_width ?? null;
+                patch.front_street_id = updateObj.front_street_id ?? null;
+              }
+              return supabase.from('blocks').update(patch).eq('id', updateObj.id as string);
            });
            
            const results = await Promise.all(updatePromises);
@@ -1217,65 +1281,112 @@ export default function MapPage() {
     }
   };
 
-  const handleSaveStreetGuide = async (latlngs: L.LatLng[]) => {
+  const resolveStreetTenantId = () => {
+    let validTenantId = selectedProject?.tenant_id;
+    if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
+      validTenantId = selectedProject?.company_id || user?.tenant_id || null;
+    }
+    return validTenantId;
+  };
+
+  const handleStreetLineDrawn = (latlngs: L.LatLng[]) => {
     if (!selectedProject || latlngs.length < 2) return;
-    
-    // Create LineString geojson
-    const coordinates = latlngs.map(ll => [ll.lng, ll.lat]);
-    const geojson = {
-        type: "LineString",
-        coordinates
-    };
+    console.log('STREET_GUIDE_DRAW_START');
+    setDrawStreetActive(false);
+    setStreetGuideModal({
+      mode: 'create',
+      coordinates: latlngs.map((ll) => [ll.lng, ll.lat]),
+    });
+  };
 
-    try {
-        let validTenantId = selectedProject.tenant_id;
-        if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
-           validTenantId = selectedProject.company_id || user?.tenant_id || null;
-        }
+  const handleSaveStreetGuideForm = async (form: StreetGuideFormValues) => {
+    if (!selectedProject || !streetGuideModal) return;
 
-        const newGuideName = `Rua/Eixo ${streetGuides.length + 1}`;
-        const tempGuide = {
-            id: `temp-${Date.now()}`,
-            tenant_id: validTenantId,
-            project_id: selectedProject.id,
-            name: newGuideName,
-            geometry_geojson: geojson,
-            visible: true
-        };
-        
-        console.log('saving street guide', {
-            tenant_id: validTenantId,
-            project_id: selectedProject.id,
-            user: user, // changed to user instead of user?.id
-            role: user?.role,
-            geometry_geojson: geojson
-        });
-        
-        // Optimistic UI
-        setStreetGuides(prev => [...prev, tempGuide]);
-        setDrawStreetActive(false);
+    const validTenantId = resolveStreetTenantId();
+    const coordinates =
+      streetGuideModal.coordinates ||
+      (
+        (streetGuideModal.guide?.geometry_geojson ||
+          streetGuideModal.guide?.geometry) as { coordinates?: number[][] }
+      )?.coordinates;
 
-        const { data, error } = await supabase.from('street_guides').insert({
-            tenant_id: validTenantId,
-            project_id: selectedProject.id,
-            name: newGuideName,
-            geometry_geojson: geojson
-        }).select();
-        
-        if (error) {
-            console.error("Save street guide error:", error);
-            if (error.code === 'PGRST205') {
-                alert("Aviso: Tabela 'street_guides' não existe. A linha foi criada apenas localmente e pode ser usada para frentes.");
-            } else {
-                alert("Aviso: Erro ao salvar linha no banco (RLS?). Linha criada localmente. Detalhe: " + error.message);
-            }
-        } else if (data && data.length > 0) {
-            setStreetGuides(prev => prev.map(g => g.id === tempGuide.id ? data[0] : g));
-        }
-        
-    } catch (e: any) {
-        console.error(e);
-        alert("Aviso: Exceção ao salvar linha-guia no banco. Linha mantida localmente. " + e.message);
+    if (!coordinates?.length) {
+      throw new Error('Geometria da linha inválida.');
+    }
+
+    const payload = buildStreetGuideInsertPayload({
+      tenantId: validTenantId,
+      projectId: selectedProject.id,
+      form,
+      coordinates,
+    });
+
+    console.log('STREET_GUIDE_SAVE_PAYLOAD', payload);
+
+    if (streetGuideModal.mode === 'edit' && streetGuideModal.guide?.id) {
+      const id = String(streetGuideModal.guide.id);
+      if (id.startsWith('temp-')) {
+        setStreetGuides((prev) =>
+          prev.map((g) =>
+            g.id === id ? normalizeStreetGuideRow({ ...g, ...payload, id }) : g,
+          ),
+        );
+        return;
+      }
+      const { data, error } = await supabase
+        .from('street_guides')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      if (data) {
+        setStreetGuides((prev) =>
+          prev.map((g) =>
+            g.id === id ? normalizeStreetGuideRow(data as Record<string, unknown>) : g,
+          ),
+        );
+      }
+      return;
+    }
+
+    const tempId = `temp-${Date.now()}`;
+    const tempGuide = normalizeStreetGuideRow({
+      id: tempId,
+      ...payload,
+      visible: true,
+    });
+    setStreetGuides((prev) => [...prev, tempGuide]);
+
+    const { data, error } = await supabase
+      .from('street_guides')
+      .insert(payload)
+      .select();
+
+    if (error) {
+      console.error('Save street guide error:', error);
+      if (error.code === 'PGRST205') {
+        alert(
+          "Aviso: Tabela 'street_guides' não existe. Linha mantida localmente.",
+        );
+      } else {
+        alert(
+          'Erro ao salvar logradouro (RLS?). Linha mantida localmente. ' +
+            error.message,
+        );
+      }
+      return;
+    }
+
+    if (data?.length) {
+      console.log('STREET_GUIDE_CREATED', { id: data[0].id });
+      setStreetGuides((prev) =>
+        prev.map((g) =>
+          g.id === tempId
+            ? normalizeStreetGuideRow(data[0] as Record<string, unknown>)
+            : g,
+        ),
+      );
     }
   };
 
@@ -1583,7 +1694,10 @@ export default function MapPage() {
             streetGuides={streetGuides}
             streetGuidesVisible={streetGuidesVisible}
             drawStreetActive={drawStreetActive}
-            onSaveStreetGuide={handleSaveStreetGuide}
+            onStreetLineDrawn={handleStreetLineDrawn}
+            onEditStreetGuide={(guide) =>
+              setStreetGuideModal({ mode: 'edit', guide })
+            }
             onDeleteStreetGuide={handleDeleteStreetGuide}
             lotSheetPickMode={lotSheetPickMode}
             onLotSheetLotPick={(lot) => {
@@ -1602,6 +1716,15 @@ export default function MapPage() {
               Selecione um lote no mapa para gerar a prancha
             </p>
           </div>
+        )}
+
+        {streetGuideModal && (
+          <StreetGuideFormModal
+            mode={streetGuideModal.mode}
+            guide={streetGuideModal.guide}
+            onClose={() => setStreetGuideModal(null)}
+            onSave={handleSaveStreetGuideForm}
+          />
         )}
 
         {lotSheetTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
