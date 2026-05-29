@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Loader2, X, FileDown, Eye, Printer } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { loadLotSheetPayload } from '@/lib/lotSheetData';
@@ -19,7 +19,7 @@ type MapLot = {
 type Props = {
   projectId: string;
   tenantId: string;
-  lot: MapLot | null;
+  lot: MapLot;
   onClose: () => void;
   onSelectAnotherLot: () => void;
 };
@@ -33,28 +33,24 @@ export function LotSheetPrintModal({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewLot, setPreviewLot] = useState<MapLot | null>(lot);
-
-  useEffect(() => {
-    setPreviewLot(lot);
-  }, [lot]);
 
   const runGenerate = useCallback(
     async (mode: 'download' | 'preview') => {
-      if (!previewLot?.id) {
-        setError('Selecione um lote no mapa.');
-        return;
-      }
       setLoading(true);
       setError(null);
       try {
         const payload = await loadLotSheetPayload(supabase, {
           projectId,
-          blockId: previewLot.id,
+          blockId: lot.id,
           tenantId,
         });
         const doc = generateLotSheetPdf(payload);
-        const name = `prancha_lote_${previewLot.number || previewLot.id}.pdf`;
+        console.log('LOT_SHEET_PDF_GENERATED', {
+          lotId: lot.id,
+          number: lot.number,
+          mode,
+        });
+        const name = `prancha_lote_${lot.number || lot.id}.pdf`;
         if (mode === 'download') {
           downloadLotSheetPdf(doc, name);
         } else {
@@ -68,7 +64,7 @@ export function LotSheetPrintModal({
         setLoading(false);
       }
     },
-    [previewLot, projectId, tenantId],
+    [lot, projectId, tenantId],
   );
 
   return (
@@ -89,16 +85,10 @@ export function LotSheetPrintModal({
         </div>
 
         <div className="p-4 space-y-4">
-          {previewLot ? (
-            <p className="text-sm text-emerald-200 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
-              Lote {previewLot.number || '—'}
-              {previewLot.block ? ` · Quadra ${previewLot.block}` : ''} selecionado.
-            </p>
-          ) : (
-            <p className="text-sm text-gray-400">
-              Nenhum lote selecionado. Use &quot;Selecionar outro lote no mapa&quot;.
-            </p>
-          )}
+          <p className="text-sm text-emerald-200 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+            Lote {lot.number || '—'}
+            {lot.block ? ` · Quadra ${lot.block}` : ''} selecionado.
+          </p>
 
           {error && (
             <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
@@ -109,7 +99,7 @@ export function LotSheetPrintModal({
           <div className="flex flex-col gap-2">
             <button
               type="button"
-              disabled={loading || !previewLot}
+              disabled={loading}
               onClick={() => void runGenerate('download')}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#4999e9] hover:bg-[#3b82d9] rounded-lg text-sm font-semibold disabled:opacity-50"
             >
@@ -122,7 +112,7 @@ export function LotSheetPrintModal({
             </button>
             <button
               type="button"
-              disabled={loading || !previewLot}
+              disabled={loading}
               onClick={() => void runGenerate('preview')}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2d3340] hover:bg-[#3d4555] rounded-lg text-sm font-semibold disabled:opacity-50"
             >
