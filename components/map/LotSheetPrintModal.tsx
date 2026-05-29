@@ -44,7 +44,7 @@ export function LotSheetPrintModal({
           blockId: lot.id,
           tenantId,
         });
-        const doc = generateLotSheetPdf(payload);
+        const doc = await generateLotSheetPdf(payload);
         console.log('LOT_SHEET_PDF_GENERATED', {
           lotId: lot.id,
           number: lot.number,

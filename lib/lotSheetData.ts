@@ -3,8 +3,23 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { polygon as turfPolygon, centroid, distance, booleanIntersects } from '@turf/turf';
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
+import {
+  buildBlockSketch,
+  buildCardinalConfrontants,
+  buildProjectMap,
+  buildSegmentTable,
+  buildVertexTable,
+  createLotSheetValidation,
+  latLngRingFromBlock,
+  LOT_SHEET_VERSION,
+  toLocalMetersFromRing,
+  type LotSheetBlockSketch,
+  type LotSheetCardinalConfrontant,
+  type LotSheetProjectMapLot,
+  type LotSheetSegmentRow,
+  type LotSheetVertexRow,
+} from '@/lib/lotSheetEnrichment';
 
 export type LotSheetGeometry = {
   /** [lat, lng] fechado ou aberto */
@@ -27,6 +42,13 @@ export type LotSheetPayload = {
   company: Record<string, unknown> | null;
   technicalResponsible: Record<string, unknown> | null;
   neighbors: LotSheetNeighbor[];
+  cardinalConfrontants: LotSheetCardinalConfrontant[];
+  blockSketch: LotSheetBlockSketch | null;
+  projectMap: LotSheetProjectMapLot[];
+  vertices: LotSheetVertexRow[];
+  segments: LotSheetSegmentRow[];
+  validation: { code: string; url: string; emittedAt: string };
+  version: string;
   geometry: LotSheetGeometry;
   measures: {
     frente: string;
@@ -46,62 +68,6 @@ function formatMeasure(val: unknown): string {
   return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`;
 }
 
-function latLngRingFromBlock(block: Record<string, unknown>): [number, number][] {
-  const geom = block.geometry as { type?: string; coordinates?: number[][][] } | undefined;
-  if (geom?.type === 'Polygon' && geom.coordinates?.[0]?.length) {
-    const ring = geom.coordinates[0].map((c) => [c[1], c[0]] as [number, number]);
-    if (ring.length > 1) {
-      const first = ring[0];
-      const last = ring[ring.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
-    }
-    return ring;
-  }
-  const bounds = block.bounds as [number, number][] | undefined;
-  if (bounds?.length) {
-    const ring = [...bounds];
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
-    return ring;
-  }
-  return [];
-}
-
-function toLocalMeters(
-  ring: [number, number][],
-): { localRing: [number, number][]; bbox: LotSheetGeometry['bboxMeters'] } {
-  if (!ring.length) {
-    return {
-      localRing: [],
-      bbox: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
-    };
-  }
-  const origin = ring[0];
-  const mPerDegLat = 111320;
-  const mPerDegLng =
-    111320 * Math.cos((origin[0] * Math.PI) / 180);
-  const localRing = ring.map(([lat, lng]) => [
-    (lng - origin[1]) * mPerDegLng,
-    (lat - origin[0]) * mPerDegLat,
-  ] as [number, number]);
-
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const [x, y] of localRing) {
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-  }
-  return {
-    localRing,
-    bbox: { minX, maxX, minY, maxY },
-  };
-}
-
 function parseScaleDenominator(escala: string | null | undefined, maxDimM: number): number {
   if (escala) {
     const m = String(escala).match(/1\s*[/:]\s*(\d+)/i);
@@ -110,56 +76,6 @@ function parseScaleDenominator(escala: string | null | undefined, maxDimM: numbe
   const targetPaperM = 0.18;
   const denom = Math.max(100, Math.round(maxDimM / targetPaperM));
   return Math.round(denom / 50) * 50 || 600;
-}
-
-function findNeighbors(
-  targetId: string,
-  targetRing: [number, number][],
-  blocks: Record<string, unknown>[],
-  streetGuides: { name?: string }[],
-): LotSheetNeighbor[] {
-  if (targetRing.length < 3) return [];
-
-  const coords = targetRing.map(([lat, lng]) => [lng, lat]);
-  const targetPoly = turfPolygon([coords]);
-  const found: LotSheetNeighbor[] = [];
-  const seen = new Set<string>();
-
-  for (const b of blocks) {
-    if (String(b.id) === targetId) continue;
-    const ring = latLngRingFromBlock(b);
-    if (ring.length < 3) continue;
-    const otherCoords = ring.map(([lat, lng]) => [lng, lat]);
-    try {
-      const otherPoly = turfPolygon([otherCoords]);
-      const touches =
-        booleanIntersects(targetPoly, otherPoly) ||
-        distance(centroid(targetPoly), centroid(otherPoly), { units: 'meters' }) <
-          35;
-      if (!touches) continue;
-      const num = b.number || b.lot || '?';
-      const blockName = b.block_name || b.block || b.quadra || '';
-      const label = blockName
-        ? `Lote ${num} (Q. ${blockName})`
-        : `Lote ${num}`;
-      if (!seen.has(label)) {
-        seen.add(label);
-        found.push({ label });
-      }
-    } catch {
-      /* ignore invalid geom */
-    }
-  }
-
-  if (streetGuides.length) {
-    found.push({ label: 'Rua / via de acesso' });
-  }
-
-  if (found.length === 0) {
-    found.push({ label: 'Confrontante não identificado' });
-  }
-
-  return found.slice(0, 12);
 }
 
 function isAvailableLotStatus(status: unknown): boolean {
@@ -391,14 +307,14 @@ export async function loadLotSheetPayload(
 
   const { data: allBlocks } = await supabase
     .from('blocks')
-    .select('id, number, lot, block, block_name, quadra, geometry, status')
+    .select('id, number, lot, block, block_name, quadra, geometry, bounds, status')
     .eq('project_id', params.projectId);
 
   const { data: guides } = await supabase
     .from('street_guides')
-    .select('id, name')
+    .select('id, name, geometry_geojson')
     .eq('project_id', params.projectId)
-    .limit(5);
+    .limit(20);
 
   const { data: company } = await supabase
     .from('companies')
@@ -418,7 +334,7 @@ export async function loadLotSheetPayload(
     throw new Error('Lote sem geometria válida no mapa.');
   }
 
-  const { localRing, bbox } = toLocalMeters(ring);
+  const { localRing, bbox } = toLocalMetersFromRing(ring);
   const maxDim = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY, 1);
   const scaleDenom = parseScaleDenominator(
     (project as Record<string, unknown>).escala_padrao as string,
@@ -436,16 +352,36 @@ export async function loadLotSheetPayload(
     block as Record<string, unknown>,
   );
 
-  const neighbors = findNeighbors(
+  const blocksList = (allBlocks || []) as Record<string, unknown>[];
+  const guidesList = (guides || []) as Record<string, unknown>[];
+
+  const cardinalConfrontants = buildCardinalConfrontants(
     params.blockId,
     ring,
-    (allBlocks || []) as Record<string, unknown>[],
-    (guides || []) as { name?: string }[],
+    blocksList,
+    guidesList,
   );
+
+  const neighbors: LotSheetNeighbor[] = cardinalConfrontants
+    .filter((c) => c.label && c.label !== '—')
+    .map((c) => ({ label: `${c.direction}: ${c.label}`, side: c.direction }));
+
+  const blockSketch = buildBlockSketch(
+    params.blockId,
+    block as Record<string, unknown>,
+    blocksList,
+  );
+
+  const projectMap = buildProjectMap(params.blockId, blocksList);
+  const vertices = buildVertexTable(localRing);
+  const segments = buildSegmentTable(localRing);
+  const validation = createLotSheetValidation();
 
   console.log('LOT_SHEET_GEOMETRY_PROCESSED', {
     points: ring.length,
-    neighbors: neighbors.length,
+    cardinal: cardinalConfrontants.length,
+    sketchLots: blockSketch?.lots.length ?? 0,
+    projectLots: projectMap.length,
     scale: scaleDenom,
   });
 
@@ -457,6 +393,13 @@ export async function loadLotSheetPayload(
     company: (company as Record<string, unknown>) || null,
     technicalResponsible: (techRows?.[0] as Record<string, unknown>) || null,
     neighbors,
+    cardinalConfrontants,
+    blockSketch,
+    projectMap,
+    vertices,
+    segments,
+    validation,
+    version: LOT_SHEET_VERSION,
     geometry: {
       ring,
       localRing,
