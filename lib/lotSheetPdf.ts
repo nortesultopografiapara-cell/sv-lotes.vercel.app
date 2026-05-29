@@ -1,15 +1,12 @@
 /**
- * Prancha técnica do lote — layout referência + painéis profissionais (A4 retrato).
+ * Prancha técnica do lote — layout Métrica Topo (A4 retrato).
  */
 
 import { jsPDF } from 'jspdf';
-import QRCode from 'qrcode';
 import type { LotSheetPayload } from '@/lib/lotSheetData';
 import type {
   LotSheetBlockSketch,
-  LotSheetProjectMapLot,
-  LotSheetSegmentRow,
-  LotSheetVertexRow,
+  LotSheetMetricRow,
 } from '@/lib/lotSheetEnrichment';
 import {
   loadImageAsBase64,
@@ -18,20 +15,12 @@ import {
 
 export type GenerateLotSheetPdfInput = LotSheetPayload;
 
+const BLACK: [number, number, number] = [0, 0, 0];
 const RED: [number, number, number] = [200, 30, 30];
 const BLUE: [number, number, number] = [30, 80, 180];
-const BLACK: [number, number, number] = [0, 0, 0];
-const YELLOW: [number, number, number] = [255, 220, 60];
+const HIGHLIGHT: [number, number, number] = [251, 146, 60];
 
-const MARGIN = 6;
-const FOOTER_RATIO = 0.22;
-
-const PANEL = {
-  tl: { w: 46, h: 36 },
-  tr: { w: 46, h: 36 },
-  bl: { w: 54, h: 30 },
-  br: { w: 54, h: 34 },
-};
+const MARGIN = 5;
 
 type Box = { x: number; y: number; w: number; h: number };
 
@@ -40,73 +29,20 @@ function formatScaleLabel(label: string): string {
   return m ? `1 / ${m[1]}` : label;
 }
 
+function parseScaleDenom(label: string): number {
+  const m = String(label).match(/1\s*[:/]\s*(\d+)/i);
+  return m?.[1] ? Number(m[1]) || 500 : 500;
+}
+
 function centroid(pts: [number, number][]): [number, number] {
-  let sx = 0,
-    sy = 0;
+  let sx = 0;
+  let sy = 0;
   const n = pts.length || 1;
   for (const [x, y] of pts) {
     sx += x;
     sy += y;
   }
   return [sx / n, sy / n];
-}
-
-function projectRingsToBox(
-  items: { localRing: [number, number][] }[],
-  bbox: { minX: number; maxX: number; minY: number; maxY: number },
-  box: Box,
-): Map<string, [number, number][]> {
-  const width = bbox.maxX - bbox.minX || 1;
-  const height = bbox.maxY - bbox.minY || 1;
-  const pad = 3;
-  const scale = Math.min(
-    (box.w - pad * 2) / width,
-    (box.h - pad * 2) / height,
-  );
-  const cx = (bbox.minX + bbox.maxX) / 2;
-  const cy = (bbox.minY + bbox.maxY) / 2;
-  const out = new Map<string, [number, number][]>();
-
-  items.forEach((item, idx) => {
-    const pts = item.localRing.map(([lx, ly]) => [
-      box.x + box.w / 2 + (lx - cx) * scale,
-      box.y + box.h / 2 - (ly - cy) * scale,
-    ] as [number, number]);
-    out.set(String(idx), pts);
-  });
-  return out;
-}
-
-function projectRingToSheet(
-  localRing: [number, number][],
-  bbox: { minX: number; maxX: number; minY: number; maxY: number },
-  box: Box,
-): [number, number][] {
-  const width = bbox.maxX - bbox.minX || 1;
-  const height = bbox.maxY - bbox.minY || 1;
-  const pad = 10;
-  const scale = Math.min(
-    (box.w - pad * 2) / width,
-    (box.h - pad * 2) / height,
-  );
-  const cx = (bbox.minX + bbox.maxX) / 2;
-  const cy = (bbox.minY + bbox.maxY) / 2;
-
-  return localRing.map(([lx, ly]) => [
-    box.x + box.w / 2 + (lx - cx) * scale,
-    box.y + box.h / 2 - (ly - cy) * scale,
-  ]);
-}
-
-function drawPanelFrame(doc: jsPDF, box: Box, title: string) {
-  doc.setDrawColor(...BLACK);
-  doc.setLineWidth(0.3);
-  doc.setFillColor(252, 252, 252);
-  doc.rect(box.x, box.y, box.w, box.h, 'FD');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
-  doc.setTextColor(...BLACK);
-  doc.text(title, box.x + box.w / 2, box.y + 3, { align: 'center' });
 }
 
 function preparePolygonVertices(points: [number, number][]): [number, number][] {
@@ -129,18 +65,70 @@ function preparePolygonVertices(points: [number, number][]): [number, number][] 
   return verts.length >= 3 ? verts : points;
 }
 
+function projectRingToSheet(
+  localRing: [number, number][],
+  bbox: { minX: number; maxX: number; minY: number; maxY: number },
+  box: Box,
+): [number, number][] {
+  const width = bbox.maxX - bbox.minX || 1;
+  const height = bbox.maxY - bbox.minY || 1;
+  const pad = 14;
+  const scale = Math.min(
+    (box.w - pad * 2) / width,
+    (box.h - pad * 2) / height,
+  );
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+
+  return localRing.map(([lx, ly]) => [
+    box.x + box.w / 2 + (lx - cx) * scale,
+    box.y + box.h / 2 - (ly - cy) * scale,
+  ]);
+}
+
+function projectRingsToBox(
+  items: { localRing: [number, number][] }[],
+  bbox: { minX: number; maxX: number; minY: number; maxY: number },
+  box: Box,
+): Map<string, [number, number][]> {
+  const width = bbox.maxX - bbox.minX || 1;
+  const height = bbox.maxY - bbox.minY || 1;
+  const pad = 4;
+  const scale = Math.min(
+    (box.w - pad * 2) / width,
+    (box.h - pad * 2) / height,
+  );
+  const cx = (bbox.minX + bbox.maxX) / 2;
+  const cy = (bbox.minY + bbox.maxY) / 2;
+  const out = new Map<string, [number, number][]>();
+
+  items.forEach((item, idx) => {
+    const pts = item.localRing.map(
+      ([lx, ly]) =>
+        [
+          box.x + box.w / 2 + (lx - cx) * scale,
+          box.y + box.h / 2 - (ly - cy) * scale,
+        ] as [number, number],
+    );
+    out.set(String(idx), pts);
+  });
+  return out;
+}
+
 function drawPolygonLines(
   doc: jsPDF,
   points: [number, number][],
-  opts: { fill?: [number, number, number]; stroke?: [number, number, number]; lw?: number },
+  opts: {
+    fill?: [number, number, number];
+    stroke?: [number, number, number];
+    lw?: number;
+  },
 ) {
   const verts = preparePolygonVertices(points);
   if (verts.length < 3) return;
-  const fill = opts.fill || [255, 255, 255];
-  const stroke = opts.stroke || BLACK;
-  doc.setDrawColor(...stroke);
-  doc.setLineWidth(opts.lw ?? 0.5);
-  doc.setFillColor(...fill);
+  doc.setDrawColor(...(opts.stroke || BLACK));
+  doc.setLineWidth(opts.lw ?? 0.45);
+  doc.setFillColor(...(opts.fill || [255, 255, 255]));
   for (let i = 0; i < verts.length; i++) {
     const [x1, y1] = verts[i];
     const [x2, y2] = verts[(i + 1) % verts.length];
@@ -150,117 +138,30 @@ function drawPolygonLines(
 
 function drawLotPolygon(doc: jsPDF, points: [number, number][]): [number, number][] {
   const verts = preparePolygonVertices(points);
-  console.log('LOT_SHEET_DRAW_POLYGON_POINTS', {
-    inputCount: points.length,
-    vertexCount: verts.length,
-    vertices: verts,
-  });
-  if (verts.length < 3) {
-    console.warn('LOT_SHEET_DRAW_POLYGON_SKIP', { vertexCount: verts.length });
-    return verts;
-  }
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.6);
+  if (verts.length < 3) return verts;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.65);
   doc.setFillColor(255, 255, 255);
   for (let i = 0; i < verts.length; i++) {
     const [x1, y1] = verts[i];
     const [x2, y2] = verts[(i + 1) % verts.length];
     doc.line(x1, y1, x2, y2);
   }
-  console.log('LOT_SHEET_DRAW_POLYGON_SUCCESS', { edges: verts.length, closed: true });
   return verts;
 }
 
-function drawBlockSketchPanel(
-  doc: jsPDF,
-  sketch: LotSheetBlockSketch | null,
-  box: Box,
-) {
-  drawPanelFrame(doc, box, `CROQUI — QUADRA ${sketch?.quadra || '—'}`);
-  if (!sketch?.lots.length) return;
-
-  const inner: Box = { x: box.x + 2, y: box.y + 5, w: box.w - 4, h: box.h - 7 };
-  const projected = projectRingsToBox(sketch.lots, sketch.bbox, inner);
-
-  sketch.lots.forEach((lot, idx) => {
-    const pts = projected.get(String(idx));
-    if (!pts) return;
-    drawPolygonLines(doc, pts, {
-      fill: lot.isSelected ? YELLOW : [255, 255, 255],
-      stroke: lot.isSelected ? BLACK : [120, 120, 120],
-      lw: lot.isSelected ? 0.65 : 0.35,
-    });
-    const c = centroid(pts);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(lot.isSelected ? 7 : 5);
-    doc.setTextColor(...(lot.isSelected ? RED : BLACK));
-    doc.text(lot.number, c[0], c[1] + 1, { align: 'center' });
-  });
-  doc.setTextColor(...BLACK);
-}
-
-function drawProjectMapPanel(
-  doc: jsPDF,
-  lots: LotSheetProjectMapLot[],
-  box: Box,
-) {
-  drawPanelFrame(doc, box, 'MAPA DO EMPREENDIMENTO');
-  if (!lots.length) return;
-
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const lot of lots) {
-    for (const [x, y] of lot.localRing) {
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    }
+function edgeLengthsFromRing(localRing: [number, number][]): string[] {
+  const verts = preparePolygonVertices(localRing);
+  const out: string[] = [];
+  for (let i = 0; i < verts.length; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % verts.length];
+    const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    out.push(
+      `${d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
+    );
   }
-  const bbox = { minX, maxX, minY, maxY };
-  const inner: Box = { x: box.x + 2, y: box.y + 5, w: box.w - 4, h: box.h - 7 };
-  const projected = projectRingsToBox(lots, bbox, inner);
-
-  lots.forEach((lot, idx) => {
-    const pts = projected.get(String(idx));
-    if (!pts) return;
-    drawPolygonLines(doc, pts, {
-      fill: lot.isSelected ? YELLOW : [245, 245, 245],
-      stroke: lot.isSelected ? BLACK : [160, 160, 160],
-      lw: lot.isSelected ? 0.55 : 0.25,
-    });
-  });
-}
-
-function drawMiniTable(
-  doc: jsPDF,
-  box: Box,
-  title: string,
-  headers: string[],
-  rows: string[][],
-  maxRows: number,
-) {
-  drawPanelFrame(doc, box, title);
-  const startY = box.y + 7;
-  const colW = (box.w - 4) / headers.length;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5);
-  headers.forEach((h, i) => {
-    doc.text(h, box.x + 2 + colW * i + colW / 2, startY, { align: 'center' });
-  });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(4.5);
-  rows.slice(0, maxRows).forEach((row, ri) => {
-    const y = startY + 3.5 + ri * 3.2;
-    row.forEach((cell, ci) => {
-      doc.text(cell, box.x + 2 + colW * ci + colW / 2, y, {
-        align: 'center',
-        maxWidth: colW - 1,
-      });
-    });
-  });
+  return out;
 }
 
 function edgeOutwardLabelPos(
@@ -294,14 +195,14 @@ function drawEdgeMeasures(
   const c = centroid(points);
   const n = Math.min(points.length, measures.length);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(...BLACK);
   for (let i = 0; i < n; i++) {
     const p1 = points[i];
     const p2 = points[(i + 1) % points.length];
     const label = measures[i];
     if (!label || label === '—') continue;
-    const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, 5);
+    const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, 6);
     doc.text(label, x, y, {
       align: 'center',
       angle: angle > 90 || angle < -90 ? angle + 180 : angle,
@@ -309,7 +210,19 @@ function drawEdgeMeasures(
   }
 }
 
-/** Rótulos de confrontantes por lado (frente/fundo/laterais). */
+function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
+  const verts = preparePolygonVertices(points);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5.5);
+  doc.setTextColor(...BLACK);
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  verts.forEach((p, i) => {
+    doc.circle(p[0], p[1], 0.9, 'S');
+    doc.text(`M-${String(i + 1).padStart(2, '0')}`, p[0] + 2.2, p[1] - 1.2);
+  });
+}
+
 function placeSideConfrontantLabels(
   doc: jsPDF,
   points: [number, number][],
@@ -330,125 +243,254 @@ function placeSideConfrontantLabels(
   const c = centroid(points);
 
   const slots = [
-    { key: 'frente' as const, label: 'FRENTE', x: c[0], y: minY - 7, angle: 0 },
-    { key: 'fundo' as const, label: 'FUNDO', x: c[0], y: maxY + 7, angle: 0 },
-    {
-      key: 'ladoDireito' as const,
-      label: 'LADO DIR.',
-      x: maxX + 9,
-      y: c[1],
-      angle: 90,
-    },
-    {
-      key: 'ladoEsquerdo' as const,
-      label: 'LADO ESQ.',
-      x: minX - 9,
-      y: c[1],
-      angle: 90,
-    },
+    { value: sides.frente, x: c[0], y: minY - 9, angle: 0 },
+    { value: sides.fundo, x: c[0], y: maxY + 9, angle: 0 },
+    { value: sides.ladoDireito, x: maxX + 11, y: c[1], angle: 90 },
+    { value: sides.ladoEsquerdo, x: minX - 11, y: c[1], angle: 90 },
   ];
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...RED);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...BLACK);
 
   for (const slot of slots) {
-    const value = sides[slot.key];
-    if (!value || value === '—') continue;
-    const text = `${slot.label}: ${value}`;
-    doc.text(text, slot.x, slot.y, {
+    if (!slot.value || slot.value === '—') continue;
+    doc.text(slot.value, slot.x, slot.y, {
       align: 'center',
       angle: slot.angle,
-      maxWidth: 42,
+      maxWidth: 48,
     });
   }
-  doc.setTextColor(...BLACK);
 }
 
 function drawAreaCenter(doc: jsPDF, points: [number, number][], areaText: string) {
   const c = centroid(points);
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  const spanX = Math.max(...xs) - Math.min(...xs);
-  const spanY = Math.max(...ys) - Math.min(...ys);
-  const vertical = spanY > spanX * 1.1;
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...BLUE);
-  doc.setFontSize(vertical ? 16 : 14);
-  if (vertical) {
-    doc.text(areaText, c[0], c[1], { align: 'center', angle: 90 });
-  } else {
-    doc.text(areaText, c[0], c[1], { align: 'center' });
-  }
+  doc.setFontSize(13);
+  doc.text(areaText, c[0], c[1], { align: 'center' });
   doc.setTextColor(...BLACK);
 }
 
 function drawLotNumberBadge(doc: jsPDF, points: [number, number][], lotNum: string) {
-  let best: [number, number] = points[0];
-  let minY = points[0][1];
-  for (let i = 0; i < points.length; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % points.length];
-    const my = (p1[1] + p2[1]) / 2;
-    if (my < minY) {
-      minY = my;
-      best = [(p1[0] + p2[0]) / 2, my];
-    }
-  }
-  const [bx, by] = best;
-  const r = 5;
-  doc.setDrawColor(...RED);
+  const c = centroid(points);
+  const r = 5.5;
+  doc.setDrawColor(...BLACK);
   doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.5);
-  doc.circle(bx, by - r - 2, r, 'FD');
+  doc.setLineWidth(0.45);
+  doc.circle(c[0], c[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.setTextColor(...RED);
-  doc.text(lotNum, bx, by - r - 1.5, { align: 'center' });
   doc.setTextColor(...BLACK);
+  doc.text(lotNum, c[0], c[1] + 1.2, { align: 'center' });
 }
 
 function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
   doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.2);
   doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.25);
   doc.circle(cx, cy, r, 'S');
-  doc.line(cx, cy - r, cx, cy + r);
-  doc.line(cx - r, cy, cx + r, cy);
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4 - Math.PI / 2;
+    const x2 = cx + Math.cos(a) * r;
+    const y2 = cy + Math.sin(a) * r;
+    doc.line(cx, cy, x2, y2);
+  }
   doc.setFillColor(...BLACK);
-  doc.triangle(cx, cy - r, cx - 2.5, cy - r + 5, cx + 2.5, cy - r + 5, 'F');
+  doc.triangle(
+    cx,
+    cy - r,
+    cx - 2.8,
+    cy - r + 6,
+    cx + 2.8,
+    cy - r + 6,
+    'F',
+  );
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(...BLACK);
-  doc.text('N', cx - 2, cy - r - 2);
+  doc.setFontSize(7);
+  doc.text('N', cx - 2.2, cy - r - 2.5);
 }
 
-function drawSealAndVersion(
+function drawMetricTable(
+  doc: jsPDF,
+  box: Box,
+  rows: LotSheetMetricRow[],
+) {
+  const headers = ['De', 'Para', 'Azimute', 'Distância', 'Coord. E(X)', 'Coord. N(Y)'];
+  const colWidths = [
+    box.w * 0.08,
+    box.w * 0.08,
+    box.w * 0.18,
+    box.w * 0.14,
+    box.w * 0.26,
+    box.w * 0.26,
+  ];
+  const rowH = 4.2;
+  const headerH = 5;
+
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  doc.rect(box.x, box.y, box.w, box.h);
+
+  let x = box.x;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5.5);
+  headers.forEach((h, i) => {
+    doc.rect(x, box.y, colWidths[i], headerH);
+    doc.text(h, x + colWidths[i] / 2, box.y + 3.5, { align: 'center' });
+    x += colWidths[i];
+  });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5);
+  const maxRows = Math.min(
+    rows.length,
+    Math.floor((box.h - headerH) / rowH),
+  );
+  for (let ri = 0; ri < maxRows; ri++) {
+    const row = rows[ri];
+    const y = box.y + headerH + ri * rowH;
+    x = box.x;
+    const cells = [
+      row.from,
+      row.to,
+      row.azimute,
+      row.distancia,
+      row.coordE,
+      row.coordN,
+    ];
+    cells.forEach((cell, ci) => {
+      doc.rect(x, y, colWidths[ci], rowH);
+      doc.text(cell, x + colWidths[ci] / 2, y + 2.9, {
+        align: 'center',
+        maxWidth: colWidths[ci] - 1,
+      });
+      x += colWidths[ci];
+    });
+  }
+}
+
+function drawGraphicScale(
   doc: jsPDF,
   x: number,
   y: number,
-  version: string,
-  emittedAt: string,
-  validationCode: string,
+  w: number,
+  scaleDenom: number,
 ) {
-  const emitted = new Date(emittedAt);
-  const dateStr = Number.isNaN(emitted.getTime())
-    ? new Date().toLocaleDateString('pt-BR')
-    : emitted.toLocaleString('pt-BR');
+  const barRealM = 50;
+  const barMm = Math.min(w * 0.55, (barRealM * 1000) / scaleDenom);
+  const segments = 5;
+  const segMm = barMm / segments;
+  const segM = barRealM / segments;
 
-  doc.setDrawColor(180, 180, 180);
-  doc.setLineWidth(0.25);
-  doc.setFillColor(248, 248, 248);
-  doc.roundedRect(x, y, 88, 14, 1, 1, 'FD');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.5);
-  doc.setTextColor(60, 60, 60);
-  doc.text('PLANTA GERADA PELO SV LOTES GIS', x + 44, y + 4.5, { align: 'center' });
+  doc.setFontSize(6);
+  doc.text('Escala Gráfica:', x, y);
+
+  const barX = x + 28;
+  const barY = y - 1.5;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.35);
+  doc.setFillColor(255, 255, 255);
+
+  for (let i = 0; i < segments; i++) {
+    if (i % 2 === 0) doc.setFillColor(255, 255, 255);
+    else doc.setFillColor(40, 40, 40);
+    doc.rect(barX + i * segMm, barY, segMm, 3, 'FD');
+  }
+  doc.setDrawColor(...BLACK);
+  doc.rect(barX, barY, barMm, 3, 'S');
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5);
-  doc.text(`Versão ${version} · Emissão ${dateStr}`, x + 44, y + 8.5, { align: 'center' });
-  doc.text(`Validação: ${validationCode}`, x + 44, y + 11.5, { align: 'center' });
   doc.setTextColor(...BLACK);
+  for (let i = 0; i <= segments; i++) {
+    const label = String(Math.round(i * segM));
+    doc.text(label, barX + i * segMm, barY + 5.5, { align: 'center' });
+  }
+  doc.text('m', barX + barMm + 3, barY + 1.5);
+}
+
+function drawQuadraLocation(
+  doc: jsPDF,
+  box: Box,
+  sketch: LotSheetBlockSketch | null,
+  streetNames: string[],
+) {
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.3);
+  doc.rect(box.x, box.y, box.w, box.h);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(5);
+  doc.text('LOCALIZAÇÃO NA QUADRA (sem escala)', box.x + 2, box.y + 4);
+
+  const inner: Box = {
+    x: box.x + 3,
+    y: box.y + 6,
+    w: box.w - 6,
+    h: box.h - 9,
+  };
+
+  if (!sketch?.lots.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.text('Croqui da quadra indisponível', inner.x + inner.w / 2, inner.y + inner.h / 2, {
+      align: 'center',
+    });
+    return;
+  }
+
+  const projected = projectRingsToBox(sketch.lots, sketch.bbox, inner);
+  sketch.lots.forEach((lot, idx) => {
+    const pts = projected.get(String(idx));
+    if (!pts) return;
+    drawPolygonLines(doc, pts, {
+      fill: lot.isSelected ? HIGHLIGHT : [255, 255, 255],
+      stroke: BLACK,
+      lw: lot.isSelected ? 0.55 : 0.3,
+    });
+    if (lot.isSelected) {
+      const c = centroid(pts);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6);
+      doc.text(lot.number, c[0], c[1] + 1, { align: 'center' });
+    }
+  });
+
+  const streets = streetNames.filter(Boolean);
+  if (streets.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(4.5);
+    if (streets[0]) {
+      doc.text(streets[0], inner.x + inner.w / 2, inner.y - 0.5, {
+        align: 'center',
+        maxWidth: inner.w,
+      });
+    }
+    if (streets[1]) {
+      doc.text(streets[1], inner.x + inner.w / 2, inner.y + inner.h + 2, {
+        align: 'center',
+        maxWidth: inner.w,
+      });
+    }
+    if (streets[2]) {
+      doc.text(streets[2], inner.x - 1, inner.y + inner.h / 2, {
+        align: 'right',
+        angle: 90,
+        maxWidth: inner.h,
+      });
+    }
+    if (streets[3]) {
+      doc.text(streets[3], inner.x + inner.w + 1, inner.y + inner.h / 2, {
+        align: 'left',
+        angle: 90,
+        maxWidth: inner.h,
+      });
+    }
+  }
+
+  drawCompassRose(doc, box.x + box.w - 8, box.y + 8, 3.5);
 }
 
 async function loadOptionalImage(url: string | null | undefined): Promise<string | null> {
@@ -460,18 +502,12 @@ async function loadOptionalImage(url: string | null | undefined): Promise<string
   }
 }
 
-function drawFooterGrid(
+function drawMetricTopoFooter(
   doc: jsPDF,
-  pageW: number,
-  footerY: number,
-  footerH: number,
+  box: Box,
   data: {
     projectName: string;
-    owner: string;
-    municipioUf: string;
-    matricula: string;
-    cri: string;
-    comarcaUf: string;
+    owner: LotSheetPayload['ownerDetails'];
     lotNum: string;
     quadra: string;
     area: string;
@@ -479,92 +515,99 @@ function drawFooterGrid(
     date: string;
     techName: string;
     techTitle: string;
-    techRegLine: string;
+    cft: string;
+    trt: string;
     logoBase64: string | null;
     signatureBase64: string | null;
   },
 ) {
-  const x0 = MARGIN;
-  const w = pageW - MARGIN * 2;
-  const h = footerH;
-
+  const { x, y, w, h } = box;
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.35);
-  doc.rect(x0, footerY, w, h);
+  doc.rect(x, y, w, h);
 
-  const leftW = w * 0.52;
-  doc.line(x0 + leftW, footerY, x0 + leftW, footerY + h);
+  const leftW = w * 0.58;
+  doc.line(x + leftW, y, x + leftW, y + h);
 
-  const label = (lx: number, ly: number, text: string, bold = false) => {
+  const label = (lx: number, ly: number, text: string, bold = false, size = 6) => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(size);
     doc.setTextColor(...BLACK);
-    doc.text(text, lx, ly);
+    doc.text(text, lx, ly, { maxWidth: leftW - 6 });
   };
 
+  let ly = y + 4;
   if (data.logoBase64) {
     try {
-      doc.addImage(data.logoBase64, 'PNG', x0 + 2, footerY + 2, 18, 10);
+      doc.addImage(data.logoBase64, 'PNG', x + 2, y + 2, 16, 8);
+      ly = y + 12;
     } catch {
       /* ignore */
     }
   }
 
-  const rowH = h / 6;
-  let y = footerY + (data.logoBase64 ? 14 : 4);
-  label(x0 + 2, y, `EMPREENDIMENTO: ${data.projectName}`, true);
-  y += rowH * 0.82;
-  label(x0 + 2, y, `Proprietário: ${data.owner}`);
-  y += rowH * 0.82;
-  label(x0 + 2, y, `MUNICÍPIO - UF: ${data.municipioUf}`);
-  y += rowH * 0.82;
-  label(x0 + 2, y, `MATRÍCULA: ${data.matricula === '—' ? '' : data.matricula}`);
-  y += rowH * 0.82;
-  label(x0 + 2, y, `CRI: ${data.cri}`);
-  y += rowH * 0.82;
-  label(x0 + 2, y, `COMARCA - UF: ${data.comarcaUf}`);
+  label(x + 2, ly, `EMPREENDIMENTO: ${data.projectName}`, true);
+  ly += 4.2;
+  label(x + 2, ly, `LOTE: ${data.lotNum}`);
+  ly += 4;
+  label(x + 2, ly, `PROPRIETÁRIO: ${data.owner.name}`);
+  ly += 4;
+  label(x + 2, ly, `CPF: ${data.owner.cpf}`);
+  ly += 4;
+  label(x + 2, ly, `NOME DO PAI: ${data.owner.fatherName}`);
+  ly += 4;
+  label(x + 2, ly, `NOME DA MÃE: ${data.owner.motherName}`);
+  ly += 4;
+  label(x + 2, ly, `ENDEREÇO: ${data.owner.address}`);
+  ly += 4;
+  label(x + 2, ly, `BAIRRO: ${data.owner.neighborhood}`);
+  ly += 4;
+  if (data.owner.cadastralInscription !== '—') {
+    label(x + 2, ly, `INSCRIÇÃO CADASTRAL: ${data.owner.cadastralInscription}`);
+    ly += 4;
+  }
+  label(x + 2, ly, `MUNICÍPIO: ${data.owner.municipality}`);
 
-  const rx = x0 + leftW + 2;
-  const rightW = w - leftW - 4;
-  const colW = rightW / 3;
-  const r1y = footerY + 5;
-  label(rx, r1y, `LOTE: ${data.lotNum}`, true);
-  label(rx + colW, r1y, `QUADRA: ${data.quadra}`, true);
-  label(rx + colW * 2, r1y, `ÁREA: ${data.area}`, true);
+  const rx = x + leftW + 2;
+  const rw = w - leftW - 4;
+  const col = rw / 3;
 
-  const r2y = footerY + h * 0.36;
-  label(rx, r2y, `ESCALA: ${data.scale}`, true);
-  label(rx + colW * 1.2, r2y, `DATA: ${data.date}`, true);
+  label(rx, y + 5, `LOTE: ${data.lotNum}`, true);
+  label(rx + col, y + 5, `QUADRA: ${data.quadra}`, true);
+  label(rx + col * 2, y + 5, `ÁREA: ${data.area}`, true);
+  label(rx, y + 10, `ESCALA: ${data.scale}`, true);
+  label(rx + col * 1.15, y + 10, `DATA: ${data.date}`, true);
 
-  const boxY = footerY + h * 0.52;
-  const boxH = h * 0.44;
-  doc.rect(rx, boxY, rightW, boxH);
-  label(rx + 2, boxY + 4, 'RESPONSÁVEL TÉCNICO:', true);
+  const techBoxY = y + 14;
+  const techBoxH = h - 16;
+  doc.rect(rx, techBoxY, rw, techBoxH);
+  label(rx + 2, techBoxY + 4, 'RESP. TÉC.:', true);
 
-  let textY = boxY + 10;
+  let ty = techBoxY + 9;
   if (data.signatureBase64) {
     try {
-      doc.addImage(data.signatureBase64, 'PNG', rx + 2, boxY + 6, 28, 10);
-      textY = boxY + 18;
+      doc.addImage(data.signatureBase64, 'PNG', rx + 2, techBoxY + 5, 24, 9);
+      ty = techBoxY + 15;
     } catch {
       /* ignore */
     }
   }
-  label(rx + 2, textY, data.techName);
-  if (data.techTitle) label(rx + 2, textY + 5, data.techTitle);
-  if (data.techRegLine) label(rx + 2, textY + 10, data.techRegLine);
+
+  label(rx + 2, ty, data.techName, false, 5.5);
+  if (data.techTitle) label(rx + 2, ty + 4, data.techTitle, false, 5);
+  const regLine = `${data.techName}, ${data.techTitle || 'Responsável Técnico'}, CFT: ${data.cft}${data.trt !== '—' ? `, TRT: ${data.trt}` : ''}`;
+  label(rx + 2, y + h - 3, regLine, false, 4.5);
 }
 
 /**
- * Gera PDF A4 retrato no padrão da planta de referência.
+ * Gera PDF A4 retrato no padrão Métrica Topo.
  */
 export async function generateLotSheetPdf(
   input: GenerateLotSheetPdfInput,
 ): Promise<jsPDF> {
   console.log('LOT_SHEET_PDF_GENERATED', {
     lot: input.lot.id,
-    project: input.project.name,
-    layout: 'portrait_reference_enriched',
+    layout: 'metrica_topo_a4',
   });
 
   const company = input.company;
@@ -576,166 +619,106 @@ export async function generateLotSheetPdf(
     tech?.signature_url as string | undefined,
   );
 
-  let qrBase64: string | null = null;
-  try {
-    qrBase64 = await QRCode.toDataURL(input.validation.url, {
-      margin: 1,
-      width: 200,
-    });
-  } catch {
-    qrBase64 = null;
-  }
-
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
+  const innerX = MARGIN;
+  const innerY = MARGIN;
+  const innerW = pageW - MARGIN * 2;
+  const innerH = pageH - MARGIN * 2;
 
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.4);
-  doc.rect(MARGIN, MARGIN, pageW - MARGIN * 2, pageH - MARGIN * 2);
+  doc.rect(innerX, innerY, innerW, innerH);
 
-  const footerH = pageH * FOOTER_RATIO;
-  const drawArea: Box = {
-    x: MARGIN + 4,
-    y: MARGIN + 4,
-    w: pageW - (MARGIN + 4) * 2,
-    h: pageH - MARGIN * 2 - footerH - 4,
-  };
-  const footerY = MARGIN + 4 + drawArea.h;
+  const footerH = 46;
+  const locationH = 36;
+  const scaleBandH = 9;
+  const tableRowH = 4.2;
+  const tableHeaderH = 5;
+  const tableRows = Math.max(3, Math.min(input.metricRows.length, 8));
+  const tableH = tableHeaderH + tableRows * tableRowH + 2;
+  const gap = 2;
+  const contentX = innerX + 3;
+  const contentW = innerW - 6;
 
-  const tlBox: Box = { x: drawArea.x, y: drawArea.y, ...PANEL.tl };
-  const trBox: Box = {
-    x: drawArea.x + drawArea.w - PANEL.tr.w,
-    y: drawArea.y,
-    ...PANEL.tr,
-  };
-  const blBox: Box = {
-    x: drawArea.x,
-    y: drawArea.y + drawArea.h - PANEL.bl.h,
-    ...PANEL.bl,
-  };
-  const brBox: Box = {
-    x: drawArea.x + drawArea.w - PANEL.br.w,
-    y: drawArea.y + drawArea.h - PANEL.br.h,
-    ...PANEL.br,
+  const footerBox: Box = {
+    x: contentX,
+    y: innerY + innerH - footerH - 2,
+    w: contentW,
+    h: footerH,
   };
 
-  const topInset = Math.max(PANEL.tl.h, PANEL.tr.h) + 3;
-  const bottomInset = Math.max(PANEL.bl.h, PANEL.br.h) + 3;
-  const leftInset = PANEL.tl.w + 3;
-  const rightInset = PANEL.tr.w + 3;
+  const locationBox: Box = {
+    x: contentX,
+    y: footerBox.y - gap - locationH,
+    w: contentW,
+    h: locationH,
+  };
 
+  const scaleY = locationBox.y - gap - scaleBandH;
+  const tableBox: Box = {
+    x: contentX,
+    y: scaleY - gap - tableH,
+    w: contentW,
+    h: tableH,
+  };
+
+  const mainTopY = innerY + 3;
+  const mainTargetH = innerH * 0.65;
+  const mainAvailableH = tableBox.y - gap - mainTopY;
   const mainBox: Box = {
-    x: drawArea.x + leftInset,
-    y: drawArea.y + topInset,
-    w: drawArea.w - leftInset - rightInset,
-    h: drawArea.h - topInset - bottomInset,
+    x: contentX,
+    y: mainTopY,
+    w: contentW,
+    h: Math.max(100, Math.min(mainTargetH, mainAvailableH)),
   };
-
-  drawBlockSketchPanel(doc, input.blockSketch, tlBox);
-  drawProjectMapPanel(doc, input.projectMap, trBox);
-
-  drawMiniTable(
-    doc,
-    blBox,
-    'COORDENADAS (m)',
-    ['Vért.', 'Norte', 'Este'],
-    input.vertices.map((v) => [String(v.vertex), v.norte, v.este]),
-    8,
-  );
-
-  const segRows = input.segments.map((s: LotSheetSegmentRow) => [
-    s.segment,
-    s.azimute,
-    s.distancia,
-  ]);
-  drawMiniTable(
-    doc,
-    { x: brBox.x, y: brBox.y, w: brBox.w - 14, h: brBox.h },
-    'AZIMUTES E DISTÂNCIAS',
-    ['Seg.', 'Az.', 'Dist.'],
-    segRows,
-    7,
-  );
-
-  if (qrBase64) {
-    try {
-      doc.addImage(qrBase64, 'PNG', brBox.x + brBox.w - 13, brBox.y + 8, 12, 12);
-      doc.setFontSize(4);
-      doc.setTextColor(80, 80, 80);
-      doc.text('QR', brBox.x + brBox.w - 7, brBox.y + 22, { align: 'center' });
-      doc.setTextColor(...BLACK);
-    } catch {
-      /* ignore */
-    }
-  }
 
   const project = input.project;
   const lot = input.lot;
   const lotNum = String(lot.number || lot.lot || '—');
   const quadra = String(lot.block_name || lot.block || lot.quadra || '—');
   const projectName = String(project.name || '—').toUpperCase();
-  const municipio = String(project.municipio || project.city || '—');
-  const uf = String(project.uf || project.state || '—');
-  const municipioUf = `${municipio} - ${uf}`.toUpperCase();
-  const comarca = String(project.comarca || project.forum_city || municipio);
-  const comarcaUf = `${comarca} - ${uf}`.toUpperCase();
-  const matricula = String(project.matricula || '—');
-  const criRaw = String(project.cri_cartorio || '—');
-  const cri = criRaw !== '—' ? `(${criRaw})` : '';
-  const techName = String(tech?.name || '—').toUpperCase();
-  const techTitle = String(tech?.title || '').toUpperCase();
-  const regType = String(tech?.registry_type || 'CFT').toUpperCase();
-  const regNum = String(tech?.registry_number || '—');
-  const techRegLine =
-    regNum !== '—' ? `${regType}: ${regNum}` : '';
+  const scaleDenom = parseScaleDenom(input.scaleLabel);
 
-  const sheetPtsRaw = projectRingToSheet(
-    input.geometry.localRing,
-    input.geometry.bboxMeters,
-    mainBox,
+  const sheetPts = drawLotPolygon(
+    doc,
+    projectRingToSheet(
+      input.geometry.localRing,
+      input.geometry.bboxMeters,
+      mainBox,
+    ),
   );
 
-  const sheetPts = drawLotPolygon(doc, sheetPtsRaw);
-
-  const edgeMeasures = [
-    input.measures.frente,
-    input.measures.ladoDireito,
-    input.measures.fundo,
-    input.measures.ladoEsquerdo,
-  ];
-
-  drawEdgeMeasures(doc, sheetPts, edgeMeasures);
+  drawEdgeMeasures(doc, sheetPts, edgeLengthsFromRing(input.geometry.localRing));
+  drawVertexMarkers(doc, sheetPts);
   drawAreaCenter(doc, sheetPts, input.measures.area);
   drawLotNumberBadge(doc, sheetPts, lotNum);
   placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants);
+  drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
 
-  drawCompassRose(doc, mainBox.x + mainBox.w - 12, mainBox.y + 12, 6);
+  drawMetricTable(doc, tableBox, input.metricRows);
+  drawGraphicScale(doc, contentX, scaleY + 4, contentW, scaleDenom);
+  drawQuadraLocation(doc, locationBox, input.blockSketch, input.quadraStreetNames);
 
-  drawSealAndVersion(
-    doc,
-    drawArea.x + drawArea.w / 2 - 44,
-    drawArea.y + drawArea.h - 16,
-    input.version,
-    input.validation.emittedAt,
-    input.validation.code,
-  );
+  const techName = String(tech?.name || '').trim() || 'Não informado';
+  const techTitle = String(tech?.title || '').trim();
+  const cft = String(tech?.registry_number || '').trim() || 'Não informado';
+  const trt =
+    String(tech?.trt || tech?.art_number || tech?.trt_number || '').trim() || '—';
 
-  drawFooterGrid(doc, pageW, footerY, footerH - 2, {
+  drawMetricTopoFooter(doc, footerBox, {
     projectName,
-    owner: String(input.owner || '—').toUpperCase(),
-    municipioUf,
-    matricula: matricula === '—' ? '' : matricula,
-    cri,
-    comarcaUf,
+    owner: input.ownerDetails,
     lotNum,
     quadra,
     area: input.measures.area,
     scale: formatScaleLabel(input.scaleLabel),
     date: new Date().toLocaleDateString('pt-BR'),
-    techName,
-    techTitle,
-    techRegLine,
+    techName: techName.toUpperCase(),
+    techTitle: techTitle.toUpperCase(),
+    cft,
+    trt,
     logoBase64,
     signatureBase64,
   });

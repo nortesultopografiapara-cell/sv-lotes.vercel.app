@@ -47,6 +47,16 @@ export type LotSheetSegmentRow = {
   distancia: string;
 };
 
+/** Tabela métrica: De | Para | Azimute | Distância | Coord. E | Coord. N */
+export type LotSheetMetricRow = {
+  from: string;
+  to: string;
+  azimute: string;
+  distancia: string;
+  coordE: string;
+  coordN: string;
+};
+
 export const LOT_SHEET_VERSION = '1.0';
 
 export function createLotSheetValidation(): {
@@ -406,6 +416,52 @@ function formatAzimuth(deg: number): string {
   const d = Math.floor(deg);
   const min = Math.round((deg - d) * 60);
   return `${String(d).padStart(3, '0')}°${String(min).padStart(2, '0')}'`;
+}
+
+function formatCoordValue(val: number): string {
+  return val.toLocaleString('pt-BR', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+function vertexMarker(i: number): string {
+  return `M-${String(i + 1).padStart(2, '0')}`;
+}
+
+export function buildMetricTable(localRing: [number, number][]): LotSheetMetricRow[] {
+  const rows: LotSheetMetricRow[] = [];
+  const verts: [number, number][] = [];
+  for (const p of localRing) {
+    const last = verts[verts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.01) verts.push(p);
+  }
+  if (verts.length > 2) {
+    const f = verts[0];
+    const l = verts[verts.length - 1];
+    if (Math.hypot(f[0] - l[0], f[1] - l[1]) < 0.01) verts.pop();
+  }
+  if (verts.length < 2) return rows;
+
+  for (let i = 0; i < verts.length; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % verts.length];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.01) continue;
+    const j = (i + 1) % verts.length;
+    rows.push({
+      from: vertexMarker(i),
+      to: vertexMarker(j),
+      azimute: formatAzimuth(azimuthFromSegment(dx, dy)),
+      distancia: `${dist.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
+      coordE: formatCoordValue(p2[0]),
+      coordN: formatCoordValue(p2[1]),
+    });
+    if (rows.length >= 20) break;
+  }
+  return rows;
 }
 
 export function buildSegmentTable(localRing: [number, number][]): LotSheetSegmentRow[] {

@@ -12,6 +12,7 @@ import {
 import {
   buildBlockSketch,
   buildCardinalConfrontants,
+  buildMetricTable,
   buildProjectMap,
   buildSegmentTable,
   buildSideConfrontants,
@@ -23,10 +24,12 @@ import {
   toLocalMetersFromRing,
   type LotSheetBlockSketch,
   type LotSheetCardinalConfrontant,
+  type LotSheetMetricRow,
   type LotSheetProjectMapLot,
   type LotSheetSegmentRow,
   type LotSheetVertexRow,
 } from '@/lib/lotSheetEnrichment';
+import { formatStreetDisplay } from '@/lib/streetGuide';
 
 export type LotSheetGeometry = {
   /** [lat, lng] fechado ou aberto */
@@ -41,11 +44,23 @@ export type LotSheetNeighbor = {
   side?: string;
 };
 
+export type LotSheetOwnerDetails = {
+  name: string;
+  cpf: string;
+  fatherName: string;
+  motherName: string;
+  address: string;
+  neighborhood: string;
+  municipality: string;
+  cadastralInscription: string;
+};
+
 export type LotSheetPayload = {
   project: Record<string, unknown>;
   lot: Record<string, unknown>;
   owner: string;
   ownerDocument: string;
+  ownerDetails: LotSheetOwnerDetails;
   company: Record<string, unknown> | null;
   technicalResponsible: Record<string, unknown> | null;
   neighbors: LotSheetNeighbor[];
@@ -54,6 +69,8 @@ export type LotSheetPayload = {
   projectMap: LotSheetProjectMapLot[];
   vertices: LotSheetVertexRow[];
   segments: LotSheetSegmentRow[];
+  metricRows: LotSheetMetricRow[];
+  quadraStreetNames: string[];
   validation: { code: string; url: string; emittedAt: string };
   version: string;
   geometry: LotSheetGeometry;
@@ -226,16 +243,77 @@ async function fetchCustomerFromLatestSaleByBlock(
   return null;
 }
 
+function buildOwnerDetails(
+  customer: Record<string, unknown> | null,
+  block: Record<string, unknown>,
+  project: Record<string, unknown>,
+  owner: string,
+  ownerDocument: string,
+  lotAddressLine: string,
+): LotSheetOwnerDetails {
+  const city = String(
+    project.municipio || project.city || customer?.city || '—',
+  ).trim();
+  const uf = String(project.uf || project.state || customer?.state_uf || '—').trim();
+  const municipality =
+    city !== '—' && uf !== '—' ? `${city}-${uf}` : city !== '—' ? city : 'Não informado';
+
+  return {
+    name: owner,
+    cpf: ownerDocument,
+    fatherName:
+      String(customer?.father_name || customer?.nome_pai || '').trim() ||
+      'Não informado',
+    motherName:
+      String(customer?.mother_name || customer?.nome_mae || '').trim() ||
+      'Não informado',
+    address:
+      String(customer?.address || customer?.endereco || lotAddressLine || '').trim() ||
+      'Não informado',
+    neighborhood:
+      String(customer?.neighborhood || customer?.bairro || '').trim() ||
+      'Não informado',
+    municipality,
+    cadastralInscription:
+      String(
+        block.inscricao_cadastral ||
+          block.cadastral_inscription ||
+          block.cadastral_code ||
+          '',
+      ).trim() || '—',
+  };
+}
+
+function quadraStreetNamesFromGuides(
+  guides: Record<string, unknown>[],
+): string[] {
+  const names: string[] = [];
+  for (const g of guides) {
+    const label = formatStreetDisplay(
+      g.type as string | undefined,
+      g.name as string | undefined,
+    );
+    if (label && !names.includes(label)) names.push(label);
+    if (names.length >= 4) break;
+  }
+  return names;
+}
+
 async function resolveLotSheetOwner(
   supabase: SupabaseClient,
   block: Record<string, unknown>,
-): Promise<{ owner: string; ownerDocument: string }> {
+): Promise<{
+  owner: string;
+  ownerDocument: string;
+  customer: Record<string, unknown> | null;
+}> {
   const status = block.status;
 
   if (isAvailableLotStatus(status)) {
     const normalized = {
       owner: 'Não informado',
       ownerDocument: 'Não informado',
+      customer: null as Record<string, unknown> | null,
     };
     console.log('LOT_SHEET_OWNER_NORMALIZED', { status, ...normalized });
     return normalized;
@@ -276,11 +354,12 @@ async function resolveLotSheetOwner(
     if (blockName) owner = blockName;
   }
 
-  const normalized = { owner, ownerDocument };
+  const normalized = { owner, ownerDocument, customer };
   console.log('LOT_SHEET_OWNER_NORMALIZED', {
     status,
     hasCustomer: Boolean(customer),
-    ...normalized,
+    owner,
+    ownerDocument,
   });
   return normalized;
 }
@@ -322,7 +401,7 @@ export async function loadLotSheetPayload(
 
   const { data: guides } = await supabase
     .from('street_guides')
-    .select('id, name, geometry_geojson')
+    .select('id, name, type, geometry_geojson')
     .eq('project_id', params.projectId)
     .limit(20);
 
@@ -357,7 +436,7 @@ export async function loadLotSheetPayload(
     ? `${chanfre.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
     : '—';
 
-  const { owner, ownerDocument } = await resolveLotSheetOwner(
+  const { owner, ownerDocument, customer } = await resolveLotSheetOwner(
     supabase,
     block as Record<string, unknown>,
   );
@@ -387,6 +466,7 @@ export async function loadLotSheetPayload(
   const projectMap = buildProjectMap(params.blockId, blocksList);
   const vertices = buildVertexTable(localRing);
   const segments = buildSegmentTable(localRing);
+  const metricRows = buildMetricTable(localRing);
   const validation = createLotSheetValidation();
   const sideConfrontants = buildSideConfrontants(
     block as Record<string, unknown>,
@@ -399,6 +479,15 @@ export async function loadLotSheetPayload(
   const memorialFrontClause = formatMemorialFrontClause(
     block as Record<string, unknown>,
   );
+  const ownerDetails = buildOwnerDetails(
+    customer,
+    block as Record<string, unknown>,
+    project as Record<string, unknown>,
+    owner,
+    ownerDocument,
+    lotAddressLine,
+  );
+  const quadraStreetNames = quadraStreetNamesFromGuides(guidesList);
 
   console.log('LOT_SHEET_GEOMETRY_PROCESSED', {
     points: ring.length,
@@ -413,6 +502,7 @@ export async function loadLotSheetPayload(
     lot: block as Record<string, unknown>,
     owner,
     ownerDocument,
+    ownerDetails,
     company: (company as Record<string, unknown>) || null,
     technicalResponsible: (techRows?.[0] as Record<string, unknown>) || null,
     neighbors,
@@ -421,6 +511,8 @@ export async function loadLotSheetPayload(
     projectMap,
     vertices,
     segments,
+    metricRows,
+    quadraStreetNames,
     validation,
     version: LOT_SHEET_VERSION,
     geometry: {
