@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import { calculateFinancialTotals } from '@/lib/financeCashFlow';
 import dynamic from 'next/dynamic';
 import SuperAdminDashboard from './SuperAdminDashboard';
@@ -55,6 +56,7 @@ export default function DashboardPage() {
 }
 
 function OperationalDashboard({ user }: { user: any }) {
+  const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
   const [stats, setStats] = useState({
     available: 0,
     reserved: 0,
@@ -74,6 +76,17 @@ function OperationalDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+
+  useEffect(() => {
+    const p = projects.find((x) => x.id === selectedProjectId);
+    if (selectedProjectId && p?.name) {
+      setGisSelectedProject({ id: p.id, name: p.name });
+    }
+  }, [selectedProjectId, projects, setGisSelectedProject]);
+
+  useEffect(() => {
+    return () => clearGisSelectedProject();
+  }, [clearGisSelectedProject]);
   
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);

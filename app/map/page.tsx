@@ -19,6 +19,7 @@ import {
 } from '@/lib/project-form';
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
+import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -292,6 +293,22 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
+
+  useEffect(() => {
+    if (selectedProject?.id && selectedProject?.name) {
+      setGisSelectedProject({
+        id: selectedProject.id,
+        name: selectedProject.name,
+      });
+    } else {
+      clearGisSelectedProject();
+    }
+  }, [selectedProject, setGisSelectedProject, clearGisSelectedProject]);
+
+  useEffect(() => {
+    return () => clearGisSelectedProject();
+  }, [clearGisSelectedProject]);
 
   // KML Import States
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -1420,16 +1437,16 @@ export default function MapPage() {
            </div>
         </div>
 
-        {/* TOP FLOATING HEADER - TOP LEFT */}
-        <div className="absolute top-2 left-2 md:top-4 md:left-24 z-[400] pointer-events-auto">
-          <div className="flex items-center bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg p-2 max-w-[250px]">
-             <div className="flex items-center gap-2 overflow-hidden">
-                <button onClick={handleBack} className="flex-shrink-0 p-1 hover:bg-[#2d3340] rounded text-gray-400 hover:text-white transition-colors" title="Voltar">
-                   <ArrowLeft className="w-4 h-4" />
-                </button>
-                <h2 className="text-sm font-bold text-white truncate">{selectedProject.name}</h2>
-             </div>
-          </div>
+        {/* Voltar — sem card de nome (nome no header global) */}
+        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[400] pointer-events-auto">
+          <button
+            type="button"
+            onClick={handleBack}
+            className="flex items-center justify-center p-2.5 bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg text-gray-400 hover:text-white hover:bg-[#2d3340] transition-colors"
+            title="Voltar aos projetos"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
         </div>
 
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}

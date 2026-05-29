@@ -35,6 +35,8 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { UserProfileModals } from './UserProfileModals';
 import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
 import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
+import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext';
+import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -367,6 +369,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const menuItems = getMenuItems(user?.role || '');
 
   return (
+    <GisSelectedProjectProvider>
     <div className="flex h-screen w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
@@ -391,6 +394,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-2">
             {isSuperAdmin && <SuperAdminQuickActions />}
+            <GisProjectHeaderBadge />
             <NotificationBell user={user} />
             <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white text-sm font-bold">
               {user?.name?.charAt(0) || 'U'}
@@ -560,6 +564,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   Master
                 </span>
               )}
+              <GisProjectHeaderBadge />
               <NotificationBell user={user} />
               
               {/* Profile Dropdown */}
@@ -644,5 +649,6 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         setActiveModal={setActiveProfileModal} 
       />
     </div>
+    </GisSelectedProjectProvider>
   );
 }
