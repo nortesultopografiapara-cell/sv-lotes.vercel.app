@@ -170,7 +170,77 @@ function segmentTextAngle(dx: number, dy: number): number {
   return angle;
 }
 
-function edgeOutwardLabelPos(
+function pointInsidePolygon(
+  x: number,
+  y: number,
+  polygon: [number, number][],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0];
+    const yi = polygon[i][1];
+    const xj = polygon[j][0];
+    const yj = polygon[j][1];
+    const intersect =
+      yi > y !== yj > y &&
+      x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/** Posição do rótulo no lado interno do polígono (em direção ao centroide). */
+function edgeInternalLabelPos(
+  p1: [number, number],
+  p2: [number, number],
+  center: [number, number],
+  polygon: [number, number][],
+  offsetMm: number,
+): {
+  x: number;
+  y: number;
+  angle: number;
+  mid: [number, number];
+  offsetUsed: number;
+} {
+  const mx = (p1[0] + p2[0]) / 2;
+  const my = (p1[1] + p2[1]) / 2;
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  const len = Math.hypot(dx, dy) || 1;
+  let nx = -dy / len;
+  let ny = dx / len;
+
+  const toCenterX = center[0] - mx;
+  const toCenterY = center[1] - my;
+  if (nx * toCenterX + ny * toCenterY < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+
+  const angle = segmentTextAngle(dx, dy);
+  let offsetUsed = offsetMm;
+  let x = mx + nx * offsetUsed;
+  let y = my + ny * offsetUsed;
+
+  if (!pointInsidePolygon(x, y, polygon)) {
+    for (const tryOffset of [offsetMm * 0.75, offsetMm * 0.5, 3]) {
+      const tx = mx + nx * tryOffset;
+      const ty = my + ny * tryOffset;
+      if (pointInsidePolygon(tx, ty, polygon)) {
+        x = tx;
+        y = ty;
+        offsetUsed = tryOffset;
+        break;
+      }
+    }
+  }
+
+  return { x, y, angle, mid: [mx, my], offsetUsed };
+}
+
+/** Confrontantes: lado externo (afastado do centroide). */
+function edgeExternalLabelPos(
   p1: [number, number],
   p2: [number, number],
   center: [number, number],
@@ -183,14 +253,22 @@ function edgeOutwardLabelPos(
   const len = Math.hypot(dx, dy) || 1;
   let nx = -dy / len;
   let ny = dx / len;
-  const vx = mx + nx * offsetMm - center[0];
-  const vy = my + ny * offsetMm - center[1];
-  if (vx * nx + vy * ny < 0) {
+
+  const toCenterX = center[0] - mx;
+  const toCenterY = center[1] - my;
+  if (nx * toCenterX + ny * toCenterY > 0) {
     nx = -nx;
     ny = -ny;
   }
+
   const angle = segmentTextAngle(dx, dy);
   return { x: mx + nx * offsetMm, y: my + ny * offsetMm, angle };
+}
+
+function lotSpanOnSheet(verts: [number, number][]): number {
+  const xs = verts.map((p) => p[0]);
+  const ys = verts.map((p) => p[1]);
+  return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 }
 
 function drawEdgeMeasures(
@@ -201,17 +279,48 @@ function drawEdgeMeasures(
   const verts = preparePolygonVertices(points);
   const c = centroid(verts);
   const n = Math.min(verts.length, measures.length);
+  const narrow = lotSpanOnSheet(verts) < 38;
+  const fontSize = narrow ? 6 : 7;
+  const baseOffset = narrow ? 3 : 4;
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(fontSize);
   doc.setTextColor(...BLACK);
+
+  console.log('LOT_SHEET_EDGE_LABEL_INTERNAL_OFFSET', {
+    narrow,
+    fontSize,
+    baseOffsetMm: baseOffset,
+    edges: n,
+  });
+
   for (let i = 0; i < n; i++) {
     const p1 = verts[i];
     const p2 = verts[(i + 1) % verts.length];
     const label = measures[i];
     if (!label || label === '—') continue;
-    const dx = p2[0] - p1[0];
-    const dy = p2[1] - p1[1];
-    const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, 5);
+
+    const edgeLenMm = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    const offsetMm = Math.min(baseOffset, Math.max(3, edgeLenMm * 0.12));
+
+    const { x, y, angle, mid, offsetUsed } = edgeInternalLabelPos(
+      p1,
+      p2,
+      c,
+      verts,
+      offsetMm,
+    );
+
+    console.log('LOT_SHEET_EDGE_LABEL_POSITION', {
+      edgeIndex: i,
+      mid,
+      position: [x, y],
+      angleDeg: angle,
+      offsetMm: offsetUsed,
+      inside: pointInsidePolygon(x, y, verts),
+      edgeLenMm,
+    });
+
     doc.text(label, x, y, {
       align: 'center',
       angle,
@@ -248,7 +357,7 @@ function labelAtEdge(
   const c = centroid(verts);
   const dx = p2[0] - p1[0];
   const dy = p2[1] - p1[1];
-  const { x, y, angle } = edgeOutwardLabelPos(p1, p2, c, offsetMm);
+  const { x, y, angle } = edgeExternalLabelPos(p1, p2, c, offsetMm);
   doc.text(text, x, y, {
     align: 'center',
     angle,
