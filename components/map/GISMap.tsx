@@ -48,12 +48,16 @@ import {
 import {
   chanfreTooltipText,
   formatChanfreMeters,
+  parseBlockSideLength,
   resolveLotMeasuresFromBlock,
+  type ChanfreInfo,
 } from "@/lib/lotChanfre";
 import {
   calculateLotDimensions,
+  detectBack,
   detectFront,
   extractSegments,
+  mergeCurvedSegments,
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
@@ -1287,9 +1291,182 @@ function MeasureInteraction({
 }
 
 
+const MAX_URBAN_SIDE_METERS = 500;
+const CHANFRE_MIN_METERS = 2;
+const CHANFRE_MAX_METERS = 15;
+
+type CleanLotMeasurements = {
+  frente: number | null;
+  fundo: number | null;
+  ladoDireito: number | null;
+  ladoEsquerdo: number | null;
+  chanfre: ChanfreInfo | null;
+  area: number | null;
+  perimeter: number | null;
+};
+
+function isPlausibleUrbanSideMeters(value: number | null | undefined): boolean {
+  return (
+    value != null &&
+    Number.isFinite(value) &&
+    value > 0.01 &&
+    value <= MAX_URBAN_SIDE_METERS
+  );
+}
+
+function isPlausibleUrbanAreaM2(value: number | null | undefined): boolean {
+  return (
+    value != null && Number.isFinite(value) && value > 1 && value <= 50_000
+  );
+}
+
+function pickPopupSideValue(
+  dbValue: unknown,
+  cleanValue: number | null | undefined,
+): number | null {
+  const db = parseBlockSideLength(dbValue);
+  const clean =
+    cleanValue != null && Number.isFinite(Number(cleanValue))
+      ? Number(cleanValue)
+      : null;
+
+  if (!isPlausibleUrbanSideMeters(db)) {
+    return isPlausibleUrbanSideMeters(clean) ? clean : null;
+  }
+  if (!isPlausibleUrbanSideMeters(clean)) {
+    return db;
+  }
+
+  const diff = Math.abs(db! - clean!);
+  const rel = diff / Math.max(clean!, 1);
+  if (rel > 0.35 && (db! > clean! * 1.5 || db! > MAX_URBAN_SIDE_METERS * 0.5)) {
+    return clean;
+  }
+  return db;
+}
+
+function polygonPerimeterM(ring: LatLngPair[]): number {
+  if (ring.length < 2) return 0;
+  let total = 0;
+  const closed = ring.length >= 3;
+  const limit = closed ? ring.length : ring.length - 1;
+  for (let i = 0; i < limit; i++) {
+    const j = closed ? (i + 1) % ring.length : i + 1;
+    total += distanceMeters(ring[i], ring[j]);
+  }
+  return total;
+}
+
+function polygonAreaM2(ring: LatLngPair[]): number {
+  if (ring.length < 3) return 0;
+  const centerLat =
+    ring.reduce((sum, [lat]) => sum + lat, 0) / ring.length;
+  const mPerDegLat = 111_320;
+  const mPerDegLng =
+    111_320 * Math.cos((centerLat * Math.PI) / 180) || 111_320;
+
+  let sum = 0;
+  const n = ring.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const [lat1, lng1] = ring[i];
+    const [lat2, lng2] = ring[j];
+    const x1 = lng1 * mPerDegLng;
+    const y1 = lat1 * mPerDegLat;
+    const x2 = lng2 * mPerDegLng;
+    const y2 = lat2 * mPerDegLat;
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) * 0.5;
+}
+
+/** Chanfre só em segmentos curtos reais (2–15 m), com mais de 4 lados no anel limpo. */
+function computeCleanChanfreFromRing(ring: number[][]): ChanfreInfo | null {
+  const rawSegs = extractSegments(ring, []);
+  const merged = mergeCurvedSegments(rawSegs, 20);
+  if (merged.length <= 4) return null;
+
+  const frenteRaw = detectFront(merged);
+  const fundoRaw = detectBack(merged, frenteRaw);
+  const chanfreLengths: number[] = [];
+
+  for (const seg of merged) {
+    if (seg === frenteRaw || seg === fundoRaw) continue;
+    if (seg.length >= CHANFRE_MIN_METERS && seg.length <= CHANFRE_MAX_METERS) {
+      chanfreLengths.push(Math.round(seg.length * 100) / 100);
+    }
+  }
+
+  if (chanfreLengths.length === 0) return null;
+  const total = Math.round(chanfreLengths.reduce((a, b) => a + b, 0) * 100) / 100;
+  return { total, segments: chanfreLengths };
+}
+
+/** Medidas do popup a partir da geometria sanitizada (mesma do desenho do mapa). */
+function getCleanLotMeasurements(
+  lot: Record<string, unknown>,
+  cleanedCoords: LatLngPair[],
+): CleanLotMeasurements {
+  const rawMeasurements = {
+    frente: lot.frente,
+    fundo: lot.Fundo,
+    ladoDireito: lot["Lado Dir."],
+    ladoEsquerdo: lot["Lado Esq."],
+    chanfre: lot.chanfreInfo,
+    area: lot.area,
+  };
+
+  if (cleanedCoords.length < 3) {
+    const empty: CleanLotMeasurements = {
+      frente: pickPopupSideValue(lot.frente, null),
+      fundo: pickPopupSideValue(lot.Fundo, null),
+      ladoDireito: pickPopupSideValue(lot["Lado Dir."], null),
+      ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], null),
+      chanfre: null,
+      area: parseBlockSideLength(lot.area),
+      perimeter: null,
+    };
+    console.log("MEASURE_RAW", lot.number, rawMeasurements);
+    console.log("MEASURE_CLEAN", lot.number, empty);
+    return empty;
+  }
+
+  const ring = boundsToLngLatRing(cleanedCoords);
+  const dims = calculateLotDimensions(ring, [], {});
+  const geoArea = polygonAreaM2(cleanedCoords);
+  const geoPerimeter = polygonPerimeterM(cleanedCoords);
+  const chanfre = computeCleanChanfreFromRing(ring);
+
+  const dbArea = parseBlockSideLength(lot.area);
+  const cleanMeasurements: CleanLotMeasurements = {
+    frente: pickPopupSideValue(lot.frente, dims.frente),
+    fundo: pickPopupSideValue(lot.Fundo, dims.fundo),
+    ladoDireito: pickPopupSideValue(lot["Lado Dir."], dims.ladoDireito),
+    ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], dims.ladoEsquerdo),
+    chanfre,
+    area:
+      isPlausibleUrbanAreaM2(dbArea) &&
+      geoArea > 0 &&
+      Math.abs(dbArea! - geoArea) / Math.max(geoArea, 1) < 0.5
+        ? dbArea
+        : geoArea > 0
+          ? Math.round(geoArea * 100) / 100
+          : isPlausibleUrbanAreaM2(dbArea)
+            ? dbArea
+            : null,
+    perimeter:
+      geoPerimeter > 0 ? Math.round(geoPerimeter * 100) / 100 : null,
+  };
+
+  console.log("MEASURE_RAW", lot.number, rawMeasurements);
+  console.log("MEASURE_CLEAN", lot.number, cleanMeasurements);
+  return cleanMeasurements;
+}
+
 /** Único popup comercial do mapa GIS (Disponibilizar / Reservar / Vender / Editar Venda). */
 function LotPopupContent({
   lot,
+  cleanedCoords,
   onAction,
   onRequestCustomerForm,
   onRequestClear,
@@ -1302,6 +1479,7 @@ function LotPopupContent({
   actionLoading,
 }: {
   lot: any;
+  cleanedCoords?: LatLngPair[];
   onAction: (lot: any, action: string, newPrice?: number) => void;
   onRequestCustomerForm: (lot: any, action: string, newPrice: number) => void;
   onRequestClear: (lot: any, newPrice: number) => void;
@@ -1329,7 +1507,12 @@ function LotPopupContent({
     console.log("SHOW_EDIT_SALE_BUTTON", lot.status, userRole, canEditSale, "isSold=", isSold);
   }, [isSold, lot.status, userRole, canEditSale]);
 
-  const area = lot.area || 0;
+  const cleanMeasures = useMemo(() => {
+    if (!cleanedCoords || cleanedCoords.length < 3) return null;
+    return getCleanLotMeasurements(lot, cleanedCoords);
+  }, [lot, cleanedCoords]);
+
+  const area = (cleanMeasures?.area ?? Number(lot.area)) || 0;
   const currentPrice = Number(lot.price) || 0;
   const displayNum =
     String(lot.number)
@@ -1422,8 +1605,8 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Frente:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.frente !== null && lot.frente !== undefined
-                  ? `${Number(lot.frente).toFixed(2)} m`
+                {cleanMeasures?.frente != null
+                  ? `${cleanMeasures.frente.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
@@ -1440,35 +1623,43 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot.Fundo !== null && lot.Fundo !== undefined
-                  ? `${Number(lot.Fundo).toFixed(2)} m`
+                {cleanMeasures?.fundo != null
+                  ? `${cleanMeasures.fundo.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot["Lado Dir."] !== null && lot["Lado Dir."] !== undefined
-                  ? `${Number(lot["Lado Dir."]).toFixed(2)} m`
+                {cleanMeasures?.ladoDireito != null
+                  ? `${cleanMeasures.ladoDireito.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {lot["Lado Esq."] !== null && lot["Lado Esq."] !== undefined
-                  ? `${Number(lot["Lado Esq."]).toFixed(2)} m`
+                {cleanMeasures?.ladoEsquerdo != null
+                  ? `${cleanMeasures.ladoEsquerdo.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
-            {lot.chanfreInfo && lot.chanfreInfo.total > 0 && (
+            {cleanMeasures?.perimeter != null && cleanMeasures.perimeter > 0 && (
+              <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-0.5">
+                <span className="text-gray-500 text-[10px]">Perímetro:</span>{" "}
+                <span className="text-gray-900 text-[11px] font-medium w-20 text-right">
+                  {cleanMeasures.perimeter.toFixed(2)} m
+                </span>
+              </div>
+            )}
+            {cleanMeasures?.chanfre && cleanMeasures.chanfre.total > 0 && (
               <div
                 className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1 cursor-help"
-                title={chanfreTooltipText(lot.chanfreInfo)}
+                title={chanfreTooltipText(cleanMeasures.chanfre)}
               >
                 <span className="text-[10px] font-semibold text-gray-500">Chanfre:</span>{" "}
                 <span className="font-bold text-gray-900 text-[11px]">
-                  {formatChanfreMeters(lot.chanfreInfo.total)}
+                  {formatChanfreMeters(cleanMeasures.chanfre.total)}
                 </span>
               </div>
             )}
@@ -3175,6 +3366,7 @@ export default function GISMap({
                     <Popup>
                       <LotPopupContent
                         lot={lot}
+                        cleanedCoords={positions}
                         onAction={handleLotAction}
                         onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
                         onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
@@ -3250,6 +3442,7 @@ export default function GISMap({
                 <Popup>
                   <LotPopupContent
                     lot={block}
+                    cleanedCoords={positions}
                     onAction={handleLotAction}
                     onRequestCustomerForm={(l, a, p) =>
                       openCustomerForm(l, a, p)
