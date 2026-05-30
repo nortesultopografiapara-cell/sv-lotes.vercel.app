@@ -105,6 +105,23 @@ export type SegmentMeasureDebug = {
     role: LotSideRole;
 };
 
+export type RingPathMeasure = {
+    indexes: number[];
+    totalLength: number;
+};
+
+export type RingPathClassification = {
+    frente: number;
+    fundo: number;
+    ladoDireito: number;
+    ladoEsquerdo: number;
+    chanfro: number;
+    frontIndex: number;
+    backIndex: number;
+    pathA: RingPathMeasure;
+    pathB: RingPathMeasure;
+};
+
 export type ClassifiedLotDimensions = {
     frente: number;
     fundo: number;
@@ -112,10 +129,104 @@ export type ClassifiedLotDimensions = {
     ladoEsquerdo: number;
     chanfro: number;
     segmentDebug: SegmentMeasureDebug[];
+    ringPaths: RingPathClassification;
 };
 
+function findSegmentIndex(segments: Segment[], target: Segment | null): number {
+    if (!target) return -1;
+    const byRef = segments.indexOf(target);
+    if (byRef >= 0) return byRef;
+    return segments.findIndex(
+        (s) =>
+            s.originalIndex === target.originalIndex &&
+            Math.abs(s.length - target.length) < 0.05,
+    );
+}
+
+/** Percorre o anel entre frente e fundo em um sentido (segmentos consecutivos). */
+function collectRingPathIndexes(
+    segmentCount: number,
+    startIdx: number,
+    endIdx: number,
+    step: 1 | -1,
+): number[] {
+    if (segmentCount < 3 || startIdx < 0 || endIdx < 0 || startIdx === endIdx) {
+        return [];
+    }
+    const path: number[] = [];
+    let i = startIdx;
+    for (let guard = 0; guard < segmentCount; guard++) {
+        i = (i + step + segmentCount) % segmentCount;
+        if (i === endIdx) break;
+        path.push(i);
+    }
+    return path;
+}
+
+function sumPathLength(segments: Segment[], indexes: number[]): number {
+    return indexes.reduce((sum, idx) => sum + (segments[idx]?.length || 0), 0);
+}
+
 /**
- * Classifica frente/fundo/lados a partir dos segmentos do polígono limpo.
+ * Lados = dois caminhos consecutivos no anel (frente → fundo), sem somar lados opostos.
+ */
+export function classifySidesByRingPaths(
+    segments: Segment[],
+    frontIndex: number,
+    backIndex: number,
+): RingPathClassification {
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const n = segments.length;
+    const empty: RingPathClassification = {
+        frente: 0,
+        fundo: 0,
+        ladoDireito: 0,
+        ladoEsquerdo: 0,
+        chanfro: 0,
+        frontIndex,
+        backIndex,
+        pathA: { indexes: [], totalLength: 0 },
+        pathB: { indexes: [], totalLength: 0 },
+    };
+    if (n < 3 || frontIndex < 0 || backIndex < 0) return empty;
+
+    const pathAIndexes = collectRingPathIndexes(n, frontIndex, backIndex, 1);
+    const pathBIndexes = collectRingPathIndexes(n, frontIndex, backIndex, -1);
+
+    const pathA: RingPathMeasure = {
+        indexes: pathAIndexes,
+        totalLength: round(sumPathLength(segments, pathAIndexes)),
+    };
+    const pathB: RingPathMeasure = {
+        indexes: pathBIndexes,
+        totalLength: round(sumPathLength(segments, pathBIndexes)),
+    };
+
+    const mainIndexes = new Set([frontIndex, backIndex, ...pathAIndexes, ...pathBIndexes]);
+    let chanfroTotal = 0;
+    for (let i = 0; i < n; i++) {
+        if (mainIndexes.has(i)) continue;
+        const len = segments[i].length;
+        if (len >= CHANFRE_MIN_M && len <= CHANFRE_MAX_M) {
+            chanfroTotal += len;
+        }
+    }
+
+    return {
+        frente: round(segments[frontIndex]?.length || 0),
+        fundo: round(segments[backIndex]?.length || 0),
+        ladoDireito: pathA.totalLength,
+        ladoEsquerdo: pathB.totalLength,
+        chanfro: round(chanfroTotal),
+        frontIndex,
+        backIndex,
+        pathA,
+        pathB,
+    };
+}
+
+/**
+ * Classifica frente/fundo/lados a partir dos segmentos do anel (ordem consecutiva).
  */
 export function classifyLotSidesFromSegments(
     segments: Segment[],
@@ -123,9 +234,21 @@ export function classifyLotSidesFromSegments(
         frenteLengthHint?: number | null;
         fundoLengthHint?: number | null;
         pickFrontSegment?: (segments: Segment[]) => Segment | null;
+        lotNumber?: unknown;
     },
 ): ClassifiedLotDimensions {
     const round = (n: number) => Math.round(n * 100) / 100;
+    const emptyRing: RingPathClassification = {
+        frente: 0,
+        fundo: 0,
+        ladoDireito: 0,
+        ladoEsquerdo: 0,
+        chanfro: 0,
+        frontIndex: -1,
+        backIndex: -1,
+        pathA: { indexes: [], totalLength: 0 },
+        pathB: { indexes: [], totalLength: 0 },
+    };
     const empty: ClassifiedLotDimensions = {
         frente: 0,
         fundo: 0,
@@ -133,52 +256,37 @@ export function classifyLotSidesFromSegments(
         ladoEsquerdo: 0,
         chanfro: 0,
         segmentDebug: [],
+        ringPaths: emptyRing,
     };
     if (segments.length === 0) return empty;
 
-    const roleBySeg = new Map<Segment, LotSideRole>();
-    const chanfreSegs: Segment[] = [];
-    const mainSegs: Segment[] = [];
-
-    if (segments.length > 4) {
-        for (const s of segments) {
-            if (s.length >= CHANFRE_MIN_M && s.length <= CHANFRE_MAX_M) {
-                roleBySeg.set(s, "chanfre");
-                chanfreSegs.push(s);
-            } else {
-                mainSegs.push(s);
-            }
-        }
-    } else {
-        mainSegs.push(...segments);
-    }
-
-    const pool = mainSegs.length > 0 ? mainSegs : segments;
-
     let front: Segment | null = null;
     if (options?.pickFrontSegment) {
-        front = options.pickFrontSegment(pool);
+        front = options.pickFrontSegment(segments);
     }
     const frenteHint = options?.frenteLengthHint ?? null;
     if (!front && frenteHint && frenteHint > 0) {
-        front = pickSegmentByLengthHint(pool, frenteHint);
+        front = pickSegmentByLengthHint(segments, frenteHint);
     }
     if (!front) {
-        const external = pool.filter((s) => s.isExternal);
-        const candidates = external.length > 0 ? external : pool;
+        const external = segments.filter((s) => s.isExternal);
+        const candidates = external.length > 0 ? external : segments;
         front = candidates.reduce((a, b) => (a.length < b.length ? a : b));
     }
 
+    let frontIndex = findSegmentIndex(segments, front);
+    if (frontIndex < 0) frontIndex = 0;
+
+    const fundoHint = options?.fundoLengthHint ?? null;
     let back: Segment | null = null;
-    const backCandidates = pool.filter(
-        (s) => s !== front && isOppositeParallel(s.azimuth, front!.azimuth),
+    const backCandidates = segments.filter(
+        (s, idx) => idx !== frontIndex && isOppositeParallel(s.azimuth, segments[frontIndex].azimuth),
     );
     if (backCandidates.length > 0) {
         back = backCandidates.reduce((best, s) => {
-            const dLen = Math.abs(s.length - front!.length);
-            const bLen = best ? Math.abs(best.length - front!.length) : Infinity;
+            const dLen = Math.abs(s.length - segments[frontIndex].length);
+            const bLen = best ? Math.abs(best.length - segments[frontIndex].length) : Infinity;
             if (dLen < bLen) return s;
-            const fundoHint = options?.fundoLengthHint;
             if (fundoHint && fundoHint > 0) {
                 const sd = Math.abs(s.length - fundoHint);
                 const bd = Math.abs(best.length - fundoHint);
@@ -187,77 +295,61 @@ export function classifyLotSidesFromSegments(
             return best;
         }, null as Segment | null);
     } else {
-        back = pool
-            .filter((s) => s !== front)
-            .reduce(
-                (best, s) => {
-                    const score = diffAngle(s.azimuth, front!.azimuth);
-                    const dev = Math.abs(score - 180);
-                    const bDev = best
-                        ? Math.abs(diffAngle(best.azimuth, front!.azimuth) - 180)
-                        : Infinity;
-                    return dev < bDev ? s : best;
-                },
-                null as Segment | null,
-            );
+        back = segments
+            .filter((_, idx) => idx !== frontIndex)
+            .reduce((best, s) => {
+                const dev = Math.abs(diffAngle(s.azimuth, segments[frontIndex].azimuth) - 180);
+                const bDev = best
+                    ? Math.abs(diffAngle(best.azimuth, segments[frontIndex].azimuth) - 180)
+                    : Infinity;
+                return dev < bDev ? s : best;
+            }, null as Segment | null);
     }
 
-    roleBySeg.set(front!, "frente");
-    if (back) roleBySeg.set(back, "fundo");
-
-    const lateral = pool.filter((s) => s !== front && s !== back);
-    let ladoDir = 0;
-    let ladoEsq = 0;
-
-    if (lateral.length >= 2 && front) {
-        const sorted = [...lateral].sort((a, b) => b.length - a.length);
-        const primary = sorted.slice(0, 2);
-        for (const s of primary) {
-            const sign = crossSignRelativeToFront(front, s);
-            if (sign >= 0) {
-                ladoDir += s.length;
-                roleBySeg.set(s, "ladoDireito");
-            } else {
-                ladoEsq += s.length;
-                roleBySeg.set(s, "ladoEsquerdo");
-            }
-        }
-        for (const s of sorted.slice(2)) {
-            if (s.length >= CHANFRE_MIN_M && s.length <= CHANFRE_MAX_M) {
-                roleBySeg.set(s, "chanfre");
-                chanfreSegs.push(s);
-            }
-        }
-    } else if (lateral.length === 1 && front) {
-        const s = lateral[0];
-        if (isPerpendicular(s.azimuth, front.azimuth)) {
-            ladoDir = s.length / 2;
-            ladoEsq = s.length / 2;
-            roleBySeg.set(s, "ladoDireito");
-        }
+    let backIndex = findSegmentIndex(segments, back);
+    if (backIndex < 0 || backIndex === frontIndex) {
+        backIndex = (frontIndex + Math.floor(segments.length / 2)) % segments.length;
     }
 
-    if (ladoDir === 0 && ladoEsq > 0) ladoDir = ladoEsq;
-    if (ladoEsq === 0 && ladoDir > 0) ladoEsq = ladoDir;
+    const ring = classifySidesByRingPaths(segments, frontIndex, backIndex);
+
+    if (options?.lotNumber !== undefined) {
+        console.log("MEASURE_RING_PATHS", options.lotNumber, {
+            frontIndex: ring.frontIndex,
+            backIndex: ring.backIndex,
+            pathA: ring.pathA,
+            pathB: ring.pathB,
+        });
+    }
+
+    const roleByIndex = new Map<number, LotSideRole>();
+    roleByIndex.set(frontIndex, "frente");
+    roleByIndex.set(backIndex, "fundo");
+    for (const idx of ring.pathA.indexes) roleByIndex.set(idx, "ladoDireito");
+    for (const idx of ring.pathB.indexes) roleByIndex.set(idx, "ladoEsquerdo");
+    for (let i = 0; i < segments.length; i++) {
+        if (roleByIndex.has(i)) continue;
+        const len = segments[i].length;
+        if (len >= CHANFRE_MIN_M && len <= CHANFRE_MAX_M) {
+            roleByIndex.set(i, "chanfre");
+        }
+    }
 
     const segmentDebug: SegmentMeasureDebug[] = segments.map((s, index) => ({
         index,
         length: round(s.length),
         angle: round(s.azimuth),
-        role: roleBySeg.get(s) || "other",
+        role: roleByIndex.get(index) || "other",
     }));
 
-    const chanfroTotal = round(
-        chanfreSegs.reduce((sum, s) => sum + s.length, 0),
-    );
-
     return {
-        frente: round(front!.length),
-        fundo: round(back ? back.length : front!.length),
-        ladoDireito: round(ladoDir),
-        ladoEsquerdo: round(ladoEsq),
-        chanfro: chanfroTotal,
+        frente: ring.frente,
+        fundo: ring.fundo,
+        ladoDireito: ring.ladoDireito,
+        ladoEsquerdo: ring.ladoEsquerdo,
+        chanfro: ring.chanfro,
         segmentDebug,
+        ringPaths: ring,
     };
 }
 
@@ -515,11 +607,6 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     const rawSegments = extractSegments(coords, allPolys);
     console.log("LOT_DIMENSION_SEGMENTS", rawSegments.length, "segments extracted");
     
-    // 5° tolerância como padrão, ou extraída
-    console.log(`LOT_DIMENSION_ANGLE_TOLERANCE = 20`);
-    const segments = mergeCurvedSegments(rawSegments, 20); 
-    console.log("LOT_DIMENSION_SEGMENTS_MERGED", segments.length, "groups");
-    
     let result = { 
         frente: propFrente || 0, 
         fundo: propFundo || 0, 
@@ -529,8 +616,8 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
 
     let finalChanfro = 0;
 
-    if (segments.length > 0) {
-        const classified = classifyLotSidesFromSegments(segments, {
+    if (rawSegments.length > 0) {
+        const classified = classifyLotSidesFromSegments(rawSegments, {
             frenteLengthHint: propFrente,
             fundoLengthHint: propFundo,
         });

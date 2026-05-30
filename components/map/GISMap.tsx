@@ -1424,16 +1424,17 @@ function getCleanLotMeasurements(
   }
 
   const ring = boundsToLngLatRing(cleanedCoords);
-  const merged = mergeCurvedSegments(extractSegments(ring, []), 20);
+  const ringSegments = extractSegments(ring, []);
   const hasDbFront = Boolean(
     lot.frontStreetName || lot.frontStreetDisplay || lot.frontStreetId,
   );
   const frenteHint = parseBlockSideLength(lot.frente);
   const fundoHint = parseBlockSideLength(lot.Fundo);
 
-  const classified = classifyLotSidesFromSegments(merged, {
+  const classified = classifyLotSidesFromSegments(ringSegments, {
     frenteLengthHint: frenteHint,
     fundoLengthHint: fundoHint,
+    lotNumber: lot.number,
     pickFrontSegment: (segments: Segment[]) => {
       if (hasDbFront && frenteHint) {
         return pickFrontSegmentByFrenteLength(segments, frenteHint);
