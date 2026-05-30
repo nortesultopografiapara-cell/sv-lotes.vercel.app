@@ -50,7 +50,11 @@ import {
   formatChanfreMeters,
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
-import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
+import {
+  calculateLotDimensions,
+  detectFront,
+  extractSegments,
+} from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
@@ -67,18 +71,13 @@ import {
  * - block line: blocksData LineString (só com SHOW_AUXILIARY_LINES)
  * - boundary: LotBoundaryEdgePolylines (só com SHOW_BOUNDARY_LINES)
  * - temp/draw: DrawStreetInteraction (só marcadores, sem polyline)
- * Labels de lote: Marker no centro (SHOW_LOT_LABEL_LINES=false)
+ * Labels de lote: numeração cartográfica em círculo (LotLabelsOverlay)
  * Lotes: contorno via stroke sanitizado (SHOW_BOUNDARY_LINES)
  */
 const SHOW_AUXILIARY_LINES = false;
 
 /** Contorno dos lotes (geometria sanitizada). */
 const SHOW_BOUNDARY_LINES = true;
-
-/** Desliga linhas de chamada entre rótulo e polígono. */
-const SHOW_LOT_LABEL_LINES = false;
-
-const LOT_LABEL_MAX_LEADER_METERS = 30;
 
 /** Lotes com histórico de linhas pretas / deslocamento visual */
 const DEBUG_GIS_LOT_NUMBERS = new Set([
@@ -568,100 +567,240 @@ function LotBoundaryEdgePolylines({
   return <>{lines}</>;
 }
 
-function logLotLabelDebug(
-  lot: { number?: string },
-  center: LatLngPair,
-  labelPos: LatLngPair,
-) {
-  const num = normalizeLotDisplayNum(lot.number);
-  const raw = String(lot.number ?? "");
-  if (!isDebugGisLot(lot.number)) {
-    return;
+const LABEL_INWARD_OFFSET_METERS = 4;
+
+type LotLabelMeta = {
+  frente?: number | null;
+  frontStreetName?: string | null;
+  frontStreetDisplay?: string | null;
+};
+
+type LotLabelItem = {
+  id: string;
+  bounds: LatLngPair[];
+  displayNum: string;
+  lot: LotLabelMeta & { number?: string };
+};
+
+function boundsToLngLatRing(bounds: LatLngPair[]): number[][] {
+  const ring = bounds.map(([lat, lng]) => [lng, lat] as [number, number]);
+  if (ring.length < 2) return ring;
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    ring.push([first[0], first[1]]);
   }
-  console.log("Lote", lot.number);
-  console.log("Centro", center);
-  console.log("Posição label", labelPos);
-  const dist = distanceMeters(center, labelPos);
-  console.log("Distância centro→label (m)", dist.toFixed(2));
-  if (dist > LOT_LABEL_MAX_LEADER_METERS) {
-    console.warn("GIS_MAP_LABEL_LEADER_TOO_LONG", {
-      lote: lot.number,
-      distMeters: dist,
-      maxMeters: LOT_LABEL_MAX_LEADER_METERS,
-    });
-  }
+  return ring;
 }
 
-function LotCentroidLabel({
-  lot,
+function offsetPointToward(
+  from: LatLngPair,
+  toward: LatLngPair,
+  meters: number,
+): LatLngPair {
+  const dist = distanceMeters(from, toward);
+  if (dist < 0.5) return from;
+  const t = Math.min(meters / dist, 0.5);
+  return [
+    from[0] + (toward[0] - from[0]) * t,
+    from[1] + (toward[1] - from[1]) * t,
+  ];
+}
+
+/** Ponto médio da frente + deslocamento para dentro; fallback: centróide. */
+function computeLotLabelPosition(
+  bounds: LatLngPair[],
+  lot?: LotLabelMeta,
+): LatLngPair {
+  const centroid = polygonCentroid(bounds);
+  if (bounds.length < 3) return centroid;
+
+  const ring = boundsToLngLatRing(bounds);
+  const segments = extractSegments(ring, []);
+  if (segments.length === 0) return centroid;
+
+  const hasStreetFront = Boolean(
+    lot?.frontStreetName || lot?.frontStreetDisplay,
+  );
+  const externalSegs = segments.filter((s) => s.isExternal);
+  const frontIdentified = hasStreetFront || externalSegs.length > 0;
+
+  if (!frontIdentified) return centroid;
+
+  let frontSeg = detectFront(segments);
+  const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
+  if (frenteLen > 0) {
+    const pool = externalSegs.length > 0 ? externalSegs : segments;
+    const byLength = pool.reduce((best, s) => {
+      const d = Math.abs(s.length - frenteLen);
+      const bd = Math.abs(best.length - frenteLen);
+      return d < bd ? s : best;
+    });
+    if (Math.abs(byLength.length - frenteLen) <= Math.max(frenteLen * 0.4, 4)) {
+      frontSeg = byLength;
+    }
+  }
+
+  const midLat = (frontSeg.p1[1] + frontSeg.p2[1]) / 2;
+  const midLng = (frontSeg.p1[0] + frontSeg.p2[0]) / 2;
+  const frontMid: LatLngPair = [midLat, midLng];
+  return offsetPointToward(frontMid, centroid, LABEL_INWARD_OFFSET_METERS);
+}
+
+function labelCircleSizePx(zoom: number): number {
+  if (zoom >= 21) return 30;
+  if (zoom >= 19) return 26;
+  if (zoom >= 17) return 22;
+  if (zoom >= 15) return 18;
+  if (zoom >= 13) return 14;
+  return 11;
+}
+
+function buildLabelBadgeHtml(
+  displayNum: string,
+  sizePx: number,
+  offsetX: number,
+  offsetY: number,
+): string {
+  const fontSize =
+    displayNum.length >= 3
+      ? Math.max(8, Math.round(sizePx * 0.34))
+      : Math.max(9, Math.round(sizePx * 0.44));
+  return `<div class="lot-map-label-badge" style="width:${sizePx}px;height:${sizePx}px;font-size:${fontSize}px;transform:translate(calc(-50% + ${offsetX}px),calc(-50% + ${offsetY}px))"><span>${displayNum}</span></div>`;
+}
+
+function resolveLabelPixelOffsets(
+  map: L.Map,
+  entries: { id: string; position: LatLngPair }[],
+  badgeSize: number,
+): Record<string, [number, number]> {
+  const minGap = badgeSize + 3;
+  const points = entries.map((e) => ({
+    id: e.id,
+    pt: map.latLngToContainerPoint(L.latLng(e.position[0], e.position[1])),
+  }));
+  const offsets: Record<string, [number, number]> = {};
+
+  for (let i = 0; i < points.length; i++) {
+    let ox = 0;
+    let oy = 0;
+    for (let j = 0; j < i; j++) {
+      const oj = offsets[points[j].id] || [0, 0];
+      const dx = points[i].pt.x + ox - (points[j].pt.x + oj[0]);
+      const dy = points[i].pt.y + oy - (points[j].pt.y + oj[1]);
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0 && dist < minGap) {
+        const push = (minGap - dist) * 0.55;
+        ox += (dx / dist) * push;
+        oy += (dy / dist) * push;
+      }
+    }
+    offsets[points[i].id] = [Math.round(ox), Math.round(oy)];
+  }
+  return offsets;
+}
+
+function LotCartographicLabelMarker({
+  position,
   displayNum,
+  mapZoom,
+  pixelOffset,
 }: {
-  lot: { bounds: LatLngPair[]; number?: string };
+  position: LatLngPair;
   displayNum: string;
+  mapZoom: number;
+  pixelOffset: [number, number];
 }) {
-  const center = polygonCentroid(lot.bounds);
-  const labelPos: LatLngPair = center;
-
-  useEffect(() => {
-    logLotLabelDebug(lot, center, labelPos);
-  }, [lot.number, center[0], center[1], labelPos[0], labelPos[1]]);
-
+  const sizePx = labelCircleSizePx(mapZoom);
   const icon = L.divIcon({
     className: "lot-map-label-marker",
-    html: `<div class="lot-map-label-text">Lote ${displayNum}</div>`,
+    html: buildLabelBadgeHtml(
+      displayNum,
+      sizePx,
+      pixelOffset[0],
+      pixelOffset[1],
+    ),
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
 
   return (
     <Marker
-      position={labelPos}
+      position={position}
       icon={icon}
       interactive={false}
-      zIndexOffset={500}
+      zIndexOffset={600}
     />
   );
 }
 
-function LotPolygonLabel({
-  lot,
-  displayNum,
+function LotLabelsOverlay({
+  items,
+  mapZoom,
+  enabled,
 }: {
-  lot: { bounds: LatLngPair[]; number?: string };
-  displayNum: string;
+  items: LotLabelItem[];
+  mapZoom: number;
+  enabled: boolean;
 }) {
-  const center = polygonCentroid(lot.bounds);
-  const labelPos = center;
+  const map = useMap();
+  const [pixelOffsets, setPixelOffsets] = useState<Record<string, [number, number]>>(
+    {},
+  );
+
+  const labelPositions = useMemo(() => {
+    const mapPos = new Map<string, LatLngPair>();
+    for (const item of items) {
+      mapPos.set(item.id, computeLotLabelPosition(item.bounds, item.lot));
+    }
+    return mapPos;
+  }, [items]);
 
   useEffect(() => {
-    logLotLabelDebug(lot, center, labelPos);
-  }, [lot.number, center[0], center[1]]);
+    if (!enabled || items.length === 0) {
+      setPixelOffsets({});
+      return;
+    }
+
+    const updateOffsets = () => {
+      const sizePx = labelCircleSizePx(mapZoom);
+      const entries = items.map((item) => ({
+        id: item.id,
+        position: labelPositions.get(item.id) || polygonCentroid(item.bounds),
+      }));
+      setPixelOffsets(resolveLabelPixelOffsets(map, entries, sizePx));
+    };
+
+    updateOffsets();
+    map.on("zoomend", updateOffsets);
+    map.on("moveend", updateOffsets);
+    map.on("resize", updateOffsets);
+    return () => {
+      map.off("zoomend", updateOffsets);
+      map.off("moveend", updateOffsets);
+      map.off("resize", updateOffsets);
+    };
+  }, [enabled, items, labelPositions, map, mapZoom]);
+
+  if (!enabled || items.length === 0) return null;
 
   return (
-    <Tooltip
-      permanent
-      direction="center"
-      offset={[0, 0]}
-      className="lot-map-label-no-leader bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
-      opacity={1}
-    >
-      <div style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}>
-        Lote {displayNum}
-      </div>
-    </Tooltip>
+    <>
+      {items.map((item) => {
+        const position =
+          labelPositions.get(item.id) || polygonCentroid(item.bounds);
+        return (
+          <LotCartographicLabelMarker
+            key={`label-${item.id}-${mapZoom}-${(pixelOffsets[item.id] || [0, 0]).join(",")}`}
+            position={position}
+            displayNum={item.displayNum}
+            mapZoom={mapZoom}
+            pixelOffset={pixelOffsets[item.id] || [0, 0]}
+          />
+        );
+      })}
+    </>
   );
-}
-
-function renderLotLabel(
-  lot: { bounds: LatLngPair[]; number?: string },
-  displayNum: string,
-  enabled: boolean,
-) {
-  if (!enabled || !displayNum || displayNum === "0") return null;
-  if (!SHOW_LOT_LABEL_LINES) {
-    return <LotCentroidLabel lot={lot} displayNum={displayNum} />;
-  }
-  return <LotPolygonLabel lot={lot} displayNum={displayNum} />;
 }
 
 const getStatusColor = (status: string) => {
@@ -1711,6 +1850,23 @@ export default function GISMap({
     }
     return getSafeMapBounds(validatedLots, blockBoundingBoxes);
   }, [lots, lotGeometryValidations, blockBoundingBoxes]);
+
+  const lotLabelItems = useMemo((): LotLabelItem[] => {
+    const items: LotLabelItem[] = [];
+    for (const lot of lots) {
+      const validation = lotGeometryValidations.get(lot.id);
+      if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
+      const displayNum = normalizeLotDisplayNum(lot.number);
+      if (!displayNum || displayNum === "0") continue;
+      items.push({
+        id: lot.id,
+        bounds: validation.cleanedCoords,
+        displayNum,
+        lot,
+      });
+    }
+    return items;
+  }, [lots, lotGeometryValidations]);
 
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
@@ -2785,19 +2941,33 @@ export default function GISMap({
             background: transparent !important;
             border: none !important;
           }
-          .lot-map-label-text {
+          .lot-map-label-badge {
+            border-radius: 50%;
+            background: #ffffff;
+            border: 1.5px solid #1f2937;
+            color: #111827;
             font-weight: 700;
-            font-size: 11px;
-            color: white;
-            white-space: nowrap;
+            opacity: 0.95;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
             pointer-events: none;
-            transform: translate(-50%, -50%);
-            text-shadow: 1px 1px 2px black, 0 0 1em black;
+            line-height: 1;
+            box-sizing: border-box;
           }
-          .leaflet-tooltip.lot-map-label-no-leader::before {
-            display: none !important;
+          .lot-map-label-badge span {
+            display: block;
+            text-align: center;
+            white-space: nowrap;
           }
         `}</style>
+
+        <LotLabelsOverlay
+          items={lotLabelItems}
+          mapZoom={mapZoom}
+          enabled={showPermanentLabels && !sheetPickActive}
+        />
 
         {lots
           .filter((lot) => lot.bounds.length > 0)
@@ -2876,11 +3046,6 @@ export default function GISMap({
                     },
                   }}
                 >
-                  {renderLotLabel(
-                    { bounds: positions, number: lot.number },
-                    displayNum,
-                    showPermanentLabels && !sheetPickActive,
-                  )}
                   {!sheetPickActive && (
                     <Popup>
                       <LotPopupContent
@@ -2957,11 +3122,6 @@ export default function GISMap({
                   },
                 }}
               >
-                {renderLotLabel(
-                  { bounds: positions, number: block.number },
-                  displayNum,
-                  showPermanentLabels,
-                )}
                 <Popup>
                   <LotPopupContent
                     lot={block}
