@@ -191,7 +191,7 @@ export function classifySidesByRingPaths(
     if (n < 3 || frontIndex < 0 || backIndex < 0) return empty;
 
     const pathAIndexes = collectRingPathIndexes(n, frontIndex, backIndex, 1);
-    const pathBIndexes = collectRingPathIndexes(n, frontIndex, backIndex, -1);
+    const pathBIndexes = collectRingPathIndexes(n, backIndex, frontIndex, 1);
 
     const pathA: RingPathMeasure = {
         indexes: pathAIndexes,

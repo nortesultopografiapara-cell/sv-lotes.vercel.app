@@ -186,12 +186,16 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
-  const collectPath = (step: 1 | -1): RingPathResult => {
+  /** Segmentos após startIdx até antes de endIdx (sentido horário, sem incluir extremos). */
+  const collectPathClockwise = (
+    startIdx: number,
+    endIdx: number,
+  ): RingPathResult => {
     const indexes: number[] = [];
-    let i = frontSegmentIndex;
+    let i = startIdx;
     for (let guard = 0; guard < n; guard++) {
-      i = (i + step + n) % n;
-      if (i === backSegmentIndex) break;
+      i = (i + 1) % n;
+      if (i === endIdx) break;
       indexes.push(i);
     }
     const totalLength = round2(
@@ -200,8 +204,9 @@ export function classifySidesByTxtRingPaths(
     return { indexes, totalLength };
   };
 
-  const pathA = collectPath(1);
-  const pathB = collectPath(-1);
+  // pathA: depois da frente até antes do fundo | pathB: depois do fundo até antes da frente
+  const pathA = collectPathClockwise(frontSegmentIndex, backSegmentIndex);
+  const pathB = collectPathClockwise(backSegmentIndex, frontSegmentIndex);
 
   return {
     frente: front.distance,
@@ -220,9 +225,13 @@ export function findBackSegmentIndex(
   const n = segments.length;
   if (n < 3) return (frontSegmentIndex + 1) % Math.max(n, 1);
 
+  // Ordem TXT Civil 3D: frente → lateral → fundo → demais laterais
+  if (n >= 4) {
+    return (frontSegmentIndex + 2) % n;
+  }
+
   const front = segments.find((s) => s.segment_index === frontSegmentIndex);
   const frontLen = front?.distance ?? 0;
-
   let bestIdx = (frontSegmentIndex + Math.floor(n / 2)) % n;
   let bestScore = Infinity;
 
@@ -347,6 +356,16 @@ export function getOfficialLotMeasurements(
   const paths = classifySidesByTxtRingPaths(segments, frontIdx, backIdx);
   console.log("LOT_RIGHT_SIDE", label, paths.pathA);
   console.log("LOT_LEFT_SIDE", label, paths.pathB);
+
+  const lotNumKey = String(label).replace(/\D/g, "");
+  if (lotNumKey === "7") {
+    console.log("MEASURE_RING_PATHS lote 7:", {
+      frontIndex: frontIdx,
+      backIndex: backIdx,
+      pathA: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
+      pathB: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
+    });
+  }
 
   const perimeter = round2(
     segments.reduce((sum, s) => sum + s.distance, 0),
