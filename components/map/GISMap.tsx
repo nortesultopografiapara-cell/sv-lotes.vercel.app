@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Fragment, useEffect, useState, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -64,18 +64,39 @@ import {
  * Linhas auxiliares no mapa (investigação visual):
  * - measurement: MeasureInteraction Polyline (#ef4444)
  * - street guide: streetGuides Polyline (verde/cinza)
- * - block line: blocksData / lotes com <3 vértices (Polyline)
+ * - block line: blocksData LineString (só com SHOW_AUXILIARY_LINES)
+ * - boundary: LotBoundaryEdgePolylines (só com SHOW_BOUNDARY_LINES)
  * - temp/draw: DrawStreetInteraction (só marcadores, sem polyline)
  * Labels de lote: Marker no centro (SHOW_LOT_LABEL_LINES=false)
+ * Lotes: Polygon com stroke desligado quando SHOW_BOUNDARY_LINES=false
  */
 const SHOW_AUXILIARY_LINES = false;
+
+/**
+ * Contorno explícito das divisas (arestas do polígono / segmentos).
+ * false = só preenchimento do lote (sem borda preta).
+ */
+const SHOW_BOUNDARY_LINES = false;
 
 /** Desliga linhas de chamada entre rótulo e polígono. */
 const SHOW_LOT_LABEL_LINES = false;
 
 const LOT_LABEL_MAX_LEADER_METERS = 30;
 
-const DEBUG_LABEL_LOT_NUMBERS = new Set(["17", "18", "2", "4", "5"]);
+/** Lotes com histórico de linhas pretas / deslocamento visual */
+const DEBUG_GIS_LOT_NUMBERS = new Set([
+  "17", "18", "2", "4", "5",
+  "29", "34", "35", "36", "38", "43", "46", "47", "48", "49", "50",
+]);
+
+const MAX_LOT_EDGE_METERS = 350;
+const MAX_LOT_VERTEX_FROM_CENTER_METERS = 280;
+
+function isDebugGisLot(number: unknown): boolean {
+  const num = normalizeLotDisplayNum(number);
+  const raw = String(number ?? "").trim();
+  return DEBUG_GIS_LOT_NUMBERS.has(num) || DEBUG_GIS_LOT_NUMBERS.has(raw);
+}
 
 type LatLngPair = [number, number];
 
@@ -104,49 +125,180 @@ function distanceMeters(a: LatLngPair, b: LatLngPair): number {
   return L.latLng(a[0], a[1]).distanceTo(L.latLng(b[0], b[1]));
 }
 
-/** Remove vértices inválidos/outliers que geram arestas pretas gigantes no mapa. */
+function isValidLatLngPair(lat: number, lng: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+  if (Math.abs(lat) > 1_000 || Math.abs(lng) > 1_000) return false;
+  return true;
+}
+
+function maxRingEdgeMeters(ring: LatLngPair[]): number {
+  if (ring.length < 2) return 0;
+  let max = 0;
+  const closed = ring.length >= 3;
+  const limit = closed ? ring.length : ring.length - 1;
+  for (let i = 0; i < limit; i++) {
+    const next = closed ? (i + 1) % ring.length : i + 1;
+    max = Math.max(max, distanceMeters(ring[i], ring[next]));
+  }
+  return max;
+}
+
+/** Remove vértices que geram arestas gigantes (contorno preto do Polygon no Leaflet). */
 function sanitizeLotBounds(
   bounds: LatLngPair[],
   lot: { id?: string; number?: string },
 ): LatLngPair[] {
-  if (bounds.length < 2) return bounds;
+  if (bounds.length < 2) return [];
 
-  const valid = bounds.filter(([lat, lng]) => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
-    if (Math.abs(lat) > 1_000 || Math.abs(lng) > 1_000) return false;
-    return true;
-  });
+  let pts = bounds.filter(([lat, lng]) => isValidLatLngPair(lat, lng));
+  if (pts.length < 2) return [];
 
-  if (valid.length < 2) return bounds;
+  const center = polygonCentroid(pts);
+  pts = pts.filter(
+    (p) => distanceMeters(p, center) <= MAX_LOT_VERTEX_FROM_CENTER_METERS,
+  );
+  if (pts.length < 2) return [];
 
-  const center = polygonCentroid(valid);
-  const maxFromCenter = 3_000;
-  const filtered = valid.filter((p) => distanceMeters(p, center) <= maxFromCenter);
-
-  const ring = filtered.length >= 2 ? filtered : valid;
-
-  if (ring.length >= 2) {
-    const maxEdge = 3_000;
-    for (let i = 0; i < ring.length; i++) {
-      const cur = ring[i];
-      const next = ring[(i + 1) % ring.length];
-      const edgeLen = distanceMeters(cur, next);
-      if (edgeLen > maxEdge) {
-        const num = normalizeLotDisplayNum(lot.number);
-        if (DEBUG_LABEL_LOT_NUMBERS.has(num)) {
-          console.warn("GIS_MAP_LONG_EDGE", {
-            lote: lot.number,
-            edgeMeters: edgeLen,
-            from: cur,
-            to: next,
-          });
-        }
+  while (pts.length >= 3) {
+    let longest = 0;
+    let removeIndex = -1;
+    for (let i = 0; i < pts.length; i++) {
+      const next = (i + 1) % pts.length;
+      const len = distanceMeters(pts[i], pts[next]);
+      if (len > longest) {
+        longest = len;
+        removeIndex = next;
       }
     }
+    if (longest <= MAX_LOT_EDGE_METERS || removeIndex < 0) break;
+    if (isDebugGisLot(lot.number)) {
+      console.warn("GIS_MAP_VERTEX_REMOVED", {
+        lote: lot.number,
+        edgeMeters: longest.toFixed(2),
+        vertex: pts[removeIndex],
+      });
+    }
+    pts.splice(removeIndex, 1);
   }
 
-  return ring;
+  if (pts.length >= 3 && maxRingEdgeMeters(pts) > MAX_LOT_EDGE_METERS) {
+    if (isDebugGisLot(lot.number)) {
+      console.warn("GIS_MAP_RING_REJECTED", {
+        lote: lot.number,
+        maxEdge: maxRingEdgeMeters(pts),
+      });
+    }
+    return [];
+  }
+
+  return pts;
+}
+
+type ParsedBlockGeometry = {
+  bounds: LatLngPair[];
+  geometryType: string;
+  coordCount: number;
+};
+
+/** Extrai anel lat/lng de block.geometry (Polygon, LineString, Multi*). */
+function boundsFromBlockGeometry(
+  block: Record<string, unknown>,
+  lotNumber: unknown,
+): ParsedBlockGeometry {
+  const geom = block.geometry as {
+    type?: string;
+    coordinates?: unknown;
+  } | null;
+
+  if (!geom?.type || !geom.coordinates) {
+    return { bounds: [], geometryType: "none", coordCount: 0 };
+  }
+
+  const gType = geom.type;
+  let ring: number[][] = [];
+
+  if (gType === "Polygon") {
+    const poly = geom.coordinates as number[][][];
+    ring = (poly?.[0] as number[][]) || [];
+  } else if (gType === "LineString") {
+    ring = geom.coordinates as number[][];
+  } else if (gType === "MultiPolygon") {
+    const multi = geom.coordinates as number[][][][];
+    ring = (multi?.[0]?.[0] as number[][]) || [];
+  } else if (gType === "MultiLineString") {
+    const multi = geom.coordinates as number[][][];
+    ring = (multi?.[0] as number[][]) || [];
+  }
+
+  const bounds: LatLngPair[] = [];
+  for (const c of ring) {
+    if (!Array.isArray(c) || c.length < 2) continue;
+    const lng = Number(c[0]);
+    const lat = Number(c[1]);
+    if (isValidLatLngPair(lat, lng)) bounds.push([lat, lng]);
+  }
+
+  if (isDebugGisLot(lotNumber)) {
+    console.log("GIS_GEOMETRY_PARSE", {
+      lote: lotNumber,
+      geometryType: gType,
+      coordCount: bounds.length,
+      flatCoordsLen: Array.isArray(geom.coordinates)
+        ? (geom.coordinates as unknown[]).flat(3).length
+        : 0,
+    });
+  }
+
+  return { bounds, geometryType: gType, coordCount: bounds.length };
+}
+
+function logGeometryRender(
+  kind: "Polygon" | "Polyline",
+  lot: { number?: string; geometryType?: string },
+  pointCount: number,
+) {
+  if (!isDebugGisLot(lot.number)) return;
+  console.log("Polyline renderizada", kind === "Polyline" ? lot.geometryType || "boundary-edge" : "Polygon-fill");
+  console.log("Quantidade de pontos", pointCount);
+  console.log("Lote", lot.number, "tipo", lot.geometryType || kind);
+}
+
+/** Arestas explícitas do polígono — só quando SHOW_BOUNDARY_LINES=true. */
+function LotBoundaryEdgePolylines({
+  positions,
+  lot,
+  strokeColor,
+}: {
+  positions: LatLngPair[];
+  lot: { number?: string; geometryType?: string };
+  strokeColor: string;
+}) {
+  if (!SHOW_BOUNDARY_LINES || positions.length < 2) return null;
+
+  const lines: React.ReactNode[] = [];
+  const isRing = positions.length >= 3;
+  const edgeCount = isRing ? positions.length : positions.length - 1;
+
+  for (let i = 0; i < edgeCount; i++) {
+    const a = positions[i];
+    const b = positions[isRing ? (i + 1) % positions.length : i + 1];
+    const seg: LatLngPair[] = [a, b];
+    logGeometryRender("Polyline", { ...lot, geometryType: "boundary-edge" }, seg.length);
+    lines.push(
+      <Polyline
+        key={`${lot.number}-edge-${i}`}
+        positions={seg}
+        pathOptions={{
+          color: strokeColor,
+          weight: 1,
+          opacity: 0.9,
+        }}
+      />,
+    );
+  }
+
+  return <>{lines}</>;
 }
 
 function logLotLabelDebug(
@@ -156,7 +308,7 @@ function logLotLabelDebug(
 ) {
   const num = normalizeLotDisplayNum(lot.number);
   const raw = String(lot.number ?? "");
-  if (!DEBUG_LABEL_LOT_NUMBERS.has(num) && !DEBUG_LABEL_LOT_NUMBERS.has(raw)) {
+  if (!isDebugGisLot(lot.number)) {
     return;
   }
   console.log("Lote", lot.number);
@@ -1472,35 +1624,30 @@ export default function GISMap({
 
           const parsedBlocks = blocksRes.data
             .map((b) => {
-              let bounds: [number, number][] = [];
+              const { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
+                b as Record<string, unknown>,
+                b.number,
+              );
               let dimsFromGeo: any = null;
 
               if (
-                b.geometry &&
-                b.geometry.type === "LineString" &&
-                b.geometry.coordinates
+                (geometryType === "Polygon" || geometryType === "MultiPolygon") &&
+                b.geometry?.coordinates
               ) {
-                bounds = b.geometry.coordinates.map((c: number[]) => [
-                  c[1],
-                  c[0],
-                ]);
-              } else if (
-                b.geometry &&
-                b.geometry.type === "Polygon" &&
-                b.geometry.coordinates
-              ) {
-                bounds = b.geometry.coordinates[0].map((c: number[]) => [
-                  c[1],
-                  c[0],
-                ]);
-                
-                // Only calculate from GeoJSON if it's not a TXT import and hasn't been set
-                if (b.source_import !== 'TXT_CIVIL3D') {
-                    try {
-                      dimsFromGeo = calculateLotDimensions(b.geometry.coordinates[0], allPolygons, b.properties || {});
-                    } catch(err) {
-                      console.error("Erro recálculo dimensões GISMap", err);
-                    }
+                const ring =
+                  geometryType === "Polygon"
+                    ? b.geometry.coordinates[0]
+                    : b.geometry.coordinates[0]?.[0];
+                if (ring && b.source_import !== "TXT_CIVIL3D") {
+                  try {
+                    dimsFromGeo = calculateLotDimensions(
+                      ring,
+                      allPolygons,
+                      b.properties || {},
+                    );
+                  } catch (err) {
+                    console.error("Erro recálculo dimensões GISMap", err);
+                  }
                 }
               }
 
@@ -1542,7 +1689,8 @@ export default function GISMap({
                   b.price !== null && b.price !== undefined
                     ? Number(b.price)
                     : 0,
-                geometryType: b.geometry?.type,
+                geometryType,
+                coordCount,
                 bounds,
                 segments_json: b.segments_json,
                 frente: lotMeasures.sides.frente,
@@ -1560,11 +1708,28 @@ export default function GISMap({
             })
             .filter((b) => b.bounds.length > 0);
           const polygonLots = parsedBlocks.filter(
-            (b) => b.geometryType === "Polygon",
+            (b) =>
+              b.geometryType === "Polygon" ||
+              b.geometryType === "MultiPolygon",
           );
           const lineBlocks = parsedBlocks.filter(
-            (b) => b.geometryType === "LineString",
+            (b) =>
+              b.geometryType === "LineString" ||
+              b.geometryType === "MultiLineString",
           );
+          polygonLots.forEach((lot) => {
+            if (!isDebugGisLot(lot.number)) return;
+            const ring = sanitizeLotBounds(lot.bounds as LatLngPair[], lot);
+            console.log("GIS_LOAD_LOT", {
+              lote: lot.number,
+              geometryType: lot.geometryType,
+              coordCount: lot.coordCount,
+              rawPoints: lot.bounds.length,
+              sanitizedPoints: ring.length,
+              maxEdgeM: maxRingEdgeMeters(ring),
+              renderPolygonOnly: !SHOW_BOUNDARY_LINES,
+            });
+          });
           setLots(polygonLots);
           setBlocksData(lineBlocks);
 
@@ -2365,75 +2530,104 @@ export default function GISMap({
             );
 
             if (positions.length < 3) {
+              if (isDebugGisLot(lot.number)) {
+                console.warn("GIS_MAP_SKIP_LOT", {
+                  lote: lot.number,
+                  pointsAfterSanitize: positions.length,
+                });
+              }
               return null;
             }
 
+            logGeometryRender("Polygon", lot, positions.length);
+            if (isDebugGisLot(lot.number)) {
+              console.log("GIS_LOT_RENDER", {
+                lote: lot.number,
+                maxEdgeM: maxRingEdgeMeters(positions),
+                polygonFillOnly: !SHOW_BOUNDARY_LINES,
+                noSegmentPolyline: true,
+              });
+            }
+
+            const strokeColor = sheetPickActive ? "#4999e9" : "#000000";
+            const borderWeight = SHOW_BOUNDARY_LINES
+              ? sheetPickActive
+                ? 2
+                : 1
+              : 0;
+
             return (
-              <Polygon
-                key={lot.id}
-                positions={positions}
-                interactive={sheetPickActive || !(drawStreetActive || measureActive)}
-                pathOptions={{
-                  color: sheetPickActive ? "#4999e9" : "#000000",
-                  fillColor: sheetPickActive ? "#4999e9" : getStatusColor(lot.status),
-                  fillOpacity: sheetPickActive ? 0.35 : 0.75,
-                  stroke: true,
-                  weight: sheetPickActive ? 2 : 1,
-                }}
-                eventHandlers={{
-                  click: () => {
-                    if (sheetPickActive && onLotSheetLotPick) {
-                      console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
-                      onLotSheetLotPick({
-                        id: lot.id,
-                        number: String(lot.number || ''),
-                        block: String(lot.block || ''),
-                      });
-                    }
-                  },
-                  mouseover: (e) => {
-                    if (sheetPickActive) return;
-                    const layer = e.target;
-                    layer.setStyle({
-                      fillOpacity: 1,
-                      weight: 2,
-                    });
-                  },
-                  mouseout: (e) => {
-                    if (sheetPickActive) return;
-                    const layer = e.target;
-                    layer.setStyle({
-                      fillOpacity: 0.75,
-                      weight: 1,
-                    });
-                  },
-                }}
-              >
-                {renderLotLabel(
-                  { bounds: positions, number: lot.number },
-                  displayNum,
-                  showPermanentLabels && !sheetPickActive,
-                )}
-                {!sheetPickActive && (
-                  <Popup>
-                    <LotPopupContent
-                      lot={lot}
-                      onAction={handleLotAction}
-                      onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
-                      onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                      canEditSale={userCanEditSale}
-                      userRole={user?.role}
-                      onEditSale={(l) => void openEditSaleForm(l)}
-                      onViewContract={handleViewContract}
-                      onRegenerateContract={(l) =>
-                        void handleRegenerateContractFromMap(l)
+              <Fragment key={lot.id}>
+                <Polygon
+                  positions={positions}
+                  interactive={sheetPickActive || !(drawStreetActive || measureActive)}
+                  pathOptions={{
+                    color: strokeColor,
+                    fillColor: sheetPickActive ? "#4999e9" : color,
+                    fillOpacity: sheetPickActive ? 0.35 : 0.75,
+                    stroke: SHOW_BOUNDARY_LINES,
+                    weight: borderWeight,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      if (sheetPickActive && onLotSheetLotPick) {
+                        console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
+                        onLotSheetLotPick({
+                          id: lot.id,
+                          number: String(lot.number || ''),
+                          block: String(lot.block || ''),
+                        });
                       }
-                      onViewFinance={handleViewFinance}
-                      actionLoading={editSaleLoading || actionLoading}
-                    />
-                  </Popup>
-                )}
-              </Polygon>
+                    },
+                    mouseover: (e) => {
+                      if (sheetPickActive) return;
+                      const layer = e.target;
+                      layer.setStyle({
+                        fillOpacity: 1,
+                        weight: SHOW_BOUNDARY_LINES ? 2 : 0,
+                      });
+                    },
+                    mouseout: (e) => {
+                      if (sheetPickActive) return;
+                      const layer = e.target;
+                      layer.setStyle({
+                        fillOpacity: 0.75,
+                        weight: borderWeight,
+                      });
+                    },
+                  }}
+                >
+                  {renderLotLabel(
+                    { bounds: positions, number: lot.number },
+                    displayNum,
+                    showPermanentLabels && !sheetPickActive,
+                  )}
+                  {!sheetPickActive && (
+                    <Popup>
+                      <LotPopupContent
+                        lot={lot}
+                        onAction={handleLotAction}
+                        onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
+                        onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
+                        canEditSale={userCanEditSale}
+                        userRole={user?.role}
+                        onEditSale={(l) => void openEditSaleForm(l)}
+                        onViewContract={handleViewContract}
+                        onRegenerateContract={(l) =>
+                          void handleRegenerateContractFromMap(l)
+                        }
+                        onViewFinance={handleViewFinance}
+                        actionLoading={editSaleLoading || actionLoading}
+                      />
+                    </Popup>
+                  )}
+                </Polygon>
+                <LotBoundaryEdgePolylines
+                  positions={positions}
+                  lot={lot}
+                  strokeColor={strokeColor}
+                />
+              </Fragment>
             );
           })}
 
@@ -2458,22 +2652,22 @@ export default function GISMap({
                   color: "#000000",
                   fillColor: getStatusColor(block.status),
                   fillOpacity: 0.75,
-                  stroke: true,
-                  weight: 1,
+                  stroke: SHOW_BOUNDARY_LINES,
+                  weight: SHOW_BOUNDARY_LINES ? 1 : 0,
                 }}
                 eventHandlers={{
                   mouseover: (e) => {
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 1,
-                      weight: 2,
+                      weight: SHOW_BOUNDARY_LINES ? 2 : 0,
                     });
                   },
                   mouseout: (e) => {
                     const layer = e.target;
                     layer.setStyle({
                       fillOpacity: 0.75,
-                      weight: 1,
+                      weight: SHOW_BOUNDARY_LINES ? 1 : 0,
                     });
                   },
                 }}
