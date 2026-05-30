@@ -25,7 +25,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  X
+  X,
+  RefreshCw,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -235,6 +236,7 @@ const getMenuItems = (role: string) => {
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
+      { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw, color: 'text-[#f97316]' },
       { name: 'Configurações', href: '/settings', icon: Settings, color: 'text-[var(--color-text-muted)]' },
     ];
   }

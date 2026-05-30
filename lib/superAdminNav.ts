@@ -9,6 +9,7 @@ import {
   Settings,
   Ticket,
   ScrollText,
+  RefreshCw,
 } from 'lucide-react';
 
 export type SuperAdminNavItem = {
@@ -48,6 +49,7 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
     items: [
       { name: 'Tickets', href: '/support/tickets', icon: Ticket },
       { name: 'Logs', href: '/logs', icon: ScrollText },
+      { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw },
     ],
   },
 ];

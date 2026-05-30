@@ -28,9 +28,12 @@ function isReservedBySameCustomer(
   );
 }
 
+export type ExecuteOfflineOptions = { forceConfirm?: boolean };
+
 async function executeBlockReserve(
   supabase: SupabaseClient,
   action: OfflineSyncAction,
+  options?: ExecuteOfflineOptions,
 ): Promise<{ ok: true } | { ok: false; conflict?: boolean; message: string }> {
   const p = action.payload;
   const blockId = String(p.block_id || '');
@@ -65,7 +68,7 @@ async function executeBlockReserve(
     customerId,
   );
 
-  if (!available && !sameReserve) {
+  if (!options?.forceConfirm && !available && !sameReserve) {
     return {
       ok: false,
       conflict: true,
@@ -140,18 +143,25 @@ async function executeBlockReserve(
   return { ok: true };
 }
 
+export async function executeOfflineAction(
+  supabase: SupabaseClient,
+  action: OfflineSyncAction,
+  options?: ExecuteOfflineOptions,
+): Promise<{ ok: true } | { ok: false; conflict?: boolean; message: string }> {
+  if (action.type === 'BLOCK_RESERVE') {
+    return executeBlockReserve(supabase, action, options);
+  }
+  return {
+    ok: false,
+    message: `Tipo de ação não suportado: ${action.type}`,
+  };
+}
+
 export function createOfflineSyncExecutor(
   supabase: SupabaseClient,
-): (action: OfflineSyncAction) => Promise<
-  { ok: true } | { ok: false; conflict?: boolean; message: string }
-> {
-  return async (action) => {
-    if (action.type === 'BLOCK_RESERVE') {
-      return executeBlockReserve(supabase, action);
-    }
-    return {
-      ok: false,
-      message: `Tipo de ação não suportado: ${action.type}`,
-    };
-  };
+): (
+  action: OfflineSyncAction,
+  options?: ExecuteOfflineOptions,
+) => Promise<{ ok: true } | { ok: false; conflict?: boolean; message: string }> {
+  return (action, options) => executeOfflineAction(supabase, action, options);
 }

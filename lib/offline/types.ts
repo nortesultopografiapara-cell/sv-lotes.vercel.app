@@ -14,7 +14,7 @@ export type OfflineActionType =
   | 'BLOCK_RELEASE'
   | 'CUSTOMER_UPSERT';
 
-export type OfflineActionStatus = 'pending' | 'synced' | 'error';
+export type OfflineActionStatus = 'pending' | 'synced' | 'error' | 'ignored';
 
 export type OfflineSyncAction = {
   id: string;
@@ -23,8 +23,12 @@ export type OfflineSyncAction = {
   payload: Record<string, unknown>;
   status: OfflineActionStatus;
   error_message?: string | null;
+  /** true quando falha por conflito de reserva/venda */
+  conflict?: boolean;
   created_at: string;
   synced_at?: string | null;
+  ignored_at?: string | null;
+  manual_confirmed_at?: string | null;
 };
 
 export type MapProjectCacheRecord = {
