@@ -68,15 +68,12 @@ import {
  * - boundary: LotBoundaryEdgePolylines (só com SHOW_BOUNDARY_LINES)
  * - temp/draw: DrawStreetInteraction (só marcadores, sem polyline)
  * Labels de lote: Marker no centro (SHOW_LOT_LABEL_LINES=false)
- * Lotes: Polygon com stroke desligado quando SHOW_BOUNDARY_LINES=false
+ * Lotes: contorno via stroke sanitizado (SHOW_BOUNDARY_LINES)
  */
 const SHOW_AUXILIARY_LINES = false;
 
-/**
- * Contorno explícito das divisas (arestas do polígono / segmentos).
- * false = só preenchimento do lote (sem borda preta).
- */
-const SHOW_BOUNDARY_LINES = false;
+/** Contorno dos lotes (geometria sanitizada). */
+const SHOW_BOUNDARY_LINES = true;
 
 /** Desliga linhas de chamada entre rótulo e polígono. */
 const SHOW_LOT_LABEL_LINES = false;
@@ -394,6 +391,75 @@ function GisSanitizeDebugMarkers({
       ))}
     </>
   );
+}
+
+type ValidatedLotForBounds = {
+  number?: string;
+  block?: string;
+  cleanedCoords: LatLngPair[];
+};
+
+/** Pontos seguros para fitBounds — só geometria validada, sem outliers. */
+function getSafeMapBounds(
+  validatedLots: ValidatedLotForBounds[],
+  blockBoundingBoxes: Map<string, BlockBBox>,
+): LatLngPair[] {
+  const rawBounds: LatLngPair[] = [];
+  const candidates: { point: LatLngPair; lotNumber?: string }[] = [];
+
+  for (const lot of validatedLots) {
+    if (lot.cleanedCoords.length < 3) continue;
+
+    const blockKey = normalizeBlockKey(lot.block);
+    const blockBBox = blockBoundingBoxes.get(blockKey) ?? null;
+
+    for (const p of lot.cleanedCoords) {
+      if (!isValidLatLngPair(p[0], p[1])) {
+        console.log("FITBOUNDS_IGNORED_POINT", p, lot.number, "invalid_pair");
+        continue;
+      }
+      rawBounds.push(p);
+
+      if (blockBBox && !isInsideBBox(p, blockBBox)) {
+        console.log(
+          "FITBOUNDS_IGNORED_POINT",
+          p,
+          lot.number,
+          "outside_block_bbox",
+        );
+        continue;
+      }
+
+      candidates.push({ point: p, lotNumber: lot.number });
+    }
+  }
+
+  console.log("FITBOUNDS_RAW", rawBounds);
+
+  let clusterCandidates = [...candidates];
+  for (let iter = 0; iter < 5 && clusterCandidates.length > 0; iter++) {
+    const clusterPoints = clusterCandidates.map((c) => c.point);
+    const centroid = polygonCentroid(clusterPoints);
+    const next = clusterCandidates.filter((c) => {
+      const ok =
+        distanceMeters(c.point, centroid) <= MAX_REMOVABLE_EDGE_METERS;
+      if (!ok) {
+        console.log(
+          "FITBOUNDS_IGNORED_POINT",
+          c.point,
+          c.lotNumber,
+          "outside_main_cluster",
+        );
+      }
+      return ok;
+    });
+    if (next.length === clusterCandidates.length) break;
+    clusterCandidates = next;
+  }
+
+  const safeBounds = clusterCandidates.map((c) => c.point);
+  console.log("FITBOUNDS_SAFE", safeBounds);
+  return safeBounds;
 }
 
 type ParsedBlockGeometry = {
@@ -723,13 +789,11 @@ async function insertContractForSale(
 }
 
 function MapController({
-  lots,
-  blocksData,
+  safeBounds,
   refreshKey,
-  projectId
+  projectId,
 }: {
-  lots: any[];
-  blocksData: any[];
+  safeBounds: LatLngPair[];
   refreshKey?: number;
   projectId?: string;
 }) {
@@ -737,7 +801,7 @@ function MapController({
   const lastFitBoundsKey = useRef<{ projectId?: string, refreshKey?: number }>({});
 
   useEffect(() => {
-    if (lots.length === 0 && blocksData.length === 0) return;
+    if (safeBounds.length === 0) return;
 
     const needFitBounds = 
          lastFitBoundsKey.current.projectId !== projectId || 
@@ -745,22 +809,12 @@ function MapController({
 
     if (!needFitBounds) return;
 
-    let allBounds: [number, number][] = [];
-    lots.forEach((l) => {
-      if (l.bounds) allBounds.push(...l.bounds);
+    map.fitBounds(L.latLngBounds(safeBounds), {
+      padding: [50, 50],
+      maxZoom: 20,
     });
-    blocksData.forEach((b) => {
-      if (b.bounds) allBounds.push(...b.bounds);
-    });
-
-    if (allBounds.length > 0) {
-      map.fitBounds(L.latLngBounds(allBounds), {
-        padding: [50, 50],
-        maxZoom: 20,
-      });
-      lastFitBoundsKey.current = { projectId, refreshKey };
-    }
-  }, [lots, blocksData, map, refreshKey, projectId]);
+    lastFitBoundsKey.current = { projectId, refreshKey };
+  }, [safeBounds, map, refreshKey, projectId]);
   return null;
 }
 
@@ -1643,6 +1697,20 @@ export default function GISMap({
     }
     return map;
   }, [lots, blockBoundingBoxes]);
+
+  const safeMapBounds = useMemo(() => {
+    const validatedLots: ValidatedLotForBounds[] = [];
+    for (const lot of lots) {
+      const validation = lotGeometryValidations.get(lot.id);
+      if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
+      validatedLots.push({
+        number: lot.number,
+        block: lot.block,
+        cleanedCoords: validation.cleanedCoords,
+      });
+    }
+    return getSafeMapBounds(validatedLots, blockBoundingBoxes);
+  }, [lots, lotGeometryValidations, blockBoundingBoxes]);
 
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
@@ -2705,7 +2773,11 @@ export default function GISMap({
 
         <ZoomControl position="bottomright" />
         <MapZoomTracker onZoom={setMapZoom} />
-        <MapController lots={lots} blocksData={blocksData} refreshKey={refreshKey} projectId={projectId} />
+        <MapController
+          safeBounds={safeMapBounds}
+          refreshKey={refreshKey}
+          projectId={projectId}
+        />
         <LocationController active={gpsActive} />
 
         <style>{`
