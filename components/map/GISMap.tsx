@@ -60,6 +60,181 @@ import {
   queueOfflineReservation,
 } from "@/lib/offline/lotReservationOffline";
 
+/** Desliga linhas de chamada entre rótulo e polígono (investigação visual). */
+const SHOW_LOT_LABEL_LINES = false;
+
+const LOT_LABEL_MAX_LEADER_METERS = 30;
+
+const DEBUG_LABEL_LOT_NUMBERS = new Set(["17", "18", "2", "4", "5"]);
+
+type LatLngPair = [number, number];
+
+function normalizeLotDisplayNum(number: unknown): string {
+  const raw = String(number ?? "");
+  return (
+    raw
+      .replace(/[^0-9A-Za-z]/g, "")
+      .replace(/.*linha.*/i, "")
+      .replace(/.*kml.*/i, "") || raw.replace(/\D/g, "")
+  );
+}
+
+function polygonCentroid(bounds: LatLngPair[]): LatLngPair {
+  if (bounds.length === 0) return [0, 0];
+  let lat = 0;
+  let lng = 0;
+  for (const [la, ln] of bounds) {
+    lat += la;
+    lng += ln;
+  }
+  return [lat / bounds.length, lng / bounds.length];
+}
+
+function distanceMeters(a: LatLngPair, b: LatLngPair): number {
+  return L.latLng(a[0], a[1]).distanceTo(L.latLng(b[0], b[1]));
+}
+
+/** Remove vértices inválidos/outliers que geram arestas pretas gigantes no mapa. */
+function sanitizeLotBounds(
+  bounds: LatLngPair[],
+  lot: { id?: string; number?: string },
+): LatLngPair[] {
+  if (bounds.length < 2) return bounds;
+
+  const valid = bounds.filter(([lat, lng]) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+    if (Math.abs(lat) > 1_000 || Math.abs(lng) > 1_000) return false;
+    return true;
+  });
+
+  if (valid.length < 2) return bounds;
+
+  const center = polygonCentroid(valid);
+  const maxFromCenter = 3_000;
+  const filtered = valid.filter((p) => distanceMeters(p, center) <= maxFromCenter);
+
+  const ring = filtered.length >= 2 ? filtered : valid;
+
+  if (ring.length >= 2) {
+    const maxEdge = 3_000;
+    for (let i = 0; i < ring.length; i++) {
+      const cur = ring[i];
+      const next = ring[(i + 1) % ring.length];
+      const edgeLen = distanceMeters(cur, next);
+      if (edgeLen > maxEdge) {
+        const num = normalizeLotDisplayNum(lot.number);
+        if (DEBUG_LABEL_LOT_NUMBERS.has(num)) {
+          console.warn("GIS_MAP_LONG_EDGE", {
+            lote: lot.number,
+            edgeMeters: edgeLen,
+            from: cur,
+            to: next,
+          });
+        }
+      }
+    }
+  }
+
+  return ring;
+}
+
+function logLotLabelDebug(
+  lot: { number?: string },
+  center: LatLngPair,
+  labelPos: LatLngPair,
+) {
+  const num = normalizeLotDisplayNum(lot.number);
+  const raw = String(lot.number ?? "");
+  if (!DEBUG_LABEL_LOT_NUMBERS.has(num) && !DEBUG_LABEL_LOT_NUMBERS.has(raw)) {
+    return;
+  }
+  console.log("Lote", lot.number);
+  console.log("Centro", center);
+  console.log("Posição label", labelPos);
+  const dist = distanceMeters(center, labelPos);
+  console.log("Distância centro→label (m)", dist.toFixed(2));
+  if (dist > LOT_LABEL_MAX_LEADER_METERS) {
+    console.warn("GIS_MAP_LABEL_LEADER_TOO_LONG", {
+      lote: lot.number,
+      distMeters: dist,
+      maxMeters: LOT_LABEL_MAX_LEADER_METERS,
+    });
+  }
+}
+
+function LotCentroidLabel({
+  lot,
+  displayNum,
+}: {
+  lot: { bounds: LatLngPair[]; number?: string };
+  displayNum: string;
+}) {
+  const center = polygonCentroid(lot.bounds);
+  const labelPos: LatLngPair = center;
+
+  useEffect(() => {
+    logLotLabelDebug(lot, center, labelPos);
+  }, [lot.number, center[0], center[1], labelPos[0], labelPos[1]]);
+
+  const icon = L.divIcon({
+    className: "lot-map-label-marker",
+    html: `<div class="lot-map-label-text">Lote ${displayNum}</div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+
+  return (
+    <Marker
+      position={labelPos}
+      icon={icon}
+      interactive={false}
+      zIndexOffset={500}
+    />
+  );
+}
+
+function LotPolygonLabel({
+  lot,
+  displayNum,
+}: {
+  lot: { bounds: LatLngPair[]; number?: string };
+  displayNum: string;
+}) {
+  const center = polygonCentroid(lot.bounds);
+  const labelPos = center;
+
+  useEffect(() => {
+    logLotLabelDebug(lot, center, labelPos);
+  }, [lot.number, center[0], center[1]]);
+
+  return (
+    <Tooltip
+      permanent
+      direction="center"
+      offset={[0, 0]}
+      className="lot-map-label-no-leader bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
+      opacity={1}
+    >
+      <div style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}>
+        Lote {displayNum}
+      </div>
+    </Tooltip>
+  );
+}
+
+function renderLotLabel(
+  lot: { bounds: LatLngPair[]; number?: string },
+  displayNum: string,
+  enabled: boolean,
+) {
+  if (!enabled || !displayNum || displayNum === "0") return null;
+  if (!SHOW_LOT_LABEL_LINES) {
+    return <LotCentroidLabel lot={lot} displayNum={displayNum} />;
+  }
+  return <LotPolygonLabel lot={lot} displayNum={displayNum} />;
+}
+
 const getStatusColor = (status: string) => {
   switch (status) {
     case "Disponível":
@@ -2149,21 +2324,56 @@ export default function GISMap({
         <MapController lots={lots} blocksData={blocksData} refreshKey={refreshKey} projectId={projectId} />
         <LocationController active={gpsActive} />
 
+        <style>{`
+          .lot-map-label-marker {
+            background: transparent !important;
+            border: none !important;
+          }
+          .lot-map-label-text {
+            font-weight: 700;
+            font-size: 11px;
+            color: white;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            text-shadow: 1px 1px 2px black, 0 0 1em black;
+          }
+          .leaflet-tooltip.lot-map-label-no-leader::before {
+            display: none !important;
+          }
+        `}</style>
+
         {lots
           .filter((lot) => lot.bounds.length > 0)
           .map((lot) => {
             const color = getStatusColor(lot.status);
-            const displayNum =
-              String(lot.number)
-                .replace(/[^0-9A-Za-z]/g, "")
-                .replace(/.*linha.*/i, "")
-                .replace(/.*kml.*/i, "") ||
-              String(lot.number).replace(/\D/g, "");
+            const displayNum = normalizeLotDisplayNum(lot.number);
+            const positions = sanitizeLotBounds(
+              lot.bounds as LatLngPair[],
+              lot,
+            );
+
+            if (positions.length < 3) {
+              if (positions.length >= 2) {
+                return (
+                  <Polyline
+                    key={`lot-line-${lot.id}`}
+                    positions={positions}
+                    pathOptions={{
+                      color: color,
+                      weight: 2,
+                      dashArray: "6, 4",
+                    }}
+                  />
+                );
+              }
+              return null;
+            }
 
             return (
               <Polygon
                 key={lot.id}
-                positions={lot.bounds}
+                positions={positions}
                 interactive={sheetPickActive || !(drawStreetActive || measureActive)}
                 pathOptions={{
                   color: sheetPickActive ? "#4999e9" : "#000000",
@@ -2201,19 +2411,10 @@ export default function GISMap({
                   },
                 }}
               >
-                {showPermanentLabels && displayNum && displayNum !== "0" && !sheetPickActive && (
-                  <Tooltip
-                    permanent
-                    direction="center"
-                    className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
-                    opacity={1}
-                  >
-                    <div
-                      style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}
-                    >
-                      Lote {displayNum}
-                    </div>
-                  </Tooltip>
+                {renderLotLabel(
+                  { bounds: positions, number: lot.number },
+                  displayNum,
+                  showPermanentLabels && !sheetPickActive,
                 )}
                 {!sheetPickActive && (
                   <Popup>
@@ -2239,17 +2440,33 @@ export default function GISMap({
           })}
 
         {blocksData.map((block) => {
-          const displayNum =
-            String(block.number)
-              .replace(/[^0-9A-Za-z]/g, "")
-              .replace(/.*linha.*/i, "")
-              .replace(/.*kml.*/i, "") ||
-            String(block.number).replace(/\D/g, "");
+          const displayNum = normalizeLotDisplayNum(block.number);
+          const positions = sanitizeLotBounds(
+            block.bounds as LatLngPair[],
+            block,
+          );
+
+          if (positions.length < 3) {
+            if (positions.length >= 2) {
+              return (
+                <Polyline
+                  key={`block-line-${block.id}`}
+                  positions={positions}
+                  pathOptions={{
+                    color: "#64748b",
+                    weight: 1,
+                    dashArray: "4, 6",
+                  }}
+                />
+              );
+            }
+            return null;
+          }
 
           return (
             <Polygon
               key={`block-${block.id}`}
-              positions={block.bounds}
+              positions={positions}
               interactive={!(drawStreetActive || measureActive)}
               pathOptions={{
                 color: "#000000",
@@ -2275,19 +2492,10 @@ export default function GISMap({
                 },
               }}
             >
-              {showPermanentLabels && displayNum && displayNum !== "0" && (
-                <Tooltip
-                  permanent
-                  direction="center"
-                  className="bg-transparent border-0 shadow-none text-white font-bold text-[11px]"
-                  opacity={1}
-                >
-                  <div
-                    style={{ textShadow: "1px 1px 2px black, 0 0 1em black" }}
-                  >
-                    Lote {displayNum}
-                  </div>
-                </Tooltip>
+              {renderLotLabel(
+                { bounds: positions, number: block.number },
+                displayNum,
+                showPermanentLabels,
               )}
               <Popup>
                 <LotPopupContent
