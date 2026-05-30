@@ -53,6 +53,7 @@ import {
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
+import { geoJsonToLeafletPositions } from "@/lib/civil3dTxtImport";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
   isBrowserOnline,
@@ -1294,19 +1295,17 @@ export default function GISMap({
                 b.geometry.type === "LineString" &&
                 b.geometry.coordinates
               ) {
-                bounds = b.geometry.coordinates.map((c: number[]) => [
-                  c[1],
-                  c[0],
-                ]);
+                bounds = geoJsonToLeafletPositions(
+                  b.geometry.coordinates as number[][],
+                );
               } else if (
                 b.geometry &&
                 b.geometry.type === "Polygon" &&
                 b.geometry.coordinates
               ) {
-                bounds = b.geometry.coordinates[0].map((c: number[]) => [
-                  c[1],
-                  c[0],
-                ]);
+                bounds = geoJsonToLeafletPositions(
+                  b.geometry.coordinates[0] as number[][],
+                );
                 
                 // Only calculate from GeoJSON if it's not a TXT import and hasn't been set
                 if (b.source_import !== 'TXT_CIVIL3D') {

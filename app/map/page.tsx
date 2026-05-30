@@ -17,7 +17,10 @@ import {
 import { area as turfArea } from '@turf/area';
 import { polygon as turfPolygon } from '@turf/helpers';
 import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
-import proj4 from 'proj4';
+import {
+  parseCivil3dTxtFile,
+  TXT_IMPORT_INVALID_COORDS_MSG,
+} from '@/lib/civil3dTxtImport';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { logSaasCompanyContext } from '@/lib/saasPlans';
 import {
@@ -1191,54 +1194,20 @@ export default function MapPage() {
       }
 
       const text = await importTxtFile.text();
-      const blocksParsed = [];
-      const nameChunks = text.split(/Name:\s*/i).slice(1);
-      
-      const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
-      const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
+      console.log('[TXT] iniciando importação Civil 3D', {
+        utmZone: importTxtUtmZone,
+        quadra: importTxtQuadra,
+      });
 
-      for (let chunk of nameChunks) {
-         const name = chunk.split('\n')[0].trim();
-         
-         let area = 0;
-         let perimeter = 0;
-         let segments: any[] = [];
-         let coords: number[][] = [];
-         
-         const areaMatch = chunk.match(/Area:\s*([0-9.]+)/i);
-         if (areaMatch) area = parseFloat(areaMatch[1]);
-         
-         const perimeterMatch = chunk.match(/Perimeter:\s*([0-9.]+)/i);
-         if (perimeterMatch) perimeter = parseFloat(perimeterMatch[1]);
-
-         const northingMatches = [...chunk.matchAll(/North(?:ing)?\s*:\s*([0-9.]+)/ig)];
-         const eastingMatches = [...chunk.matchAll(/East(?:ing)?\s*:\s*([0-9.]+)/ig)];
-         const lengthMatches = [...chunk.matchAll(/Length\s*:\s*([0-9.]+)/ig)];
-
-         const numPoints = Math.min(northingMatches.length, eastingMatches.length);
-         for(let i=0; i < numPoints; i++) {
-             const northing = parseFloat(northingMatches[i][1]);
-             const easting = parseFloat(eastingMatches[i][1]);
-             
-             let seg: any = { northing, easting };
-             if (i < lengthMatches.length) {
-                 seg.length = parseFloat(lengthMatches[i][1]);
-             }
-             segments.push(seg);
-             
-             const [lng, lat] = proj4(proj4String, "EPSG:4326", [easting, northing]);
-             coords.push([lng, lat]);
-         }
-         
-         if (coords.length > 2) {
-             const first = coords[0];
-             const last = coords[coords.length - 1];
-             if (first[0] !== last[0] || first[1] !== last[1]) {
-                coords.push([...first]);
-             }
-         }
-         
-         blocksParsed.push({ name, area, perimeter, segments, coords });
+      let blocksParsed: Awaited<ReturnType<typeof parseCivil3dTxtFile>>;
+      try {
+        blocksParsed = parseCivil3dTxtFile(text, importTxtUtmZone);
+      } catch (parseErr: unknown) {
+        const msg =
+          parseErr instanceof Error ? parseErr.message : String(parseErr);
+        alert(msg.includes('Coordenada inválida') ? msg : TXT_IMPORT_INVALID_COORDS_MSG);
+        setImportingTxt(false);
+        return;
       }
 
       if (blocksParsed.length === 0) {
@@ -1881,7 +1850,7 @@ export default function MapPage() {
                           className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
                         >
                            <option value="21S">Zona 21 Sul (21S)</option>
-                           <option value="22S">Zona 22 Sul (22S)</option>
+                           <option value="22S">Zona 22 Sul — SIRGAS 2000 (22S)</option>
                            <option value="23S">Zona 23 Sul (23S)</option>
                            <option value="24S">Zona 24 Sul (24S)</option>
                         </select>
