@@ -43,7 +43,7 @@ import {
 } from '@/lib/projectQuadras';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
 import {
-  findFrontSegmentIndexFromLengthHint,
+  findFrontSegmentIndexFromStreetEdge,
   getOfficialLotMeasurements,
   normalizeTxtImportSegments,
   officialSegmentsToLotSegmentRows,
@@ -592,9 +592,10 @@ export default function MapPage() {
                officialSegs.length >= 3 &&
                block.source_import === 'TXT_CIVIL3D'
              ) {
-               frontSegmentIndex = findFrontSegmentIndexFromLengthHint(
+               frontSegmentIndex = findFrontSegmentIndexFromStreetEdge(
                  officialSegs,
-                 frenteLength,
+                 bestSegment.originalIndex ?? 0,
+                 block.number,
                );
                const measures = getOfficialLotMeasurements({
                  ...block,

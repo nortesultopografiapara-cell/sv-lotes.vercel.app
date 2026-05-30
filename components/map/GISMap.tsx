@@ -52,7 +52,11 @@ import {
   resolveLotMeasuresFromBlock,
   type ChanfreInfo,
 } from "@/lib/lotChanfre";
-import { getOfficialLotMeasurements } from "@/lib/officialLotMeasurements";
+import {
+  buildBlockPatchFromOfficialMeasures,
+  getOfficialLotMeasurements,
+  parseOfficialSegmentsFromBlock,
+} from "@/lib/officialLotMeasurements";
 import {
   calculateLotDimensions,
   classifyLotSidesFromSegments,
@@ -541,10 +545,14 @@ function LotBoundaryEdgePolylines({
   positions,
   lot,
   strokeColor,
+  frontCorrectActive,
+  onEdgePick,
 }: {
   positions: LatLngPair[];
-  lot: { number?: string; geometryType?: string };
+  lot: { id?: string; number?: string; geometryType?: string };
   strokeColor: string;
+  frontCorrectActive?: boolean;
+  onEdgePick?: (segmentIndex: number) => void;
 }) {
   if (!SHOW_BOUNDARY_LINES || positions.length < 2) return null;
 
@@ -559,13 +567,24 @@ function LotBoundaryEdgePolylines({
     logGeometryRender("Polyline", { ...lot, geometryType: "boundary-edge" }, seg.length);
     lines.push(
       <Polyline
-        key={`${lot.number}-edge-${i}`}
+        key={`${lot.id ?? lot.number}-edge-${i}`}
         positions={seg}
+        interactive={Boolean(frontCorrectActive && onEdgePick)}
         pathOptions={{
-          color: strokeColor,
-          weight: 1,
-          opacity: 0.9,
+          color: frontCorrectActive ? "#f59e0b" : strokeColor,
+          weight: frontCorrectActive ? 4 : 1,
+          opacity: frontCorrectActive ? 1 : 0.9,
         }}
+        eventHandlers={
+          frontCorrectActive && onEdgePick
+            ? {
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  onEdgePick(i);
+                },
+              }
+            : undefined
+        }
       />,
     );
   }
@@ -1441,6 +1460,11 @@ function LotPopupContent({
   canEditSale,
   userRole,
   actionLoading,
+  frontCorrectActive,
+  onStartCorrectFront,
+  onCancelCorrectFront,
+  onPickFrontSegment,
+  frontCorrectSaving,
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
@@ -1454,6 +1478,11 @@ function LotPopupContent({
   canEditSale?: boolean;
   userRole?: string | null;
   actionLoading: string | null;
+  frontCorrectActive?: boolean;
+  onStartCorrectFront?: (lot: any) => void;
+  onCancelCorrectFront?: () => void;
+  onPickFrontSegment?: (lot: any, segmentIndex: number) => void;
+  frontCorrectSaving?: boolean;
 }) {
   console.log("GIS_POPUP_RENDER", {
     lotId: lot?.id,
@@ -1473,6 +1502,11 @@ function LotPopupContent({
 
   const officialMeasures = useMemo(
     () => getOfficialLotMeasurementsForPopup(lot),
+    [lot],
+  );
+
+  const txtSegments = useMemo(
+    () => parseOfficialSegmentsFromBlock(lot as Record<string, unknown>, lot.number),
     [lot],
   );
 
@@ -1629,6 +1663,55 @@ function LotPopupContent({
             )}
           </div>
         </div>
+
+        {userRole !== "BROKER" &&
+          Array.isArray(lot.segments_json) &&
+          lot.segments_json.length >= 3 &&
+          onStartCorrectFront && (
+            <div className="border-t border-gray-200 pt-2 mt-2">
+              {frontCorrectActive ? (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold text-amber-800 leading-snug">
+                    Clique no lado correto no mapa ou escolha o segmento TXT:
+                  </p>
+                  <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
+                    {txtSegments.map((seg) => (
+                      <button
+                        key={seg.segment_index}
+                        type="button"
+                        disabled={frontCorrectSaving}
+                        onClick={() =>
+                          onPickFrontSegment?.(lot, seg.segment_index)
+                        }
+                        className="text-left px-2 py-1.5 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10px] font-medium text-gray-900 disabled:opacity-50"
+                      >
+                        Seg. {seg.segment_index + 1} — {seg.distance.toFixed(2)} m
+                        {lot.front_segment_index === seg.segment_index
+                          ? " (frente atual)"
+                          : ""}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCancelCorrectFront}
+                    className="w-full text-[10px] font-semibold text-gray-600 hover:text-gray-900 py-1"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onStartCorrectFront(lot)}
+                  className="w-full py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-900"
+                >
+                  Corrigir frente do lote
+                </button>
+              )}
+            </div>
+          )}
+
         <div className="flex justify-between items-center pt-1">
           <span className="text-gray-600 font-semibold mb-1">
             Valor do Lote (R$):
@@ -2091,6 +2174,65 @@ export default function GISMap({
   const showPermanentLabels =
     labelsMinZoom == null || mapZoom >= labelsMinZoom;
   const sheetPickActive = Boolean(lotSheetPickMode);
+  const [frontCorrectLotId, setFrontCorrectLotId] = useState<string | null>(
+    null,
+  );
+  const [frontCorrectSaving, setFrontCorrectSaving] = useState(false);
+
+  const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
+    if (!lot?.id) return;
+    setFrontCorrectSaving(true);
+    try {
+      const block: Record<string, unknown> = {
+        ...lot,
+        front_segment_index: segmentIndex,
+        segments_json: lot.segments_json,
+        number: lot.number,
+        area: lot.area,
+        front_street_name: lot.frontStreetName,
+        front_street_id: lot.frontStreetId,
+        source_import: lot.source_import ?? "TXT_CIVIL3D",
+      };
+      const measures = getOfficialLotMeasurements(block, lot.number);
+      console.log("FRONT_SEGMENT_MANUAL_OVERRIDE", {
+        lotId: lot.id,
+        segmentIndex,
+        measures,
+      });
+      const patch = buildBlockPatchFromOfficialMeasures(
+        measures,
+        segmentIndex,
+      );
+      const { error } = await supabase
+        .from("blocks")
+        .update(patch)
+        .eq("id", lot.id);
+      if (error) throw error;
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === lot.id
+            ? {
+                ...l,
+                frente: measures.frente,
+                Fundo: measures.fundo,
+                "Lado Dir.": measures.ladoDireito,
+                "Lado Esq.": measures.ladoEsquerdo,
+                front_segment_index: segmentIndex,
+              }
+            : l,
+        ),
+      );
+      setFrontCorrectLotId(null);
+      alert(
+        `Frente do lote ${lot.number} definida no segmento ${segmentIndex + 1}.`,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro desconhecido";
+      alert(`Erro ao salvar frente: ${msg}`);
+    } finally {
+      setFrontCorrectSaving(false);
+    }
+  };
 
   const blockBoundingBoxes = useMemo(
     () => buildBlockBoundingBoxes(lots),
@@ -3368,6 +3510,11 @@ export default function GISMap({
                         }
                         onViewFinance={handleViewFinance}
                         actionLoading={editSaleLoading || actionLoading}
+                        frontCorrectActive={frontCorrectLotId === lot.id}
+                        onStartCorrectFront={(l) => setFrontCorrectLotId(l.id)}
+                        onCancelCorrectFront={() => setFrontCorrectLotId(null)}
+                        onPickFrontSegment={handlePickFrontSegment}
+                        frontCorrectSaving={frontCorrectSaving}
                       />
                     </Popup>
                   )}
@@ -3376,6 +3523,10 @@ export default function GISMap({
                   positions={positions}
                   lot={lot}
                   strokeColor={strokeColor}
+                  frontCorrectActive={frontCorrectLotId === lot.id}
+                  onEdgePick={(edgeIndex) =>
+                    void handlePickFrontSegment(lot, edgeIndex)
+                  }
                 />
               </Fragment>
             );
@@ -3564,6 +3715,15 @@ export default function GISMap({
               ? "Clique no início do logradouro"
               : "Clique no fim do logradouro — abrirá o cadastro"}
           </span>
+        </div>
+      )}
+
+      {frontCorrectLotId && (
+        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
+          <p className="text-xs font-semibold text-amber-100 bg-[#11141a]/95 border border-amber-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
+            Corrigir frente: clique no lado do lote no mapa (arestas em destaque) ou
+            escolha o segmento no popup do lote.
+          </p>
         </div>
       )}
 

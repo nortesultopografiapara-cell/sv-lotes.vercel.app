@@ -256,118 +256,167 @@ export function segmentsToPersistJson(
   }));
 }
 
-/** Caminho de arestas consecutivas no anel (sentido horário ou anti-horário). */
-export function classifySidesByTxtRingPaths(
-  segments: OfficialLotSegment[],
-  frontSegmentIndex: number,
-  backSegmentIndex: number,
-): {
+export type OfficialMeasurePaths = {
   frente: number;
   fundo: number;
   ladoDireito: number;
   ladoEsquerdo: number;
   pathA: RingPathResult;
   pathB: RingPathResult;
-} {
+  pathFundo: RingPathResult;
+  frontIndex: number;
+};
+
+/** Lote com frente já vinculada a logradouro (Identificar Frentes). */
+export function hasStreetFrontIdentified(
+  block: Record<string, unknown>,
+): boolean {
+  return Boolean(
+    block.front_street_name ||
+      block.front_street_id ||
+      block.front_street_display,
+  );
+}
+
+function sumPathDistances(
+  indexes: number[],
+  byIdx: Map<number, OfficialLotSegment>,
+): number {
+  return round2(
+    indexes.reduce((sum, idx) => {
+      const length = Number(byIdx.get(idx)?.distance);
+      return isValidSegmentDistance(length) ? sum + length : sum;
+    }, 0),
+  );
+}
+
+/**
+ * Classifica lados pelo anel TXT com frente como âncora.
+ * pathA = lateral horário (frente → fundo) | pathB = lateral anti-horário.
+ * pathFundo = segmentos opostos contínuos (fundo quebrado em 2+ arestas).
+ */
+export function classifySidesByTxtRingPaths(
+  segments: OfficialLotSegment[],
+  frontSegmentIndex: number,
+): OfficialMeasurePaths {
   const n = segments.length;
   const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
   const front = byIdx.get(frontSegmentIndex);
-  const back = byIdx.get(backSegmentIndex);
-
   const emptyPaths: RingPathResult = { indexes: [], totalLength: 0 };
-  if (!front || !back || n < 3) {
+
+  if (!front || n < 3) {
     return {
       frente: front?.distance ?? 0,
-      fundo: back?.distance ?? 0,
+      fundo: 0,
       ladoDireito: 0,
       ladoEsquerdo: 0,
       pathA: emptyPaths,
       pathB: emptyPaths,
+      pathFundo: emptyPaths,
+      frontIndex: frontSegmentIndex,
     };
   }
 
-  /** Segmentos após startIdx até antes de endIdx (sentido horário, sem incluir extremos). */
-  const collectPathClockwise = (
+  const collectPath = (
     startIdx: number,
     endIdx: number,
+    step: 1 | -1,
   ): RingPathResult => {
     const indexes: number[] = [];
     let i = startIdx;
     for (let guard = 0; guard < n; guard++) {
-      i = (i + 1) % n;
+      i = (i + step + n) % n;
       if (i === endIdx) break;
       indexes.push(i);
     }
-    const totalLength = round2(
-      indexes.reduce((sum, idx) => {
-        const length = Number(byIdx.get(idx)?.distance);
-        if (!isValidSegmentDistance(length)) return sum;
-        return sum + length;
-      }, 0),
-    );
-    return { indexes, totalLength };
+    return { indexes, totalLength: sumPathDistances(indexes, byIdx) };
+  };
+
+  const fundoStart = (frontSegmentIndex + 2) % n;
+  const pathA = collectPath(frontSegmentIndex, fundoStart, 1);
+  const pathB = collectPath(frontSegmentIndex, fundoStart, -1);
+
+  const used = new Set<number>([
+    frontSegmentIndex,
+    ...pathA.indexes,
+    ...pathB.indexes,
+  ]);
+  const fundoUnordered: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!used.has(i)) fundoUnordered.push(i);
+  }
+  const fundoIndexes: number[] = [];
+  let walk = fundoStart;
+  for (let guard = 0; guard < n; guard++) {
+    if (fundoUnordered.includes(walk)) fundoIndexes.push(walk);
+    walk = (walk + 1) % n;
+    if (fundoIndexes.length === fundoUnordered.length) break;
+  }
+  if (fundoIndexes.length === 0) {
+    fundoIndexes.push(...fundoUnordered.sort((a, b) => a - b));
+  }
+
+  const pathFundo: RingPathResult = {
+    indexes: fundoIndexes,
+    totalLength: sumPathDistances(fundoIndexes, byIdx),
   };
 
   const frenteLen = Number(front.distance);
-  const fundoLen = Number(back.distance);
-
-  // pathA: depois da frente até antes do fundo | pathB: depois do fundo até antes da frente
-  const pathA = collectPathClockwise(frontSegmentIndex, backSegmentIndex);
-  const pathB = collectPathClockwise(backSegmentIndex, frontSegmentIndex);
 
   return {
     frente: isValidSegmentDistance(frenteLen) ? round2(frenteLen) : 0,
-    fundo: isValidSegmentDistance(fundoLen) ? round2(fundoLen) : 0,
+    fundo: pathFundo.totalLength,
     ladoDireito: pathA.totalLength,
     ladoEsquerdo: pathB.totalLength,
     pathA,
     pathB,
+    pathFundo,
+    frontIndex: frontSegmentIndex,
   };
 }
 
+/** Primeiro índice do arco de fundo (referência TXT). */
 export function findBackSegmentIndex(
   segments: OfficialLotSegment[],
   frontSegmentIndex: number,
 ): number {
   const n = segments.length;
   if (n < 3) return (frontSegmentIndex + 1) % Math.max(n, 1);
-
-  // Ordem TXT Civil 3D: frente → lateral → fundo → demais laterais
-  if (n >= 4) {
-    return (frontSegmentIndex + 2) % n;
-  }
-
-  const front = segments.find((s) => s.segment_index === frontSegmentIndex);
-  const frontLen = front?.distance ?? 0;
-  let bestIdx = (frontSegmentIndex + Math.floor(n / 2)) % n;
-  let bestScore = Infinity;
-
-  for (const seg of segments) {
-    if (seg.segment_index === frontSegmentIndex) continue;
-    const lenDiff = Math.abs(seg.distance - frontLen);
-    const idxDiff = Math.abs(
-      ((seg.segment_index - frontSegmentIndex + n) % n) - n / 2,
-    );
-    const score = lenDiff + idxDiff * 0.01;
-    if (score < bestScore) {
-      bestScore = score;
-      bestIdx = seg.segment_index;
-    }
-  }
-  return bestIdx;
+  return (frontSegmentIndex + 2) % n;
 }
 
 export function resolveFrontSegmentIndex(
   block: Record<string, unknown>,
   segments: OfficialLotSegment[],
 ): number | null {
+  const hasStreet = hasStreetFrontIdentified(block);
   const stored = block.front_segment_index;
+
   if (typeof stored === "number" && Number.isFinite(stored) && stored >= 0) {
-    return stored;
+    const idx =
+      stored < segments.length ? stored : stored % Math.max(segments.length, 1);
+    if (hasStreet || stored >= 0) {
+      console.log("FRONT_SEGMENT_LOCKED", {
+        lote: block.number ?? block.id,
+        frontIndex: idx,
+        street: hasStreet,
+      });
+    }
+    return idx;
+  }
+
+  if (hasStreet) {
+    console.warn("FRONT_SEGMENT_STREET_WITHOUT_INDEX", block.number ?? block.id);
+    return segments.length > 0 ? 0 : null;
   }
 
   const frenteHint = Number(block.frente);
-  if (Number.isFinite(frenteHint) && frenteHint > 0 && segments.length > 0) {
+  if (
+    Number.isFinite(frenteHint) &&
+    frenteHint > 0 &&
+    frenteHint < MAX_SEGMENT_DISTANCE_M &&
+    segments.length > 0
+  ) {
     const match = segments.reduce((best, s) => {
       const d = Math.abs(s.distance - frenteHint);
       const bd = Math.abs(best.distance - frenteHint);
@@ -382,18 +431,37 @@ export function resolveFrontSegmentIndex(
   return null;
 }
 
+/** Segmento TXT alinhado à aresta da geometria mais próxima da linha de rua. */
+export function findFrontSegmentIndexFromStreetEdge(
+  segments: OfficialLotSegment[],
+  geometryEdgeIndex: number,
+  lotLabel?: unknown,
+): number {
+  if (segments.length === 0) return 0;
+  const idx = Math.min(
+    Math.max(0, Math.floor(geometryEdgeIndex)),
+    segments.length - 1,
+  );
+  console.log("FRONT_SEGMENT_SELECTED_FROM_STREET", {
+    lote: lotLabel ?? "?",
+    frontIndex: idx,
+    geometryEdgeIndex,
+  });
+  return idx;
+}
+
 function computeChanfreFromTxtPaths(
   segments: OfficialLotSegment[],
   frontIdx: number,
-  backIdx: number,
   pathA: RingPathResult,
   pathB: RingPathResult,
+  pathFundo: RingPathResult,
 ): ChanfreInfo | null {
   const used = new Set([
     frontIdx,
-    backIdx,
     ...pathA.indexes,
     ...pathB.indexes,
+    ...pathFundo.indexes,
   ]);
   const chanfreSegs: number[] = [];
 
@@ -448,11 +516,19 @@ function buildMeasuresFromSegments(
   if (frontIdx == null) frontIdx = 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const backIdx = findBackSegmentIndex(segments, frontIdx);
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx, backIdx);
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx);
 
   logLotSideSegments(label, "right", paths.pathA, segments);
   logLotSideSegments(label, "left", paths.pathB, segments);
+
+  console.log("OFFICIAL_MEASURE_PATHS", {
+    lote: label,
+    frontIndex: paths.frontIndex,
+    fundoIndexes: paths.pathFundo.indexes,
+    fundoTotal: paths.fundo,
+    pathRight: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
+    pathLeft: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
+  });
 
   const perimeter = round2(
     segments.reduce((sum, s) => {
@@ -468,9 +544,9 @@ function buildMeasuresFromSegments(
   const chanfre = computeChanfreFromTxtPaths(
     segments,
     frontIdx,
-    backIdx,
     paths.pathA,
     paths.pathB,
+    paths.pathFundo,
   );
 
   return {
@@ -503,25 +579,6 @@ export function getOfficialLotMeasurements(
 
   if (result) {
     console.log("LOT_FRONT_SEGMENT", label, result.frontSegmentIndex);
-    console.log("LOT_BACK_SIDE", label, {
-      backSegmentIndex: findBackSegmentIndex(
-        segments,
-        result.frontSegmentIndex ?? 0,
-      ),
-    });
-
-    const lotNumKey = String(label).replace(/\D/g, "");
-    if (lotNumKey === "7") {
-      const frontIdx = result.frontSegmentIndex ?? 0;
-      const backIdx = findBackSegmentIndex(segments, frontIdx);
-      const paths = classifySidesByTxtRingPaths(segments, frontIdx, backIdx);
-      console.log("MEASURE_RING_PATHS lote 7:", {
-        frontIndex: frontIdx,
-        backIndex: backIdx,
-        pathA: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
-        pathB: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
-      });
-    }
   }
 
   if (result && failsMeasureSanity(result)) {
@@ -558,7 +615,7 @@ export function getOfficialLotMeasurements(
   return result;
 }
 
-/** Associa aresta TXT à frente identificada pela geometria/logradouro (comprimento em m). */
+/** Fallback legado: associa frente por comprimento (não usar se já há rua identificada). */
 export function findFrontSegmentIndexFromLengthHint(
   segments: OfficialLotSegment[],
   frontLengthM: number,
@@ -574,6 +631,18 @@ export function findFrontSegmentIndexFromLengthHint(
     }
   }
   return best;
+}
+
+/** Persistência após correção manual da frente no mapa. */
+export function buildBlockPatchFromOfficialMeasures(
+  measures: OfficialLotMeasures,
+  frontSegmentIndex: number,
+): Record<string, unknown> {
+  return {
+    ...officialMeasuresToBlockFields(measures, frontSegmentIndex),
+    front_segment_index: frontSegmentIndex,
+    updated_at: new Date().toISOString(),
+  };
 }
 
 /** Linhas para persistência em lot_segments. */
