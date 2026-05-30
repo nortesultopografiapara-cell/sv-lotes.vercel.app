@@ -1052,20 +1052,31 @@ function MapController({
   safeBounds,
   refreshKey,
   projectId,
+  focusBlockName,
+  focusBlockKey = 0,
 }: {
   safeBounds: LatLngPair[];
   refreshKey?: number;
   projectId?: string;
+  focusBlockName?: string | null;
+  focusBlockKey?: number;
 }) {
   const map = useMap();
-  const lastFitBoundsKey = useRef<{ projectId?: string, refreshKey?: number }>({});
+  const lastFitBoundsKey = useRef<{
+    projectId?: string;
+    refreshKey?: number;
+    focusBlockName?: string | null;
+    focusBlockKey?: number;
+  }>({});
 
   useEffect(() => {
     if (safeBounds.length === 0) return;
 
-    const needFitBounds = 
-         lastFitBoundsKey.current.projectId !== projectId || 
-         lastFitBoundsKey.current.refreshKey !== refreshKey;
+    const needFitBounds =
+      lastFitBoundsKey.current.projectId !== projectId ||
+      lastFitBoundsKey.current.refreshKey !== refreshKey ||
+      lastFitBoundsKey.current.focusBlockName !== focusBlockName ||
+      lastFitBoundsKey.current.focusBlockKey !== focusBlockKey;
 
     if (!needFitBounds) return;
 
@@ -1073,8 +1084,13 @@ function MapController({
       padding: [50, 50],
       maxZoom: 20,
     });
-    lastFitBoundsKey.current = { projectId, refreshKey };
-  }, [safeBounds, map, refreshKey, projectId]);
+    lastFitBoundsKey.current = {
+      projectId,
+      refreshKey,
+      focusBlockName,
+      focusBlockKey,
+    };
+  }, [safeBounds, map, refreshKey, projectId, focusBlockName, focusBlockKey]);
   return null;
 }
 
@@ -2038,12 +2054,17 @@ export default function GISMap({
   labelsMinZoom,
   lotSheetPickMode = false,
   onLotSheetLotPick,
+  focusBlockName = null,
+  focusBlockKey = 0,
 }: {
   projectId?: string;
   activeLayer?: "streets" | "satellite" | "dark";
   gpsActive?: boolean;
   measureActive?: boolean;
   refreshKey?: number;
+  /** Zoom na quadra selecionada no gerenciador (block_name). */
+  focusBlockName?: string | null;
+  focusBlockKey?: number;
   streetGuides?: any[];
   streetGuidesVisible?: boolean;
   drawStreetActive?: boolean;
@@ -2092,18 +2113,33 @@ export default function GISMap({
   }, [lots, blockBoundingBoxes]);
 
   const safeMapBounds = useMemo(() => {
+    const focusKey = focusBlockName
+      ? normalizeBlockKey(focusBlockName)
+      : null;
     const validatedLots: ValidatedLotForBounds[] = [];
     for (const lot of lots) {
       const validation = lotGeometryValidations.get(lot.id);
       if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
+      if (focusKey && normalizeBlockKey(lot.block) !== focusKey) continue;
       validatedLots.push({
         number: lot.number,
         block: lot.block,
         cleanedCoords: validation.cleanedCoords,
       });
     }
+    if (focusKey && validatedLots.length === 0) {
+      for (const lot of lots) {
+        const validation = lotGeometryValidations.get(lot.id);
+        if (!validation?.valid || validation.cleanedCoords.length < 3) continue;
+        validatedLots.push({
+          number: lot.number,
+          block: lot.block,
+          cleanedCoords: validation.cleanedCoords,
+        });
+      }
+    }
     return getSafeMapBounds(validatedLots, blockBoundingBoxes);
-  }, [lots, lotGeometryValidations, blockBoundingBoxes]);
+  }, [lots, lotGeometryValidations, blockBoundingBoxes, focusBlockName]);
 
   const lotLabelItems = useMemo((): LotLabelItem[] => {
     const items: LotLabelItem[] = [];
@@ -3199,6 +3235,8 @@ export default function GISMap({
           safeBounds={safeMapBounds}
           refreshKey={refreshKey}
           projectId={projectId}
+          focusBlockName={focusBlockName}
+          focusBlockKey={focusBlockKey}
         />
         <LocationController active={gpsActive} />
 

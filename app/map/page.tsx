@@ -36,6 +36,13 @@ import {
 } from '@/lib/offline/projectsOfflineCache';
 import { clearProjectMapOfflineCache } from '@/lib/offline/store';
 import {
+  deleteProjectQuadra,
+  fetchProjectQuadraNames,
+  formatQuadraLabel,
+  normalizeQuadraBlockName,
+} from '@/lib/projectQuadras';
+import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
+import {
   findFrontSegmentIndexFromLengthHint,
   getOfficialLotMeasurements,
   normalizeTxtImportSegments,
@@ -368,6 +375,17 @@ export default function MapPage() {
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const [quadrasPanelOpen, setQuadrasPanelOpen] = useState(false);
+  const [projectQuadras, setProjectQuadras] = useState<string[]>([]);
+  const [quadrasLoading, setQuadrasLoading] = useState(false);
+  const [quadraActionLoading, setQuadraActionLoading] = useState<string | null>(
+    null,
+  );
+  const [deleteQuadraConfirm, setDeleteQuadraConfirm] = useState<string | null>(
+    null,
+  );
+  const [focusBlockName, setFocusBlockName] = useState<string | null>(null);
+  const [focusBlockKey, setFocusBlockKey] = useState(0);
   const [lotSheetPickMode, setLotSheetPickMode] = useState(false);
   const [lotSheetTarget, setLotSheetTarget] = useState<{
     id: string;
@@ -405,6 +423,80 @@ export default function MapPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (selectedProject) loadStreetGuides();
   }, [selectedProject, loadStreetGuides]);
+
+  const loadProjectQuadras = useCallback(async () => {
+    if (!selectedProject?.id) {
+      setProjectQuadras([]);
+      return;
+    }
+    setQuadrasLoading(true);
+    try {
+      const names = await fetchProjectQuadraNames(
+        supabase,
+        selectedProject.id,
+        user,
+      );
+      setProjectQuadras(names);
+    } catch (err) {
+      console.error('[QUADRAS] falha ao listar', err);
+      setProjectQuadras([]);
+    } finally {
+      setQuadrasLoading(false);
+    }
+  }, [selectedProject?.id, user]);
+
+  useEffect(() => {
+    if (selectedProject?.id) {
+      loadProjectQuadras();
+    } else {
+      setProjectQuadras([]);
+    }
+  }, [selectedProject?.id, mapRefreshKey, loadProjectQuadras]);
+
+  const handleViewQuadraOnMap = (blockName: string) => {
+    setFocusBlockName(normalizeQuadraBlockName(blockName));
+    setFocusBlockKey((k) => k + 1);
+  };
+
+  const handleReimportQuadraTxt = (blockName: string) => {
+    setImportTxtQuadra(normalizeQuadraBlockName(blockName));
+    setImportTxtFile(null);
+    setIsImportTxtModalOpen(true);
+  };
+
+  const handleConfirmDeleteQuadra = async () => {
+    if (!deleteQuadraConfirm || !selectedProject?.id) return;
+    const quadraName = deleteQuadraConfirm;
+    setQuadraActionLoading(quadraName);
+    try {
+      const { lotsRemoved } = await deleteProjectQuadra(
+        supabase,
+        selectedProject.id,
+        quadraName,
+        user,
+      );
+      setDeleteQuadraConfirm(null);
+      if (
+        focusBlockName &&
+        normalizeQuadraBlockName(focusBlockName) ===
+          normalizeQuadraBlockName(quadraName)
+      ) {
+        setFocusBlockName(null);
+      }
+      await loadProjectQuadras();
+      setMapRefreshKey((k) => k + 1);
+      alert(
+        lotsRemoved > 0
+          ? `${formatQuadraLabel(quadraName)} excluída (${lotsRemoved} lotes).`
+          : `${formatQuadraLabel(quadraName)} excluída.`,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+      alert(`Erro ao excluir quadra: ${msg}`);
+    } finally {
+      setQuadraActionLoading(null);
+    }
+  };
 
   const handleIdentifyFronts = async () => {
     if (!selectedProject || streetGuides.length === 0) {
@@ -1709,10 +1801,23 @@ export default function MapPage() {
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}
         <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
-           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center">
+           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
              
              {user?.role !== 'BROKER' && (
                <>
+                 <ProjectQuadrasPanel
+                   open={quadrasPanelOpen}
+                   onToggleOpen={() => setQuadrasPanelOpen((o) => !o)}
+                   quadras={projectQuadras}
+                   loading={quadrasLoading}
+                   actionLoading={quadraActionLoading}
+                   onViewOnMap={handleViewQuadraOnMap}
+                   onReimportTxt={handleReimportQuadraTxt}
+                   onRequestDelete={setDeleteQuadraConfirm}
+                 />
+
+                 <hr className="w-2/3 border-[#2d3340]" />
+
                  {/* Import */}
                  <button 
                     onClick={() => setIsImportModalOpen(true)} 
@@ -1830,6 +1935,8 @@ export default function MapPage() {
             gpsActive={gpsActive} 
             measureActive={measureActive} 
             refreshKey={mapRefreshKey}
+            focusBlockName={focusBlockName}
+            focusBlockKey={focusBlockKey}
             streetGuides={streetGuides}
             streetGuidesVisible={streetGuidesVisible}
             drawStreetActive={drawStreetActive}
@@ -1946,6 +2053,51 @@ export default function MapPage() {
                  </form>
               </div>
            </div>
+        )}
+
+        {deleteQuadraConfirm && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
+              <div className="p-4 border-b border-[var(--color-border)]">
+                <h3 className="font-bold text-white text-lg">Excluir quadra</h3>
+              </div>
+              <div className="p-6">
+                <p className="text-sm text-gray-300 leading-relaxed">
+                  Deseja excluir somente a{' '}
+                  <strong className="text-white">
+                    {formatQuadraLabel(deleteQuadraConfirm)}
+                  </strong>
+                  ?
+                </p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-3">
+                  Todos os lotes desta quadra serão removidos. Outras quadras e o
+                  projeto permanecem intactos.
+                </p>
+                <div className="flex gap-3 mt-6">
+                  <button
+                    type="button"
+                    disabled={Boolean(quadraActionLoading)}
+                    onClick={() => setDeleteQuadraConfirm(null)}
+                    className="flex-1 py-2.5 rounded-lg border border-[var(--color-border)] text-gray-300 font-semibold hover:bg-[var(--color-background)] transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(quadraActionLoading)}
+                    onClick={handleConfirmDeleteQuadra}
+                    className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {quadraActionLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      'Excluir'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Modal TXT Import */}
