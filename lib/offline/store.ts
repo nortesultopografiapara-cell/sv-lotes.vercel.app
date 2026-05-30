@@ -1,4 +1,4 @@
-import { getOfflineDb } from '@/lib/offline/db';
+import { getOfflineDb, isIndexedDbAvailable } from '@/lib/offline/db';
 import type { MapProjectCacheRecord } from '@/lib/offline/types';
 
 type EntityStoreName =
@@ -62,6 +62,62 @@ export async function saveMapProjectCache(
     projectId: record.projectId,
     lots: record.lots.length,
     updatedAt: record.updatedAt,
+  });
+}
+
+/**
+ * Remove cache local do mapa para um projeto (após reimportar TXT / atualizar GIS).
+ */
+export async function clearProjectMapOfflineCache(
+  projectId: string,
+): Promise<void> {
+  if (!isIndexedDbAvailable()) return;
+
+  const db = await getOfflineDb();
+  const pid = String(projectId);
+
+  try {
+    await db.delete('map_projects', pid);
+  } catch {
+    /* ignore */
+  }
+
+  const deleteByProject = async (
+    store: 'blocks' | 'lots' | 'projects',
+  ): Promise<number> => {
+    const all = await db.getAll(store);
+    let removed = 0;
+    const tx = db.transaction(store, 'readwrite');
+    for (const row of all) {
+      const rowPid = String(
+        (row as Record<string, unknown>).project_id ??
+          (row as Record<string, unknown>).id ??
+          '',
+      );
+      const match =
+        store === 'projects'
+          ? String((row as Record<string, unknown>).id) === pid
+          : rowPid === pid;
+      if (!match) continue;
+      const key = String((row as Record<string, unknown>).id ?? '');
+      if (key) {
+        await tx.store.delete(key);
+        removed += 1;
+      }
+    }
+    await tx.done;
+    return removed;
+  };
+
+  const blocksRemoved = await deleteByProject('blocks');
+  const lotsRemoved = await deleteByProject('lots');
+  const projectsRemoved = await deleteByProject('projects');
+
+  console.log('[CACHE] cache local do mapa limpo', {
+    projectId: pid,
+    blocks: blocksRemoved,
+    lots: lotsRemoved,
+    projects: projectsRemoved,
   });
 }
 

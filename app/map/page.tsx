@@ -34,6 +34,7 @@ import {
   cacheSingleProjectForOffline,
   loadOfflineProjectsList,
 } from '@/lib/offline/projectsOfflineCache';
+import { clearProjectMapOfflineCache } from '@/lib/offline/store';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -1249,18 +1250,25 @@ export default function MapPage() {
          return;
       }
 
-      const { data: blockCheck } = await supabase
-         .from('blocks')
-         .select('id')
-         .eq('project_id', selectedProject.id)
-         .eq('block_name', importTxtQuadra.toUpperCase().trim())
-         .limit(1);
+      const quadraName = importTxtQuadra.toUpperCase().trim();
 
-      if (blockCheck && blockCheck.length > 0) {
-         alert(`Erro: A Quadra "${importTxtQuadra}" já existe neste projeto.`);
-         setImportingTxt(false);
-         return;
+      try {
+        await clearProjectMapOfflineCache(selectedProject.id);
+      } catch (cacheErr) {
+        console.warn('[CACHE] falha ao limpar IndexedDB do mapa', cacheErr);
       }
+
+      const { error: deleteQuadraError } = await supabase
+        .from('blocks')
+        .delete()
+        .eq('project_id', selectedProject.id)
+        .eq('block_name', quadraName);
+
+      if (deleteQuadraError) {
+        throw deleteQuadraError;
+      }
+
+      console.log('[TXT] geometrias antigas removidas da quadra', quadraName);
 
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
           
@@ -1292,8 +1300,8 @@ export default function MapPage() {
 
           return {
              project_id: selectedProject.id,
-             name: importTxtQuadra.toUpperCase(),
-             block_name: importTxtQuadra.toUpperCase(),
+             name: quadraName,
+             block_name: quadraName,
              number: b.name,
              lot_number: b.name,
              status: 'Disponível',

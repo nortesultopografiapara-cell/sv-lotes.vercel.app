@@ -60,7 +60,17 @@ import {
   queueOfflineReservation,
 } from "@/lib/offline/lotReservationOffline";
 
-/** Desliga linhas de chamada entre rótulo e polígono (investigação visual). */
+/**
+ * Linhas auxiliares no mapa (investigação visual):
+ * - measurement: MeasureInteraction Polyline (#ef4444)
+ * - street guide: streetGuides Polyline (verde/cinza)
+ * - block line: blocksData / lotes com <3 vértices (Polyline)
+ * - temp/draw: DrawStreetInteraction (só marcadores, sem polyline)
+ * Labels de lote: Marker no centro (SHOW_LOT_LABEL_LINES=false)
+ */
+const SHOW_AUXILIARY_LINES = false;
+
+/** Desliga linhas de chamada entre rótulo e polígono. */
 const SHOW_LOT_LABEL_LINES = false;
 
 const LOT_LABEL_MAX_LEADER_METERS = 30;
@@ -570,6 +580,7 @@ function MeasureInteraction({
   }, [points, closed, setStr]);
 
   if (!active || points.length === 0) return null;
+  if (!SHOW_AUXILIARY_LINES) return null;
 
   return (
     <>
@@ -2354,19 +2365,6 @@ export default function GISMap({
             );
 
             if (positions.length < 3) {
-              if (positions.length >= 2) {
-                return (
-                  <Polyline
-                    key={`lot-line-${lot.id}`}
-                    positions={positions}
-                    pathOptions={{
-                      color: color,
-                      weight: 2,
-                      dashArray: "6, 4",
-                    }}
-                  />
-                );
-              }
               return null;
             }
 
@@ -2439,88 +2437,79 @@ export default function GISMap({
             );
           })}
 
-        {blocksData.map((block) => {
-          const displayNum = normalizeLotDisplayNum(block.number);
-          const positions = sanitizeLotBounds(
-            block.bounds as LatLngPair[],
-            block,
-          );
+        {SHOW_AUXILIARY_LINES &&
+          blocksData.map((block) => {
+            const displayNum = normalizeLotDisplayNum(block.number);
+            const positions = sanitizeLotBounds(
+              block.bounds as LatLngPair[],
+              block,
+            );
 
-          if (positions.length < 3) {
-            if (positions.length >= 2) {
-              return (
-                <Polyline
-                  key={`block-line-${block.id}`}
-                  positions={positions}
-                  pathOptions={{
-                    color: "#64748b",
-                    weight: 1,
-                    dashArray: "4, 6",
-                  }}
-                />
-              );
+            if (positions.length < 3) {
+              return null;
             }
-            return null;
-          }
 
-          return (
-            <Polygon
-              key={`block-${block.id}`}
-              positions={positions}
-              interactive={!(drawStreetActive || measureActive)}
-              pathOptions={{
-                color: "#000000",
-                fillColor: getStatusColor(block.status),
-                fillOpacity: 0.75,
-                stroke: true,
-                weight: 1,
-              }}
-              eventHandlers={{
-                mouseover: (e) => {
-                  const layer = e.target;
-                  layer.setStyle({
-                    fillOpacity: 1,
-                    weight: 2,
-                  });
-                },
-                mouseout: (e) => {
-                  const layer = e.target;
-                  layer.setStyle({
-                    fillOpacity: 0.75,
-                    weight: 1,
-                  });
-                },
-              }}
-            >
-              {renderLotLabel(
-                { bounds: positions, number: block.number },
-                displayNum,
-                showPermanentLabels,
-              )}
-              <Popup>
-                <LotPopupContent
-                  lot={block}
-                  onAction={handleLotAction}
-                  onRequestCustomerForm={(l, a, p) =>
-                    openCustomerForm(l, a, p)
-                  }
-                  onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
-                  canEditSale={userCanEditSale}
-                  userRole={user?.role}
-                  onEditSale={(l) => void openEditSaleForm(l)}
-                  onViewContract={handleViewContract}
-                  onRegenerateContract={(l) =>
-                    void handleRegenerateContractFromMap(l)
-                  }
-                  onViewFinance={handleViewFinance}
-                  actionLoading={editSaleLoading || actionLoading}
-                />
-              </Popup>
-            </Polygon>
-          );
-        })}
+            return (
+              <Polygon
+                key={`block-${block.id}`}
+                positions={positions}
+                interactive={!(drawStreetActive || measureActive)}
+                pathOptions={{
+                  color: "#000000",
+                  fillColor: getStatusColor(block.status),
+                  fillOpacity: 0.75,
+                  stroke: true,
+                  weight: 1,
+                }}
+                eventHandlers={{
+                  mouseover: (e) => {
+                    const layer = e.target;
+                    layer.setStyle({
+                      fillOpacity: 1,
+                      weight: 2,
+                    });
+                  },
+                  mouseout: (e) => {
+                    const layer = e.target;
+                    layer.setStyle({
+                      fillOpacity: 0.75,
+                      weight: 1,
+                    });
+                  },
+                }}
+              >
+                {renderLotLabel(
+                  { bounds: positions, number: block.number },
+                  displayNum,
+                  showPermanentLabels,
+                )}
+                <Popup>
+                  <LotPopupContent
+                    lot={block}
+                    onAction={handleLotAction}
+                    onRequestCustomerForm={(l, a, p) =>
+                      openCustomerForm(l, a, p)
+                    }
+                    onRequestClear={(l, p) =>
+                      setClearConfirmModal({ lot: l, price: p })
+                    }
+                    canEditSale={userCanEditSale}
+                    userRole={user?.role}
+                    onEditSale={(l) => void openEditSaleForm(l)}
+                    onViewContract={handleViewContract}
+                    onRegenerateContract={(l) =>
+                      void handleRegenerateContractFromMap(l)
+                    }
+                    onViewFinance={handleViewFinance}
+                    actionLoading={editSaleLoading || actionLoading}
+                  />
+                </Popup>
+              </Polygon>
+            );
+          })}
 
-        {streetGuidesVisible &&
+        {SHOW_AUXILIARY_LINES &&
+          streetGuidesVisible &&
           streetGuides.map((guide) => {
             const geo = guide.geometry_geojson || guide.geometry;
             if (!geo?.coordinates) return null;
@@ -2600,14 +2589,16 @@ export default function GISMap({
             );
           })}
 
-        <MeasureInteraction
-          active={measureActive}
-          points={measurePoints}
-          setPoints={setMeasurePoints}
-          closed={measureClosed}
-          setClosed={setMeasureClosed}
-          setStr={setMeasureStr}
-        />
+        {SHOW_AUXILIARY_LINES && (
+          <MeasureInteraction
+            active={measureActive}
+            points={measurePoints}
+            setPoints={setMeasurePoints}
+            closed={measureClosed}
+            setClosed={setMeasureClosed}
+            setStr={setMeasureStr}
+          />
+        )}
 
         <DrawStreetInteraction
           active={drawStreetActive}
