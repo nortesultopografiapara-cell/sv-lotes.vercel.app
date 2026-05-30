@@ -28,6 +28,11 @@ import {
 import { useCompanySaas } from '@/hooks/useCompanySaas';
 import { applyTenantFilter, isPlatformAdmin, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
+import { isBrowserOnline } from '@/lib/offline/lotReservationOffline';
+import {
+  cacheProjectsForOffline,
+  loadOfflineProjectsList,
+} from '@/lib/offline/projectsOfflineCache';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -372,6 +377,7 @@ export default function MapPage() {
 
   const loadStreetGuides = useCallback(async () => {
     if (!selectedProject) return;
+    if (!isBrowserOnline()) return;
     try {
       const { data, error } = await supabase.from('street_guides').select('*').eq('project_id', selectedProject.id);
       if (error && error.code !== 'PGRST205') console.warn('Error loading street guides:', error);
@@ -575,11 +581,30 @@ export default function MapPage() {
   };
 
   const loadProjects = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
+
+    if (!isBrowserOnline()) {
+      try {
+        const cached = await loadOfflineProjectsList();
+        setProjects(cached);
+      } catch (err) {
+        console.error('[OFFLINE] erro ao carregar projetos', err);
+        setProjects([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const rlsCtx = await resolveRlsContext(user);
-      const activeTenantId = saasTenantId ?? rlsCtx.tenantId ?? (await resolveActiveTenantId(user));
+      const activeTenantId =
+        saasTenantId ?? rlsCtx.tenantId ?? (await resolveActiveTenantId(user));
 
       if (!rlsCtx.isSuperAdmin && !activeTenantId) {
         setProjects([]);
@@ -604,6 +629,7 @@ export default function MapPage() {
       const projectList = data || [];
       setProjects(projectList);
       logSaasCompanyContext(activeTenantId, saasCompany, projectList.length);
+      void cacheProjectsForOffline(projectList);
     } catch (err) {
       console.error(err);
       setProjects([]);
@@ -613,8 +639,15 @@ export default function MapPage() {
   }, [user, saasTenantId, saasCompany]);
 
   useEffect(() => {
-    if (!authLoading && !saasLoading) {
-      loadProjects();
+    if (authLoading) return;
+    const offline =
+      typeof navigator !== 'undefined' && !navigator.onLine;
+    if (offline) {
+      void loadProjects();
+      return;
+    }
+    if (!saasLoading) {
+      void loadProjects();
     }
   }, [user, authLoading, saasLoading, loadProjects]);
 
@@ -2016,6 +2049,10 @@ export default function MapPage() {
                    </div>
                  );
                })}
+             </div>
+          ) : !isBrowserOnline() ? (
+             <div className="w-full h-full flex flex-col items-center justify-center text-center px-6 text-[var(--color-text-muted)] text-sm max-w-lg mx-auto">
+                 Nenhum projeto disponível offline. Abra este projeto online pelo menos uma vez para armazená-lo neste dispositivo.
              </div>
           ) : (
              <div className="w-full h-full flex items-center justify-center text-[var(--color-text-muted)] text-sm">

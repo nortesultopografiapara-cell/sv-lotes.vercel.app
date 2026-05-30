@@ -28,6 +28,19 @@ export function useCompanySaas() {
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      console.log('[OFFLINE] useCompanySaas: sem fetch remoto');
+      const activeTenantId =
+        user.tenant_id ||
+        user.company_id ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('impersonating_tenant_id')
+          : null);
+      setTenantId(activeTenantId);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const activeTenantId = await resolveActiveTenantId(user);

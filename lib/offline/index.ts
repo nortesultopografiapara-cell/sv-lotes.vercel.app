@@ -5,3 +5,4 @@ export * from '@/lib/offline/offlineSync';
 export * from '@/lib/offline/syncExecutor';
 export * from '@/lib/offline/lotReservationOffline';
 export * from '@/lib/offline/syncQueueLabels';
+export * from '@/lib/offline/projectsOfflineCache';

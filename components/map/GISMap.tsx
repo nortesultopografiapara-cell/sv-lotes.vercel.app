@@ -53,6 +53,7 @@ import {
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
+import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
   isBrowserOnline,
   blockOfflineSale,
@@ -1107,7 +1108,7 @@ export default function GISMap({
 
   useEffect(() => {
     async function loadBrokers() {
-      if (!user?.tenant_id) return;
+      if (!user?.tenant_id || !isBrowserOnline()) return;
       const { data } = await supabase
         .from("brokers")
         .select("id, name")
@@ -1228,22 +1229,32 @@ export default function GISMap({
 
   useEffect(() => {
     async function loadLots() {
-      if (!user || !projectId) return;
-      try {
-        if (!isBrowserOnline()) {
-          const cached = await getMapProjectCache(projectId);
-          if (cached?.lots?.length) {
-            setLots(cached.lots as any[]);
-            setBlocksData((cached.blocksData as any[]) || []);
-            setLoading(false);
-            console.log('GIS_MAP_OFFLINE_CACHE_USED', {
-              projectId,
-              lots: cached.lots.length,
-            });
-            return;
-          }
-        }
+      if (!user || !projectId) {
+        setLoading(false);
+        return;
+      }
 
+      if (!isBrowserOnline()) {
+        try {
+          const { lots, blocksData } = await loadOfflineMapGeometries(projectId);
+          setLots(lots as any[]);
+          setBlocksData(blocksData as any[]);
+          console.log('GIS_MAP_OFFLINE_CACHE_USED', {
+            projectId,
+            lots: lots.length,
+            blocksData: blocksData.length,
+          });
+        } catch (e) {
+          console.error('[OFFLINE] erro ao carregar mapa', e);
+          setLots([]);
+          setBlocksData([]);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
         let blocksQuery = supabase
           .from("blocks")
           .select("*, projects(name), customers(name)")
@@ -1390,6 +1401,10 @@ export default function GISMap({
     }
 
     loadLots();
+
+    if (!isBrowserOnline()) {
+      return;
+    }
 
     const channel = supabase
       .channel("realtime:blocks")
