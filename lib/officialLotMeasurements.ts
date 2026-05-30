@@ -34,7 +34,107 @@ export type RingPathResult = {
 
 const CHANFRE_MIN = 2;
 const CHANFRE_MAX = 15;
+const MAX_SEGMENT_DISTANCE_M = 1000;
+const MAX_SIDE_TOTAL_M = 1000;
+const MAX_PERIMETER_M = 5000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Única fonte de comprimento: distance/length do TXT — nunca north/east. */
+export function isValidSegmentDistance(length: number): boolean {
+  return (
+    Number.isFinite(length) && length > 0 && length < MAX_SEGMENT_DISTANCE_M
+  );
+}
+
+/**
+ * Extrai comprimento oficial do segmento (somente campos de distância do TXT).
+ */
+export function extractOfficialSegmentDistance(
+  raw: Record<string, unknown>,
+  lotLabel?: unknown,
+  segmentIndex?: number,
+): number | null {
+  const value = raw.distance ?? raw.length ?? raw.Length ?? raw.comprimento ?? raw.medida;
+  const length = Number(value);
+
+  if (!isValidSegmentDistance(length)) {
+    if (value != null && value !== "") {
+      console.log("LOT_INVALID_SEGMENT", {
+        lote: lotLabel ?? "?",
+        index: segmentIndex ?? raw.segment_index,
+        raw: value,
+        rejectedAs: length,
+      });
+    }
+    return null;
+  }
+  return round2(length);
+}
+
+/** Remove segmentos inválidos e reindexa o anel 0..n-1. */
+export function sanitizeOfficialSegments(
+  segments: OfficialLotSegment[],
+  lotLabel?: unknown,
+): OfficialLotSegment[] {
+  const valid: OfficialLotSegment[] = [];
+  for (const seg of segments) {
+    const length = Number(seg.distance);
+    if (!isValidSegmentDistance(length)) {
+      console.log("LOT_INVALID_SEGMENT", {
+        lote: lotLabel ?? "?",
+        index: seg.segment_index,
+        raw: seg.distance,
+        rejectedAs: length,
+      });
+      continue;
+    }
+    valid.push({ ...seg, distance: round2(length) });
+  }
+  return valid.map((s, i) => ({
+    ...s,
+    segment_index: i,
+    vertex_order: i,
+  }));
+}
+
+function logLotSideSegments(
+  lotLabel: unknown,
+  side: "right" | "left",
+  path: RingPathResult,
+  segments: OfficialLotSegment[],
+): void {
+  const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+  const detail = path.indexes.map((index) => ({
+    index,
+    distance: byIdx.get(index)?.distance ?? 0,
+  }));
+  console.log("LOT_SIDE_SEGMENTS", {
+    lote: lotLabel,
+    side,
+    segments: detail,
+    total: path.totalLength,
+  });
+}
+
+function failsMeasureSanity(measures: {
+  frente: number | null;
+  fundo: number | null;
+  ladoDireito: number | null;
+  ladoEsquerdo: number | null;
+  perimeter: number | null;
+}): boolean {
+  const sides = [
+    measures.frente,
+    measures.fundo,
+    measures.ladoDireito,
+    measures.ladoEsquerdo,
+  ];
+  if (sides.some((v) => v != null && v > MAX_SIDE_TOTAL_M)) return true;
+  if (measures.perimeter != null && measures.perimeter > MAX_PERIMETER_M) {
+    return true;
+  }
+  return false;
+}
 
 function bearingFromEn(
   north1: number,
@@ -102,10 +202,12 @@ export function normalizeTxtImportSegments(
 /** Lê segmentos oficiais do block (segments_json enriquecido ou legado). */
 export function parseOfficialSegmentsFromBlock(
   block: Record<string, unknown>,
+  lotLabel?: unknown,
 ): OfficialLotSegment[] {
   const raw = block.segments_json;
   if (!Array.isArray(raw) || raw.length < 2) return [];
 
+  const label = lotLabel ?? block.number ?? block.id;
   const parsed: OfficialLotSegment[] = [];
   for (let i = 0; i < raw.length; i++) {
     const item = raw[i];
@@ -113,16 +215,14 @@ export function parseOfficialSegmentsFromBlock(
     const s = item as Record<string, unknown>;
     const north = Number(s.north ?? s.northing ?? s.Northing ?? s.y);
     const east = Number(s.east ?? s.easting ?? s.Easting ?? s.x);
-    const distance = Number(
-      s.distance ?? s.length ?? s.Length ?? s.comprimento ?? s.medida,
-    );
+    const distance = extractOfficialSegmentDistance(s, label, i);
     if (!Number.isFinite(north) || !Number.isFinite(east)) continue;
-    if (!Number.isFinite(distance) || distance <= 0) continue;
+    if (distance == null) continue;
 
     parsed.push({
       segment_index:
         typeof s.segment_index === "number" ? s.segment_index : i,
-      distance: round2(distance),
+      distance,
       bearing:
         s.bearing != null && Number.isFinite(Number(s.bearing))
           ? round2(Number(s.bearing))
@@ -137,7 +237,7 @@ export function parseOfficialSegmentsFromBlock(
   }
 
   parsed.sort((a, b) => a.segment_index - b.segment_index);
-  return parsed;
+  return sanitizeOfficialSegments(parsed, label);
 }
 
 export function segmentsToPersistJson(
@@ -199,18 +299,25 @@ export function classifySidesByTxtRingPaths(
       indexes.push(i);
     }
     const totalLength = round2(
-      indexes.reduce((sum, idx) => sum + (byIdx.get(idx)?.distance ?? 0), 0),
+      indexes.reduce((sum, idx) => {
+        const length = Number(byIdx.get(idx)?.distance);
+        if (!isValidSegmentDistance(length)) return sum;
+        return sum + length;
+      }, 0),
     );
     return { indexes, totalLength };
   };
+
+  const frenteLen = Number(front.distance);
+  const fundoLen = Number(back.distance);
 
   // pathA: depois da frente até antes do fundo | pathB: depois do fundo até antes da frente
   const pathA = collectPathClockwise(frontSegmentIndex, backSegmentIndex);
   const pathB = collectPathClockwise(backSegmentIndex, frontSegmentIndex);
 
   return {
-    frente: front.distance,
-    fundo: back.distance,
+    frente: isValidSegmentDistance(frenteLen) ? round2(frenteLen) : 0,
+    fundo: isValidSegmentDistance(fundoLen) ? round2(fundoLen) : 0,
     ladoDireito: pathA.totalLength,
     ladoEsquerdo: pathB.totalLength,
     pathA,
@@ -307,8 +414,15 @@ function parseColumnFallback(block: Record<string, unknown>): OfficialLotMeasure
   const parse = (v: unknown) => {
     if (v == null || v === "") return null;
     const n = Number(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
-    return Number.isFinite(n) && n > 0 ? round2(n) : null;
+    return isValidSegmentDistance(n) ? round2(n) : null;
   };
+  const perimeterRaw = Number(block.perimeter);
+  const perimeter =
+    Number.isFinite(perimeterRaw) &&
+    perimeterRaw > 0 &&
+    perimeterRaw < MAX_PERIMETER_M
+      ? round2(perimeterRaw)
+      : null;
   return {
     frente: parse(block.frente),
     fundo: parse(block.Fundo ?? block.fundo),
@@ -316,60 +430,37 @@ function parseColumnFallback(block: Record<string, unknown>): OfficialLotMeasure
     ladoEsquerdo: parse(block["Lado Esq."] ?? block.lado_esquerdo),
     chanfre: null,
     area: parse(block.area),
-    perimeter: parse(block.perimeter),
+    perimeter,
     frontSegmentIndex: null,
     segmentCount: 0,
     source: "columns_fallback",
   };
 }
 
-/**
- * Medidas oficiais baseadas nos segmentos TXT (não na geometria do mapa).
- */
-export function getOfficialLotMeasurements(
+function buildMeasuresFromSegments(
   block: Record<string, unknown>,
-  lotNumber?: unknown,
-): OfficialLotMeasures {
-  const label = lotNumber ?? block.number ?? block.id ?? "?";
-  const segments = parseOfficialSegmentsFromBlock(block);
+  segments: OfficialLotSegment[],
+  label: unknown,
+): OfficialLotMeasures | null {
+  if (segments.length < 3) return null;
 
-  console.log("LOT_SEGMENTS", label, segments);
-
-  if (segments.length < 3) {
-    const fallback = parseColumnFallback(block);
-    console.log("LOT_OFFICIAL_MEASURES", label, fallback);
-    return fallback;
-  }
-
-  const frontIdx = resolveFrontSegmentIndex(block, segments);
-  if (frontIdx == null) {
-    const fallback = parseColumnFallback(block);
-    console.log("LOT_OFFICIAL_MEASURES", label, fallback);
-    return fallback;
-  }
-
-  console.log("LOT_FRONT_SEGMENT", label, frontIdx);
+  let frontIdx = resolveFrontSegmentIndex(block, segments);
+  if (frontIdx == null) frontIdx = 0;
+  if (frontIdx >= segments.length) frontIdx = 0;
 
   const backIdx = findBackSegmentIndex(segments, frontIdx);
-  console.log("LOT_BACK_SIDE", label, { backSegmentIndex: backIdx });
-
   const paths = classifySidesByTxtRingPaths(segments, frontIdx, backIdx);
-  console.log("LOT_RIGHT_SIDE", label, paths.pathA);
-  console.log("LOT_LEFT_SIDE", label, paths.pathB);
 
-  const lotNumKey = String(label).replace(/\D/g, "");
-  if (lotNumKey === "7") {
-    console.log("MEASURE_RING_PATHS lote 7:", {
-      frontIndex: frontIdx,
-      backIndex: backIdx,
-      pathA: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
-      pathB: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
-    });
-  }
+  logLotSideSegments(label, "right", paths.pathA, segments);
+  logLotSideSegments(label, "left", paths.pathB, segments);
 
   const perimeter = round2(
-    segments.reduce((sum, s) => sum + s.distance, 0),
+    segments.reduce((sum, s) => {
+      const length = Number(s.distance);
+      return isValidSegmentDistance(length) ? sum + length : sum;
+    }, 0),
   );
+
   const areaRaw = Number(block.area);
   const area =
     Number.isFinite(areaRaw) && areaRaw > 0 ? round2(areaRaw) : null;
@@ -382,18 +473,86 @@ export function getOfficialLotMeasurements(
     paths.pathB,
   );
 
-  const result: OfficialLotMeasures = {
-    frente: paths.frente,
-    fundo: paths.fundo,
-    ladoDireito: paths.ladoDireito,
-    ladoEsquerdo: paths.ladoEsquerdo,
+  return {
+    frente: paths.frente > 0 ? paths.frente : null,
+    fundo: paths.fundo > 0 ? paths.fundo : null,
+    ladoDireito: paths.ladoDireito > 0 ? paths.ladoDireito : null,
+    ladoEsquerdo: paths.ladoEsquerdo > 0 ? paths.ladoEsquerdo : null,
     chanfre,
     area,
-    perimeter,
+    perimeter: perimeter > 0 ? perimeter : null,
     frontSegmentIndex: frontIdx,
     segmentCount: segments.length,
     source: "txt_segments",
   };
+}
+
+/**
+ * Medidas oficiais baseadas nos segmentos TXT (não na geometria do mapa).
+ */
+export function getOfficialLotMeasurements(
+  block: Record<string, unknown>,
+  lotNumber?: unknown,
+): OfficialLotMeasures {
+  const label = lotNumber ?? block.number ?? block.id ?? "?";
+  const segments = parseOfficialSegmentsFromBlock(block, label);
+
+  console.log("LOT_SEGMENTS", label, segments);
+
+  let result = buildMeasuresFromSegments(block, segments, label);
+
+  if (result) {
+    console.log("LOT_FRONT_SEGMENT", label, result.frontSegmentIndex);
+    console.log("LOT_BACK_SIDE", label, {
+      backSegmentIndex: findBackSegmentIndex(
+        segments,
+        result.frontSegmentIndex ?? 0,
+      ),
+    });
+
+    const lotNumKey = String(label).replace(/\D/g, "");
+    if (lotNumKey === "7") {
+      const frontIdx = result.frontSegmentIndex ?? 0;
+      const backIdx = findBackSegmentIndex(segments, frontIdx);
+      const paths = classifySidesByTxtRingPaths(segments, frontIdx, backIdx);
+      console.log("MEASURE_RING_PATHS lote 7:", {
+        frontIndex: frontIdx,
+        backIndex: backIdx,
+        pathA: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
+        pathB: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
+      });
+    }
+  }
+
+  if (result && failsMeasureSanity(result)) {
+    console.log("LOT_MEASURE_SANITY_FAIL", label, result);
+    const strictSegments = sanitizeOfficialSegments(
+      parseOfficialSegmentsFromBlock(block, label),
+      label,
+    );
+    const retry = buildMeasuresFromSegments(block, strictSegments, label);
+    if (retry && !failsMeasureSanity(retry)) {
+      result = retry;
+    } else {
+      const fallback = parseColumnFallback(block);
+      if (!failsMeasureSanity(fallback)) {
+        console.log("LOT_OFFICIAL_MEASURES", label, fallback, "(columns after sanity)");
+        return { ...fallback, segmentCount: segments.length };
+      }
+      result = {
+        ...result,
+        ladoDireito: null,
+        ladoEsquerdo: null,
+        perimeter: null,
+      };
+    }
+  }
+
+  if (!result) {
+    const fallback = parseColumnFallback(block);
+    console.log("LOT_OFFICIAL_MEASURES", label, fallback);
+    return fallback;
+  }
 
   console.log("LOT_OFFICIAL_MEASURES", label, result);
   return result;
