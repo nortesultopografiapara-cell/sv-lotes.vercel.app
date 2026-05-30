@@ -52,6 +52,7 @@ import {
   resolveLotMeasuresFromBlock,
   type ChanfreInfo,
 } from "@/lib/lotChanfre";
+import { getOfficialLotMeasurements } from "@/lib/officialLotMeasurements";
 import {
   calculateLotDimensions,
   classifyLotSidesFromSegments,
@@ -1394,85 +1395,20 @@ function chanfreFromClassified(
   };
 }
 
-/** Medidas do popup a partir da geometria sanitizada (mesma do desenho do mapa). */
-function getCleanLotMeasurements(
+/** Medidas do popup — fonte oficial: segmentos TXT Civil 3D (não geometria Leaflet). */
+function getOfficialLotMeasurementsForPopup(
   lot: Record<string, unknown>,
-  cleanedCoords: LatLngPair[],
 ): CleanLotMeasurements {
-  const rawMeasurements = {
-    frente: lot.frente,
-    fundo: lot.Fundo,
-    ladoDireito: lot["Lado Dir."],
-    ladoEsquerdo: lot["Lado Esq."],
-    chanfre: lot.chanfreInfo,
-    area: lot.area,
+  const official = getOfficialLotMeasurements(lot, lot.number);
+  return {
+    frente: official.frente,
+    fundo: official.fundo,
+    ladoDireito: official.ladoDireito,
+    ladoEsquerdo: official.ladoEsquerdo,
+    chanfre: official.chanfre,
+    area: official.area ?? parseBlockSideLength(lot.area),
+    perimeter: official.perimeter,
   };
-
-  if (cleanedCoords.length < 3) {
-    const empty: CleanLotMeasurements = {
-      frente: pickPopupSideValue(lot.frente, null),
-      fundo: pickPopupSideValue(lot.Fundo, null),
-      ladoDireito: pickPopupSideValue(lot["Lado Dir."], null),
-      ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], null),
-      chanfre: null,
-      area: parseBlockSideLength(lot.area),
-      perimeter: null,
-    };
-    console.log("MEASURE_RAW", lot.number, rawMeasurements);
-    console.log("MEASURE_CLEAN", lot.number, empty);
-    return empty;
-  }
-
-  const ring = boundsToLngLatRing(cleanedCoords);
-  const ringSegments = extractSegments(ring, []);
-  const hasDbFront = Boolean(
-    lot.frontStreetName || lot.frontStreetDisplay || lot.frontStreetId,
-  );
-  const frenteHint = parseBlockSideLength(lot.frente);
-  const fundoHint = parseBlockSideLength(lot.Fundo);
-
-  const classified = classifyLotSidesFromSegments(ringSegments, {
-    frenteLengthHint: frenteHint,
-    fundoLengthHint: fundoHint,
-    lotNumber: lot.number,
-    pickFrontSegment: (segments: Segment[]) => {
-      if (hasDbFront && frenteHint) {
-        return pickFrontSegmentByFrenteLength(segments, frenteHint);
-      }
-      return null;
-    },
-  });
-
-  console.log("MEASURE_SEGMENTS", lot.number, classified.segmentDebug);
-
-  const geoArea = polygonAreaM2(cleanedCoords);
-  const geoPerimeter = polygonPerimeterM(cleanedCoords);
-  const chanfre = chanfreFromClassified(classified);
-
-  const dbArea = parseBlockSideLength(lot.area);
-  const cleanMeasurements: CleanLotMeasurements = {
-    frente: pickPopupSideValue(lot.frente, classified.frente),
-    fundo: pickPopupSideValue(lot.Fundo, classified.fundo),
-    ladoDireito: pickPopupSideValue(lot["Lado Dir."], classified.ladoDireito),
-    ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], classified.ladoEsquerdo),
-    chanfre,
-    area:
-      isPlausibleUrbanAreaM2(dbArea) &&
-      geoArea > 0 &&
-      Math.abs(dbArea! - geoArea) / Math.max(geoArea, 1) < 0.5
-        ? dbArea
-        : geoArea > 0
-          ? Math.round(geoArea * 100) / 100
-          : isPlausibleUrbanAreaM2(dbArea)
-            ? dbArea
-            : null,
-    perimeter:
-      geoPerimeter > 0 ? Math.round(geoPerimeter * 100) / 100 : null,
-  };
-
-  console.log("MEASURE_RAW", lot.number, rawMeasurements);
-  console.log("MEASURE_CLEAN", lot.number, cleanMeasurements);
-  return cleanMeasurements;
 }
 
 /** Único popup comercial do mapa GIS (Disponibilizar / Reservar / Vender / Editar Venda). */
@@ -1519,12 +1455,12 @@ function LotPopupContent({
     console.log("SHOW_EDIT_SALE_BUTTON", lot.status, userRole, canEditSale, "isSold=", isSold);
   }, [isSold, lot.status, userRole, canEditSale]);
 
-  const cleanMeasures = useMemo(() => {
-    if (!cleanedCoords || cleanedCoords.length < 3) return null;
-    return getCleanLotMeasurements(lot, cleanedCoords);
-  }, [lot, cleanedCoords]);
+  const officialMeasures = useMemo(
+    () => getOfficialLotMeasurementsForPopup(lot),
+    [lot],
+  );
 
-  const area = (cleanMeasures?.area ?? Number(lot.area)) || 0;
+  const area = (officialMeasures.area ?? Number(lot.area)) || 0;
   const currentPrice = Number(lot.price) || 0;
   const displayNum =
     String(lot.number)
@@ -1617,8 +1553,8 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Frente:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {cleanMeasures?.frente != null
-                  ? `${cleanMeasures.frente.toFixed(2)} m`
+                {officialMeasures.frente != null
+                  ? `${officialMeasures.frente.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
@@ -1635,43 +1571,43 @@ function LotPopupContent({
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {cleanMeasures?.fundo != null
-                  ? `${cleanMeasures.fundo.toFixed(2)} m`
+                {officialMeasures.fundo != null
+                  ? `${officialMeasures.fundo.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {cleanMeasures?.ladoDireito != null
-                  ? `${cleanMeasures.ladoDireito.toFixed(2)} m`
+                {officialMeasures.ladoDireito != null
+                  ? `${officialMeasures.ladoDireito.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
               <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {cleanMeasures?.ladoEsquerdo != null
-                  ? `${cleanMeasures.ladoEsquerdo.toFixed(2)} m`
+                {officialMeasures.ladoEsquerdo != null
+                  ? `${officialMeasures.ladoEsquerdo.toFixed(2)} m`
                   : "--"}
               </span>
             </div>
-            {cleanMeasures?.perimeter != null && cleanMeasures.perimeter > 0 && (
+            {officialMeasures.perimeter != null && officialMeasures.perimeter > 0 && (
               <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-0.5">
                 <span className="text-gray-500 text-[10px]">Perímetro:</span>{" "}
                 <span className="text-gray-900 text-[11px] font-medium w-20 text-right">
-                  {cleanMeasures.perimeter.toFixed(2)} m
+                  {officialMeasures.perimeter.toFixed(2)} m
                 </span>
               </div>
             )}
-            {cleanMeasures?.chanfre && cleanMeasures.chanfre.total > 0 && (
+            {officialMeasures.chanfre && officialMeasures.chanfre.total > 0 && (
               <div
                 className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1 cursor-help"
-                title={chanfreTooltipText(cleanMeasures.chanfre)}
+                title={chanfreTooltipText(officialMeasures.chanfre)}
               >
                 <span className="text-[10px] font-semibold text-gray-500">Chanfre:</span>{" "}
                 <span className="font-bold text-gray-900 text-[11px]">
-                  {formatChanfreMeters(cleanMeasures.chanfre.total)}
+                  {formatChanfreMeters(officialMeasures.chanfre.total)}
                 </span>
               </div>
             )}
@@ -2464,6 +2400,9 @@ export default function GISMap({
                 coordCount,
                 bounds,
                 segments_json: b.segments_json,
+                front_segment_index: b.front_segment_index ?? null,
+                source_import: b.source_import ?? null,
+                perimeter: b.perimeter ?? null,
                 frente: lotMeasures.sides.frente,
                 Fundo: lotMeasures.sides.fundo,
                 "Lado Dir.": lotMeasures.sides.ladoDireito,

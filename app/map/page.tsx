@@ -35,6 +35,14 @@ import {
   loadOfflineProjectsList,
 } from '@/lib/offline/projectsOfflineCache';
 import { clearProjectMapOfflineCache } from '@/lib/offline/store';
+import {
+  findFrontSegmentIndexFromLengthHint,
+  getOfficialLotMeasurements,
+  normalizeTxtImportSegments,
+  officialSegmentsToLotSegmentRows,
+  parseOfficialSegmentsFromBlock,
+  segmentsToPersistJson,
+} from '@/lib/officialLotMeasurements';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -479,33 +487,64 @@ export default function MapPage() {
           }
 
           if (bestSegment && bestScore < 50) {
-             // Set FRONT
              const frenteLength = bestSegment.length;
-             
-             // Back is furthest/opposite
-             const otherSegments = segments.filter(s => s !== bestSegment);
-             let backSegment = null;
-             let maxDist = -1;
-             
-             const midFront = [ (bestSegment.p1[0] + bestSegment.p2[0])/2, (bestSegment.p1[1] + bestSegment.p2[1])/2 ];
-             for (const oSeg of otherSegments) {
-                const midO = [ (oSeg.p1[0] + oSeg.p2[0])/2, (oSeg.p1[1] + oSeg.p2[1])/2 ];
-                const d = turfDistance.default(turfHelpers.point(midFront), turfHelpers.point(midO));
-                if (d > maxDist) {
+             const officialSegs = parseOfficialSegmentsFromBlock(block);
+
+             let finalFrente: number;
+             let finalFundo: number;
+             let finalDir: number;
+             let finalEsq: number;
+             let frontSegmentIndex: number | null = null;
+
+             if (
+               officialSegs.length >= 3 &&
+               block.source_import === 'TXT_CIVIL3D'
+             ) {
+               frontSegmentIndex = findFrontSegmentIndexFromLengthHint(
+                 officialSegs,
+                 frenteLength,
+               );
+               const measures = getOfficialLotMeasurements({
+                 ...block,
+                 front_segment_index: frontSegmentIndex,
+               });
+               finalFrente = measures.frente ?? frenteLength;
+               finalFundo = measures.fundo ?? finalFrente;
+               finalDir = measures.ladoDireito ?? 0;
+               finalEsq = measures.ladoEsquerdo ?? 0;
+               console.log('LOT_FRONT_SEGMENT', block.number, frontSegmentIndex);
+             } else {
+               const otherSegments = segments.filter(s => s !== bestSegment);
+               let backSegment = null;
+               let maxDist = -1;
+               const midFront = [
+                 (bestSegment.p1[0] + bestSegment.p2[0]) / 2,
+                 (bestSegment.p1[1] + bestSegment.p2[1]) / 2,
+               ];
+               for (const oSeg of otherSegments) {
+                 const midO = [
+                   (oSeg.p1[0] + oSeg.p2[0]) / 2,
+                   (oSeg.p1[1] + oSeg.p2[1]) / 2,
+                 ];
+                 const d = turfDistance.default(
+                   turfHelpers.point(midFront),
+                   turfHelpers.point(midO),
+                 );
+                 if (d > maxDist) {
                    maxDist = d;
                    backSegment = oSeg;
-                }
+                 }
+               }
+               const fundoLength = backSegment
+                 ? backSegment.length
+                 : frenteLength;
+               const sides = detectSides(segments, bestSegment, backSegment);
+               finalFrente = normalizeDimensions(frenteLength, 10);
+               finalFundo = normalizeDimensions(fundoLength, finalFrente);
+               finalDir = normalizeDimensions(sides.ladoDireito, finalFrente * 2);
+               finalEsq = normalizeDimensions(sides.ladoEsquerdo, finalDir);
              }
 
-             const fundoLength = backSegment ? backSegment.length : frenteLength;
-             
-             const sides = detectSides(segments, bestSegment, backSegment);
-             
-             const finalFrente = normalizeDimensions(frenteLength, 10);
-             const finalFundo = normalizeDimensions(fundoLength, finalFrente);
-             const finalDir = normalizeDimensions(sides.ladoDireito, finalFrente * 2);
-             const finalEsq = normalizeDimensions(sides.ladoEsquerdo, finalDir);
-             
              if (!block.id) continue;
              const row: Record<string, unknown> = {
                  id: block.id,
@@ -513,6 +552,7 @@ export default function MapPage() {
                  fundo: finalFundo,
                  lado_direito: finalDir,
                  lado_esquerdo: finalEsq,
+                 front_segment_index: frontSegmentIndex,
              };
              if (bestGuide) {
                row.front_street_name = formatStreetDisplay(
@@ -556,6 +596,9 @@ export default function MapPage() {
                   'Lado Esq.': updateObj.lado_esquerdo !== null ? String(updateObj.lado_esquerdo).replace(/[^0-9.]/g, '') : null,
                   updated_at: new Date().toISOString(),
               };
+              if (updateObj.front_segment_index != null) {
+                patch.front_segment_index = updateObj.front_segment_index;
+              }
               if (updateObj.front_street_name) {
                 patch.front_street_name = updateObj.front_street_name;
                 patch.front_street_type = updateObj.front_street_type ?? 'Rua';
@@ -1277,18 +1320,17 @@ export default function MapPage() {
       const blocksToInsert = blocksParsed.map((b) => {
           const finalArea = b.area;
           const finalPrice = parseFloat((finalArea * 120.00).toFixed(2));
-          
-          let frente = null;
-          let fundo = null;
-          let lado_direito = null;
-          let lado_esquerdo = null;
-          
-          if (b.segments && b.segments.length >= 4) {
-             frente = b.segments[0]?.length || null;
-             lado_direito = b.segments[1]?.length || null;
-             fundo = b.segments[2]?.length || null;
-             lado_esquerdo = b.segments[3]?.length || null;
-          }
+          const officialSegs = normalizeTxtImportSegments(b.segments);
+          const segmentsJson = segmentsToPersistJson(officialSegs);
+          const provisionalFrontIndex = 0;
+          const measures = getOfficialLotMeasurements({
+            segments_json: segmentsJson,
+            front_segment_index: provisionalFrontIndex,
+            area: finalArea,
+            perimeter: b.perimeter,
+            source_import: 'TXT_CIVIL3D',
+            number: b.name,
+          });
 
           let geom = null;
           if (b.coords.length >= 4) {
@@ -1306,30 +1348,63 @@ export default function MapPage() {
              lot_number: b.name,
              status: 'Disponível',
              area: finalArea,
-             perimeter: b.perimeter,
+             perimeter: measures.perimeter ?? b.perimeter,
              price: finalPrice,
              geometry: geom,
              tenant_id: finalTenantId,
              company_id: finalTenantId,
-             frente: frente !== null ? Number(frente) : null,
-             'Fundo': fundo !== null ? String(fundo).replace(/[^0-9.]/g, '') : null,
-             'Lado Dir.': lado_direito !== null ? String(lado_direito).replace(/[^0-9.]/g, '') : null,
-             'Lado Esq.': lado_esquerdo !== null ? String(lado_esquerdo).replace(/[^0-9.]/g, '') : null,
-             segments_json: b.segments,
-             coordinates_utm_json:
-               b.segments?.length > 0
-                 ? b.segments.map((s: { easting: number; northing: number }) => [
-                     s.easting,
-                     s.northing,
-                   ])
+             frente: measures.frente,
+             'Fundo':
+               measures.fundo != null
+                 ? String(measures.fundo).replace(/[^0-9.]/g, '')
                  : null,
-             source_import: 'TXT_CIVIL3D'
+             'Lado Dir.':
+               measures.ladoDireito != null
+                 ? String(measures.ladoDireito).replace(/[^0-9.]/g, '')
+                 : null,
+             'Lado Esq.':
+               measures.ladoEsquerdo != null
+                 ? String(measures.ladoEsquerdo).replace(/[^0-9.]/g, '')
+                 : null,
+             front_segment_index: provisionalFrontIndex,
+             segments_json: segmentsJson,
+             coordinates_utm_json:
+               officialSegs.length > 0
+                 ? officialSegs.map((s) => [s.east, s.north])
+                 : null,
+             source_import: 'TXT_CIVIL3D',
+             _officialSegs: officialSegs,
           };
       });
       
       if (blocksToInsert.length > 0) {
-          const { error: insertError } = await supabase.from('blocks').insert(blocksToInsert);
+          const insertPayload = blocksToInsert.map(
+            ({ _officialSegs: _s, ...row }) => row,
+          );
+          const { data: inserted, error: insertError } = await supabase
+            .from('blocks')
+            .insert(insertPayload)
+            .select('id, number');
           if (insertError) throw insertError;
+
+          if (inserted?.length) {
+            for (let i = 0; i < inserted.length; i++) {
+              const lotId = inserted[i]?.id;
+              const officialSegs = blocksToInsert[i]?._officialSegs;
+              if (!lotId || !officialSegs?.length) continue;
+              try {
+                await supabase
+                  .from('lot_segments')
+                  .delete()
+                  .eq('lot_id', lotId);
+                await supabase
+                  .from('lot_segments')
+                  .insert(officialSegmentsToLotSegmentRows(lotId, officialSegs));
+              } catch (segErr) {
+                console.warn('[TXT] lot_segments não persistido (tabela ausente?)', segErr);
+              }
+            }
+          }
       }
       
       alert(`Importados ${blocksToInsert.length} lotes do TXT com sucesso!`);

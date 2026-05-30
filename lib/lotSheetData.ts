@@ -13,8 +13,10 @@ import {
   buildBlockSketch,
   buildCardinalConfrontants,
   buildMetricTable,
+  buildMetricTableFromOfficial,
   buildProjectMap,
   buildSegmentTable,
+  buildSegmentTableFromOfficial,
   buildSideConfrontants,
   buildVertexTable,
   findFrontEdgeIndex,
@@ -470,12 +472,16 @@ export async function loadLotSheetPayload(
 
   const projectMap = buildProjectMap(params.blockId, blocksList);
   const vertices = buildVertexTable(localRing);
-  const segments = buildSegmentTable(localRing);
-  const { rows: metricRows, coordinatesAvailable } = buildMetricTable(
-    block as Record<string, unknown>,
-    localRing,
+  const blockRecord = block as Record<string, unknown>;
+  const officialSegments = buildSegmentTableFromOfficial(blockRecord);
+  const segments = officialSegments ?? buildSegmentTable(localRing);
+  const officialMetric = buildMetricTableFromOfficial(
+    blockRecord,
     project as Record<string, unknown>,
   );
+  const { rows: metricRows, coordinatesAvailable } =
+    officialMetric ??
+    buildMetricTable(blockRecord, localRing, project as Record<string, unknown>);
   const frontEdgeIndex = findFrontEdgeIndex(
     localRing,
     block as Record<string, unknown>,

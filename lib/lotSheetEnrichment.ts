@@ -11,6 +11,7 @@ import {
   resolveRealCoordinateRing,
 } from '@/lib/lotSheetCoordinates';
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import { parseOfficialSegmentsFromBlock } from '@/lib/officialLotMeasurements';
 
 export type CardinalDirection = 'NORTE' | 'SUL' | 'LESTE' | 'OESTE';
 
@@ -699,6 +700,70 @@ export function buildMetricTable(
         ? formatCoordValue(c2[0])
         : unavailableMsg,
       coordN: real.available ? formatCoordValue(c2[1]) : '—',
+    });
+    if (rows.length >= 20) break;
+  }
+
+  return { rows, coordinatesAvailable: real.available };
+}
+
+/** Memorial: segmentos exatamente como no TXT Civil 3D (sem recalcular pela geometria local). */
+export function buildSegmentTableFromOfficial(
+  block: Record<string, unknown>,
+): LotSheetSegmentRow[] | null {
+  const segs = parseOfficialSegmentsFromBlock(block);
+  if (segs.length < 2) return null;
+
+  const rows: LotSheetSegmentRow[] = [];
+  for (const s of segs) {
+    const toIdx = (s.vertex_order + 1) % segs.length;
+    rows.push({
+      segment: `V${String(s.vertex_order + 1).padStart(2, '0')}-V${String(toIdx + 1).padStart(2, '0')}`,
+      azimute:
+        s.bearing != null
+          ? formatAzimuth(s.bearing)
+          : '—',
+      distancia: `${s.distance.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} m`,
+    });
+    if (rows.length >= 16) break;
+  }
+  return rows;
+}
+
+/** Memorial métrico com distâncias/azimutes oficiais do TXT. */
+export function buildMetricTableFromOfficial(
+  block: Record<string, unknown>,
+  project?: Record<string, unknown> | null,
+): { rows: LotSheetMetricRow[]; coordinatesAvailable: boolean } | null {
+  const segs = parseOfficialSegmentsFromBlock(block);
+  if (segs.length < 2) return null;
+
+  const real = resolveRealCoordinateRing(block, project);
+  const unavailableMsg = coordinatesUnavailableMessage();
+  const rows: LotSheetMetricRow[] = [];
+
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const next = segs[(i + 1) % segs.length];
+    const j = (s.vertex_order + 1) % segs.length;
+    const c2: [number, number] | undefined = real.available
+      ? [next.east, next.north]
+      : undefined;
+
+    rows.push({
+      from: vertexMarker(s.vertex_order),
+      to: vertexMarker(j),
+      azimute:
+        s.bearing != null ? formatAzimuth(s.bearing) : '—',
+      distancia: `${s.distance.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} m`,
+      coordE: c2 ? formatCoordValue(c2[0]) : unavailableMsg,
+      coordN: c2 ? formatCoordValue(c2[1]) : '—',
     });
     if (rows.length >= 20) break;
   }

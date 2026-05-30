@@ -1,4 +1,5 @@
 import { pickBlockSideRaw } from '@/lib/blockLotNormalize';
+import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
 
 /**
  * Chanfre: segmentos extras quando há mais de 4 lados em segments_json.
@@ -186,6 +187,31 @@ export function resolveLotMeasuresFromBlock(
     chanfre: null,
   };
   if (!block) return empty;
+
+  const isTxtOfficial =
+    block.source_import === 'TXT_CIVIL3D' ||
+    (Array.isArray(block.segments_json) &&
+      block.segments_json.some(
+        (s) =>
+          s != null &&
+          typeof s === 'object' &&
+          ('segment_index' in (s as object) || 'distance' in (s as object)),
+      ));
+
+  if (isTxtOfficial) {
+    const official = getOfficialLotMeasurements(block);
+    if (official.source === 'txt_segments') {
+      return {
+        sides: {
+          frente: official.frente,
+          fundo: official.fundo,
+          ladoDireito: official.ladoDireito,
+          ladoEsquerdo: official.ladoEsquerdo,
+        },
+        chanfre: official.chanfre,
+      };
+    }
+  }
 
   const columnTargets = getColumnTargets(block);
   const segmentLengths = parseSegmentLengthsFromJson(block.segments_json);
