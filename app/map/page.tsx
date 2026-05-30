@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer } from 'lucide-react';
@@ -42,6 +43,13 @@ import {
   normalizeQuadraBlockName,
 } from '@/lib/projectQuadras';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
+import {
+  clearGisMapProjectPersistence,
+  GIS_MAP_PROJECT_ID_KEY,
+  gisMapUrlWithProject,
+  persistGisMapProject,
+  readGisMapProjectIdFromUrl,
+} from '@/lib/gisMapProjectPersistence';
 import {
   findFrontSegmentIndexFromStreetEdge,
   getOfficialLotMeasurements,
@@ -307,6 +315,8 @@ async function createProjectThroughApi(payload: {
 }
 
 export default function MapPage() {
+  const router = useRouter();
+  const restoredGisProjectRef = useRef(false);
   const { user, loading: authLoading } = useAuth();
   const {
     saas,
@@ -798,19 +808,72 @@ export default function MapPage() {
     }
   }, [user, authLoading, saasLoading, loadProjects]);
 
+  const openGisProject = useCallback(
+    (project: { id: string; name?: string; [key: string]: unknown }) => {
+      setSelectedProject(project);
+      persistGisMapProject({ id: project.id, name: project.name });
+      router.replace(gisMapUrlWithProject(project.id));
+      if (isBrowserOnline() && project.id) {
+        void cacheSingleProjectForOffline(project).catch((e) =>
+          console.error('[CACHE] falha ao abrir projeto', e),
+        );
+      }
+    },
+    [router],
+  );
+
   useEffect(() => {
-    if (typeof window === 'undefined' || projects.length === 0) return;
-    const raw = sessionStorage.getItem('sv_gis_focus');
-    if (!raw) return;
-    try {
-      const { projectId } = JSON.parse(raw) as { projectId?: string; blockId?: string };
-      const proj = projects.find((p) => p.id === projectId);
-      if (proj) setSelectedProject(proj);
-      sessionStorage.removeItem('sv_gis_focus');
-    } catch {
-      sessionStorage.removeItem('sv_gis_focus');
+    if (loading || projects.length === 0 || restoredGisProjectRef.current) {
+      return;
     }
-  }, [projects]);
+
+    const raw = sessionStorage.getItem('sv_gis_focus');
+    if (raw) {
+      try {
+        const { projectId } = JSON.parse(raw) as {
+          projectId?: string;
+          blockId?: string;
+        };
+        sessionStorage.removeItem('sv_gis_focus');
+        const proj = projects.find((p) => p.id === projectId);
+        if (proj) {
+          restoredGisProjectRef.current = true;
+          openGisProject(proj);
+          return;
+        }
+      } catch {
+        sessionStorage.removeItem('sv_gis_focus');
+      }
+    }
+
+    const urlId = readGisMapProjectIdFromUrl();
+    const storageId =
+      typeof window !== 'undefined'
+        ? localStorage.getItem(GIS_MAP_PROJECT_ID_KEY)
+        : null;
+    const targetId = urlId || storageId;
+    if (!targetId) return;
+
+    const proj = projects.find((p) => p.id === targetId);
+    restoredGisProjectRef.current = true;
+
+    if (!proj) {
+      clearGisMapProjectPersistence();
+      if (urlId) router.replace('/map');
+      return;
+    }
+
+    setSelectedProject(proj);
+    persistGisMapProject(proj);
+    if (!urlId) {
+      router.replace(gisMapUrlWithProject(proj.id));
+    }
+    if (isBrowserOnline()) {
+      void cacheSingleProjectForOffline(proj).catch((e) =>
+        console.error('[CACHE] falha ao restaurar projeto', e),
+      );
+    }
+  }, [loading, projects, router, openGisProject]);
 
   const filteredProjects = projects.filter(p => 
      p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -818,16 +881,13 @@ export default function MapPage() {
   );
 
   const handleOpenProject = (project: any) => {
-    setSelectedProject(project);
-    if (isBrowserOnline() && project?.id) {
-      void cacheSingleProjectForOffline(project).catch((e) =>
-        console.error('[CACHE] falha ao abrir projeto', e),
-      );
-    }
+    openGisProject(project);
   };
 
   const handleBack = () => {
     setSelectedProject(null);
+    clearGisMapProjectPersistence();
+    router.replace('/map');
   };
 
   const applyProjectFormInitialData = (initialData: ProjectFormInitialData) => {
