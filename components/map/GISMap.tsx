@@ -54,10 +54,11 @@ import {
 } from "@/lib/lotChanfre";
 import {
   calculateLotDimensions,
-  detectBack,
+  classifyLotSidesFromSegments,
   detectFront,
   extractSegments,
   mergeCurvedSegments,
+  type Segment,
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
@@ -1292,9 +1293,6 @@ function MeasureInteraction({
 
 
 const MAX_URBAN_SIDE_METERS = 500;
-const CHANFRE_MIN_METERS = 2;
-const CHANFRE_MAX_METERS = 15;
-
 type CleanLotMeasurements = {
   frente: number | null;
   fundo: number | null;
@@ -1339,7 +1337,10 @@ function pickPopupSideValue(
 
   const diff = Math.abs(db! - clean!);
   const rel = diff / Math.max(clean!, 1);
-  if (rel > 0.35 && (db! > clean! * 1.5 || db! > MAX_URBAN_SIDE_METERS * 0.5)) {
+  if (rel > 0.25) {
+    return clean;
+  }
+  if (db! > clean! * 1.5 || db! < clean! / 1.5) {
     return clean;
   }
   return db;
@@ -1380,26 +1381,17 @@ function polygonAreaM2(ring: LatLngPair[]): number {
   return Math.abs(sum) * 0.5;
 }
 
-/** Chanfre só em segmentos curtos reais (2–15 m), com mais de 4 lados no anel limpo. */
-function computeCleanChanfreFromRing(ring: number[][]): ChanfreInfo | null {
-  const rawSegs = extractSegments(ring, []);
-  const merged = mergeCurvedSegments(rawSegs, 20);
-  if (merged.length <= 4) return null;
-
-  const frenteRaw = detectFront(merged);
-  const fundoRaw = detectBack(merged, frenteRaw);
-  const chanfreLengths: number[] = [];
-
-  for (const seg of merged) {
-    if (seg === frenteRaw || seg === fundoRaw) continue;
-    if (seg.length >= CHANFRE_MIN_METERS && seg.length <= CHANFRE_MAX_METERS) {
-      chanfreLengths.push(Math.round(seg.length * 100) / 100);
-    }
-  }
-
-  if (chanfreLengths.length === 0) return null;
-  const total = Math.round(chanfreLengths.reduce((a, b) => a + b, 0) * 100) / 100;
-  return { total, segments: chanfreLengths };
+function chanfreFromClassified(
+  classified: ReturnType<typeof classifyLotSidesFromSegments>,
+): ChanfreInfo | null {
+  if (classified.chanfro <= 0) return null;
+  const segments = classified.segmentDebug
+    .filter((s) => s.role === "chanfre")
+    .map((s) => s.length);
+  return {
+    total: classified.chanfro,
+    segments: segments.length > 0 ? segments : [classified.chanfro],
+  };
 }
 
 /** Medidas do popup a partir da geometria sanitizada (mesma do desenho do mapa). */
@@ -1432,17 +1424,36 @@ function getCleanLotMeasurements(
   }
 
   const ring = boundsToLngLatRing(cleanedCoords);
-  const dims = calculateLotDimensions(ring, [], {});
+  const merged = mergeCurvedSegments(extractSegments(ring, []), 20);
+  const hasDbFront = Boolean(
+    lot.frontStreetName || lot.frontStreetDisplay || lot.frontStreetId,
+  );
+  const frenteHint = parseBlockSideLength(lot.frente);
+  const fundoHint = parseBlockSideLength(lot.Fundo);
+
+  const classified = classifyLotSidesFromSegments(merged, {
+    frenteLengthHint: frenteHint,
+    fundoLengthHint: fundoHint,
+    pickFrontSegment: (segments: Segment[]) => {
+      if (hasDbFront && frenteHint) {
+        return pickFrontSegmentByFrenteLength(segments, frenteHint);
+      }
+      return null;
+    },
+  });
+
+  console.log("MEASURE_SEGMENTS", lot.number, classified.segmentDebug);
+
   const geoArea = polygonAreaM2(cleanedCoords);
   const geoPerimeter = polygonPerimeterM(cleanedCoords);
-  const chanfre = computeCleanChanfreFromRing(ring);
+  const chanfre = chanfreFromClassified(classified);
 
   const dbArea = parseBlockSideLength(lot.area);
   const cleanMeasurements: CleanLotMeasurements = {
-    frente: pickPopupSideValue(lot.frente, dims.frente),
-    fundo: pickPopupSideValue(lot.Fundo, dims.fundo),
-    ladoDireito: pickPopupSideValue(lot["Lado Dir."], dims.ladoDireito),
-    ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], dims.ladoEsquerdo),
+    frente: pickPopupSideValue(lot.frente, classified.frente),
+    fundo: pickPopupSideValue(lot.Fundo, classified.fundo),
+    ladoDireito: pickPopupSideValue(lot["Lado Dir."], classified.ladoDireito),
+    ladoEsquerdo: pickPopupSideValue(lot["Lado Esq."], classified.ladoEsquerdo),
     chanfre,
     area:
       isPlausibleUrbanAreaM2(dbArea) &&

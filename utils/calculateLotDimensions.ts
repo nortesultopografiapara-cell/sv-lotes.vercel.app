@@ -49,6 +49,218 @@ function diffAngle(a1: number, a2: number): number {
     return diff > 180 ? 360 - diff : diff;
 }
 
+const PARALLEL_TOL_DEG = 28;
+const CHANFRE_MIN_M = 2;
+const CHANFRE_MAX_M = 15;
+
+function isOppositeParallel(az1: number, az2: number, tol = PARALLEL_TOL_DEG): boolean {
+    const diff = diffAngle(az1, az2);
+    return Math.abs(diff - 180) <= tol;
+}
+
+function isPerpendicular(az1: number, az2: number, tol = PARALLEL_TOL_DEG): boolean {
+    const diff = diffAngle(az1, az2);
+    return Math.abs(diff - 90) <= tol;
+}
+
+function crossSignRelativeToFront(front: Segment, seg: Segment): number {
+    const fx = front.p2[0] - front.p1[0];
+    const fy = front.p2[1] - front.p1[1];
+    const mx =
+        (seg.p1[0] + seg.p2[0]) / 2 - (front.p1[0] + front.p2[0]) / 2;
+    const my =
+        (seg.p1[1] + seg.p2[1]) / 2 - (front.p1[1] + front.p2[1]) / 2;
+    return fx * my - fy * mx;
+}
+
+function pickSegmentByLengthHint(
+    segments: Segment[],
+    targetLen: number,
+    toleranceRatio = 0.4,
+): Segment | null {
+    if (!targetLen || targetLen <= 0 || segments.length === 0) return null;
+    const match = segments.reduce((best, s) => {
+        const d = Math.abs(s.length - targetLen);
+        const bd = Math.abs(best.length - targetLen);
+        return d < bd ? s : best;
+    });
+    if (Math.abs(match.length - targetLen) <= Math.max(targetLen * toleranceRatio, 4)) {
+        return match;
+    }
+    return null;
+}
+
+export type LotSideRole =
+    | "frente"
+    | "fundo"
+    | "ladoDireito"
+    | "ladoEsquerdo"
+    | "chanfre"
+    | "other";
+
+export type SegmentMeasureDebug = {
+    index: number;
+    length: number;
+    angle: number;
+    role: LotSideRole;
+};
+
+export type ClassifiedLotDimensions = {
+    frente: number;
+    fundo: number;
+    ladoDireito: number;
+    ladoEsquerdo: number;
+    chanfro: number;
+    segmentDebug: SegmentMeasureDebug[];
+};
+
+/**
+ * Classifica frente/fundo/lados a partir dos segmentos do polígono limpo.
+ */
+export function classifyLotSidesFromSegments(
+    segments: Segment[],
+    options?: {
+        frenteLengthHint?: number | null;
+        fundoLengthHint?: number | null;
+        pickFrontSegment?: (segments: Segment[]) => Segment | null;
+    },
+): ClassifiedLotDimensions {
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const empty: ClassifiedLotDimensions = {
+        frente: 0,
+        fundo: 0,
+        ladoDireito: 0,
+        ladoEsquerdo: 0,
+        chanfro: 0,
+        segmentDebug: [],
+    };
+    if (segments.length === 0) return empty;
+
+    const roleBySeg = new Map<Segment, LotSideRole>();
+    const chanfreSegs: Segment[] = [];
+    const mainSegs: Segment[] = [];
+
+    if (segments.length > 4) {
+        for (const s of segments) {
+            if (s.length >= CHANFRE_MIN_M && s.length <= CHANFRE_MAX_M) {
+                roleBySeg.set(s, "chanfre");
+                chanfreSegs.push(s);
+            } else {
+                mainSegs.push(s);
+            }
+        }
+    } else {
+        mainSegs.push(...segments);
+    }
+
+    const pool = mainSegs.length > 0 ? mainSegs : segments;
+
+    let front: Segment | null = null;
+    if (options?.pickFrontSegment) {
+        front = options.pickFrontSegment(pool);
+    }
+    const frenteHint = options?.frenteLengthHint ?? null;
+    if (!front && frenteHint && frenteHint > 0) {
+        front = pickSegmentByLengthHint(pool, frenteHint);
+    }
+    if (!front) {
+        const external = pool.filter((s) => s.isExternal);
+        const candidates = external.length > 0 ? external : pool;
+        front = candidates.reduce((a, b) => (a.length < b.length ? a : b));
+    }
+
+    let back: Segment | null = null;
+    const backCandidates = pool.filter(
+        (s) => s !== front && isOppositeParallel(s.azimuth, front!.azimuth),
+    );
+    if (backCandidates.length > 0) {
+        back = backCandidates.reduce((best, s) => {
+            const dLen = Math.abs(s.length - front!.length);
+            const bLen = best ? Math.abs(best.length - front!.length) : Infinity;
+            if (dLen < bLen) return s;
+            const fundoHint = options?.fundoLengthHint;
+            if (fundoHint && fundoHint > 0) {
+                const sd = Math.abs(s.length - fundoHint);
+                const bd = Math.abs(best.length - fundoHint);
+                return sd < bd ? s : best;
+            }
+            return best;
+        }, null as Segment | null);
+    } else {
+        back = pool
+            .filter((s) => s !== front)
+            .reduce(
+                (best, s) => {
+                    const score = diffAngle(s.azimuth, front!.azimuth);
+                    const dev = Math.abs(score - 180);
+                    const bDev = best
+                        ? Math.abs(diffAngle(best.azimuth, front!.azimuth) - 180)
+                        : Infinity;
+                    return dev < bDev ? s : best;
+                },
+                null as Segment | null,
+            );
+    }
+
+    roleBySeg.set(front!, "frente");
+    if (back) roleBySeg.set(back, "fundo");
+
+    const lateral = pool.filter((s) => s !== front && s !== back);
+    let ladoDir = 0;
+    let ladoEsq = 0;
+
+    if (lateral.length >= 2 && front) {
+        const sorted = [...lateral].sort((a, b) => b.length - a.length);
+        const primary = sorted.slice(0, 2);
+        for (const s of primary) {
+            const sign = crossSignRelativeToFront(front, s);
+            if (sign >= 0) {
+                ladoDir += s.length;
+                roleBySeg.set(s, "ladoDireito");
+            } else {
+                ladoEsq += s.length;
+                roleBySeg.set(s, "ladoEsquerdo");
+            }
+        }
+        for (const s of sorted.slice(2)) {
+            if (s.length >= CHANFRE_MIN_M && s.length <= CHANFRE_MAX_M) {
+                roleBySeg.set(s, "chanfre");
+                chanfreSegs.push(s);
+            }
+        }
+    } else if (lateral.length === 1 && front) {
+        const s = lateral[0];
+        if (isPerpendicular(s.azimuth, front.azimuth)) {
+            ladoDir = s.length / 2;
+            ladoEsq = s.length / 2;
+            roleBySeg.set(s, "ladoDireito");
+        }
+    }
+
+    if (ladoDir === 0 && ladoEsq > 0) ladoDir = ladoEsq;
+    if (ladoEsq === 0 && ladoDir > 0) ladoEsq = ladoDir;
+
+    const segmentDebug: SegmentMeasureDebug[] = segments.map((s, index) => ({
+        index,
+        length: round(s.length),
+        angle: round(s.azimuth),
+        role: roleBySeg.get(s) || "other",
+    }));
+
+    const chanfroTotal = round(
+        chanfreSegs.reduce((sum, s) => sum + s.length, 0),
+    );
+
+    return {
+        frente: round(front!.length),
+        fundo: round(back ? back.length : front!.length),
+        ladoDireito: round(ladoDir),
+        ladoEsquerdo: round(ladoEsq),
+        chanfro: chanfroTotal,
+        segmentDebug,
+    };
+}
+
 /**
  * 1. Extrair TODOS os segmentos ignorando irrelevantes
  */
@@ -175,50 +387,55 @@ export function detectFront(segments: Segment[]): Segment {
  * 3. Identificar o FUNDO
  */
 export function detectBack(segments: Segment[], front: Segment): Segment | null {
-    let fundoCandidates = segments.filter(s => s !== front);
-    if (fundoCandidates.length === 0) return null;
-    
-    return fundoCandidates.reduce(
-       (best, s) => {
-           let diff = diffAngle(s.azimuth, front.azimuth);
-           let bestDiff = best ? diffAngle(best.azimuth, front.azimuth) : -1;
-           if (!best) return s;
-           // Procurar o ângulo mais oposto (invertido ~180°)
-           let dev1 = Math.abs(diff - 180);
-           let dev2 = Math.abs(bestDiff - 180);
-           return dev1 < dev2 ? s : best;
-       }, null as Segment | null
+    const parallelOpposite = segments.filter(
+        (s) => s !== front && isOppositeParallel(s.azimuth, front.azimuth),
     );
+    if (parallelOpposite.length > 0) {
+        return parallelOpposite.reduce((best, s) => {
+            const dLen = Math.abs(s.length - front.length);
+            const bLen = best ? Math.abs(best.length - front.length) : Infinity;
+            return dLen < bLen ? s : best;
+        }, null as Segment | null);
+    }
+
+    const fundoCandidates = segments.filter((s) => s !== front);
+    if (fundoCandidates.length === 0) return null;
+
+    return fundoCandidates.reduce((best, s) => {
+        const dev1 = Math.abs(diffAngle(s.azimuth, front.azimuth) - 180);
+        const dev2 = best
+            ? Math.abs(diffAngle(best.azimuth, front.azimuth) - 180)
+            : Infinity;
+        return dev1 < dev2 ? s : best;
+    }, null as Segment | null);
 }
 
 /**
  * 4. Identificar LADOS
  */
 export function detectSides(segments: Segment[], front: Segment | null, back: Segment | null) {
-    const sides = segments.filter(s => s !== front && s !== back);
-    
+    const sides = segments.filter((s) => s !== front && s !== back);
+
     let ladoDirVal = 0;
     let ladoEsqVal = 0;
 
     if (sides.length === 0 && front && back) {
-        // Fallback: triângulo (fundo calculado dividido) ou fallback geral
         ladoDirVal = back.length / 2;
         ladoEsqVal = back.length / 2;
     } else if (sides.length === 1 && back) {
         ladoDirVal = sides[0].length / 2;
         ladoEsqVal = sides[0].length / 2;
     } else if (sides.length >= 2 && front) {
-        // Ordenar sentido horário ou ângulo de base da frente
-        for (let s of sides) {
-            let diff = (s.azimuth - front.azimuth + 360) % 360;
-            // Paralelismo ou agrupamento em tolerância de 15 a 180 graus dita os lados
-            if (diff >= 45 && diff < 180) {
-                ladoDirVal += s.length;
-            } else {
-                ladoEsqVal += s.length;
-            }
+        const sorted = [...sides].sort((a, b) => b.length - a.length);
+        for (const s of sorted.slice(0, 2)) {
+            const sign = crossSignRelativeToFront(front, s);
+            if (sign >= 0) ladoDirVal += s.length;
+            else ladoEsqVal += s.length;
         }
     }
+
+    if (ladoDirVal === 0 && ladoEsqVal > 0) ladoDirVal = ladoEsqVal;
+    if (ladoEsqVal === 0 && ladoDirVal > 0) ladoEsqVal = ladoDirVal;
 
     return { ladoDireito: ladoDirVal, ladoEsquerdo: ladoEsqVal };
 }
@@ -313,52 +530,16 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     let finalChanfro = 0;
 
     if (segments.length > 0) {
-        const frenteRaw = detectFront(segments);
-        const fundoRaw = detectBack(segments, frenteRaw);
-
-        // Identificar Chanfros
-        const chanfroSegments: Segment[] = [];
-        const nonChanfroSegments: Segment[] = [];
-
-        segments.forEach((s, idx) => {
-            if (s === frenteRaw || s === fundoRaw) {
-                nonChanfroSegments.push(s);
-                return;
-            }
-
-            const prevSeg = segments[(idx - 1 + segments.length) % segments.length];
-            const nextSeg = segments[(idx + 1) % segments.length];
-            const deflPrev = diffAngle(s.azimuth, prevSeg.azimuth);
-            const deflNext = diffAngle(s.azimuth, nextSeg.azimuth);
-
-            const relAzimuth = (s.azimuth - (frenteRaw?.azimuth || 0) + 360) % 360;
-            const dev = Math.min(
-                relAzimuth,
-                Math.abs(relAzimuth - 90),
-                Math.abs(relAzimuth - 180),
-                Math.abs(relAzimuth - 270),
-                Math.abs(relAzimuth - 360)
-            );
-
-            // Um segmento é considerado chanfro se:
-            // 1. É curto (< 8m)
-            // 2. E tem deflexões menores que 40 graus com seus vizinhos OU possui orientação diagonal nítida (desvio > 25)
-            const isChan = s.length < 8 && (deflPrev < 40 || deflNext < 40 || dev > 25);
-            if (isChan) {
-                chanfroSegments.push(s);
-            } else {
-                nonChanfroSegments.push(s);
-            }
+        const classified = classifyLotSidesFromSegments(segments, {
+            frenteLengthHint: propFrente,
+            fundoLengthHint: propFundo,
         });
 
-        finalChanfro = parseFloat(chanfroSegments.reduce((sum, s) => sum + s.length, 0).toFixed(2));
-
-        const calcSides = detectSides(nonChanfroSegments, frenteRaw, fundoRaw);
-
-        if (!result.frente) result.frente = frenteRaw ? frenteRaw.length : 0;
-        if (!result.fundo) result.fundo = fundoRaw ? fundoRaw.length : result.frente;
-        if (!result.ladoDireito) result.ladoDireito = calcSides.ladoDireito;
-        if (!result.ladoEsquerdo) result.ladoEsquerdo = calcSides.ladoEsquerdo;
+        finalChanfro = classified.chanfro;
+        if (!result.frente) result.frente = classified.frente;
+        if (!result.fundo) result.fundo = classified.fundo;
+        if (!result.ladoDireito) result.ladoDireito = classified.ladoDireito;
+        if (!result.ladoEsquerdo) result.ladoEsquerdo = classified.ladoEsquerdo;
     }
 
     // Nunca devolver lados vazios, fallback p/ Centroid ou maior lado
