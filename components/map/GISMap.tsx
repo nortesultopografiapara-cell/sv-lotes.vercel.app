@@ -567,12 +567,22 @@ function LotBoundaryEdgePolylines({
   return <>{lines}</>;
 }
 
-const LABEL_INWARD_OFFSET_METERS = 4;
+/** Deslocamento do número para dentro do lote (frente identificada). */
+const LABEL_INWARD_OFFSET_METERS = 2.5;
+const STREET_FRONT_MAX_SCORE_METERS = 50;
+
+type StreetGuideForLabel = {
+  visible?: boolean;
+  active?: boolean;
+  geometry?: { coordinates?: number[][] };
+  geometry_geojson?: { coordinates?: number[][] };
+};
 
 type LotLabelMeta = {
   frente?: number | null;
   frontStreetName?: string | null;
   frontStreetDisplay?: string | null;
+  frontStreetId?: string | null;
 };
 
 type LotLabelItem = {
@@ -607,10 +617,110 @@ function offsetPointToward(
   ];
 }
 
-/** Ponto médio da frente + deslocamento para dentro; fallback: centróide. */
+function distancePointToSegmentMeters(
+  point: LatLngPair,
+  a: LatLngPair,
+  b: LatLngPair,
+): number {
+  const P = L.latLng(point[0], point[1]);
+  const A = L.latLng(a[0], a[1]);
+  const B = L.latLng(b[0], b[1]);
+  let minD = Math.min(P.distanceTo(A), P.distanceTo(B));
+  for (let t = 0.2; t <= 0.8; t += 0.2) {
+    const Q = L.latLng(
+      A.lat + (B.lat - A.lat) * t,
+      A.lng + (B.lng - A.lng) * t,
+    );
+    minD = Math.min(minD, P.distanceTo(Q));
+  }
+  return minD;
+}
+
+function minDistancePointToPolyline(
+  point: LatLngPair,
+  lineLngLat: number[][],
+): number {
+  let min = Infinity;
+  for (let i = 0; i < lineLngLat.length - 1; i++) {
+    const a: LatLngPair = [lineLngLat[i][1], lineLngLat[i][0]];
+    const b: LatLngPair = [lineLngLat[i + 1][1], lineLngLat[i + 1][0]];
+    min = Math.min(min, distancePointToSegmentMeters(point, a, b));
+  }
+  return min;
+}
+
+/** Mesma lógica de “Identificar Frentes”, em runtime para posicionar o label. */
+function findFrontSegmentByStreetGuides(
+  ring: number[][],
+  guides: StreetGuideForLabel[],
+) {
+  const segments = extractSegments(ring, []);
+  if (segments.length === 0 || guides.length === 0) return null;
+
+  let bestSegment: (typeof segments)[0] | null = null;
+  let bestScore = Infinity;
+
+  for (const seg of segments) {
+    const p1: LatLngPair = [seg.p1[1], seg.p1[0]];
+    const p2: LatLngPair = [seg.p2[1], seg.p2[0]];
+
+    for (const guide of guides) {
+      if (guide.visible === false || guide.active === false) continue;
+      const geo = guide.geometry_geojson || guide.geometry;
+      const coords = geo?.coordinates;
+      if (!coords || coords.length < 2) continue;
+
+      const distP1 = minDistancePointToPolyline(p1, coords);
+      const distP2 = minDistancePointToPolyline(p2, coords);
+      const avgDist = (distP1 + distP2) / 2;
+      const parallelVariance = Math.abs(distP1 - distP2);
+      const score = avgDist + parallelVariance * 3;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestSegment = seg;
+      }
+    }
+  }
+
+  if (bestSegment && bestScore < STREET_FRONT_MAX_SCORE_METERS) {
+    return bestSegment;
+  }
+  return null;
+}
+
+function pickFrontSegmentByFrenteLength(
+  segments: ReturnType<typeof extractSegments>,
+  frenteLen: number,
+) {
+  const pool = segments.filter((s) => s.isExternal);
+  const candidates = pool.length > 0 ? pool : segments;
+  const match = candidates.reduce((best, s) => {
+    const d = Math.abs(s.length - frenteLen);
+    const bd = Math.abs(best.length - frenteLen);
+    return d < bd ? s : best;
+  });
+  if (Math.abs(match.length - frenteLen) <= Math.max(frenteLen * 0.4, 4)) {
+    return match;
+  }
+  return null;
+}
+
+function frontSegmentMidpoint(seg: {
+  p1: number[];
+  p2: number[];
+}): LatLngPair {
+  return [(seg.p1[1] + seg.p2[1]) / 2, (seg.p1[0] + seg.p2[0]) / 2];
+}
+
+/**
+ * Fase 1: centróide.
+ * Fase 2: meio da frente + 2,5 m para dentro, se frente identificada (DB ou logradouro).
+ */
 function computeLotLabelPosition(
   bounds: LatLngPair[],
   lot?: LotLabelMeta,
+  streetGuides: StreetGuideForLabel[] = [],
 ): LatLngPair {
   const centroid = polygonCentroid(bounds);
   if (bounds.length < 3) return centroid;
@@ -619,41 +729,41 @@ function computeLotLabelPosition(
   const segments = extractSegments(ring, []);
   if (segments.length === 0) return centroid;
 
-  const hasStreetFront = Boolean(
-    lot?.frontStreetName || lot?.frontStreetDisplay,
+  const hasDbFront = Boolean(
+    lot?.frontStreetName ||
+      lot?.frontStreetDisplay ||
+      lot?.frontStreetId,
   );
-  const externalSegs = segments.filter((s) => s.isExternal);
-  const frontIdentified = hasStreetFront || externalSegs.length > 0;
+  const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
+  const hasFrenteMedida = frenteLen > 0 && hasDbFront;
 
+  const visibleGuides = streetGuides.filter(
+    (g) => g.visible !== false && g.active !== false,
+  );
+  const guideFrontSeg =
+    visibleGuides.length > 0
+      ? findFrontSegmentByStreetGuides(ring, visibleGuides)
+      : null;
+
+  const frontIdentified = hasDbFront || hasFrenteMedida || guideFrontSeg != null;
   if (!frontIdentified) return centroid;
 
-  let frontSeg = detectFront(segments);
-  const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
-  if (frenteLen > 0) {
-    const pool = externalSegs.length > 0 ? externalSegs : segments;
-    const byLength = pool.reduce((best, s) => {
-      const d = Math.abs(s.length - frenteLen);
-      const bd = Math.abs(best.length - frenteLen);
-      return d < bd ? s : best;
-    });
-    if (Math.abs(byLength.length - frenteLen) <= Math.max(frenteLen * 0.4, 4)) {
-      frontSeg = byLength;
-    }
-  }
+  let frontSeg =
+    guideFrontSeg ||
+    (hasFrenteMedida ? pickFrontSegmentByFrenteLength(segments, frenteLen) : null) ||
+    detectFront(segments);
 
-  const midLat = (frontSeg.p1[1] + frontSeg.p2[1]) / 2;
-  const midLng = (frontSeg.p1[0] + frontSeg.p2[0]) / 2;
-  const frontMid: LatLngPair = [midLat, midLng];
+  const frontMid = frontSegmentMidpoint(frontSeg);
   return offsetPointToward(frontMid, centroid, LABEL_INWARD_OFFSET_METERS);
 }
 
 function labelCircleSizePx(zoom: number): number {
-  if (zoom >= 21) return 30;
-  if (zoom >= 19) return 26;
-  if (zoom >= 17) return 22;
-  if (zoom >= 15) return 18;
-  if (zoom >= 13) return 14;
-  return 11;
+  if (zoom >= 21) return 26;
+  if (zoom >= 19) return 22;
+  if (zoom >= 17) return 19;
+  if (zoom >= 15) return 16;
+  if (zoom >= 13) return 13;
+  return 10;
 }
 
 function buildLabelBadgeHtml(
@@ -738,10 +848,12 @@ function LotLabelsOverlay({
   items,
   mapZoom,
   enabled,
+  streetGuides = [],
 }: {
   items: LotLabelItem[];
   mapZoom: number;
   enabled: boolean;
+  streetGuides?: StreetGuideForLabel[];
 }) {
   const map = useMap();
   const [pixelOffsets, setPixelOffsets] = useState<Record<string, [number, number]>>(
@@ -751,10 +863,13 @@ function LotLabelsOverlay({
   const labelPositions = useMemo(() => {
     const mapPos = new Map<string, LatLngPair>();
     for (const item of items) {
-      mapPos.set(item.id, computeLotLabelPosition(item.bounds, item.lot));
+      mapPos.set(
+        item.id,
+        computeLotLabelPosition(item.bounds, item.lot, streetGuides),
+      );
     }
     return mapPos;
-  }, [items]);
+  }, [items, streetGuides]);
 
   useEffect(() => {
     if (!enabled || items.length === 0) {
@@ -1868,6 +1983,14 @@ export default function GISMap({
     return items;
   }, [lots, lotGeometryValidations]);
 
+  const streetGuidesForLabels = useMemo(
+    () =>
+      streetGuidesVisible
+        ? streetGuides.filter((g) => g.visible !== false && g.active !== false)
+        : [],
+    [streetGuides, streetGuidesVisible],
+  );
+
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
   const [measureClosed, setMeasureClosed] = useState(false);
@@ -2146,6 +2269,7 @@ export default function GISMap({
                 frontStreetName: b.front_street_name || null,
                 frontStreetType: b.front_street_type || null,
                 frontStreetWidth: b.front_street_width ?? null,
+                frontStreetId: b.front_street_id || null,
                 frontStreetDisplay: b.front_street_name
                   ? formatStreetDisplay(b.front_street_type, b.front_street_name)
                   : null,
@@ -2967,6 +3091,7 @@ export default function GISMap({
           items={lotLabelItems}
           mapZoom={mapZoom}
           enabled={showPermanentLabels && !sheetPickActive}
+          streetGuides={streetGuidesForLabels}
         />
 
         {lots
