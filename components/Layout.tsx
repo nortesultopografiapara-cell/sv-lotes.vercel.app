@@ -37,6 +37,7 @@ import { SuperAdminSidebar } from './admin/SuperAdminSidebar';
 import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
 import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext';
 import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
+import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 
@@ -416,6 +417,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <OfflineStatusBar />
             {isSuperAdmin && <SuperAdminQuickActions />}
             <GisProjectHeaderBadge />
             <NotificationBell user={user} />
@@ -581,6 +583,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
+              <OfflineStatusBar />
               {isSuperAdmin && <SuperAdminQuickActions />}
               {isSuperAdmin && (
                 <span className="hidden md:inline-flex px-2.5 py-1 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold uppercase tracking-wider border border-[var(--color-primary)]/20">

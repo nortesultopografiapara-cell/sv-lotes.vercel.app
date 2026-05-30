@@ -52,6 +52,12 @@ import {
 } from "@/lib/lotChanfre";
 import { calculateLotDimensions } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
+import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
+import {
+  isBrowserOnline,
+  blockOfflineSale,
+  queueOfflineReservation,
+} from "@/lib/offline/lotReservationOffline";
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -759,7 +765,11 @@ function LotPopupContent({
                 alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
                 return;
               }
-              onRequestCustomerForm(lot, "Vendido", currentPrice)
+              if (!isBrowserOnline()) {
+                blockOfflineSale();
+                return;
+              }
+              onRequestCustomerForm(lot, "Vendido", currentPrice);
             }}
             disabled={actionLoading === lot.id || isSold}
             title={isSold ? "Este lote já está vendido" : "Vender lote"}
@@ -1192,6 +1202,10 @@ export default function GISMap({
   };
 
   const openCustomerForm = (lot: any, action: string, price: number) => {
+    if (!isBrowserOnline() && action === "Vendido") {
+      blockOfflineSale();
+      return;
+    }
     const isReserved =
       String(lot.status || "").toLowerCase() === "reservado" ||
       lot.status === "Reservado";
@@ -1216,6 +1230,20 @@ export default function GISMap({
     async function loadLots() {
       if (!user || !projectId) return;
       try {
+        if (!isBrowserOnline()) {
+          const cached = await getMapProjectCache(projectId);
+          if (cached?.lots?.length) {
+            setLots(cached.lots as any[]);
+            setBlocksData((cached.blocksData as any[]) || []);
+            setLoading(false);
+            console.log('GIS_MAP_OFFLINE_CACHE_USED', {
+              projectId,
+              lots: cached.lots.length,
+            });
+            return;
+          }
+        }
+
         let blocksQuery = supabase
           .from("blocks")
           .select("*, projects(name), customers(name)")
@@ -1334,11 +1362,25 @@ export default function GISMap({
               };
             })
             .filter((b) => b.bounds.length > 0);
-          setLots(parsedBlocks.filter((b) => b.geometryType === "Polygon"));
-          // Separando os dados de bloco caso o componente espere 'blocksData' e 'lots'
-          setBlocksData(
-            parsedBlocks.filter((b) => b.geometryType === "LineString"),
+          const polygonLots = parsedBlocks.filter(
+            (b) => b.geometryType === "Polygon",
           );
+          const lineBlocks = parsedBlocks.filter(
+            (b) => b.geometryType === "LineString",
+          );
+          setLots(polygonLots);
+          setBlocksData(lineBlocks);
+
+          if (isBrowserOnline()) {
+            await saveMapProjectCache({
+              projectId,
+              tenantId: String(user.tenant_id || user.company_id || ''),
+              blocksRaw: blocksRes.data as Record<string, unknown>[],
+              lots: polygonLots as Record<string, unknown>[],
+              blocksData: lineBlocks as Record<string, unknown>[],
+              updatedAt: new Date().toISOString(),
+            });
+          }
         }
       } catch (e) {
         console.error("Error loading map geometries:", e);
@@ -1482,6 +1524,41 @@ export default function GISMap({
       return;
     }
 
+    if (!isBrowserOnline()) {
+      if (isVendidoStatus(newStatus)) {
+        blockOfflineSale();
+        return;
+      }
+      if (newStatus === "Reservado") {
+        try {
+          await queueOfflineReservation({
+            lot,
+            finalPrice,
+            customerData,
+            user: {
+              id: user.id,
+              tenant_id: finalTenantId,
+              role: user.role,
+            },
+            brokerId: finalBrokerId,
+          });
+          alert(
+            `Reserva OFFLINE registrada para o lote ${lot.block} / ${lot.number}.\n\nAo voltar a internet, o sistema sincroniza e valida se o lote ainda está disponível.`,
+          );
+          setCustomerForm(null);
+          const cached = await getMapProjectCache(String(finalProjectId));
+          if (cached) {
+            setLots(cached.lots as any[]);
+            setBlocksData((cached.blocksData as any[]) || []);
+          }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          alert("Erro ao salvar reserva offline: " + msg);
+        }
+        return;
+      }
+    }
+
     try {
       const { customerId, clientId, reused } = await resolveOrCreateCustomer(supabase, {
         form: customerData,
@@ -1506,6 +1583,12 @@ export default function GISMap({
 
       let newSaleData: any = null;
       let newContractData: any = null;
+      let expirationTime: string | null = null;
+      if (newStatus === "Reservado") {
+        const d = new Date();
+        d.setHours(d.getHours() + 48);
+        expirationTime = d.toISOString();
+      }
 
       if (isVendidoStatus(newStatus)) {
         console.log("[VENDA] TRANSACTION_STARTED");
@@ -1930,13 +2013,6 @@ export default function GISMap({
         }
       } else {
         // Reservas e Disponível
-        let expirationTime = null;
-        if (newStatus === "Reservado") {
-           const d = new Date();
-           d.setHours(d.getHours() + 48); // Reserva válida por 48h
-           expirationTime = d.toISOString();
-        }
-
         console.log("BLOCK_MARKED_RESERVED_OR_AVAILABLE");
         const { error: updateError } = await supabase
           .from("blocks")
