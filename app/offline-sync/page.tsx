@@ -35,6 +35,7 @@ import {
   OFFLINE_ACTION_TYPE_LABELS,
 } from '@/lib/offline/syncQueueLabels';
 import type { OfflineActionType } from '@/lib/offline/types';
+import { debugOfflineCache } from '@/lib/offline/offlineCacheDebug';
 
 function StatCard({
   label,
@@ -77,8 +78,21 @@ export default function OfflineSyncAdminPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cacheDiag, setCacheDiag] = useState<string | null>(null);
 
   const canAccess = isPartnerPanelAdmin(user?.role);
+
+  const runCacheDiagnostic = async () => {
+    try {
+      const counts = await debugOfflineCache();
+      setCacheDiag(
+        `Projetos salvos: ${counts.projects}\nMapas salvos: ${counts.map_projects}\nQuadras/blocos salvos: ${counts.blocks}\nLotes salvos: ${counts.lots}`,
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setCacheDiag(`Erro no diagnóstico: ${msg}`);
+    }
+  };
 
   const reload = useCallback(async () => {
     if (!isIndexedDbAvailable()) {
@@ -234,6 +248,13 @@ export default function OfflineSyncAdminPage() {
           </button>
           <button
             type="button"
+            onClick={() => void runCacheDiagnostic()}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-200 hover:bg-amber-500/20"
+          >
+            Diagnóstico Offline
+          </button>
+          <button
+            type="button"
             disabled={syncingAll || (summary?.pending ?? 0) === 0}
             onClick={() => void handleSyncAll()}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
@@ -251,6 +272,12 @@ export default function OfflineSyncAdminPage() {
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}
+        </div>
+      )}
+
+      {cacheDiag && (
+        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 whitespace-pre-line font-mono">
+          {cacheDiag}
         </div>
       )}
 

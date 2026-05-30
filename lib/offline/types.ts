@@ -34,6 +34,7 @@ export type OfflineSyncAction = {
 export type MapProjectCacheRecord = {
   projectId: string;
   tenantId: string;
+  projectName?: string;
   blocksRaw: Record<string, unknown>[];
   lots: Record<string, unknown>[];
   blocksData: Record<string, unknown>[];

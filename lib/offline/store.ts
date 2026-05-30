@@ -22,9 +22,17 @@ export async function putEntities(
   store: EntityStoreName,
   records: Array<Record<string, unknown> & { id: string }>,
 ): Promise<void> {
+  if (records.length === 0) return;
   const db = await getOfflineDb();
   const tx = db.transaction(store, 'readwrite');
-  await Promise.all(records.map((r) => tx.store.put(r)));
+  for (const raw of records) {
+    const id = raw?.id != null ? String(raw.id) : '';
+    if (!id) {
+      console.warn('[CACHE] putEntities ignorado — sem id', store);
+      continue;
+    }
+    await tx.store.put({ ...raw, id });
+  }
   await tx.done;
 }
 
@@ -44,10 +52,12 @@ export async function getAllEntities<T extends Record<string, unknown>>(
 }
 
 export async function saveMapProjectCache(
-  record: MapProjectCacheRecord,
+  record: MapProjectCacheRecord & { projectName?: string },
 ): Promise<void> {
-  const db = await getOfflineDb();
-  await db.put('map_projects', record);
+  const { persistMapProjectOfflineCache } = await import(
+    '@/lib/offline/projectsOfflineCache'
+  );
+  await persistMapProjectOfflineCache(record);
   console.log('OFFLINE_MAP_CACHE_SAVED', {
     projectId: record.projectId,
     lots: record.lots.length,

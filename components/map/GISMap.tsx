@@ -1383,9 +1383,16 @@ export default function GISMap({
           setBlocksData(lineBlocks);
 
           if (isBrowserOnline()) {
+            const projectName =
+              String(
+                blocksRes.data?.[0]?.projects?.name ||
+                  polygonLots[0]?.projectName ||
+                  '',
+              ) || undefined;
             await saveMapProjectCache({
               projectId,
               tenantId: String(user.tenant_id || user.company_id || ''),
+              projectName,
               blocksRaw: blocksRes.data as Record<string, unknown>[],
               lots: polygonLots as Record<string, unknown>[],
               blocksData: lineBlocks as Record<string, unknown>[],

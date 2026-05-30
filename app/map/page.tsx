@@ -31,6 +31,7 @@ import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
 import { isBrowserOnline } from '@/lib/offline/lotReservationOffline';
 import {
   cacheProjectsForOffline,
+  cacheSingleProjectForOffline,
   loadOfflineProjectsList,
 } from '@/lib/offline/projectsOfflineCache';
 
@@ -613,7 +614,9 @@ export default function MapPage() {
 
       let query = supabase
         .from('projects')
-        .select('*, blocks(status, geometry)')
+        .select(
+          '*, blocks(id, status, geometry, number, block_name, project_id, area, price)',
+        )
         .order('created_at', { ascending: false });
 
       query = applyTenantFilterToProjectsQuery(query, user, activeTenantId);
@@ -629,7 +632,11 @@ export default function MapPage() {
       const projectList = data || [];
       setProjects(projectList);
       logSaasCompanyContext(activeTenantId, saasCompany, projectList.length);
-      void cacheProjectsForOffline(projectList);
+      try {
+        await cacheProjectsForOffline(projectList);
+      } catch (cacheErr) {
+        console.error('[CACHE] falha após listar projetos', cacheErr);
+      }
     } catch (err) {
       console.error(err);
       setProjects([]);
@@ -639,6 +646,9 @@ export default function MapPage() {
   }, [user, saasTenantId, saasCompany]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && navigator.onLine) {
+      console.log('[CACHE] página /map — carregamento online');
+    }
     if (authLoading) return;
     const offline =
       typeof navigator !== 'undefined' && !navigator.onLine;
@@ -672,6 +682,11 @@ export default function MapPage() {
 
   const handleOpenProject = (project: any) => {
     setSelectedProject(project);
+    if (isBrowserOnline() && project?.id) {
+      void cacheSingleProjectForOffline(project).catch((e) =>
+        console.error('[CACHE] falha ao abrir projeto', e),
+      );
+    }
   };
 
   const handleBack = () => {
