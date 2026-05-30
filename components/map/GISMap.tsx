@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -89,8 +89,12 @@ const DEBUG_GIS_LOT_NUMBERS = new Set([
   "29", "34", "35", "36", "38", "43", "46", "47", "48", "49", "50",
 ]);
 
-const MAX_LOT_EDGE_METERS = 350;
-const MAX_LOT_VERTEX_FROM_CENTER_METERS = 280;
+/** Pontos removidos (vermelho) / mantidos (azul) no mapa */
+const DEBUG_GIS_SANITIZE = false;
+
+/** Remove vértice só se aresta > 2 km ou ponto fora do bbox da quadra (+200 m) */
+const MAX_REMOVABLE_EDGE_METERS = 2000;
+const BLOCK_BBOX_MARGIN_METERS = 200;
 
 function isDebugGisLot(number: unknown): boolean {
   const num = normalizeLotDisplayNum(number);
@@ -144,55 +148,252 @@ function maxRingEdgeMeters(ring: LatLngPair[]): number {
   return max;
 }
 
-/** Remove vértices que geram arestas gigantes (contorno preto do Polygon no Leaflet). */
-function sanitizeLotBounds(
-  bounds: LatLngPair[],
-  lot: { id?: string; number?: string },
-): LatLngPair[] {
-  if (bounds.length < 2) return [];
+type BlockBBox = {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+};
 
-  let pts = bounds.filter(([lat, lng]) => isValidLatLngPair(lat, lng));
-  if (pts.length < 2) return [];
+type RemovedVertex = {
+  coord: LatLngPair;
+  reason: "edge_too_long" | "outside_block_bbox";
+  edgeMeters?: number;
+  originalIndex: number;
+};
 
-  const center = polygonCentroid(pts);
-  pts = pts.filter(
-    (p) => distanceMeters(p, center) <= MAX_LOT_VERTEX_FROM_CENTER_METERS,
+type ValidateLotGeometryResult = {
+  valid: boolean;
+  cleanedCoords: LatLngPair[];
+  removedVertices: RemovedVertex[];
+  reason?: string;
+};
+
+function normalizeBlockKey(block: unknown): string {
+  return String(block ?? "?").trim() || "?";
+}
+
+function expandBBoxMeters(bbox: BlockBBox, marginM: number): BlockBBox {
+  const centerLat = (bbox.minLat + bbox.maxLat) / 2;
+  const metersPerDegLat = 111_320;
+  const metersPerDegLng =
+    111_320 * Math.cos((centerLat * Math.PI) / 180) || 111_320;
+  const dLat = marginM / metersPerDegLat;
+  const dLng = marginM / metersPerDegLng;
+  return {
+    minLat: bbox.minLat - dLat,
+    maxLat: bbox.maxLat + dLat,
+    minLng: bbox.minLng - dLng,
+    maxLng: bbox.maxLng + dLng,
+  };
+}
+
+function isInsideBBox(p: LatLngPair, bbox: BlockBBox): boolean {
+  const [lat, lng] = p;
+  return (
+    lat >= bbox.minLat &&
+    lat <= bbox.maxLat &&
+    lng >= bbox.minLng &&
+    lng <= bbox.maxLng
   );
-  if (pts.length < 2) return [];
+}
 
-  while (pts.length >= 3) {
-    let longest = 0;
-    let removeIndex = -1;
-    for (let i = 0; i < pts.length; i++) {
-      const next = (i + 1) % pts.length;
-      const len = distanceMeters(pts[i], pts[next]);
-      if (len > longest) {
-        longest = len;
-        removeIndex = next;
+/** Bbox da quadra a partir de todos os vértices válidos dos lotes do mesmo bloco. */
+function buildBlockBoundingBoxes(
+  lots: Array<{ block?: string; bounds?: LatLngPair[] }>,
+): Map<string, BlockBBox> {
+  const byBlock = new Map<string, LatLngPair[]>();
+
+  for (const lot of lots) {
+    const key = normalizeBlockKey(lot.block);
+    const pts = ((lot.bounds || []) as LatLngPair[]).filter(([lat, lng]) =>
+      isValidLatLngPair(lat, lng),
+    );
+    if (pts.length === 0) continue;
+    const existing = byBlock.get(key) || [];
+    byBlock.set(key, existing.concat(pts));
+  }
+
+  const result = new Map<string, BlockBBox>();
+  for (const [blockKey, pts] of byBlock) {
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    for (const [lat, lng] of pts) {
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    }
+    result.set(
+      blockKey,
+      expandBBoxMeters({ minLat, maxLat, minLng, maxLng }, BLOCK_BBOX_MARGIN_METERS),
+    );
+  }
+  return result;
+}
+
+function logSanitizeRemoval(
+  lot: { number?: string; block?: string },
+  originalCount: number,
+  currentCount: number,
+  removed: RemovedVertex,
+) {
+  console.log("GIS_SANITIZE_REMOVE", {
+    lote: lot.number,
+    quadra: lot.block,
+    verticesOriginal: originalCount,
+    verticesAtuais: currentCount,
+    motivo: removed.reason,
+    distanciaArestaRemovidaM: removed.edgeMeters,
+    coordenadaRemovida: removed.coord,
+  });
+}
+
+function logSanitizeDiagnostic(
+  lot: { number?: string; block?: string },
+  originalCount: number,
+  result: ValidateLotGeometryResult,
+) {
+  console.log("GIS_SANITIZE_DIAG", {
+    lote: lot.number,
+    quadra: lot.block,
+    verticesOriginal: originalCount,
+    verticesAposSanitizacao: result.cleanedCoords.length,
+    verticesRemovidos: result.removedVertices.length,
+    removidos: result.removedVertices.map((r) => ({
+      coordenada: r.coord,
+      motivo: r.reason,
+      distanciaArestaM: r.edgeMeters,
+    })),
+    valido: result.valid,
+    motivoInvalido: result.reason,
+  });
+}
+
+/**
+ * Sanitiza geometria do lote: remove só outlier (aresta > 2 km ou fora do bbox da quadra).
+ */
+function validateLotGeometry(
+  lot: { number?: string; block?: string; bounds?: LatLngPair[] },
+  blockBBox: BlockBBox | null,
+): ValidateLotGeometryResult {
+  const original = (lot.bounds || []) as LatLngPair[];
+  const originalCount = original.length;
+  const removedVertices: RemovedVertex[] = [];
+
+  let pts = original.filter(([lat, lng]) => isValidLatLngPair(lat, lng));
+
+  if (pts.length < 2) {
+    const empty: ValidateLotGeometryResult = {
+      valid: false,
+      cleanedCoords: pts,
+      removedVertices,
+      reason: "insufficient_geometry",
+    };
+    logSanitizeDiagnostic(lot, originalCount, empty);
+    return empty;
+  }
+
+  const recordRemoval = (
+    index: number,
+    reason: RemovedVertex["reason"],
+    edgeMeters?: number,
+  ) => {
+    const coord = pts[index];
+    const entry: RemovedVertex = {
+      coord,
+      reason,
+      edgeMeters,
+      originalIndex: index,
+    };
+    removedVertices.push(entry);
+    logSanitizeRemoval(lot, originalCount, pts.length - 1, entry);
+    pts.splice(index, 1);
+  };
+
+  if (blockBBox) {
+    for (let i = pts.length - 1; i >= 0; i--) {
+      if (!isInsideBBox(pts[i], blockBBox)) {
+        recordRemoval(i, "outside_block_bbox");
       }
     }
-    if (longest <= MAX_LOT_EDGE_METERS || removeIndex < 0) break;
-    if (isDebugGisLot(lot.number)) {
-      console.warn("GIS_MAP_VERTEX_REMOVED", {
-        lote: lot.number,
-        edgeMeters: longest.toFixed(2),
-        vertex: pts[removeIndex],
-      });
-    }
-    pts.splice(removeIndex, 1);
   }
 
-  if (pts.length >= 3 && maxRingEdgeMeters(pts) > MAX_LOT_EDGE_METERS) {
-    if (isDebugGisLot(lot.number)) {
-      console.warn("GIS_MAP_RING_REJECTED", {
-        lote: lot.number,
-        maxEdge: maxRingEdgeMeters(pts),
-      });
+  const maxEdgeIterations = Math.max(pts.length, 1);
+  for (let iter = 0; iter < maxEdgeIterations && pts.length >= 2; iter++) {
+    const n = pts.length;
+    const edgeCount = n >= 3 ? n : n - 1;
+    if (edgeCount < 1) break;
+
+    let longest = 0;
+    let removeIndex = -1;
+    for (let i = 0; i < edgeCount; i++) {
+      const j = n >= 3 ? (i + 1) % n : i + 1;
+      const len = distanceMeters(pts[i], pts[j]);
+      if (len > longest) {
+        longest = len;
+        removeIndex = j;
+      }
     }
-    return [];
+
+    if (longest <= MAX_REMOVABLE_EDGE_METERS || removeIndex < 0) break;
+    if (pts.length < 4) break;
+
+    recordRemoval(removeIndex, "edge_too_long", longest);
   }
 
-  return pts;
+  if (pts.length < 3) {
+    const invalid: ValidateLotGeometryResult = {
+      valid: false,
+      cleanedCoords: pts,
+      removedVertices,
+      reason: "insufficient_geometry",
+    };
+    logSanitizeDiagnostic(lot, originalCount, invalid);
+    return invalid;
+  }
+
+  const ok: ValidateLotGeometryResult = {
+    valid: true,
+    cleanedCoords: pts,
+    removedVertices,
+  };
+  logSanitizeDiagnostic(lot, originalCount, ok);
+  return ok;
+}
+
+/** Visualização temporária: vértices mantidos (azul) e removidos (vermelho). */
+function GisSanitizeDebugMarkers({
+  lotId,
+  validation,
+}: {
+  lotId: string;
+  validation: ValidateLotGeometryResult;
+}) {
+  if (!DEBUG_GIS_SANITIZE) return null;
+
+  return (
+    <>
+      {validation.cleanedCoords.map((p, idx) => (
+        <CircleMarker
+          key={`${lotId}-keep-${idx}`}
+          center={p}
+          radius={6}
+          pathOptions={{ color: "#2563eb", fillColor: "#3b82f6", fillOpacity: 0.9, weight: 2 }}
+        />
+      ))}
+      {validation.removedVertices.map((r, idx) => (
+        <CircleMarker
+          key={`${lotId}-rm-${idx}`}
+          center={r.coord}
+          radius={7}
+          pathOptions={{ color: "#b91c1c", fillColor: "#ef4444", fillOpacity: 0.95, weight: 2 }}
+        />
+      ))}
+    </>
+  );
 }
 
 type ParsedBlockGeometry = {
@@ -1423,6 +1624,26 @@ export default function GISMap({
     labelsMinZoom == null || mapZoom >= labelsMinZoom;
   const sheetPickActive = Boolean(lotSheetPickMode);
 
+  const blockBoundingBoxes = useMemo(
+    () => buildBlockBoundingBoxes(lots),
+    [lots],
+  );
+
+  const lotGeometryValidations = useMemo(() => {
+    const map = new Map<string, ValidateLotGeometryResult>();
+    for (const lot of lots) {
+      if (!lot.bounds?.length) continue;
+      map.set(
+        lot.id,
+        validateLotGeometry(
+          lot,
+          blockBoundingBoxes.get(normalizeBlockKey(lot.block)) ?? null,
+        ),
+      );
+    }
+    return map;
+  }, [lots, blockBoundingBoxes]);
+
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
   const [measureClosed, setMeasureClosed] = useState(false);
@@ -1717,19 +1938,6 @@ export default function GISMap({
               b.geometryType === "LineString" ||
               b.geometryType === "MultiLineString",
           );
-          polygonLots.forEach((lot) => {
-            if (!isDebugGisLot(lot.number)) return;
-            const ring = sanitizeLotBounds(lot.bounds as LatLngPair[], lot);
-            console.log("GIS_LOAD_LOT", {
-              lote: lot.number,
-              geometryType: lot.geometryType,
-              coordCount: lot.coordCount,
-              rawPoints: lot.bounds.length,
-              sanitizedPoints: ring.length,
-              maxEdgeM: maxRingEdgeMeters(ring),
-              renderPolygonOnly: !SHOW_BOUNDARY_LINES,
-            });
-          });
           setLots(polygonLots);
           setBlocksData(lineBlocks);
 
@@ -2524,18 +2732,16 @@ export default function GISMap({
           .map((lot) => {
             const color = getStatusColor(lot.status);
             const displayNum = normalizeLotDisplayNum(lot.number);
-            const positions = sanitizeLotBounds(
-              lot.bounds as LatLngPair[],
-              lot,
-            );
+            const validation = lotGeometryValidations.get(lot.id);
+            if (!validation) return null;
+            const positions = validation.cleanedCoords;
 
-            if (positions.length < 3) {
-              if (isDebugGisLot(lot.number)) {
-                console.warn("GIS_MAP_SKIP_LOT", {
-                  lote: lot.number,
-                  pointsAfterSanitize: positions.length,
-                });
-              }
+            if (!validation.valid || positions.length < 3) {
+              console.warn(
+                "Lote ignorado por geometria insuficiente",
+                lot.number,
+                validation.reason,
+              );
               return null;
             }
 
@@ -2558,6 +2764,7 @@ export default function GISMap({
 
             return (
               <Fragment key={lot.id}>
+                <GisSanitizeDebugMarkers lotId={lot.id} validation={validation} />
                 <Polygon
                   positions={positions}
                   interactive={sheetPickActive || !(drawStreetActive || measureActive)}
@@ -2634,12 +2841,18 @@ export default function GISMap({
         {SHOW_AUXILIARY_LINES &&
           blocksData.map((block) => {
             const displayNum = normalizeLotDisplayNum(block.number);
-            const positions = sanitizeLotBounds(
-              block.bounds as LatLngPair[],
+            const validation = validateLotGeometry(
               block,
+              blockBoundingBoxes.get(normalizeBlockKey(block.block)) ?? null,
             );
+            const positions = validation.cleanedCoords;
 
-            if (positions.length < 3) {
+            if (!validation.valid || positions.length < 3) {
+              console.warn(
+                "Lote ignorado por geometria insuficiente",
+                block.number,
+                validation.reason,
+              );
               return null;
             }
 
