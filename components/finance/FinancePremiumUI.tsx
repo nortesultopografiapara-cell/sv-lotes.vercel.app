@@ -199,7 +199,7 @@ export const PaymentTableRow = memo(
 
     return (
       <tr className="group">
-        <td className="w-10">
+        <td className="finance-col-check">
           <input
             type="checkbox"
             checked={selected}
@@ -207,13 +207,13 @@ export const PaymentTableRow = memo(
             className="rounded border-slate-600"
           />
         </td>
-        <td>
-          <div className="font-semibold text-slate-200">{contractNo}</div>
-          <div className="text-[11px] text-slate-500">{loteDesc}</div>
+        <td className="finance-col-contract">
+          <div className="font-semibold text-slate-200 truncate">{contractNo}</div>
+          <div className="text-[11px] text-slate-500 truncate">{loteDesc}</div>
         </td>
-        <td className="text-slate-300">{clientName}</td>
-        <td className="text-slate-400">{projectName}</td>
-        <td className="text-center">
+        <td className="finance-col-client text-slate-300 truncate">{clientName}</td>
+        <td className="finance-col-project text-slate-400 truncate">{projectName}</td>
+        <td className="finance-col-parcel text-center">
           {isEntry ? (
             <FinanceStatusBadge status="entrada" />
           ) : (
@@ -223,22 +223,22 @@ export const PaymentTableRow = memo(
             </span>
           )}
         </td>
-        <td className="text-slate-300">
+        <td className="finance-col-due text-slate-300">
           {dueStr
             ? new Date(`${dueStr}T12:00:00Z`).toLocaleDateString('pt-BR')
             : '—'}
         </td>
-        <td className="text-right font-medium text-slate-200">
+        <td className="finance-col-amount text-right font-medium text-slate-200">
           {formatCurrency(amount)}
         </td>
-        <td className="text-right text-slate-400">
+        <td className="finance-col-paid text-right text-slate-400">
           {formatCurrency(paidAmount)}
         </td>
-        <td className="text-center">
+        <td className="finance-col-status text-center">
           <FinanceStatusBadge status={computedStatus} />
         </td>
-        <td className="finance-sticky-actions text-center">
-          <div className="flex items-center justify-center gap-0.5">
+        <td className="finance-col-actions finance-sticky-actions text-center">
+          <div className="finance-actions-row">
             <FinanceParcelActionBtn title="Visualizar" onClick={onView}>
               <Eye />
             </FinanceParcelActionBtn>

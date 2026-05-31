@@ -176,6 +176,63 @@
   border-spacing: 0;
 }
 
+.finance-premium .finance-table.finance-table-parcels {
+  table-layout: fixed;
+  min-width: 1420px;
+}
+
+.finance-premium .finance-col-check {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  max-width: 2.5rem;
+}
+
+.finance-premium .finance-col-contract {
+  min-width: 160px;
+  width: 160px;
+}
+
+.finance-premium .finance-col-client {
+  min-width: 220px;
+  width: 220px;
+}
+
+.finance-premium .finance-col-project {
+  min-width: 220px;
+  width: 220px;
+}
+
+.finance-premium .finance-col-parcel {
+  min-width: 90px;
+  width: 90px;
+}
+
+.finance-premium .finance-col-due {
+  min-width: 120px;
+  width: 120px;
+}
+
+.finance-premium .finance-col-amount {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-premium .finance-col-paid {
+  min-width: 130px;
+  width: 130px;
+}
+
+.finance-premium .finance-col-status {
+  min-width: 110px;
+  width: 110px;
+}
+
+.finance-premium .finance-col-actions {
+  min-width: 180px;
+  width: 180px;
+  max-width: 180px;
+}
+
 .finance-premium .finance-table thead th {
   position: sticky;
   top: 0;
@@ -212,9 +269,14 @@
 .finance-premium .finance-table .finance-sticky-actions {
   position: sticky;
   right: 0;
-  z-index: 5;
+  z-index: 6;
+  min-width: 180px;
+  width: 180px;
+  max-width: 180px;
+  box-sizing: border-box;
   background: #13161c;
-  box-shadow: -8px 0 16px rgba(0, 0, 0, 0.35);
+  border-left: 1px solid var(--fin-border);
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.25);
 }
 
 .finance-premium .finance-table tbody tr:hover .finance-sticky-actions {
@@ -222,8 +284,22 @@
 }
 
 .finance-premium .finance-table thead .finance-sticky-actions {
-  z-index: 11;
+  z-index: 12;
   background: #12161f;
+}
+
+.finance-premium .finance-table .finance-col-status {
+  position: relative;
+  z-index: 1;
+}
+
+.finance-premium .finance-actions-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
 }
 
 .finance-premium .finance-action-btn {

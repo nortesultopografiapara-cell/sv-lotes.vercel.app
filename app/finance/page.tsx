@@ -2765,11 +2765,23 @@ export default function FinancePage() {
 
       {/* TABELA PARCELAS — prioridade visual */}
       <div className="finance-table-panel mb-6 flex flex-col">
-        <div className="finance-table-scroll">
-          <table className="finance-table text-left">
+        <div className="finance-table-scroll overflow-x-auto">
+          <table className="finance-table finance-table-parcels text-left">
+            <colgroup>
+              <col className="finance-col-check" />
+              <col className="finance-col-contract" />
+              <col className="finance-col-client" />
+              <col className="finance-col-project" />
+              <col className="finance-col-parcel" />
+              <col className="finance-col-due" />
+              <col className="finance-col-amount" />
+              <col className="finance-col-paid" />
+              <col className="finance-col-status" />
+              <col className="finance-col-actions" />
+            </colgroup>
             <thead>
               <tr>
-                <th className="w-10">
+                <th className="finance-col-check">
                   <input
                     type="checkbox"
                     className="rounded border-slate-600"
@@ -2787,15 +2799,17 @@ export default function FinancePage() {
                     aria-label="Selecionar todos"
                   />
                 </th>
-                <th>Contrato / Lote</th>
-                <th>Cliente</th>
-                <th>Projeto</th>
-                <th className="text-center">Parcela</th>
-                <th>Vencimento</th>
-                <th className="text-right">Valor Parcela</th>
-                <th className="text-right">Valor Pago</th>
-                <th className="text-center">Status</th>
-                <th className="finance-sticky-actions text-center">Ações</th>
+                <th className="finance-col-contract">Contrato / Lote</th>
+                <th className="finance-col-client">Cliente</th>
+                <th className="finance-col-project">Projeto</th>
+                <th className="finance-col-parcel text-center">Parcela</th>
+                <th className="finance-col-due">Vencimento</th>
+                <th className="finance-col-amount text-right">Valor Parcela</th>
+                <th className="finance-col-paid text-right">Valor Pago</th>
+                <th className="finance-col-status text-center">Status</th>
+                <th className="finance-col-actions finance-sticky-actions text-center">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -2956,8 +2970,8 @@ export default function FinancePage() {
                               <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Ativo</span>
                             )}
                          </td>
-                         <td className="finance-sticky-actions text-center">
-                            <div className="flex items-center justify-center gap-0.5">
+                         <td className="finance-col-actions finance-sticky-actions text-center">
+                            <div className="finance-actions-row">
                             {renderFlowActions(item)}
                             </div>
                          </td>
