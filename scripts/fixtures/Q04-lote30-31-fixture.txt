@@ -1,0 +1,56 @@
+Name: 30
+Area: 500.00
+Perimeter: 100.000
+End North: 9316100.0000m
+End East: 623900.0000m
+
+Segment #1  :  Curve
+
+Length: 25.000m     Radius: 50.000m
+Chord: 24.500m
+End North: 9316120.0000m     End East: 623920.0000m
+RP North: 9316150.0000m     RP East: 623950.0000m
+
+Segment #2  :  Line
+
+Course: 090° 00' 00.00"     Length: 50.000m
+North: 9316120.0000m     East: 623970.0000m
+
+Segment #3  :  Line
+
+Course: 180° 00' 00.00"     Length: 50.000m
+North: 9316070.0000m     East: 623970.0000m
+
+Segment #4  :  Line
+
+Course: 270° 00' 00.00"     Length: 50.000m
+North: 9316070.0000m     East: 623900.0000m
+
+Name: 31
+Area: 600.00
+Perimeter: 260.626
+North: 9316133.9411m     East: 623921.4020m
+
+Segment #1  :  Line
+
+Course: 011° 32' 18.76"     Length: 24.137m
+North: 9316157.5903m     East: 623926.2301m
+
+Segment #2  :  Line
+
+Course: 109° 20' 19.40"     Length: 113.875m
+North: 9316119.8803m     East: 624033.6799m
+
+Segment #3  :  Curve
+
+Length: 30.561m     Radius: 63.207m
+Delta: 027.7026 (d)     Tangent: 15.585m
+Chord: 30.264m     Course: 237° 07' 51.76"
+Course In: 313° 16' 47.08"     Course Out: 160° 58' 56.43"
+RP North: 9316163.2126m     RP East: 623987.0000m
+End North: 9316100.0000m     End East: 623950.0000m
+
+Segment #4  :  Line
+
+Course: 200° 00' 00.00"     Length: 50.000m
+North: 9316133.9411m     East: 623921.4020m

@@ -52,6 +52,7 @@ import {
 } from '@/lib/gisMapProjectPersistence';
 import {
   civil3dLotToImportPayload,
+  computeProjectUtmCenterFromBlocks,
   parseCivil3dTxtLots,
   QUADRA_OUT_OF_PROJECT_MESSAGE,
   validateQuadraImportAgainstProject,
@@ -1456,7 +1457,7 @@ export default function MapPage() {
 
       let centerQuery = supabase
         .from('blocks')
-        .select('geometry')
+        .select('geometry, coordinates_utm_json')
         .eq('project_id', selectedProject.id);
       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
         centerQuery = centerQuery.or(
@@ -1484,12 +1485,17 @@ export default function MapPage() {
         return { lat: sumLat / n, lng: sumLng / n };
       })();
 
+      const projectCenterUtm = computeProjectUtmCenterFromBlocks(
+        existingBlocks,
+        proj4String,
+      );
+
       const lotsParsed = parseCivil3dTxtLots(text);
       const blocksParsed = lotsParsed.map((lot) => {
         const payload = civil3dLotToImportPayload(
           lot,
           proj4String,
-          projectCenter,
+          null,
         );
         return {
           name: payload.name,
@@ -1514,6 +1520,9 @@ export default function MapPage() {
         blocksParsed,
         projectCenter,
         quadraName,
+        lotsParsed,
+        proj4String,
+        projectCenterUtm,
       );
       if (quadraLocation.blocked) {
         alert(QUADRA_OUT_OF_PROJECT_MESSAGE);

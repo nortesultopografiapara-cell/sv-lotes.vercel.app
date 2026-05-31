@@ -70,16 +70,27 @@ function parseBrNumber(raw: string | undefined | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function escapeRegexLabel(label: string): string {
+  return label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Lê campo numérico no bloco (início de linha ou inline — Civil 3D usa ambos). */
 function readField(block: string, labels: string[]): number | null {
   for (const label of labels) {
-    const re = new RegExp(
-      `(?:^|\\n)\\s*${label}\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
-      "im",
-    );
-    const m = block.match(re);
-    if (m) {
-      const v = parseBrNumber(m[1]);
-      if (v != null) return v;
+    const escaped = escapeRegexLabel(label);
+    const patterns = [
+      new RegExp(
+        `(?:^|\\n)\\s*${escaped}\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
+        "im",
+      ),
+      new RegExp(`${escaped}\\s*:\\s*([0-9+\\-.,]+)\\s*m?`, "i"),
+    ];
+    for (const re of patterns) {
+      const m = block.match(re);
+      if (m) {
+        const v = parseBrNumber(m[1]);
+        if (v != null) return v;
+      }
     }
   }
   return null;
@@ -106,6 +117,23 @@ function readLotHeaderCoord(
 function readAllCoordPairs(
   block: string,
 ): Array<{ north: number; east: number }> {
+  const pairs: Array<{ north: number; east: number }> = [];
+  const seen = new Set<string>();
+
+  const pushPair = (north: number | null, east: number | null) => {
+    if (north == null || east == null) return;
+    const key = `${round2(north)}|${round2(east)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push({ north, east });
+  };
+
+  const inlineRe =
+    /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?\s+(?<!End\s)(?<!RP\s)(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim;
+  for (const m of block.matchAll(inlineRe)) {
+    pushPair(parseBrNumber(m[1]), parseBrNumber(m[2]));
+  }
+
   const northMatches = [
     ...block.matchAll(
       /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
@@ -116,12 +144,12 @@ function readAllCoordPairs(
       /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
     ),
   ];
-  const pairs: Array<{ north: number; east: number }> = [];
   const n = Math.min(northMatches.length, eastMatches.length);
   for (let i = 0; i < n; i++) {
-    const north = parseBrNumber(northMatches[i][1]);
-    const east = parseBrNumber(eastMatches[i][1]);
-    if (north != null && east != null) pairs.push({ north, east });
+    pushPair(
+      parseBrNumber(northMatches[i][1]),
+      parseBrNumber(eastMatches[i][1]),
+    );
   }
   return pairs;
 }
@@ -153,6 +181,8 @@ function parseDirectionBearing(block: string): number | null {
 function isCurveBlock(block: string): boolean {
   return (
     /\bType\s*:\s*Curve\b/i.test(block) ||
+    /Segment\s*#\s*\d+\s*:\s*Curve\b/i.test(block) ||
+    /(?:^|\n)\s*:\s*Curve\b/i.test(block) ||
     /(?:^|\n)\s*Curve\b/i.test(block) ||
     /\bCurve\s+Length\b/i.test(block)
   );
@@ -169,14 +199,51 @@ function isNearPoint(
   return Math.hypot(e1 - e2, n1 - n2) < tol;
 }
 
-/** Ponto inicial do lote (North/East antes do Segment #1 — não End North). */
+/**
+ * Ponto inicial do lote (trecho antes do Segment #1).
+ * Aceita North/East ou, no Civil 3D Q04, End North/End East no cabeçalho.
+ */
 function parseLotHeaderStart(
   chunk: string,
-): { north: number; east: number } | null {
+  lotLabel: string,
+): { north: number; east: number; source: string } | null {
   const header = chunk.split(/Segment\s*#\s*1\b/i)[0] ?? chunk;
+
+  const headerPairs = readAllCoordPairs(header);
+  if (headerPairs.length > 0) {
+    return {
+      north: headerPairs[0].north,
+      east: headerPairs[0].east,
+      source: "header_north_east_before_segment_1",
+    };
+  }
+
   const north = readLotHeaderCoord(header, "north");
   const east = readLotHeaderCoord(header, "east");
-  if (north != null && east != null) return { north, east };
+  if (north != null && east != null) {
+    return { north, east, source: "header_north_east_before_segment_1" };
+  }
+
+  const endNorth = readField(header, [
+    "End North",
+    "End Northing",
+    "Ending Northing",
+    "Northing End",
+  ]);
+  const endEast = readField(header, [
+    "End East",
+    "End Easting",
+    "Ending Easting",
+    "Easting End",
+  ]);
+  if (endNorth != null && endEast != null) {
+    return {
+      north: endNorth,
+      east: endEast,
+      source: "header_end_north_east_before_segment_1",
+    };
+  }
+
   return null;
 }
 
@@ -195,7 +262,7 @@ function computeChainClosureErrorM(
 
 function chainSegmentEndpoints(
   segments: ParsedCivil3dSegment[],
-  lotStart: { north: number; east: number } | null,
+  lotStart: { north: number; east: number; source: string } | null,
   lotLabel: string,
 ): ParsedCivil3dSegment[] {
   const out = segments.map((s) => ({ ...s }));
@@ -205,7 +272,7 @@ function chainSegmentEndpoints(
       lote: lotLabel,
       north: lotStart.north,
       east: lotStart.east,
-      source: "header_before_segment_1",
+      source: lotStart.source,
     });
     out[0].north = lotStart.north;
     out[0].east = lotStart.east;
@@ -448,7 +515,7 @@ function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
   const perimeterMatch = chunk.match(/Perimeter\s*:\s*([0-9.,+-]+)/i);
   const area = parseBrNumber(areaMatch?.[1] ?? "") ?? 0;
   const perimeter = parseBrNumber(perimeterMatch?.[1] ?? "") ?? 0;
-  const lotStart = parseLotHeaderStart(chunk);
+  const lotStart = parseLotHeaderStart(chunk, name);
   let segments = parseSegmentBlocks(chunk, name);
   segments = chainSegmentEndpoints(segments, lotStart, name);
 
@@ -703,6 +770,96 @@ export function computeQuadraCentroidFromImportLots(
   return computeLngLatCentroidFromRings(rings);
 }
 
+export function computeUtmCentroidFromRings(
+  rings: [number, number][][],
+): { east: number; north: number } | null {
+  let sumE = 0;
+  let sumN = 0;
+  let n = 0;
+  for (const ring of rings) {
+    for (const [e, north] of ring) {
+      if (Number.isFinite(e) && Number.isFinite(north)) {
+        sumE += e;
+        sumN += north;
+        n++;
+      }
+    }
+  }
+  if (n < 1) return null;
+  return { east: sumE / n, north: sumN / n };
+}
+
+/** Centroide UTM do lote (anel por corda) — usado na validação da quadra antes de salvar. */
+export function computeImportLotUtmCentroid(
+  lot: ParsedCivil3dLot,
+): { east: number; north: number } | null {
+  const officialSegs = civil3dParsedToOfficialSegments(lot.segments, lot.name);
+  if (officialSegs.length < 2) return null;
+  if (computeOfficialChainClosureErrorM(officialSegs) > CLOSURE_MAX_M) return null;
+  const ring = buildUtmRingFromOfficialSegments(officialSegs, lot.name);
+  if (ring.length < 3) return null;
+  return computeUtmCentroidFromRings([ring]);
+}
+
+export function computeProjectUtmCenterFromBlocks(
+  blocks:
+    | Array<{
+        geometry?: { coordinates?: number[][][] } | null;
+        coordinates_utm_json?: number[][] | null;
+      }>
+    | null
+    | undefined,
+  proj4UtmSouth: string,
+): { east: number; north: number } | null {
+  let sumE = 0;
+  let sumN = 0;
+  let n = 0;
+  for (const b of blocks ?? []) {
+    const utmJson = b.coordinates_utm_json;
+    if (Array.isArray(utmJson) && utmJson.length > 0) {
+      for (const pt of utmJson) {
+        if (pt?.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
+          sumE += Number(pt[0]);
+          sumN += Number(pt[1]);
+          n++;
+        }
+      }
+      continue;
+    }
+    const ring = b.geometry?.coordinates?.[0];
+    if (!ring?.length) continue;
+    for (const c of ring) {
+      if (c?.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+        const lng = Number(c[0]);
+        const lat = Number(c[1]);
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+        const [e, north] = proj4("EPSG:4326", proj4UtmSouth, [lng, lat]);
+        sumE += e;
+        sumN += north;
+        n++;
+      }
+    }
+  }
+  if (n < 1) return null;
+  return { east: sumE / n, north: sumN / n };
+}
+
+export function computeQuadraUtmCentroidFromParsedLots(
+  parsedLots: ParsedCivil3dLot[],
+): { east: number; north: number } | null {
+  const centers = parsedLots
+    .map((l) => computeImportLotUtmCentroid(l))
+    .filter((c): c is { east: number; north: number } => c != null);
+  if (centers.length < 1) return null;
+  let sumE = 0;
+  let sumN = 0;
+  for (const c of centers) {
+    sumE += c.east;
+    sumN += c.north;
+  }
+  return { east: sumE / centers.length, north: sumN / centers.length };
+}
+
 export type QuadraLocationValidation = {
   ok: boolean;
   blocked: boolean;
@@ -712,12 +869,56 @@ export type QuadraLocationValidation = {
   skipped: boolean;
 };
 
+const QUADRA_IMPORT_MAX_M = QUADRA_IMPORT_MAX_KM_FROM_PROJECT * 1000;
+
 /** Compara centroide da quadra importada com o centroide do projeto (bloqueio > 5 km). */
 export function validateQuadraImportAgainstProject(
   lots: Array<{ coords: number[][]; geometrySaved: boolean }>,
   projectCenter: { lat: number; lng: number } | null,
   quadraLabel: string,
+  parsedLots?: ParsedCivil3dLot[],
+  proj4UtmSouth?: string,
+  projectCenterUtm?: { east: number; north: number } | null,
 ): QuadraLocationValidation {
+  const quadraCenterUtm =
+    parsedLots?.length && proj4UtmSouth
+      ? computeQuadraUtmCentroidFromParsedLots(parsedLots)
+      : null;
+
+  if (projectCenterUtm && quadraCenterUtm) {
+    const distanceM = Math.hypot(
+      quadraCenterUtm.east - projectCenterUtm.east,
+      quadraCenterUtm.north - projectCenterUtm.north,
+    );
+    const distanceKm = distanceM / 1000;
+    const ok = distanceM <= QUADRA_IMPORT_MAX_M;
+    console.log("QUADRA_IMPORT_LOCATION_CHECK", {
+      quadra: quadraLabel,
+      mode: "utm",
+      projectCenterUtm,
+      quadraCenterUtm,
+      distanceM: round2(distanceM),
+      distanceKm: round2(distanceKm),
+      maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+      ok,
+    });
+    if (!ok) {
+      console.log("INVALID_QUADRA_LOCATION_AFTER_TXT_PARSE", {
+        quadra: quadraLabel,
+        mode: "utm",
+        distanceKm: round2(distanceKm),
+      });
+    }
+    return {
+      ok,
+      blocked: !ok,
+      distanceKm,
+      quadraCenter: null,
+      projectCenter,
+      skipped: false,
+    };
+  }
+
   const quadraCenter = computeQuadraCentroidFromImportLots(lots);
 
   if (!projectCenter) {
