@@ -37,6 +37,9 @@ const CHANFRE_MAX = 15;
 const MAX_SEGMENT_DISTANCE_M = 1000;
 /** Mesmo lado: variação de azimute entre segmentos consecutivos. */
 const COLINEAR_DEFLECTION_MAX_DEG = 10;
+/** Chanfre de esquina (~45°): segmento seguinte à virada. */
+const CHANFRE_DEFLECTION_MIN_DEG = 40;
+const CHANFRE_DEFLECTION_MAX_DEG = 50;
 /** Mudança de lado (~90°): deflexão na virada. */
 const CORNER_DEFLECTION_MIN_DEG = 80;
 const CORNER_DEFLECTION_MAX_DEG = 100;
@@ -280,11 +283,77 @@ function isColinearDeflection(deflectionDeg: number): boolean {
   return deflectionDeg <= COLINEAR_DEFLECTION_MAX_DEG;
 }
 
+function isChanfreDeflection(deflectionDeg: number): boolean {
+  return (
+    deflectionDeg >= CHANFRE_DEFLECTION_MIN_DEG &&
+    deflectionDeg <= CHANFRE_DEFLECTION_MAX_DEG
+  );
+}
+
 function isCornerDeflection(deflectionDeg: number): boolean {
   return (
     deflectionDeg >= CORNER_DEFLECTION_MIN_DEG &&
     deflectionDeg <= CORNER_DEFLECTION_MAX_DEG
   );
+}
+
+/**
+ * Chanfres de esquina: deflexão 40°–50° → segmento seguinte é chanfre.
+ */
+export function detectChanfreIndexesByDeflection(
+  segments: OfficialLotSegment[],
+  lotLabel?: unknown,
+): number[] {
+  const n = segments.length;
+  if (n < 3) return [];
+
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const chanfreIndexes: number[] = [];
+
+  const inspectVertex = (
+    cur: OfficialLotSegment,
+    next: OfficialLotSegment,
+    afterNext: OfficialLotSegment,
+    closing?: boolean,
+  ) => {
+    const bCur = resolveSegmentBearing(cur, next);
+    const bNext = resolveSegmentBearing(next, afterNext);
+    const deflection = angularDifferenceDeg(bCur, bNext);
+
+    console.log("SEGMENT_DEFLECTION", {
+      lote: lotLabel ?? "?",
+      vertexAfterSegment: cur.segment_index,
+      nextSegment: next.segment_index,
+      bearingCurrent: bCur,
+      bearingNext: bNext,
+      deflectionDeg: deflection,
+      sameSide: isColinearDeflection(deflection),
+      chanfre: isChanfreDeflection(deflection),
+      newSide: isCornerDeflection(deflection),
+      closingVertex: Boolean(closing),
+    });
+
+    if (isChanfreDeflection(deflection)) {
+      const idx = next.segment_index;
+      if (!chanfreIndexes.includes(idx)) {
+        chanfreIndexes.push(idx);
+        console.log("CHANFRE_DETECTED_BY_DEFLECTION", {
+          lote: lotLabel ?? "?",
+          vertexAfterSegment: cur.segment_index,
+          chanfreSegmentIndex: idx,
+          deflectionDeg: deflection,
+          distance: next.distance,
+        });
+      }
+    }
+  };
+
+  for (let i = 0; i < n - 1; i++) {
+    inspectVertex(ordered[i], ordered[i + 1], ordered[(i + 2) % n]);
+  }
+  inspectVertex(ordered[n - 1], ordered[0], ordered[1], true);
+
+  return chanfreIndexes;
 }
 
 export type SegmentDeflectionGroup = {
@@ -348,40 +417,41 @@ export function groupSegmentsByDeflection(
     ];
   }
 
+  const chanfreIndexes = detectChanfreIndexesByDeflection(segments, lotLabel);
+  const chanfreSet = new Set(chanfreIndexes);
+
   const rawGroups: number[][] = [];
   let current: number[] = [ordered[0].segment_index];
 
   for (let i = 0; i < n - 1; i++) {
     const cur = ordered[i];
     const next = ordered[i + 1];
-    const afterNext = ordered[(i + 2) % n];
-    const bCur = resolveSegmentBearing(cur, next);
-    const bNext = resolveSegmentBearing(next, afterNext);
-    const deflection = angularDifferenceDeg(bCur, bNext);
-
-    console.log("SEGMENT_DEFLECTION", {
-      lote: lotLabel ?? "?",
-      vertexAfterSegment: cur.segment_index,
-      nextSegment: next.segment_index,
-      bearingCurrent: bCur,
-      bearingNext: bNext,
-      deflectionDeg: deflection,
-      sameSide: isColinearDeflection(deflection),
-      newSide: isCornerDeflection(deflection),
-    });
-
     const nextIdx = next.segment_index;
+
+    if (chanfreSet.has(nextIdx)) {
+      rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
+      current = [];
+      continue;
+    }
+
+    const afterNext = ordered[(i + 2) % n];
+    const deflection = angularDifferenceDeg(
+      resolveSegmentBearing(cur, next),
+      resolveSegmentBearing(next, afterNext),
+    );
+
     if (isColinearDeflection(deflection)) {
       if (!current.includes(nextIdx)) current.push(nextIdx);
-    } else if (
-      isCornerDeflection(deflection) ||
-      deflection > COLINEAR_DEFLECTION_MAX_DEG
-    ) {
-      rawGroups.push([...current]);
-      current = [nextIdx];
+    } else if (isChanfreDeflection(deflection)) {
+      rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
+      current = [];
+    } else if (isCornerDeflection(deflection)) {
+      rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
+      current = chanfreSet.has(nextIdx) ? [] : [nextIdx];
     }
   }
-  rawGroups.push([...current]);
+  const tail = current.filter((idx) => !chanfreSet.has(idx));
+  if (tail.length > 0) rawGroups.push(tail);
 
   if (rawGroups.length >= 2) {
     const lastSeg = ordered[n - 1];
@@ -599,6 +669,8 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
+  const chanfreIndexes = detectChanfreIndexesByDeflection(segments, lotLabel);
+  const chanfreSet = new Set(chanfreIndexes);
   const groups = groupSegmentsByDeflection(segments, lotLabel);
   if (groups.length === 0) {
     return {
@@ -635,6 +707,9 @@ export function classifySidesByTxtRingPaths(
     }
   }
 
+  const withoutChanfre = (indexes: number[]) =>
+    indexes.filter((idx) => !chanfreSet.has(idx));
+
   const collectGroupPath = (
     fromGroup: number,
     toGroup: number,
@@ -645,14 +720,14 @@ export function classifySidesByTxtRingPaths(
     for (let guard = 0; guard < numGroups; guard++) {
       g = (g + step + numGroups) % numGroups;
       if (g === toGroup) break;
-      indexes.push(...groups[g].segmentIndexes);
+      indexes.push(...withoutChanfre(groups[g].segmentIndexes));
     }
     return indexes;
   };
 
   const pathAIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, 1);
   const pathBIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, -1);
-  const fundoIndexes = [...groups[backGroupIdx].segmentIndexes];
+  const fundoIndexes = withoutChanfre(groups[backGroupIdx].segmentIndexes);
 
   const pathA: RingPathResult = {
     indexes: pathAIndexes,
@@ -685,6 +760,7 @@ export function classifySidesByTxtRingPaths(
     frontGroupIdx,
     backGroupIdx,
     frontSegmentIndex,
+    chanfreIndexes,
     frente: result.frente,
     fundo: result.fundo,
     ladoDireito: result.ladoDireito,
@@ -773,18 +849,42 @@ export function findFrontSegmentIndexFromStreetEdge(
   return idx;
 }
 
+function computeChanfreFromDeflection(
+  segments: OfficialLotSegment[],
+  chanfreIndexes: number[],
+): ChanfreInfo | null {
+  if (chanfreIndexes.length === 0) return null;
+  const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+  const dists: number[] = [];
+  for (const idx of chanfreIndexes) {
+    const d = Number(byIdx.get(idx)?.distance);
+    if (isValidSegmentDistance(d)) dists.push(round2(d));
+  }
+  if (dists.length === 0) return null;
+  const total = round2(dists.reduce((a, b) => a + b, 0));
+  return { total, segments: dists };
+}
+
 function computeChanfreFromTxtPaths(
   segments: OfficialLotSegment[],
   frontIdx: number,
   pathA: RingPathResult,
   pathB: RingPathResult,
   pathFundo: RingPathResult,
+  chanfreByDeflection: number[],
 ): ChanfreInfo | null {
+  const fromDeflection = computeChanfreFromDeflection(
+    segments,
+    chanfreByDeflection,
+  );
+  if (fromDeflection) return fromDeflection;
+
   const used = new Set([
     frontIdx,
     ...pathA.indexes,
     ...pathB.indexes,
     ...pathFundo.indexes,
+    ...chanfreByDeflection,
   ]);
   const chanfreSegs: number[] = [];
 
@@ -855,12 +955,14 @@ function buildMeasuresFromSegments(
   const area =
     Number.isFinite(areaRaw) && areaRaw > 0 ? round2(areaRaw) : null;
 
+  const chanfreIndexes = detectChanfreIndexesByDeflection(segments, label);
   const chanfre = computeChanfreFromTxtPaths(
     segments,
     frontIdx,
     paths.pathA,
     paths.pathB,
     paths.pathFundo,
+    chanfreIndexes,
   );
 
   return {
@@ -1077,11 +1179,15 @@ function classifySegmentForTable(
   return "perimetro";
 }
 
-function chanfreIndexesFromPaths(
+function resolveChanfreSegmentIndexes(
   segments: OfficialLotSegment[],
   frontIdx: number,
   paths: OfficialMeasurePaths,
+  lotLabel?: unknown,
 ): number[] {
+  const byDeflection = detectChanfreIndexesByDeflection(segments, lotLabel);
+  if (byDeflection.length > 0) return byDeflection;
+
   const used = new Set<number>([
     frontIdx,
     ...paths.pathA.indexes,
@@ -1127,7 +1233,12 @@ export function getOfficialLotSegmentTable(
   if (frontIdx >= segments.length) frontIdx = 0;
 
   const paths = classifySidesByTxtRingPaths(segments, frontIdx, label);
-  const chanfreIdx = chanfreIndexesFromPaths(segments, frontIdx, paths);
+  const chanfreIdx = resolveChanfreSegmentIndexes(
+    segments,
+    frontIdx,
+    paths,
+    label,
+  );
   const deflectionGroups = groupSegmentsByDeflection(segments, label);
 
   const rows: OfficialLotSegmentTableRow[] = [];

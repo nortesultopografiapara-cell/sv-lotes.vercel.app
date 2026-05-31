@@ -611,8 +611,8 @@ function drawMetricTable(
     box.w * 0.26,
     box.w * 0.26,
   ];
-  const rowH = 4.2;
-  const headerH = 5;
+  const rowH = 4.6;
+  const headerH = 5.5;
 
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
@@ -620,7 +620,7 @@ function drawMetricTable(
 
   let x = box.x;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5.5);
+  doc.setFontSize(6);
   headers.forEach((h, i) => {
     doc.rect(x, box.y, colWidths[i], headerH);
     doc.text(h, x + colWidths[i] / 2, box.y + 3.5, { align: 'center' });
@@ -628,7 +628,7 @@ function drawMetricTable(
   });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5);
+  doc.setFontSize(5.5);
   const maxRows = Math.min(
     rows.length,
     Math.floor((box.h - headerH) / rowH),
@@ -649,9 +649,9 @@ function drawMetricTable(
       doc.rect(x, y, colWidths[ci], rowH);
       const isCoordCol = ci >= 4;
       const longMsg = cell.includes('não disponíveis');
-      if (isCoordCol && longMsg) doc.setFontSize(3.8);
-      else doc.setFontSize(5);
-      doc.text(cell, x + colWidths[ci] / 2, y + 2.9, {
+      if (isCoordCol && longMsg) doc.setFontSize(4.2);
+      else doc.setFontSize(5.5);
+      doc.text(cell, x + colWidths[ci] / 2, y + 3.1, {
         align: 'center',
         maxWidth: colWidths[ci] - 1,
       });
@@ -925,12 +925,11 @@ export async function generateLotSheetPdf(
   doc.rect(innerX, innerY, innerW, innerH);
 
   const footerH = 46;
-  const locationH = 36;
   const scaleBandH = 9;
-  const tableRowH = 4.2;
-  const tableHeaderH = 5;
-  const tableRows = Math.max(3, Math.min(input.metricRows.length, 8));
-  const tableH = tableHeaderH + tableRows * tableRowH + 2;
+  const tableRowH = 4.6;
+  const tableHeaderH = 5.5;
+  const tableRows = Math.max(4, Math.min(input.metricRows.length, 12));
+  const tableH = tableHeaderH + tableRows * tableRowH + 3;
   const gap = 2;
   const contentX = innerX + 3;
   const contentW = innerW - 6;
@@ -942,29 +941,22 @@ export async function generateLotSheetPdf(
     h: footerH,
   };
 
-  const locationBox: Box = {
-    x: contentX,
-    y: footerBox.y - gap - locationH,
-    w: contentW,
-    h: locationH,
-  };
-
-  const scaleY = locationBox.y - gap - scaleBandH;
   const tableBox: Box = {
     x: contentX,
-    y: scaleY - gap - tableH,
+    y: footerBox.y - gap - tableH,
     w: contentW,
     h: tableH,
   };
 
+  const scaleY = tableBox.y - gap - scaleBandH;
+
   const mainTopY = innerY + 3;
-  const mainTargetH = innerH * 0.65;
   const mainAvailableH = tableBox.y - gap - mainTopY;
   const mainBox: Box = {
     x: contentX,
     y: mainTopY,
     w: contentW,
-    h: Math.max(100, Math.min(mainTargetH, mainAvailableH)),
+    h: Math.max(120, mainAvailableH),
   };
 
   const project = input.project;
@@ -1050,7 +1042,6 @@ export async function generateLotSheetPdf(
 
   drawMetricTable(doc, tableBox, input.metricRows);
   drawGraphicScale(doc, contentX, scaleY + 4, contentW, scaleDenom);
-  drawQuadraLocation(doc, locationBox, input.blockSketch, input.quadraStreetNames);
 
   const techName = String(tech?.name || '').trim() || 'Não informado';
   const techTitle = String(tech?.title || '').trim();
