@@ -15,7 +15,7 @@ import {
 
 /** Marcador de build — visível no console para confirmar deploy. */
 export const AUTOMATIC_CONFRONTATION_BUILD_ID =
-  'v1.9.5-confrontation-diagnostic-forced';
+  'v1.9.6-confrontation-field-compare';
 
 if (typeof window !== 'undefined') {
   console.error(

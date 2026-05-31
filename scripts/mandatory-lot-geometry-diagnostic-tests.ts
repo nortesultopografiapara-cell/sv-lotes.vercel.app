@@ -6,8 +6,10 @@
 import {
   analyzeLotGeometryBlock,
   buildLotGeometryDiagnosticSummary,
+  buildLotPerimeterFieldCompareRow,
   gisMapRingFromBlock,
 } from '../lib/lotGeometryDiagnostic';
+import { explainConfrontationValidation } from '../lib/lotGeometryNormalize';
 
 const LAT0 = -23.5;
 const LNG0 = -46.6;
@@ -65,6 +67,31 @@ total++;
   const a = analyzeLotGeometryBlock(b);
   const ok = a.segs.ok && a.perimeter.field === 'geometry';
   console.log(`${ok ? 'PASSOU' : 'FALHOU'} — segments_json string + perímetro geometry`);
+  if (ok) pass++;
+}
+
+total++;
+{
+  const segmentsOnly = {
+    id: 'seg-only',
+    number: '88',
+    geometry: null,
+    segments_json: [
+      { north: 9336441, east: 637557, distance: 10 },
+      { north: 9336442, east: 637558, distance: 24 },
+      { north: 9336465, east: 637558, distance: 10 },
+      { north: 9336465, east: 637557, distance: 24 },
+    ],
+  };
+  const row = buildLotPerimeterFieldCompareRow(segmentsOnly);
+  const ok =
+    !row.gisMapOk &&
+    !row.confrontationValid &&
+    row.segments_jsonExists &&
+    row.pdfOfficialSource === 'segments_json';
+  console.log(
+    `${ok ? 'PASSOU' : 'FALHOU'} — só segments_json: prancha OK, mapa/confrontação geometry`,
+  );
   if (ok) pass++;
 }
 

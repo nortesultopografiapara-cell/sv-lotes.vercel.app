@@ -3,15 +3,33 @@
  * Não altera confrontação nem importação.
  */
 
+import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
 import { parseOfficialSegmentsFromBlock } from '@/lib/officialLotMeasurements';
 import {
+  buildOfficialSheetLocalGeometry,
+  resolveRealCoordinateRing,
+} from '@/lib/lotSheetCoordinates';
+import {
+  explainConfrontationValidation,
   normalizeLotGeometry,
   normalizeLotSegments,
   validateConfrontationLot,
 } from '@/lib/lotGeometryNormalize';
 
 export const LOT_GEOMETRY_DIAGNOSTIC_BUILD_ID =
-  'v1.9.5-confrontation-diagnostic-forced';
+  'v1.9.6-confrontation-field-compare';
+
+/** Campos usados por cada parte do sistema (documentação em runtime). */
+export const PERIMETER_SOURCE_BY_SUBSYSTEM = {
+  gisMap:
+    'block.geometry — GeoJSON coordinates[0] como [lng,lat], filtro isValidLatLngPair (>= 3 pontos)',
+  confrontation:
+    'block.geometry — normalizeLotGeometry(coordPairToLatLng) + ringPointsValid (>= 4 pontos); fallback block.bounds',
+  pdfPrancha:
+    'block.segments_json (UTM oficial TXT) — resolveRealCoordinateRing / buildOfficialSheetLocalGeometry',
+  areaMedidas:
+    'block.segments_json — getOfficialLotMeasurements (não usa validateConfrontationLot)',
+} as const;
 
 if (typeof window !== 'undefined') {
   console.error(
@@ -31,8 +49,34 @@ export type LotGeometryDiagnosticSummary = {
   gisMapRingOk: number;
   confrontationValid: number;
   confrontationInvalid: number;
+  gisOkConfrontationRejected: number;
+  rejectionByReason: Record<string, number>;
+  pdfUsesSegmentsJson: number;
   recommendedField: string;
   recommendedReason: string;
+};
+
+export type LotPerimeterFieldCompareRow = {
+  'lot.id': unknown;
+  'lot.number': unknown;
+  geometryExists: boolean;
+  'geometry.type': string | null;
+  'geometry.coordinates length': number;
+  segments_jsonExists: boolean;
+  segments_jsonLength: number;
+  coordinates_utm_jsonExists: boolean;
+  coordinates_utm_jsonLength: number;
+  gisMapOk: boolean;
+  gisMapRingPoints: number;
+  confrontationValid: boolean;
+  confrontationRejectionReason: string | null;
+  confrontationNormalizedRingPoints: number;
+  pdfOfficialSource: string;
+  pdfOfficialVertices: number;
+  officialMeasuresOk: boolean;
+  perimeterOfficialForMap: string;
+  perimeterOfficialForPdf: string;
+  perimeterFailsConfrontationBecause: string | null;
 };
 
 const KNOWN_GEOM_KEYS = [
@@ -105,6 +149,131 @@ export function gisMapRingFromBlock(block: Record<string, unknown>): {
     geometryType: gType,
     rawCoordCount: ringRaw.length,
   };
+}
+
+function geometryRawMeta(block: Record<string, unknown>): {
+  exists: boolean;
+  type: string | null;
+  coordinatesLength: number;
+} {
+  const raw = parseJsonMaybe(block.geometry) ?? block.geometry;
+  if (raw == null) {
+    return { exists: false, type: null, coordinatesLength: 0 };
+  }
+  if (typeof raw !== 'object') {
+    return { exists: true, type: typeof raw, coordinatesLength: 0 };
+  }
+  const geom = raw as { type?: string; coordinates?: unknown };
+  const type = geom.type ? String(geom.type) : null;
+  let coordinatesLength = 0;
+  const coords = geom.coordinates;
+  if (type === 'Polygon' && Array.isArray(coords) && Array.isArray(coords[0])) {
+    coordinatesLength = coords[0].length;
+  } else if (
+    type === 'MultiPolygon' &&
+    Array.isArray(coords) &&
+    Array.isArray(coords[0]) &&
+    Array.isArray(coords[0][0])
+  ) {
+    coordinatesLength = coords[0][0].length;
+  } else if (type === 'LineString' && Array.isArray(coords)) {
+    coordinatesLength = coords.length;
+  } else if (Array.isArray(coords)) {
+    coordinatesLength = coords.length;
+  }
+  return { exists: true, type, coordinatesLength };
+}
+
+function jsonArrayLength(value: unknown): number {
+  const parsed = parseJsonMaybe(value) ?? value;
+  return Array.isArray(parsed) ? parsed.length : 0;
+}
+
+/** Comparação campo a campo — mapa vs confrontação vs prancha (10 primeiros lotes). */
+export function buildLotPerimeterFieldCompareRow(
+  block: Record<string, unknown>,
+): LotPerimeterFieldCompareRow {
+  const geomMeta = geometryRawMeta(block);
+  const gis = gisMapRingFromBlock(block);
+  const validation = validateConfrontationLot(block);
+  const explain = explainConfrontationValidation(block);
+  const pdfRing = resolveRealCoordinateRing(block, null);
+  const sheet = buildOfficialSheetLocalGeometry(block);
+  const measures = getOfficialLotMeasurements(block, block.number);
+  const segsLen = jsonArrayLength(block.segments_json);
+  const utmLen = jsonArrayLength(block.coordinates_utm_json);
+
+  let failsBecause: string | null = null;
+  if (gis.ok && !validation.valid) {
+    if (!explain.normalizeOk) {
+      failsBecause = `normalizeLotGeometry falhou (${explain.normalizeReason})`;
+    } else if (!explain.ringPointsValid) {
+      failsBecause = `GIS aceita ${gis.ring.length} pt(s) lat/lng; confrontação exige >= 4 após normalize (tem ${explain.normalizedRingLength})`;
+    } else {
+      failsBecause = explain.rejectionReason || validation.reason || 'desconhecido';
+    }
+  }
+
+  return {
+    'lot.id': block.id,
+    'lot.number': block.number ?? block.lot,
+    geometryExists: geomMeta.exists,
+    'geometry.type': geomMeta.type,
+    'geometry.coordinates length': geomMeta.coordinatesLength,
+    segments_jsonExists: segsLen > 0,
+    segments_jsonLength: segsLen,
+    coordinates_utm_jsonExists: utmLen > 0,
+    coordinates_utm_jsonLength: utmLen,
+    gisMapOk: gis.ok,
+    gisMapRingPoints: gis.ring.length,
+    confrontationValid: validation.valid,
+    confrontationRejectionReason:
+      validation.reason ?? explain.rejectionReason ?? null,
+    confrontationNormalizedRingPoints: explain.normalizedRingLength,
+    pdfOfficialSource: sheet
+      ? 'segments_json'
+      : pdfRing.available
+        ? pdfRing.source
+        : 'unavailable',
+    pdfOfficialVertices: sheet
+      ? sheet.utmRing.length
+      : pdfRing.ring.length,
+    officialMeasuresOk: Boolean(
+      measures.frente || measures.fundo || measures.ladoDireito,
+    ),
+    perimeterOfficialForMap: PERIMETER_SOURCE_BY_SUBSYSTEM.gisMap,
+    perimeterOfficialForPdf: PERIMETER_SOURCE_BY_SUBSYSTEM.pdfPrancha,
+    perimeterFailsConfrontationBecause: failsBecause,
+  };
+}
+
+export function logConfrontationFieldCompare(
+  blocks: Record<string, unknown>[],
+  options?: { sampleCount?: number },
+): LotPerimeterFieldCompareRow[] {
+  const list = Array.isArray(blocks) ? blocks : [];
+  const sampleCount = options?.sampleCount ?? 10;
+  const sorted = [...list].sort((a, b) => {
+    const na = Number(a.number ?? a.lot ?? 0);
+    const nb = Number(b.number ?? b.lot ?? 0);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a.number ?? '').localeCompare(String(b.number ?? ''));
+  });
+
+  const rows: LotPerimeterFieldCompareRow[] = [];
+  console.error('[CONFRONTATION FIELD COMPARE] subsystem sources', {
+    ...PERIMETER_SOURCE_BY_SUBSYSTEM,
+    confrontationValidation:
+      'validateConfrontationLot → normalizeLotGeometry(block.geometry)',
+  });
+
+  for (let i = 0; i < Math.min(sampleCount, sorted.length); i++) {
+    const row = buildLotPerimeterFieldCompareRow(sorted[i]);
+    rows.push(row);
+    console.error('[CONFRONTATION FIELD COMPARE]', row);
+  }
+
+  return rows;
 }
 
 function parseJsonMaybe(value: unknown): unknown {
@@ -310,11 +479,15 @@ export function buildLotGeometryDiagnosticSummary(
   let gisMapRingOk = 0;
   let confrontationValid = 0;
   let confrontationInvalid = 0;
+  let gisOkConfrontationRejected = 0;
+  let pdfUsesSegmentsJson = 0;
+  const rejectionByReason: Record<string, number> = {};
 
   const fieldVotes = new Map<string, number>();
 
   for (const block of blocks) {
     const a = analyzeLotGeometryBlock(block);
+    const pdfRing = resolveRealCoordinateRing(block, null);
 
     if (a.geomStore.empty) geometryEmpty++;
     else if (a.geomStore.ok) geometryOk++;
@@ -326,7 +499,19 @@ export function buildLotGeometryDiagnosticSummary(
 
     if (a.gis.ok) gisMapRingOk++;
     if (a.validation.valid) confrontationValid++;
-    else confrontationInvalid++;
+    else {
+      confrontationInvalid++;
+      const reason = a.validation.reason || 'geometria inválida';
+      rejectionByReason[reason] = (rejectionByReason[reason] || 0) + 1;
+    }
+
+    if (a.gis.ok && !a.validation.valid) gisOkConfrontationRejected++;
+    if (
+      pdfRing.source === 'segments_json' ||
+      buildOfficialSheetLocalGeometry(block)
+    ) {
+      pdfUsesSegmentsJson++;
+    }
 
     fieldVotes.set(
       a.perimeter.field,
@@ -347,9 +532,15 @@ export function buildLotGeometryDiagnosticSummary(
     gisMapRingOk,
     confrontationValid,
     confrontationInvalid,
-    recommendedField: topField?.[0] ?? 'geometry',
+    gisOkConfrontationRejected,
+    rejectionByReason,
+    pdfUsesSegmentsJson,
+    recommendedField:
+      gisOkConfrontationRejected > 0 ? 'segments_json' : topField?.[0] ?? 'geometry',
     recommendedReason:
-      'Para este projeto, a maioria dos lotes deve usar o campo indicado abaixo como fonte do perímetro na confrontação automática.',
+      gisOkConfrontationRejected > 0
+        ? 'Mapa usa geometry (lat/lng). Prancha/medidas usam segments_json (UTM). Confrontação rejeita por regra diferente em normalizeLotGeometry/ringPointsValid(>=4).'
+        : 'Para este projeto, a maioria dos lotes deve usar o campo indicado abaixo como fonte do perímetro na confrontação automática.',
   };
 }
 
@@ -408,6 +599,9 @@ function emptyDiagnosticSummary(): LotGeometryDiagnosticSummary {
     gisMapRingOk: 0,
     confrontationValid: 0,
     confrontationInvalid: 0,
+    gisOkConfrontationRejected: 0,
+    rejectionByReason: {},
+    pdfUsesSegmentsJson: 0,
     recommendedField: 'nenhum',
     recommendedReason: 'diagnóstico não executado',
   };
@@ -440,6 +634,7 @@ export function runLotGeometryDiagnosticReport(
 
   try {
     const sampleCount = options?.sampleCount ?? 10;
+    const fieldCompareRows = logConfrontationFieldCompare(list, { sampleCount });
     const summary = buildLotGeometryDiagnosticSummary(list);
 
     const sorted = [...list].sort((a, b) => {
@@ -459,6 +654,8 @@ export function runLotGeometryDiagnosticReport(
       projectId,
       summary,
       mismatch,
+      subsystemSources: PERIMETER_SOURCE_BY_SUBSYSTEM,
+      fieldCompareRows,
       samples: sorted.slice(0, sampleCount).map((block) => {
         try {
           return debugPayloadForLot(block);
@@ -523,6 +720,16 @@ export function runLotGeometryDiagnosticReport(
     console.warn(
       '[LOT GEOMETRY DEBUG] DIVERGÊNCIA mapa OK mas confrontação rejeita',
       mismatch,
+    );
+    console.error(
+      '[LOT GEOMETRY DEBUG] REJEIÇÃO POR MOTIVO',
+      summary.rejectionByReason,
+    );
+    console.error(
+      '[LOT GEOMETRY DEBUG] PRANCHA USA segments_json',
+      summary.pdfUsesSegmentsJson,
+      '/',
+      summary.total,
     );
     console.warn(
       '[LOT GEOMETRY DEBUG] CAMPO RECOMENDADO PARA CONFRONTAÇÃO',

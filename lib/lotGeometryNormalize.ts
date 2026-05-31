@@ -296,6 +296,55 @@ function ringPointsValid(ring: [number, number][]): boolean {
   return true;
 }
 
+/** Explica por que a confrontação aceita ou rejeita (somente diagnóstico). */
+export function explainConfrontationValidation(
+  block: Record<string, unknown>,
+): {
+  /** Campo(s) lidos por validateConfrontationLot / normalizeLotGeometry. */
+  confrontationReads: string;
+  normalizeOk: boolean;
+  normalizeReason?: string;
+  normalizedRingLength: number;
+  ringPointsValid: boolean;
+  ringPointsValidRule: string;
+  valid: boolean;
+  rejectionReason?: string;
+} {
+  const confrontationReads =
+    'block.geometry (GeoJSON via normalizeLotGeometry) → fallback block.bounds';
+  const geom = normalizeLotGeometry(block);
+
+  if (!geom.ok || !Array.isArray(geom.ring)) {
+    return {
+      confrontationReads,
+      normalizeOk: false,
+      normalizeReason: geom.reason,
+      normalizedRingLength: 0,
+      ringPointsValid: false,
+      ringPointsValidRule: 'anel com >= 4 pares [lat,lng] finitos',
+      valid: false,
+      rejectionReason: geom.reason || 'geometria inválida',
+    };
+  }
+
+  const ringValid = ringPointsValid(geom.ring);
+  const rejectionReason = !ringValid
+    ? geom.ring.length < 4
+      ? 'pontos insuficientes'
+      : 'geometria inválida'
+    : undefined;
+
+  return {
+    confrontationReads,
+    normalizeOk: true,
+    normalizedRingLength: geom.ring.length,
+    ringPointsValid: ringValid,
+    ringPointsValidRule: 'anel com >= 4 pares [lat,lng] finitos',
+    valid: ringValid,
+    rejectionReason,
+  };
+}
+
 /**
  * Valida lote antes da confrontação automática.
  */
