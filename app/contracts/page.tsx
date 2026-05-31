@@ -36,6 +36,7 @@ import { generateContractHTML } from "@/lib/contractTemplate";
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
+import { removeTrailingBlankPdfPages } from "@/lib/contractPdfPostProcess";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
@@ -642,6 +643,11 @@ export default function ContractsPage() {
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         })
+        .toPdf()
+        .get("pdf")
+        .then((pdf: { internal: { getNumberOfPages: () => number; pages?: unknown[] }; deletePage: (n: number) => void; setPage: (n: number) => void }) => {
+          removeTrailingBlankPdfPages(pdf);
+        })
         .save();
     } catch (e) {
       console.error(e);
@@ -805,6 +811,7 @@ export default function ContractsPage() {
           
           pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 8, { align: 'right' });
         }
+        removeTrailingBlankPdfPages(pdf);
       }).save();
     } catch (e) {
       alert(

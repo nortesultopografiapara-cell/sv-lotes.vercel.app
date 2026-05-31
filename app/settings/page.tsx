@@ -14,18 +14,23 @@ export default function SettingsPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
   const techSignatureInputRef = useRef<HTMLInputElement>(null);
+  const techStampInputRef = useRef<HTMLInputElement>(null);
   
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
   const [uploadingTechSignature, setUploadingTechSignature] = useState(false);
+  const [uploadingTechStamp, setUploadingTechStamp] = useState(false);
   const [technical, setTechnical] = useState<Record<string, string>>({
     name: '',
     title: '',
-    registry_type: 'CREA',
-    registry_number: '',
+    crea: '',
+    cau: '',
+    cft: '',
+    cpf: '',
     phone: '',
     email: '',
     signature_url: '',
+    stamp_url: '',
   });
   const [technicalId, setTechnicalId] = useState<string | null>(null);
 
@@ -55,14 +60,19 @@ export default function SettingsPage() {
 
       if (!techErr && tech) {
         setTechnicalId(tech.id);
+        const rt = tech.registry_type || '';
+        const rn = tech.registry_number || '';
         setTechnical({
           name: tech.name || '',
           title: tech.title || '',
-          registry_type: tech.registry_type || 'CREA',
-          registry_number: tech.registry_number || '',
+          crea: tech.crea || (rt === 'CREA' ? rn : ''),
+          cau: tech.cau || (rt === 'CAU' ? rn : ''),
+          cft: tech.cft || (rt === 'CFT' ? rn : ''),
+          cpf: tech.cpf || '',
           phone: tech.phone || '',
           email: tech.email || '',
           signature_url: tech.signature_url || '',
+          stamp_url: tech.stamp_url || '',
         });
       }
 
@@ -138,6 +148,14 @@ export default function SettingsPage() {
     setUploadingTechSignature(false);
   };
 
+  const handleTechStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length || !company?.id) return;
+    setUploadingTechStamp(true);
+    const url = await uploadImage(e.target.files[0], 'signature');
+    if (url) setTechnical((prev) => ({ ...prev, stamp_url: url }));
+    setUploadingTechStamp(false);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!company?.id) return;
@@ -167,15 +185,29 @@ export default function SettingsPage() {
      }
 
      if (technical.name.trim()) {
+       const primaryType = technical.crea
+         ? 'CREA'
+         : technical.cft
+           ? 'CFT'
+           : technical.cau
+             ? 'CAU'
+             : null;
+       const primaryNumber =
+         technical.crea || technical.cft || technical.cau || null;
        const techPayload = {
          company_id: company.id,
          name: technical.name.trim(),
          title: technical.title || null,
-         registry_type: technical.registry_type || null,
-         registry_number: technical.registry_number || null,
+         crea: technical.crea || null,
+         cau: technical.cau || null,
+         cft: technical.cft || null,
+         cpf: technical.cpf || null,
+         registry_type: primaryType,
+         registry_number: primaryNumber,
          phone: technical.phone || null,
          email: technical.email || null,
          signature_url: technical.signature_url || null,
+         stamp_url: technical.stamp_url || null,
          active: true,
          updated_at: new Date().toISOString(),
        };
@@ -332,29 +364,35 @@ export default function SettingsPage() {
         <div className="space-y-4">
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
              <HardHat className="w-5 h-5 text-amber-400" />
-             Responsável Técnico (Prancha de Lote)
+             Responsável Técnico
            </h2>
-           <p className="text-xs text-gray-500">Usado na geração automática da prancha PDF no Mapa GIS.</p>
+           <p className="text-xs text-gray-500">
+             Alimenta automaticamente prancha PDF, memorial, contratos, relatórios e recibos técnicos.
+           </p>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Nome *</label>
-                 <input type="text" name="name" value={technical.name} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Nome do Responsável Técnico *</label>
+                 <input type="text" name="name" value={technical.name} onChange={handleTechChange} placeholder="Severino José de França" className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Título profissional</label>
-                 <input type="text" name="title" value={technical.title} onChange={handleTechChange} placeholder="Eng. Civil" className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Cargo / Função</label>
+                 <input type="text" name="title" value={technical.title} onChange={handleTechChange} placeholder="Técnico em Agrimensura" className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">CFT / CREA / CAU</label>
-                 <select name="registry_type" value={technical.registry_type} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]">
-                    <option value="CREA">CREA</option>
-                    <option value="CAU">CAU</option>
-                    <option value="CFT">CFT</option>
-                 </select>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">CREA</label>
+                 <input type="text" name="crea" value={technical.crea} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Número do registro</label>
-                 <input type="text" name="registry_number" value={technical.registry_number} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">CAU</label>
+                 <input type="text" name="cau" value={technical.cau} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">CFT</label>
+                 <input type="text" name="cft" value={technical.cft} onChange={handleTechChange} placeholder="12345678900" className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
+              </div>
+              <div>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">CPF</label>
+                 <input type="text" name="cpf" value={technical.cpf} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div>
                  <label className="block text-xs font-semibold text-gray-400 mb-1">Telefone</label>
@@ -365,7 +403,7 @@ export default function SettingsPage() {
                  <input type="email" name="email" value={technical.email} onChange={handleTechChange} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" />
               </div>
               <div className="md:col-span-2">
-                 <label className="block text-xs font-semibold text-gray-400 mb-1">Assinatura</label>
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Assinatura Digital (PNG transparente)</label>
                  <div className="flex items-center gap-4">
                    <div className="w-28 h-14 rounded-md border border-[var(--color-border)] bg-black/20 flex items-center justify-center overflow-hidden">
                      {technical.signature_url ? (
@@ -374,10 +412,27 @@ export default function SettingsPage() {
                        <span className="text-[10px] text-gray-500">Sem assinatura</span>
                      )}
                    </div>
-                   <input type="file" accept="image/*" className="hidden" ref={techSignatureInputRef} onChange={handleTechSignatureUpload} />
+                   <input type="file" accept="image/png,image/*" className="hidden" ref={techSignatureInputRef} onChange={handleTechSignatureUpload} />
                    <button type="button" onClick={() => techSignatureInputRef.current?.click()} disabled={uploadingTechSignature} className="px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg text-sm font-medium flex items-center gap-2">
                      {uploadingTechSignature ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                      Upload assinatura
+                   </button>
+                 </div>
+              </div>
+              <div className="md:col-span-2">
+                 <label className="block text-xs font-semibold text-gray-400 mb-1">Carimbo Técnico (PNG opcional)</label>
+                 <div className="flex items-center gap-4">
+                   <div className="w-28 h-14 rounded-md border border-[var(--color-border)] bg-black/20 flex items-center justify-center overflow-hidden">
+                     {technical.stamp_url ? (
+                       <img src={technical.stamp_url} alt="Carimbo RT" className="w-full h-full object-contain" />
+                     ) : (
+                       <span className="text-[10px] text-gray-500">Sem carimbo</span>
+                     )}
+                   </div>
+                   <input type="file" accept="image/png,image/*" className="hidden" ref={techStampInputRef} onChange={handleTechStampUpload} />
+                   <button type="button" onClick={() => techStampInputRef.current?.click()} disabled={uploadingTechStamp} className="px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg text-sm font-medium flex items-center gap-2">
+                     {uploadingTechStamp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                     Upload carimbo
                    </button>
                  </div>
               </div>

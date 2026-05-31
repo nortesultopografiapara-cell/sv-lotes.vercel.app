@@ -10,6 +10,7 @@ import {
   coordinatesUnavailableMessage,
   resolveRealCoordinateRing,
 } from '@/lib/lotSheetCoordinates';
+import { formatAzimuthDms } from '@/lib/azimuthFormat';
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
   getOfficialLotSegmentTable,
@@ -680,9 +681,7 @@ function azimuthFromSegment(dx: number, dy: number): number {
 }
 
 function formatAzimuth(deg: number): string {
-  const d = Math.floor(deg);
-  const min = Math.round((deg - d) * 60);
-  return `${String(d).padStart(3, '0')}°${String(min).padStart(2, '0')}'`;
+  return formatAzimuthDms(deg);
 }
 
 function formatCoordValue(val: number): string {

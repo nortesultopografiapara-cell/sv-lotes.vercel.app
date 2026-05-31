@@ -34,6 +34,11 @@ import {
   officialSegmentTableToEdgeLabels,
 } from '@/lib/officialLotMeasurements';
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
+import { resolveLotSideConfrontants } from '@/lib/lotConfrontations';
+import {
+  formatMemorialTechnicalBlock,
+  normalizeTechnicalResponsible,
+} from '@/lib/technicalResponsible';
 
 export type LotSheetGeometry = {
   /** Anel UTM [E, N] dos vértices oficiais TXT */
@@ -95,6 +100,8 @@ export type LotSheetPayload = {
   sideConfrontants: LotSheetSideConfrontants;
   lotAddressLine: string;
   memorialFrontClause: string;
+  /** HTML do responsável técnico para memorial descritivo (próxima etapa). */
+  memorialTechnicalHtml: string;
   /** Distâncias oficiais por aresta (índice = segment_index) para o croqui PDF. */
   officialEdgeLengths: string[];
   ignoredSegmentNote: string | null;
@@ -533,10 +540,13 @@ export async function loadLotSheetPayload(
           localRing.length - 1,
         );
   const validation = createLotSheetValidation();
-  const sideConfrontants = buildSideConfrontants(
-    block as Record<string, unknown>,
+  const techProfile = normalizeTechnicalResponsible(
+    (techRows?.[0] as Record<string, unknown>) || null,
+  );
+
+  const sideConfrontants = resolveLotSideConfrontants(
+    blockRecord,
     params.blockId,
-    ring,
     blocksList,
     guidesList,
   );
@@ -578,7 +588,6 @@ export async function loadLotSheetPayload(
     ownerDocument,
     ownerDetails,
     company: (company as Record<string, unknown>) || null,
-    technicalResponsible: (techRows?.[0] as Record<string, unknown>) || null,
     neighbors,
     cardinalConfrontants,
     blockSketch,
@@ -616,6 +625,8 @@ export async function loadLotSheetPayload(
     sideConfrontants,
     lotAddressLine,
     memorialFrontClause,
+    memorialTechnicalHtml: formatMemorialTechnicalBlock(techProfile),
+    technicalResponsible: techProfile as unknown as Record<string, unknown>,
     officialEdgeLengths,
     ignoredSegmentNote,
   };

@@ -12,6 +12,12 @@ import {
   loadImageAsBase64,
   loadReportHeaderLogoBase64,
 } from '@/lib/reportBranding';
+import {
+  formatTechnicalRegistryLine,
+  hasTechnicalResponsible,
+  normalizeTechnicalResponsible,
+  type TechnicalResponsibleProfile,
+} from '@/lib/technicalResponsible';
 
 export type GenerateLotSheetPdfInput = LotSheetPayload;
 
@@ -818,12 +824,10 @@ function drawMetricTopoFooter(
     area: string;
     scale: string;
     date: string;
-    techName: string;
-    techTitle: string;
-    cft: string;
-    trt: string;
+    tech: TechnicalResponsibleProfile;
     logoBase64: string | null;
     signatureBase64: string | null;
+    stampBase64: string | null;
   },
 ) {
   const { x, y, w, h } = box;
@@ -886,22 +890,44 @@ function drawMetricTopoFooter(
   const techBoxY = y + 14;
   const techBoxH = h - 16;
   doc.rect(rx, techBoxY, rw, techBoxH);
-  label(rx + 2, techBoxY + 4, 'RESP. TÉC.:', true);
+  label(rx + 2, techBoxY + 4, 'RESPONSÁVEL TÉCNICO', true, 5.5);
 
+  if (!hasTechnicalResponsible(data.tech)) {
+    label(rx + 2, techBoxY + 11, 'Não informado', false, 5.5);
+    return;
+  }
+
+  const tech = data.tech;
   let ty = techBoxY + 9;
+  label(rx + 2, ty, `Nome: ${tech.name || '—'}`, false, 5);
+  ty += 3.8;
+  if (tech.title) {
+    label(rx + 2, ty, `Cargo: ${tech.title}`, false, 5);
+    ty += 3.8;
+  }
+  const reg = formatTechnicalRegistryLine(tech);
+  label(rx + 2, ty, `CREA/CFT/CAU: ${reg}`, false, 4.8);
+  ty += 3.8;
+
+  const imgX = rx + rw - 28;
+  let imgY = techBoxY + 6;
   if (data.signatureBase64) {
     try {
-      doc.addImage(data.signatureBase64, 'PNG', rx + 2, techBoxY + 5, 24, 9);
-      ty = techBoxY + 15;
+      doc.addImage(data.signatureBase64, 'PNG', imgX, imgY, 24, 9);
+      label(rx + 2, techBoxY + techBoxH - 14, 'Assinatura:', false, 4.5);
+      imgY += 10;
     } catch {
       /* ignore */
     }
   }
-
-  label(rx + 2, ty, data.techName, false, 5.5);
-  if (data.techTitle) label(rx + 2, ty + 4, data.techTitle, false, 5);
-  const regLine = `${data.techName}, ${data.techTitle || 'Responsável Técnico'}, CFT: ${data.cft}${data.trt !== '—' ? `, TRT: ${data.trt}` : ''}`;
-  label(rx + 2, y + h - 3, regLine, false, 4.5);
+  if (data.stampBase64) {
+    try {
+      doc.addImage(data.stampBase64, 'PNG', imgX, imgY, 22, 10);
+      label(rx + 2, techBoxY + techBoxH - 8, 'Carimbo:', false, 4.5);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function drawLotSheetLegalDisclaimer(doc: jsPDF, box: Box) {
@@ -947,9 +973,11 @@ export async function generateLotSheetPdf(
   const logoBase64 = await loadReportHeaderLogoBase64(
     (company?.logo_url as string) || null,
   );
-  const signatureBase64 = await loadOptionalImage(
-    tech?.signature_url as string | undefined,
+  const techProfile = normalizeTechnicalResponsible(
+    tech as Record<string, unknown> | null,
   );
+  const signatureBase64 = await loadOptionalImage(techProfile.signature_url);
+  const stampBase64 = await loadOptionalImage(techProfile.stamp_url);
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -1090,12 +1118,6 @@ export async function generateLotSheetPdf(
   drawMetricTable(doc, tableBox, input.metricRows);
   drawGraphicScale(doc, contentX, scaleY + 4, contentW, scaleDenom);
 
-  const techName = String(tech?.name || '').trim() || 'Não informado';
-  const techTitle = String(tech?.title || '').trim();
-  const cft = String(tech?.registry_number || '').trim() || 'Não informado';
-  const trt =
-    String(tech?.trt || tech?.art_number || tech?.trt_number || '').trim() || '—';
-
   drawMetricTopoFooter(doc, footerBox, {
     projectName,
     owner: input.ownerDetails,
@@ -1104,12 +1126,10 @@ export async function generateLotSheetPdf(
     area: input.measures.area,
     scale: formatScaleLabel(input.scaleLabel),
     date: new Date().toLocaleDateString('pt-BR'),
-    techName: techName.toUpperCase(),
-    techTitle: techTitle.toUpperCase(),
-    cft,
-    trt,
+    tech: techProfile,
     logoBase64,
     signatureBase64,
+    stampBase64,
   });
 
   drawLotSheetLegalDisclaimer(doc, disclaimerBox);

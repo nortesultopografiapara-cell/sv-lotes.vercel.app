@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Loader2, X, FileDown, Eye, Printer } from 'lucide-react';
+import { Loader2, X, FileDown, Eye, Printer, MapPin } from 'lucide-react';
+import { CorrectConfrontationsModal } from '@/components/map/CorrectConfrontationsModal';
 import { supabase } from '@/lib/supabase';
 import { loadLotSheetPayload } from '@/lib/lotSheetData';
 import {
@@ -33,6 +34,13 @@ export function LotSheetPrintModal({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confrontOpen, setConfrontOpen] = useState(false);
+  const [confrontCtx, setConfrontCtx] = useState<{
+    block: Record<string, unknown>;
+    blocks: Record<string, unknown>[];
+    guides: Record<string, unknown>[];
+  } | null>(null);
+  const [confrontLoading, setConfrontLoading] = useState(false);
 
   const runGenerate = useCallback(
     async (mode: 'download' | 'preview') => {
@@ -66,6 +74,40 @@ export function LotSheetPrintModal({
     },
     [lot, projectId, tenantId],
   );
+
+  const openConfrontations = useCallback(async () => {
+    setConfrontLoading(true);
+    setError(null);
+    try {
+      const { data: block, error: blockErr } = await supabase
+        .from('blocks')
+        .select('*')
+        .eq('id', lot.id)
+        .single();
+      if (blockErr || !block) throw new Error(blockErr?.message || 'Lote não encontrado');
+
+      const { data: blocks } = await supabase
+        .from('blocks')
+        .select('id, number, block, block_name, quadra, project_id, geometry, front_segment_index')
+        .eq('project_id', projectId);
+
+      const { data: guides } = await supabase
+        .from('street_guides')
+        .select('*')
+        .eq('project_id', projectId);
+
+      setConfrontCtx({
+        block: block as Record<string, unknown>,
+        blocks: (blocks || []) as Record<string, unknown>[],
+        guides: (guides || []) as Record<string, unknown>[],
+      });
+      setConfrontOpen(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao carregar confrontações');
+    } finally {
+      setConfrontLoading(false);
+    }
+  }, [lot.id, projectId]);
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto">
@@ -121,6 +163,19 @@ export function LotSheetPrintModal({
             </button>
             <button
               type="button"
+              disabled={loading || confrontLoading}
+              onClick={() => void openConfrontations()}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600/90 hover:bg-amber-500 rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              {confrontLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <MapPin className="w-4 h-4" />
+              )}
+              CORRIGIR CONFRONTAÇÕES
+            </button>
+            <button
+              type="button"
               onClick={onSelectAnotherLot}
               className="w-full px-4 py-2 text-sm text-[#4999e9] hover:underline"
             >
@@ -139,6 +194,16 @@ export function LotSheetPrintModal({
           </button>
         </div>
       </div>
+
+      {confrontOpen && confrontCtx && (
+        <CorrectConfrontationsModal
+          blockId={lot.id}
+          block={confrontCtx.block}
+          blocks={confrontCtx.blocks}
+          streetGuides={confrontCtx.guides}
+          onClose={() => setConfrontOpen(false)}
+        />
+      )}
     </div>
   );
 }

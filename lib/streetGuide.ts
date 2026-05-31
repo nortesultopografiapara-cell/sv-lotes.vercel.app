@@ -154,7 +154,8 @@ export function buildLotAddressLine(block: Record<string, unknown>): string {
   if (street && street !== 'Rua/Eixo sem nome') parts.push(street);
   if (quadra) parts.push(`Quadra ${quadra}`);
   if (lote) parts.push(`Lote ${lote}`);
-  return parts.join(', ') || '';
+  parts.push('S/N');
+  return parts.join(', ') || 'S/N';
 }
 
 /** Texto para memorial: "confrontando pela frente com a Rua X" */

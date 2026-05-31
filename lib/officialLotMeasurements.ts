@@ -3,6 +3,7 @@
  * Geometria (mapa) não altera frente/fundo/laterais/chanfre.
  */
 
+import { formatAzimuthDms } from "@/lib/azimuthFormat";
 import type { ChanfreInfo } from "@/lib/lotChanfre";
 import {
   findFrontSegmentIndexTouchingStreet,
@@ -1849,10 +1850,7 @@ export type OfficialLotSegmentTableResult = {
 };
 
 function formatOfficialAzimuth(deg: number | null): string {
-  if (deg == null || !Number.isFinite(deg)) return "—";
-  const d = Math.floor(deg);
-  const min = Math.round((deg - d) * 60);
-  return `${String(d).padStart(3, "0")}°${String(min).padStart(2, "0")}'`;
+  return formatAzimuthDms(deg);
 }
 
 function formatOfficialCoord(val: number): string {
