@@ -629,6 +629,39 @@ export function hasStreetFrontIdentified(
   );
 }
 
+/** Frente travada no segmento escolhido (manual ou rua) — sem frente composta. */
+export function isFrontSegmentLocked(
+  block: Record<string, unknown> | null | undefined,
+): boolean {
+  const stored = block?.front_segment_index;
+  return typeof stored === "number" && Number.isFinite(stored) && stored >= 0;
+}
+
+/** Percorre o anel TXT a partir da frente; índices = segment_index. */
+function collectRingArcFromFront(
+  ordered: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  stopSegmentIndexes: Set<number>,
+  step: 1 | -1,
+  exclude: Set<number>,
+): number[] {
+  const n = ordered.length;
+  const ringPos = ordered.findIndex(
+    (s) => s.segment_index === frontSegmentIndex,
+  );
+  if (ringPos < 0) return [];
+
+  const indexes: number[] = [];
+  let pos = (ringPos + step + n) % n;
+  for (let guard = 0; guard < n; guard++) {
+    const segIdx = ordered[pos].segment_index;
+    if (stopSegmentIndexes.has(segIdx)) break;
+    if (!exclude.has(segIdx)) indexes.push(segIdx);
+    pos = (pos + step + n) % n;
+  }
+  return indexes;
+}
+
 function sumPathDistances(
   indexes: number[],
   byIdx: Map<number, OfficialLotSegment>,
@@ -649,6 +682,7 @@ export function classifySidesByTxtRingPaths(
   segments: OfficialLotSegment[],
   frontSegmentIndex: number,
   lotLabel?: unknown,
+  block?: Record<string, unknown> | null,
 ): OfficialMeasurePaths {
   const n = segments.length;
   const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
@@ -685,6 +719,12 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
+  const lockedFront = isFrontSegmentLocked(block);
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const ringPos = ordered.findIndex(
+    (s) => s.segment_index === frontSegmentIndex,
+  );
+
   let frontGroupIdx = groups.findIndex((g) =>
     g.segmentIndexes.includes(frontSegmentIndex),
   );
@@ -693,12 +733,21 @@ export function classifySidesByTxtRingPaths(
   const frontGroup = groups[frontGroupIdx];
   const numGroups = groups.length;
 
+  const frontSeg = byIdx.get(frontSegmentIndex);
+  const frontNext = ordered[(ringPos + 1) % n];
+  const frontBearing = frontSeg
+    ? resolveSegmentBearing(frontSeg, frontNext)
+    : frontGroup.averageBearing;
+
   let backGroupIdx = 0;
   let bestOpposite = -1;
   for (let g = 0; g < numGroups; g++) {
-    if (g === frontGroupIdx) continue;
+    if (g === frontGroupIdx && !lockedFront) continue;
+    if (lockedFront && groups[g].segmentIndexes.includes(frontSegmentIndex)) {
+      continue;
+    }
     const opp = angularDifferenceDeg(
-      frontGroup.averageBearing,
+      frontBearing,
       groups[g].averageBearing,
     );
     if (opp > bestOpposite) {
@@ -710,24 +759,61 @@ export function classifySidesByTxtRingPaths(
   const withoutChanfre = (indexes: number[]) =>
     indexes.filter((idx) => !chanfreSet.has(idx));
 
-  const collectGroupPath = (
-    fromGroup: number,
-    toGroup: number,
-    step: 1 | -1,
-  ): number[] => {
-    const indexes: number[] = [];
-    let g = fromGroup;
-    for (let guard = 0; guard < numGroups; guard++) {
-      g = (g + step + numGroups) % numGroups;
-      if (g === toGroup) break;
-      indexes.push(...withoutChanfre(groups[g].segmentIndexes));
-    }
-    return indexes;
-  };
-
-  const pathAIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, 1);
-  const pathBIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, -1);
   const fundoIndexes = withoutChanfre(groups[backGroupIdx].segmentIndexes);
+  const fundoStop = new Set(fundoIndexes);
+  const excludeWalk = new Set<number>([
+    frontSegmentIndex,
+    ...chanfreIndexes,
+  ]);
+
+  let pathAIndexes: number[];
+  let pathBIndexes: number[];
+  let frenteLen: number;
+
+  if (lockedFront) {
+    console.log("FRONT_SEGMENT_ABSOLUTE", {
+      lote: lotLabel ?? block?.number ?? block?.id,
+      frontSegmentIndex,
+      distance: frontSeg?.distance,
+      note: "frente = somente o segmento escolhido; paralelos ficam nas laterais",
+    });
+
+    pathAIndexes = collectRingArcFromFront(
+      ordered,
+      frontSegmentIndex,
+      fundoStop,
+      1,
+      excludeWalk,
+    );
+    pathBIndexes = collectRingArcFromFront(
+      ordered,
+      frontSegmentIndex,
+      fundoStop,
+      -1,
+      excludeWalk,
+    );
+    const d = Number(frontSeg?.distance);
+    frenteLen = isValidSegmentDistance(d) ? d : 0;
+  } else {
+    const collectGroupPath = (
+      fromGroup: number,
+      toGroup: number,
+      step: 1 | -1,
+    ): number[] => {
+      const indexes: number[] = [];
+      let g = fromGroup;
+      for (let guard = 0; guard < numGroups; guard++) {
+        g = (g + step + numGroups) % numGroups;
+        if (g === toGroup) break;
+        indexes.push(...withoutChanfre(groups[g].segmentIndexes));
+      }
+      return indexes;
+    };
+
+    pathAIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, 1);
+    pathBIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, -1);
+    frenteLen = frontGroup.totalLength;
+  }
 
   const pathA: RingPathResult = {
     indexes: pathAIndexes,
@@ -742,8 +828,6 @@ export function classifySidesByTxtRingPaths(
     totalLength: sumPathDistances(fundoIndexes, byIdx),
   };
 
-  const frenteLen = frontGroup.totalLength;
-
   const result = {
     frente: isValidSegmentDistance(frenteLen) ? round2(frenteLen) : 0,
     fundo: pathFundo.totalLength,
@@ -757,6 +841,7 @@ export function classifySidesByTxtRingPaths(
 
   console.log("OFFICIAL_GROUPED_MEASURES", {
     lote: lotLabel ?? "?",
+    frontLocked: lockedFront,
     frontGroupIdx,
     backGroupIdx,
     frontSegmentIndex,
@@ -765,7 +850,7 @@ export function classifySidesByTxtRingPaths(
     fundo: result.fundo,
     ladoDireito: result.ladoDireito,
     ladoEsquerdo: result.ladoEsquerdo,
-    frontGroupSegments: frontGroup.segmentIndexes,
+    frontGroupSegments: lockedFront ? [frontSegmentIndex] : frontGroup.segmentIndexes,
     backGroupSegments: groups[backGroupIdx].segmentIndexes,
     pathRightSegments: pathAIndexes,
     pathLeftSegments: pathBIndexes,
@@ -939,7 +1024,7 @@ function buildMeasuresFromSegments(
   if (frontIdx == null) frontIdx = 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label);
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label, block);
 
   logLotSideSegments(label, "right", paths.pathA, segments);
   logLotSideSegments(label, "left", paths.pathB, segments);
@@ -1163,19 +1248,20 @@ function classifySegmentForTable(
   frontIdx: number,
   paths: OfficialMeasurePaths,
   chanfreIndexes: number[],
+  lockedFront?: boolean,
   groups?: SegmentDeflectionGroup[],
 ): OfficialSegmentClassification {
   if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
+  if (segmentIndex === frontIdx) return "frente";
   if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
   if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
   if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
-  if (groups?.length) {
+  if (!lockedFront && groups?.length) {
     const frontGroup = groups.find((g) =>
       g.segmentIndexes.includes(frontIdx),
     );
     if (frontGroup?.segmentIndexes.includes(segmentIndex)) return "frente";
   }
-  if (segmentIndex === frontIdx) return "frente";
   return "perimetro";
 }
 
@@ -1232,7 +1318,8 @@ export function getOfficialLotSegmentTable(
   let frontIdx = measures.frontSegmentIndex ?? 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label);
+  const lockedFront = isFrontSegmentLocked(lot);
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label, lot);
   const chanfreIdx = resolveChanfreSegmentIndexes(
     segments,
     frontIdx,
@@ -1282,6 +1369,7 @@ export function getOfficialLotSegmentTable(
         frontIdx,
         paths,
         chanfreIdx,
+        lockedFront,
         deflectionGroups,
       ),
       valid,
