@@ -269,7 +269,10 @@ export function buildOfficialSheetLocalGeometry(
     })),
   });
 
-  const utmRing: [number, number][] = buildUtmRingFromOfficialSegments(segments);
+  const utmRing: [number, number][] = buildUtmRingFromOfficialSegments(
+    segments,
+    block.number ?? block.id,
+  );
 
   let minE = Infinity;
   let maxE = -Infinity;

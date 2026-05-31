@@ -52,6 +52,7 @@ import {
   resolveLotMeasuresFromBlock,
   type ChanfreInfo,
 } from "@/lib/lotChanfre";
+import { buildLngLatRingFromOfficialBlock } from "@/lib/civil3dTxtParser";
 import {
   buildBlockPatchFromOfficialMeasures,
   getOfficialLotMeasurements,
@@ -2522,10 +2523,36 @@ export default function GISMap({
 
           const parsedBlocks = blocksRes.data
             .map((b) => {
-              const { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
+              let { bounds, geometryType, coordCount } = boundsFromBlockGeometry(
                 b as Record<string, unknown>,
                 b.number,
               );
+
+              if (
+                b.source_import === "TXT_CIVIL3D" &&
+                Array.isArray(b.segments_json) &&
+                b.segments_json.length >= 3
+              ) {
+                try {
+                  const rebuilt = buildLngLatRingFromOfficialBlock(
+                    b as Record<string, unknown>,
+                    b.projects as Record<string, unknown> | undefined,
+                  );
+                  if (rebuilt && rebuilt.length >= 4) {
+                    bounds = rebuilt.map(
+                      (c) => [c[1], c[0]] as [number, number],
+                    );
+                    geometryType = "Polygon";
+                    coordCount = bounds.length;
+                    console.log("LOT_RING_REBUILT_FROM_TXT", {
+                      lote: b.number,
+                      points: bounds.length,
+                    });
+                  }
+                } catch (ringErr) {
+                  console.warn("LOT_RING_REBUILD_FAILED", b.number, ringErr);
+                }
+              }
               let dimsFromGeo: any = null;
 
               if (
