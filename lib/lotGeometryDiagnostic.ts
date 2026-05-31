@@ -386,75 +386,163 @@ function debugPayloadForLot(block: Record<string, unknown>) {
   };
 }
 
+function emptyDiagnosticSummary(): LotGeometryDiagnosticSummary {
+  return {
+    total: 0,
+    geometryOk: 0,
+    geometryInvalid: 0,
+    geometryEmpty: 0,
+    segmentsJsonOk: 0,
+    segmentsJsonInvalid: 0,
+    segmentsJsonEmpty: 0,
+    gisMapRingOk: 0,
+    confrontationValid: 0,
+    confrontationInvalid: 0,
+    recommendedField: 'nenhum',
+    recommendedReason: 'diagnóstico não executado',
+  };
+}
+
 /**
  * Emite [LOT GEOMETRY DEBUG] no console (primeiros N lotes + resumo).
+ * Usa console.warn para aparecer com filtro "Warnings" no DevTools (produção).
  */
 export function runLotGeometryDiagnosticReport(
   blocks: Record<string, unknown>[],
   options?: { projectId?: string; context?: string; sampleCount?: number },
 ): LotGeometryDiagnosticSummary {
+  const context = options?.context ?? 'report';
+  const projectId = options?.projectId ?? '?';
   const list = Array.isArray(blocks) ? blocks : [];
-  const sampleCount = options?.sampleCount ?? 10;
-  const summary = buildLotGeometryDiagnosticSummary(list);
 
-  console.group(
-    `[LOT GEOMETRY DEBUG] ${options?.context ?? 'report'} project=${options?.projectId ?? '?'}`,
-  );
-
-  const sorted = [...list].sort((a, b) => {
-    const na = Number(a.number ?? a.lot ?? 0);
-    const nb = Number(b.number ?? b.lot ?? 0);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
-    return String(a.number ?? '').localeCompare(String(b.number ?? ''));
+  console.warn('[LOT GEOMETRY DEBUG] DIAGNOSTIC START', {
+    context,
+    projectId,
+    blockCount: list.length,
   });
 
-  for (let i = 0; i < Math.min(sampleCount, sorted.length); i++) {
-    const block = sorted[i];
-    console.log('[LOT GEOMETRY DEBUG]', debugPayloadForLot(block));
-  }
+  try {
+    const sampleCount = options?.sampleCount ?? 10;
+    const summary = buildLotGeometryDiagnosticSummary(list);
 
-  const mismatch = list.filter((b) => {
-    const a = analyzeLotGeometryBlock(b);
-    return a.gis.ok && !a.validation.valid;
-  }).length;
-
-  console.log('--- RESUMO ---');
-  console.log('TOTAL LOTES', summary.total);
-  console.log('GEOMETRIA OK (normalizeLotGeometry)', summary.geometryOk);
-  console.log('GEOMETRIA INVÁLIDA', summary.geometryInvalid);
-  console.log('GEOMETRIA VAZIA', summary.geometryEmpty);
-  console.log('GIS MAPA OK (geometry lat/lng como no mapa)', summary.gisMapRingOk);
-  console.log(
-    'CONFRONTAÇÃO OK (validateConfrontationLot atual)',
-    summary.confrontationValid,
-  );
-  console.log(
-    'CONFRONTAÇÃO INVÁLIDA (validateConfrontationLot atual)',
-    summary.confrontationInvalid,
-  );
-  console.log('SEGMENTS_JSON OK', summary.segmentsJsonOk);
-  console.log('SEGMENTS_JSON INVÁLIDO', summary.segmentsJsonInvalid);
-  console.log('SEGMENTS_JSON VAZIO', summary.segmentsJsonEmpty);
-  console.log(
-    'DIVERGÊNCIA mapa OK mas confrontação rejeita',
-    mismatch,
-  );
-  console.log('CAMPO RECOMENDADO PARA CONFRONTAÇÃO', summary.recommendedField);
-  console.log('MOTIVO', summary.recommendedReason);
-
-  const samplePerimeter = analyzeLotGeometryBlock(
-    sorted.find((b) => String(b.number) === '2') ?? sorted[0] ?? {},
-  );
-  if (sorted.length) {
-    console.log('AMOSTRA perímetro válido (lote', samplePerimeter.number, ')', {
-      gisMap: samplePerimeter.gis.ok,
-      campo: samplePerimeter.perimeter.field,
-      motivo: samplePerimeter.perimeter.reason,
-      validationReason: samplePerimeter.validation.reason,
+    const sorted = [...list].sort((a, b) => {
+      const na = Number(a.number ?? a.lot ?? 0);
+      const nb = Number(b.number ?? b.lot ?? 0);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+      return String(a.number ?? '').localeCompare(String(b.number ?? ''));
     });
+
+    const mismatch = list.filter((b) => {
+      const a = analyzeLotGeometryBlock(b);
+      return a.gis.ok && !a.validation.valid;
+    }).length;
+
+    const report = {
+      context,
+      projectId,
+      summary,
+      mismatch,
+      samples: sorted.slice(0, sampleCount).map((block) => {
+        try {
+          return debugPayloadForLot(block);
+        } catch (sampleErr: unknown) {
+          return {
+            'lot.number': block.number ?? block.lot,
+            sampleError:
+              sampleErr instanceof Error ? sampleErr.message : String(sampleErr),
+          };
+        }
+      }),
+    };
+
+    console.warn('[LOT GEOMETRY DEBUG] report', report);
+    try {
+      console.warn(
+        '[LOT GEOMETRY DEBUG] report-json',
+        JSON.stringify({
+          context,
+          projectId,
+          summary,
+          mismatch,
+        }),
+      );
+    } catch {
+      console.warn('[LOT GEOMETRY DEBUG] report-json skipped (circular)');
+    }
+
+    console.warn('[LOT GEOMETRY DEBUG] --- RESUMO ---');
+    console.warn('[LOT GEOMETRY DEBUG] TOTAL LOTES', summary.total);
+    console.warn(
+      '[LOT GEOMETRY DEBUG] GEOMETRIA OK (normalizeLotGeometry)',
+      summary.geometryOk,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] GEOMETRIA INVÁLIDA',
+      summary.geometryInvalid,
+    );
+    console.warn('[LOT GEOMETRY DEBUG] GEOMETRIA VAZIA', summary.geometryEmpty);
+    console.warn(
+      '[LOT GEOMETRY DEBUG] GIS MAPA OK (geometry lat/lng como no mapa)',
+      summary.gisMapRingOk,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] CONFRONTAÇÃO OK (validateConfrontationLot atual)',
+      summary.confrontationValid,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] CONFRONTAÇÃO INVÁLIDA (validateConfrontationLot atual)',
+      summary.confrontationInvalid,
+    );
+    console.warn('[LOT GEOMETRY DEBUG] SEGMENTS_JSON OK', summary.segmentsJsonOk);
+    console.warn(
+      '[LOT GEOMETRY DEBUG] SEGMENTS_JSON INVÁLIDO',
+      summary.segmentsJsonInvalid,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] SEGMENTS_JSON VAZIO',
+      summary.segmentsJsonEmpty,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] DIVERGÊNCIA mapa OK mas confrontação rejeita',
+      mismatch,
+    );
+    console.warn(
+      '[LOT GEOMETRY DEBUG] CAMPO RECOMENDADO PARA CONFRONTAÇÃO',
+      summary.recommendedField,
+    );
+    console.warn('[LOT GEOMETRY DEBUG] MOTIVO', summary.recommendedReason);
+
+    const samplePerimeter = analyzeLotGeometryBlock(
+      sorted.find((b) => String(b.number) === '2') ?? sorted[0] ?? {},
+    );
+    if (sorted.length) {
+      console.warn(
+        '[LOT GEOMETRY DEBUG] AMOSTRA perímetro (lote',
+        samplePerimeter.number,
+        ')',
+        {
+          gisMap: samplePerimeter.gis.ok,
+          campo: samplePerimeter.perimeter.field,
+          motivo: samplePerimeter.perimeter.reason,
+          validationReason: samplePerimeter.validation.reason,
+        },
+      );
+    }
+
+    console.warn('[LOT GEOMETRY DEBUG] DIAGNOSTIC END', { context, projectId });
+
+    return summary;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[LOT GEOMETRY DEBUG] DIAGNOSTIC FAILED', {
+      context,
+      projectId,
+      message,
+      err,
+    });
+    return emptyDiagnosticSummary();
   }
-
-  console.groupEnd();
-
-  return summary;
 }
+
+/** Alias explícito (docs / chamadas legadas). */
+export const generateLotGeometryDiagnosticReport = runLotGeometryDiagnosticReport;

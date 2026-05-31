@@ -73,6 +73,7 @@ import {
   blockOfflineSale,
   queueOfflineReservation,
 } from "@/lib/offline/lotReservationOffline";
+import { runLotGeometryDiagnosticReport } from "@/lib/lotGeometryDiagnostic";
 
 /**
  * Linhas auxiliares no mapa (investigação visual):
@@ -2510,6 +2511,14 @@ export default function GISMap({
             lots: lots.length,
             blocksData: blocksData.length,
           });
+          try {
+            runLotGeometryDiagnosticReport(blocksData as Record<string, unknown>[], {
+              projectId,
+              context: 'GISMap-offline',
+            });
+          } catch (diagErr: unknown) {
+            console.error('[LOT GEOMETRY DEBUG] GISMap-offline failed', diagErr);
+          }
         } catch (e) {
           console.error('[OFFLINE] erro ao carregar mapa', e);
           setLots([]);
@@ -2546,13 +2555,14 @@ export default function GISMap({
         console.groupEnd();
 
         if (blocksRes.data) {
-          const { runLotGeometryDiagnosticReport } = await import(
-            '@/lib/lotGeometryDiagnostic'
-          );
-          runLotGeometryDiagnosticReport(
-            blocksRes.data as Record<string, unknown>[],
-            { projectId, context: 'GISMap-load' },
-          );
+          try {
+            runLotGeometryDiagnosticReport(
+              blocksRes.data as Record<string, unknown>[],
+              { projectId, context: 'GISMap-load' },
+            );
+          } catch (diagErr: unknown) {
+            console.error('[LOT GEOMETRY DEBUG] GISMap-load failed', diagErr);
+          }
           const allPolygons = blocksRes.data
             .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
             .map((b: any) => b.geometry.coordinates[0]);

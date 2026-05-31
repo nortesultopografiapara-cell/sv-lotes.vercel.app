@@ -82,10 +82,14 @@ export async function runAutomaticConfrontation(
       : await fetchProjectBlocks(projectId, options.tenantId);
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
 
-  runLotGeometryDiagnosticReport(blocks, {
-    projectId,
-    context: 'automaticConfrontation',
-  });
+  try {
+    runLotGeometryDiagnosticReport(blocks, {
+      projectId,
+      context: 'automaticConfrontation',
+    });
+  } catch (diagErr: unknown) {
+    console.error('[LOT GEOMETRY DEBUG] invoke failed', diagErr);
+  }
 
   const streetGuides =
     options.streetGuides?.length
