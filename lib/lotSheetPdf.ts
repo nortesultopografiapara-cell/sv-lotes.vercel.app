@@ -290,6 +290,167 @@ function resolveLabelCollisions(
   return [x, y];
 }
 
+function minDistToPolygonEdges(
+  pos: [number, number],
+  verts: [number, number][],
+): number {
+  let min = Infinity;
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const len2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((pos[0] - p1[0]) * dx + (pos[1] - p1[1]) * dy) / len2,
+      ),
+    );
+    const px = p1[0] + t * dx;
+    const py = p1[1] + t * dy;
+    min = Math.min(min, Math.hypot(pos[0] - px, pos[1] - py));
+  }
+  return min;
+}
+
+function lotUsefulCrossWidthMm(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+): number {
+  const crossX = -mainAxis.axisDy;
+  const crossY = mainAxis.axisDx;
+  const c = mainAxis.center;
+  let minT = Infinity;
+  let maxT = -Infinity;
+  for (const v of verts) {
+    const t = (v[0] - c[0]) * crossX + (v[1] - c[1]) * crossY;
+    minT = Math.min(minT, t);
+    maxT = Math.max(maxT, t);
+  }
+  return maxT - minT;
+}
+
+/** Centro visual do espaço interno (não só centroide). */
+function getVisualCenter(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  front: LotFrontContext,
+  badgePos: [number, number] | null,
+  placedZones: PlacedLabelZone[],
+): [number, number] {
+  const xs = verts.map((p) => p[0]);
+  const ys = verts.map((p) => p[1]);
+  const bboxCenter: [number, number] = [
+    (Math.min(...xs) + Math.max(...xs)) / 2,
+    (Math.min(...ys) + Math.max(...ys)) / 2,
+  ];
+  const geoCenter = centroid(verts);
+
+  const candidates: [number, number][] = [
+    geoCenter,
+    bboxCenter,
+    [
+      (bboxCenter[0] + geoCenter[0]) / 2,
+      (bboxCenter[1] + geoCenter[1]) / 2,
+    ],
+  ];
+
+  if (badgePos) {
+    const deepPoint: [number, number] = [
+      front.edge.mid[0] + front.inwardNx * front.maxInwardDepthMm * 0.62,
+      front.edge.mid[1] + front.inwardNy * front.maxInwardDepthMm * 0.62,
+    ];
+    candidates.push([
+      (badgePos[0] + deepPoint[0]) / 2,
+      (badgePos[1] + deepPoint[1]) / 2,
+    ]);
+    candidates.push(deepPoint);
+  }
+
+  let best = geoCenter;
+  let bestScore = -1;
+
+  for (const cand of candidates) {
+    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
+    let score = minDistToPolygonEdges(cand, verts);
+    for (const zone of placedZones) {
+      const d = Math.hypot(cand[0] - zone.pos[0], cand[1] - zone.pos[1]);
+      score = Math.min(score, d - zone.radius);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+
+  return best;
+}
+
+function resolveAreaCollisions(
+  pos: [number, number],
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  placedZones: PlacedLabelZone[],
+): [number, number] {
+  const areaRadius = 14;
+  let resolved = resolveLabelCollisions(pos, areaRadius, placedZones, 6);
+
+  if (!pointInsidePolygon(resolved[0], resolved[1], verts)) {
+    resolved = [...mainAxis.center];
+  }
+
+  const shifts = [
+    [0, 0],
+    [4, 0],
+    [-4, 0],
+    [0, 4],
+    [0, -4],
+    [6, 3],
+    [-6, 3],
+    [6, -3],
+    [-6, -3],
+  ];
+  for (const [along, cross] of shifts) {
+    const tx =
+      pos[0] + mainAxis.axisDx * along + -mainAxis.axisDy * cross;
+    const ty =
+      pos[1] + mainAxis.axisDy * along + mainAxis.axisDx * cross;
+    const candidate = resolveLabelCollisions(
+      [tx, ty],
+      areaRadius,
+      placedZones,
+      6,
+    );
+    if (pointInsidePolygon(candidate[0], candidate[1], verts)) {
+      resolved = candidate;
+      break;
+    }
+  }
+
+  return resolved;
+}
+
+function splitAreaLabelLines(
+  areaText: string,
+  usefulCrossWidthMm: number,
+  narrow: boolean,
+): string[] {
+  const unitMatch = areaText.match(/\s*(m²|M²|m2)\s*$/i);
+  const unit = unitMatch ? unitMatch[0].trim() : 'm²';
+  const value = areaText.replace(/\s*(m²|M²|m2)\s*$/i, '').trim();
+
+  if (!narrow && usefulCrossWidthMm >= 26) {
+    return [areaText];
+  }
+  if (usefulCrossWidthMm >= 22 && value.length <= 10) {
+    return [areaText];
+  }
+  return [value, unit];
+}
+
 function pointInsidePolygon(
   x: number,
   y: number,
@@ -604,9 +765,12 @@ function placeSideConfrontantLabels(
 }
 
 const LOT_BADGE_RADIUS_MM = 5.5;
-const FRONT_DEPTH_FRACTION = 0.27;
+/** Profundidade do círculo em direção à rua (8–12% da profundidade do lote). */
+const FRONT_DEPTH_FRACTION = 0.1;
+const AREA_FONT_PT_NORMAL = 21;
+const AREA_FONT_PT_NARROW = 18;
 
-/** Círculo do lote voltado para a frente (entre rua e centro), ~20–35% da profundidade. */
+/** Círculo do lote voltado para a frente (próximo à rua). */
 function placeLotNumberNearFront(
   doc: jsPDF,
   points: [number, number][],
@@ -651,44 +815,59 @@ function placeLotNumberNearFront(
   return { badgePos, radius: r };
 }
 
-/** Área centralizada no lote, maior, eixo longitudinal, separada do círculo. */
+/** Área no centro visual do lote, fonte destacada, separada do círculo. */
 function placeAreaLabelCenter(
   doc: jsPDF,
   points: [number, number][],
   areaText: string,
   mainAxis: LotMainAxis,
+  frontEdgeIndex: number,
+  badgePos: [number, number],
   placedZones: PlacedLabelZone[],
 ): { areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
-  let areaPos: [number, number] = [...mainAxis.center];
+  const front = getLotFrontDirection(verts, frontEdgeIndex);
+  const visualCenter = getVisualCenter(
+    verts,
+    mainAxis,
+    front,
+    badgePos,
+    placedZones,
+  );
+  const areaPos = resolveAreaCollisions(
+    visualCenter,
+    verts,
+    mainAxis,
+    placedZones,
+  );
 
-  areaPos = resolveLabelCollisions(areaPos, 9, placedZones, 4);
-
-  if (!pointInsidePolygon(areaPos[0], areaPos[1], verts)) {
-    areaPos = [...mainAxis.center];
-  }
-
-  const shifts = [0, 3, -3, 6, -6, 9, -9];
-  for (const d of shifts) {
-    const tx = mainAxis.center[0] + mainAxis.axisDx * d;
-    const ty = mainAxis.center[1] + mainAxis.axisDy * d;
-    const candidate = resolveLabelCollisions([tx, ty], 9, placedZones, 4);
-    if (pointInsidePolygon(candidate[0], candidate[1], verts)) {
-      areaPos = candidate;
-      break;
-    }
-  }
-
-  const areaFont = (mainAxis.narrow ? 10 : 11) * 1.25;
+  const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
+  const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
+  const areaFont = mainAxis.narrow ? AREA_FONT_PT_NARROW : AREA_FONT_PT_NORMAL;
+  const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
+  const lineStep = mainAxis.narrow ? 5 : 5.5;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(areaFont);
   doc.setTextColor(...BLUE);
-  doc.text(areaText, areaPos[0], areaPos[1], {
-    align: 'center',
-    baseline: 'middle',
-    angle: mainAxis.angleDeg,
-  });
+
+  if (lines.length === 1) {
+    doc.text(lines[0], areaPos[0], areaPos[1], {
+      align: 'center',
+      baseline: 'middle',
+      angle: mainAxis.angleDeg,
+    });
+  } else {
+    lines.forEach((line, i) => {
+      const off = (i - (lines.length - 1) / 2) * lineStep;
+      doc.text(line, areaPos[0] + Math.cos(perpRad) * off, areaPos[1] + Math.sin(perpRad) * off, {
+        align: 'center',
+        baseline: 'middle',
+        angle: mainAxis.angleDeg,
+      });
+    });
+  }
+
   doc.setTextColor(...BLACK);
 
   return { areaPos };
@@ -1386,6 +1565,8 @@ export async function generateLotSheetPdf(
     sheetPts,
     input.measures.area,
     mainAxis,
+    frontEdge,
+    lotBadge.badgePos,
     placedZones,
   );
 
