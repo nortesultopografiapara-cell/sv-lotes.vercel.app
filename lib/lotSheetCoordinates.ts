@@ -3,6 +3,7 @@
  */
 
 import proj4 from 'proj4';
+import { buildUtmRingFromOfficialSegments } from '@/lib/civil3dTxtParser';
 import {
   parseOfficialSegmentsFromBlock,
   type OfficialLotSegment,
@@ -268,7 +269,7 @@ export function buildOfficialSheetLocalGeometry(
     })),
   });
 
-  const utmRing: [number, number][] = segments.map((s) => [s.east, s.north]);
+  const utmRing: [number, number][] = buildUtmRingFromOfficialSegments(segments);
 
   let minE = Infinity;
   let maxE = -Infinity;

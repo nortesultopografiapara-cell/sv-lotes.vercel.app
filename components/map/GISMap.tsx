@@ -1513,7 +1513,11 @@ function LotPopupContent({
     return table.validRows.map((row) => ({
       segment_index: row.segment_index,
       distance: row.distanceM as number,
+      distanceLabel: row.distancia,
       classification: row.classification,
+      isCurve:
+        row.distancia.includes("curva") ||
+        row.distancia.includes("Curva R="),
     }));
   }, [lot]);
 
@@ -1692,7 +1696,9 @@ function LotPopupContent({
                         }
                         className="text-left px-2 py-1.5 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10px] font-medium text-gray-900 disabled:opacity-50"
                       >
-                        Seg. {seg.segment_index + 1} — {seg.distance.toFixed(2)} m
+                        Seg. {seg.segment_index + 1} —{" "}
+                        {seg.distanceLabel ??
+                          `${seg.distance.toFixed(2)} m`}
                         {lot.front_segment_index === seg.segment_index
                           ? " (frente atual)"
                           : ""}

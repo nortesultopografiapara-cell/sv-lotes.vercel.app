@@ -501,7 +501,7 @@ export async function loadLotSheetPayload(
 
   const officialEdgeLengths = officialSegmentTableToEdgeLabels(
     officialTable,
-    localRing.length,
+    officialSegs.length,
   );
   const ignoredSegmentNote =
     officialTable.ignoredInvalidCount > 0

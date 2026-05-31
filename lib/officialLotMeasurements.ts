@@ -9,6 +9,8 @@ import {
   type StreetGuideLineInput,
 } from "@/lib/lotStreetFrontDetection";
 
+export type OfficialSegmentKind = "LINE" | "CURVE";
+
 export type OfficialLotSegment = {
   segment_index: number;
   distance: number;
@@ -16,6 +18,18 @@ export type OfficialLotSegment = {
   north: number;
   east: number;
   vertex_order: number;
+  segment_type?: OfficialSegmentKind;
+  radius?: number | null;
+  chord?: number | null;
+  delta?: number | null;
+  tangent?: number | null;
+  course?: number | null;
+  course_in?: number | null;
+  course_out?: number | null;
+  rp_north?: number | null;
+  rp_east?: number | null;
+  end_north?: number | null;
+  end_east?: number | null;
 };
 
 export type OfficialLotMeasures = {
@@ -101,6 +115,11 @@ function collectForbiddenCoordinateValues(
  * Extrai comprimento oficial do segmento (somente campos de distância do TXT).
  * Nunca north/east/northing/easting/coord/lat/lon.
  */
+function isCurveSegmentRaw(raw: Record<string, unknown>): boolean {
+  const t = String(raw.type ?? raw.segment_type ?? "").toUpperCase();
+  return t === "CURVE" || (raw.radius != null && Number(raw.radius) > 0);
+}
+
 export function extractOfficialSegmentDistance(
   raw: Record<string, unknown>,
   lotLabel?: unknown,
@@ -109,6 +128,22 @@ export function extractOfficialSegmentDistance(
   const forbidden = collectForbiddenCoordinateValues(raw);
   const label = lotLabel ?? "?";
   const idx = segmentIndex ?? raw.segment_index;
+
+  if (isCurveSegmentRaw(raw)) {
+    const arcLen = Number(
+      String(raw.length ?? raw.distance ?? raw.Length ?? "").replace(",", "."),
+    );
+    if (isValidSegmentDistance(arcLen)) {
+      console.log("ARC_MEASURE_USED", {
+        lote: label,
+        segmentIndex: idx,
+        length: round2(arcLen),
+        chord: raw.chord,
+        note: "curve usa Length oficial, nunca Chord",
+      });
+      return round2(arcLen);
+    }
+  }
 
   for (const field of DISTANCE_FIELD_KEYS) {
     const value = raw[field];
@@ -229,7 +264,7 @@ function failsMeasureSanity(measures: {
   return false;
 }
 
-function bearingFromEn(
+export function bearingFromEn(
   north1: number,
   east1: number,
   north2: number,
@@ -270,6 +305,13 @@ export function resolveSegmentBearing(
 ): number {
   if (seg.bearing != null && Number.isFinite(seg.bearing)) {
     return seg.bearing;
+  }
+  if (
+    seg.segment_type === "CURVE" &&
+    seg.end_north != null &&
+    seg.end_east != null
+  ) {
+    return bearingFromEn(seg.north, seg.east, seg.end_north, seg.end_east);
   }
   if (
     next &&
@@ -462,6 +504,14 @@ export function groupSegmentsByDeflection(
       resolveSegmentBearing(next, afterNext),
     );
 
+    const curKind = byIdx.get(cur.segment_index)?.segment_type;
+    const nextKind = byIdx.get(nextIdx)?.segment_type;
+    if (curKind === "CURVE" || nextKind === "CURVE") {
+      rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
+      current = chanfreSet.has(nextIdx) ? [] : [nextIdx];
+      continue;
+    }
+
     if (isColinearDeflection(deflection)) {
       if (!current.includes(nextIdx)) current.push(nextIdx);
     } else if (isChanfreDeflection(deflection)) {
@@ -592,7 +642,11 @@ export function parseOfficialSegmentsFromBlock(
     if (!Number.isFinite(north) || !Number.isFinite(east)) continue;
     if (distance == null) continue;
 
-    parsed.push({
+    const kindRaw = String(s.type ?? s.segment_type ?? "LINE").toUpperCase();
+    const segment_type: OfficialSegmentKind =
+      kindRaw === "CURVE" ? "CURVE" : "LINE";
+
+    const row: OfficialLotSegment = {
       segment_index:
         typeof s.segment_index === "number" ? s.segment_index : i,
       distance,
@@ -601,12 +655,54 @@ export function parseOfficialSegmentsFromBlock(
           ? round2(Number(s.bearing))
           : s.azimuth != null && Number.isFinite(Number(s.azimuth))
             ? round2(Number(s.azimuth))
-            : null,
+            : s.courseOut != null && Number.isFinite(Number(s.courseOut))
+              ? round2(Number(s.courseOut))
+              : s.course_out != null && Number.isFinite(Number(s.course_out))
+                ? round2(Number(s.course_out))
+                : null,
       north,
       east,
       vertex_order:
         typeof s.vertex_order === "number" ? s.vertex_order : i,
-    });
+      segment_type,
+    };
+
+    if (segment_type === "CURVE") {
+      const num = (k: string) => {
+        const v = Number(s[k]);
+        return Number.isFinite(v) ? round2(v) : null;
+      };
+      row.radius = num("radius");
+      row.chord = num("chord");
+      row.delta = s.delta != null ? Number(s.delta) : null;
+      row.tangent = num("tangent");
+      row.course = s.course != null ? Number(s.course) : null;
+      row.course_in =
+        s.courseIn != null
+          ? Number(s.courseIn)
+          : s.course_in != null
+            ? Number(s.course_in)
+            : null;
+      row.course_out =
+        s.courseOut != null
+          ? Number(s.courseOut)
+          : s.course_out != null
+            ? Number(s.course_out)
+            : null;
+      row.rp_north = num("rpNorth") ?? num("rp_north");
+      row.rp_east = num("rpEast") ?? num("rp_east");
+      row.end_north = num("endNorth") ?? num("end_north");
+      row.end_east = num("endEast") ?? num("end_east");
+      console.log("ARC_SEGMENT_DETECTED", {
+        lote: label,
+        segmentIndex: row.segment_index,
+        length: distance,
+        radius: row.radius,
+        chord: row.chord,
+      });
+    }
+
+    parsed.push(row);
   }
 
   parsed.sort((a, b) => a.segment_index - b.segment_index);
@@ -616,17 +712,34 @@ export function parseOfficialSegmentsFromBlock(
 export function segmentsToPersistJson(
   segments: OfficialLotSegment[],
 ): Record<string, unknown>[] {
-  return segments.map((s) => ({
-    segment_index: s.segment_index,
-    distance: s.distance,
-    bearing: s.bearing,
-    north: s.north,
-    east: s.east,
-    vertex_order: s.vertex_order,
-    length: s.distance,
-    northing: s.north,
-    easting: s.east,
-  }));
+  return segments.map((s) => {
+    const base: Record<string, unknown> = {
+      segment_index: s.segment_index,
+      type: s.segment_type ?? "LINE",
+      distance: s.distance,
+      length: s.distance,
+      bearing: s.bearing,
+      north: s.north,
+      east: s.east,
+      northing: s.north,
+      easting: s.east,
+      vertex_order: s.vertex_order,
+    };
+    if (s.segment_type === "CURVE") {
+      base.radius = s.radius;
+      base.chord = s.chord;
+      base.delta = s.delta;
+      base.tangent = s.tangent;
+      base.course = s.course;
+      base.courseIn = s.course_in;
+      base.courseOut = s.course_out;
+      base.rpNorth = s.rp_north;
+      base.rpEast = s.rp_east;
+      base.endNorth = s.end_north;
+      base.endEast = s.end_east;
+    }
+    return base;
+  });
 }
 
 export type OfficialMeasurePaths = {
@@ -1343,13 +1456,62 @@ function classifySegmentForTable(
   chanfreIndexes: number[],
   _lockedFront?: boolean,
   _groups?: SegmentDeflectionGroup[],
+  segment?: OfficialLotSegment,
+  lotLabel?: unknown,
 ): OfficialSegmentClassification {
   if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
-  if (segmentIndex === frontIdx) return "frente";
-  if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
-  if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
-  if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
-  return "perimetro";
+  let role: OfficialSegmentClassification = "perimetro";
+  if (segmentIndex === frontIdx) role = "frente";
+  else if (paths.pathFundo.indexes.includes(segmentIndex)) role = "fundo";
+  else if (paths.pathA.indexes.includes(segmentIndex)) role = "lado_direito";
+  else if (paths.pathB.indexes.includes(segmentIndex)) role = "lado_esquerdo";
+
+  if (segment?.segment_type === "CURVE") {
+    console.log("ARC_SIDE_CLASSIFIED", {
+      lote: lotLabel ?? "?",
+      segmentIndex,
+      role,
+      lengthM: segment.distance,
+      radiusM: segment.radius,
+    });
+  }
+  return role;
+}
+
+/** Rótulo de distância para popup, memorial e prancha. */
+export function formatOfficialSegmentDistancia(
+  seg: OfficialLotSegment,
+  distanceM: number,
+): string {
+  const base = distanceM.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (seg.segment_type === "CURVE" && seg.radius != null && seg.radius > 0) {
+    const r = seg.radius.toLocaleString("pt-BR", {
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    });
+    return `${base} m — Curva R=${r} m`;
+  }
+  return `${base} m`;
+}
+
+/** Texto memorial para segmento em curva. */
+export function formatCurveMemorialDescription(seg: OfficialLotSegment): string {
+  const dev = seg.distance.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const raio = (seg.radius ?? 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const corda = (seg.chord ?? 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `segue em curva com desenvolvimento de ${dev} m, raio de ${raio} m e corda de ${corda} m`;
 }
 
 function resolveChanfreSegmentIndexes(
@@ -1448,13 +1610,20 @@ export function getOfficialLotSegmentTable(
       azimute: formatOfficialAzimuth(s.bearing),
       distanceM,
       distancia: valid
-        ? `${distanceM!.toLocaleString("pt-BR", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })} m`
+        ? s.segment_type === "CURVE" && (s.radius ?? 0) > 0
+          ? formatCurveMemorialDescription(s)
+          : formatOfficialSegmentDistancia(s, distanceM!)
         : "Segmento inválido ignorado",
-      coordE: formatOfficialCoord(next.east),
-      coordN: formatOfficialCoord(next.north),
+      coordE: formatOfficialCoord(
+        s.segment_type === "CURVE" && s.end_east != null
+          ? s.end_east
+          : next.east,
+      ),
+      coordN: formatOfficialCoord(
+        s.segment_type === "CURVE" && s.end_north != null
+          ? s.end_north
+          : next.north,
+      ),
       classification: classifySegmentForTable(
         s.segment_index,
         frontIdx,
@@ -1462,6 +1631,8 @@ export function getOfficialLotSegmentTable(
         chanfreIdx,
         lockedFront,
         deflectionGroups,
+        s,
+        label,
       ),
       valid,
     });
@@ -1487,13 +1658,13 @@ export function officialSegmentTableToEdgeLabels(
   const byIndex = new Map<number, string>();
   for (const row of table.validRows) {
     if (row.distanceM == null) continue;
-    byIndex.set(
-      row.segment_index,
-      `${row.distanceM.toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })} m`,
-    );
+    let label = `${row.distanceM!.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} m`;
+    const rMatch = row.distancia.match(/R\s*=\s*([0-9.,]+)\s*m/i);
+    if (rMatch) label += ` (R=${rMatch[1]} m)`;
+    byIndex.set(row.segment_index, label);
   }
 
   const labels: string[] = [];

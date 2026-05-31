@@ -51,11 +51,13 @@ import {
   readGisMapProjectIdFromUrl,
 } from '@/lib/gisMapProjectPersistence';
 import {
+  civil3dLotToImportPayload,
+  parseCivil3dTxtLots,
+} from '@/lib/civil3dTxtParser';
+import {
   getOfficialLotMeasurements,
-  normalizeTxtImportSegments,
   officialSegmentsToLotSegmentRows,
   parseOfficialSegmentsFromBlock,
-  segmentsToPersistJson,
 } from '@/lib/officialLotMeasurements';
 import {
   findFrontSegmentIndexTouchingStreet,
@@ -1447,57 +1449,21 @@ export default function MapPage() {
       }
 
       const text = await importTxtFile.text();
-      const blocksParsed = [];
-      const nameChunks = text.split(/Name:\s*/i).slice(1);
-      
       const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
       const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
 
-      for (let chunk of nameChunks) {
-         const name = chunk.split('\n')[0].trim();
-         
-         let area = 0;
-         let perimeter = 0;
-         let segments: any[] = [];
-         let coords: number[][] = [];
-         
-         const areaMatch = chunk.match(/Area:\s*([0-9.]+)/i);
-         if (areaMatch) area = parseFloat(areaMatch[1]);
-         
-         const perimeterMatch = chunk.match(/Perimeter:\s*([0-9.]+)/i);
-         if (perimeterMatch) perimeter = parseFloat(perimeterMatch[1]);
-
-         const northingMatches = [...chunk.matchAll(/North(?:ing)?\s*:\s*([0-9.]+)/ig)];
-         const eastingMatches = [...chunk.matchAll(/East(?:ing)?\s*:\s*([0-9.]+)/ig)];
-         const lengthMatches = [...chunk.matchAll(/Length\s*:\s*([0-9.]+)/ig)];
-
-         const numPoints = Math.min(northingMatches.length, eastingMatches.length);
-         for(let i=0; i < numPoints; i++) {
-             const northing = parseFloat(northingMatches[i][1]);
-             const easting = parseFloat(eastingMatches[i][1]);
-             
-             let seg: any = { northing, easting };
-             if (i < lengthMatches.length) {
-                 seg.length = parseFloat(lengthMatches[i][1]);
-             }
-             segments.push(seg);
-             
-             const [lng, lat] = proj4(proj4String, "EPSG:4326", [easting, northing]);
-             console.log("UTM original", { north: northing, east: easting });
-             console.log("Lat/Lon convertido", { lat, lon: lng });
-             coords.push([lng, lat]);
-         }
-         
-         if (coords.length > 2) {
-             const first = coords[0];
-             const last = coords[coords.length - 1];
-             if (first[0] !== last[0] || first[1] !== last[1]) {
-                coords.push([...first]);
-             }
-         }
-         
-         blocksParsed.push({ name, area, perimeter, segments, coords });
-      }
+      const lotsParsed = parseCivil3dTxtLots(text);
+      const blocksParsed = lotsParsed.map((lot) => {
+        const payload = civil3dLotToImportPayload(lot, proj4String);
+        return {
+          name: payload.name,
+          area: payload.area,
+          perimeter: payload.perimeter,
+          officialSegs: payload.officialSegs,
+          segmentsJson: payload.segmentsJson,
+          coords: payload.coords,
+        };
+      });
 
       if (blocksParsed.length === 0) {
          alert('Erro: Nenhum lote válido encontrado no arquivo TXT.');
@@ -1532,8 +1498,8 @@ export default function MapPage() {
       const blocksToInsert = blocksParsed.map((b) => {
           const finalArea = b.area;
           const finalPrice = parseFloat((finalArea * 120.00).toFixed(2));
-          const officialSegs = normalizeTxtImportSegments(b.segments);
-          const segmentsJson = segmentsToPersistJson(officialSegs);
+          const officialSegs = b.officialSegs;
+          const segmentsJson = b.segmentsJson;
           const provisionalFrontIndex = 0;
           const measures = getOfficialLotMeasurements({
             segments_json: segmentsJson,
