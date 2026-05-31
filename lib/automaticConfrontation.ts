@@ -4,7 +4,10 @@
 
 import { supabase } from '@/lib/supabase';
 import { autoLotSideConfrontants } from '@/lib/lotConfrontations';
-import { latLngRingFromBlock } from '@/lib/lotSheetEnrichment';
+import {
+  confrontationLotDiagnostics,
+  validateConfrontationLot,
+} from '@/lib/lotGeometryNormalize';
 import {
   PROJECT_CONFRONTATION_SNAPSHOT_VERSION,
   saveProjectConfrontationSnapshot,
@@ -18,6 +21,7 @@ export type AutomaticConfrontationResult = {
   skipped: number;
   computedAt: string;
   errors: string[];
+  skipReasons: Record<string, number>;
 };
 
 export type RunAutomaticConfrontationOptions = {
@@ -37,7 +41,8 @@ async function fetchProjectBlocks(
   }
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data || []) as Record<string, unknown>[];
+  const rows = data || [];
+  return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
 }
 
 async function fetchProjectStreetGuides(
@@ -48,7 +53,16 @@ async function fetchProjectStreetGuides(
     .select('*')
     .eq('project_id', projectId);
   if (error) throw new Error(error.message);
-  return (data || []) as Record<string, unknown>[];
+  const rows = data || [];
+  return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+}
+
+function recordSkip(
+  skipReasons: Record<string, number>,
+  reason: string,
+): void {
+  const key = reason || 'desconhecido';
+  skipReasons[key] = (skipReasons[key] || 0) + 1;
 }
 
 /**
@@ -63,10 +77,12 @@ export async function runAutomaticConfrontation(
   }
 
   const errors: string[] = [];
-  const blocks =
+  const skipReasons: Record<string, number> = {};
+  const rawBlocks =
     options.blocks?.length
       ? options.blocks
       : await fetchProjectBlocks(projectId, options.tenantId);
+  const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
   const streetGuides =
     options.streetGuides?.length
       ? options.streetGuides
@@ -78,33 +94,51 @@ export async function runAutomaticConfrontation(
 
   for (const block of blocks) {
     const blockId = String(block.id || '');
+    const lotLabel = String(
+      block.number ?? block.lot ?? (blockId || '?'),
+    );
+
+    console.log('[CONFRONTATION] lot', lotLabel, confrontationLotDiagnostics(block));
+
     if (!blockId) {
       skipped += 1;
+      recordSkip(skipReasons, 'sem id');
+      errors.push(`Lote ${lotLabel}: sem id`);
       continue;
     }
-    const ring = latLngRingFromBlock(block);
-    if (ring.length < 3) {
+
+    const validation = validateConfrontationLot(block);
+    if (!validation.valid) {
       skipped += 1;
-      errors.push(`Lote ${block.number ?? blockId}: sem geometria válida`);
+      const reason = validation.reason || 'geometria inválida';
+      recordSkip(skipReasons, reason);
+      errors.push(`Lote ${lotLabel}: ${reason}`);
       continue;
     }
+
     try {
       const confrontants = autoLotSideConfrontants(
         block,
         blockId,
         blocks,
         streetGuides,
+        validation.ring,
       );
       lots.push({
         blockId,
-        lotNumber: String(block.number ?? block.lot ?? ''),
+        lotNumber: lotLabel,
         confrontants,
       });
       processed += 1;
     } catch (e: unknown) {
       skipped += 1;
-      const msg = e instanceof Error ? e.message : 'erro desconhecido';
-      errors.push(`Lote ${block.number ?? blockId}: ${msg}`);
+      const msg =
+        e instanceof Error ? e.message : 'erro desconhecido';
+      const reason =
+        /not iterable/i.test(msg) ? 'geometria inválida' : msg;
+      recordSkip(skipReasons, reason);
+      errors.push(`Lote ${lotLabel}: ${reason}`);
+      console.warn('[CONFRONTATION] erro', lotLabel, e);
     }
   }
 
@@ -123,5 +157,6 @@ export async function runAutomaticConfrontation(
     skipped,
     computedAt,
     errors,
+    skipReasons,
   };
 }

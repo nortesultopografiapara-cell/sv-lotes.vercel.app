@@ -3,6 +3,7 @@
  */
 
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
 import { latLngRingFromBlock, type LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 import {
   calculateBearing,
@@ -28,21 +29,45 @@ function diffAngleDeg(a1: number, a2: number): number {
 }
 
 function latLngRingToLngLatClosed(ring: [number, number][]): number[][] {
-  if (ring.length < 3) return [];
-  const out = ring.map(([lat, lng]) => [lng, lat]);
+  if (!Array.isArray(ring) || ring.length < 3) return [];
+  const out: number[][] = [];
+  for (const pt of ring) {
+    if (!Array.isArray(pt) || pt.length < 2) continue;
+    const lat = Number(pt[0]);
+    const lng = Number(pt[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    out.push([lng, lat]);
+  }
+  if (out.length < 3) return [];
   const first = out[0];
   const last = out[out.length - 1];
   if (first[0] !== last[0] || first[1] !== last[1]) {
-    out.push([...first]);
+    out.push([first[0], first[1]]);
   }
   return out;
+}
+
+function buildAllPolysLngLat(blocks: Record<string, unknown>[]): number[][][] {
+  const polys: number[][][] = [];
+  if (!Array.isArray(blocks)) return polys;
+  for (const b of blocks) {
+    const { ok, ring } = normalizeLotGeometry(b);
+    if (!ok || ring.length < 3) continue;
+    const coords = latLngRingToLngLatClosed(ring);
+    if (coords.length >= 4) polys.push(coords);
+  }
+  return polys;
 }
 
 function ringCentroidLngLat(ring: [number, number][]): [number, number] {
   let sx = 0;
   let sy = 0;
   const n = ring.length || 1;
-  for (const [lat, lng] of ring) {
+  for (const pt of ring) {
+    if (!Array.isArray(pt) || pt.length < 2) continue;
+    const lat = Number(pt[0]);
+    const lng = Number(pt[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     sx += lng;
     sy += lat;
   }
@@ -215,8 +240,12 @@ function resolveSideSegmentIndexes(
   const backIndex = classified.ringPaths.backIndex;
   const ringPaths = classifySidesByRingPaths(segments, frontIndex, backIndex);
 
-  let pathDireito = ringPaths.pathA.indexes;
-  let pathEsquerdo = ringPaths.pathB.indexes;
+  let pathDireito = Array.isArray(ringPaths.pathA?.indexes)
+    ? ringPaths.pathA.indexes
+    : [];
+  let pathEsquerdo = Array.isArray(ringPaths.pathB?.indexes)
+    ? ringPaths.pathB.indexes
+    : [];
 
   if (frontIndex >= 0 && pathDireito.length > 0 && pathEsquerdo.length > 0) {
     const front = segments[frontIndex];
@@ -313,9 +342,7 @@ export function buildSideConfrontantsFromSegments(
   blocks: Record<string, unknown>[],
   _streetGuides: Record<string, unknown>[],
 ): LotSheetSideConfrontants {
-  const allPolysLngLat = blocks
-    .map((b) => latLngRingToLngLatClosed(latLngRingFromBlock(b)))
-    .filter((c) => c.length >= 4);
+  const allPolysLngLat = buildAllPolysLngLat(blocks);
 
   const { segments, sides } = resolveSideSegmentIndexes(
     block,

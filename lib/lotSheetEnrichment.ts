@@ -15,6 +15,7 @@ import {
   formatAzimuthDms,
 } from '@/lib/azimuthFormat';
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
 import { buildSideConfrontantsFromSegments } from '@/lib/lotSegmentConfrontation';
 import {
   getOfficialLotSegmentTable,
@@ -89,25 +90,8 @@ export function createLotSheetValidation(): {
 }
 
 export function latLngRingFromBlock(block: Record<string, unknown>): [number, number][] {
-  const geom = block.geometry as { type?: string; coordinates?: number[][][] } | undefined;
-  if (geom?.type === 'Polygon' && geom.coordinates?.[0]?.length) {
-    const ring = geom.coordinates[0].map((c) => [c[1], c[0]] as [number, number]);
-    if (ring.length > 1) {
-      const first = ring[0];
-      const last = ring[ring.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
-    }
-    return ring;
-  }
-  const bounds = block.bounds as [number, number][] | undefined;
-  if (bounds?.length) {
-    const ring = [...bounds];
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
-    return ring;
-  }
-  return [];
+  const { ok, ring } = normalizeLotGeometry(block);
+  return ok ? ring : [];
 }
 
 /** Anel UTM [Easting, Northing] → metros locais centrados no primeiro vértice. */
