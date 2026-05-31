@@ -10,7 +10,10 @@ import {
   coordinatesUnavailableMessage,
   resolveRealCoordinateRing,
 } from '@/lib/lotSheetCoordinates';
-import { formatAzimuthDms } from '@/lib/azimuthFormat';
+import {
+  azimuthFromSegmentDxDy,
+  formatAzimuthDms,
+} from '@/lib/azimuthFormat';
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
   getOfficialLotSegmentTable,
@@ -675,11 +678,6 @@ export function buildVertexTable(localRing: [number, number][]): LotSheetVertexR
   }));
 }
 
-function azimuthFromSegment(dx: number, dy: number): number {
-  const rad = Math.atan2(dx, dy);
-  return ((rad * 180) / Math.PI + 360) % 360;
-}
-
 function formatAzimuth(deg: number): string {
   return formatAzimuthDms(deg);
 }
@@ -745,7 +743,7 @@ export function buildMetricTable(
     rows.push({
       from: vertexMarker(i),
       to: vertexMarker(j),
-      azimute: formatAzimuth(azimuthFromSegment(dx, dy)),
+      azimute: formatAzimuth(azimuthFromSegmentDxDy(dx, dy)),
       distancia: `${dist.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
       coordE: real.available
         ? formatCoordValue(c2[0])
@@ -835,7 +833,7 @@ export function buildSegmentTable(localRing: [number, number][]): LotSheetSegmen
     const j = (i + 1) % verts.length;
     rows.push({
       segment: `${i + 1}-${j + 1}`,
-      azimute: formatAzimuth(azimuthFromSegment(dx, dy)),
+      azimute: formatAzimuth(azimuthFromSegmentDxDy(dx, dy)),
       distancia: `${dist.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
     });
     if (rows.length >= 16) break;

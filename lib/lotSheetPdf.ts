@@ -879,6 +879,31 @@ function drawConfrontationsBox(
   }
 }
 
+const RT_LINE_STEP_MM = 3;
+const RT_IMG_MAX_H_MM = 18;
+
+function addPdfImageContained(
+  doc: jsPDF,
+  base64: string,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  format: 'PNG' | 'JPEG' = 'PNG',
+): number {
+  try {
+    const props = doc.getImageProperties(base64);
+    const scale = Math.min(boxW / props.width, boxH / props.height);
+    const dw = props.width * scale;
+    const dh = props.height * scale;
+    const ix = boxX + (boxW - dw) / 2;
+    doc.addImage(base64, format, ix, boxY, dw, dh);
+    return dh;
+  } catch {
+    return 0;
+  }
+}
+
 function drawTechnicalResponsiblePanel(
   doc: jsPDF,
   box: Box,
@@ -888,76 +913,89 @@ function drawTechnicalResponsiblePanel(
 ) {
   const { x, y, w, h } = box;
   const pad = 3;
+  const colGap = 2;
+  const innerW = w - pad * 2;
+  const leftW = innerW * 0.56;
+  const rightW = innerW - leftW - colGap;
+  const leftX = x + pad;
+  const rightX = leftX + leftW + colGap;
+  const contentTop = y + 7;
+  const lineStep = RT_LINE_STEP_MM;
+
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
   doc.rect(x, y, w, h);
 
-  const label = (
+  const writeLines = (
     lx: number,
     ly: number,
     text: string,
+    maxW: number,
+    size = 4.6,
     bold = false,
-    size = 5,
-  ) => {
+  ): number => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
     doc.setFontSize(size);
     doc.setTextColor(...BLACK);
-    doc.text(text, lx, ly, { maxWidth: w - pad * 2 });
+    const lines = doc.splitTextToSize(text, maxW) as string[];
+    let cy = ly;
+    for (const line of lines) {
+      doc.text(line, lx, cy);
+      cy += lineStep;
+    }
+    return cy;
   };
 
-  label(x + pad, y + 4, 'RESPONSÁVEL TÉCNICO', true, 6);
+  writeLines(leftX, y + 4, 'RESPONSÁVEL TÉCNICO', innerW, 6, true);
 
   if (!hasTechnicalResponsible(tech)) {
-    const lines = doc.splitTextToSize(TECH_NOT_INFORMED_MSG, w - pad * 2) as string[];
-    let ly = y + 10;
-    for (const line of lines) {
-      label(x + pad, ly, line, false, 4.8);
-      ly += 3.6;
-    }
+    writeLines(leftX, contentTop, TECH_NOT_INFORMED_MSG, innerW, 4.8);
     return;
   }
 
-  let ty = y + 9;
-  label(x + pad, ty, `Nome: ${tech.name}`, false, 4.8);
-  ty += 3.6;
-  if (tech.title) {
-    label(x + pad, ty, `Cargo/Função: ${tech.title}`, false, 4.6);
-    ty += 3.4;
-  }
-  const reg = formatTechnicalRegistryLine(tech);
-  label(x + pad, ty, `CREA/CFT/CAU: ${reg}`, false, 4.5);
-  ty += 3.4;
-  if (tech.cpf) {
-    label(x + pad, ty, `CPF: ${tech.cpf}`, false, 4.5);
-    ty += 3.4;
-  }
-  if (tech.phone) {
-    label(x + pad, ty, `Tel.: ${tech.phone}`, false, 4.5);
-    ty += 3.4;
-  }
+  let ly = contentTop;
+  const pushField = (label: string, value: string) => {
+    if (!value) return;
+    ly = writeLines(leftX, ly, `${label}: ${value}`, leftW, 4.6);
+  };
+
+  pushField('Nome', tech.name);
+  pushField('Cargo/Função', tech.title);
+  pushField('CREA/CFT/CAU', formatTechnicalRegistryLine(tech));
+  pushField('CPF', tech.cpf);
+  pushField('Telefone', tech.phone);
   if (tech.email) {
-    label(x + pad, ty, `E-mail: ${tech.email}`, false, 4.5);
-    ty += 3.4;
+    ly = writeLines(leftX, ly, `E-mail: ${tech.email}`, leftW, 4.6);
   }
 
-  const imgX = x + w - pad - 26;
-  let imgY = y + 7;
+  let imgY = contentTop;
+  const imgBoxH = RT_IMG_MAX_H_MM;
+
   if (signatureBase64) {
-    try {
-      doc.addImage(signatureBase64, 'PNG', imgX, imgY, 24, 9);
-      label(x + pad, y + h - 12, 'Assinatura', false, 4.2);
-      imgY += 10;
-    } catch {
-      /* ignore */
-    }
+    const usedH = addPdfImageContained(
+      doc,
+      signatureBase64,
+      rightX,
+      imgY,
+      rightW,
+      imgBoxH,
+    );
+    imgY += (usedH > 0 ? usedH : imgBoxH) + 2;
+  } else {
+    writeLines(
+      rightX,
+      imgY + 2,
+      'Assinatura não cadastrada',
+      rightW,
+      4.2,
+    );
+    imgY += 7;
   }
+
   if (stampBase64) {
-    try {
-      doc.addImage(stampBase64, 'PNG', imgX, imgY, 22, 10);
-      label(x + pad, y + h - 6, 'Carimbo', false, 4.2);
-    } catch {
-      /* ignore */
-    }
+    addPdfImageContained(doc, stampBase64, rightX, imgY, rightW, imgBoxH);
+  } else {
+    writeLines(rightX, imgY + 2, 'Carimbo não cadastrado', rightW, 4.2);
   }
 }
 

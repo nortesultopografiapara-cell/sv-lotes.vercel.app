@@ -3,7 +3,10 @@
  * Geometria (mapa) não altera frente/fundo/laterais/chanfre.
  */
 
-import { formatAzimuthDms } from "@/lib/azimuthFormat";
+import {
+  azimuthFromCoordinates,
+  formatAzimuthDms,
+} from "@/lib/azimuthFormat";
 import type { ChanfreInfo } from "@/lib/lotChanfre";
 import {
   findFrontSegmentIndexTouchingStreet,
@@ -351,11 +354,44 @@ export function bearingFromEn(
   north2: number,
   east2: number,
 ): number {
-  const dn = north2 - north1;
-  const de = east2 - east1;
-  let deg = (Math.atan2(de, dn) * 180) / Math.PI;
-  if (deg < 0) deg += 360;
-  return round2(deg);
+  return round2(azimuthFromCoordinates(north1, east1, north2, east2));
+}
+
+/** Azimute real para exibição (memorial, prancha) — prioriza cálculo EN, sem round2 em graus. */
+export function resolveSegmentAzimuthDegrees(
+  seg: OfficialLotSegment,
+  next: OfficialLotSegment | null,
+): number | null {
+  if (
+    seg.segment_type === "CURVE" &&
+    seg.end_north != null &&
+    seg.end_east != null
+  ) {
+    return azimuthFromCoordinates(
+      seg.north,
+      seg.east,
+      seg.end_north,
+      seg.end_east,
+    );
+  }
+  if (
+    next &&
+    Number.isFinite(seg.north) &&
+    Number.isFinite(seg.east) &&
+    Number.isFinite(next.north) &&
+    Number.isFinite(next.east)
+  ) {
+    return azimuthFromCoordinates(
+      seg.north,
+      seg.east,
+      next.north,
+      next.east,
+    );
+  }
+  if (seg.bearing != null && Number.isFinite(seg.bearing)) {
+    return Number(seg.bearing);
+  }
+  return null;
 }
 
 /** Diferença angular mínima entre dois azimutes (0–180°). */
@@ -2060,7 +2096,7 @@ export function getOfficialLotSegmentTable(
       segment_index: s.segment_index,
       de: vertexDeParaMarker(s.vertex_order),
       para: vertexDeParaMarker(toVertex),
-      azimute: formatOfficialAzimuth(s.bearing),
+      azimute: formatOfficialAzimuth(resolveSegmentAzimuthDegrees(s, next)),
       distanceM,
       distancia: valid
         ? s.segment_type === "CURVE" && (s.radius ?? 0) > 0
