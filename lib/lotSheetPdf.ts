@@ -22,6 +22,18 @@ const HIGHLIGHT: [number, number, number] = [251, 146, 60];
 
 const MARGIN = 5;
 
+/** Aviso legal — caráter informativo da prancha (não altera medidas do croqui). */
+const LOT_SHEET_LEGAL_DISCLAIMER = {
+  title: 'OBSERVAÇÕES:',
+  paragraphs: [
+    'Esta prancha possui caráter exclusivamente informativo.',
+    'Sua validade está condicionada à apresentação conjunta do contrato de compra e venda e/ou comprovante de quitação emitido pela empreendedora.',
+    'Este documento não constitui prova de propriedade, posse ou domínio do imóvel.',
+  ],
+} as const;
+
+const DISCLAIMER_BAND_H = 17;
+
 type Box = { x: number; y: number; w: number; h: number };
 
 function formatScaleLabel(label: string): string {
@@ -892,6 +904,33 @@ function drawMetricTopoFooter(
   label(rx + 2, y + h - 3, regLine, false, 4.5);
 }
 
+function drawLotSheetLegalDisclaimer(doc: jsPDF, box: Box) {
+  const { x, y, w, h } = box;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  doc.rect(x, y, w, h);
+
+  const lineH = 2.85;
+  let ly = y + 3.2;
+
+  doc.setTextColor(...BLACK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5);
+  doc.text(LOT_SHEET_LEGAL_DISCLAIMER.title, x + 2, ly);
+  ly += lineH + 0.4;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(4.5);
+  for (const paragraph of LOT_SHEET_LEGAL_DISCLAIMER.paragraphs) {
+    const lines = doc.splitTextToSize(paragraph, w - 4) as string[];
+    for (const line of lines) {
+      doc.text(line, x + 2, ly);
+      ly += lineH;
+    }
+    ly += 0.35;
+  }
+}
+
 /**
  * Gera PDF A4 retrato no padrão Métrica Topo.
  */
@@ -925,6 +964,7 @@ export async function generateLotSheetPdf(
   doc.rect(innerX, innerY, innerW, innerH);
 
   const footerH = 46;
+  const disclaimerH = DISCLAIMER_BAND_H;
   const scaleBandH = 9;
   const tableRowH = 4.6;
   const tableHeaderH = 5.5;
@@ -934,9 +974,16 @@ export async function generateLotSheetPdf(
   const contentX = innerX + 3;
   const contentW = innerW - 6;
 
+  const disclaimerBox: Box = {
+    x: contentX,
+    y: innerY + innerH - disclaimerH - 1,
+    w: contentW,
+    h: disclaimerH,
+  };
+
   const footerBox: Box = {
     x: contentX,
-    y: innerY + innerH - footerH - 2,
+    y: disclaimerBox.y - gap - footerH,
     w: contentW,
     h: footerH,
   };
@@ -1064,6 +1111,8 @@ export async function generateLotSheetPdf(
     logoBase64,
     signatureBase64,
   });
+
+  drawLotSheetLegalDisclaimer(doc, disclaimerBox);
 
   return doc;
 }
