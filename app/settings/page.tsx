@@ -7,6 +7,9 @@ import { Building2, Save, Upload, Loader2, ImagePlus, HardHat } from 'lucide-rea
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
+const COMPANY_TECHNICAL_COLUMNS =
+  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
+
 function resolveSettingsCompanyId(user: { tenant_id?: string; company_id?: string; role?: string } | null): string | null {
   if (!user) return null;
   if (typeof window !== 'undefined') {
@@ -70,38 +73,19 @@ export default function SettingsPage() {
 
       const { data, error } = await supabase
         .from('companies')
-        .select('*')
+        .select(COMPANY_TECHNICAL_COLUMNS)
         .eq('id', companyId)
         .single();
 
+      console.log('[RT RELOAD] company', data, error);
+
+      if (error) {
+        console.error('[RT RELOAD] erro ao carregar companies', error);
+      }
+
       if (!error && data) {
         setCompany(data);
-        let techState = technicalFromCompanyRow(data as Record<string, unknown>);
-
-        if (!techState.name) {
-          const { data: tech } = await supabase
-            .from('technical_responsibles')
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('active', true)
-            .maybeSingle();
-          if (tech) {
-            const rt = tech.registry_type || '';
-            const rn = tech.registry_number || '';
-            techState = {
-              name: tech.name || '',
-              title: tech.title || '',
-              crea: tech.crea || (rt === 'CREA' ? rn : ''),
-              cau: tech.cau || (rt === 'CAU' ? rn : ''),
-              cft: tech.cft || (rt === 'CFT' ? rn : ''),
-              cpf: tech.cpf || '',
-              phone: tech.phone || '',
-              email: tech.email || '',
-              signature_url: tech.signature_url || '',
-              stamp_url: tech.stamp_url || '',
-            };
-          }
-        }
+        const techState = technicalFromCompanyRow(data as Record<string, unknown>);
         setTechnical(techState);
       }
 
@@ -144,24 +128,26 @@ export default function SettingsPage() {
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0 || !company?.id) return;
+      const companyId = resolveSettingsCompanyId(user) || company?.id;
+      if (!e.target.files || e.target.files.length === 0 || !companyId) return;
       setUploadingLogo(true);
       const url = await uploadImage(e.target.files[0], 'logo');
       if (url) {
           setCompany((prev: any) => ({ ...prev, logo_url: url }));
-          await supabase.from('companies').update({ logo_url: url }).eq('id', company.id);
+          await supabase.from('companies').update({ logo_url: url }).eq('id', companyId);
           window.dispatchEvent(new Event('company_updated'));
       }
       setUploadingLogo(false);
   };
 
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0 || !company?.id) return;
+      const companyId = resolveSettingsCompanyId(user) || company?.id;
+      if (!e.target.files || e.target.files.length === 0 || !companyId) return;
       setUploadingSignature(true);
       const url = await uploadImage(e.target.files[0], 'signature');
       if (url) {
           setCompany((prev: any) => ({ ...prev, signature_url: url }));
-          await supabase.from('companies').update({ signature_url: url }).eq('id', company.id);
+          await supabase.from('companies').update({ signature_url: url }).eq('id', companyId);
       }
       setUploadingSignature(false);
   };
@@ -171,7 +157,8 @@ export default function SettingsPage() {
   };
 
   const handleTechSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length || !company?.id) return;
+    const companyId = resolveSettingsCompanyId(user) || company?.id;
+    if (!e.target.files?.length || !companyId) return;
     setUploadingTechSignature(true);
     const url = await uploadImage(e.target.files[0], 'signature');
     if (url) setTechnical((prev) => ({ ...prev, signature_url: url }));
@@ -179,7 +166,8 @@ export default function SettingsPage() {
   };
 
   const handleTechStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length || !company?.id) return;
+    const companyId = resolveSettingsCompanyId(user) || company?.id;
+    if (!e.target.files?.length || !companyId) return;
     setUploadingTechStamp(true);
     const url = await uploadImage(e.target.files[0], 'signature');
     if (url) setTechnical((prev) => ({ ...prev, stamp_url: url }));
@@ -188,51 +176,38 @@ export default function SettingsPage() {
 
   const handleSave = async (e: React.FormEvent) => {
      e.preventDefault();
-     if (!company?.id) return;
-     
-     setSubmitting(true);
-     const signatureUrl =
-       technical.signature_url ||
-       company.technical_signature_url ||
-       null;
-     const stampUrl =
-       technical.stamp_url || company.technical_stamp_url || null;
 
-     const { error } = await supabase
-        .from('companies')
-        .update({
-           fantasy_name: company.fantasy_name,
-           phone: company.phone,
-           email: company.email,
-           address: company.address,
-           city: company.city,
-           state: company.state,
-           zip_code: company.zip_code,
-           legal_representative: company.legal_representative,
-           representative_cpf: company.representative_cpf,
-           logo_url: company.logo_url,
-           signature_url: company.signature_url,
-           technical_responsible_name: technical.name.trim() || null,
-           technical_responsible_role: technical.title.trim() || null,
-           technical_responsible_crea: technical.crea.trim() || null,
-           technical_responsible_cau: technical.cau.trim() || null,
-           technical_responsible_cft: technical.cft.trim() || null,
-           technical_responsible_cpf: technical.cpf.trim() || null,
-           technical_responsible_phone: technical.phone.trim() || null,
-           technical_responsible_email: technical.email.trim() || null,
-           technical_signature_url: signatureUrl,
-           technical_stamp_url: stampUrl,
-        })
-        .eq('id', company.id);
+     const companyId = resolveSettingsCompanyId(user);
+     console.log('[RT SAVE] companyId', companyId);
 
-     if (error) {
-        setSubmitting(false);
-        alert("Erro ao salvar: " + error.message);
-        return;
+     if (!companyId) {
+       alert('Empresa não identificada. ADMIN: verifique tenant_id. SUPER_ADMIN: selecione a empresa (impersonação).');
+       return;
      }
 
-     setCompany((prev: Record<string, unknown>) => ({
-       ...prev,
+     if (company?.id && company.id !== companyId) {
+       console.warn('[RT SAVE] company.id diverge de resolveSettingsCompanyId', company.id, companyId);
+     }
+
+     setSubmitting(true);
+
+     const signatureUrl =
+       (technical.signature_url || company?.technical_signature_url || '').trim() || null;
+     const stampUrl =
+       (technical.stamp_url || company?.technical_stamp_url || '').trim() || null;
+
+     const payload = {
+       fantasy_name: company?.fantasy_name,
+       phone: company?.phone,
+       email: company?.email,
+       address: company?.address,
+       city: company?.city,
+       state: company?.state,
+       zip_code: company?.zip_code,
+       legal_representative: company?.legal_representative,
+       representative_cpf: company?.representative_cpf,
+       logo_url: company?.logo_url,
+       signature_url: company?.signature_url,
        technical_responsible_name: technical.name.trim() || null,
        technical_responsible_role: technical.title.trim() || null,
        technical_responsible_crea: technical.crea.trim() || null,
@@ -243,10 +218,64 @@ export default function SettingsPage() {
        technical_responsible_email: technical.email.trim() || null,
        technical_signature_url: signatureUrl,
        technical_stamp_url: stampUrl,
-     }));
+     };
+
+     console.log('[RT SAVE] payload', payload);
+
+     const { data: updateData, error: updateError } = await supabase
+        .from('companies')
+        .update(payload)
+        .eq('id', companyId)
+        .select(COMPANY_TECHNICAL_COLUMNS)
+        .single();
+
+     console.log('[RT SAVE] result', updateData, updateError);
+
+     if (updateError) {
+        console.error('[RT SAVE] erro no update', updateError);
+        setSubmitting(false);
+        alert('Erro ao salvar: ' + updateError.message);
+        return;
+     }
+
+     if (!updateData) {
+        setSubmitting(false);
+        const msg = 'Nenhuma linha atualizada em companies (verifique RLS ou company_id).';
+        console.error('[RT SAVE]', msg, { companyId });
+        alert(msg);
+        return;
+     }
+
+     const { data: reloaded, error: reloadError } = await supabase
+       .from('companies')
+       .select(COMPANY_TECHNICAL_COLUMNS)
+       .eq('id', companyId)
+       .single();
+
+     console.log('[RT RELOAD] company', reloaded, reloadError);
+
+     if (reloadError) {
+       console.error('[RT RELOAD] erro pós-save', reloadError);
+       setSubmitting(false);
+       alert('Erro ao verificar persistência: ' + reloadError.message);
+       return;
+     }
+
+     const expectedName = technical.name.trim();
+     const persistedName = String(reloaded?.technical_responsible_name || '').trim();
+
+     if (expectedName && persistedName !== expectedName) {
+       console.error('[RT SAVE] persistência inconsistente', { expectedName, persistedName, reloaded });
+       setSubmitting(false);
+       alert('Falha ao persistir responsável técnico em companies');
+       return;
+     }
+
+     setCompany(reloaded);
+     setTechnical(technicalFromCompanyRow(reloaded as Record<string, unknown>));
 
      setSubmitting(false);
-     alert("Configurações salvas com sucesso!");
+     alert('Configurações salvas com sucesso!');
      window.dispatchEvent(new Event('company_updated'));
   };
 
@@ -254,8 +283,23 @@ export default function SettingsPage() {
      return <div className="p-8 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>;
   }
 
-  if (!user?.tenant_id && user?.role !== 'SUPER_ADMIN') {
+  const settingsCompanyId = resolveSettingsCompanyId(user);
+  const isPlatformAdmin = user?.role && PLATFORM_ADMIN_ROLES.includes(user.role);
+
+  if (!settingsCompanyId && !isPlatformAdmin) {
      return <div className="p-8 text-center text-gray-500">Acesso negado ou empresa não localizada.</div>;
+  }
+
+  if (!settingsCompanyId && isPlatformAdmin) {
+     return (
+       <div className="p-8 text-center text-gray-500">
+         Selecione uma empresa (impersonação) no painel master para editar as configurações.
+       </div>
+     );
+  }
+
+  if (!company) {
+     return <div className="p-8 text-center text-gray-500">Empresa não encontrada em companies.</div>;
   }
 
   return (
