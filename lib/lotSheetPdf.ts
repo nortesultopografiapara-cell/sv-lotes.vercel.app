@@ -228,8 +228,11 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
 /** Escala de fontes/offsets apenas no croqui (não tabelas/rodapés). */
 const SKETCH_FONT_SCALE = 2;
 
-/** Profundidade da área na linha média: fração frente → fundo (48–55%; lote 5 ≈ 52%). */
-const AREA_CENTERLINE_DEPTH_RATIO_DEFAULT = 0.52;
+/** Profundidade da área: fração frente → fundo (50–52%). */
+const AREA_CENTERLINE_DEPTH_RATIO_DEFAULT = 0.51;
+
+/** Tentativas de offset interno das medidas (sempre dentro do lote). */
+const DISTANCE_OFFSET_TRY_MM = [6, 5, 4, 3];
 
 /** Offset interno simétrico das medidas (mm no croqui, sem redução por lado). */
 const DISTANCE_INTERNAL_OFFSET_NORMAL_MM = 6;
@@ -433,50 +436,31 @@ function getPointOnCenterlineAtRatio(
   return pos;
 }
 
-function sideBalanceScore(pos: [number, number], sides: LotSideSegments): number {
-  const dLeft = distPointToSegment(pos, sides.esquerdo.p1, sides.esquerdo.p2);
-  const dRight = distPointToSegment(pos, sides.direito.p1, sides.direito.p2);
-  return -Math.abs(dLeft - dRight) * 20;
-}
-
-function areaCenterlinePlacementScore(
-  pos: [number, number],
-  verts: [number, number][],
+/**
+ * Centro real entre laterais: média dos pontos médios esquerdo/direito,
+ * ajustada na profundidade (frente → fundo).
+ */
+function getAreaPositionBetweenLaterals(
   sides: LotSideSegments,
-  badgePos: [number, number] | null,
-  placedZones: PlacedLabelZone[],
-  preferred: [number, number],
-  centerline: LotCenterline,
-): number {
-  if (!pointInsidePolygon(pos[0], pos[1], verts)) return -Infinity;
-
-  let score = minDistToPolygonEdges(pos, verts) * 2;
-  score += sideBalanceScore(pos, sides);
-  score -= Math.hypot(pos[0] - preferred[0], pos[1] - preferred[1]) * 4;
-
-  const crossDx = -centerline.depthUy;
-  const crossDy = centerline.depthUx;
-  const lateralOff = Math.abs(
-    (pos[0] - preferred[0]) * crossDx + (pos[1] - preferred[1]) * crossDy,
-  );
-  score -= lateralOff * 40;
-
-  const areaRadius = sketchOffsetMm(7);
-  for (const zone of placedZones) {
-    const d = Math.hypot(pos[0] - zone.pos[0], pos[1] - zone.pos[1]);
-    const need = areaRadius + zone.radius + sketchOffsetMm(3);
-    if (d < need) score -= (need - d) * 8;
-    if (zone.kind === 'lot_badge' && d < need + 6) score -= 120;
-  }
-
-  if (badgePos) {
-    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 40);
-  }
-
-  return score;
+  front: LotFrontContext,
+  ratio: number,
+): [number, number] {
+  const transMid: [number, number] = [
+    (sides.esquerdo.mid[0] + sides.direito.mid[0]) / 2,
+    (sides.esquerdo.mid[1] + sides.direito.mid[1]) / 2,
+  ];
+  const currentDepth =
+    (transMid[0] - front.edge.mid[0]) * front.inwardNx +
+    (transMid[1] - front.edge.mid[1]) * front.inwardNy;
+  const targetDepth = front.maxInwardDepthMm * Math.max(0, Math.min(1, ratio));
+  const delta = targetDepth - currentDepth;
+  return [
+    transMid[0] + front.inwardNx * delta,
+    transMid[1] + front.inwardNy * delta,
+  ];
 }
 
-/** Posiciona a área na linha média; colisões apenas ao longo da profundidade. */
+/** Posiciona a área no eixo entre laterais; colisão só altera profundidade. */
 function placeAreaOnCenterlineRatio(
   verts: [number, number][],
   front: LotFrontContext,
@@ -486,76 +470,42 @@ function placeAreaOnCenterlineRatio(
   ratio = AREA_CENTERLINE_DEPTH_RATIO_DEFAULT,
 ): [number, number] {
   const sides = getSideSegmentsByRole(verts, frontEdgeIndex);
-  const centerline = getLotCenterlineBetweenSides(front, sides);
-  const { depthUx, depthUy } = centerline;
   const areaRadius = sketchOffsetMm(7);
+  const depthRatios = [ratio, 0.51, 0.5, 0.52, 0.48, 0.54];
 
-  const depthRatios = [ratio, 0.52, 0.5, 0.54, 0.48, 0.55];
-  const preferred = getPointOnCenterlineAtRatio(verts, front, sides, ratio);
+  let best = getAreaPositionBetweenLaterals(sides, front, ratio);
 
-  const candidates: [number, number][] = [];
   for (const r of depthRatios) {
-    candidates.push(getPointOnCenterlineAtRatio(verts, front, sides, r));
-  }
+    let pos = getAreaPositionBetweenLaterals(sides, front, r);
+    if (!pointInsidePolygon(pos[0], pos[1], verts)) continue;
 
-  for (const deltaMm of [-12, -8, -4, 4, 8, 12, 16]) {
-    candidates.push([
-      preferred[0] + depthUx * deltaMm,
-      preferred[1] + depthUy * deltaMm,
-    ]);
-  }
-
-  if (badgePos) {
-    const toFund =
-      (preferred[0] - badgePos[0]) * depthUx + (preferred[1] - badgePos[1]) * depthUy;
-    const sign = toFund >= 0 ? 1 : -1;
-    for (const d of [8, 12, 16, 20]) {
-      candidates.push([
-        preferred[0] + depthUx * sign * d,
-        preferred[1] + depthUy * sign * d,
-      ]);
-    }
-  }
-
-  let best = preferred;
-  let bestScore = -Infinity;
-
-  for (let cand of candidates) {
-    const depthMm = Math.max(
-      0,
-      Math.min(
-        centerline.maxDepthMm,
-        (cand[0] - front.edge.mid[0]) * depthUx +
-          (cand[1] - front.edge.mid[1]) * depthUy,
-      ),
-    );
-    cand = getCrossSectionMidpointAtDepth(front, sides, depthMm);
-    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
-
-    for (const zone of placedZones) {
-      const d = Math.hypot(cand[0] - zone.pos[0], cand[1] - zone.pos[1]);
-      const need = areaRadius + zone.radius + sketchOffsetMm(3);
-      if (d < need && zone.kind === 'lot_badge') {
-        const push = (need - d) / (Math.hypot(depthUx, depthUy) || 1);
-        cand = getCrossSectionMidpointAtDepth(front, sides, depthMm + push);
+    if (badgePos) {
+      const need = areaRadius + LOT_BADGE_RADIUS_MM + sketchOffsetMm(3);
+      let d = Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]);
+      if (d < need) {
+        for (const bump of [0.03, 0.05, 0.08, 0.1]) {
+          const pos2 = getAreaPositionBetweenLaterals(
+            sides,
+            front,
+            Math.min(0.58, r + bump),
+          );
+          if (!pointInsidePolygon(pos2[0], pos2[1], verts)) continue;
+          const d2 = Math.hypot(pos2[0] - badgePos[0], pos2[1] - badgePos[1]);
+          if (d2 >= need) {
+            pos = pos2;
+            d = d2;
+            break;
+          }
+        }
       }
     }
 
-    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
-
-    const s = areaCenterlinePlacementScore(
-      cand,
-      verts,
-      sides,
-      badgePos,
-      placedZones,
-      preferred,
-      centerline,
-    );
-    if (s > bestScore) {
-      bestScore = s;
-      best = cand;
+    let score = minDistToPolygonEdges(pos, verts);
+    if (badgePos) {
+      score += Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]) * 0.5;
     }
+    const bestScore = minDistToPolygonEdges(best, verts);
+    if (score >= bestScore) best = pos;
   }
 
   return best;
@@ -766,20 +716,6 @@ function positionAlongNormal(
   return [mid[0] + nx * offsetMm, mid[1] + ny * offsetMm];
 }
 
-/** Normal interna verdadeira (lado que cai dentro do polígono). */
-function getTrueInternalNormal(
-  edge: EdgeGeometry,
-  polygon: [number, number][],
-): { nx: number; ny: number } {
-  const probe = 1.2;
-  const tx = edge.mid[0] + edge.inNx * probe;
-  const ty = edge.mid[1] + edge.inNy * probe;
-  if (pointInsidePolygon(tx, ty, polygon)) {
-    return { nx: edge.inNx, ny: edge.inNy };
-  }
-  return { nx: -edge.inNx, ny: -edge.inNy };
-}
-
 function perpendicularDistanceToEdge(
   pos: [number, number],
   edge: EdgeGeometry,
@@ -787,32 +723,66 @@ function perpendicularDistanceToEdge(
   return distPointToSegment(pos, edge.p1, edge.p2);
 }
 
-/** Offset interno fixo e igual em todos os segmentos. */
+/** Escolhe a normal cujo deslocamento cai dentro do polígono. */
+function pickInternalNormal(
+  edge: EdgeGeometry,
+  polygon: [number, number][],
+): { nx: number; ny: number } {
+  const len = Math.hypot(edge.dx, edge.dy) || 1;
+  const perpX = -edge.dy / len;
+  const perpY = edge.dx / len;
+  const candidates = [
+    { nx: perpX, ny: perpY },
+    { nx: -perpX, ny: -perpY },
+    { nx: edge.inNx, ny: edge.inNy },
+    { nx: -edge.inNx, ny: -edge.inNy },
+  ];
+  for (const n of candidates) {
+    const tx = edge.mid[0] + n.nx * 1.5;
+    const ty = edge.mid[1] + n.ny * 1.5;
+    if (pointInsidePolygon(tx, ty, polygon)) return n;
+  }
+  return { nx: edge.inNx, ny: edge.inNy };
+}
+
+/** Medida sempre dentro do lote; reduz offset se necessário, nunca inverte para fora. */
 function placeDistanceLabelWithSymmetricOffset(
   edge: EdgeGeometry,
   polygon: [number, number][],
-  offsetMm: number,
-): { x: number; y: number } {
-  const { nx, ny } = getTrueInternalNormal(edge, polygon);
-  let used = offsetMm;
-  let x = edge.mid[0] + nx * used;
-  let y = edge.mid[1] + ny * used;
+  fixedOffsetMm?: number,
+): { x: number; y: number; offsetUsed: number } {
+  const { nx, ny } = pickInternalNormal(edge, polygon);
+  const tries =
+    fixedOffsetMm != null
+      ? [
+          fixedOffsetMm,
+          ...DISTANCE_OFFSET_TRY_MM.filter((o) => o < fixedOffsetMm),
+        ]
+      : DISTANCE_OFFSET_TRY_MM;
 
-  let dist = perpendicularDistanceToEdge([x, y], edge);
-  if (dist < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM) {
-    used = offsetMm + (DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM - dist + 0.5);
-    x = edge.mid[0] + nx * used;
-    y = edge.mid[1] + ny * used;
-    dist = perpendicularDistanceToEdge([x, y], edge);
+  for (const off of tries) {
+    const x = edge.mid[0] + nx * off;
+    const y = edge.mid[1] + ny * off;
+    if (!pointInsidePolygon(x, y, polygon)) continue;
+    if (perpendicularDistanceToEdge([x, y], edge) < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM) {
+      continue;
+    }
+    return { x, y, offsetUsed: off };
   }
 
-  if (!pointInsidePolygon(x, y, polygon) || dist < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM * 0.8) {
-    used = offsetMm + 1.5;
-    x = edge.mid[0] + nx * used;
-    y = edge.mid[1] + ny * used;
+  for (const off of [2.5, 2, 1.5]) {
+    const x = edge.mid[0] + nx * off;
+    const y = edge.mid[1] + ny * off;
+    if (pointInsidePolygon(x, y, polygon)) {
+      return { x, y, offsetUsed: off };
+    }
   }
 
-  return { x, y };
+  return {
+    x: edge.mid[0] + nx * 2,
+    y: edge.mid[1] + ny * 2,
+    offsetUsed: 2,
+  };
 }
 
 /** Rótulo no lado externo do polígono (normal oposta ao centroide). */
@@ -845,12 +815,13 @@ function placeDistanceLabelsInsideLot(
   doc: jsPDF,
   points: [number, number][],
   measures: string[],
-  _frontEdgeIndex: number,
+  frontEdgeIndex: number,
   mainAxis: LotMainAxis,
 ): { edgeIndex: number; x: number; y: number }[] {
   const verts = preparePolygonVertices(points);
   const n = Math.min(verts.length, measures.length);
-  const baseOffset = mainAxis.internalOffsetMm;
+  const sides = getSideSegmentsByRole(verts, frontEdgeIndex);
+  let lateralOffsetMm: number | null = null;
   const placed: { edgeIndex: number; x: number; y: number }[] = [];
 
   doc.setTextColor(...BLACK);
@@ -862,7 +833,39 @@ function placeDistanceLabelsInsideLot(
     const edge = getEdgeGeometry(verts, i);
     const edgeLenMm = Math.hypot(edge.dx, edge.dy);
     const fontSize = distanceLabelFontSize(edgeLenMm, mainAxis.narrow);
-    const { x, y } = placeDistanceLabelWithSymmetricOffset(edge, verts, baseOffset);
+    const isLateral =
+      edge.index === sides.esquerdo.index || edge.index === sides.direito.index;
+
+    let x: number;
+    let y: number;
+    if (isLateral) {
+      if (lateralOffsetMm == null) {
+        const first = placeDistanceLabelWithSymmetricOffset(
+          edge,
+          verts,
+          mainAxis.internalOffsetMm,
+        );
+        lateralOffsetMm = first.offsetUsed;
+        x = first.x;
+        y = first.y;
+      } else {
+        const pos = placeDistanceLabelWithSymmetricOffset(
+          edge,
+          verts,
+          lateralOffsetMm,
+        );
+        x = pos.x;
+        y = pos.y;
+      }
+    } else {
+      const pos = placeDistanceLabelWithSymmetricOffset(
+        edge,
+        verts,
+        mainAxis.internalOffsetMm,
+      );
+      x = pos.x;
+      y = pos.y;
+    }
 
     placed.push({ edgeIndex: i, x, y });
 
