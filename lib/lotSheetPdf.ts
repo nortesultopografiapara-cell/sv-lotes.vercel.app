@@ -170,12 +170,57 @@ function drawLotPolygon(doc: jsPDF, points: [number, number][]): [number, number
   return verts;
 }
 
-/** Ângulo do texto no eixo do PDF (Y invertido). Apenas medidas das divisas. */
-function computePdfAxisTextAngle(dx: number, dy: number): number {
+/** Ângulo legível no PDF (paralelo ao segmento, sem texto invertido). */
+function getReadableRotation(dx: number, dy: number): number {
   let angleDeg = (-Math.atan2(dy, dx) * 180) / Math.PI;
-  if (angleDeg > 90) angleDeg -= 180;
-  if (angleDeg < -90) angleDeg += 180;
+  while (angleDeg > 90) angleDeg -= 180;
+  while (angleDeg <= -90) angleDeg += 180;
   return angleDeg;
+}
+
+function computePdfAxisTextAngle(dx: number, dy: number): number {
+  return getReadableRotation(dx, dy);
+}
+
+type LotMainAxis = {
+  center: [number, number];
+  axisDx: number;
+  axisDy: number;
+  angleDeg: number;
+  narrow: boolean;
+  internalOffsetMm: number;
+};
+
+/** Eixo longitudinal do lote (aresta mais longa no croqui). */
+function getLotMainAxis(verts: [number, number][]): LotMainAxis {
+  const center = centroid(verts);
+  const narrow = lotSpanOnSheet(verts) < 38;
+  let bestLen = 0;
+  let axisDx = 1;
+  let axisDy = 0;
+
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const len = Math.hypot(dx, dy);
+    if (len > bestLen) {
+      bestLen = len;
+      axisDx = dx / len;
+      axisDy = dy / len;
+    }
+  }
+
+  return {
+    center,
+    axisDx,
+    axisDy,
+    angleDeg: getReadableRotation(axisDx, axisDy),
+    narrow,
+    internalOffsetMm: narrow ? 2.5 : 3.5,
+  };
 }
 
 function pointInsidePolygon(
@@ -255,40 +300,33 @@ function positionAlongNormal(
   return [mid[0] + nx * offsetMm, mid[1] + ny * offsetMm];
 }
 
-/** Posição do rótulo no lado interno do polígono (em direção ao centroide). */
-function edgeInternalLabelPos(
+/** Posição interna uniforme, paralela ao segmento (offset simétrico em todos os lados). */
+function getSegmentInternalLabelPosition(
   edge: EdgeGeometry,
   polygon: [number, number][],
-  offsetMm: number,
-): {
-  x: number;
-  y: number;
-  mid: [number, number];
-  offsetUsed: number;
-} {
-  const tries = [offsetMm, Math.max(3, offsetMm - 1), 3].filter(
-    (v, idx, arr) => arr.indexOf(v) === idx,
-  );
+  baseOffsetMm: number,
+): { x: number; y: number; offsetUsed: number } {
+  const steps = [1, 0.85, 0.7, 0.55].map((f) => baseOffsetMm * f);
 
-  let offsetUsed = tries[0];
-  let [x, y] = positionAlongNormal(edge.mid, edge.inNx, edge.inNy, offsetUsed);
-
-  for (const tryOffset of tries) {
-    const [tx, ty] = positionAlongNormal(
-      edge.mid,
-      edge.inNx,
-      edge.inNy,
-      tryOffset,
-    );
-    if (pointInsidePolygon(tx, ty, polygon)) {
-      x = tx;
-      y = ty;
-      offsetUsed = tryOffset;
-      break;
+  for (const off of steps) {
+    if (off < 2) continue;
+    const [x, y] = positionAlongNormal(edge.mid, edge.inNx, edge.inNy, off);
+    if (pointInsidePolygon(x, y, polygon)) {
+      return { x, y, offsetUsed: off };
     }
   }
 
-  return { x, y, mid: edge.mid, offsetUsed };
+  const c = centroid(polygon);
+  const pull = 0.12;
+  const x =
+    edge.mid[0] +
+    edge.inNx * 2 +
+    (c[0] - edge.mid[0]) * pull;
+  const y =
+    edge.mid[1] +
+    edge.inNy * 2 +
+    (c[1] - edge.mid[1]) * pull;
+  return { x, y, offsetUsed: 2 };
 }
 
 /** Rótulo no lado externo do polígono (normal oposta ao centroide). */
@@ -302,58 +340,44 @@ function lotSpanOnSheet(verts: [number, number][]): number {
   return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 }
 
-function drawEdgeMeasures(
+function distanceLabelFontSize(
+  edgeLenMm: number,
+  narrow: boolean,
+): number {
+  let size = narrow ? 5.5 : 6;
+  if (edgeLenMm < 18) size = Math.min(size, 5);
+  if (edgeLenMm < 12) size = 4.5;
+  return size;
+}
+
+/** Distâncias oficiais: offset interno uniforme, paralelas às divisas. */
+function placeDistanceLabelsInsideLot(
   doc: jsPDF,
   points: [number, number][],
   measures: string[],
-  frontEdgeIndex: number,
+  _frontEdgeIndex: number,
+  mainAxis: LotMainAxis,
 ): { edgeIndex: number; x: number; y: number }[] {
   const verts = preparePolygonVertices(points);
   const n = Math.min(verts.length, measures.length);
-  const narrow = lotSpanOnSheet(verts) < 38;
-  const fontSize = narrow ? 5.5 : 6;
-  const baseOffset = narrow ? 3 : 4;
+  const baseOffset = mainAxis.internalOffsetMm;
   const placed: { edgeIndex: number; x: number; y: number }[] = [];
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(fontSize);
   doc.setTextColor(...BLACK);
-
-  console.log('LOT_SHEET_EDGE_LABEL_INTERNAL_OFFSET', {
-    narrow,
-    fontSize,
-    baseOffsetMm: baseOffset,
-    rangeMm: '3-4',
-    edges: n,
-    frontEdgeIndex,
-  });
 
   for (let i = 0; i < n; i++) {
     const label = measures[i];
     if (!label || label === '—' || label.includes('inválido')) continue;
 
     const edge = getEdgeGeometry(verts, i);
-    const { x, y, offsetUsed } = edgeInternalLabelPos(edge, verts, baseOffset);
+    const edgeLenMm = Math.hypot(edge.dx, edge.dy);
+    const fontSize = distanceLabelFontSize(edgeLenMm, mainAxis.narrow);
+    const { x, y } = getSegmentInternalLabelPosition(edge, verts, baseOffset);
 
     placed.push({ edgeIndex: i, x, y });
 
-    console.log('LOT_SHEET_TEXT_ANGLE_PDF_AXIS', {
-      edgeIndex: i,
-      dx: edge.dx,
-      dy: edge.dy,
-      angleDeg: edge.angleDeg,
-      midpoint: edge.mid,
-      isFront: i === frontEdgeIndex,
-    });
-    console.log('LOT_SHEET_TEXT_VISIBLE_FALLBACK', {
-      edgeIndex: i,
-      label,
-      x,
-      y,
-      offsetMm: offsetUsed,
-      inside: pointInsidePolygon(x, y, verts),
-    });
-
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(fontSize);
     doc.text(label, x, y, {
       angle: edge.angleDeg,
       align: 'center',
@@ -362,6 +386,22 @@ function drawEdgeMeasures(
   }
 
   return placed;
+}
+
+function drawEdgeMeasures(
+  doc: jsPDF,
+  points: [number, number][],
+  measures: string[],
+  frontEdgeIndex: number,
+): { edgeIndex: number; x: number; y: number }[] {
+  const verts = preparePolygonVertices(points);
+  return placeDistanceLabelsInsideLot(
+    doc,
+    points,
+    measures,
+    frontEdgeIndex,
+    getLotMainAxis(verts),
+  );
 }
 
 type LabelAvoidBand = { yMin: number; yMax: number; pad?: number };
@@ -498,49 +538,6 @@ function placeSideConfrontantLabels(
   labelAtEdgeExternal(doc, verts, esqIdx, sides.ladoEsquerdo, extOffset);
 }
 
-function drawAreaCenter(
-  doc: jsPDF,
-  points: [number, number][],
-  areaText: string,
-  frontEdgeIndex: number,
-  lotBadgePos: [number, number],
-) {
-  const verts = preparePolygonVertices(points);
-  const c = centroid(verts);
-  let ax = c[0];
-  let ay = c[1];
-
-  const n = verts.length;
-  if (n >= 3) {
-    const fi = ((frontEdgeIndex % n) + n) % n;
-    const p1 = verts[fi];
-    const p2 = verts[(fi + 1) % n];
-    const midF = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2] as [number, number];
-    let vx = c[0] - midF[0];
-    let vy = c[1] - midF[1];
-    const len = Math.hypot(vx, vy) || 1;
-    vx /= len;
-    vy /= len;
-    const shift = 8;
-    ax = c[0] + vx * shift;
-    ay = c[1] + vy * shift;
-  }
-
-  if (Math.hypot(ax - lotBadgePos[0], ay - lotBadgePos[1]) < 12) {
-    const dx = ax - lotBadgePos[0];
-    const dy = ay - lotBadgePos[1];
-    const dlen = Math.hypot(dx, dy) || 1;
-    ax += (dx / dlen) * 10;
-    ay += (dy / dlen) * 10;
-  }
-
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...BLUE);
-  doc.setFontSize(13);
-  doc.text(areaText, ax, ay, { align: 'center' });
-  doc.setTextColor(...BLACK);
-}
-
 function minDistToPoints(pos: [number, number], others: ([number, number] | null)[]): number {
   let min = Infinity;
   for (const o of others) {
@@ -551,65 +548,103 @@ function minDistToPoints(pos: [number, number], others: ([number, number] | null
   return min;
 }
 
-function drawLotNumberBadge(
+function nudgeCenterInsideLot(
+  center: [number, number],
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  avoidPoints: ([number, number] | null)[],
+  minSep = 10,
+): [number, number] {
+  let [cx, cy] = center;
+  if (
+    pointInsidePolygon(cx, cy, verts) &&
+    minDistToPoints([cx, cy], avoidPoints) >= minSep
+  ) {
+    return [cx, cy];
+  }
+
+  const shifts = [0, 4, -4, 8, -8, 12, -12];
+  for (const d of shifts) {
+    const tx = cx + mainAxis.axisDx * d;
+    const ty = cy + mainAxis.axisDy * d;
+    if (
+      pointInsidePolygon(tx, ty, verts) &&
+      minDistToPoints([tx, ty], avoidPoints) >= minSep
+    ) {
+      return [tx, ty];
+    }
+  }
+  return center;
+}
+
+/** Número do lote (vermelho) acima da área (azul), alinhados ao eixo longitudinal. */
+function placeLotNumberAndAreaLabel(
   doc: jsPDF,
   points: [number, number][],
   lotNum: string,
-  frontEdgeIndex: number,
+  areaText: string,
+  mainAxis: LotMainAxis,
   avoidPoints: ([number, number] | null)[],
-): [number, number] {
+): { numberPos: [number, number]; areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
-  const n = verts.length;
-  const c = centroid(verts);
-  if (n < 3) {
-    doc.text(lotNum, c[0], c[1], { align: 'center' });
-    return c;
+  const center = nudgeCenterInsideLot(
+    mainAxis.center,
+    verts,
+    mainAxis,
+    avoidPoints,
+  );
+
+  /** Empilha número acima da área ao longo do eixo longitudinal (padrão Civil 3D). */
+  let stackSign = 1;
+  if (Math.abs(mainAxis.axisDy) >= Math.abs(mainAxis.axisDx)) {
+    stackSign = mainAxis.axisDy > 0 ? -1 : 1;
+  } else {
+    stackSign = mainAxis.axisDx > 0 ? -1 : 1;
   }
 
-  const edge = getEdgeGeometry(verts, frontEdgeIndex);
-  const mid = edge.mid;
-  let vx = c[0] - mid[0];
-  let vy = c[1] - mid[1];
-  const len = Math.hypot(vx, vy) || 1;
-  vx /= len;
-  vy /= len;
-
-  const minSep = 14;
-  let inset = 20;
-  let pos: [number, number] = [
-    mid[0] + vx * inset,
-    mid[1] + vy * inset,
+  const stack = mainAxis.narrow ? 4.5 : 5.5;
+  const numPos: [number, number] = [
+    center[0] + mainAxis.axisDx * stack * stackSign,
+    center[1] + mainAxis.axisDy * stack * stackSign,
+  ];
+  const areaPos: [number, number] = [
+    center[0] - mainAxis.axisDx * stack * stackSign * 0.95,
+    center[1] - mainAxis.axisDy * stack * stackSign * 0.95,
   ];
 
-  for (const tryInset of [20, 24, 28, 32, 36]) {
-    const candidate: [number, number] = [
-      mid[0] + vx * tryInset,
-      mid[1] + vy * tryInset,
-    ];
-    if (
-      pointInsidePolygon(candidate[0], candidate[1], verts) &&
-      minDistToPoints(candidate, avoidPoints) >= minSep
-    ) {
-      pos = candidate;
-      inset = tryInset;
-      break;
-    }
-    if (pointInsidePolygon(candidate[0], candidate[1], verts)) {
-      pos = candidate;
-      inset = tryInset;
-    }
-  }
+  const lotFont = mainAxis.narrow ? 11 : 12;
+  const areaFont = mainAxis.narrow ? 10 : 11;
 
-  const r = 5.5;
-  doc.setDrawColor(...BLACK);
-  doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.45);
-  doc.circle(pos[0], pos[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(lotFont);
+  doc.setTextColor(...RED);
+  doc.text(lotNum, numPos[0], numPos[1], {
+    align: 'center',
+    baseline: 'middle',
+    angle: mainAxis.angleDeg,
+  });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(areaFont);
+  doc.setTextColor(...BLUE);
+  doc.text(areaText, areaPos[0], areaPos[1], {
+    align: 'center',
+    baseline: 'middle',
+    angle: mainAxis.angleDeg,
+  });
+
   doc.setTextColor(...BLACK);
-  doc.text(lotNum, pos[0], pos[1] + 1.2, { align: 'center' });
-  return pos;
+
+  console.log('LOT_SHEET_CENTER_LABELS', {
+    lotNum,
+    areaText,
+    angleDeg: mainAxis.angleDeg,
+    numberPos: numPos,
+    areaPos,
+    offsetMm: mainAxis.internalOffsetMm,
+  });
+
+  return { numberPos: numPos, areaPos };
 }
 
 function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
@@ -1240,11 +1275,15 @@ export async function generateLotSheetPdf(
     doc.setTextColor(...BLACK);
   }
 
-  const measurePositions = drawEdgeMeasures(
+  const sheetVerts = preparePolygonVertices(sheetPts);
+  const mainAxis = getLotMainAxis(sheetVerts);
+
+  const measurePositions = placeDistanceLabelsInsideLot(
     doc,
     sheetPts,
     edgeLabels,
     frontEdge,
+    mainAxis,
   );
   drawVertexMarkers(doc, sheetPts);
 
@@ -1262,12 +1301,20 @@ export async function generateLotSheetPdf(
     labelAvoidBands,
   );
 
-  const badgePos = drawLotNumberBadge(doc, sheetPts, lotNum, frontEdge, [
+  const avoidLabelPoints: ([number, number] | null)[] = [
+    ...measurePositions.map((p) => [p.x, p.y] as [number, number]),
     frontMeasurePos ? [frontMeasurePos.x, frontMeasurePos.y] : null,
     streetPos,
-  ]);
+  ];
+  const centerLabels = placeLotNumberAndAreaLabel(
+    doc,
+    sheetPts,
+    lotNum,
+    input.measures.area,
+    mainAxis,
+    avoidLabelPoints,
+  );
 
-  drawAreaCenter(doc, sheetPts, input.measures.area, frontEdge, badgePos);
   placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants, frontEdge);
 
   console.log('LOT_SHEET_FINAL_FRONT_LAYOUT', {
@@ -1275,7 +1322,8 @@ export async function generateLotSheetPdf(
     streetName: input.sideConfrontants.frente,
     frontMeasurePos,
     streetPos,
-    badgePos,
+    centerLabels,
+    mainAxisAngleDeg: mainAxis.angleDeg,
     minGapMeasureToStreet:
       frontMeasurePos && streetPos
         ? Math.hypot(
