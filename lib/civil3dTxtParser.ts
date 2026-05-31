@@ -260,6 +260,104 @@ function parseLotHeaderStart(
   return null;
 }
 
+function pickLastNonRpCoordPair(
+  pairs: Array<{ north: number; east: number }>,
+  rpNorth: number | null,
+  rpEast: number | null,
+): { north: number; east: number } | null {
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    const p = pairs[i];
+    if (isNearPoint(p.north, p.east, rpNorth, rpEast)) continue;
+    return p;
+  }
+  return null;
+}
+
+function logLotDebugChain30_31(
+  lotLabel: string,
+  segments: ParsedCivil3dSegment[],
+  lotStart: { north: number; east: number; source: string } | null,
+): void {
+  const key = String(lotLabel).trim();
+  if (key !== "30" && key !== "31") return;
+  const logKey = key === "30" ? "LOT_DEBUG_CHAIN_30" : "LOT_DEBUG_CHAIN_31";
+  const closureErr = computeChainClosureErrorM(segments);
+  console.log(logKey, {
+    closureErrorM: round2(closureErr),
+    maxAllowedM: CLOSURE_MAX_M,
+    lotStart: lotStart
+      ? {
+          north: round2(lotStart.north),
+          east: round2(lotStart.east),
+          source: lotStart.source,
+        }
+      : null,
+    chain: segments.map((s) => ({
+      seg: s.segmentNumber,
+      type: s.type,
+      start: { n: round2(s.north), e: round2(s.east) },
+      end:
+        s.endNorth != null
+          ? { n: round2(s.endNorth), e: round2(s.endEast) }
+          : null,
+      length: s.length,
+    })),
+  });
+}
+
+/**
+ * Lotes com Curve (ex. 30, 31): garante fechamento no ponto inicial do memorial.
+ * Não aplica a lotes só com Line (ex. 32).
+ */
+function reconcileCurveLotClosure(
+  segments: ParsedCivil3dSegment[],
+  lotStart: { north: number; east: number; source: string } | null,
+  lotLabel: string,
+): ParsedCivil3dSegment[] {
+  if (!lotStart || !segments.some((s) => s.type === "CURVE")) {
+    return segments;
+  }
+
+  logLotDebugChain30_31(lotLabel, segments, lotStart);
+
+  let closureErr = computeChainClosureErrorM(segments);
+  if (closureErr <= CLOSURE_MAX_M) {
+    return segments;
+  }
+
+  const last = segments[segments.length - 1];
+  if (last.endNorth == null || last.endEast == null) {
+    return segments;
+  }
+
+  const distToStart = Math.hypot(
+    last.endEast - lotStart.east,
+    last.endNorth - lotStart.north,
+  );
+
+  if (distToStart > CLOSURE_MAX_M) {
+    console.log("TXT_CHAIN_CLOSURE_ERROR", {
+      lote: lotLabel,
+      action: "snap_last_end_to_lot_start",
+      closureBeforeM: round2(closureErr),
+      lastEnd: { north: round2(last.endNorth), east: round2(last.endEast) },
+      lotStart: { north: round2(lotStart.north), east: round2(lotStart.east) },
+      note: "curve_lot_only",
+    });
+    last.endNorth = lotStart.north;
+    last.endEast = lotStart.east;
+    closureErr = computeChainClosureErrorM(segments);
+    console.log("TXT_CHAIN_CLOSURE_ERROR", {
+      lote: lotLabel,
+      closureAfterSnapM: round2(closureErr),
+      maxAllowedM: CLOSURE_MAX_M,
+      ok: closureErr <= CLOSURE_MAX_M,
+    });
+  }
+
+  return segments;
+}
+
 function computeChainClosureErrorM(
   segments: Array<{ north: number; east: number; endNorth: number | null; endEast: number | null }>,
 ): number {
@@ -375,15 +473,14 @@ function parseOneSegmentBlock(
       });
     }
     if (endN == null || endE == null) {
-      for (const pair of coordPairs) {
-        if (isNearPoint(pair.north, pair.east, rpNorth, rpEast)) continue;
-        endN = pair.north;
-        endE = pair.east;
-        break;
+      const fallback = pickLastNonRpCoordPair(coordPairs, rpNorth, rpEast);
+      if (fallback) {
+        endN = fallback.north;
+        endE = fallback.east;
       }
     }
-  } else {
-    const lineEnd = coordPairs[coordPairs.length - 1];
+  } else if (endN == null || endE == null) {
+    const lineEnd = pickLastNonRpCoordPair(coordPairs, rpNorth, rpEast);
     if (lineEnd) {
       endN = lineEnd.north;
       endE = lineEnd.east;
@@ -531,6 +628,7 @@ function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
   const lotStart = parseLotHeaderStart(chunk, name);
   let segments = parseSegmentBlocks(chunk, name);
   segments = chainSegmentEndpoints(segments, lotStart, name);
+  segments = reconcileCurveLotClosure(segments, lotStart, name);
 
   if (segments.length < 2) return null;
 
