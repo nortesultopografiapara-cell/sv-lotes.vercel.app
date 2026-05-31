@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "clean": "next clean",
-    "diagnose:txt": "tsx scripts/diagnose-civil3d-import.ts"
+    "diagnose:txt": "tsx scripts/diagnose-civil3d-import.ts",
+    "test:txt-mandatory": "tsx scripts/mandatory-txt-parser-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

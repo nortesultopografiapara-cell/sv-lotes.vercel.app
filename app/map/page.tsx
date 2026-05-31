@@ -52,9 +52,10 @@ import {
 } from '@/lib/gisMapProjectPersistence';
 import {
   civil3dLotToImportPayload,
-  computeProjectUtmCenterFromBlocks,
+  computeProjectUtmClusterCenterFromBlocks,
+  formatQuadraImportLocationBlockedMessage,
+  getQuadraImportMaxAllowedKm,
   parseCivil3dTxtLots,
-  QUADRA_OUT_OF_PROJECT_MESSAGE,
   validateQuadraImportAgainstProject,
 } from '@/lib/civil3dTxtParser';
 import {
@@ -1457,7 +1458,7 @@ export default function MapPage() {
 
       let centerQuery = supabase
         .from('blocks')
-        .select('geometry, coordinates_utm_json')
+        .select('geometry, coordinates_utm_json, block_name, name')
         .eq('project_id', selectedProject.id);
       if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
         centerQuery = centerQuery.or(
@@ -1466,29 +1467,15 @@ export default function MapPage() {
       }
       const { data: existingBlocks } = await centerQuery;
 
-      const projectCenter = (() => {
-        let sumLat = 0;
-        let sumLng = 0;
-        let n = 0;
-        for (const b of existingBlocks ?? []) {
-          const ring = b.geometry?.coordinates?.[0];
-          if (!ring?.length) continue;
-          for (const c of ring) {
-            if (c?.length >= 2) {
-              sumLng += Number(c[0]);
-              sumLat += Number(c[1]);
-              n++;
-            }
-          }
-        }
-        if (n < 1) return null;
-        return { lat: sumLat / n, lng: sumLng / n };
-      })();
+      const quadraName = importTxtQuadra.toUpperCase().trim();
+      const utmZoneLabel = importTxtUtmZone.trim() || `22S`;
 
-      const projectCenterUtm = computeProjectUtmCenterFromBlocks(
-        existingBlocks,
+      const clusterResult = computeProjectUtmClusterCenterFromBlocks(
+        existingBlocks ?? [],
         proj4String,
+        { excludeBlockName: quadraName },
       );
+      const projectCenterUtm = clusterResult.center;
 
       const lotsParsed = parseCivil3dTxtLots(text);
       const blocksParsed = lotsParsed.map((lot) => {
@@ -1514,20 +1501,46 @@ export default function MapPage() {
          return;
       }
 
-      const quadraName = importTxtQuadra.toUpperCase().trim();
-
       const quadraLocation = validateQuadraImportAgainstProject(
         blocksParsed,
-        projectCenter,
+        null,
         quadraName,
         lotsParsed,
         proj4String,
         projectCenterUtm,
+        {
+          utmZone: utmZoneLabel,
+          maxAllowedKm: getQuadraImportMaxAllowedKm(selectedProject),
+          clusterMeta: clusterResult,
+        },
       );
       if (quadraLocation.blocked) {
-        alert(QUADRA_OUT_OF_PROJECT_MESSAGE);
-        setImportingTxt(false);
-        return;
+        const blockMsg = formatQuadraImportLocationBlockedMessage(quadraLocation);
+        const canOverrideLocation =
+          user.role === 'SUPER_ADMIN' ||
+          user.role === 'ADMIN' ||
+          user.email === 'severino@nortesultopografia.com.br' ||
+          user.email === 'nortesultopografiapara@gmail.com';
+        if (
+          canOverrideLocation &&
+          window.confirm(
+            `${blockMsg}\n\nImportar mesmo assim? (somente administrador)`,
+          )
+        ) {
+          console.log('QUADRA_IMPORT_LOCATION_OVERRIDE', {
+            quadra: quadraName,
+            projectId: selectedProject.id,
+            distanceKm: quadraLocation.distanceKm,
+            maxAllowedKm: quadraLocation.maxAllowedKm,
+            utmZone: utmZoneLabel,
+            user: user.email,
+            role: user.role,
+          });
+        } else {
+          alert(blockMsg);
+          setImportingTxt(false);
+          return;
+        }
       }
 
       const lotsWithGeometryPreDelete = blocksParsed.filter(

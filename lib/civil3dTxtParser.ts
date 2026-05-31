@@ -50,11 +50,24 @@ export type LotRingBuildResult = {
 const CLOSURE_MAX_M = 0.1;
 /** Distância máxima (km) do centro do projeto para aceitar geometria importada. */
 const PROJECT_LOCATION_MAX_KM = 5;
-/** Distância máxima (km) entre centroide da quadra importada e do projeto. */
-export const QUADRA_IMPORT_MAX_KM_FROM_PROJECT = 5;
+/** Distância máxima (km) — projeto urbano. */
+export const QUADRA_IMPORT_MAX_KM_URBAN = 5;
+/** Distância máxima (km) — chacreamento / rural. */
+export const QUADRA_IMPORT_MAX_KM_RURAL = 30;
+/** Limite padrão até estabilizar importações grandes (todos os projetos). */
+export const QUADRA_IMPORT_MAX_KM_FROM_PROJECT = QUADRA_IMPORT_MAX_KM_RURAL;
+
+/** Lotes/blocos a mais de X km do centro provisório são excluídos do cluster. */
+const CLUSTER_OUTLIER_MAX_KM = 20;
 
 export const QUADRA_OUT_OF_PROJECT_MESSAGE =
   "Quadra fora da área do projeto. Verifique a zona UTM ou o arquivo TXT.";
+
+export function getQuadraImportMaxAllowedKm(
+  _project?: Record<string, unknown> | null,
+): number {
+  return QUADRA_IMPORT_MAX_KM_FROM_PROJECT;
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -801,47 +814,158 @@ export function computeImportLotUtmCentroid(
   return computeUtmCentroidFromRings([ring]);
 }
 
-export function computeProjectUtmCenterFromBlocks(
-  blocks:
-    | Array<{
-        geometry?: { coordinates?: number[][][] } | null;
-        coordinates_utm_json?: number[][] | null;
-      }>
-    | null
-    | undefined,
+export type ProjectBlockUtmInput = {
+  geometry?: { coordinates?: number[][][] } | null;
+  coordinates_utm_json?: number[][] | null;
+  block_name?: string | null;
+  name?: string | null;
+};
+
+/** Um centroide UTM por lote (ignora blocos sem geometria válida). */
+export function computeBlockUtmCentroid(
+  block: ProjectBlockUtmInput,
   proj4UtmSouth: string,
 ): { east: number; north: number } | null {
+  const utmJson = block.coordinates_utm_json;
+  if (Array.isArray(utmJson) && utmJson.length > 0) {
+    let sumE = 0;
+    let sumN = 0;
+    let n = 0;
+    for (const pt of utmJson) {
+      if (pt?.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
+        sumE += Number(pt[0]);
+        sumN += Number(pt[1]);
+        n++;
+      }
+    }
+    if (n > 0) return { east: sumE / n, north: sumN / n };
+  }
+
+  const ring = block.geometry?.coordinates?.[0];
+  if (!ring?.length || ring.length < 3) return null;
+
   let sumE = 0;
   let sumN = 0;
   let n = 0;
-  for (const b of blocks ?? []) {
-    const utmJson = b.coordinates_utm_json;
-    if (Array.isArray(utmJson) && utmJson.length > 0) {
-      for (const pt of utmJson) {
-        if (pt?.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
-          sumE += Number(pt[0]);
-          sumN += Number(pt[1]);
-          n++;
-        }
-      }
-      continue;
-    }
-    const ring = b.geometry?.coordinates?.[0];
-    if (!ring?.length) continue;
-    for (const c of ring) {
-      if (c?.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
-        const lng = Number(c[0]);
-        const lat = Number(c[1]);
-        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
-        const [e, north] = proj4("EPSG:4326", proj4UtmSouth, [lng, lat]);
-        sumE += e;
-        sumN += north;
-        n++;
-      }
+  for (const c of ring) {
+    if (c?.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+      const lng = Number(c[0]);
+      const lat = Number(c[1]);
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+      const [e, north] = proj4("EPSG:4326", proj4UtmSouth, [lng, lat]);
+      sumE += e;
+      sumN += north;
+      n++;
     }
   }
   if (n < 1) return null;
   return { east: sumE / n, north: sumN / n };
+}
+
+export type ProjectCentroidClusterResult = {
+  center: { east: number; north: number } | null;
+  totalBlocks: number;
+  blocksWithGeometry: number;
+  clusterBlocks: number;
+  excludedOutlierBlocks: number;
+};
+
+/**
+ * Centroide do projeto pelo cluster principal em UTM (exclui outliers e lotes sem geometry).
+ */
+export function computeProjectUtmClusterCenterFromBlocks(
+  blocks: ProjectBlockUtmInput[] | null | undefined,
+  proj4UtmSouth: string,
+  options?: { excludeBlockName?: string | null },
+): ProjectCentroidClusterResult {
+  const exclude = (options?.excludeBlockName ?? "").trim().toUpperCase();
+  const centroids: Array<{ east: number; north: number; blockName: string }> = [];
+
+  for (const b of blocks ?? []) {
+    const bn = String(b.block_name ?? b.name ?? "")
+      .trim()
+      .toUpperCase();
+    if (exclude && bn === exclude) continue;
+
+    const c = computeBlockUtmCentroid(b, proj4UtmSouth);
+    if (c) centroids.push({ ...c, blockName: bn || "?" });
+  }
+
+  const totalBlocks = blocks?.length ?? 0;
+  const blocksWithGeometry = centroids.length;
+
+  if (blocksWithGeometry < 1) {
+    console.log("PROJECT_CENTROID_CLUSTER", {
+      totalBlocks,
+      blocksWithGeometry: 0,
+      clusterBlocks: 0,
+      excludedOutlierBlocks: 0,
+      center: null,
+    });
+    return {
+      center: null,
+      totalBlocks,
+      blocksWithGeometry: 0,
+      clusterBlocks: 0,
+      excludedOutlierBlocks: 0,
+    };
+  }
+
+  let sumE = 0;
+  let sumN = 0;
+  for (const c of centroids) {
+    sumE += c.east;
+    sumN += c.north;
+  }
+  let centerE = sumE / centroids.length;
+  let centerN = sumN / centroids.length;
+
+  const outlierMaxM = CLUSTER_OUTLIER_MAX_KM * 1000;
+  const inliers =
+    centroids.length >= 3
+      ? centroids.filter((c) => {
+          const d = Math.hypot(c.east - centerE, c.north - centerN);
+          return d <= outlierMaxM;
+        })
+      : centroids;
+
+  const clusterList = inliers.length > 0 ? inliers : centroids;
+  sumE = 0;
+  sumN = 0;
+  for (const c of clusterList) {
+    sumE += c.east;
+    sumN += c.north;
+  }
+  centerE = sumE / clusterList.length;
+  centerN = sumN / clusterList.length;
+
+  const excludedOutlierBlocks = centroids.length - clusterList.length;
+
+  console.log("PROJECT_CENTROID_CLUSTER", {
+    totalBlocks,
+    blocksWithGeometry,
+    clusterBlocks: clusterList.length,
+    excludedOutlierBlocks,
+    excludeBlockName: exclude || null,
+    center: { east: round2(centerE), north: round2(centerN) },
+    outlierMaxKm: CLUSTER_OUTLIER_MAX_KM,
+  });
+
+  return {
+    center: { east: centerE, north: centerN },
+    totalBlocks,
+    blocksWithGeometry,
+    clusterBlocks: clusterList.length,
+    excludedOutlierBlocks,
+  };
+}
+
+/** @deprecated Prefer computeProjectUtmClusterCenterFromBlocks */
+export function computeProjectUtmCenterFromBlocks(
+  blocks: ProjectBlockUtmInput[] | null | undefined,
+  proj4UtmSouth: string,
+): { east: number; north: number } | null {
+  return computeProjectUtmClusterCenterFromBlocks(blocks, proj4UtmSouth).center;
 }
 
 export function computeQuadraUtmCentroidFromParsedLots(
@@ -864,14 +988,45 @@ export type QuadraLocationValidation = {
   ok: boolean;
   blocked: boolean;
   distanceKm: number | null;
+  quadraCenterUtm: { east: number; north: number } | null;
+  projectCenterUtm: { east: number; north: number } | null;
   quadraCenter: { lat: number; lng: number } | null;
   projectCenter: { lat: number; lng: number } | null;
   skipped: boolean;
+  maxAllowedKm: number;
+  utmZone: string | null;
+  clusterMeta?: ProjectCentroidClusterResult;
 };
 
-const QUADRA_IMPORT_MAX_M = QUADRA_IMPORT_MAX_KM_FROM_PROJECT * 1000;
+/** Mensagem detalhada quando a quadra é bloqueada por distância. */
+export function formatQuadraImportLocationBlockedMessage(
+  v: QuadraLocationValidation,
+): string {
+  const lines = [
+    QUADRA_OUT_OF_PROJECT_MESSAGE,
+    "",
+    `Distância calculada: ${v.distanceKm != null ? round2(v.distanceKm) : "?"} km (limite: ${v.maxAllowedKm} km)`,
+    `Zona UTM usada no import: ${v.utmZone ?? "—"}`,
+  ];
+  if (v.projectCenterUtm) {
+    lines.push(
+      `Centroide do projeto (UTM): East ${round2(v.projectCenterUtm.east)}, North ${round2(v.projectCenterUtm.north)}`,
+    );
+  }
+  if (v.quadraCenterUtm) {
+    lines.push(
+      `Centroide da quadra (UTM): East ${round2(v.quadraCenterUtm.east)}, North ${round2(v.quadraCenterUtm.north)}`,
+    );
+  }
+  if (v.clusterMeta) {
+    lines.push(
+      `Cluster do projeto: ${v.clusterMeta.clusterBlocks} lote(s) com geometria (${v.clusterMeta.excludedOutlierBlocks} outlier(s) ignorado(s))`,
+    );
+  }
+  return lines.join("\n");
+}
 
-/** Compara centroide da quadra importada com o centroide do projeto (bloqueio > 5 km). */
+/** Compara centroide da quadra importada com o cluster principal do projeto (UTM). */
 export function validateQuadraImportAgainstProject(
   lots: Array<{ coords: number[][]; geometrySaved: boolean }>,
   projectCenter: { lat: number; lng: number } | null,
@@ -879,7 +1034,17 @@ export function validateQuadraImportAgainstProject(
   parsedLots?: ParsedCivil3dLot[],
   proj4UtmSouth?: string,
   projectCenterUtm?: { east: number; north: number } | null,
+  options?: {
+    utmZone?: string | null;
+    maxAllowedKm?: number;
+    clusterMeta?: ProjectCentroidClusterResult;
+  },
 ): QuadraLocationValidation {
+  const maxAllowedKm =
+    options?.maxAllowedKm ?? getQuadraImportMaxAllowedKm();
+  const maxAllowedM = maxAllowedKm * 1000;
+  const utmZone = options?.utmZone ?? null;
+
   const quadraCenterUtm =
     parsedLots?.length && proj4UtmSouth
       ? computeQuadraUtmCentroidFromParsedLots(parsedLots)
@@ -891,31 +1056,38 @@ export function validateQuadraImportAgainstProject(
       quadraCenterUtm.north - projectCenterUtm.north,
     );
     const distanceKm = distanceM / 1000;
-    const ok = distanceM <= QUADRA_IMPORT_MAX_M;
+    const ok = distanceM <= maxAllowedM;
     console.log("QUADRA_IMPORT_LOCATION_CHECK", {
       quadra: quadraLabel,
-      mode: "utm",
+      mode: "utm_cluster",
       projectCenterUtm,
       quadraCenterUtm,
       distanceM: round2(distanceM),
       distanceKm: round2(distanceKm),
-      maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+      maxAllowedKm,
       ok,
+      clusterMeta: options?.clusterMeta,
     });
     if (!ok) {
-      console.log("INVALID_QUADRA_LOCATION_AFTER_TXT_PARSE", {
+      console.log("QUADRA_IMPORT_LOCATION_BLOCKED", {
         quadra: quadraLabel,
-        mode: "utm",
         distanceKm: round2(distanceKm),
+        maxAllowedKm,
+        utmZone,
       });
     }
     return {
       ok,
       blocked: !ok,
       distanceKm,
+      quadraCenterUtm,
+      projectCenterUtm,
       quadraCenter: null,
       projectCenter,
       skipped: false,
+      maxAllowedKm,
+      utmZone,
+      clusterMeta: options?.clusterMeta,
     };
   }
 
@@ -931,9 +1103,14 @@ export function validateQuadraImportAgainstProject(
       ok: true,
       blocked: false,
       distanceKm: null,
+      quadraCenterUtm: null,
+      projectCenterUtm: null,
       quadraCenter,
       projectCenter: null,
       skipped: true,
+      maxAllowedKm,
+      utmZone,
+      clusterMeta: options?.clusterMeta,
     };
   }
 
@@ -947,9 +1124,14 @@ export function validateQuadraImportAgainstProject(
       ok: true,
       blocked: false,
       distanceKm: null,
+      quadraCenterUtm: null,
+      projectCenterUtm: null,
       quadraCenter: null,
       projectCenter,
       skipped: true,
+      maxAllowedKm,
+      utmZone,
+      clusterMeta: options?.clusterMeta,
     };
   }
 
@@ -959,22 +1141,24 @@ export function validateQuadraImportAgainstProject(
     quadraCenter.lat,
     quadraCenter.lng,
   );
-  const ok = distanceKm <= QUADRA_IMPORT_MAX_KM_FROM_PROJECT;
+  const ok = distanceKm <= maxAllowedKm;
 
   console.log("QUADRA_IMPORT_LOCATION_CHECK", {
     quadra: quadraLabel,
+    mode: "latlng_fallback",
     projectCenter,
     quadraCenter,
     distanceKm: round2(distanceKm),
-    maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+    maxAllowedKm,
     ok,
   });
 
   if (!ok) {
-    console.log("INVALID_QUADRA_LOCATION_AFTER_TXT_PARSE", {
+    console.log("QUADRA_IMPORT_LOCATION_BLOCKED", {
       quadra: quadraLabel,
       distanceKm: round2(distanceKm),
-      maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+      maxAllowedKm,
+      utmZone,
     });
   }
 
@@ -982,9 +1166,14 @@ export function validateQuadraImportAgainstProject(
     ok,
     blocked: !ok,
     distanceKm,
+    quadraCenterUtm: null,
+    projectCenterUtm: null,
     quadraCenter,
     projectCenter,
     skipped: false,
+    maxAllowedKm,
+    utmZone,
+    clusterMeta: options?.clusterMeta,
   };
 }
 
