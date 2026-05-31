@@ -219,19 +219,30 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
     axisDy,
     angleDeg: getReadableRotation(axisDx, axisDy),
     narrow,
-    internalOffsetMm: narrow ? 5 : 8,
+    internalOffsetMm: narrow
+      ? DISTANCE_INTERNAL_OFFSET_NARROW_MM
+      : DISTANCE_INTERNAL_OFFSET_NORMAL_MM,
   };
 }
 
 /** Escala de fontes/offsets apenas no croqui (não tabelas/rodapés). */
 const SKETCH_FONT_SCALE = 2;
 
-/** Profundidade da área: fração da frente ao fundo (55–60%). */
-const AREA_DEPTH_FRACTION_DEFAULT = 0.575;
+/** Profundidade da área na linha média: fração frente → fundo (48–55%; lote 5 ≈ 52%). */
+const AREA_CENTERLINE_DEPTH_RATIO_DEFAULT = 0.52;
 
-/** Offset externo dos confrontantes (mm no croqui; frente mantém escala maior). */
-const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 9;
-const BACK_CONFRONTANT_LABEL_OFFSET_MM = 9;
+/** Offset interno simétrico das medidas (mm no croqui, sem redução por lado). */
+const DISTANCE_INTERNAL_OFFSET_NORMAL_MM = 6;
+const DISTANCE_INTERNAL_OFFSET_NARROW_MM = 4;
+const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = 2.5;
+
+/** Offset externo dos confrontantes (mm; frente mantém escala maior). */
+const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 8;
+const BACK_CONFRONTANT_LABEL_OFFSET_MM = 8;
+
+/** Vértices: bissetriz externa e afastamento mínimo da divisa. */
+const VERTEX_LABEL_OFFSET_MM = 4;
+const VERTEX_LABEL_CLEARANCE_MM = 3.5;
 
 /** Refinos de legibilidade (somente vértices e medidas internas). */
 const VERTEX_FONT_EXTRA_SCALE = 1.3;
@@ -346,9 +357,13 @@ function pointOnEdgeAtInwardDepth(
   return best;
 }
 
+/** Direção transversal (perpendicular à profundidade frente → fundo). */
+function depthPerpendicularDir(front: LotFrontContext): [number, number] {
+  return [-front.inwardNy, front.inwardNx];
+}
+
 /** Ponto médio entre as laterais em um corte perpendicular à profundidade. */
 function getCrossSectionMidpointAtDepth(
-  mainAxis: LotMainAxis,
   front: LotFrontContext,
   sides: LotSideSegments,
   depthMm: number,
@@ -357,7 +372,7 @@ function getCrossSectionMidpointAtDepth(
     front.edge.mid[0] + front.inwardNx * depthMm,
     front.edge.mid[1] + front.inwardNy * depthMm,
   ];
-  const crossDir: [number, number] = [-mainAxis.axisDy, mainAxis.axisDx];
+  const crossDir = depthPerpendicularDir(front);
   const hits: [number, number][] = [];
 
   for (const edge of [sides.esquerdo, sides.direito]) {
@@ -376,14 +391,11 @@ function getCrossSectionMidpointAtDepth(
 
 /** Linha média entre lado esquerdo e direito (frente → fundo). */
 function getLotCenterlineBetweenSides(
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
   front: LotFrontContext,
   sides: LotSideSegments,
 ): LotCenterline {
-  const frontPoint = getCrossSectionMidpointAtDepth(mainAxis, front, sides, 0);
+  const frontPoint = getCrossSectionMidpointAtDepth(front, sides, 0);
   const fundoPoint = getCrossSectionMidpointAtDepth(
-    mainAxis,
     front,
     sides,
     front.maxInwardDepthMm,
@@ -399,18 +411,18 @@ function getLotCenterlineBetweenSides(
   };
 }
 
-/** Ponto na linha média a `depthFraction` da frente (0) ao fundo (1). */
-function getPointOnCenterlineAtDepth(
+/** Ponto na linha média a `ratio` da frente (0) ao fundo (1). */
+function getPointOnCenterlineAtRatio(
   verts: [number, number][],
-  mainAxis: LotMainAxis,
   front: LotFrontContext,
   sides: LotSideSegments,
-  depthFraction: number,
+  ratio: number,
 ): [number, number] {
-  const depthMm = Math.max(0, Math.min(1, depthFraction)) * front.maxInwardDepthMm;
-  let pos = getCrossSectionMidpointAtDepth(mainAxis, front, sides, depthMm);
+  const depthFraction = Math.max(0, Math.min(1, ratio));
+  const depthMm = depthFraction * front.maxInwardDepthMm;
+  let pos = getCrossSectionMidpointAtDepth(front, sides, depthMm);
   if (!pointInsidePolygon(pos[0], pos[1], verts)) {
-    const line = getLotCenterlineBetweenSides(verts, mainAxis, front, sides);
+    const line = getLotCenterlineBetweenSides(front, sides);
     pos = [
       line.frontPoint[0] +
         (line.fundoPoint[0] - line.frontPoint[0]) * depthFraction,
@@ -464,35 +476,29 @@ function areaCenterlinePlacementScore(
   return score;
 }
 
-/** Posiciona a área na linha média entre laterais; colisões só ao longo da profundidade. */
-function placeAreaOnCenterline(
+/** Posiciona a área na linha média; colisões apenas ao longo da profundidade. */
+function placeAreaOnCenterlineRatio(
   verts: [number, number][],
-  mainAxis: LotMainAxis,
   front: LotFrontContext,
   frontEdgeIndex: number,
   placedZones: PlacedLabelZone[],
   badgePos: [number, number] | null,
+  ratio = AREA_CENTERLINE_DEPTH_RATIO_DEFAULT,
 ): [number, number] {
   const sides = getSideSegmentsByRole(verts, frontEdgeIndex);
-  const centerline = getLotCenterlineBetweenSides(verts, mainAxis, front, sides);
+  const centerline = getLotCenterlineBetweenSides(front, sides);
   const { depthUx, depthUy } = centerline;
   const areaRadius = sketchOffsetMm(7);
 
-  const depthFracs = [0.575, 0.55, 0.6, 0.57, 0.58];
-  const preferred = getPointOnCenterlineAtDepth(
-    verts,
-    mainAxis,
-    front,
-    sides,
-    AREA_DEPTH_FRACTION_DEFAULT,
-  );
+  const depthRatios = [ratio, 0.52, 0.5, 0.54, 0.48, 0.55];
+  const preferred = getPointOnCenterlineAtRatio(verts, front, sides, ratio);
 
   const candidates: [number, number][] = [];
-  for (const df of depthFracs) {
-    candidates.push(getPointOnCenterlineAtDepth(verts, mainAxis, front, sides, df));
+  for (const r of depthRatios) {
+    candidates.push(getPointOnCenterlineAtRatio(verts, front, sides, r));
   }
 
-  for (const deltaMm of [-14, -10, -6, -3, 3, 6, 10, 14, 18]) {
+  for (const deltaMm of [-12, -8, -4, 4, 8, 12, 16]) {
     candidates.push([
       preferred[0] + depthUx * deltaMm,
       preferred[1] + depthUy * deltaMm,
@@ -503,7 +509,7 @@ function placeAreaOnCenterline(
     const toFund =
       (preferred[0] - badgePos[0]) * depthUx + (preferred[1] - badgePos[1]) * depthUy;
     const sign = toFund >= 0 ? 1 : -1;
-    for (const d of [6, 10, 14]) {
+    for (const d of [8, 12, 16, 20]) {
       candidates.push([
         preferred[0] + depthUx * sign * d,
         preferred[1] + depthUy * sign * d,
@@ -515,7 +521,6 @@ function placeAreaOnCenterline(
   let bestScore = -Infinity;
 
   for (let cand of candidates) {
-    cand = resolveLabelCollisions(cand, areaRadius, placedZones, sketchOffsetMm(3));
     const depthMm = Math.max(
       0,
       Math.min(
@@ -524,8 +529,20 @@ function placeAreaOnCenterline(
           (cand[1] - front.edge.mid[1]) * depthUy,
       ),
     );
-    cand = getCrossSectionMidpointAtDepth(mainAxis, front, sides, depthMm);
+    cand = getCrossSectionMidpointAtDepth(front, sides, depthMm);
     if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
+
+    for (const zone of placedZones) {
+      const d = Math.hypot(cand[0] - zone.pos[0], cand[1] - zone.pos[1]);
+      const need = areaRadius + zone.radius + sketchOffsetMm(3);
+      if (d < need && zone.kind === 'lot_badge') {
+        const push = (need - d) / (Math.hypot(depthUx, depthUy) || 1);
+        cand = getCrossSectionMidpointAtDepth(front, sides, depthMm + push);
+      }
+    }
+
+    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
+
     const s = areaCenterlinePlacementScore(
       cand,
       verts,
@@ -749,31 +766,53 @@ function positionAlongNormal(
   return [mid[0] + nx * offsetMm, mid[1] + ny * offsetMm];
 }
 
-/** Offset perpendicular fixo (simétrico em todos os lados equivalentes). */
-function getSegmentInternalLabelPosition(
+/** Normal interna verdadeira (lado que cai dentro do polígono). */
+function getTrueInternalNormal(
   edge: EdgeGeometry,
   polygon: [number, number][],
-  baseOffsetMm: number,
-): { x: number; y: number; offsetUsed: number } {
-  const [x, y] = positionAlongNormal(
-    edge.mid,
-    edge.inNx,
-    edge.inNy,
-    baseOffsetMm,
-  );
-  if (pointInsidePolygon(x, y, polygon)) {
-    return { x, y, offsetUsed: baseOffsetMm };
+): { nx: number; ny: number } {
+  const probe = 1.2;
+  const tx = edge.mid[0] + edge.inNx * probe;
+  const ty = edge.mid[1] + edge.inNy * probe;
+  if (pointInsidePolygon(tx, ty, polygon)) {
+    return { nx: edge.inNx, ny: edge.inNy };
+  }
+  return { nx: -edge.inNx, ny: -edge.inNy };
+}
+
+function perpendicularDistanceToEdge(
+  pos: [number, number],
+  edge: EdgeGeometry,
+): number {
+  return distPointToSegment(pos, edge.p1, edge.p2);
+}
+
+/** Offset interno fixo e igual em todos os segmentos. */
+function placeDistanceLabelWithSymmetricOffset(
+  edge: EdgeGeometry,
+  polygon: [number, number][],
+  offsetMm: number,
+): { x: number; y: number } {
+  const { nx, ny } = getTrueInternalNormal(edge, polygon);
+  let used = offsetMm;
+  let x = edge.mid[0] + nx * used;
+  let y = edge.mid[1] + ny * used;
+
+  let dist = perpendicularDistanceToEdge([x, y], edge);
+  if (dist < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM) {
+    used = offsetMm + (DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM - dist + 0.5);
+    x = edge.mid[0] + nx * used;
+    y = edge.mid[1] + ny * used;
+    dist = perpendicularDistanceToEdge([x, y], edge);
   }
 
-  for (const off of [baseOffsetMm - 0.5, baseOffsetMm - 1, baseOffsetMm - 1.5]) {
-    if (off < 2) continue;
-    const [tx, ty] = positionAlongNormal(edge.mid, edge.inNx, edge.inNy, off);
-    if (pointInsidePolygon(tx, ty, polygon)) {
-      return { x: tx, y: ty, offsetUsed: off };
-    }
+  if (!pointInsidePolygon(x, y, polygon) || dist < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM * 0.8) {
+    used = offsetMm + 1.5;
+    x = edge.mid[0] + nx * used;
+    y = edge.mid[1] + ny * used;
   }
 
-  return { x, y, offsetUsed: baseOffsetMm };
+  return { x, y };
 }
 
 /** Rótulo no lado externo do polígono (normal oposta ao centroide). */
@@ -823,7 +862,7 @@ function placeDistanceLabelsInsideLot(
     const edge = getEdgeGeometry(verts, i);
     const edgeLenMm = Math.hypot(edge.dx, edge.dy);
     const fontSize = distanceLabelFontSize(edgeLenMm, mainAxis.narrow);
-    const { x, y } = getSegmentInternalLabelPosition(edge, verts, baseOffset);
+    const { x, y } = placeDistanceLabelWithSymmetricOffset(edge, verts, baseOffset);
 
     placed.push({ edgeIndex: i, x, y });
 
@@ -927,6 +966,76 @@ function drawFrontStreetLabel(
   return [x, y];
 }
 
+function getVertexExternalBisector(
+  verts: [number, number][],
+  vertexIndex: number,
+): [number, number] {
+  const n = verts.length;
+  const vi = ((vertexIndex % n) + n) % n;
+  const edgePrev = getEdgeGeometry(verts, (vi - 1 + n) % n);
+  const edgeNext = getEdgeGeometry(verts, vi);
+  let bx = edgePrev.exNx + edgeNext.exNx;
+  let by = edgePrev.exNy + edgeNext.exNy;
+  const len = Math.hypot(bx, by) || 1;
+  bx /= len;
+  by /= len;
+  return [bx, by];
+}
+
+function avoidVertexLabelLineCollision(
+  pos: [number, number],
+  verts: [number, number][],
+  minClearance = VERTEX_LABEL_CLEARANCE_MM,
+): boolean {
+  if (pointInsidePolygon(pos[0], pos[1], verts)) return false;
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    if (distPointToSegment(pos, p1, p2) < minClearance) return false;
+  }
+  return true;
+}
+
+function rotateDir(dir: [number, number], deg: number): [number, number] {
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return [dir[0] * c - dir[1] * s, dir[0] * s + dir[1] * c];
+}
+
+function placeVertexLabelOutsideCorner(
+  verts: [number, number][],
+  vertexIndex: number,
+): { x: number; y: number; angleDeg: number } {
+  const n = verts.length;
+  const vi = ((vertexIndex % n) + n) % n;
+  const vtx = verts[vi];
+  const bisector = getVertexExternalBisector(verts, vi);
+  const edgeNext = getEdgeGeometry(verts, vi);
+
+  const offsets = [VERTEX_LABEL_OFFSET_MM, 4.5, 5, 5.5, 6];
+  const rotations = [0, 25, -25, 45, -45, 70, -70];
+
+  for (const off of offsets) {
+    for (const rot of rotations) {
+      const [bx, by] = rotateDir(bisector, rot);
+      const x = vtx[0] + bx * off;
+      const y = vtx[1] + by * off;
+      if (avoidVertexLabelLineCollision([x, y], verts)) {
+        return { x, y, angleDeg: edgeNext.angleDeg };
+      }
+    }
+  }
+
+  const [bx, by] = bisector;
+  return {
+    x: vtx[0] + bx * (VERTEX_LABEL_OFFSET_MM + 2),
+    y: vtx[1] + by * (VERTEX_LABEL_OFFSET_MM + 2),
+    angleDeg: edgeNext.angleDeg,
+  };
+}
+
 function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
   const verts = preparePolygonVertices(points);
   doc.setFont('helvetica', 'normal');
@@ -936,11 +1045,11 @@ function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
   doc.setLineWidth(0.25);
   verts.forEach((p, i) => {
     doc.circle(p[0], p[1], 0.9, 'S');
-    doc.text(
-      `M-${String(i + 1).padStart(2, '0')}`,
-      p[0] + sketchOffsetMm(2.2),
-      p[1] - sketchOffsetMm(1.2),
-    );
+    const { x, y } = placeVertexLabelOutsideCorner(verts, i);
+    doc.text(`M-${String(i + 1).padStart(2, '0')}`, x, y, {
+      align: 'left',
+      baseline: 'middle',
+    });
   });
 }
 
@@ -1062,7 +1171,7 @@ function placeLotNumberNearFront(
   return { badgePos, radius: r };
 }
 
-/** Área na linha média entre laterais (55–60% frente→fundo), separada do círculo. */
+/** Área na linha média entre laterais (~52% frente→fundo), separada do círculo. */
 function placeAreaLabelCenter(
   doc: jsPDF,
   points: [number, number][],
@@ -1074,13 +1183,13 @@ function placeAreaLabelCenter(
 ): { areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
-  const areaPos = placeAreaOnCenterline(
+  const areaPos = placeAreaOnCenterlineRatio(
     verts,
-    mainAxis,
     front,
     frontEdgeIndex,
     placedZones,
     badgePos,
+    AREA_CENTERLINE_DEPTH_RATIO_DEFAULT,
   );
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
