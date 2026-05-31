@@ -11,10 +11,13 @@ export type LotAutoConfrontationRecord = {
   confrontants: LotSheetSideConfrontants;
 };
 
+/** Incrementar quando a heurística de confrontação mudar. */
+export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 2;
+
 export type ProjectConfrontationSnapshot = {
   projectId: string;
   computedAt: string;
-  version: 1;
+  version: number;
   lots: LotAutoConfrontationRecord[];
 };
 
@@ -43,6 +46,7 @@ export function loadProjectConfrontationSnapshot(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ProjectConfrontationSnapshot;
     if (parsed?.projectId !== projectId || !Array.isArray(parsed.lots)) return null;
+    if (parsed.version !== PROJECT_CONFRONTATION_SNAPSHOT_VERSION) return null;
     return parsed;
   } catch {
     return null;

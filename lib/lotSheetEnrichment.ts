@@ -15,6 +15,7 @@ import {
   formatAzimuthDms,
 } from '@/lib/azimuthFormat';
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import { buildSideConfrontantsFromSegments } from '@/lib/lotSegmentConfrontation';
 import {
   getOfficialLotSegmentTable,
   isValidSegmentDistance,
@@ -473,7 +474,7 @@ export type LotSheetSideConfrontants = {
   ladoEsquerdo: string;
 };
 
-/** Confrontantes por lado do lote (frente = logradouro). */
+/** Confrontantes por lado do lote (vizinho por segmento; frente = logradouro). */
 export function buildSideConfrontants(
   block: Record<string, unknown>,
   targetId: string,
@@ -481,40 +482,13 @@ export function buildSideConfrontants(
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
 ): LotSheetSideConfrontants {
-  const rawFront = String(block.front_street_name || '').trim();
-  const frontDisplay = formatStreetDisplay(
-    block.front_street_type as string | undefined,
-    rawFront || undefined,
-  );
-  const frente =
-    rawFront && !/sem nome/i.test(rawFront)
-      ? frontDisplay || rawFront
-      : 'Rua / via de acesso';
-
-  const cardinals = buildCardinalConfrontants(
+  return buildSideConfrontantsFromSegments(
+    block,
     targetId,
     targetRing,
     blocks,
     streetGuides,
   );
-  const byDir = Object.fromEntries(
-    cardinals.map((c) => [c.direction, c.label]),
-  ) as Partial<Record<CardinalDirection, string>>;
-
-  const streetHit = detectStreetDirection(targetRing, streetGuides);
-  const frontDir: CardinalDirection = streetHit?.direction || 'NORTE';
-
-  const pick = (d: CardinalDirection) => {
-    const v = byDir[d];
-    return v && v !== '—' ? v : '—';
-  };
-
-  return {
-    frente,
-    fundo: pick(OPPOSITE_CARDINAL[frontDir]),
-    ladoDireito: pick(RIGHT_CARDINAL[frontDir]),
-    ladoEsquerdo: pick(LEFT_CARDINAL[frontDir]),
-  };
 }
 
 export function buildCardinalConfrontants(

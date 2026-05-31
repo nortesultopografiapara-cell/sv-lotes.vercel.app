@@ -10,7 +10,8 @@
     "clean": "next clean",
     "diagnose:txt": "tsx scripts/diagnose-civil3d-import.ts",
     "test:txt-mandatory": "tsx scripts/mandatory-txt-parser-tests.ts",
-    "test:side-mandatory": "tsx scripts/mandatory-side-classification-tests.ts"
+    "test:side-mandatory": "tsx scripts/mandatory-side-classification-tests.ts",
+    "test:confrontation-segment": "tsx scripts/mandatory-segment-confrontation-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

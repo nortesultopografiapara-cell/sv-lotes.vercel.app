@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { autoLotSideConfrontants } from '@/lib/lotConfrontations';
 import { latLngRingFromBlock } from '@/lib/lotSheetEnrichment';
 import {
+  PROJECT_CONFRONTATION_SNAPSHOT_VERSION,
   saveProjectConfrontationSnapshot,
   type LotAutoConfrontationRecord,
   type ProjectConfrontationSnapshot,
@@ -111,7 +112,7 @@ export async function runAutomaticConfrontation(
   const snapshot: ProjectConfrontationSnapshot = {
     projectId,
     computedAt,
-    version: 1,
+    version: PROJECT_CONFRONTATION_SNAPSHOT_VERSION,
     lots,
   };
   saveProjectConfrontationSnapshot(snapshot);
