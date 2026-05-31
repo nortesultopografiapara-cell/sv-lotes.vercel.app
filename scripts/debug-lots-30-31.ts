@@ -5,6 +5,8 @@ import {
   computeOfficialChainClosureErrorM,
   civil3dParsedToOfficialSegments,
   buildUtmRingFromOfficialSegments,
+  logLotDebugChain30_31,
+  parseLotHeaderStart,
 } from "../lib/civil3dTxtParser";
 
 const PROJ =
@@ -23,6 +25,19 @@ for (const name of ["30", "31", "32"]) {
   const official = civil3dParsedToOfficialSegments(lot.segments, lot.name);
   const payload = civil3dLotToImportPayload(lot, PROJ, null);
   const ring = buildUtmRingFromOfficialSegments(official, lot.name);
+  const chunkMarker = `Name: ${lot.name}`;
+  const chunkIdx = text.indexOf(chunkMarker);
+  const nextName = text.indexOf("\nName:", chunkIdx + 1);
+  const chunk =
+    chunkIdx >= 0
+      ? text.slice(chunkIdx, nextName > chunkIdx ? nextName : undefined)
+      : "";
+  const lotStart = chunk ? parseLotHeaderStart(chunk, lot.name) : null;
+  if (name === "30" || name === "31") {
+    logLotDebugChain30_31(lot.name, lot.segments, lotStart, {
+      geometrySaved: payload.geometrySaved,
+    });
+  }
   console.log(`\n=== Lote ${name} ===`);
   console.log({
     closureErrorM: computeOfficialChainClosureErrorM(official),

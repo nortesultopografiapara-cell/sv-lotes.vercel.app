@@ -109,62 +109,69 @@ function readField(block: string, labels: string[]): number | null {
   return null;
 }
 
-/** North/Easting do cabeçalho do lote — nunca "End North" / "RP North". */
-function readLotHeaderCoord(
-  header: string,
-  kind: "north" | "east",
-): number | null {
-  const label =
-    kind === "north"
-      ? "(?<!End\\s)(?<!RP\\s)North(?:ing)?"
-      : "(?<!End\\s)(?<!RP\\s)East(?:ing)?";
-  const re = new RegExp(
-    `(?:^|\\n)\\s*${label}\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
-    "im",
-  );
-  const m = header.match(re);
-  if (!m) return null;
-  return parseBrNumber(m[1]);
+/** Padrão do rótulo North no Civil 3D (ex.: "North", "End North", "RP North"). */
+function northLabelRegex(northLabel: string): string {
+  const escaped = escapeRegexLabel(northLabel);
+  if (northLabel === "North") {
+    return `(?<!End\\s)(?<!RP\\s)(?<!Error\\s)${escaped}(?:ing)?`;
+  }
+  return `${escaped}(?:ing)?`;
 }
 
-function readAllCoordPairs(
+/** Ignora rodapé Civil 3D (Perimeter, Error Closure, Error North/East) no fim do bloco. */
+function trimSegmentBlockFooter(block: string): string {
+  const cut = block.search(
+    /\b(?:Perimeter|Error\s+Closure|Precision)\s*:/i,
+  );
+  return cut >= 0 ? block.slice(0, cut) : block;
+}
+
+/**
+ * Civil 3D Q04: na mesma linha, `End North: …m     East: …m` (sem "End East").
+ * Aceita legado `End East:` na mesma linha.
+ */
+export function readCoordPairFromLine(
+  line: string,
+  northLabel: string,
+): { north: number; east: number } | null {
+  const northPat = northLabelRegex(northLabel);
+  const patterns = [
+    new RegExp(
+      `${northPat}\\s*:\\s*([0-9+\\-.,]+)\\s*m?\\s+(?<!End\\s)East(?:ing)?\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
+      "i",
+    ),
+    new RegExp(
+      `${northPat}\\s*:\\s*([0-9+\\-.,]+)\\s*m?\\s+End\\s+East(?:ing)?\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
+      "i",
+    ),
+  ];
+  for (const re of patterns) {
+    const m = line.match(re);
+    if (!m) continue;
+    const north = parseBrNumber(m[1]);
+    const east = parseBrNumber(m[2]);
+    if (north != null && east != null) return { north, east };
+  }
+  return null;
+}
+
+/** Varre linhas do bloco; `last` = último par encontrado (fim de Line/Curve). */
+function readCoordPairFromBlock(
   block: string,
-): Array<{ north: number; east: number }> {
-  const pairs: Array<{ north: number; east: number }> = [];
-  const seen = new Set<string>();
-
-  const pushPair = (north: number | null, east: number | null) => {
-    if (north == null || east == null) return;
-    const key = `${round2(north)}|${round2(east)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    pairs.push({ north, east });
-  };
-
-  const inlineRe =
-    /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?\s+(?<!End\s)(?<!RP\s)(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim;
-  for (const m of block.matchAll(inlineRe)) {
-    pushPair(parseBrNumber(m[1]), parseBrNumber(m[2]));
+  northLabel: string,
+  options?: { last?: boolean },
+): { north: number; east: number } | null {
+  const found: Array<{ north: number; east: number }> = [];
+  for (const line of block.split(/\r?\n/)) {
+    const pair = readCoordPairFromLine(line, northLabel);
+    if (pair) found.push(pair);
   }
-
-  const northMatches = [
-    ...block.matchAll(
-      /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
-    ),
-  ];
-  const eastMatches = [
-    ...block.matchAll(
-      /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
-    ),
-  ];
-  const n = Math.min(northMatches.length, eastMatches.length);
-  for (let i = 0; i < n; i++) {
-    pushPair(
-      parseBrNumber(northMatches[i][1]),
-      parseBrNumber(eastMatches[i][1]),
-    );
+  if (found.length === 0) {
+    const inline = block.replace(/\s+/g, " ");
+    const pair = readCoordPairFromLine(inline, northLabel);
+    return pair;
   }
-  return pairs;
+  return options?.last ? found[found.length - 1] : found[0];
 }
 
 function parseDirectionBearing(block: string): number | null {
@@ -201,97 +208,56 @@ function isCurveBlock(block: string): boolean {
   );
 }
 
-function isNearPoint(
-  n1: number,
-  e1: number,
-  n2: number | null,
-  e2: number | null,
-  tol = 0.05,
-): boolean {
-  if (n2 == null || e2 == null) return false;
-  return Math.hypot(e1 - e2, n1 - n2) < tol;
-}
-
 /**
  * Ponto inicial do lote (trecho antes do Segment #1).
  * Aceita North/East ou, no Civil 3D Q04, End North/End East no cabeçalho.
  */
-function parseLotHeaderStart(
+export function parseLotHeaderStart(
   chunk: string,
-  lotLabel: string,
+  _lotLabel: string,
 ): { north: number; east: number; source: string } | null {
   const header = chunk.split(/Segment\s*#\s*1\b/i)[0] ?? chunk;
 
-  const headerPairs = readAllCoordPairs(header);
-  if (headerPairs.length > 0) {
+  const endHeader = readCoordPairFromBlock(header, "End North");
+  if (endHeader) {
     return {
-      north: headerPairs[0].north,
-      east: headerPairs[0].east,
-      source: "header_north_east_before_segment_1",
-    };
-  }
-
-  const north = readLotHeaderCoord(header, "north");
-  const east = readLotHeaderCoord(header, "east");
-  if (north != null && east != null) {
-    return { north, east, source: "header_north_east_before_segment_1" };
-  }
-
-  const endNorth = readField(header, [
-    "End North",
-    "End Northing",
-    "Ending Northing",
-    "Northing End",
-  ]);
-  const endEast = readField(header, [
-    "End East",
-    "End Easting",
-    "Ending Easting",
-    "Easting End",
-  ]);
-  if (endNorth != null && endEast != null) {
-    return {
-      north: endNorth,
-      east: endEast,
+      north: endHeader.north,
+      east: endHeader.east,
       source: "header_end_north_east_before_segment_1",
     };
   }
 
-  return null;
-}
-
-function pickLastNonRpCoordPair(
-  pairs: Array<{ north: number; east: number }>,
-  rpNorth: number | null,
-  rpEast: number | null,
-): { north: number; east: number } | null {
-  for (let i = pairs.length - 1; i >= 0; i--) {
-    const p = pairs[i];
-    if (isNearPoint(p.north, p.east, rpNorth, rpEast)) continue;
-    return p;
+  const northHeader = readCoordPairFromBlock(header, "North");
+  if (northHeader) {
+    return {
+      north: northHeader.north,
+      east: northHeader.east,
+      source: "header_north_east_before_segment_1",
+    };
   }
+
   return null;
 }
 
-function logLotDebugChain30_31(
+export function logLotDebugChain30_31(
   lotLabel: string,
   segments: ParsedCivil3dSegment[],
   lotStart: { north: number; east: number; source: string } | null,
+  extra?: { geometrySaved?: boolean },
 ): void {
   const key = String(lotLabel).trim();
   if (key !== "30" && key !== "31") return;
   const logKey = key === "30" ? "LOT_DEBUG_CHAIN_30" : "LOT_DEBUG_CHAIN_31";
-  const closureErr = computeChainClosureErrorM(segments);
+  const closureErr = computeChainClosureErrorM(segments, lotStart);
   console.log(logKey, {
     closureErrorM: round2(closureErr),
     maxAllowedM: CLOSURE_MAX_M,
-    lotStart: lotStart
-      ? {
-          north: round2(lotStart.north),
-          east: round2(lotStart.east),
-          source: lotStart.source,
-        }
-      : null,
+    geometrySaved: extra?.geometrySaved,
+    start: lotStart
+      ? { n: round2(lotStart.north), e: round2(lotStart.east), source: lotStart.source }
+      : segments[0]
+        ? { n: round2(segments[0].north), e: round2(segments[0].east) }
+        : null,
     chain: segments.map((s) => ({
       seg: s.segmentNumber,
       type: s.type,
@@ -305,70 +271,16 @@ function logLotDebugChain30_31(
   });
 }
 
-/**
- * Lotes com Curve (ex. 30, 31): garante fechamento no ponto inicial do memorial.
- * Não aplica a lotes só com Line (ex. 32).
- */
-function reconcileCurveLotClosure(
-  segments: ParsedCivil3dSegment[],
-  lotStart: { north: number; east: number; source: string } | null,
-  lotLabel: string,
-): ParsedCivil3dSegment[] {
-  if (!lotStart || !segments.some((s) => s.type === "CURVE")) {
-    return segments;
-  }
-
-  logLotDebugChain30_31(lotLabel, segments, lotStart);
-
-  let closureErr = computeChainClosureErrorM(segments);
-  if (closureErr <= CLOSURE_MAX_M) {
-    return segments;
-  }
-
-  const last = segments[segments.length - 1];
-  if (last.endNorth == null || last.endEast == null) {
-    return segments;
-  }
-
-  const distToStart = Math.hypot(
-    last.endEast - lotStart.east,
-    last.endNorth - lotStart.north,
-  );
-
-  if (distToStart > CLOSURE_MAX_M) {
-    console.log("TXT_CHAIN_CLOSURE_ERROR", {
-      lote: lotLabel,
-      action: "snap_last_end_to_lot_start",
-      closureBeforeM: round2(closureErr),
-      lastEnd: { north: round2(last.endNorth), east: round2(last.endEast) },
-      lotStart: { north: round2(lotStart.north), east: round2(lotStart.east) },
-      note: "curve_lot_only",
-    });
-    last.endNorth = lotStart.north;
-    last.endEast = lotStart.east;
-    closureErr = computeChainClosureErrorM(segments);
-    console.log("TXT_CHAIN_CLOSURE_ERROR", {
-      lote: lotLabel,
-      closureAfterSnapM: round2(closureErr),
-      maxAllowedM: CLOSURE_MAX_M,
-      ok: closureErr <= CLOSURE_MAX_M,
-    });
-  }
-
-  return segments;
-}
-
 function computeChainClosureErrorM(
   segments: Array<{ north: number; east: number; endNorth: number | null; endEast: number | null }>,
+  lotStart?: { north: number; east: number } | null,
 ): number {
-  if (segments.length < 2) return Infinity;
-  const first = segments[0];
+  if (segments.length < 1) return Infinity;
   const last = segments[segments.length - 1];
   if (last.endNorth == null || last.endEast == null) return Infinity;
-  return Math.hypot(
-    last.endEast - first.east,
-    last.endNorth - first.north,
-  );
+  const closeN = lotStart?.north ?? segments[0].north;
+  const closeE = lotStart?.east ?? segments[0].east;
+  return Math.hypot(last.endEast - closeE, last.endNorth - closeN);
 }
 
 function chainSegmentEndpoints(
@@ -416,7 +328,7 @@ function chainSegmentEndpoints(
   }));
   console.log("TXT_SEGMENT_CHAIN", { lote: lotLabel, chain: chainLog });
 
-  const closureErr = computeChainClosureErrorM(out);
+  const closureErr = computeChainClosureErrorM(out, lotStart);
   console.log("TXT_CHAIN_CLOSURE_ERROR", {
     lote: lotLabel,
     closureErrorM: round2(closureErr),
@@ -432,84 +344,69 @@ function parseOneSegmentBlock(
   segmentNumber: number,
   lotLabel: string,
 ): ParsedCivil3dSegment | null {
-  const type: Civil3dSegmentKind = isCurveBlock(block) ? "CURVE" : "LINE";
-  const coordPairs = readAllCoordPairs(block);
+  const body = trimSegmentBlockFooter(block);
+  const type: Civil3dSegmentKind = isCurveBlock(body) ? "CURVE" : "LINE";
 
-  const rpNorth = readField(block, [
-    "RP North",
-    "RP Northing",
-    "Radius Point Northing",
-    "Point of Curve Northing",
-    "PI Northing",
-  ]);
-  const rpEast = readField(block, [
-    "RP East",
-    "RP Easting",
-    "Radius Point Easting",
-    "Point of Curve Easting",
-    "PI Easting",
-  ]);
+  const rpPair = readCoordPairFromBlock(body, "RP North");
+  const rpNorth =
+    rpPair?.north ??
+    readField(body, [
+      "RP North",
+      "RP Northing",
+      "Radius Point Northing",
+      "Point of Curve Northing",
+      "PI Northing",
+    ]);
+  const rpEast =
+    rpPair?.east ??
+    readField(body, [
+      "RP East",
+      "RP Easting",
+      "Radius Point Easting",
+      "Point of Curve Easting",
+      "PI Easting",
+    ]);
 
-  let endN = readField(block, [
-    "End North",
-    "End Northing",
-    "Ending Northing",
-    "Northing End",
-  ]);
-  let endE = readField(block, [
-    "End East",
-    "End Easting",
-    "Ending Easting",
-    "Easting End",
-  ]);
+  const endPair =
+    type === "CURVE"
+      ? readCoordPairFromBlock(body, "End North", { last: true })
+      : readCoordPairFromBlock(body, "North", { last: true });
 
-  if (type === "CURVE") {
-    if (rpNorth != null && rpEast != null) {
-      console.log("ARC_RP_IGNORED_FOR_POLYGON", {
-        lote: lotLabel,
-        segmentNumber,
-        rpNorth,
-        rpEast,
-      });
-    }
-    if (endN == null || endE == null) {
-      const fallback = pickLastNonRpCoordPair(coordPairs, rpNorth, rpEast);
-      if (fallback) {
-        endN = fallback.north;
-        endE = fallback.east;
-      }
-    }
-  } else if (endN == null || endE == null) {
-    const lineEnd = pickLastNonRpCoordPair(coordPairs, rpNorth, rpEast);
-    if (lineEnd) {
-      endN = lineEnd.north;
-      endE = lineEnd.east;
-    }
+  if (type === "CURVE" && rpNorth != null && rpEast != null) {
+    console.log("ARC_RP_IGNORED_FOR_POLYGON", {
+      lote: lotLabel,
+      segmentNumber,
+      rpNorth,
+      rpEast,
+    });
   }
+
+  const endN = endPair?.north ?? null;
+  const endE = endPair?.east ?? null;
 
   if (endN == null || endE == null) return null;
 
-  const length = readField(block, [
+  const length = readField(body, [
     "Length",
     "Comprimento",
     "Curve Length",
     "Arc Length",
     "Comprimento da Curva",
   ]);
-  const radius = readField(block, ["Radius", "Raio"]);
-  const chord = readField(block, ["Chord", "Corda"]);
-  const delta = readField(block, ["Delta", "Deflection", "Deflexão"]);
-  const tangent = readField(block, ["Tangent", "Tangente"]);
-  const course = readField(block, ["Course", "Azimuth", "Azimute"]);
-  const courseIn = readField(block, ["Course In", "CourseIn", "Azimuth In"]);
-  const courseOut = readField(block, [
+  const radius = readField(body, ["Radius", "Raio"]);
+  const chord = readField(body, ["Chord", "Corda"]);
+  const delta = readField(body, ["Delta", "Deflection", "Deflexão"]);
+  const tangent = readField(body, ["Tangent", "Tangente"]);
+  const course = readField(body, ["Course", "Azimuth", "Azimute"]);
+  const courseIn = readField(body, ["Course In", "CourseIn", "Azimuth In"]);
+  const courseOut = readField(body, [
     "Course Out",
     "CourseOut",
     "Azimuth Out",
   ]);
 
   const bearing =
-    courseOut ?? course ?? courseIn ?? parseDirectionBearing(block);
+    courseOut ?? course ?? courseIn ?? parseDirectionBearing(body);
 
   if (type === "CURVE") {
     console.log("ARC_SEGMENT_DETECTED", {
@@ -617,7 +514,7 @@ function parseSegmentBlocks(
   return segments;
 }
 
-function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
+export function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
   const name = chunk.split("\n")[0]?.trim();
   if (!name) return null;
 
@@ -628,7 +525,6 @@ function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
   const lotStart = parseLotHeaderStart(chunk, name);
   let segments = parseSegmentBlocks(chunk, name);
   segments = chainSegmentEndpoints(segments, lotStart, name);
-  segments = reconcileCurveLotClosure(segments, lotStart, name);
 
   if (segments.length < 2) return null;
 
@@ -1444,6 +1340,19 @@ export function civil3dLotToImportPayload(
         locationOk: built?.locationOk ?? false,
       });
     }
+  }
+
+  const lotKey = String(lot.name).trim();
+  if (lotKey === "30" || lotKey === "31") {
+    const s0 = lot.segments[0];
+    logLotDebugChain30_31(
+      lot.name,
+      lot.segments,
+      s0
+        ? { north: s0.north, east: s0.east, source: "segment_chain_start" }
+        : null,
+      { geometrySaved },
+    );
   }
 
   return {

@@ -1,14 +1,14 @@
 Name: 30
 Area: 2501.08
 Perimeter: 200.000
-End North: 9316050.0000m     End East: 623900.0000m
+End North: 9316050.0000m     East: 623900.0000m
 
 Segment #1  :  Curve
 
 Length: 25.000m     Radius: 50.000m
 Chord: 24.500m
-End North: 9316075.0000m     End East: 623920.0000m
-RP North: 9316100.0000m     RP East: 623950.0000m
+End North: 9316075.0000m     East: 623920.0000m
+RP North: 9316100.0000m     East: 623950.0000m
 
 Segment #2  :  Line
 

@@ -10,6 +10,7 @@ import {
   buildUtmRingFromOfficialSegments,
   computeQuadraUtmCentroidFromParsedLots,
   validateQuadraImportAgainstProject,
+  readCoordPairFromLine,
 } from "../lib/civil3dTxtParser";
 
 const PROJ4 =
@@ -205,7 +206,8 @@ Length: 10.000m
 North: 6000.0000m     East: 640000.0000m
 `;
 
-const INLINE_END_NE = `Name: INLINE-END
+/** Civil 3D Q04: End North + East na mesma linha (sem rótulo "End East"). */
+const INLINE_END_NORTH_EAST = `Name: INLINE-END
 Area: 120.00
 Perimeter: 44.00
 North: 7000.0000m     East: 650000.0000m
@@ -216,8 +218,8 @@ North: 7011.0000m     East: 650000.0000m
 
 Segment #2  :  Curve
 Length: 11.000m
-End North: 7011.0000m     End East: 650011.0000m
-RP North: 7020.0000m     RP East: 650015.0000m
+End North: 7011.0000m     East: 650011.0000m
+RP North: 7020.0000m     East: 650015.0000m
 
 Segment #3  :  Line
 Length: 11.000m
@@ -226,6 +228,54 @@ North: 7000.0000m     East: 650011.0000m
 Segment #4  :  Line
 Length: 11.000m
 North: 7000.0000m     East: 650000.0000m
+`;
+
+/** Último segmento com rodapé Civil 3D (não confundir Error North com fim da Line). */
+const LINE_WITH_ERROR_FOOTER = `Name: ERR-FOOT
+Area: 100.00
+Perimeter: 40.00
+North: 1000.0000m     East: 500000.0000m
+
+Segment #1  :  Line
+Length: 10.000m
+North: 1010.0000m     East: 500000.0000m
+
+Segment #2  :  Line
+Length: 10.000m
+North: 1010.0000m     East: 500010.0000m
+
+Segment #3  :  Line
+Length: 10.000m
+North: 1000.0000m     East: 500010.0000m
+
+Segment #4  :  Line
+Length: 10.000m
+North: 1000.0000m     East: 500000.0000m
+Perimeter: 40.000m     Area: 100.00sq.m
+Error Closure: 0.0001     Course: 090°
+Error North: -0.00049m     East: 0.00038m
+`;
+
+const HEADER_END_NORTH_EAST = `Name: HDR-END-NE
+Area: 100.00
+Perimeter: 40.00
+End North: 9316103.4553m     East: 624008.2611m
+
+Segment #1  :  Line
+Length: 10.000m
+North: 9316113.4553m     East: 624008.2611m
+
+Segment #2  :  Line
+Length: 10.000m
+North: 9316113.4553m     East: 624018.2611m
+
+Segment #3  :  Line
+Length: 10.000m
+North: 9316103.4553m     East: 624018.2611m
+
+Segment #4  :  Line
+Length: 10.000m
+North: 9316103.4553m     East: 624008.2611m
 `;
 
 function buildQuadra20Lots(): string {
@@ -350,9 +400,16 @@ function runTests() {
     );
   }
 
-  // 7. End North/End East mesma linha (bloco curva)
+  // 7. End North + East na mesma linha (formato Civil 3D Q04, sem End East)
   {
-    const { closure, payload, lot } = evaluateLot(INLINE_END_NE, "INLINE-END");
+    const pair = readCoordPairFromLine(
+      "End North: 9316103.4553m     East: 624008.2611m",
+      "End North",
+    );
+    const { closure, payload, lot } = evaluateLot(
+      INLINE_END_NORTH_EAST,
+      "INLINE-END",
+    );
     const curve = lot.segments.find((s) => s.type === "CURVE");
     const endOk =
       curve?.endNorth != null &&
@@ -361,9 +418,49 @@ function runTests() {
       Math.abs(curve.endEast - 650011) < 0.01;
     assert(
       7,
-      "Lote onde End North/End East estão na mesma linha",
-      payload.geometrySaved && closure <= 0.1 && endOk,
+      "End North + East na mesma linha (Curve, sem End East)",
+      pair != null &&
+        Math.abs(pair.north - 9316103.4553) < 0.01 &&
+        Math.abs(pair.east - 624008.2611) < 0.01 &&
+        payload.geometrySaved &&
+        closure <= 0.1 &&
+        endOk,
       `geom=${payload.geometrySaved} curveEnd=(${curve?.endNorth},${curve?.endEast})`,
+    );
+  }
+
+  // 7b. Cabeçalho End North + East (lote 30)
+  {
+    const { closure, payload, lot } = evaluateLot(
+      HEADER_END_NORTH_EAST,
+      "HDR-END-NE",
+    );
+    const startOk =
+      Math.abs(lot.segments[0].north - 9316103.4553) < 0.01 &&
+      Math.abs(lot.segments[0].east - 624008.2611) < 0.01;
+    assert(
+      7.1,
+      "Cabeçalho End North + East (início do lote)",
+      payload.geometrySaved && closure <= 0.1 && startOk,
+      `geom=${payload.geometrySaved} start=(${lot.segments[0].north},${lot.segments[0].east})`,
+    );
+  }
+
+  // 7c. Rodapé Error North/East não é vértice do último segmento
+  {
+    const { closure, payload, lot } = evaluateLot(
+      LINE_WITH_ERROR_FOOTER,
+      "ERR-FOOT",
+    );
+    const last = lot.segments[lot.segments.length - 1];
+    const endOk =
+      Math.abs(last.endNorth! - 1000) < 0.01 &&
+      Math.abs(last.endEast! - 500000) < 0.01;
+    assert(
+      7.2,
+      "Ignorar Error North/East no rodapé do bloco",
+      payload.geometrySaved && closure <= 0.1 && endOk,
+      `geom=${payload.geometrySaved} lastEnd=(${last.endNorth},${last.endEast})`,
     );
   }
 

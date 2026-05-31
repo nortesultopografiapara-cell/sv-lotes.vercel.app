@@ -1,14 +1,14 @@
 Name: 30
 Area: 2501.08
 Perimeter: 200.000
-End North: 9316050.0000m     End East: 623900.0000m
+End North: 9316050.0000m     East: 623900.0000m
 
 Segment #1  :  Curve
 
 Length: 25.000m     Radius: 50.000m
 Chord: 24.500m
-End North: 9316075.0000m     End East: 623920.0000m
-RP North: 9316100.0000m     RP East: 623950.0000m
+End North: 9316075.0000m     East: 623920.0000m
+RP North: 9316100.0000m     East: 623950.0000m
 
 Segment #2  :  Line
 
@@ -46,8 +46,8 @@ Length: 30.561m     Radius: 63.207m
 Delta: 027.7026 (d)     Tangent: 15.585m
 Chord: 30.264m     Course: 237° 07' 51.76"
 Course In: 313° 16' 47.08"     Course Out: 160° 58' 56.43"
-RP North: 9316163.2126m     RP East: 623987.4020m
-End North: 9316088.9411m     End East: 623921.4020m
+RP North: 9316163.2126m     East: 623987.4020m
+End North: 9316088.9411m     East: 623921.4020m
 
 Segment #4  :  Line
 
