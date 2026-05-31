@@ -3069,7 +3069,14 @@ export default function GISMap({
           }
 
           const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);
-          const enrichedSaleData = { ...saleData, receipts_sum: receiptsSum };
+          const enrichedSaleData = {
+            ...saleData,
+            receipts_sum: receiptsSum,
+            finance_receipts: financeData,
+            down_payment_due_date: customerData.down_payment_due_date || null,
+            first_installment_due_date:
+              customerData.first_installment_due_date || null,
+          };
 
           const contractPayloadPartial = {
             project_name_snapshot: projDataSnapshot?.name || lot?.projects?.name || null,
@@ -3126,6 +3133,7 @@ export default function GISMap({
               project: projDataSnapshot || lot.projects || {},
               block: blockRow,
               sale: enrichedSaleData,
+              financeReceipts: financeData,
               contractSnapshot: {
                 ...contractPayloadPartial,
                 contract_number: contractNumber,

@@ -644,6 +644,7 @@ export async function loadFreshRegenerationEntities(
   }
 
   let receipts_sum = 0;
+  let finance_receipts: Array<Record<string, unknown>> = [];
   if (saleId) {
     let recQuery = supabase
       .from('finance_receipts')
@@ -666,6 +667,7 @@ export async function loadFreshRegenerationEntities(
     if (recErr) {
       console.warn('REGENERATE_RECEIPTS_LOAD', recErr.message);
     } else if (recs?.length) {
+      finance_receipts = recs as Array<Record<string, unknown>>;
       receipts_sum = recs.reduce(
         (a, b) => a + Number((b as { amount?: number }).amount || 0),
         0,
@@ -717,6 +719,7 @@ export async function loadFreshRegenerationEntities(
     block: enrichBlockForContract(block),
     project,
     receipts_sum,
+    finance_receipts,
     seller,
   };
 }
@@ -737,7 +740,8 @@ export async function buildFreshSaleContractHtml(
   receipts_sum: number;
 }> {
   const fresh = await loadFreshRegenerationEntities(supabase, contract, session);
-  const { company, customer, sale, block, project, receipts_sum } = fresh;
+  const { company, customer, sale, block, project, receipts_sum, finance_receipts } =
+    fresh;
 
   const tenant = {
     ...company,
@@ -786,7 +790,12 @@ export async function buildFreshSaleContractHtml(
     customer: customerWithId,
     project: projData,
     block: blockWithId,
-    sale: { ...saleWithId, receipts_sum },
+    sale: {
+      ...saleWithId,
+      receipts_sum,
+      finance_receipts,
+    },
+    financeReceipts: finance_receipts,
     contractSnapshot: {
       contract_number: contractNumber,
       ...contractPayloadPartial,

@@ -46,6 +46,123 @@ const formatArea = (val: any) => {
   );
 };
 
+export type ContractFinanceReceiptRef = {
+  due_date?: string | null;
+  installment_number?: number | string | null;
+  amount?: number | null;
+  status?: string | null;
+};
+
+export type ContractPaymentDates = {
+  entryDueRaw: string | null;
+  firstInstallmentDueRaw: string | null;
+  lastInstallmentDueRaw: string | null;
+  entryDueFmt: string;
+  firstInstallmentDueFmt: string;
+  lastInstallmentDueFmt: string;
+};
+
+/** Data YYYY-MM-DD em pt-BR sem deslocar fuso (UTC noon). */
+export function formatContractDueDateBr(dateStr: unknown): string {
+  if (dateStr == null || dateStr === "") return "";
+  const iso = String(dateStr).trim().split("T")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const d = new Date(`${iso}T12:00:00Z`);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+    }
+  }
+  const parsed = new Date(String(dateStr));
+  if (isNaN(parsed.getTime())) return String(dateStr);
+  return parsed.toLocaleDateString("pt-BR");
+}
+
+function addMonthsToIsoDate(isoDate: string, months: number): string | null {
+  const base = String(isoDate).split("T")[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return null;
+  const d = new Date(`${base}T12:00:00Z`);
+  if (isNaN(d.getTime())) return null;
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Datas oficiais do contrato — mesma fonte do financeiro (parcelas geradas + sale).
+ * Não recalcula +30 dias a partir da assinatura se já houver vencimento gravado.
+ */
+export function resolveContractPaymentDates(
+  sale: Record<string, unknown>,
+  receipts?: ContractFinanceReceiptRef[] | null,
+): ContractPaymentDates {
+  const recs = (
+    receipts ??
+    (sale.finance_receipts as ContractFinanceReceiptRef[] | undefined) ??
+    []
+  ).filter((r) => {
+    if (!r?.due_date) return false;
+    const st = String(r.status || "").toLowerCase();
+    return st !== "cancelado" && st !== "cancelled";
+  });
+
+  const byInst = (n: number) =>
+    recs
+      .filter((r) => Number(r.installment_number) === n)
+      .sort((a, b) =>
+        String(a.due_date).localeCompare(String(b.due_date)),
+      )[0];
+
+  const parcelRecs = recs
+    .filter((r) => {
+      const num = Number(r.installment_number);
+      return Number.isFinite(num) && num >= 1;
+    })
+    .sort(
+      (a, b) =>
+        Number(a.installment_number) - Number(b.installment_number) ||
+        String(a.due_date).localeCompare(String(b.due_date)),
+    );
+
+  const entryRec = byInst(0);
+  const firstParcelRec = parcelRecs[0];
+  const lastParcelRec = parcelRecs[parcelRecs.length - 1];
+
+  const qtdParcelas = Math.max(1, Number(sale.installments_count) || 1);
+
+  const entryDueRaw =
+    (entryRec?.due_date as string | undefined) ||
+    (sale.down_payment_due_date as string | undefined) ||
+    (sale.entry_due_date as string | undefined) ||
+    null;
+
+  const firstInstallmentDueRaw =
+    (firstParcelRec?.due_date as string | undefined) ||
+    (sale.first_installment_due_date as string | undefined) ||
+    null;
+
+  let lastInstallmentDueRaw =
+    (lastParcelRec?.due_date as string | undefined) || null;
+  if (
+    !lastInstallmentDueRaw &&
+    firstInstallmentDueRaw &&
+    qtdParcelas > 1
+  ) {
+    lastInstallmentDueRaw =
+      addMonthsToIsoDate(firstInstallmentDueRaw, qtdParcelas - 1);
+  }
+  if (!lastInstallmentDueRaw && firstInstallmentDueRaw) {
+    lastInstallmentDueRaw = firstInstallmentDueRaw;
+  }
+
+  return {
+    entryDueRaw,
+    firstInstallmentDueRaw,
+    lastInstallmentDueRaw,
+    entryDueFmt: formatContractDueDateBr(entryDueRaw),
+    firstInstallmentDueFmt: formatContractDueDateBr(firstInstallmentDueRaw),
+    lastInstallmentDueFmt: formatContractDueDateBr(lastInstallmentDueRaw),
+  };
+}
+
 interface GenerateContractParams {
   tenant: any;
   customer: any;
@@ -54,6 +171,7 @@ interface GenerateContractParams {
   sale: any;
   contractSnapshot?: any;
   contractDate?: string;
+  financeReceipts?: ContractFinanceReceiptRef[] | null;
 }
 
 export function generateContractHTML({
@@ -64,18 +182,13 @@ export function generateContractHTML({
   sale,
   contractSnapshot,
   contractDate,
+  financeReceipts,
 }: GenerateContractParams) {
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
     }).format(val);
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    return date.toLocaleDateString("pt-BR");
-  };
 
   const isValid = (v: any) =>
     !!v &&
@@ -134,10 +247,6 @@ export function generateContractHTML({
       ? formatCNPJCPF(seller.representativeCpf)
       : "Não informado";
   const sellerText = formatClassicSellerInstallationText(seller);
-  const empresaLogoSrc = seller.logoUrl;
-  const empresaLogo = empresaLogoSrc
-    ? `<img src="${empresaLogoSrc}" style="max-height: 80px; margin-bottom: 12px;" alt="Logo ${empresaNome}"/>`
-    : "";
   const empresaAssinatura = seller.signatureUrl
     ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
     : "";
@@ -335,18 +444,16 @@ export function generateContractHTML({
       });
   } catch (e) {}
 
-  // Tentativa de calcular primeira parcela
-  // Vence 30 dias após data de criação da venda ou entrada
+  const paymentDates = resolveContractPaymentDates(
+    sale as Record<string, unknown>,
+    financeReceipts,
+  );
+  const dataEntradaFmt = paymentDates.entryDueFmt;
+  const dataPrimeiraParcelaFmt = paymentDates.firstInstallmentDueFmt;
+  const dataUltimaParcelaFmt = paymentDates.lastInstallmentDueFmt;
+
   const dContrato = new Date(contractDate || sale?.created_at || new Date());
   const dataContratoFmt = dContrato.toLocaleDateString("pt-BR");
-
-  const dPrimeira = new Date(dContrato);
-  dPrimeira.setMonth(dPrimeira.getMonth() + 1);
-  const dataPrimeiraParcelaFmt = dPrimeira.toLocaleDateString("pt-BR");
-
-  const dUltima = new Date(dPrimeira);
-  dUltima.setMonth(dUltima.getMonth() + (qtdParcelas - 1));
-  const dataUltimaParcelaFmt = dUltima.toLocaleDateString("pt-BR");
 
   let clPagamento = "";
   if (tipoVenda === "À Vista") {
@@ -355,10 +462,10 @@ export function generateContractHTML({
     clPagamento = `
             <p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR da seguinte forma:</p>
             <ul>
-                <li>Entrada: <strong>${valorEntradaFmt}</strong> (${valorEntradaExtenso}), paga no ato da assinatura.</li>
+                <li>Entrada: <strong>${valorEntradaFmt}</strong> (${valorEntradaExtenso})${dataEntradaFmt ? `, com vencimento em <strong>${dataEntradaFmt}</strong>` : ", paga no ato da assinatura"}.</li>
                 <li>Restante: Dividido em <strong>${qtdParcelas}</strong> parcelas mensais e sucessivas no valor de <strong>${valorParcelaFmt}</strong> (${valorParcelaExtenso}) cada.</li>
-                <li>Vencimento da primeira parcela: <strong>${dataPrimeiraParcelaFmt}</strong></li>
-                <li>Vencimento da última parcela: <strong>${dataUltimaParcelaFmt}</strong></li>
+                <li>Vencimento da primeira parcela: <strong>${dataPrimeiraParcelaFmt || "—"}</strong></li>
+                <li>Vencimento da última parcela: <strong>${dataUltimaParcelaFmt || "—"}</strong></li>
             </ul>
         `;
   }
@@ -395,8 +502,6 @@ export function generateContractHTML({
 
   return `
         <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
-            
-            ${empresaLogo ? `<div style="text-align: center; margin-top: 10px; margin-bottom: 16px; page-break-inside: avoid;">${empresaLogo}</div>` : ""}
 
             <div style="text-align: center; margin-bottom: 25px; page-break-inside: avoid;">
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>

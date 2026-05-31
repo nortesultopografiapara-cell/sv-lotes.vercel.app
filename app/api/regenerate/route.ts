@@ -59,9 +59,13 @@ export async function GET() {
       };
       
       let receipts_sum = 0;
+      let finance_receipts: Array<Record<string, unknown>> = [];
       if (contract.sale_id) {
-         const { data: recs } = await supabaseAdmin.from("finance_receipts").select("amount").eq("sale_id", contract.sale_id).neq("status", "cancelled");
-         if (recs && recs.length) receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
+         const { data: recs } = await supabaseAdmin.from("finance_receipts").select("amount, due_date, installment_number, status").eq("sale_id", contract.sale_id).neq("status", "cancelled");
+         if (recs && recs.length) {
+           finance_receipts = recs;
+           receipts_sum = recs.reduce((a, b) => a + Number(b.amount || 0), 0);
+         }
       }
       
       let tenantData = {};
@@ -75,7 +79,8 @@ export async function GET() {
          customer: updatedContract.customers || (updatedContract.customer_id ? { id: updatedContract.customer_id } : {}),
          project: projData,
          block: updatedContract.blocks || updatedContract.sales?.blocks || {},
-         sale: { ...(updatedContract.sales || {}), receipts_sum },
+         sale: { ...(updatedContract.sales || {}), receipts_sum, finance_receipts },
+         financeReceipts: finance_receipts,
          contractSnapshot: updatedContract,
          contractDate: updatedContract.created_at,
       });
