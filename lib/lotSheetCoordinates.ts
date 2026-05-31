@@ -68,8 +68,8 @@ function extractFromSegmentsJson(block: Record<string, unknown>): [number, numbe
   for (const seg of raw) {
     if (!seg || typeof seg !== 'object') continue;
     const s = seg as Record<string, unknown>;
-    const e = Number(s.easting ?? s.Easting ?? s.x);
-    const n = Number(s.northing ?? s.Northing ?? s.y);
+    const e = Number(s.east ?? s.easting ?? s.Easting ?? s.x);
+    const n = Number(s.north ?? s.northing ?? s.Northing ?? s.y);
     if (Number.isFinite(e) && Number.isFinite(n)) pairs.push([e, n]);
   }
   return ringFromEnPairs(pairs);

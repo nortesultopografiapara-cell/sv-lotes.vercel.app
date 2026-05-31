@@ -46,29 +46,110 @@ export function isValidSegmentDistance(length: number): boolean {
   );
 }
 
+const DISTANCE_FIELD_KEYS = [
+  "distance",
+  "length",
+  "Length",
+  "comprimento",
+  "medida",
+] as const;
+
+const FORBIDDEN_DISTANCE_KEYS = [
+  "north",
+  "northing",
+  "North",
+  "Northing",
+  "east",
+  "easting",
+  "East",
+  "Easting",
+  "x",
+  "y",
+  "coordX",
+  "coordY",
+  "latitude",
+  "longitude",
+  "lat",
+  "lng",
+  "lon",
+] as const;
+
+function collectForbiddenCoordinateValues(
+  raw: Record<string, unknown>,
+): Set<number> {
+  const forbidden = new Set<number>();
+  for (const key of FORBIDDEN_DISTANCE_KEYS) {
+    const v = Number(raw[key]);
+    if (Number.isFinite(v)) forbidden.add(v);
+  }
+  return forbidden;
+}
+
 /**
  * Extrai comprimento oficial do segmento (somente campos de distância do TXT).
+ * Nunca north/east/northing/easting/coord/lat/lon.
  */
 export function extractOfficialSegmentDistance(
   raw: Record<string, unknown>,
   lotLabel?: unknown,
   segmentIndex?: number,
 ): number | null {
-  const value = raw.distance ?? raw.length ?? raw.Length ?? raw.comprimento ?? raw.medida;
-  const length = Number(value);
+  const forbidden = collectForbiddenCoordinateValues(raw);
+  const label = lotLabel ?? "?";
+  const idx = segmentIndex ?? raw.segment_index;
 
-  if (!isValidSegmentDistance(length)) {
-    if (value != null && value !== "") {
-      console.log("LOT_INVALID_SEGMENT", {
-        lote: lotLabel ?? "?",
-        index: segmentIndex ?? raw.segment_index,
+  for (const field of DISTANCE_FIELD_KEYS) {
+    const value = raw[field];
+    if (value == null || value === "") continue;
+
+    const length = Number(String(value).replace(",", "."));
+
+    if (!Number.isFinite(length)) continue;
+
+    if (Math.abs(length) >= 100_000) {
+      console.log("INVALID_OFFICIAL_DISTANCE", {
+        lote: label,
+        index: idx,
+        field,
         raw: value,
+        reason: "looks_like_utm_coordinate",
+      });
+      continue;
+    }
+
+    let matchesCoordinateField = false;
+    for (const coordVal of forbidden) {
+      if (Math.abs(length - coordVal) < 0.01) {
+        console.log("INVALID_OFFICIAL_DISTANCE", {
+          lote: label,
+          index: idx,
+          field,
+          raw: value,
+          reason: "matches_coordinate_field",
+          coordinate: coordVal,
+        });
+        matchesCoordinateField = true;
+        break;
+      }
+    }
+    if (matchesCoordinateField) continue;
+
+    if (!isValidSegmentDistance(length)) {
+      console.log("INVALID_OFFICIAL_DISTANCE", {
+        lote: label,
+        index: idx,
+        field,
+        raw: value,
+        reason: "out_of_range",
         rejectedAs: length,
       });
+      continue;
     }
-    return null;
+
+    return round2(length);
   }
-  return round2(length);
+
+  return null;
 }
 
 /** Remove segmentos inválidos e reindexa o anel 0..n-1. */
@@ -691,4 +772,212 @@ export function officialMeasuresToBlockFields(
         : null,
     perimeter: measures.perimeter,
   };
+}
+
+export type OfficialSegmentClassification =
+  | "frente"
+  | "fundo"
+  | "lado_direito"
+  | "lado_esquerdo"
+  | "chanfre"
+  | "perimetro";
+
+export type OfficialLotSegmentTableRow = {
+  segment_index: number;
+  de: string;
+  para: string;
+  azimute: string;
+  /** Metros (somente se valid). */
+  distanceM: number | null;
+  distancia: string;
+  coordE: string;
+  coordN: string;
+  classification: OfficialSegmentClassification;
+  valid: boolean;
+};
+
+export type OfficialLotSegmentTableResult = {
+  rows: OfficialLotSegmentTableRow[];
+  validRows: OfficialLotSegmentTableRow[];
+  source: "txt_segments" | "empty";
+  coordinatesAvailable: boolean;
+  ignoredInvalidCount: number;
+  measures: OfficialLotMeasures | null;
+};
+
+function formatOfficialAzimuth(deg: number | null): string {
+  if (deg == null || !Number.isFinite(deg)) return "—";
+  const d = Math.floor(deg);
+  const min = Math.round((deg - d) * 60);
+  return `${String(d).padStart(3, "0")}°${String(min).padStart(2, "0")}'`;
+}
+
+function formatOfficialCoord(val: number): string {
+  return val.toLocaleString("pt-BR", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+function vertexDeParaMarker(i: number): string {
+  return `M-${String(i + 1).padStart(2, "0")}`;
+}
+
+function classifySegmentForTable(
+  segmentIndex: number,
+  frontIdx: number,
+  paths: OfficialMeasurePaths,
+  chanfreIndexes: number[],
+): OfficialSegmentClassification {
+  if (segmentIndex === frontIdx) return "frente";
+  if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
+  if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
+  if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
+  if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
+  return "perimetro";
+}
+
+function chanfreIndexesFromPaths(
+  segments: OfficialLotSegment[],
+  frontIdx: number,
+  paths: OfficialMeasurePaths,
+): number[] {
+  const used = new Set<number>([
+    frontIdx,
+    ...paths.pathA.indexes,
+    ...paths.pathB.indexes,
+    ...paths.pathFundo.indexes,
+  ]);
+  const indexes: number[] = [];
+  for (const seg of segments) {
+    if (used.has(seg.segment_index)) continue;
+    if (
+      seg.distance >= CHANFRE_MIN &&
+      seg.distance <= CHANFRE_MAX &&
+      isValidSegmentDistance(seg.distance)
+    ) {
+      indexes.push(seg.segment_index);
+    }
+  }
+  return indexes;
+}
+
+/**
+ * Fonte única: tabela de segmentos oficiais (TXT) para popup, prancha, memorial e contrato.
+ */
+export function getOfficialLotSegmentTable(
+  lot: Record<string, unknown>,
+  _project?: Record<string, unknown> | null,
+): OfficialLotSegmentTableResult {
+  const label = lot.number ?? lot.id ?? "?";
+  const segments = parseOfficialSegmentsFromBlock(lot, label);
+  const empty: OfficialLotSegmentTableResult = {
+    rows: [],
+    validRows: [],
+    source: "empty",
+    coordinatesAvailable: segments.length >= 2,
+    ignoredInvalidCount: 0,
+    measures: null,
+  };
+
+  if (segments.length < 2) return empty;
+
+  const measures = getOfficialLotMeasurements(lot, label);
+  let frontIdx = measures.frontSegmentIndex ?? 0;
+  if (frontIdx >= segments.length) frontIdx = 0;
+
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx);
+  const chanfreIdx = chanfreIndexesFromPaths(segments, frontIdx, paths);
+
+  const rows: OfficialLotSegmentTableRow[] = [];
+  let ignoredInvalidCount = 0;
+
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const next = segments[(i + 1) % segments.length];
+    const toVertex = (s.vertex_order + 1) % segments.length;
+    const distanceM = isValidSegmentDistance(Number(s.distance))
+      ? round2(Number(s.distance))
+      : null;
+    const valid = distanceM != null;
+
+    if (!valid) {
+      ignoredInvalidCount++;
+      console.log("INVALID_OFFICIAL_DISTANCE", {
+        lote: label,
+        index: s.segment_index,
+        reason: "excluded_from_table",
+        raw: s.distance,
+      });
+    }
+
+    rows.push({
+      segment_index: s.segment_index,
+      de: vertexDeParaMarker(s.vertex_order),
+      para: vertexDeParaMarker(toVertex),
+      azimute: formatOfficialAzimuth(s.bearing),
+      distanceM,
+      distancia: valid
+        ? `${distanceM!.toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} m`
+        : "Segmento inválido ignorado",
+      coordE: formatOfficialCoord(next.east),
+      coordN: formatOfficialCoord(next.north),
+      classification: classifySegmentForTable(
+        s.segment_index,
+        frontIdx,
+        paths,
+        chanfreIdx,
+      ),
+      valid,
+    });
+  }
+
+  const validRows = rows.filter((r) => r.valid);
+
+  return {
+    rows,
+    validRows,
+    source: "txt_segments",
+    coordinatesAvailable: true,
+    ignoredInvalidCount,
+    measures,
+  };
+}
+
+/** Rótulos de distância por aresta para desenho da prancha (índice = segment_index). */
+export function officialSegmentTableToEdgeLabels(
+  table: OfficialLotSegmentTableResult,
+  edgeCount: number,
+): string[] {
+  const byIndex = new Map<number, string>();
+  for (const row of table.validRows) {
+    if (row.distanceM == null) continue;
+    byIndex.set(
+      row.segment_index,
+      `${row.distanceM.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} m`,
+    );
+  }
+
+  const labels: string[] = [];
+  for (let i = 0; i < edgeCount; i++) {
+    const label = byIndex.get(i);
+    if (label) {
+      labels.push(label);
+    } else {
+      labels.push("—");
+      if (table.source === "txt_segments") {
+        console.log("INVALID_OFFICIAL_DISTANCE", {
+          reason: "missing_edge_label",
+          edgeIndex: i,
+        });
+      }
+    }
+  }
+  return labels;
 }

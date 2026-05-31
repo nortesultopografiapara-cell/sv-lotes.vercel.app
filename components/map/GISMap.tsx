@@ -55,7 +55,7 @@ import {
 import {
   buildBlockPatchFromOfficialMeasures,
   getOfficialLotMeasurements,
-  parseOfficialSegmentsFromBlock,
+  getOfficialLotSegmentTable,
 } from "@/lib/officialLotMeasurements";
 import {
   calculateLotDimensions,
@@ -1505,10 +1505,17 @@ function LotPopupContent({
     [lot],
   );
 
-  const txtSegments = useMemo(
-    () => parseOfficialSegmentsFromBlock(lot as Record<string, unknown>, lot.number),
-    [lot],
-  );
+  const txtSegments = useMemo(() => {
+    const table = getOfficialLotSegmentTable(
+      lot as Record<string, unknown>,
+      null,
+    );
+    return table.validRows.map((row) => ({
+      segment_index: row.segment_index,
+      distance: row.distanceM as number,
+      classification: row.classification,
+    }));
+  }, [lot]);
 
   const area = (officialMeasures.area ?? Number(lot.area)) || 0;
   const currentPrice = Number(lot.price) || 0;

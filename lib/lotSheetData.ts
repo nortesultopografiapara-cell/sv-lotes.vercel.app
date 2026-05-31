@@ -24,6 +24,7 @@ import {
   type LotSheetSideConfrontants,
   latLngRingFromBlock,
   LOT_SHEET_VERSION,
+  toLocalMetersFromEnRing,
   toLocalMetersFromRing,
   type LotSheetBlockSketch,
   type LotSheetCardinalConfrontant,
@@ -33,6 +34,11 @@ import {
   type LotSheetVertexRow,
 } from '@/lib/lotSheetEnrichment';
 import { formatStreetDisplay } from '@/lib/streetGuide';
+import {
+  getOfficialLotSegmentTable,
+  officialSegmentTableToEdgeLabels,
+} from '@/lib/officialLotMeasurements';
+import { resolveRealCoordinateRing } from '@/lib/lotSheetCoordinates';
 
 export type LotSheetGeometry = {
   /** [lat, lng] fechado ou aberto */
@@ -91,6 +97,9 @@ export type LotSheetPayload = {
   sideConfrontants: LotSheetSideConfrontants;
   lotAddressLine: string;
   memorialFrontClause: string;
+  /** Distâncias oficiais por aresta (índice = segment_index) para o croqui PDF. */
+  officialEdgeLengths: string[];
+  ignoredSegmentNote: string | null;
 };
 
 function formatMeasure(val: unknown): string {
@@ -425,12 +434,29 @@ export async function loadLotSheetPayload(
     .eq('active', true)
     .limit(1);
 
-  const ring = latLngRingFromBlock(block as Record<string, unknown>);
-  if (ring.length < 3) {
-    throw new Error('Lote sem geometria válida no mapa.');
-  }
+  const blockRecord = block as Record<string, unknown>;
+  const ring = latLngRingFromBlock(blockRecord);
+  const realCoords = resolveRealCoordinateRing(
+    blockRecord,
+    project as Record<string, unknown>,
+  );
 
-  const { localRing, bbox } = toLocalMetersFromRing(ring);
+  let localRing: [number, number][];
+  let bbox: { minX: number; maxX: number; minY: number; maxY: number };
+
+  if (realCoords.available && realCoords.ring.length >= 3) {
+    ({ localRing, bbox } = toLocalMetersFromEnRing(realCoords.ring));
+    console.log('LOT_SHEET_LOCAL_RING_FROM_UTM', {
+      blockId: params.blockId,
+      source: realCoords.source,
+      vertices: realCoords.ring.length,
+    });
+  } else {
+    if (ring.length < 3) {
+      throw new Error('Lote sem geometria válida no mapa.');
+    }
+    ({ localRing, bbox } = toLocalMetersFromRing(ring));
+  }
   const maxDim = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY, 1);
   const scaleDenom = parseScaleDenominator(
     (project as Record<string, unknown>).escala_padrao as string,
@@ -472,7 +498,10 @@ export async function loadLotSheetPayload(
 
   const projectMap = buildProjectMap(params.blockId, blocksList);
   const vertices = buildVertexTable(localRing);
-  const blockRecord = block as Record<string, unknown>;
+  const officialTable = getOfficialLotSegmentTable(
+    blockRecord,
+    project as Record<string, unknown>,
+  );
   const officialSegments = buildSegmentTableFromOfficial(blockRecord);
   const segments = officialSegments ?? buildSegmentTable(localRing);
   const officialMetric = buildMetricTableFromOfficial(
@@ -482,6 +511,15 @@ export async function loadLotSheetPayload(
   const { rows: metricRows, coordinatesAvailable } =
     officialMetric ??
     buildMetricTable(blockRecord, localRing, project as Record<string, unknown>);
+
+  const officialEdgeLengths = officialSegmentTableToEdgeLabels(
+    officialTable,
+    localRing.length >= 3 ? localRing.length : metricRows.length,
+  );
+  const ignoredSegmentNote =
+    officialTable.ignoredInvalidCount > 0
+      ? 'Segmento inválido ignorado'
+      : null;
   const frontEdgeIndex = findFrontEdgeIndex(
     localRing,
     block as Record<string, unknown>,
@@ -561,5 +599,7 @@ export async function loadLotSheetPayload(
     sideConfrontants,
     lotAddressLine,
     memorialFrontClause,
+    officialEdgeLengths,
+    ignoredSegmentNote,
   };
 }

@@ -11,7 +11,11 @@ import {
   resolveRealCoordinateRing,
 } from '@/lib/lotSheetCoordinates';
 import { formatStreetDisplay } from '@/lib/streetGuide';
-import { parseOfficialSegmentsFromBlock } from '@/lib/officialLotMeasurements';
+import {
+  getOfficialLotSegmentTable,
+  isValidSegmentDistance,
+  type OfficialLotSegmentTableResult,
+} from '@/lib/officialLotMeasurements';
 
 export type CardinalDirection = 'NORTE' | 'SUL' | 'LESTE' | 'OESTE';
 
@@ -98,6 +102,34 @@ export function latLngRingFromBlock(block: Record<string, unknown>): [number, nu
     return ring;
   }
   return [];
+}
+
+/** Anel UTM [Easting, Northing] → metros locais centrados no primeiro vértice. */
+export function toLocalMetersFromEnRing(enRing: [number, number][]): {
+  localRing: [number, number][];
+  bbox: { minX: number; maxX: number; minY: number; maxY: number };
+} {
+  if (!enRing.length) {
+    return {
+      localRing: [],
+      bbox: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
+    };
+  }
+  const origin = enRing[0];
+  const localRing = enRing.map(
+    ([e, n]) => [e - origin[0], n - origin[1]] as [number, number],
+  );
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const [x, y] of localRing) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  return { localRing, bbox: { minX, maxX, minY, maxY } };
 }
 
 export function toLocalMetersFromRing(ring: [number, number][]): {
@@ -687,6 +719,14 @@ export function buildMetricTable(
     const dy = p2[1] - p1[1];
     const dist = Math.hypot(dx, dy);
     if (dist < 0.01 && !real.available) continue;
+    if (!isValidSegmentDistance(dist)) {
+      console.log('INVALID_OFFICIAL_DISTANCE', {
+        reason: 'geometry_metric_fallback_rejected',
+        edgeIndex: i,
+        rejectedAs: dist,
+      });
+      continue;
+    }
 
     const c2 = coordVerts[(i + 1) % coordVerts.length] ?? coordVerts[0];
     const j = (i + 1) % edgeCount;
@@ -707,68 +747,49 @@ export function buildMetricTable(
   return { rows, coordinatesAvailable: real.available };
 }
 
-/** Memorial: segmentos exatamente como no TXT Civil 3D (sem recalcular pela geometria local). */
+export function segmentTableToMemorialRows(
+  table: OfficialLotSegmentTableResult,
+): LotSheetSegmentRow[] {
+  return table.validRows.slice(0, 16).map((row) => ({
+    segment: `${row.de}-${row.para}`,
+    azimute: row.azimute,
+    distancia: row.distancia,
+  }));
+}
+
+export function segmentTableToMetricRows(
+  table: OfficialLotSegmentTableResult,
+): LotSheetMetricRow[] {
+  return table.validRows.slice(0, 20).map((row) => ({
+    from: row.de,
+    to: row.para,
+    azimute: row.azimute,
+    distancia: row.distancia,
+    coordE: row.coordE,
+    coordN: row.coordN,
+  }));
+}
+
+/** Memorial: segmentos oficiais TXT via getOfficialLotSegmentTable. */
 export function buildSegmentTableFromOfficial(
   block: Record<string, unknown>,
 ): LotSheetSegmentRow[] | null {
-  const segs = parseOfficialSegmentsFromBlock(block);
-  if (segs.length < 2) return null;
-
-  const rows: LotSheetSegmentRow[] = [];
-  for (const s of segs) {
-    const toIdx = (s.vertex_order + 1) % segs.length;
-    rows.push({
-      segment: `V${String(s.vertex_order + 1).padStart(2, '0')}-V${String(toIdx + 1).padStart(2, '0')}`,
-      azimute:
-        s.bearing != null
-          ? formatAzimuth(s.bearing)
-          : '—',
-      distancia: `${s.distance.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })} m`,
-    });
-    if (rows.length >= 16) break;
-  }
-  return rows;
+  const table = getOfficialLotSegmentTable(block);
+  if (table.validRows.length < 2) return null;
+  return segmentTableToMemorialRows(table);
 }
 
-/** Memorial métrico com distâncias/azimutes oficiais do TXT. */
+/** Memorial métrico oficial (mesma fonte que popup/prancha). */
 export function buildMetricTableFromOfficial(
   block: Record<string, unknown>,
   project?: Record<string, unknown> | null,
 ): { rows: LotSheetMetricRow[]; coordinatesAvailable: boolean } | null {
-  const segs = parseOfficialSegmentsFromBlock(block);
-  if (segs.length < 2) return null;
-
-  const real = resolveRealCoordinateRing(block, project);
-  const unavailableMsg = coordinatesUnavailableMessage();
-  const rows: LotSheetMetricRow[] = [];
-
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
-    const next = segs[(i + 1) % segs.length];
-    const j = (s.vertex_order + 1) % segs.length;
-    const c2: [number, number] | undefined = real.available
-      ? [next.east, next.north]
-      : undefined;
-
-    rows.push({
-      from: vertexMarker(s.vertex_order),
-      to: vertexMarker(j),
-      azimute:
-        s.bearing != null ? formatAzimuth(s.bearing) : '—',
-      distancia: `${s.distance.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })} m`,
-      coordE: c2 ? formatCoordValue(c2[0]) : unavailableMsg,
-      coordN: c2 ? formatCoordValue(c2[1]) : '—',
-    });
-    if (rows.length >= 20) break;
-  }
-
-  return { rows, coordinatesAvailable: real.available };
+  const table = getOfficialLotSegmentTable(block, project);
+  if (table.validRows.length < 2) return null;
+  return {
+    rows: segmentTableToMetricRows(table),
+    coordinatesAvailable: table.coordinatesAvailable,
+  };
 }
 
 export function buildSegmentTable(localRing: [number, number][]): LotSheetSegmentRow[] {
@@ -792,6 +813,14 @@ export function buildSegmentTable(localRing: [number, number][]): LotSheetSegmen
     const dy = p2[1] - p1[1];
     const dist = Math.hypot(dx, dy);
     if (dist < 0.01) continue;
+    if (!isValidSegmentDistance(dist)) {
+      console.log('INVALID_OFFICIAL_DISTANCE', {
+        reason: 'geometry_segment_fallback_rejected',
+        edgeIndex: i,
+        rejectedAs: dist,
+      });
+      continue;
+    }
     const j = (i + 1) % verts.length;
     rows.push({
       segment: `${i + 1}-${j + 1}`,
