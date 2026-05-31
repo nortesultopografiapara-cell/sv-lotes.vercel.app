@@ -53,6 +53,8 @@ import {
 import {
   civil3dLotToImportPayload,
   parseCivil3dTxtLots,
+  QUADRA_OUT_OF_PROJECT_MESSAGE,
+  validateQuadraImportAgainstProject,
 } from '@/lib/civil3dTxtParser';
 import {
   getOfficialLotMeasurements,
@@ -1452,9 +1454,43 @@ export default function MapPage() {
       const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
       const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
 
+      let centerQuery = supabase
+        .from('blocks')
+        .select('geometry')
+        .eq('project_id', selectedProject.id);
+      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+        centerQuery = centerQuery.or(
+          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
+        );
+      }
+      const { data: existingBlocks } = await centerQuery;
+
+      const projectCenter = (() => {
+        let sumLat = 0;
+        let sumLng = 0;
+        let n = 0;
+        for (const b of existingBlocks ?? []) {
+          const ring = b.geometry?.coordinates?.[0];
+          if (!ring?.length) continue;
+          for (const c of ring) {
+            if (c?.length >= 2) {
+              sumLng += Number(c[0]);
+              sumLat += Number(c[1]);
+              n++;
+            }
+          }
+        }
+        if (n < 1) return null;
+        return { lat: sumLat / n, lng: sumLng / n };
+      })();
+
       const lotsParsed = parseCivil3dTxtLots(text);
       const blocksParsed = lotsParsed.map((lot) => {
-        const payload = civil3dLotToImportPayload(lot, proj4String);
+        const payload = civil3dLotToImportPayload(
+          lot,
+          proj4String,
+          projectCenter,
+        );
         return {
           name: payload.name,
           area: payload.area,
@@ -1462,6 +1498,7 @@ export default function MapPage() {
           officialSegs: payload.officialSegs,
           segmentsJson: payload.segmentsJson,
           coords: payload.coords,
+          geometrySaved: payload.geometrySaved,
         };
       });
 
@@ -1472,6 +1509,17 @@ export default function MapPage() {
       }
 
       const quadraName = importTxtQuadra.toUpperCase().trim();
+
+      const quadraLocation = validateQuadraImportAgainstProject(
+        blocksParsed,
+        projectCenter,
+        quadraName,
+      );
+      if (quadraLocation.blocked) {
+        alert(QUADRA_OUT_OF_PROJECT_MESSAGE);
+        setImportingTxt(false);
+        return;
+      }
 
       try {
         await clearProjectMapOfflineCache(selectedProject.id);
@@ -1511,11 +1559,13 @@ export default function MapPage() {
           });
 
           let geom = null;
-          if (b.coords.length >= 4) {
+          if (b.geometrySaved && b.coords.length >= 4) {
              geom = {
                  type: "Polygon",
                  coordinates: [b.coords]
              };
+          } else if (!b.geometrySaved) {
+             console.warn('[TXT] geometry skipped — closure or location invalid', b.name);
           }
 
           return {

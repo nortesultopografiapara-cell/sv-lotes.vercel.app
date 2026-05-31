@@ -1,6 +1,7 @@
 /**
  * Parser TXT Civil 3D — suporte a Segment Line e Curve.
  * Medida oficial da curva: Length (nunca Chord).
+ * Geometria do mapa: corda (início → fim de cada segmento), sem RP, sem arco.
  */
 
 import proj4 from "proj4";
@@ -39,6 +40,22 @@ export type ParsedCivil3dLot = {
   segments: ParsedCivil3dSegment[];
 };
 
+export type LotRingBuildResult = {
+  utmRing: [number, number][];
+  lngLat: number[][];
+  closureErrorM: number;
+  locationOk: boolean;
+};
+
+const CLOSURE_MAX_M = 0.1;
+/** Distância máxima (km) do centro do projeto para aceitar geometria importada. */
+const PROJECT_LOCATION_MAX_KM = 5;
+/** Distância máxima (km) entre centroide da quadra importada e do projeto. */
+export const QUADRA_IMPORT_MAX_KM_FROM_PROJECT = 5;
+
+export const QUADRA_OUT_OF_PROJECT_MESSAGE =
+  "Quadra fora da área do projeto. Verifique a zona UTM ou o arquivo TXT.";
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function parseBrNumber(raw: string | undefined | null): number | null {
@@ -68,17 +85,35 @@ function readField(block: string, labels: string[]): number | null {
   return null;
 }
 
+/** North/Easting do cabeçalho do lote — nunca "End North" / "RP North". */
+function readLotHeaderCoord(
+  header: string,
+  kind: "north" | "east",
+): number | null {
+  const label =
+    kind === "north"
+      ? "(?<!End\\s)(?<!RP\\s)North(?:ing)?"
+      : "(?<!End\\s)(?<!RP\\s)East(?:ing)?";
+  const re = new RegExp(
+    `(?:^|\\n)\\s*${label}\\s*:\\s*([0-9+\\-.,]+)\\s*m?`,
+    "im",
+  );
+  const m = header.match(re);
+  if (!m) return null;
+  return parseBrNumber(m[1]);
+}
+
 function readAllCoordPairs(
   block: string,
 ): Array<{ north: number; east: number }> {
   const northMatches = [
     ...block.matchAll(
-      /(?:^|\n)\s*(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
+      /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Northing|North|Norte)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
     ),
   ];
   const eastMatches = [
     ...block.matchAll(
-      /(?:^|\n)\s*(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
+      /(?:^|\n)\s*(?<!End\s)(?<!RP\s)(?:Easting|East|Este)\s*:\s*([0-9+\-.,]+)\s*m?/gim,
     ),
   ];
   const pairs: Array<{ north: number; east: number }> = [];
@@ -134,15 +169,28 @@ function isNearPoint(
   return Math.hypot(e1 - e2, n1 - n2) < tol;
 }
 
-/** Ponto inicial do lote (antes do Segment #1). */
+/** Ponto inicial do lote (North/East antes do Segment #1 — não End North). */
 function parseLotHeaderStart(
   chunk: string,
 ): { north: number; east: number } | null {
   const header = chunk.split(/Segment\s*#\s*1\b/i)[0] ?? chunk;
-  const north = readField(header, ["North", "Northing", "Norte"]);
-  const east = readField(header, ["East", "Easting", "Este"]);
+  const north = readLotHeaderCoord(header, "north");
+  const east = readLotHeaderCoord(header, "east");
   if (north != null && east != null) return { north, east };
   return null;
+}
+
+function computeChainClosureErrorM(
+  segments: Array<{ north: number; east: number; endNorth: number | null; endEast: number | null }>,
+): number {
+  if (segments.length < 2) return Infinity;
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  if (last.endNorth == null || last.endEast == null) return Infinity;
+  return Math.hypot(
+    last.endEast - first.east,
+    last.endNorth - first.north,
+  );
 }
 
 function chainSegmentEndpoints(
@@ -151,28 +199,53 @@ function chainSegmentEndpoints(
   lotLabel: string,
 ): ParsedCivil3dSegment[] {
   const out = segments.map((s) => ({ ...s }));
-  for (let i = 0; i < out.length; i++) {
+
+  if (lotStart) {
+    console.log("TXT_LOT_START_POINT", {
+      lote: lotLabel,
+      north: lotStart.north,
+      east: lotStart.east,
+      source: "header_before_segment_1",
+    });
+    out[0].north = lotStart.north;
+    out[0].east = lotStart.east;
+  } else if (out.length > 0) {
+    console.warn("TXT_LOT_START_POINT", {
+      lote: lotLabel,
+      warning: "missing_header_start_using_segment_1_coords",
+      north: out[0].north,
+      east: out[0].east,
+    });
+  }
+
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
     const cur = out[i];
-    if (i === 0) {
-      if (lotStart) {
-        cur.north = lotStart.north;
-        cur.east = lotStart.east;
-      }
-    } else {
-      const prev = out[i - 1];
-      if (prev.endNorth != null && prev.endEast != null) {
-        cur.north = prev.endNorth;
-        cur.east = prev.endEast;
-      }
-    }
-    if (cur.endNorth == null || cur.endEast == null) {
-      console.warn("LOT_RING_SEGMENT_MISSING_END", {
-        lote: lotLabel,
-        segmentNumber: cur.segmentNumber,
-        type: cur.type,
-      });
+    if (prev.endNorth != null && prev.endEast != null) {
+      cur.north = prev.endNorth;
+      cur.east = prev.endEast;
     }
   }
+
+  const chainLog = out.map((s) => ({
+    seg: s.segmentNumber,
+    type: s.type,
+    start: { n: round2(s.north), e: round2(s.east) },
+    end:
+      s.endNorth != null
+        ? { n: round2(s.endNorth), e: round2(s.endEast) }
+        : null,
+  }));
+  console.log("TXT_SEGMENT_CHAIN", { lote: lotLabel, chain: chainLog });
+
+  const closureErr = computeChainClosureErrorM(out);
+  console.log("TXT_CHAIN_CLOSURE_ERROR", {
+    lote: lotLabel,
+    closureErrorM: round2(closureErr),
+    maxAllowedM: CLOSURE_MAX_M,
+    ok: closureErr <= CLOSURE_MAX_M,
+  });
+
   return out;
 }
 
@@ -219,7 +292,6 @@ function parseOneSegmentBlock(
         segmentNumber,
         rpNorth,
         rpEast,
-        note: "RP é centro do raio, não vértice do lote",
       });
     }
     if (endN == null || endE == null) {
@@ -266,13 +338,6 @@ function parseOneSegmentBlock(
       endNorth: endN,
       endEast: endE,
     });
-    console.log("ARC_DRAW_AS_CHORD", {
-      lote: lotLabel,
-      segmentNumber,
-      from: "start encadeado",
-      to: { endNorth: endN, endEast: endE },
-      chord,
-    });
   }
 
   return {
@@ -298,10 +363,12 @@ function parseOneSegmentBlock(
 
 function parseLegacyVertexSegments(chunk: string): ParsedCivil3dSegment[] {
   const northingMatches = [
-    ...chunk.matchAll(/North(?:ing)?\s*:\s*([0-9.+-]+)/gi),
+    ...chunk.matchAll(
+      /(?<!End\s)(?<!RP\s)North(?:ing)?\s*:\s*([0-9.+-]+)/gi,
+    ),
   ];
   const eastingMatches = [
-    ...chunk.matchAll(/East(?:ing)?\s*:\s*([0-9.+-]+)/gi),
+    ...chunk.matchAll(/(?<!End\s)(?<!RP\s)East(?:ing)?\s*:\s*([0-9.+-]+)/gi),
   ];
   const lengthMatches = [...chunk.matchAll(/Length\s*:\s*([0-9.+-]+)/gi)];
   const n = Math.min(northingMatches.length, eastingMatches.length);
@@ -384,7 +451,6 @@ function parseLotChunk(chunk: string): ParsedCivil3dLot | null {
   return { name, area, perimeter, segments };
 }
 
-/** Divide o arquivo TXT em lotes (blocos Name:). */
 export function parseCivil3dTxtLots(text: string): ParsedCivil3dLot[] {
   const chunks = text.split(/Name:\s*/i).slice(1);
   const lots: ParsedCivil3dLot[] = [];
@@ -402,13 +468,6 @@ export function parsedSegmentToOfficial(
 ): OfficialLotSegment | null {
   const length = p.length;
   if (length == null || !isValidSegmentDistance(length)) {
-    console.log("LOT_INVALID_SEGMENT", {
-      lote: lotLabel ?? "?",
-      index,
-      type: p.type,
-      raw: length,
-      reason: "missing_or_invalid_length",
-    });
     return null;
   }
 
@@ -419,7 +478,6 @@ export function parsedSegmentToOfficial(
       length: round2(length),
       chord: p.chord,
       radius: p.radius,
-      note: "distancia oficial = Length; Chord apenas referencia",
     });
   }
 
@@ -431,6 +489,8 @@ export function parsedSegmentToOfficial(
     north: round2(p.north),
     east: round2(p.east),
     vertex_order: index,
+    end_north: p.endNorth != null ? round2(p.endNorth) : null,
+    end_east: p.endEast != null ? round2(p.endEast) : null,
   };
 
   if (p.type === "CURVE") {
@@ -443,8 +503,6 @@ export function parsedSegmentToOfficial(
     seg.course_out = p.courseOut;
     seg.rp_north = p.rpNorth != null ? round2(p.rpNorth) : null;
     seg.rp_east = p.rpEast != null ? round2(p.rpEast) : null;
-    seg.end_north = p.endNorth != null ? round2(p.endNorth) : null;
-    seg.end_east = p.endEast != null ? round2(p.endEast) : null;
   }
 
   return seg;
@@ -462,29 +520,14 @@ export function civil3dParsedToOfficialSegments(
   return out.map((s, i) => ({ ...s, segment_index: i, vertex_order: i }));
 }
 
-/** Reencadeia inícios a partir dos finais gravados (corrige import antigo). */
-export function reconcileOfficialSegmentChain(
+/** Preenche fim do segmento a partir do início do próximo — não altera o ponto inicial do lote. */
+export function hydrateSegmentEndsFromChain(
   segments: OfficialLotSegment[],
 ): OfficialLotSegment[] {
   const ordered = [...segments].sort(
     (a, b) => a.segment_index - b.segment_index,
   );
   if (ordered.length < 2) return ordered;
-
-  const last = ordered[ordered.length - 1];
-  if (last.end_north != null && last.end_east != null) {
-    ordered[0].north = last.end_north;
-    ordered[0].east = last.end_east;
-  }
-
-  for (let i = 1; i < ordered.length; i++) {
-    const prev = ordered[i - 1];
-    const cur = ordered[i];
-    if (prev.end_north != null && prev.end_east != null) {
-      cur.north = prev.end_north;
-      cur.east = prev.end_east;
-    }
-  }
 
   for (let i = 0; i < ordered.length; i++) {
     const cur = ordered[i];
@@ -494,27 +537,40 @@ export function reconcileOfficialSegmentChain(
       cur.end_east = next.east;
     }
   }
-
   return ordered;
 }
 
+export function computeOfficialChainClosureErrorM(
+  segments: OfficialLotSegment[],
+): number {
+  const ordered = hydrateSegmentEndsFromChain(segments);
+  if (ordered.length < 2) return Infinity;
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
+  if (last.end_north == null || last.end_east == null) return Infinity;
+  return Math.hypot(
+    last.end_east! - first.east,
+    last.end_north! - first.north,
+  );
+}
+
 /**
- * Anel UTM: vértice = início de cada segmento (encadeado pelo fim do anterior).
- * Curva: aresta reta (corda) até o início do próximo; medida oficial = Length.
+ * Anel UTM: vértice = início de cada segmento (já encadeado no import).
+ * Curva desenhada pela corda; RP nunca entra no anel.
  */
 export function buildUtmRingFromOfficialSegments(
   segments: OfficialLotSegment[],
   lotLabel?: unknown,
 ): [number, number][] {
-  const chained = reconcileOfficialSegmentChain(segments);
+  const ordered = hydrateSegmentEndsFromChain(segments);
   const ring: [number, number][] = [];
 
-  for (const seg of chained) {
+  for (const seg of ordered) {
     if (!Number.isFinite(seg.east) || !Number.isFinite(seg.north)) continue;
-    const last = ring[ring.length - 1];
+    const prev = ring[ring.length - 1];
     if (
-      last &&
-      Math.hypot(last[0] - seg.east, last[1] - seg.north) < 0.01
+      prev &&
+      Math.hypot(prev[0] - seg.east, prev[1] - seg.north) < 0.01
     ) {
       continue;
     }
@@ -526,7 +582,6 @@ export function buildUtmRingFromOfficialSegments(
         start: { east: seg.east, north: seg.north },
         end: { east: seg.end_east, north: seg.end_north },
         lengthOfficial: seg.distance,
-        chord: seg.chord,
       });
     }
   }
@@ -541,58 +596,11 @@ export function buildUtmRingFromOfficialSegments(
 
   console.log("LOT_RING_POINTS_BUILT", {
     lote: lotLabel ?? "?",
-    segmentCount: chained.length,
     vertexCount: ring.length,
-    points: ring.map(([e, n], i) => ({
-      i,
-      east: round2(e),
-      north: round2(n),
-      type: chained[i]?.segment_type ?? "LINE",
-    })),
+    closureErrorM: round2(computeOfficialChainClosureErrorM(ordered)),
   });
 
   return ring;
-}
-
-function resolveUtmProj4(
-  segments: OfficialLotSegment[],
-  project?: Record<string, unknown> | null,
-): string | null {
-  const raw = String(
-    project?.utm_zone ?? project?.zona_utm ?? project?.utmZone ?? "",
-  ).trim();
-  const m = raw.match(/(\d{1,2})\s*([NnSs])?/i);
-  if (m?.[1]) {
-    const zone = Number(m[1]);
-    const south = !m[2] || m[2].toUpperCase() === "S";
-    return `+proj=utm +zone=${zone} +${south ? "south" : "north"} +datum=WGS84 +units=m +no_defs`;
-  }
-  const east = segments[0]?.east;
-  if (east != null && east >= 600_000 && east < 700_000) {
-    return "+proj=utm +zone=23 +south +datum=WGS84 +units=m +no_defs";
-  }
-  if (east != null && east >= 500_000 && east < 600_000) {
-    return "+proj=utm +zone=22 +south +datum=WGS84 +units=m +no_defs";
-  }
-  return null;
-}
-
-/** Reconstrói polígono lat/lng a partir de segments_json (mapa GIS). */
-export function buildLngLatRingFromOfficialBlock(
-  block: Record<string, unknown>,
-  project?: Record<string, unknown> | null,
-): number[][] | null {
-  const segments = parseOfficialSegmentsFromBlock(block);
-  if (segments.length < 3) return null;
-
-  const utmRing = buildUtmRingFromOfficialSegments(
-    segments,
-    block.number ?? block.id,
-  );
-  const proj4String = resolveUtmProj4(segments, project);
-  if (!proj4String) return null;
-
-  return utmRingToLngLat(utmRing, proj4String);
 }
 
 export function utmRingToLngLat(
@@ -607,6 +615,237 @@ export function utmRingToLngLat(
   return coords;
 }
 
+export function resolveUtmProj4FromProject(
+  project?: Record<string, unknown> | null,
+  fallbackZoneNum?: number,
+): string | null {
+  const raw = String(
+    project?.utm_zone ?? project?.zona_utm ?? project?.utmZone ?? "",
+  ).trim();
+  const m = raw.match(/(\d{1,2})\s*([NnSs])?/i);
+  if (m?.[1]) {
+    const zone = Number(m[1]);
+    const south = !m[2] || m[2].toUpperCase() === "S";
+    return `+proj=utm +zone=${zone} +${south ? "south" : "north"} +datum=WGS84 +units=m +no_defs`;
+  }
+  if (
+    fallbackZoneNum != null &&
+    Number.isFinite(fallbackZoneNum) &&
+    fallbackZoneNum >= 1 &&
+    fallbackZoneNum <= 60
+  ) {
+    return `+proj=utm +zone=${fallbackZoneNum} +south +datum=WGS84 +units=m +no_defs`;
+  }
+  return null;
+}
+
+export function haversineKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function computeLngLatCentroidFromRings(
+  rings: number[][][],
+): { lat: number; lng: number } | null {
+  let sumLat = 0;
+  let sumLng = 0;
+  let n = 0;
+  for (const ring of rings) {
+    for (const c of ring) {
+      if (c?.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+        sumLng += Number(c[0]);
+        sumLat += Number(c[1]);
+        n++;
+      }
+    }
+  }
+  if (n < 1) return null;
+  return { lat: sumLat / n, lng: sumLng / n };
+}
+
+export function computeQuadraCentroidFromImportLots(
+  lots: Array<{ coords: number[][]; geometrySaved: boolean }>,
+): { lat: number; lng: number } | null {
+  const rings = lots
+    .filter((l) => l.geometrySaved && l.coords.length >= 3)
+    .map((l) => l.coords);
+  return computeLngLatCentroidFromRings(rings);
+}
+
+export type QuadraLocationValidation = {
+  ok: boolean;
+  blocked: boolean;
+  distanceKm: number | null;
+  quadraCenter: { lat: number; lng: number } | null;
+  projectCenter: { lat: number; lng: number } | null;
+  skipped: boolean;
+};
+
+/** Compara centroide da quadra importada com o centroide do projeto (bloqueio > 5 km). */
+export function validateQuadraImportAgainstProject(
+  lots: Array<{ coords: number[][]; geometrySaved: boolean }>,
+  projectCenter: { lat: number; lng: number } | null,
+  quadraLabel: string,
+): QuadraLocationValidation {
+  const quadraCenter = computeQuadraCentroidFromImportLots(lots);
+
+  if (!projectCenter) {
+    console.log("QUADRA_IMPORT_LOCATION_CHECK", {
+      quadra: quadraLabel,
+      skipped: true,
+      reason: "no_project_reference_geometry",
+    });
+    return {
+      ok: true,
+      blocked: false,
+      distanceKm: null,
+      quadraCenter,
+      projectCenter: null,
+      skipped: true,
+    };
+  }
+
+  if (!quadraCenter) {
+    console.log("QUADRA_IMPORT_LOCATION_CHECK", {
+      quadra: quadraLabel,
+      skipped: true,
+      reason: "no_quadra_geometry_for_centroid",
+    });
+    return {
+      ok: true,
+      blocked: false,
+      distanceKm: null,
+      quadraCenter: null,
+      projectCenter,
+      skipped: true,
+    };
+  }
+
+  const distanceKm = haversineKm(
+    projectCenter.lat,
+    projectCenter.lng,
+    quadraCenter.lat,
+    quadraCenter.lng,
+  );
+  const ok = distanceKm <= QUADRA_IMPORT_MAX_KM_FROM_PROJECT;
+
+  console.log("QUADRA_IMPORT_LOCATION_CHECK", {
+    quadra: quadraLabel,
+    projectCenter,
+    quadraCenter,
+    distanceKm: round2(distanceKm),
+    maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+    ok,
+  });
+
+  if (!ok) {
+    console.log("INVALID_QUADRA_LOCATION_AFTER_TXT_PARSE", {
+      quadra: quadraLabel,
+      distanceKm: round2(distanceKm),
+      maxAllowedKm: QUADRA_IMPORT_MAX_KM_FROM_PROJECT,
+    });
+  }
+
+  return {
+    ok,
+    blocked: !ok,
+    distanceKm,
+    quadraCenter,
+    projectCenter,
+    skipped: false,
+  };
+}
+
+export function validateLngLatNearProjectCenter(
+  lngLat: number[][],
+  projectCenter: { lat: number; lng: number } | null,
+  lotLabel?: unknown,
+): boolean {
+  if (!projectCenter || lngLat.length < 3) return true;
+  const cLat = projectCenter.lat;
+  const cLng = projectCenter.lng;
+  let maxKm = 0;
+  for (const [lng, lat] of lngLat) {
+    maxKm = Math.max(maxKm, haversineKm(cLat, cLng, lat, lng));
+  }
+  if (maxKm > PROJECT_LOCATION_MAX_KM) {
+    console.log("INVALID_PROJECT_LOCATION_AFTER_TXT_PARSE", {
+      lote: lotLabel ?? "?",
+      projectCenter,
+      maxDistanceKm: round2(maxKm),
+      maxAllowedKm: PROJECT_LOCATION_MAX_KM,
+      sample: lngLat[0],
+    });
+    return false;
+  }
+  return true;
+}
+
+export function buildValidatedLotRing(
+  segments: OfficialLotSegment[],
+  proj4UtmSouth: string,
+  lotLabel: string,
+  projectCenter?: { lat: number; lng: number } | null,
+): LotRingBuildResult | null {
+  const closureErrorM = computeOfficialChainClosureErrorM(segments);
+  if (closureErrorM > CLOSURE_MAX_M) {
+    console.log("TXT_CHAIN_CLOSURE_ERROR", {
+      lote: lotLabel,
+      closureErrorM: round2(closureErrorM),
+      rejected: true,
+    });
+    return null;
+  }
+
+  const utmRing = buildUtmRingFromOfficialSegments(segments, lotLabel);
+  if (utmRing.length < 3) return null;
+
+  const lngLat = utmRingToLngLat(utmRing, proj4UtmSouth);
+  const locationOk = validateLngLatNearProjectCenter(
+    lngLat,
+    projectCenter ?? null,
+    lotLabel,
+  );
+
+  return {
+    utmRing,
+    lngLat,
+    closureErrorM,
+    locationOk,
+  };
+}
+
+/** Reconstrói polígono lat/lng — só se fechamento e localização forem válidos. */
+export function buildLngLatRingFromOfficialBlock(
+  block: Record<string, unknown>,
+  proj4UtmSouth: string,
+  projectCenter?: { lat: number; lng: number } | null,
+): number[][] | null {
+  const segments = parseOfficialSegmentsFromBlock(block);
+  if (segments.length < 3) return null;
+
+  const built = buildValidatedLotRing(
+    segments,
+    proj4UtmSouth,
+    String(block.number ?? block.id ?? "?"),
+    projectCenter ?? null,
+  );
+  if (!built || !built.locationOk) return null;
+  return built.lngLat;
+}
+
 export type Civil3dImportLotPayload = {
   name: string;
   area: number;
@@ -614,16 +853,36 @@ export type Civil3dImportLotPayload = {
   officialSegs: OfficialLotSegment[];
   segmentsJson: Record<string, unknown>[];
   coords: number[][];
+  geometrySaved: boolean;
 };
 
 export function civil3dLotToImportPayload(
   lot: ParsedCivil3dLot,
   proj4UtmSouth: string,
+  projectCenter?: { lat: number; lng: number } | null,
 ): Civil3dImportLotPayload {
   const officialSegs = civil3dParsedToOfficialSegments(lot.segments, lot.name);
   const segmentsJson = officialSegs.map((s) => officialSegmentToPersistJson(s));
-  const utmRing = buildUtmRingFromOfficialSegments(officialSegs, lot.name);
-  const coords = utmRingToLngLat(utmRing, proj4UtmSouth);
+
+  const built = buildValidatedLotRing(
+    officialSegs,
+    proj4UtmSouth,
+    lot.name,
+    projectCenter ?? null,
+  );
+
+  let coords: number[][] = [];
+  let geometrySaved = false;
+
+  if (built && built.locationOk) {
+    coords = built.lngLat;
+    geometrySaved = coords.length >= 4;
+  } else {
+    console.log("TXT_CHAIN_CLOSURE_ERROR", {
+      lote: lot.name,
+      note: "geometry_not_saved_closure_or_location",
+    });
+  }
 
   return {
     name: lot.name,
@@ -632,6 +891,7 @@ export function civil3dLotToImportPayload(
     officialSegs,
     segmentsJson,
     coords,
+    geometrySaved,
   };
 }
 
@@ -649,6 +909,8 @@ export function officialSegmentToPersistJson(
     northing: s.north,
     easting: s.east,
     vertex_order: s.vertex_order,
+    endNorth: s.end_north,
+    endEast: s.end_east,
   };
   if (s.segment_type === "CURVE") {
     base.radius = s.radius;
@@ -660,8 +922,6 @@ export function officialSegmentToPersistJson(
     base.courseOut = s.course_out;
     base.rpNorth = s.rp_north;
     base.rpEast = s.rp_east;
-    base.endNorth = s.end_north;
-    base.endEast = s.end_east;
   }
   return base;
 }
