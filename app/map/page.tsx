@@ -6,7 +6,8 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText } from 'lucide-react';
+import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -74,6 +75,9 @@ import {
   buildBlockMatchKey,
   parseShapefileZipFile,
 } from '@/lib/shapefileImport';
+
+/** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
+const SHOW_LEGACY_GIS_IMPORT = false;
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -418,6 +422,9 @@ export default function MapPage() {
   const [focusBlockName, setFocusBlockName] = useState<string | null>(null);
   const [focusBlockKey, setFocusBlockKey] = useState(0);
   const [lotSheetPickMode, setLotSheetPickMode] = useState(false);
+  const [confrontationRunning, setConfrontationRunning] = useState(false);
+  const [memorialModalOpen, setMemorialModalOpen] = useState(false);
+
   const [lotSheetTarget, setLotSheetTarget] = useState<{
     id: string;
     number?: string;
@@ -449,6 +456,45 @@ export default function MapPage() {
       }
     } catch (e) {}
   }, [selectedProject]);
+
+  const handleRunAutomaticConfrontation = useCallback(async () => {
+    if (!selectedProject?.id) {
+      alert('Selecione um projeto para executar a confrontação automática.');
+      return;
+    }
+    setConfrontationRunning(true);
+    try {
+      const tenantId = String(
+        saasTenantId || user?.tenant_id || selectedProject.tenant_id || '',
+      ).trim();
+      const result = await runAutomaticConfrontation(selectedProject.id, {
+        tenantId: tenantId || undefined,
+        streetGuides,
+      });
+      const errLines =
+        result.errors.length > 0
+          ? `\n\nAvisos (${result.errors.length}):\n${result.errors.slice(0, 6).join('\n')}`
+          : '';
+      alert(
+        `Confrontação automática concluída.\n${result.processed} lote(s) processado(s).` +
+          (result.skipped > 0 ? `\n${result.skipped} ignorado(s).` : '') +
+          errLines,
+      );
+      setMapRefreshKey((k) => k + 1);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Erro na confrontação automática';
+      alert(msg);
+      console.error('[Confrontação automática]', err);
+    } finally {
+      setConfrontationRunning(false);
+    }
+  }, [
+    selectedProject,
+    saasTenantId,
+    user?.tenant_id,
+    streetGuides,
+  ]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2270,30 +2316,59 @@ export default function MapPage() {
 
                  <hr className="w-2/3 border-[#2d3340]" />
 
-                 {/* Import */}
-                 <button 
-                    onClick={() => setIsImportModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
-                 >
-                    <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
-                 </button>
-
-                 <button 
-                    onClick={() => setIsImportTxtModalOpen(true)} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
-                 >
-                    <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (TXT)</span>
-                 </button>
+                 {/* Import — oficial: TXT Civil 3D */}
+                 {SHOW_LEGACY_GIS_IMPORT && (
+                   <button
+                     type="button"
+                     onClick={() => setIsImportModalOpen(true)}
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                   >
+                     <Upload className="w-4 h-4 md:w-5 md:h-5" />
+                     <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
+                   </button>
+                 )}
 
                  <button
                     type="button"
-                    onClick={() => setIsImportShpModalOpen(true)}
+                    onClick={() => setIsImportTxtModalOpen(true)}
                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
                  >
-                    <Layers className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
+                    <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Importar TXT Civil 3D</span>
+                 </button>
+
+                 {SHOW_LEGACY_GIS_IMPORT && (
+                   <button
+                     type="button"
+                     onClick={() => setIsImportShpModalOpen(true)}
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                   >
+                     <Layers className="w-4 h-4 md:w-5 md:h-5" />
+                     <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
+                   </button>
+                 )}
+
+                 <button
+                   type="button"
+                   onClick={() => void handleRunAutomaticConfrontation()}
+                   disabled={confrontationRunning}
+                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#22c55e] transition-colors group relative disabled:opacity-40"
+                 >
+                   {confrontationRunning ? (
+                     <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" />
+                   ) : (
+                     <GitCompare className="w-4 h-4 md:w-5 md:h-5" />
+                   )}
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Confrontação Automática</span>
+                 </button>
+
+                 <button
+                   type="button"
+                   onClick={() => setMemorialModalOpen(true)}
+                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
+                 >
+                   <ScrollText className="w-4 h-4 md:w-5 md:h-5" />
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Memorial Descritivo</span>
                  </button>
                  
                  <hr className="w-2/3 border-[#2d3340]" />
@@ -2432,6 +2507,48 @@ export default function MapPage() {
             onClose={() => setStreetGuideModal(null)}
             onSave={handleSaveStreetGuideForm}
           />
+        )}
+
+        {memorialModalOpen && selectedProject && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-[#11141a] border border-[#2d3340] rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#2d3340]">
+                <h3 className="font-bold text-white text-lg">Memorial Descritivo</h3>
+                <button
+                  type="button"
+                  onClick={() => setMemorialModalOpen(false)}
+                  className="p-1 text-gray-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 text-sm text-gray-300 space-y-3">
+                {lotSheetTarget ? (
+                  <p>
+                    Lote <strong className="text-white">{lotSheetTarget.number || lotSheetTarget.id}</strong> selecionado.
+                    A geração completa do memorial descritivo está em preparação (sprint v1.9).
+                  </p>
+                ) : (
+                  <p>
+                    Projeto <strong className="text-white">{selectedProject.name}</strong>.
+                    Selecione um lote no mapa para priorizar o memorial unitário, ou aguarde a geração em lote do projeto.
+                  </p>
+                )}
+                <p className="text-xs text-gray-500">
+                  Os textos usarão segmentos oficiais TXT, confrontações automáticas e responsável técnico da empresa.
+                </p>
+              </div>
+              <div className="px-5 pb-5">
+                <button
+                  type="button"
+                  onClick={() => setMemorialModalOpen(false)}
+                  className="w-full py-2.5 rounded-lg bg-[#4999e9] text-white font-semibold text-sm hover:bg-[#3d82c4]"
+                >
+                  Entendi
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {lotSheetTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (

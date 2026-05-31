@@ -40,6 +40,7 @@ function formatConfrontantForContract(raw: string): string {
 
 export function resolveContractLotSidesAndConfrontants(params: {
   block: Record<string, unknown>;
+  projectId?: string;
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
   manualConfrontants?: ManualSideConfrontants | null;
@@ -103,6 +104,7 @@ export function resolveContractLotSidesAndConfrontants(params: {
       params.projectBlocks,
       params.streetGuides || [],
       manual,
+      params.projectId,
     );
   }
 

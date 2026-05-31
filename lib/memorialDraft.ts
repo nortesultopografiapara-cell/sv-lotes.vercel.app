@@ -12,6 +12,7 @@ import {
 
 export type MemorialDraftInput = {
   block: Record<string, unknown>;
+  projectId?: string;
   projectBlocks?: Record<string, unknown>[];
   streetGuides?: Record<string, unknown>[];
   technicalResponsible?: Record<string, unknown> | null;
@@ -29,6 +30,8 @@ export function buildMemorialDraftPlainText(input: MemorialDraftInput): string {
           blockId,
           input.projectBlocks,
           input.streetGuides || [],
+          undefined,
+          input.projectId,
         )
       : {
           frente: String(block.front_street_name || "via de acesso"),

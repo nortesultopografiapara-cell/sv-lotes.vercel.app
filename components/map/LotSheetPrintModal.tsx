@@ -201,6 +201,7 @@ export function LotSheetPrintModal({
           block={confrontCtx.block}
           blocks={confrontCtx.blocks}
           streetGuides={confrontCtx.guides}
+          projectId={projectId}
           onClose={() => setConfrontOpen(false)}
         />
       )}

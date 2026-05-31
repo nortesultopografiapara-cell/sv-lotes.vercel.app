@@ -16,6 +16,7 @@ type Props = {
   block: Record<string, unknown>;
   blocks: Record<string, unknown>[];
   streetGuides: Record<string, unknown>[];
+  projectId?: string;
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -25,6 +26,7 @@ export function CorrectConfrontationsModal({
   block,
   blocks,
   streetGuides,
+  projectId,
   onClose,
   onSaved,
 }: Props) {
@@ -48,6 +50,8 @@ export function CorrectConfrontationsModal({
       blockId,
       blocks,
       streetGuides,
+      undefined,
+      projectId,
     );
     const manual = loadManualConfrontants(blockId);
     setAuto(autoLotSideConfrontants(block, blockId, blocks, streetGuides));

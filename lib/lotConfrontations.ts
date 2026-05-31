@@ -7,6 +7,7 @@ import {
   latLngRingFromBlock,
   type LotSheetSideConfrontants,
 } from "@/lib/lotSheetEnrichment";
+import { getProjectLotConfrontants } from "@/lib/projectConfrontations";
 
 export type ManualSideConfrontants = Partial<LotSheetSideConfrontants>;
 
@@ -68,15 +69,12 @@ export function resolveLotSideConfrontants(
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
   manual?: ManualSideConfrontants | null,
+  projectId?: string,
 ): LotSheetSideConfrontants {
   const ring = latLngRingFromBlock(block);
-  const auto = buildSideConfrontants(
-    block,
-    blockId,
-    ring,
-    blocks,
-    streetGuides,
-  );
+  const auto =
+    (projectId ? getProjectLotConfrontants(projectId, blockId) : null) ??
+    buildSideConfrontants(block, blockId, ring, blocks, streetGuides);
   const stored = manual ?? loadManualConfrontants(blockId);
   if (!stored) return auto;
   return {

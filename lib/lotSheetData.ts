@@ -545,6 +545,8 @@ export async function loadLotSheetPayload(
     params.blockId,
     blocksList,
     guidesList,
+    undefined,
+    params.projectId,
   );
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
