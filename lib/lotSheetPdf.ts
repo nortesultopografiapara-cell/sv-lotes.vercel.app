@@ -226,25 +226,16 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
 /** Escala de fontes/offsets apenas no croqui (não tabelas/rodapés). */
 const SKETCH_FONT_SCALE = 2;
 
-/** Ajuste fino da área no plano da prancha (após zona preferencial). */
-const AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM = 18;
-const AREA_LABEL_FINE_TUNE_SHEET_RIGHT_MM = 5;
+/** Profundidade da área: fração da frente ao fundo (55–60%). */
+const AREA_DEPTH_FRACTION_DEFAULT = 0.575;
+
+/** Offset externo dos confrontantes (mm no croqui; frente mantém escala maior). */
+const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 9;
+const BACK_CONFRONTANT_LABEL_OFFSET_MM = 9;
 
 /** Refinos de legibilidade (somente vértices e medidas internas). */
 const VERTEX_FONT_EXTRA_SCALE = 1.3;
 const DISTANCE_FONT_EXTRA_SCALE = 1.2;
-
-type InnerUsableLotBox = {
-  origin: [number, number];
-  alongUx: number;
-  alongUy: number;
-  crossUx: number;
-  crossUy: number;
-  alongMin: number;
-  alongMax: number;
-  crossMin: number;
-  crossMax: number;
-};
 
 function sketchFontSize(base: number): number {
   return base * SKETCH_FONT_SCALE;
@@ -254,104 +245,303 @@ function sketchOffsetMm(base: number): number {
   return base * SKETCH_FONT_SCALE;
 }
 
-/** Retângulo interno útil do lote (projeção along/cross, com margem). */
-function getInnerUsableLotBox(
+function frontStreetLabelOffset(narrow: boolean): number {
+  return sketchOffsetMm((narrow ? 12 : 15) + 2);
+}
+
+function sideConfrontantLabelOffset(): number {
+  return SIDE_CONFRONTANT_LABEL_OFFSET_MM;
+}
+
+function backConfrontantLabelOffset(): number {
+  return BACK_CONFRONTANT_LABEL_OFFSET_MM;
+}
+
+type LotSideSegments = {
+  front: EdgeGeometry;
+  fundo: EdgeGeometry;
+  direito: EdgeGeometry;
+  esquerdo: EdgeGeometry;
+};
+
+type LotCenterline = {
+  frontPoint: [number, number];
+  fundoPoint: [number, number];
+  depthUx: number;
+  depthUy: number;
+  maxDepthMm: number;
+};
+
+function getSideSegmentsByRole(
   verts: [number, number][],
-  mainAxis: LotMainAxis,
-  front: LotFrontContext,
-): InnerUsableLotBox {
-  const origin = front.edge.mid;
-  const alongUx = front.inwardNx;
-  const alongUy = front.inwardNy;
-  const crossUx = -mainAxis.axisDy;
-  const crossUy = mainAxis.axisDx;
-
-  let alongMin = Infinity;
-  let alongMax = -Infinity;
-  let crossMin = Infinity;
-  let crossMax = -Infinity;
-
-  for (const v of verts) {
-    const da = (v[0] - origin[0]) * alongUx + (v[1] - origin[1]) * alongUy;
-    const dc = (v[0] - origin[0]) * crossUx + (v[1] - origin[1]) * crossUy;
-    alongMin = Math.min(alongMin, da);
-    alongMax = Math.max(alongMax, da);
-    crossMin = Math.min(crossMin, dc);
-    crossMax = Math.max(crossMax, dc);
-  }
-
-  const alongSpan = alongMax - alongMin || 1;
-  const crossSpan = crossMax - crossMin || 1;
-  const alongInset = alongSpan * 0.14;
-  const crossInset = crossSpan * 0.14;
-
+  frontEdgeIndex: number,
+): LotSideSegments {
+  const n = verts.length;
+  const frenteIdx = ((frontEdgeIndex % n) + n) % n;
+  const fundoIdx = (frenteIdx + Math.floor(n / 2)) % n;
+  const dirIdx = (frenteIdx + 1) % n;
+  const esqIdx = (frenteIdx + n - 1) % n;
   return {
-    origin,
-    alongUx,
-    alongUy,
-    crossUx,
-    crossUy,
-    alongMin: alongMin + alongInset,
-    alongMax: alongMax - alongInset,
-    crossMin: crossMin + crossInset,
-    crossMax: crossMax - crossInset,
+    front: getEdgeGeometry(verts, frenteIdx),
+    fundo: getEdgeGeometry(verts, fundoIdx),
+    direito: getEdgeGeometry(verts, dirIdx),
+    esquerdo: getEdgeGeometry(verts, esqIdx),
   };
 }
 
-function pointFromInnerBox(
-  inner: InnerUsableLotBox,
-  alongT: number,
-  crossT: number,
-): [number, number] {
-  return [
-    inner.origin[0] +
-      inner.alongUx * alongT +
-      inner.crossUx * crossT,
-    inner.origin[1] +
-      inner.alongUy * alongT +
-      inner.crossUy * crossT,
-  ];
+function intersectLineWithSegment(
+  origin: [number, number],
+  dir: [number, number],
+  segA: [number, number],
+  segB: [number, number],
+): [number, number] | null {
+  const ex = segB[0] - segA[0];
+  const ey = segB[1] - segA[1];
+  const den = dir[0] * ey - dir[1] * ex;
+  if (Math.abs(den) < 1e-9) return null;
+  const aox = segA[0] - origin[0];
+  const aoy = segA[1] - origin[1];
+  const u = (aox * dir[1] - aoy * dir[0]) / den;
+  if (u < -0.001 || u > 1.001) return null;
+  const t = (aox * ey - aoy * ex) / den;
+  return [origin[0] + dir[0] * t, origin[1] + dir[1] * t];
 }
 
-/**
- * Posição preferencial da área: ~50% da profundidade (fundo→frente), centro lateral no retângulo útil.
- */
-function getAreaPreferredPosition(
+function distPointToSegment(
+  pos: [number, number],
+  segA: [number, number],
+  segB: [number, number],
+): number {
+  const dx = segB[0] - segA[0];
+  const dy = segB[1] - segA[1];
+  const len2 = dx * dx + dy * dy || 1e-12;
+  const t = Math.max(
+    0,
+    Math.min(1, ((pos[0] - segA[0]) * dx + (pos[1] - segA[1]) * dy) / len2),
+  );
+  const px = segA[0] + t * dx;
+  const py = segA[1] + t * dy;
+  return Math.hypot(pos[0] - px, pos[1] - py);
+}
+
+function pointOnEdgeAtInwardDepth(
+  edge: EdgeGeometry,
+  front: LotFrontContext,
+  targetDepthMm: number,
+): [number, number] {
+  let best: [number, number] = edge.mid;
+  let bestErr = Infinity;
+  for (let t = 0; t <= 1.001; t += 0.02) {
+    const px = edge.p1[0] + (edge.p2[0] - edge.p1[0]) * t;
+    const py = edge.p1[1] + (edge.p2[1] - edge.p1[1]) * t;
+    const d =
+      (px - front.edge.mid[0]) * front.inwardNx +
+      (py - front.edge.mid[1]) * front.inwardNy;
+    const err = Math.abs(d - targetDepthMm);
+    if (err < bestErr) {
+      bestErr = err;
+      best = [px, py];
+    }
+  }
+  return best;
+}
+
+/** Ponto médio entre as laterais em um corte perpendicular à profundidade. */
+function getCrossSectionMidpointAtDepth(
+  mainAxis: LotMainAxis,
+  front: LotFrontContext,
+  sides: LotSideSegments,
+  depthMm: number,
+): [number, number] {
+  const origin: [number, number] = [
+    front.edge.mid[0] + front.inwardNx * depthMm,
+    front.edge.mid[1] + front.inwardNy * depthMm,
+  ];
+  const crossDir: [number, number] = [-mainAxis.axisDy, mainAxis.axisDx];
+  const hits: [number, number][] = [];
+
+  for (const edge of [sides.esquerdo, sides.direito]) {
+    const h = intersectLineWithSegment(origin, crossDir, edge.p1, edge.p2);
+    if (h) hits.push(h);
+  }
+
+  if (hits.length >= 2) {
+    return [(hits[0][0] + hits[1][0]) / 2, (hits[0][1] + hits[1][1]) / 2];
+  }
+
+  const leftPt = pointOnEdgeAtInwardDepth(sides.esquerdo, front, depthMm);
+  const rightPt = pointOnEdgeAtInwardDepth(sides.direito, front, depthMm);
+  return [(leftPt[0] + rightPt[0]) / 2, (leftPt[1] + rightPt[1]) / 2];
+}
+
+/** Linha média entre lado esquerdo e direito (frente → fundo). */
+function getLotCenterlineBetweenSides(
   verts: [number, number][],
   mainAxis: LotMainAxis,
   front: LotFrontContext,
-): [number, number] {
-  const inner = getInnerUsableLotBox(verts, mainAxis, front);
-  const alongSpan = inner.alongMax - inner.alongMin;
-  const depthFromFundo = 0.5;
-  const alongT = inner.alongMax - alongSpan * depthFromFundo;
-  const crossT = (inner.crossMin + inner.crossMax) / 2;
-  let pos = pointFromInnerBox(inner, alongT, crossT);
+  sides: LotSideSegments,
+): LotCenterline {
+  const frontPoint = getCrossSectionMidpointAtDepth(mainAxis, front, sides, 0);
+  const fundoPoint = getCrossSectionMidpointAtDepth(
+    mainAxis,
+    front,
+    sides,
+    front.maxInwardDepthMm,
+  );
+  const depthUx = front.inwardNx;
+  const depthUy = front.inwardNy;
+  return {
+    frontPoint,
+    fundoPoint,
+    depthUx,
+    depthUy,
+    maxDepthMm: front.maxInwardDepthMm,
+  };
+}
 
+/** Ponto na linha média a `depthFraction` da frente (0) ao fundo (1). */
+function getPointOnCenterlineAtDepth(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  front: LotFrontContext,
+  sides: LotSideSegments,
+  depthFraction: number,
+): [number, number] {
+  const depthMm = Math.max(0, Math.min(1, depthFraction)) * front.maxInwardDepthMm;
+  let pos = getCrossSectionMidpointAtDepth(mainAxis, front, sides, depthMm);
   if (!pointInsidePolygon(pos[0], pos[1], verts)) {
-    pos = pointFromInnerBox(
-      inner,
-      inner.alongMin + alongSpan * 0.48,
-      crossT,
-    );
-  }
-  if (!pointInsidePolygon(pos[0], pos[1], verts)) {
-    pos = centroid(verts);
+    const line = getLotCenterlineBetweenSides(verts, mainAxis, front, sides);
+    pos = [
+      line.frontPoint[0] +
+        (line.fundoPoint[0] - line.frontPoint[0]) * depthFraction,
+      line.frontPoint[1] +
+        (line.fundoPoint[1] - line.frontPoint[1]) * depthFraction,
+    ];
   }
   return pos;
 }
 
-/** Desloca a área em mm: +fundo (eixo interno da frente) e +direita na prancha. */
-function applyAreaLabelFineTune(
+function sideBalanceScore(pos: [number, number], sides: LotSideSegments): number {
+  const dLeft = distPointToSegment(pos, sides.esquerdo.p1, sides.esquerdo.p2);
+  const dRight = distPointToSegment(pos, sides.direito.p1, sides.direito.p2);
+  return -Math.abs(dLeft - dRight) * 20;
+}
+
+function areaCenterlinePlacementScore(
   pos: [number, number],
+  verts: [number, number][],
+  sides: LotSideSegments,
+  badgePos: [number, number] | null,
+  placedZones: PlacedLabelZone[],
+  preferred: [number, number],
+  centerline: LotCenterline,
+): number {
+  if (!pointInsidePolygon(pos[0], pos[1], verts)) return -Infinity;
+
+  let score = minDistToPolygonEdges(pos, verts) * 2;
+  score += sideBalanceScore(pos, sides);
+  score -= Math.hypot(pos[0] - preferred[0], pos[1] - preferred[1]) * 4;
+
+  const crossDx = -centerline.depthUy;
+  const crossDy = centerline.depthUx;
+  const lateralOff = Math.abs(
+    (pos[0] - preferred[0]) * crossDx + (pos[1] - preferred[1]) * crossDy,
+  );
+  score -= lateralOff * 40;
+
+  const areaRadius = sketchOffsetMm(7);
+  for (const zone of placedZones) {
+    const d = Math.hypot(pos[0] - zone.pos[0], pos[1] - zone.pos[1]);
+    const need = areaRadius + zone.radius + sketchOffsetMm(3);
+    if (d < need) score -= (need - d) * 8;
+    if (zone.kind === 'lot_badge' && d < need + 6) score -= 120;
+  }
+
+  if (badgePos) {
+    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 40);
+  }
+
+  return score;
+}
+
+/** Posiciona a área na linha média entre laterais; colisões só ao longo da profundidade. */
+function placeAreaOnCenterline(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
   front: LotFrontContext,
+  frontEdgeIndex: number,
+  placedZones: PlacedLabelZone[],
+  badgePos: [number, number] | null,
 ): [number, number] {
-  return [
-    pos[0] +
-      front.inwardNx * AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM +
-      AREA_LABEL_FINE_TUNE_SHEET_RIGHT_MM,
-    pos[1] + front.inwardNy * AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM,
-  ];
+  const sides = getSideSegmentsByRole(verts, frontEdgeIndex);
+  const centerline = getLotCenterlineBetweenSides(verts, mainAxis, front, sides);
+  const { depthUx, depthUy } = centerline;
+  const areaRadius = sketchOffsetMm(7);
+
+  const depthFracs = [0.575, 0.55, 0.6, 0.57, 0.58];
+  const preferred = getPointOnCenterlineAtDepth(
+    verts,
+    mainAxis,
+    front,
+    sides,
+    AREA_DEPTH_FRACTION_DEFAULT,
+  );
+
+  const candidates: [number, number][] = [];
+  for (const df of depthFracs) {
+    candidates.push(getPointOnCenterlineAtDepth(verts, mainAxis, front, sides, df));
+  }
+
+  for (const deltaMm of [-14, -10, -6, -3, 3, 6, 10, 14, 18]) {
+    candidates.push([
+      preferred[0] + depthUx * deltaMm,
+      preferred[1] + depthUy * deltaMm,
+    ]);
+  }
+
+  if (badgePos) {
+    const toFund =
+      (preferred[0] - badgePos[0]) * depthUx + (preferred[1] - badgePos[1]) * depthUy;
+    const sign = toFund >= 0 ? 1 : -1;
+    for (const d of [6, 10, 14]) {
+      candidates.push([
+        preferred[0] + depthUx * sign * d,
+        preferred[1] + depthUy * sign * d,
+      ]);
+    }
+  }
+
+  let best = preferred;
+  let bestScore = -Infinity;
+
+  for (let cand of candidates) {
+    cand = resolveLabelCollisions(cand, areaRadius, placedZones, sketchOffsetMm(3));
+    const depthMm = Math.max(
+      0,
+      Math.min(
+        centerline.maxDepthMm,
+        (cand[0] - front.edge.mid[0]) * depthUx +
+          (cand[1] - front.edge.mid[1]) * depthUy,
+      ),
+    );
+    cand = getCrossSectionMidpointAtDepth(mainAxis, front, sides, depthMm);
+    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
+    const s = areaCenterlinePlacementScore(
+      cand,
+      verts,
+      sides,
+      badgePos,
+      placedZones,
+      preferred,
+      centerline,
+    );
+    if (s > bestScore) {
+      bestScore = s;
+      best = cand;
+    }
+  }
+
+  return best;
 }
 
 type LotFrontContext = {
@@ -462,105 +652,6 @@ function lotUsefulCrossWidthMm(
     maxT = Math.max(maxT, t);
   }
   return maxT - minT;
-}
-
-function areaPlacementScore(
-  pos: [number, number],
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
-  badgePos: [number, number] | null,
-  placedZones: PlacedLabelZone[],
-  preferred: [number, number],
-): number {
-  if (!pointInsidePolygon(pos[0], pos[1], verts)) return -Infinity;
-
-  let score = minDistToPolygonEdges(pos, verts) * 2;
-  score -= Math.hypot(pos[0] - preferred[0], pos[1] - preferred[1]) * 6;
-
-  const areaRadius = sketchOffsetMm(7);
-  for (const zone of placedZones) {
-    const d = Math.hypot(pos[0] - zone.pos[0], pos[1] - zone.pos[1]);
-    const need = areaRadius + zone.radius + sketchOffsetMm(3);
-    if (d < need) score -= (need - d) * 8;
-    if (zone.kind === 'lot_badge' && d < need + 6) score -= 120;
-  }
-
-  if (badgePos) {
-    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 50);
-  }
-
-  return score;
-}
-
-function placeAreaLabelPreferredZone(
-  preferred: [number, number],
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
-  front: LotFrontContext,
-  placedZones: PlacedLabelZone[],
-  badgePos: [number, number] | null,
-): [number, number] {
-  const inner = getInnerUsableLotBox(verts, mainAxis, front);
-  const alongSpan = inner.alongMax - inner.alongMin;
-  const crossSpan = inner.crossMax - inner.crossMin;
-  const areaRadius = sketchOffsetMm(7);
-
-  const candidates: [number, number][] = [preferred];
-
-  for (const df of [0.45, 0.5, 0.55, 0.48, 0.52]) {
-    candidates.push(
-      pointFromInnerBox(
-        inner,
-        inner.alongMax - alongSpan * df,
-        (inner.crossMin + inner.crossMax) / 2,
-      ),
-    );
-  }
-
-  for (const ct of [-0.2, -0.1, 0, 0.1, 0.2]) {
-    candidates.push(
-      pointFromInnerBox(
-        inner,
-        inner.alongMax - alongSpan * 0.5,
-        (inner.crossMin + inner.crossMax) / 2 + crossSpan * ct,
-      ),
-    );
-  }
-
-  if (badgePos) {
-    let awayX = preferred[0] - badgePos[0];
-    let awayY = preferred[1] - badgePos[1];
-    const len = Math.hypot(awayX, awayY) || 1;
-    awayX /= len;
-    awayY /= len;
-    for (const d of [10, 14, 18, 22]) {
-      candidates.push([
-        preferred[0] + awayX * d,
-        preferred[1] + awayY * d,
-      ]);
-    }
-  }
-
-  let best = preferred;
-  let bestScore = -Infinity;
-
-  for (let cand of candidates) {
-    cand = resolveLabelCollisions(cand, areaRadius, placedZones, sketchOffsetMm(3));
-    const s = areaPlacementScore(
-      cand,
-      verts,
-      mainAxis,
-      badgePos,
-      placedZones,
-      preferred,
-    );
-    if (s > bestScore) {
-      bestScore = s;
-      best = cand;
-    }
-  }
-
-  return best;
 }
 
 function splitAreaLabelLines(
@@ -799,7 +890,7 @@ function drawFrontStreetLabel(
   const fi = ((frontEdgeIndex % n) + n) % n;
   const edge = getEdgeGeometry(verts, fi);
   const narrow = lotSpanOnSheet(verts) < 38;
-  const streetOffset = sketchOffsetMm((narrow ? 12 : 15) + 2);
+  const streetOffset = frontStreetLabelOffset(narrow);
   let [x, y] = edgeExternalLabelPos(edge, streetOffset);
   if (avoidBands?.length) {
     [x, y] = nudgeLabelOutsideBands(x, y, avoidBands);
@@ -897,10 +988,27 @@ function placeSideConfrontantLabels(
 
   doc.setTextColor(...BLACK);
 
-  const extOffset = sketchOffsetMm(10);
-  labelAtEdgeExternal(doc, verts, fundoIdx, sides.fundo, extOffset);
-  labelAtEdgeExternal(doc, verts, dirIdx, sides.ladoDireito, extOffset);
-  labelAtEdgeExternal(doc, verts, esqIdx, sides.ladoEsquerdo, extOffset);
+  labelAtEdgeExternal(
+    doc,
+    verts,
+    fundoIdx,
+    sides.fundo,
+    backConfrontantLabelOffset(),
+  );
+  labelAtEdgeExternal(
+    doc,
+    verts,
+    dirIdx,
+    sides.ladoDireito,
+    sideConfrontantLabelOffset(),
+  );
+  labelAtEdgeExternal(
+    doc,
+    verts,
+    esqIdx,
+    sides.ladoEsquerdo,
+    sideConfrontantLabelOffset(),
+  );
 }
 
 const LOT_BADGE_RADIUS_MM = 5.5;
@@ -954,7 +1062,7 @@ function placeLotNumberNearFront(
   return { badgePos, radius: r };
 }
 
-/** Área na zona preferencial central (retângulo útil), separada do círculo. */
+/** Área na linha média entre laterais (55–60% frente→fundo), separada do círculo. */
 function placeAreaLabelCenter(
   doc: jsPDF,
   points: [number, number][],
@@ -966,26 +1074,14 @@ function placeAreaLabelCenter(
 ): { areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
-  const preferred = getAreaPreferredPosition(verts, mainAxis, front);
-  let areaPos = placeAreaLabelPreferredZone(
-    preferred,
+  const areaPos = placeAreaOnCenterline(
     verts,
     mainAxis,
     front,
+    frontEdgeIndex,
     placedZones,
     badgePos,
   );
-  areaPos = applyAreaLabelFineTune(areaPos, front);
-  if (!pointInsidePolygon(areaPos[0], areaPos[1], verts)) {
-    areaPos = placeAreaLabelPreferredZone(
-      preferred,
-      verts,
-      mainAxis,
-      front,
-      placedZones,
-      badgePos,
-    );
-  }
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
   const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
