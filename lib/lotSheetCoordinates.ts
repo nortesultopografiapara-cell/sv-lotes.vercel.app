@@ -3,6 +3,10 @@
  */
 
 import proj4 from 'proj4';
+import {
+  parseOfficialSegmentsFromBlock,
+  type OfficialLotSegment,
+} from '@/lib/officialLotMeasurements';
 
 export type RealCoordSource =
   | 'segments_json'
@@ -231,4 +235,78 @@ export function resolveRealCoordinateRing(
     hasGeometry: Boolean(block.geometry),
   });
   return { available: false, source: 'unavailable', ring: [] };
+}
+
+export type OfficialSheetLocalGeometry = {
+  /** [x, y] com x = east - minEast, y = north - minNorth (metros). */
+  localRing: [number, number][];
+  bboxMeters: { minX: number; maxX: number; minY: number; maxY: number };
+  utmRing: [number, number][];
+  segments: OfficialLotSegment[];
+};
+
+/**
+ * Croqui da prancha: polígono local somente a partir de segments_json TXT (UTM).
+ */
+export function buildOfficialSheetLocalGeometry(
+  block: Record<string, unknown>,
+): OfficialSheetLocalGeometry | null {
+  const segments = parseOfficialSegmentsFromBlock(block);
+  if (segments.length < 3) return null;
+
+  console.log('LOT_SHEET_OFFICIAL_SEGMENTS', {
+    blockId: block.id,
+    lote: block.number ?? block.lot_number,
+    count: segments.length,
+    front_segment_index: block.front_segment_index,
+    segments: segments.map((s) => ({
+      index: s.segment_index,
+      distance: s.distance,
+      east: s.east,
+      north: s.north,
+      bearing: s.bearing,
+    })),
+  });
+
+  const utmRing: [number, number][] = segments.map((s) => [s.east, s.north]);
+
+  let minE = Infinity;
+  let maxE = -Infinity;
+  let minN = Infinity;
+  let maxN = -Infinity;
+  for (const [e, n] of utmRing) {
+    if (!Number.isFinite(e) || !Number.isFinite(n)) return null;
+    minE = Math.min(minE, e);
+    maxE = Math.max(maxE, e);
+    minN = Math.min(minN, n);
+    maxN = Math.max(maxN, n);
+  }
+
+  const localRing = utmRing.map(
+    ([e, n]) => [e - minE, n - minN] as [number, number],
+  );
+  const bboxMeters = {
+    minX: 0,
+    maxX: maxE - minE,
+    minY: 0,
+    maxY: maxN - minN,
+  };
+
+  console.log('LOT_SHEET_LOCAL_POINTS', {
+    blockId: block.id,
+    lote: block.number,
+    pointCount: localRing.length,
+    minEast: minE,
+    minNorth: minN,
+    localRing,
+  });
+
+  console.log('LOT_SHEET_SCALE_BBOX', {
+    blockId: block.id,
+    bbox: bboxMeters,
+    widthM: bboxMeters.maxX,
+    heightM: bboxMeters.maxY,
+  });
+
+  return { localRing, bboxMeters, utmRing, segments };
 }

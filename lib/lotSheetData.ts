@@ -3,7 +3,6 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import {
   buildLotAddressLine,
   formatMemorialFrontClause,
@@ -12,20 +11,15 @@ import {
 import {
   buildBlockSketch,
   buildCardinalConfrontants,
-  buildMetricTable,
-  buildMetricTableFromOfficial,
   buildProjectMap,
-  buildSegmentTable,
-  buildSegmentTableFromOfficial,
   buildSideConfrontants,
-  buildVertexTable,
-  findFrontEdgeIndex,
+  buildVertexTableFromOfficialSegments,
   createLotSheetValidation,
+  segmentTableToMemorialRows,
+  segmentTableToMetricRows,
   type LotSheetSideConfrontants,
   latLngRingFromBlock,
   LOT_SHEET_VERSION,
-  toLocalMetersFromEnRing,
-  toLocalMetersFromRing,
   type LotSheetBlockSketch,
   type LotSheetCardinalConfrontant,
   type LotSheetMetricRow,
@@ -35,15 +29,16 @@ import {
 } from '@/lib/lotSheetEnrichment';
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
+  getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
   officialSegmentTableToEdgeLabels,
 } from '@/lib/officialLotMeasurements';
-import { resolveRealCoordinateRing } from '@/lib/lotSheetCoordinates';
+import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
 
 export type LotSheetGeometry = {
-  /** [lat, lng] fechado ou aberto */
-  ring: [number, number][];
-  /** metros locais [x, y] centrados no lote */
+  /** Anel UTM [E, N] dos vértices oficiais TXT */
+  utmRing: [number, number][];
+  /** Planta: x = east - minEast, y = north - minNorth */
   localRing: [number, number][];
   bboxMeters: { minX: number; maxX: number; minY: number; maxY: number };
 };
@@ -435,39 +430,41 @@ export async function loadLotSheetPayload(
     .limit(1);
 
   const blockRecord = block as Record<string, unknown>;
-  const ring = latLngRingFromBlock(blockRecord);
-  const realCoords = resolveRealCoordinateRing(
+  const officialTable = getOfficialLotSegmentTable(
     blockRecord,
     project as Record<string, unknown>,
   );
-
-  let localRing: [number, number][];
-  let bbox: { minX: number; maxX: number; minY: number; maxY: number };
-
-  if (realCoords.available && realCoords.ring.length >= 3) {
-    ({ localRing, bbox } = toLocalMetersFromEnRing(realCoords.ring));
-    console.log('LOT_SHEET_LOCAL_RING_FROM_UTM', {
-      blockId: params.blockId,
-      source: realCoords.source,
-      vertices: realCoords.ring.length,
-    });
-  } else {
-    if (ring.length < 3) {
-      throw new Error('Lote sem geometria válida no mapa.');
-    }
-    ({ localRing, bbox } = toLocalMetersFromRing(ring));
+  if (officialTable.validRows.length < 2) {
+    throw new Error(
+      'Prancha requer segmentos oficiais TXT Civil 3D (segments_json).',
+    );
   }
+
+  const sheetGeom = buildOfficialSheetLocalGeometry(blockRecord);
+  if (!sheetGeom) {
+    throw new Error(
+      'Não foi possível montar o croqui UTM a partir dos segmentos oficiais do TXT.',
+    );
+  }
+
+  const { localRing, bboxMeters: bbox, utmRing, segments: officialSegs } =
+    sheetGeom;
   const maxDim = Math.max(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY, 1);
   const scaleDenom = parseScaleDenominator(
     (project as Record<string, unknown>).escala_padrao as string,
     maxDim,
   );
 
-  const lotMeasures = resolveLotMeasuresFromBlock(block as Record<string, unknown>);
-  const chanfre = lotMeasures.chanfre;
+  const officialMeasures = getOfficialLotMeasurements(
+    blockRecord,
+    blockRecord.number,
+  );
+  const chanfre = officialMeasures.chanfre;
   const chanfreStr = chanfre?.total
     ? `${chanfre.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
     : '—';
+
+  const ring = latLngRingFromBlock(blockRecord);
 
   const { owner, ownerDocument, customer } = await resolveLotSheetOwner(
     supabase,
@@ -497,35 +494,28 @@ export async function loadLotSheetPayload(
   );
 
   const projectMap = buildProjectMap(params.blockId, blocksList);
-  const vertices = buildVertexTable(localRing);
-  const officialTable = getOfficialLotSegmentTable(
-    blockRecord,
-    project as Record<string, unknown>,
-  );
-  const officialSegments = buildSegmentTableFromOfficial(blockRecord);
-  const segments = officialSegments ?? buildSegmentTable(localRing);
-  const officialMetric = buildMetricTableFromOfficial(
-    blockRecord,
-    project as Record<string, unknown>,
-  );
-  const { rows: metricRows, coordinatesAvailable } =
-    officialMetric ??
-    buildMetricTable(blockRecord, localRing, project as Record<string, unknown>);
+  const vertices = buildVertexTableFromOfficialSegments(officialSegs);
+  const segments: LotSheetSegmentRow[] = segmentTableToMemorialRows(officialTable);
+  const metricRows: LotSheetMetricRow[] = segmentTableToMetricRows(officialTable);
+  const coordinatesAvailable = officialTable.coordinatesAvailable;
 
   const officialEdgeLengths = officialSegmentTableToEdgeLabels(
     officialTable,
-    localRing.length >= 3 ? localRing.length : metricRows.length,
+    localRing.length,
   );
   const ignoredSegmentNote =
     officialTable.ignoredInvalidCount > 0
       ? 'Segmento inválido ignorado'
       : null;
-  const frontEdgeIndex = findFrontEdgeIndex(
-    localRing,
-    block as Record<string, unknown>,
-    guidesList,
-    ring,
-  );
+
+  const storedFront = blockRecord.front_segment_index;
+  const frontEdgeIndex =
+    typeof storedFront === 'number' && Number.isFinite(storedFront) && storedFront >= 0
+      ? Math.min(Math.floor(storedFront), localRing.length - 1)
+      : Math.min(
+          officialMeasures.frontSegmentIndex ?? 0,
+          localRing.length - 1,
+        );
   const validation = createLotSheetValidation();
   const sideConfrontants = buildSideConfrontants(
     block as Record<string, unknown>,
@@ -549,11 +539,20 @@ export async function loadLotSheetPayload(
   const quadraStreetNames = quadraStreetNamesFromGuides(guidesList);
 
   console.log('LOT_SHEET_GEOMETRY_PROCESSED', {
-    points: ring.length,
+    officialSegments: officialSegs.length,
+    frontEdgeIndex,
     cardinal: cardinalConfrontants.length,
     sketchLots: blockSketch?.lots.length ?? 0,
     projectLots: projectMap.length,
     scale: scaleDenom,
+    measures: {
+      frente: officialMeasures.frente,
+      fundo: officialMeasures.fundo,
+      ladoDireito: officialMeasures.ladoDireito,
+      ladoEsquerdo: officialMeasures.ladoEsquerdo,
+      perimeter: officialMeasures.perimeter,
+      area: officialMeasures.area,
+    },
   });
 
   return {
@@ -577,23 +576,22 @@ export async function loadLotSheetPayload(
     validation,
     version: LOT_SHEET_VERSION,
     geometry: {
-      ring,
+      utmRing,
       localRing,
       bboxMeters: bbox,
     },
     measures: {
-      frente: formatMeasure(lotMeasures.sides.frente ?? (block as Record<string, unknown>).frente),
-      fundo: formatMeasure(lotMeasures.sides.fundo ?? (block as Record<string, unknown>).Fundo ?? (block as Record<string, unknown>).fundo),
-      ladoDireito: formatMeasure(
-        lotMeasures.sides.ladoDireito ?? (block as Record<string, unknown>)['Lado Dir.'],
-      ),
-      ladoEsquerdo: formatMeasure(
-        lotMeasures.sides.ladoEsquerdo ?? (block as Record<string, unknown>)['Lado Esq.'],
-      ),
+      frente: formatMeasure(officialMeasures.frente),
+      fundo: formatMeasure(officialMeasures.fundo),
+      ladoDireito: formatMeasure(officialMeasures.ladoDireito),
+      ladoEsquerdo: formatMeasure(officialMeasures.ladoEsquerdo),
       chanfre: chanfreStr,
-      area: block.area
-        ? `${Number(block.area).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²`
-        : '—',
+      area:
+        officialMeasures.area != null
+          ? `${officialMeasures.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²`
+          : block.area
+            ? `${Number(block.area).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²`
+            : '—',
     },
     scaleLabel: `1 : ${scaleDenom}`,
     sideConfrontants,

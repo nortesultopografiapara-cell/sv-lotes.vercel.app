@@ -14,6 +14,7 @@ import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
   getOfficialLotSegmentTable,
   isValidSegmentDistance,
+  type OfficialLotSegment,
   type OfficialLotSegmentTableResult,
 } from '@/lib/officialLotMeasurements';
 
@@ -637,6 +638,17 @@ function formatCoordMeters(val: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+/** Vértices da tabela com coordenadas UTM oficiais do TXT. */
+export function buildVertexTableFromOfficialSegments(
+  segments: OfficialLotSegment[],
+): LotSheetVertexRow[] {
+  return segments.map((s, i) => ({
+    vertex: i + 1,
+    norte: formatCoordMeters(s.north),
+    este: formatCoordMeters(s.east),
+  }));
 }
 
 export function buildVertexTable(localRing: [number, number][]): LotSheetVertexRow[] {

@@ -150,30 +150,6 @@ function drawLotPolygon(doc: jsPDF, points: [number, number][]): [number, number
   return verts;
 }
 
-function edgeLengthsFromRing(localRing: [number, number][]): string[] {
-  const verts = preparePolygonVertices(localRing);
-  const out: string[] = [];
-  const MAX_EDGE_M = 1000;
-  for (let i = 0; i < verts.length; i++) {
-    const p1 = verts[i];
-    const p2 = verts[(i + 1) % verts.length];
-    const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-    if (!Number.isFinite(d) || d <= 0 || d >= MAX_EDGE_M) {
-      console.log('INVALID_OFFICIAL_DISTANCE', {
-        reason: 'geometry_edge_fallback_rejected',
-        edgeIndex: i,
-        rejectedAs: d,
-      });
-      out.push('—');
-      continue;
-    }
-    out.push(
-      `${d.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`,
-    );
-  }
-  return out;
-}
-
 /** Ângulo do texto no eixo do PDF (Y invertido). Apenas medidas das divisas. */
 function computePdfAxisTextAngle(dx: number, dy: number): number {
   let angleDeg = (-Math.atan2(dy, dx) * 180) / Math.PI;
@@ -1008,11 +984,16 @@ export async function generateLotSheetPdf(
   );
 
   const frontEdge = input.frontEdgeIndex ?? 0;
-  const edgeLabels =
-    input.officialEdgeLengths?.length &&
-    input.officialEdgeLengths.some((l) => l && l !== '—')
-      ? input.officialEdgeLengths
-      : edgeLengthsFromRing(input.geometry.localRing);
+  const edgeLabels = input.officialEdgeLengths ?? [];
+  if (
+    !edgeLabels.length ||
+    !edgeLabels.some((l) => l && l !== '—' && !l.includes('inválido'))
+  ) {
+    console.log('INVALID_OFFICIAL_DISTANCE', {
+      reason: 'no_official_edge_labels_for_pdf',
+      lot: lotNum,
+    });
+  }
 
   if (input.ignoredSegmentNote) {
     console.log('LOT_SHEET_PDF_IGNORED_SEGMENTS', {
