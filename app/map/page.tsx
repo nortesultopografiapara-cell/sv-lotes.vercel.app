@@ -51,13 +51,18 @@ import {
   readGisMapProjectIdFromUrl,
 } from '@/lib/gisMapProjectPersistence';
 import {
-  findFrontSegmentIndexFromStreetEdge,
   getOfficialLotMeasurements,
   normalizeTxtImportSegments,
   officialSegmentsToLotSegmentRows,
   parseOfficialSegmentsFromBlock,
   segmentsToPersistJson,
 } from '@/lib/officialLotMeasurements';
+import {
+  findFrontSegmentIndexTouchingStreet,
+  pickStreetGuideForFrontSegment,
+  scoreSegmentStreetProximity,
+  type StreetGuideLineInput,
+} from '@/lib/lotStreetFrontDetection';
 import {
   blockHasTxtOfficialData,
   buildBlockMatchKey,
@@ -551,10 +556,17 @@ export default function MapPage() {
        if (!blocks || blocks.length === 0) return;
 
        // 2. Prepare guide lines
-       const guideLines = visibleGuides.map((g) => {
-         const geo = g.geometry_geojson || g.geometry;
-         return turfHelpers.lineString(geo.coordinates);
-       });
+       const streetGuideLines: StreetGuideLineInput[] = visibleGuides
+         .map((g) => {
+           const geo = g.geometry_geojson || g.geometry;
+           const coordinates = geo?.coordinates;
+           if (!coordinates || coordinates.length < 2) return null;
+           return {
+             id: g.id != null ? String(g.id) : undefined,
+             coordinates,
+           };
+         })
+         .filter(Boolean) as StreetGuideLineInput[];
 
        const updates: Array<Record<string, unknown>> = [];
        let streetApplied = 0;
@@ -565,58 +577,91 @@ export default function MapPage() {
           let coords = block.geometry.coordinates[0];
           if (!coords || coords.length < 4) continue;
           
-          // Use calculateLotDimensions utilities to extract segments
-          const segments = extractSegments(coords, []); // not passing allPolys to keep it fast, we only care about closest to street
-          
-          let bestSegment = null;
-          let bestScore = Infinity;
-          let bestGuide: (typeof visibleGuides)[number] | null = null;
+          const segments = extractSegments(coords, []);
+          const officialSegs = parseOfficialSegmentsFromBlock(block);
 
-          for (const seg of segments) {
-             const pA = turfHelpers.point(seg.p1);
-             const pB = turfHelpers.point(seg.p2);
-             
-             for (let gi = 0; gi < guideLines.length; gi++) {
-                 const guide = guideLines[gi];
-                 const nearestA = turfNearestOnLine.default(guide, pA);
-                 const nearestB = turfNearestOnLine.default(guide, pB);
-                 
-                 const distA = nearestA.properties.dist || 0;
-                 const distB = nearestB.properties.dist || 0;
-                 
-                 const avgDist = (distA + distB) / 2;
-                 const parallelVariance = Math.abs(distA - distB);
-                 
-                 // Score = Average Distance + Penalty for not being parallel
-                 const score = avgDist + (parallelVariance * 3);
-                 
-                 if (score < bestScore) {
-                     bestScore = score;
-                     bestSegment = seg;
-                     bestGuide = visibleGuides[gi];
-                 }
-             }
+          let frontSegmentIndex: number | null = null;
+          let bestGuide: (typeof visibleGuides)[number] | null = null;
+          let bestTouchM = Infinity;
+
+          if (
+            officialSegs.length >= 3 &&
+            block.source_import === 'TXT_CIVIL3D'
+          ) {
+            frontSegmentIndex = findFrontSegmentIndexTouchingStreet(
+              officialSegs,
+              coords,
+              streetGuideLines,
+              null,
+              block.number,
+            );
+            const matchedGuide = pickStreetGuideForFrontSegment(
+              coords,
+              streetGuideLines,
+              frontSegmentIndex,
+              officialSegs.length,
+            );
+            if (matchedGuide?.id) {
+              bestGuide =
+                visibleGuides.find(
+                  (g) => String(g.id) === String(matchedGuide.id),
+                ) ?? null;
+            }
+            const ring = coords;
+            const ri = Math.min(frontSegmentIndex, ring.length - 2);
+            const p1 = ring[ri] as [number, number];
+            const p2 = ring[ri + 1] as [number, number];
+            for (const gl of streetGuideLines) {
+              const sc = scoreSegmentStreetProximity(p1, p2, gl.coordinates);
+              bestTouchM = Math.min(bestTouchM, sc.minDistM);
+            }
+          } else {
+            let bestSegment: (typeof segments)[0] | null = null;
+            for (const seg of segments) {
+              const pA = turfHelpers.point(seg.p1);
+              const pB = turfHelpers.point(seg.p2);
+              const mid = turfHelpers.point([
+                (seg.p1[0] + seg.p2[0]) / 2,
+                (seg.p1[1] + seg.p2[1]) / 2,
+              ]);
+              for (let gi = 0; gi < streetGuideLines.length; gi++) {
+                const guide = turfHelpers.lineString(
+                  streetGuideLines[gi].coordinates,
+                );
+                const d1 = turfNearestOnLine.default(guide, pA).properties.dist || 0;
+                const d2 = turfNearestOnLine.default(guide, pB).properties.dist || 0;
+                const dMid =
+                  turfNearestOnLine.default(guide, mid).properties.dist || 0;
+                const minDist = Math.min(d1, d2, dMid);
+                if (minDist < bestTouchM) {
+                  bestTouchM = minDist;
+                  bestSegment = seg;
+                  bestGuide = visibleGuides[gi];
+                }
+              }
+            }
+            if (bestSegment) {
+              frontSegmentIndex = bestSegment.originalIndex ?? 0;
+            }
           }
 
-          if (bestSegment && bestScore < 50) {
-             const frenteLength = bestSegment.length;
-             const officialSegs = parseOfficialSegmentsFromBlock(block);
+          if (frontSegmentIndex != null && bestTouchM < 50) {
+             const frenteLength =
+               officialSegs.find((s) => s.segment_index === frontSegmentIndex)
+                 ?.distance ??
+               segments.find((s) => s.originalIndex === frontSegmentIndex)
+                 ?.length ??
+               0;
 
              let finalFrente: number;
              let finalFundo: number;
              let finalDir: number;
              let finalEsq: number;
-             let frontSegmentIndex: number | null = null;
 
              if (
                officialSegs.length >= 3 &&
                block.source_import === 'TXT_CIVIL3D'
              ) {
-               frontSegmentIndex = findFrontSegmentIndexFromStreetEdge(
-                 officialSegs,
-                 bestSegment.originalIndex ?? 0,
-                 block.number,
-               );
                const measures = getOfficialLotMeasurements({
                  ...block,
                  front_segment_index: frontSegmentIndex,
@@ -627,7 +672,11 @@ export default function MapPage() {
                finalEsq = measures.ladoEsquerdo ?? 0;
                console.log('LOT_FRONT_SEGMENT', block.number, frontSegmentIndex);
              } else {
-               const otherSegments = segments.filter(s => s !== bestSegment);
+               const bestSegment =
+                 segments.find(
+                   (s) => s.originalIndex === frontSegmentIndex,
+                 ) ?? segments[0];
+               const otherSegments = segments.filter((s) => s !== bestSegment);
                let backSegment = null;
                let maxDist = -1;
                const midFront = [

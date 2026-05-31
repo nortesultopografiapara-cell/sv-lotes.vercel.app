@@ -4,6 +4,10 @@
  */
 
 import type { ChanfreInfo } from "@/lib/lotChanfre";
+import {
+  findFrontSegmentIndexTouchingStreet,
+  type StreetGuideLineInput,
+} from "@/lib/lotStreetFrontDetection";
 
 export type OfficialLotSegment = {
   segment_index: number;
@@ -303,6 +307,7 @@ function isCornerDeflection(deflectionDeg: number): boolean {
 export function detectChanfreIndexesByDeflection(
   segments: OfficialLotSegment[],
   lotLabel?: unknown,
+  adjacentToFrontIndex?: number | null,
 ): number[] {
   const n = segments.length;
   if (n < 3) return [];
@@ -352,6 +357,23 @@ export function detectChanfreIndexesByDeflection(
     inspectVertex(ordered[i], ordered[i + 1], ordered[(i + 2) % n]);
   }
   inspectVertex(ordered[n - 1], ordered[0], ordered[1], true);
+
+  if (
+    adjacentToFrontIndex != null &&
+    Number.isFinite(adjacentToFrontIndex) &&
+    adjacentToFrontIndex >= 0 &&
+    chanfreIndexes.length > 0
+  ) {
+    const ringPos = ordered.findIndex(
+      (s) => s.segment_index === adjacentToFrontIndex,
+    );
+    if (ringPos >= 0) {
+      const prev = ordered[(ringPos - 1 + n) % n].segment_index;
+      const next = ordered[(ringPos + 1) % n].segment_index;
+      const adjacent = new Set([prev, next]);
+      return chanfreIndexes.filter((idx) => adjacent.has(idx));
+    }
+  }
 
   return chanfreIndexes;
 }
@@ -703,7 +725,15 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
-  const chanfreIndexes = detectChanfreIndexesByDeflection(segments, lotLabel);
+  const lockedFront = isFrontSegmentLocked(block);
+  const streetFront = hasStreetFrontIdentified(block ?? {});
+  const cornerLotMode = lockedFront || streetFront;
+
+  const chanfreIndexes = detectChanfreIndexesByDeflection(
+    segments,
+    lotLabel,
+    cornerLotMode ? frontSegmentIndex : null,
+  );
   const chanfreSet = new Set(chanfreIndexes);
   const groups = groupSegmentsByDeflection(segments, lotLabel);
   if (groups.length === 0) {
@@ -719,7 +749,6 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
-  const lockedFront = isFrontSegmentLocked(block);
   const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
   const ringPos = ordered.findIndex(
     (s) => s.segment_index === frontSegmentIndex,
@@ -766,18 +795,13 @@ export function classifySidesByTxtRingPaths(
     ...chanfreIndexes,
   ]);
 
+  const useRingWalk =
+    cornerLotMode || chanfreIndexes.length > 0 || lockedFront;
+
   let pathAIndexes: number[];
   let pathBIndexes: number[];
-  let frenteLen: number;
 
-  if (lockedFront) {
-    console.log("FRONT_SEGMENT_ABSOLUTE", {
-      lote: lotLabel ?? block?.number ?? block?.id,
-      frontSegmentIndex,
-      distance: frontSeg?.distance,
-      note: "frente = somente o segmento escolhido; paralelos ficam nas laterais",
-    });
-
+  if (useRingWalk) {
     pathAIndexes = collectRingArcFromFront(
       ordered,
       frontSegmentIndex,
@@ -792,8 +816,6 @@ export function classifySidesByTxtRingPaths(
       -1,
       excludeWalk,
     );
-    const d = Number(frontSeg?.distance);
-    frenteLen = isValidSegmentDistance(d) ? d : 0;
   } else {
     const collectGroupPath = (
       fromGroup: number,
@@ -812,8 +834,24 @@ export function classifySidesByTxtRingPaths(
 
     pathAIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, 1);
     pathBIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, -1);
-    frenteLen = frontGroup.totalLength;
   }
+
+  if (lockedFront) {
+    console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
+      lote: lotLabel ?? block?.number ?? block?.id,
+      frontSegmentIndex,
+      distance: frontSeg?.distance,
+      note: "frente manual/travada = somente este segmento",
+    });
+  }
+
+  const d = Number(frontSeg?.distance);
+  const frenteLen =
+    cornerLotMode || chanfreIndexes.length > 0
+      ? isValidSegmentDistance(d)
+        ? d
+        : 0
+      : frontGroup.totalLength;
 
   const pathA: RingPathResult = {
     indexes: pathAIndexes,
@@ -842,6 +880,8 @@ export function classifySidesByTxtRingPaths(
   console.log("OFFICIAL_GROUPED_MEASURES", {
     lote: lotLabel ?? "?",
     frontLocked: lockedFront,
+    streetFront,
+    cornerLotMode,
     frontGroupIdx,
     backGroupIdx,
     frontSegmentIndex,
@@ -850,11 +890,40 @@ export function classifySidesByTxtRingPaths(
     fundo: result.fundo,
     ladoDireito: result.ladoDireito,
     ladoEsquerdo: result.ladoEsquerdo,
-    frontGroupSegments: lockedFront ? [frontSegmentIndex] : frontGroup.segmentIndexes,
+    frontGroupSegments: cornerLotMode
+      ? [frontSegmentIndex]
+      : frontGroup.segmentIndexes,
     backGroupSegments: groups[backGroupIdx].segmentIndexes,
     pathRightSegments: pathAIndexes,
     pathLeftSegments: pathBIndexes,
   });
+
+  if (cornerLotMode || chanfreIndexes.length > 0) {
+    const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+    const classify = (idx: number) => {
+      if (idx === frontSegmentIndex) return "frente";
+      if (chanfreSet.has(idx)) return "chanfre";
+      if (fundoIndexes.includes(idx)) return "fundo";
+      if (pathAIndexes.includes(idx)) return "lado_direito";
+      if (pathBIndexes.includes(idx)) return "lado_esquerdo";
+      return "perimetro";
+    };
+    console.log("CORNER_LOT_MEASURE_CLASSIFICATION", {
+      lote: lotLabel ?? block?.number ?? block?.id,
+      frontSegmentIndex,
+      frenteM: result.frente,
+      chanfreM: chanfreIndexes.map((i) => byIdx.get(i)?.distance),
+      laterais: {
+        direitoM: result.ladoDireito,
+        esquerdoM: result.ladoEsquerdo,
+      },
+      segments: segments.map((s) => ({
+        index: s.segment_index,
+        distanceM: s.distance,
+        role: classify(s.segment_index),
+      })),
+    });
+  }
 
   return result;
 }
@@ -880,10 +949,11 @@ export function resolveFrontSegmentIndex(
     const idx =
       stored < segments.length ? stored : stored % Math.max(segments.length, 1);
     if (hasStreet || stored >= 0) {
-      console.log("FRONT_SEGMENT_LOCKED", {
+      console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lote: block.number ?? block.id,
         frontIndex: idx,
         street: hasStreet,
+        source: "front_segment_index",
       });
     }
     return idx;
@@ -915,23 +985,42 @@ export function resolveFrontSegmentIndex(
   return null;
 }
 
-/** Segmento TXT alinhado à aresta da geometria mais próxima da linha de rua. */
+/** Segmento TXT que toca a rua (proximidade mínima), não só índice da aresta do polígono. */
 export function findFrontSegmentIndexFromStreetEdge(
   segments: OfficialLotSegment[],
   geometryEdgeIndex: number,
   lotLabel?: unknown,
+  ringLngLat?: number[][],
+  streetGuides?: StreetGuideLineInput[],
+  preferredStreetId?: string | null,
 ): number {
   if (segments.length === 0) return 0;
+
+  if (ringLngLat && streetGuides && streetGuides.length > 0) {
+    return findFrontSegmentIndexTouchingStreet(
+      segments,
+      ringLngLat,
+      streetGuides,
+      preferredStreetId,
+      lotLabel,
+    );
+  }
+
   const idx = Math.min(
     Math.max(0, Math.floor(geometryEdgeIndex)),
     segments.length - 1,
   );
+  const ordered = [...segments].sort(
+    (a, b) => a.segment_index - b.segment_index,
+  );
+  const mapped = ordered[idx]?.segment_index ?? idx;
   console.log("FRONT_SEGMENT_SELECTED_FROM_STREET", {
     lote: lotLabel ?? "?",
-    frontIndex: idx,
+    frontIndex: mapped,
     geometryEdgeIndex,
+    scoring: "edge_index_fallback",
   });
-  return idx;
+  return mapped;
 }
 
 function computeChanfreFromDeflection(
@@ -1040,7 +1129,11 @@ function buildMeasuresFromSegments(
   const area =
     Number.isFinite(areaRaw) && areaRaw > 0 ? round2(areaRaw) : null;
 
-  const chanfreIndexes = detectChanfreIndexesByDeflection(segments, label);
+  const chanfreIndexes = detectChanfreIndexesByDeflection(
+    segments,
+    label,
+    frontIdx,
+  );
   const chanfre = computeChanfreFromTxtPaths(
     segments,
     frontIdx,
@@ -1248,20 +1341,14 @@ function classifySegmentForTable(
   frontIdx: number,
   paths: OfficialMeasurePaths,
   chanfreIndexes: number[],
-  lockedFront?: boolean,
-  groups?: SegmentDeflectionGroup[],
+  _lockedFront?: boolean,
+  _groups?: SegmentDeflectionGroup[],
 ): OfficialSegmentClassification {
   if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
   if (segmentIndex === frontIdx) return "frente";
   if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
   if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
   if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
-  if (!lockedFront && groups?.length) {
-    const frontGroup = groups.find((g) =>
-      g.segmentIndexes.includes(frontIdx),
-    );
-    if (frontGroup?.segmentIndexes.includes(segmentIndex)) return "frente";
-  }
   return "perimetro";
 }
 
@@ -1271,7 +1358,11 @@ function resolveChanfreSegmentIndexes(
   paths: OfficialMeasurePaths,
   lotLabel?: unknown,
 ): number[] {
-  const byDeflection = detectChanfreIndexesByDeflection(segments, lotLabel);
+  const byDeflection = detectChanfreIndexesByDeflection(
+    segments,
+    lotLabel,
+    frontIdx,
+  );
   if (byDeflection.length > 0) return byDeflection;
 
   const used = new Set<number>([

@@ -2201,7 +2201,7 @@ export default function GISMap({
         source_import: lot.source_import ?? "TXT_CIVIL3D",
       };
       const measures = getOfficialLotMeasurements(block, lot.number);
-      console.log("FRONT_SEGMENT_MANUAL_OVERRIDE", {
+      console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
         measures,
