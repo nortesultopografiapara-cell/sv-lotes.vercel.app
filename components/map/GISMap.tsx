@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useMemo, useState, useRef } from "react";
 import {
   MapContainer,
-  TileLayer,
   Polygon,
   Polyline,
   CircleMarker,
@@ -67,6 +66,8 @@ import {
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
+import { GIS_MAP_DEFAULT_ZOOM, GIS_MAP_MAX_ZOOM } from "@/lib/gisMapBaseLayers";
+import { GisBaseTileLayers } from "@/components/map/GisBaseTileLayers";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
   isBrowserOnline,
@@ -3401,35 +3402,12 @@ export default function GISMap({
     <div className="w-full h-full relative">
       <MapContainer
         center={center}
-        zoom={18}
-        maxZoom={22}
+        zoom={GIS_MAP_DEFAULT_ZOOM}
+        maxZoom={GIS_MAP_MAX_ZOOM}
         className="w-full h-full"
         zoomControl={false}
       >
-        {activeLayer === "streets" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-        )}
-        {activeLayer === "satellite" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          />
-        )}
-        {activeLayer === "dark" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          />
-        )}
+        <GisBaseTileLayers mode={activeLayer} />
 
         <ZoomControl position="bottomright" />
         <MapZoomTracker onZoom={setMapZoom} />
