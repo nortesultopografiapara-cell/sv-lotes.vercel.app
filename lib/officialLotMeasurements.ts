@@ -35,6 +35,11 @@ export type RingPathResult = {
 const CHANFRE_MIN = 2;
 const CHANFRE_MAX = 15;
 const MAX_SEGMENT_DISTANCE_M = 1000;
+/** Mesmo lado: variação de azimute entre segmentos consecutivos. */
+const COLINEAR_DEFLECTION_MAX_DEG = 10;
+/** Mudança de lado (~90°): deflexão na virada. */
+const CORNER_DEFLECTION_MIN_DEG = 80;
+const CORNER_DEFLECTION_MAX_DEG = 100;
 const MAX_SIDE_TOTAL_M = 1000;
 const MAX_PERIMETER_M = 5000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -230,6 +235,201 @@ function bearingFromEn(
   return round2(deg);
 }
 
+/** Diferença angular mínima entre dois azimutes (0–180°). */
+export function angularDifferenceDeg(a: number, b: number): number {
+  let diff = Math.abs(a - b) % 360;
+  if (diff > 180) diff = 360 - diff;
+  return round2(diff);
+}
+
+function circularMeanBearing(bearings: number[]): number {
+  if (bearings.length === 0) return 0;
+  let sinSum = 0;
+  let cosSum = 0;
+  for (const b of bearings) {
+    const r = (b * Math.PI) / 180;
+    sinSum += Math.sin(r);
+    cosSum += Math.cos(r);
+  }
+  let deg = (Math.atan2(sinSum, cosSum) * 180) / Math.PI;
+  if (deg < 0) deg += 360;
+  return round2(deg);
+}
+
+/** Azimute do segmento (TXT); fallback pelo próximo vértice EN. */
+export function resolveSegmentBearing(
+  seg: OfficialLotSegment,
+  next: OfficialLotSegment | null,
+): number {
+  if (seg.bearing != null && Number.isFinite(seg.bearing)) {
+    return seg.bearing;
+  }
+  if (
+    next &&
+    Number.isFinite(seg.north) &&
+    Number.isFinite(seg.east) &&
+    Number.isFinite(next.north) &&
+    Number.isFinite(next.east)
+  ) {
+    return bearingFromEn(seg.north, seg.east, next.north, next.east);
+  }
+  return 0;
+}
+
+function isColinearDeflection(deflectionDeg: number): boolean {
+  return deflectionDeg <= COLINEAR_DEFLECTION_MAX_DEG;
+}
+
+function isCornerDeflection(deflectionDeg: number): boolean {
+  return (
+    deflectionDeg >= CORNER_DEFLECTION_MIN_DEG &&
+    deflectionDeg <= CORNER_DEFLECTION_MAX_DEG
+  );
+}
+
+export type SegmentDeflectionGroup = {
+  groupIndex: number;
+  segmentIndexes: number[];
+  totalLength: number;
+  averageBearing: number;
+};
+
+function buildDeflectionGroup(
+  segmentIndexes: number[],
+  ordered: OfficialLotSegment[],
+  byIdx: Map<number, OfficialLotSegment>,
+  groupIndex: number,
+): SegmentDeflectionGroup {
+  const bearings: number[] = [];
+  let totalLength = 0;
+  for (const idx of segmentIndexes) {
+    const seg = byIdx.get(idx);
+    if (!seg) continue;
+    const pos = ordered.findIndex((s) => s.segment_index === idx);
+    const next =
+      pos >= 0 ? ordered[(pos + 1) % ordered.length] : null;
+    if (isValidSegmentDistance(seg.distance)) {
+      totalLength += seg.distance;
+    }
+    bearings.push(resolveSegmentBearing(seg, next));
+  }
+  return {
+    groupIndex,
+    segmentIndexes: [...segmentIndexes],
+    totalLength: round2(totalLength),
+    averageBearing: circularMeanBearing(bearings),
+  };
+}
+
+/**
+ * Agrupa segmentos TXT pelo ângulo de virada entre azimutes consecutivos.
+ */
+export function groupSegmentsByDeflection(
+  segments: OfficialLotSegment[],
+  lotLabel?: unknown,
+): SegmentDeflectionGroup[] {
+  const n = segments.length;
+  if (n === 0) return [];
+
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const byIdx = new Map(ordered.map((s) => [s.segment_index, s]));
+
+  if (n === 1) {
+    const s = ordered[0];
+    return [
+      {
+        groupIndex: 0,
+        segmentIndexes: [s.segment_index],
+        totalLength: isValidSegmentDistance(s.distance)
+          ? round2(s.distance)
+          : 0,
+        averageBearing: resolveSegmentBearing(s, null),
+      },
+    ];
+  }
+
+  const rawGroups: number[][] = [];
+  let current: number[] = [ordered[0].segment_index];
+
+  for (let i = 0; i < n - 1; i++) {
+    const cur = ordered[i];
+    const next = ordered[i + 1];
+    const afterNext = ordered[(i + 2) % n];
+    const bCur = resolveSegmentBearing(cur, next);
+    const bNext = resolveSegmentBearing(next, afterNext);
+    const deflection = angularDifferenceDeg(bCur, bNext);
+
+    console.log("SEGMENT_DEFLECTION", {
+      lote: lotLabel ?? "?",
+      vertexAfterSegment: cur.segment_index,
+      nextSegment: next.segment_index,
+      bearingCurrent: bCur,
+      bearingNext: bNext,
+      deflectionDeg: deflection,
+      sameSide: isColinearDeflection(deflection),
+      newSide: isCornerDeflection(deflection),
+    });
+
+    const nextIdx = next.segment_index;
+    if (isColinearDeflection(deflection)) {
+      if (!current.includes(nextIdx)) current.push(nextIdx);
+    } else if (
+      isCornerDeflection(deflection) ||
+      deflection > COLINEAR_DEFLECTION_MAX_DEG
+    ) {
+      rawGroups.push([...current]);
+      current = [nextIdx];
+    }
+  }
+  rawGroups.push([...current]);
+
+  if (rawGroups.length >= 2) {
+    const lastSeg = ordered[n - 1];
+    const firstSeg = ordered[0];
+    const secondSeg = ordered[1];
+    const closeDefl = angularDifferenceDeg(
+      resolveSegmentBearing(lastSeg, firstSeg),
+      resolveSegmentBearing(firstSeg, secondSeg),
+    );
+    console.log("SEGMENT_DEFLECTION", {
+      lote: lotLabel ?? "?",
+      vertexAfterSegment: lastSeg.segment_index,
+      nextSegment: firstSeg.segment_index,
+      bearingCurrent: resolveSegmentBearing(lastSeg, firstSeg),
+      bearingNext: resolveSegmentBearing(firstSeg, secondSeg),
+      deflectionDeg: closeDefl,
+      sameSide: isColinearDeflection(closeDefl),
+      newSide: isCornerDeflection(closeDefl),
+      closingVertex: true,
+    });
+    if (isColinearDeflection(closeDefl)) {
+      const merged = [...rawGroups[rawGroups.length - 1], ...rawGroups[0]];
+      const deduped: number[] = [];
+      for (const idx of merged) {
+        if (!deduped.includes(idx)) deduped.push(idx);
+      }
+      rawGroups = [deduped, ...rawGroups.slice(1, -1)];
+    }
+  }
+
+  const groups = rawGroups
+    .filter((g) => g.length > 0)
+    .map((indexes, gi) => buildDeflectionGroup(indexes, ordered, byIdx, gi));
+
+  console.log("SEGMENT_GROUPS", {
+    lote: lotLabel ?? "?",
+    groupCount: groups.length,
+    groups: groups.map((g) => ({
+      groupIndex: g.groupIndex,
+      segmentIndexes: g.segmentIndexes,
+      totalLength: g.totalLength,
+      averageBearing: g.averageBearing,
+    })),
+  });
+
+  return groups;
+}
+
 /** Normaliza vértices/segmentos vindos do parser TXT Civil 3D. */
 export function normalizeTxtImportSegments(
   raw: Array<{
@@ -372,22 +572,23 @@ function sumPathDistances(
 }
 
 /**
- * Classifica lados pelo anel TXT com frente como âncora.
+ * Classifica lados por grupos de deflexão angular (topografia TXT).
  * pathA = lateral horário (frente → fundo) | pathB = lateral anti-horário.
- * pathFundo = segmentos opostos contínuos (fundo quebrado em 2+ arestas).
  */
 export function classifySidesByTxtRingPaths(
   segments: OfficialLotSegment[],
   frontSegmentIndex: number,
+  lotLabel?: unknown,
 ): OfficialMeasurePaths {
   const n = segments.length;
   const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
-  const front = byIdx.get(frontSegmentIndex);
   const emptyPaths: RingPathResult = { indexes: [], totalLength: 0 };
 
-  if (!front || n < 3) {
+  if (n < 2) {
+    const only = byIdx.get(frontSegmentIndex);
+    const len = only && isValidSegmentDistance(only.distance) ? only.distance : 0;
     return {
-      frente: front?.distance ?? 0,
+      frente: len,
       fundo: 0,
       ladoDireito: 0,
       ladoEsquerdo: 0,
@@ -398,53 +599,77 @@ export function classifySidesByTxtRingPaths(
     };
   }
 
-  const collectPath = (
-    startIdx: number,
-    endIdx: number,
-    step: 1 | -1,
-  ): RingPathResult => {
-    const indexes: number[] = [];
-    let i = startIdx;
-    for (let guard = 0; guard < n; guard++) {
-      i = (i + step + n) % n;
-      if (i === endIdx) break;
-      indexes.push(i);
+  const groups = groupSegmentsByDeflection(segments, lotLabel);
+  if (groups.length === 0) {
+    return {
+      frente: 0,
+      fundo: 0,
+      ladoDireito: 0,
+      ladoEsquerdo: 0,
+      pathA: emptyPaths,
+      pathB: emptyPaths,
+      pathFundo: emptyPaths,
+      frontIndex: frontSegmentIndex,
+    };
+  }
+
+  let frontGroupIdx = groups.findIndex((g) =>
+    g.segmentIndexes.includes(frontSegmentIndex),
+  );
+  if (frontGroupIdx < 0) frontGroupIdx = 0;
+
+  const frontGroup = groups[frontGroupIdx];
+  const numGroups = groups.length;
+
+  let backGroupIdx = 0;
+  let bestOpposite = -1;
+  for (let g = 0; g < numGroups; g++) {
+    if (g === frontGroupIdx) continue;
+    const opp = angularDifferenceDeg(
+      frontGroup.averageBearing,
+      groups[g].averageBearing,
+    );
+    if (opp > bestOpposite) {
+      bestOpposite = opp;
+      backGroupIdx = g;
     }
-    return { indexes, totalLength: sumPathDistances(indexes, byIdx) };
+  }
+
+  const collectGroupPath = (
+    fromGroup: number,
+    toGroup: number,
+    step: 1 | -1,
+  ): number[] => {
+    const indexes: number[] = [];
+    let g = fromGroup;
+    for (let guard = 0; guard < numGroups; guard++) {
+      g = (g + step + numGroups) % numGroups;
+      if (g === toGroup) break;
+      indexes.push(...groups[g].segmentIndexes);
+    }
+    return indexes;
   };
 
-  const fundoStart = (frontSegmentIndex + 2) % n;
-  const pathA = collectPath(frontSegmentIndex, fundoStart, 1);
-  const pathB = collectPath(frontSegmentIndex, fundoStart, -1);
+  const pathAIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, 1);
+  const pathBIndexes = collectGroupPath(frontGroupIdx, backGroupIdx, -1);
+  const fundoIndexes = [...groups[backGroupIdx].segmentIndexes];
 
-  const used = new Set<number>([
-    frontSegmentIndex,
-    ...pathA.indexes,
-    ...pathB.indexes,
-  ]);
-  const fundoUnordered: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (!used.has(i)) fundoUnordered.push(i);
-  }
-  const fundoIndexes: number[] = [];
-  let walk = fundoStart;
-  for (let guard = 0; guard < n; guard++) {
-    if (fundoUnordered.includes(walk)) fundoIndexes.push(walk);
-    walk = (walk + 1) % n;
-    if (fundoIndexes.length === fundoUnordered.length) break;
-  }
-  if (fundoIndexes.length === 0) {
-    fundoIndexes.push(...fundoUnordered.sort((a, b) => a - b));
-  }
-
+  const pathA: RingPathResult = {
+    indexes: pathAIndexes,
+    totalLength: sumPathDistances(pathAIndexes, byIdx),
+  };
+  const pathB: RingPathResult = {
+    indexes: pathBIndexes,
+    totalLength: sumPathDistances(pathBIndexes, byIdx),
+  };
   const pathFundo: RingPathResult = {
     indexes: fundoIndexes,
     totalLength: sumPathDistances(fundoIndexes, byIdx),
   };
 
-  const frenteLen = Number(front.distance);
+  const frenteLen = frontGroup.totalLength;
 
-  return {
+  const result = {
     frente: isValidSegmentDistance(frenteLen) ? round2(frenteLen) : 0,
     fundo: pathFundo.totalLength,
     ladoDireito: pathA.totalLength,
@@ -454,6 +679,23 @@ export function classifySidesByTxtRingPaths(
     pathFundo,
     frontIndex: frontSegmentIndex,
   };
+
+  console.log("OFFICIAL_GROUPED_MEASURES", {
+    lote: lotLabel ?? "?",
+    frontGroupIdx,
+    backGroupIdx,
+    frontSegmentIndex,
+    frente: result.frente,
+    fundo: result.fundo,
+    ladoDireito: result.ladoDireito,
+    ladoEsquerdo: result.ladoEsquerdo,
+    frontGroupSegments: frontGroup.segmentIndexes,
+    backGroupSegments: groups[backGroupIdx].segmentIndexes,
+    pathRightSegments: pathAIndexes,
+    pathLeftSegments: pathBIndexes,
+  });
+
+  return result;
 }
 
 /** Primeiro índice do arco de fundo (referência TXT). */
@@ -597,19 +839,10 @@ function buildMeasuresFromSegments(
   if (frontIdx == null) frontIdx = 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx);
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label);
 
   logLotSideSegments(label, "right", paths.pathA, segments);
   logLotSideSegments(label, "left", paths.pathB, segments);
-
-  console.log("OFFICIAL_MEASURE_PATHS", {
-    lote: label,
-    frontIndex: paths.frontIndex,
-    fundoIndexes: paths.pathFundo.indexes,
-    fundoTotal: paths.fundo,
-    pathRight: { indexes: paths.pathA.indexes, total: paths.pathA.totalLength },
-    pathLeft: { indexes: paths.pathB.indexes, total: paths.pathB.totalLength },
-  });
 
   const perimeter = round2(
     segments.reduce((sum, s) => {
@@ -828,12 +1061,19 @@ function classifySegmentForTable(
   frontIdx: number,
   paths: OfficialMeasurePaths,
   chanfreIndexes: number[],
+  groups?: SegmentDeflectionGroup[],
 ): OfficialSegmentClassification {
-  if (segmentIndex === frontIdx) return "frente";
+  if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
   if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
   if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
   if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
-  if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
+  if (groups?.length) {
+    const frontGroup = groups.find((g) =>
+      g.segmentIndexes.includes(frontIdx),
+    );
+    if (frontGroup?.segmentIndexes.includes(segmentIndex)) return "frente";
+  }
+  if (segmentIndex === frontIdx) return "frente";
   return "perimetro";
 }
 
@@ -886,8 +1126,9 @@ export function getOfficialLotSegmentTable(
   let frontIdx = measures.frontSegmentIndex ?? 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx);
+  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label);
   const chanfreIdx = chanfreIndexesFromPaths(segments, frontIdx, paths);
+  const deflectionGroups = groupSegmentsByDeflection(segments, label);
 
   const rows: OfficialLotSegmentTableRow[] = [];
   let ignoredInvalidCount = 0;
@@ -930,6 +1171,7 @@ export function getOfficialLotSegmentTable(
         frontIdx,
         paths,
         chanfreIdx,
+        deflectionGroups,
       ),
       valid,
     });
