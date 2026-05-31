@@ -131,7 +131,14 @@ export function extractOfficialSegmentDistance(
 
   if (isCurveSegmentRaw(raw)) {
     const arcLen = Number(
-      String(raw.length ?? raw.distance ?? raw.Length ?? "").replace(",", "."),
+      String(
+        raw.length ??
+          raw.distance ??
+          raw.Length ??
+          raw.curveLength ??
+          raw["Curve Length"] ??
+          "",
+      ).replace(",", "."),
     );
     if (isValidSegmentDistance(arcLen)) {
       console.log("ARC_MEASURE_USED", {
@@ -667,11 +674,14 @@ export function parseOfficialSegmentsFromBlock(
       segment_type,
     };
 
+    const num = (k: string) => {
+      const v = Number(s[k]);
+      return Number.isFinite(v) ? round2(v) : null;
+    };
+    row.end_north = num("endNorth") ?? num("end_north");
+    row.end_east = num("endEast") ?? num("end_east");
+
     if (segment_type === "CURVE") {
-      const num = (k: string) => {
-        const v = Number(s[k]);
-        return Number.isFinite(v) ? round2(v) : null;
-      };
       row.radius = num("radius");
       row.chord = num("chord");
       row.delta = s.delta != null ? Number(s.delta) : null;
@@ -691,8 +701,6 @@ export function parseOfficialSegmentsFromBlock(
             : null;
       row.rp_north = num("rpNorth") ?? num("rp_north");
       row.rp_east = num("rpEast") ?? num("rp_east");
-      row.end_north = num("endNorth") ?? num("end_north");
-      row.end_east = num("endEast") ?? num("end_east");
       console.log("ARC_SEGMENT_DETECTED", {
         lote: label,
         segmentIndex: row.segment_index,

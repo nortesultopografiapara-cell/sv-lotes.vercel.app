@@ -1521,6 +1521,17 @@ export default function MapPage() {
         return;
       }
 
+      const lotsWithGeometryPreDelete = blocksParsed.filter(
+        (b) => b.geometrySaved,
+      ).length;
+      if (lotsWithGeometryPreDelete === 0) {
+        alert(
+          "Quadra importada sem geometria válida. Verifique o TXT, o fechamento dos lotes e a zona UTM.",
+        );
+        setImportingTxt(false);
+        return;
+      }
+
       try {
         await clearProjectMapOfflineCache(selectedProject.id);
       } catch (cacheErr) {
@@ -1543,6 +1554,16 @@ export default function MapPage() {
           
       const PRICE_PER_M2 = 0.0993035247984734; // Placeholder
       
+      const lotsWithGeometry = blocksParsed.filter((b) => b.geometrySaved);
+      const lotsWithoutGeometry = blocksParsed.length - lotsWithGeometry.length;
+
+      console.log("[TXT] resumo geometria quadra", {
+        quadra: quadraName,
+        total: blocksParsed.length,
+        comGeometria: lotsWithGeometry.length,
+        semGeometria: lotsWithoutGeometry,
+      });
+
       const blocksToInsert = blocksParsed.map((b) => {
           const finalArea = b.area;
           const finalPrice = parseFloat((finalArea * 120.00).toFixed(2));
@@ -1565,7 +1586,11 @@ export default function MapPage() {
                  coordinates: [b.coords]
              };
           } else if (!b.geometrySaved) {
-             console.warn('[TXT] geometry skipped — closure or location invalid', b.name);
+             console.log("LOT_INSERT_WITHOUT_GEOMETRY", {
+               quadra: quadraName,
+               lote: b.name,
+               segmentCount: b.officialSegs.length,
+             });
           }
 
           return {
@@ -1635,7 +1660,19 @@ export default function MapPage() {
           }
       }
       
-      alert(`Importados ${blocksToInsert.length} lotes do TXT com sucesso!`);
+      if (lotsWithGeometry.length === 0) {
+        alert(
+          "Quadra importada sem geometria válida. Verifique o TXT, o fechamento dos lotes e a zona UTM.",
+        );
+      } else if (lotsWithoutGeometry > 0) {
+        alert(
+          `Importados ${blocksToInsert.length} lotes. ${lotsWithoutGeometry} lote(s) sem geometria no mapa — veja o console (GEOMETRY_SAVED_FALSE / TXT_CHAIN_CLOSURE_ERROR).`,
+        );
+      } else {
+        alert(
+          `Importados ${blocksToInsert.length} lotes do TXT com sucesso!`,
+        );
+      }
       setIsImportTxtModalOpen(false);
       setImportTxtFile(null);
       setImportTxtQuadra('');

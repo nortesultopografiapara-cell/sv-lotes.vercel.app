@@ -312,7 +312,13 @@ function parseOneSegmentBlock(
 
   if (endN == null || endE == null) return null;
 
-  const length = readField(block, ["Length", "Comprimento"]);
+  const length = readField(block, [
+    "Length",
+    "Comprimento",
+    "Curve Length",
+    "Arc Length",
+    "Comprimento da Curva",
+  ]);
   const radius = readField(block, ["Radius", "Raio"]);
   const chord = readField(block, ["Chord", "Corda"]);
   const delta = readField(block, ["Delta", "Deflection", "Deflexão"]);
@@ -468,6 +474,13 @@ export function parsedSegmentToOfficial(
 ): OfficialLotSegment | null {
   const length = p.length;
   if (length == null || !isValidSegmentDistance(length)) {
+    console.log("GEOMETRY_SAVED_FALSE", {
+      lote: lotLabel ?? "?",
+      reason: "segment_missing_official_length",
+      segmentIndex: index,
+      type: p.type,
+      length: p.length,
+    });
     return null;
   }
 
@@ -555,8 +568,8 @@ export function computeOfficialChainClosureErrorM(
 }
 
 /**
- * Anel UTM: vértice = início de cada segmento (já encadeado no import).
- * Curva desenhada pela corda; RP nunca entra no anel.
+ * Anel UTM por corda: início do lote + fim de cada segmento (Line/Curve End N/E).
+ * RP nunca entra no anel.
  */
 export function buildUtmRingFromOfficialSegments(
   segments: OfficialLotSegment[],
@@ -565,16 +578,20 @@ export function buildUtmRingFromOfficialSegments(
   const ordered = hydrateSegmentEndsFromChain(segments);
   const ring: [number, number][] = [];
 
-  for (const seg of ordered) {
-    if (!Number.isFinite(seg.east) || !Number.isFinite(seg.north)) continue;
+  const pushVertex = (east: number, north: number) => {
+    if (!Number.isFinite(east) || !Number.isFinite(north)) return;
     const prev = ring[ring.length - 1];
-    if (
-      prev &&
-      Math.hypot(prev[0] - seg.east, prev[1] - seg.north) < 0.01
-    ) {
-      continue;
-    }
-    ring.push([seg.east, seg.north]);
+    if (prev && Math.hypot(prev[0] - east, prev[1] - north) < 0.001) return;
+    ring.push([east, north]);
+  };
+
+  if (ordered.length < 1) return ring;
+
+  const first = ordered[0];
+  pushVertex(first.east, first.north);
+
+  for (const seg of ordered) {
+    if (seg.end_east == null || seg.end_north == null) continue;
     if (seg.segment_type === "CURVE") {
       console.log("ARC_DRAW_AS_CHORD", {
         lote: lotLabel ?? "?",
@@ -584,12 +601,13 @@ export function buildUtmRingFromOfficialSegments(
         lengthOfficial: seg.distance,
       });
     }
+    pushVertex(seg.end_east, seg.end_north);
   }
 
-  if (ring.length > 2) {
+  if (ring.length >= 3) {
     const f = ring[0];
     const l = ring[ring.length - 1];
-    if (Math.hypot(f[0] - l[0], f[1] - l[1]) > 0.05) {
+    if (Math.hypot(f[0] - l[0], f[1] - l[1]) > 0.01) {
       ring.push([f[0], f[1]]);
     }
   }
@@ -598,6 +616,7 @@ export function buildUtmRingFromOfficialSegments(
     lote: lotLabel ?? "?",
     vertexCount: ring.length,
     closureErrorM: round2(computeOfficialChainClosureErrorM(ordered)),
+    points: ring.map(([e, n]) => ({ east: round2(e), north: round2(n) })),
   });
 
   return ring;
@@ -774,23 +793,59 @@ export function validateLngLatNearProjectCenter(
   lotLabel?: unknown,
 ): boolean {
   if (!projectCenter || lngLat.length < 3) return true;
-  const cLat = projectCenter.lat;
-  const cLng = projectCenter.lng;
-  let maxKm = 0;
-  for (const [lng, lat] of lngLat) {
-    maxKm = Math.max(maxKm, haversineKm(cLat, cLng, lat, lng));
-  }
-  if (maxKm > PROJECT_LOCATION_MAX_KM) {
+  const lotCenter = computeLngLatCentroidFromRings([lngLat]);
+  if (!lotCenter) return true;
+  const distKm = haversineKm(
+    projectCenter.lat,
+    projectCenter.lng,
+    lotCenter.lat,
+    lotCenter.lng,
+  );
+  if (distKm > PROJECT_LOCATION_MAX_KM) {
     console.log("INVALID_PROJECT_LOCATION_AFTER_TXT_PARSE", {
       lote: lotLabel ?? "?",
       projectCenter,
-      maxDistanceKm: round2(maxKm),
+      lotCenter,
+      distanceKm: round2(distKm),
       maxAllowedKm: PROJECT_LOCATION_MAX_KM,
       sample: lngLat[0],
     });
     return false;
   }
   return true;
+}
+
+function logClosureRejection(
+  lotLabel: string,
+  segments: OfficialLotSegment[],
+  closureErrorM: number,
+  extra?: Record<string, unknown>,
+): void {
+  const ordered = hydrateSegmentEndsFromChain(segments);
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
+  console.log("TXT_CHAIN_CLOSURE_ERROR", {
+    lote: lotLabel,
+    closureErrorM: round2(closureErrorM),
+    maxAllowedM: CLOSURE_MAX_M,
+    rejected: true,
+    segmentCount: ordered.length,
+    firstPoint: first
+      ? { north: first.north, east: first.east }
+      : null,
+    lastEnd:
+      last?.end_north != null
+        ? { north: last.end_north, east: last.end_east }
+        : null,
+    chain: ordered.map((s) => ({
+      idx: s.segment_index,
+      type: s.segment_type,
+      start: { n: s.north, e: s.east },
+      end: { n: s.end_north, e: s.end_east },
+      length: s.distance,
+    })),
+    ...extra,
+  });
 }
 
 export function buildValidatedLotRing(
@@ -801,11 +856,7 @@ export function buildValidatedLotRing(
 ): LotRingBuildResult | null {
   const closureErrorM = computeOfficialChainClosureErrorM(segments);
   if (closureErrorM > CLOSURE_MAX_M) {
-    console.log("TXT_CHAIN_CLOSURE_ERROR", {
-      lote: lotLabel,
-      closureErrorM: round2(closureErrorM),
-      rejected: true,
-    });
+    logClosureRejection(lotLabel, segments, closureErrorM);
     return null;
   }
 
@@ -877,11 +928,34 @@ export function civil3dLotToImportPayload(
   if (built && built.locationOk) {
     coords = built.lngLat;
     geometrySaved = coords.length >= 4;
+    if (!geometrySaved) {
+      console.log("GEOMETRY_SAVED_FALSE", {
+        lote: lot.name,
+        reason: "ring_too_few_vertices",
+        vertexCount: coords.length,
+      });
+    }
   } else {
-    console.log("TXT_CHAIN_CLOSURE_ERROR", {
-      lote: lot.name,
-      note: "geometry_not_saved_closure_or_location",
-    });
+    const closureErrorM = computeOfficialChainClosureErrorM(officialSegs);
+    const reason =
+      closureErrorM > CLOSURE_MAX_M
+        ? "closure"
+        : built && !built.locationOk
+          ? "location"
+          : "ring_build_failed";
+    if (reason === "closure") {
+      logClosureRejection(lot.name, officialSegs, closureErrorM, {
+        note: "geometry_not_saved",
+      });
+    } else {
+      console.log("GEOMETRY_SAVED_FALSE", {
+        lote: lot.name,
+        reason,
+        closureErrorM: round2(closureErrorM),
+        segmentCount: officialSegs.length,
+        locationOk: built?.locationOk ?? false,
+      });
+    }
   }
 
   return {
