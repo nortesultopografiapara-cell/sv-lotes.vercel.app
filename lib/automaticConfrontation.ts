@@ -13,6 +13,17 @@ import {
   type ProjectConfrontationSnapshot,
 } from '@/lib/projectConfrontations';
 
+/** Marcador de build — visível no console para confirmar deploy. */
+export const AUTOMATIC_CONFRONTATION_BUILD_ID =
+  'v1.9.5-confrontation-diagnostic-forced';
+
+if (typeof window !== 'undefined') {
+  console.error(
+    'AUTOMATIC_CONFRONTATION MODULE LOADED',
+    AUTOMATIC_CONFRONTATION_BUILD_ID,
+  );
+}
+
 export type AutomaticConfrontationResult = {
   projectId: string;
   processed: number;
@@ -82,11 +93,19 @@ export async function runAutomaticConfrontation(
       : await fetchProjectBlocks(projectId, options.tenantId);
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
 
+  console.error('DIAGNOSTIC FORCED START', {
+    build: AUTOMATIC_CONFRONTATION_BUILD_ID,
+    projectId,
+    blockCount: blocks.length,
+  });
+
+  let diagnosticReport: unknown = null;
   try {
-    runLotGeometryDiagnosticReport(blocks, {
+    diagnosticReport = runLotGeometryDiagnosticReport(blocks, {
       projectId,
       context: 'automaticConfrontation',
     });
+    console.error('DIAGNOSTIC REPORT', diagnosticReport);
   } catch (diagErr: unknown) {
     console.error('[LOT GEOMETRY DEBUG] invoke failed', diagErr);
   }

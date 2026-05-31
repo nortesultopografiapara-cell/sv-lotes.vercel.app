@@ -10,6 +10,16 @@ import {
   validateConfrontationLot,
 } from '@/lib/lotGeometryNormalize';
 
+export const LOT_GEOMETRY_DIAGNOSTIC_BUILD_ID =
+  'v1.9.5-confrontation-diagnostic-forced';
+
+if (typeof window !== 'undefined') {
+  console.error(
+    'LOT_GEOMETRY_DIAGNOSTIC MODULE LOADED',
+    LOT_GEOMETRY_DIAGNOSTIC_BUILD_ID,
+  );
+}
+
 export type LotGeometryDiagnosticSummary = {
   total: number;
   geometryOk: number;
@@ -415,6 +425,13 @@ export function runLotGeometryDiagnosticReport(
   const projectId = options?.projectId ?? '?';
   const list = Array.isArray(blocks) ? blocks : [];
 
+  console.error('DIAGNOSTIC FORCED START', {
+    build: LOT_GEOMETRY_DIAGNOSTIC_BUILD_ID,
+    context,
+    projectId,
+    blockCount: list.length,
+  });
+
   console.warn('[LOT GEOMETRY DEBUG] DIAGNOSTIC START', {
     context,
     projectId,
@@ -455,6 +472,7 @@ export function runLotGeometryDiagnosticReport(
       }),
     };
 
+    console.error('DIAGNOSTIC REPORT', report);
     console.warn('[LOT GEOMETRY DEBUG] report', report);
     try {
       console.warn(

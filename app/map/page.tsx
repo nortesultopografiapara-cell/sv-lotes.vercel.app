@@ -458,6 +458,9 @@ export default function MapPage() {
   }, [selectedProject]);
 
   const handleRunAutomaticConfrontation = useCallback(async () => {
+    console.error('MAP PAGE CONFRONTATION CLICK', {
+      projectId: selectedProject?.id ?? null,
+    });
     if (!selectedProject?.id) {
       alert('Selecione um projeto para executar a confrontação automática.');
       return;
@@ -471,13 +474,20 @@ export default function MapPage() {
         tenantId: tenantId || undefined,
         streetGuides,
       });
+      const reasonLines = Object.entries(result.skipReasons || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => `  • ${reason}: ${count}`)
+        .join('\n');
       const errLines =
         result.errors.length > 0
           ? `\n\nAvisos (${result.errors.length}):\n${result.errors.slice(0, 6).join('\n')}`
           : '';
+      const skipSummary =
+        reasonLines.length > 0 ? `\n\nIgnorados por motivo:\n${reasonLines}` : '';
       alert(
         `Confrontação automática concluída.\n${result.processed} lote(s) processado(s).` +
           (result.skipped > 0 ? `\n${result.skipped} ignorado(s).` : '') +
+          skipSummary +
           errLines,
       );
       setMapRefreshKey((k) => k + 1);

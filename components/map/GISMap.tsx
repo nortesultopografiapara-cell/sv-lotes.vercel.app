@@ -2555,11 +2555,16 @@ export default function GISMap({
         console.groupEnd();
 
         if (blocksRes.data) {
+          console.error('GISMAP DIAGNOSTIC START', {
+            projectId,
+            blockCount: blocksRes.data.length,
+          });
           try {
-            runLotGeometryDiagnosticReport(
+            const gisReport = runLotGeometryDiagnosticReport(
               blocksRes.data as Record<string, unknown>[],
               { projectId, context: 'GISMap-load' },
             );
+            console.error('DIAGNOSTIC REPORT', gisReport);
           } catch (diagErr: unknown) {
             console.error('[LOT GEOMETRY DEBUG] GISMap-load failed', diagErr);
           }
