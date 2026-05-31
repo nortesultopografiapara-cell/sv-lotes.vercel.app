@@ -472,8 +472,16 @@ export default function MapPage() {
       ).trim();
       const result = await runAutomaticConfrontation(selectedProject.id, {
         tenantId: tenantId || undefined,
+        project: selectedProject as Record<string, unknown>,
         streetGuides,
       });
+      const totalLots = result.processed + result.skipped;
+      const src = result.sourceCounts || {};
+      const sourceLines = [
+        `  • segments_json: ${src.segments_json ?? 0}`,
+        `  • coordinates_utm_json: ${src.coordinates_utm_json ?? 0}`,
+        `  • geometry: ${src.geometry ?? 0}`,
+      ].join('\n');
       const reasonLines = Object.entries(result.skipReasons || {})
         .sort((a, b) => b[1] - a[1])
         .map(([reason, count]) => `  • ${reason}: ${count}`)
@@ -485,8 +493,11 @@ export default function MapPage() {
       const skipSummary =
         reasonLines.length > 0 ? `\n\nIgnorados por motivo:\n${reasonLines}` : '';
       alert(
-        `Confrontação automática concluída.\n${result.processed} lote(s) processado(s).` +
-          (result.skipped > 0 ? `\n${result.skipped} ignorado(s).` : '') +
+        `Confrontação automática concluída.\n` +
+          `Total de lotes: ${totalLots}\n` +
+          `Processados: ${result.processed}\n` +
+          `Ignorados: ${result.skipped}\n\n` +
+          `Fonte do perímetro:\n${sourceLines}` +
           skipSummary +
           errLines,
       );

@@ -465,14 +465,17 @@ export function buildSideConfrontants(
   targetRing: [number, number][],
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
+  project?: Record<string, unknown> | null,
 ): LotSheetSideConfrontants {
-  return buildSideConfrontantsFromSegments(
+  const result = buildSideConfrontantsFromSegments(
     block,
     targetId,
     targetRing,
     blocks,
     streetGuides,
+    project,
   );
+  return result;
 }
 
 export function buildCardinalConfrontants(

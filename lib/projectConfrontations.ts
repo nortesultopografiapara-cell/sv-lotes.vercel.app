@@ -1,18 +1,26 @@
 /**
  * Confrontações automáticas por projeto — fonte reutilizável (prancha, contrato, memorial).
- * Persistência temporária em localStorage até colunas dedicadas no Supabase.
  */
 
+import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 
 export type LotAutoConfrontationRecord = {
   blockId: string;
   lotNumber: string;
+  block?: string;
   confrontants: LotSheetSideConfrontants;
+  front: string;
+  back: string;
+  left: string;
+  right: string;
+  source: OfficialConfrontationRingSource;
+  confidence: number;
+  computedAt: string;
 };
 
 /** Incrementar quando a heurística de confrontação mudar. */
-export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 2;
+export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 5;
 
 export type ProjectConfrontationSnapshot = {
   projectId: string;

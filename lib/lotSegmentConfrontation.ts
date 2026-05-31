@@ -1,26 +1,29 @@
 /**
- * Confrontação por segmento compartilhado (vizinho colado à divisa, não por centroide).
+ * Confrontação por segmento UTM (segments_json oficial — mesma base da prancha).
  */
 
 import { formatStreetDisplay } from '@/lib/streetGuide';
-import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
-import { latLngRingFromBlock, type LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 import {
-  calculateBearing,
-  calculateDistance,
+  getOfficialConfrontationRing,
+  planarBearingDeg,
+  planarDistanceM,
+  utmRingToClosedCoords,
+  type OfficialConfrontationRingSource,
+} from '@/lib/officialConfrontationRing';
+import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
+import {
   classifyLotSidesFromSegments,
   classifySidesByRingPaths,
-  extractSegments,
   mergeCurvedSegments,
   type Segment,
 } from '@/utils/calculateLotDimensions';
 
-const MAX_PERPENDICULAR_M = 1.5;
+const MAX_PERPENDICULAR_M = 0.5;
+const MAX_PERPENDICULAR_FALLBACK_M = 1.5;
 const MAX_ANGLE_DIFF_DEG = 10;
 const MIN_OVERLAP_RATIO = 0.4;
 
 type SideRole = 'frente' | 'fundo' | 'ladoDireito' | 'ladoEsquerdo';
-
 type SideSegmentIndexes = Record<SideRole, number[]>;
 
 function diffAngleDeg(a1: number, a2: number): number {
@@ -28,79 +31,82 @@ function diffAngleDeg(a1: number, a2: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
-function latLngRingToLngLatClosed(ring: [number, number][]): number[][] {
-  if (!Array.isArray(ring) || ring.length < 3) return [];
-  const out: number[][] = [];
-  for (const pt of ring) {
-    if (!Array.isArray(pt) || pt.length < 2) continue;
-    const lat = Number(pt[0]);
-    const lng = Number(pt[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    out.push([lng, lat]);
+function extractUtmSegments(
+  coords: number[][],
+  allPolys: number[][][],
+): Segment[] {
+  const segments: Segment[] = [];
+  if (!Array.isArray(coords) || coords.length < 2) return segments;
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const length = planarDistanceM(p1, p2);
+    if (length < 0.5) continue;
+    segments.push({
+      p1,
+      p2,
+      length,
+      azimuth: planarBearingDeg(p1, p2),
+      originalIndex: i,
+      isExternal: true,
+    });
   }
-  if (out.length < 3) return [];
-  const first = out[0];
-  const last = out[out.length - 1];
-  if (first[0] !== last[0] || first[1] !== last[1]) {
-    out.push([first[0], first[1]]);
+
+  for (const seg of segments) {
+    let matched = false;
+    for (const other of allPolys) {
+      if (other === coords) continue;
+      for (let j = 0; j < other.length - 1; j++) {
+        const d1 = planarDistanceM(seg.p1, other[j]);
+        const d2 = planarDistanceM(seg.p2, other[j + 1]);
+        const d3 = planarDistanceM(seg.p1, other[j + 1]);
+        const d4 = planarDistanceM(seg.p2, other[j]);
+        if ((d1 < 1.0 && d2 < 1.0) || (d3 < 1.0 && d4 < 1.0)) {
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+    seg.isExternal = !matched;
   }
-  return out;
+
+  return segments;
 }
 
-function buildAllPolysLngLat(blocks: Record<string, unknown>[]): number[][][] {
+function buildAllPolysUtm(
+  blocks: Record<string, unknown>[],
+  project?: Record<string, unknown> | null,
+): number[][][] {
   const polys: number[][][] = [];
-  if (!Array.isArray(blocks)) return polys;
   for (const b of blocks) {
-    const { ok, ring } = normalizeLotGeometry(b);
+    const { ok, ring } = getOfficialConfrontationRing(b, project);
     if (!ok || ring.length < 3) continue;
-    const coords = latLngRingToLngLatClosed(ring);
+    const coords = utmRingToClosedCoords(ring);
     if (coords.length >= 4) polys.push(coords);
   }
   return polys;
 }
 
-function ringCentroidLngLat(ring: [number, number][]): [number, number] {
+function ringCentroidUtm(ring: [number, number][]): [number, number] {
   let sx = 0;
   let sy = 0;
-  const n = ring.length || 1;
+  let n = 0;
   for (const pt of ring) {
     if (!Array.isArray(pt) || pt.length < 2) continue;
-    const lat = Number(pt[0]);
-    const lng = Number(pt[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    sx += lng;
-    sy += lat;
+    sx += pt[0];
+    sy += pt[1];
+    n++;
   }
-  return [sx / n, sy / n];
+  return n ? [sx / n, sy / n] : [0, 0];
 }
 
 function segmentMid(seg: Segment): [number, number] {
   return [(seg.p1[0] + seg.p2[0]) / 2, (seg.p1[1] + seg.p2[1]) / 2];
 }
 
-/** Normal unitária apontando para fora do polígono (lng/lat). */
-function segmentOutwardNormal(
-  ring: [number, number][],
-  seg: Segment,
-): [number, number] {
-  const dx = seg.p2[0] - seg.p1[0];
-  const dy = seg.p2[1] - seg.p1[1];
-  const len = Math.hypot(dx, dy) || 1e-12;
-  const nx1 = -dy / len;
-  const ny1 = dx / len;
-  const mid = segmentMid(seg);
-  const c = ringCentroidLngLat(ring);
-  const toCentroidX = c[0] - mid[0];
-  const toCentroidY = c[1] - mid[1];
-  const dot = nx1 * toCentroidX + ny1 * toCentroidY;
-  if (dot > 0) return [nx1, ny1];
-  return [-nx1, -ny1];
-}
-
-function projectParamOnSegment(
-  p: [number, number],
-  seg: Segment,
-): number {
+function projectParamOnSegment(p: [number, number], seg: Segment): number {
   const dx = seg.p2[0] - seg.p1[0];
   const dy = seg.p2[1] - seg.p1[1];
   const len2 = dx * dx + dy * dy || 1e-12;
@@ -114,7 +120,7 @@ function pointToSegmentDistanceM(
   const t = Math.max(0, Math.min(1, projectParamOnSegment(p, seg)));
   const px = seg.p1[0] + t * (seg.p2[0] - seg.p1[0]);
   const py = seg.p1[1] + t * (seg.p2[1] - seg.p1[1]);
-  return calculateDistance(p, [px, py]);
+  return planarDistanceM(p, [px, py]);
 }
 
 function longitudinalOverlapM(target: Segment, candidate: Segment): number {
@@ -131,8 +137,7 @@ function longitudinalOverlapM(target: Segment, candidate: Segment): number {
     tMax = Math.max(tMax, t);
   }
   if (!Number.isFinite(tMin)) return 0;
-  const overlap = Math.max(0, Math.min(tMax, target.length) - Math.max(tMin, 0));
-  return overlap;
+  return Math.max(0, Math.min(tMax, target.length) - Math.max(tMin, 0));
 }
 
 function segmentsAreParallel(target: Segment, candidate: Segment): boolean {
@@ -140,10 +145,10 @@ function segmentsAreParallel(target: Segment, candidate: Segment): boolean {
   return diff <= MAX_ANGLE_DIFF_DEG || diff >= 180 - MAX_ANGLE_DIFF_DEG;
 }
 
-/** Score do candidato para confrontar o segmento alvo (maior = melhor). */
 export function scoreConfrontantForSegment(
   target: Segment,
   candidate: Segment,
+  maxPerpM = MAX_PERPENDICULAR_M,
 ): number | null {
   if (!segmentsAreParallel(target, candidate)) return null;
 
@@ -151,7 +156,7 @@ export function scoreConfrontantForSegment(
     pointToSegmentDistanceM(segmentMid(candidate), target),
     pointToSegmentDistanceM(segmentMid(target), candidate),
   );
-  if (perpDist > MAX_PERPENDICULAR_M) return null;
+  if (perpDist > maxPerpM) return null;
 
   const overlap = longitudinalOverlapM(target, candidate);
   const minLen = Math.min(target.length, candidate.length);
@@ -167,32 +172,144 @@ export function scoreConfrontantForSegment(
   return overlap * 100 - perpDist * 40 - parallelPenalty * 2;
 }
 
-export function findConfrontantForSegment(
+function parseLotNumber(value: unknown): number | null {
+  const n = Number(String(value ?? '').replace(/\D/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function sameQuadra(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  const qa = String(a.block_name ?? a.name ?? '').trim().toUpperCase();
+  const qb = String(b.block_name ?? b.name ?? '').trim().toUpperCase();
+  return qa.length > 0 && qa === qb;
+}
+
+function sequenceNeighborLabel(
+  targetBlock: Record<string, unknown>,
+  delta: number,
+  blocks: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  const num = parseLotNumber(targetBlock.number ?? targetBlock.lot);
+  if (num == null) return null;
+  const want = num + delta;
+  return (
+    blocks.find((b) => {
+      if (!sameQuadra(b, targetBlock)) return false;
+      const bn = parseLotNumber(b.number ?? b.lot);
+      return bn === want;
+    }) ?? null
+  );
+}
+
+function scoreSegmentAgainstBlock(
   target: Segment,
+  block: Record<string, unknown>,
+  allPolysUtm: number[][][],
+  project: Record<string, unknown> | null | undefined,
+  maxPerpM: number,
+): number | null {
+  const { ok, ring } = getOfficialConfrontationRing(block, project);
+  if (!ok) return null;
+  const coords = utmRingToClosedCoords(ring);
+  if (coords.length < 4) return null;
+  const candSegments = mergeCurvedSegments(
+    extractUtmSegments(coords, allPolysUtm),
+    20,
+  );
+  let best: number | null = null;
+  for (const cand of candSegments) {
+    const s = scoreConfrontantForSegment(target, cand, maxPerpM);
+    if (s != null && (best == null || s > best)) best = s;
+  }
+  return best;
+}
+
+function labelFromBlock(block: Record<string, unknown>): string {
+  const num = block.number ?? block.lot ?? '?';
+  return `Lote ${num}`;
+}
+
+function trySequenceConfrontant(
+  targetBlock: Record<string, unknown>,
+  side: 'ladoEsquerdo' | 'ladoDireito',
+  segmentIndexes: number[],
+  segments: Segment[],
+  blocks: Record<string, unknown>[],
+  allPolysUtm: number[][][],
+  project?: Record<string, unknown> | null,
+): string | null {
+  const delta = side === 'ladoEsquerdo' ? -1 : 1;
+  const neighbor = sequenceNeighborLabel(targetBlock, delta, blocks);
+  if (!neighbor) return null;
+
+  let bestScore = -Infinity;
+  for (const idx of segmentIndexes) {
+    const target = segments[idx];
+    if (!target) continue;
+    const s = scoreSegmentAgainstBlock(
+      target,
+      neighbor,
+      allPolysUtm,
+      project,
+      MAX_PERPENDICULAR_FALLBACK_M,
+    );
+    if (s != null && s > bestScore) bestScore = s;
+  }
+  if (bestScore <= -Infinity) return null;
+  return labelFromBlock(neighbor);
+}
+
+function bestConfrontantForSide(
+  segmentIndexes: number[],
+  segments: Segment[],
   candidateBlocks: Record<string, unknown>[],
+  targetBlock: Record<string, unknown>,
   targetBlockId: string,
-  allPolysLngLat: number[][][],
+  allPolysUtm: number[][][],
+  project?: Record<string, unknown> | null,
+  side?: 'ladoEsquerdo' | 'ladoDireito',
 ): string {
   let bestLabel = '—';
   let bestScore = -Infinity;
 
-  for (const block of candidateBlocks) {
-    const id = String(block.id || '');
-    if (!id || id === targetBlockId) continue;
-    const ring = latLngRingFromBlock(block);
-    const coords = latLngRingToLngLatClosed(ring);
-    if (coords.length < 4) continue;
-
-    const raw = extractSegments(coords, allPolysLngLat);
-    const segments = mergeCurvedSegments(raw, 20);
-
-    for (const candSeg of segments) {
-      const score = scoreConfrontantForSegment(target, candSeg);
-      if (score == null || score <= bestScore) continue;
-      const num = block.number ?? block.lot ?? '?';
-      bestScore = score;
-      bestLabel = `Lote ${num}`;
+  const tryPass = (maxPerp: number) => {
+    for (const idx of segmentIndexes) {
+      const target = segments[idx];
+      if (!target) continue;
+      for (const block of candidateBlocks) {
+        const id = String(block.id || '');
+        if (!id || id === targetBlockId) continue;
+        if (!sameQuadra(block, targetBlock)) continue;
+        const s = scoreSegmentAgainstBlock(
+          target,
+          block,
+          allPolysUtm,
+          project,
+          maxPerp,
+        );
+        if (s == null || s <= bestScore) continue;
+        bestScore = s;
+        bestLabel = labelFromBlock(block);
+      }
     }
+  };
+
+  tryPass(MAX_PERPENDICULAR_M);
+  if (bestScore <= -Infinity) tryPass(MAX_PERPENDICULAR_FALLBACK_M);
+
+  if (bestLabel === '—' && side) {
+    const seq = trySequenceConfrontant(
+      targetBlock,
+      side,
+      segmentIndexes,
+      segments,
+      candidateBlocks,
+      allPolysUtm,
+      project,
+    );
+    if (seq) return seq;
   }
 
   return bestLabel;
@@ -200,8 +317,8 @@ export function findConfrontantForSegment(
 
 function resolveSideSegmentIndexes(
   block: Record<string, unknown>,
-  ring: [number, number][],
-  allPolysLngLat: number[][][],
+  utmRing: [number, number][],
+  allPolysUtm: number[][][],
 ): { segments: Segment[]; sides: SideSegmentIndexes; frontIndex: number } {
   const emptySides: SideSegmentIndexes = {
     frente: [],
@@ -209,12 +326,12 @@ function resolveSideSegmentIndexes(
     ladoDireito: [],
     ladoEsquerdo: [],
   };
-  const coords = latLngRingToLngLatClosed(ring);
+  const coords = utmRingToClosedCoords(utmRing);
   if (coords.length < 4) {
     return { segments: [], sides: emptySides, frontIndex: -1 };
   }
 
-  const raw = extractSegments(coords, allPolysLngLat);
+  const raw = extractUtmSegments(coords, allPolysUtm);
   const segments = mergeCurvedSegments(raw, 20);
   if (!segments.length) {
     return { segments: [], sides: emptySides, frontIndex: -1 };
@@ -251,7 +368,7 @@ function resolveSideSegmentIndexes(
     const front = segments[frontIndex];
     const lateralIdx = pathDireito[0];
     const lat = segments[lateralIdx];
-    if (lat) {
+    if (lat && front) {
       const fx = front.p2[0] - front.p1[0];
       const fy = front.p2[1] - front.p1[1];
       const mx =
@@ -298,42 +415,13 @@ function resolveFrenteLabel(block: Record<string, unknown>): string {
   return 'Rua / via de acesso';
 }
 
-function bestConfrontantForSide(
-  segmentIndexes: number[],
-  segments: Segment[],
-  candidateBlocks: Record<string, unknown>[],
-  targetBlockId: string,
-  allPolysLngLat: number[][][],
-): string {
-  let bestLabel = '—';
-  let bestScore = -Infinity;
-
-  for (const idx of segmentIndexes) {
-    const target = segments[idx];
-    if (!target) continue;
-    for (const block of candidateBlocks) {
-      const id = String(block.id || '');
-      if (!id || id === targetBlockId) continue;
-      const ring = latLngRingFromBlock(block);
-      const coords = latLngRingToLngLatClosed(ring);
-      if (coords.length < 4) continue;
-      const raw = extractSegments(coords, allPolysLngLat);
-      const candSegments = mergeCurvedSegments(raw, 20);
-      for (const cand of candSegments) {
-        const score = scoreConfrontantForSegment(target, cand);
-        if (score == null || score <= bestScore) continue;
-        const num = block.number ?? block.lot ?? '?';
-        bestScore = score;
-        bestLabel = `Lote ${num}`;
-      }
-    }
-  }
-
-  return bestLabel;
-}
+export type BuildSideConfrontantsResult = LotSheetSideConfrontants & {
+  ringSource: OfficialConfrontationRingSource;
+  confidence: number;
+};
 
 /**
- * Confrontantes por lado do lote (segmentos paralelos e sobrepostos).
+ * Confrontantes por segmento UTM oficial (segments_json).
  */
 export function buildSideConfrontantsFromSegments(
   block: Record<string, unknown>,
@@ -341,13 +429,16 @@ export function buildSideConfrontantsFromSegments(
   targetRing: [number, number][],
   blocks: Record<string, unknown>[],
   _streetGuides: Record<string, unknown>[],
-): LotSheetSideConfrontants {
-  const allPolysLngLat = buildAllPolysLngLat(blocks);
+  project?: Record<string, unknown> | null,
+): BuildSideConfrontantsResult {
+  const official = getOfficialConfrontationRing(block, project);
+  const utmRing = official.ok ? official.ring : targetRing;
+  const allPolysUtm = buildAllPolysUtm(blocks, project);
 
   const { segments, sides } = resolveSideSegmentIndexes(
     block,
-    targetRing,
-    allPolysLngLat,
+    utmRing,
+    allPolysUtm,
   );
 
   if (!segments.length) {
@@ -356,31 +447,93 @@ export function buildSideConfrontantsFromSegments(
       fundo: '—',
       ladoDireito: '—',
       ladoEsquerdo: '—',
+      ringSource: official.source,
+      confidence: 0,
     };
   }
 
+  const fundo = bestConfrontantForSide(
+    sides.fundo,
+    segments,
+    blocks,
+    block,
+    targetId,
+    allPolysUtm,
+    project,
+  );
+  const ladoDireito = bestConfrontantForSide(
+    sides.ladoDireito,
+    segments,
+    blocks,
+    block,
+    targetId,
+    allPolysUtm,
+    project,
+    'ladoDireito',
+  );
+  const ladoEsquerdo = bestConfrontantForSide(
+    sides.ladoEsquerdo,
+    segments,
+    blocks,
+    block,
+    targetId,
+    allPolysUtm,
+    project,
+    'ladoEsquerdo',
+  );
+
+  const matched = [fundo, ladoDireito, ladoEsquerdo].filter((l) => l !== '—').length;
+  const confidence = matched / 3;
+
   return {
     frente: resolveFrenteLabel(block),
-    fundo: bestConfrontantForSide(
-      sides.fundo,
-      segments,
-      blocks,
-      targetId,
-      allPolysLngLat,
-    ),
-    ladoDireito: bestConfrontantForSide(
-      sides.ladoDireito,
-      segments,
-      blocks,
-      targetId,
-      allPolysLngLat,
-    ),
-    ladoEsquerdo: bestConfrontantForSide(
-      sides.ladoEsquerdo,
-      segments,
-      blocks,
-      targetId,
-      allPolysLngLat,
-    ),
+    fundo,
+    ladoDireito,
+    ladoEsquerdo,
+    ringSource: official.source,
+    confidence,
   };
+}
+
+export function findConfrontantForSegment(
+  target: Segment,
+  candidateBlocks: Record<string, unknown>[],
+  targetBlockId: string,
+  allPolysUtm: number[][][],
+  project?: Record<string, unknown> | null,
+): string {
+  let bestLabel = '—';
+  let bestScore = -Infinity;
+  for (const block of candidateBlocks) {
+    const id = String(block.id || '');
+    if (!id || id === targetBlockId) continue;
+    const s = scoreSegmentAgainstBlock(
+      target,
+      block,
+      allPolysUtm,
+      project,
+      MAX_PERPENDICULAR_M,
+    );
+    if (s == null) continue;
+    if (s <= bestScore) continue;
+    bestScore = s;
+    bestLabel = labelFromBlock(block);
+  }
+  if (bestLabel === '—') {
+    for (const block of candidateBlocks) {
+      const id = String(block.id || '');
+      if (!id || id === targetBlockId) continue;
+      const s = scoreSegmentAgainstBlock(
+        target,
+        block,
+        allPolysUtm,
+        project,
+        MAX_PERPENDICULAR_FALLBACK_M,
+      );
+      if (s == null || s <= bestScore) continue;
+      bestScore = s;
+      bestLabel = labelFromBlock(block);
+    }
+  }
+  return bestLabel;
 }

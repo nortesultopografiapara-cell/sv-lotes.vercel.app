@@ -9,7 +9,10 @@ import {
   buildLotPerimeterFieldCompareRow,
   gisMapRingFromBlock,
 } from '../lib/lotGeometryDiagnostic';
-import { explainConfrontationValidation } from '../lib/lotGeometryNormalize';
+import {
+  explainConfrontationValidation,
+  validateConfrontationLot,
+} from '../lib/lotGeometryNormalize';
 
 const LAT0 = -23.5;
 const LNG0 = -46.6;
@@ -77,20 +80,54 @@ total++;
     number: '88',
     geometry: null,
     segments_json: [
-      { north: 9336441, east: 637557, distance: 10 },
-      { north: 9336442, east: 637558, distance: 24 },
-      { north: 9336465, east: 637558, distance: 10 },
-      { north: 9336465, east: 637557, distance: 24 },
+      {
+        segment_index: 0,
+        north: 9336441,
+        east: 637557,
+        end_north: 9336441,
+        end_east: 637567,
+        distance: 10,
+        segment_type: 'LINE',
+      },
+      {
+        segment_index: 1,
+        north: 9336441,
+        east: 637567,
+        end_north: 9336465,
+        end_east: 637567,
+        distance: 24,
+        segment_type: 'LINE',
+      },
+      {
+        segment_index: 2,
+        north: 9336465,
+        east: 637567,
+        end_north: 9336465,
+        end_east: 637557,
+        distance: 10,
+        segment_type: 'LINE',
+      },
+      {
+        segment_index: 3,
+        north: 9336465,
+        east: 637557,
+        end_north: 9336441,
+        end_east: 637557,
+        distance: 24,
+        segment_type: 'LINE',
+      },
     ],
   };
   const row = buildLotPerimeterFieldCompareRow(segmentsOnly);
+  const validation = validateConfrontationLot(segmentsOnly);
   const ok =
     !row.gisMapOk &&
-    !row.confrontationValid &&
+    row.confrontationValid &&
+    validation.ringSource === 'segments_json' &&
     row.segments_jsonExists &&
     row.pdfOfficialSource === 'segments_json';
   console.log(
-    `${ok ? 'PASSOU' : 'FALHOU'} — só segments_json: prancha OK, mapa/confrontação geometry`,
+    `${ok ? 'PASSOU' : 'FALHOU'} — só segments_json: prancha e confrontação OK, mapa sem geometry`,
   );
   if (ok) pass++;
 }

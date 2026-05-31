@@ -1,10 +1,10 @@
 /**
- * Confrontação automática em lote (MVP v1.9) — detecta vizinhos e ruas por geometria.
+ * Confrontação automática em lote — perímetro oficial UTM (segments_json).
  */
 
 import { supabase } from '@/lib/supabase';
 import { autoLotSideConfrontants } from '@/lib/lotConfrontations';
-import { runLotGeometryDiagnosticReport } from '@/lib/lotGeometryDiagnostic';
+import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
 import { validateConfrontationLot } from '@/lib/lotGeometryNormalize';
 import {
   PROJECT_CONFRONTATION_SNAPSHOT_VERSION,
@@ -13,17 +13,6 @@ import {
   type ProjectConfrontationSnapshot,
 } from '@/lib/projectConfrontations';
 
-/** Marcador de build — visível no console para confirmar deploy. */
-export const AUTOMATIC_CONFRONTATION_BUILD_ID =
-  'v1.9.6-confrontation-field-compare';
-
-if (typeof window !== 'undefined') {
-  console.error(
-    'AUTOMATIC_CONFRONTATION MODULE LOADED',
-    AUTOMATIC_CONFRONTATION_BUILD_ID,
-  );
-}
-
 export type AutomaticConfrontationResult = {
   projectId: string;
   processed: number;
@@ -31,11 +20,12 @@ export type AutomaticConfrontationResult = {
   computedAt: string;
   errors: string[];
   skipReasons: Record<string, number>;
+  sourceCounts: Record<OfficialConfrontationRingSource, number>;
 };
 
 export type RunAutomaticConfrontationOptions = {
   tenantId?: string;
-  /** Se já carregados na tela do mapa, evita nova consulta. */
+  project?: Record<string, unknown> | null;
   blocks?: Record<string, unknown>[];
   streetGuides?: Record<string, unknown>[];
 };
@@ -87,28 +77,18 @@ export async function runAutomaticConfrontation(
 
   const errors: string[] = [];
   const skipReasons: Record<string, number> = {};
+  const sourceCounts: Record<OfficialConfrontationRingSource, number> = {
+    segments_json: 0,
+    coordinates_utm_json: 0,
+    geometry: 0,
+  };
+
   const rawBlocks =
     options.blocks?.length
       ? options.blocks
       : await fetchProjectBlocks(projectId, options.tenantId);
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
-
-  console.error('DIAGNOSTIC FORCED START', {
-    build: AUTOMATIC_CONFRONTATION_BUILD_ID,
-    projectId,
-    blockCount: blocks.length,
-  });
-
-  let diagnosticReport: unknown = null;
-  try {
-    diagnosticReport = runLotGeometryDiagnosticReport(blocks, {
-      projectId,
-      context: 'automaticConfrontation',
-    });
-    console.error('DIAGNOSTIC REPORT', diagnosticReport);
-  } catch (diagErr: unknown) {
-    console.error('[LOT GEOMETRY DEBUG] invoke failed', diagErr);
-  }
+  const project = options.project ?? null;
 
   const streetGuides =
     options.streetGuides?.length
@@ -118,6 +98,7 @@ export async function runAutomaticConfrontation(
   const lots: LotAutoConfrontationRecord[] = [];
   let processed = 0;
   let skipped = 0;
+  const batchAt = new Date().toISOString();
 
   for (const block of blocks) {
     const blockId = String(block.id || '');
@@ -132,10 +113,10 @@ export async function runAutomaticConfrontation(
       continue;
     }
 
-    const validation = validateConfrontationLot(block);
+    const validation = validateConfrontationLot(block, project);
     if (!validation.valid) {
       skipped += 1;
-      const reason = validation.reason || 'geometria inválida';
+      const reason = validation.reason || 'sem perímetro oficial';
       recordSkip(skipReasons, reason);
       errors.push(`Lote ${lotLabel}: ${reason}`);
       continue;
@@ -148,11 +129,34 @@ export async function runAutomaticConfrontation(
         blocks,
         streetGuides,
         validation.ring,
+        project,
       );
+
+      const source = validation.ringSource ?? 'segments_json';
+      sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+
+      const confidence =
+        typeof (confrontants as { confidence?: number }).confidence === 'number'
+          ? (confrontants as { confidence: number }).confidence
+          : 0.5;
+
       lots.push({
         blockId,
         lotNumber: lotLabel,
-        confrontants,
+        block: String(block.block_name ?? block.name ?? ''),
+        confrontants: {
+          frente: confrontants.frente,
+          fundo: confrontants.fundo,
+          ladoDireito: confrontants.ladoDireito,
+          ladoEsquerdo: confrontants.ladoEsquerdo,
+        },
+        front: confrontants.frente,
+        back: confrontants.fundo,
+        left: confrontants.ladoEsquerdo,
+        right: confrontants.ladoDireito,
+        source,
+        confidence,
+        computedAt: batchAt,
       });
       processed += 1;
     } catch (e: unknown) {
@@ -160,14 +164,14 @@ export async function runAutomaticConfrontation(
       const msg =
         e instanceof Error ? e.message : 'erro desconhecido';
       const reason =
-        /not iterable/i.test(msg) ? 'geometria inválida' : msg;
+        /not iterable/i.test(msg) ? 'erro de geometria' : msg;
       recordSkip(skipReasons, reason);
       errors.push(`Lote ${lotLabel}: ${reason}`);
       console.warn('[CONFRONTATION] erro', lotLabel, e);
     }
   }
 
-  const computedAt = new Date().toISOString();
+  const computedAt = batchAt;
   const snapshot: ProjectConfrontationSnapshot = {
     projectId,
     computedAt,
@@ -183,5 +187,6 @@ export async function runAutomaticConfrontation(
     computedAt,
     errors,
     skipReasons,
+    sourceCounts,
   };
 }

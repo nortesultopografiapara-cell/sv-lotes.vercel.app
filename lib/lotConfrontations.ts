@@ -2,11 +2,13 @@
  * Confrontações do lote (frente/fundo/laterais) — automático + correção manual (local).
  */
 
+import { getOfficialConfrontationRing } from '@/lib/officialConfrontationRing';
+import { buildSideConfrontantsFromSegments } from '@/lib/lotSegmentConfrontation';
 import {
   buildSideConfrontants,
   latLngRingFromBlock,
   type LotSheetSideConfrontants,
-} from "@/lib/lotSheetEnrichment";
+} from '@/lib/lotSheetEnrichment';
 import { getProjectLotConfrontants } from "@/lib/projectConfrontations";
 
 export type ManualSideConfrontants = Partial<LotSheetSideConfrontants>;
@@ -52,14 +54,23 @@ export function autoLotSideConfrontants(
   blockId: string,
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
+  targetRing?: [number, number][],
+  project?: Record<string, unknown> | null,
 ): LotSheetSideConfrontants {
-  const ring = latLngRingFromBlock(block);
-  return buildSideConfrontants(
+  const official = getOfficialConfrontationRing(block, project);
+  const ring =
+    targetRing?.length
+      ? targetRing
+      : official.ok
+        ? official.ring
+        : latLngRingFromBlock(block);
+  return buildSideConfrontantsFromSegments(
     block,
     blockId,
     ring,
     blocks,
     streetGuides,
+    project,
   );
 }
 

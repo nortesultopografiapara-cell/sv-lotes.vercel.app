@@ -1,6 +1,12 @@
 /**
- * Normalização segura de geometria e segmentos para confrontação automática.
+ * Normalização segura de geometria e segmentos (mapa / legado).
+ * Confrontação automática usa lib/officialConfrontationRing (segments_json UTM).
  */
+
+import {
+  getOfficialConfrontationRing,
+  type OfficialConfrontationRingSource,
+} from '@/lib/officialConfrontationRing';
 
 export type NormalizeGeometryResult = {
   ok: boolean;
@@ -18,11 +24,13 @@ export type NormalizeSegmentsResult = {
 
 export type ConfrontationLotValidation = {
   valid: boolean;
+  /** Anel UTM [east, north] para confrontação. */
   ring: [number, number][];
   segments: Record<string, unknown>[];
   reason?: string;
   geometryType?: string;
   segmentSource?: NormalizeSegmentsResult['source'];
+  ringSource?: OfficialConfrontationRingSource;
 };
 
 function parseJsonMaybe<T>(value: unknown): T | null {
@@ -299,8 +307,8 @@ function ringPointsValid(ring: [number, number][]): boolean {
 /** Explica por que a confrontação aceita ou rejeita (somente diagnóstico). */
 export function explainConfrontationValidation(
   block: Record<string, unknown>,
+  project?: Record<string, unknown> | null,
 ): {
-  /** Campo(s) lidos por validateConfrontationLot / normalizeLotGeometry. */
   confrontationReads: string;
   normalizeOk: boolean;
   normalizeReason?: string;
@@ -309,82 +317,69 @@ export function explainConfrontationValidation(
   ringPointsValidRule: string;
   valid: boolean;
   rejectionReason?: string;
+  ringSource?: OfficialConfrontationRingSource;
 } {
   const confrontationReads =
-    'block.geometry (GeoJSON via normalizeLotGeometry) → fallback block.bounds';
-  const geom = normalizeLotGeometry(block);
+    'segments_json → coordinates_utm_json → geometry (getOfficialConfrontationRing)';
+  const official = getOfficialConfrontationRing(block, project);
 
-  if (!geom.ok || !Array.isArray(geom.ring)) {
+  if (!official.ok) {
     return {
       confrontationReads,
       normalizeOk: false,
-      normalizeReason: geom.reason,
+      normalizeReason: official.reason,
       normalizedRingLength: 0,
       ringPointsValid: false,
-      ringPointsValidRule: 'anel com >= 4 pares [lat,lng] finitos',
+      ringPointsValidRule: 'anel UTM >= 3 vértices úteis',
       valid: false,
-      rejectionReason: geom.reason || 'geometria inválida',
+      rejectionReason: official.reason || 'sem perímetro oficial',
+      ringSource: official.source,
     };
   }
-
-  const ringValid = ringPointsValid(geom.ring);
-  const rejectionReason = !ringValid
-    ? geom.ring.length < 4
-      ? 'pontos insuficientes'
-      : 'geometria inválida'
-    : undefined;
 
   return {
     confrontationReads,
     normalizeOk: true,
-    normalizedRingLength: geom.ring.length,
-    ringPointsValid: ringValid,
-    ringPointsValidRule: 'anel com >= 4 pares [lat,lng] finitos',
-    valid: ringValid,
-    rejectionReason,
+    normalizedRingLength: official.ring.length,
+    ringPointsValid: true,
+    ringPointsValidRule: 'anel UTM >= 3 vértices úteis',
+    valid: true,
+    ringSource: official.source,
   };
 }
 
 /**
- * Valida lote antes da confrontação automática.
+ * Valida lote antes da confrontação automática (perímetro oficial UTM).
  */
 export function validateConfrontationLot(
   block: Record<string, unknown>,
+  project?: Record<string, unknown> | null,
 ): ConfrontationLotValidation {
+  const official = getOfficialConfrontationRing(block, project);
   const geom = normalizeLotGeometry(block);
   const geometryType = geom.geometryType;
 
-  if (!geom.ok || !Array.isArray(geom.ring)) {
+  if (!official.ok) {
     return {
       valid: false,
       ring: [],
       segments: [],
-      reason: geom.reason || 'geometria inválida',
+      reason: official.reason || 'sem perímetro oficial',
       geometryType,
+      ringSource: official.source,
     };
   }
 
-  if (!ringPointsValid(geom.ring)) {
-    const reason =
-      geom.ring.length < 4 ? 'pontos insuficientes' : 'geometria inválida';
-    return {
-      valid: false,
-      ring: geom.ring,
-      segments: [],
-      reason,
-      geometryType,
-    };
-  }
-
-  const seg = normalizeLotSegments(block, geom.ring);
+  const seg = normalizeLotSegments(block);
 
   return {
     valid: true,
-    ring: geom.ring,
+    ring: official.ring,
     segments: seg.segments,
     reason: undefined,
     geometryType,
     segmentSource: seg.source,
+    ringSource: official.source,
   };
 }
 

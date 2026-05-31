@@ -1019,13 +1019,29 @@ export function normalizeTxtImportSegments(
   return out;
 }
 
+function readSegmentsJsonArray(block: Record<string, unknown>): unknown[] | null {
+  const raw = block.segments_json;
+  if (Array.isArray(raw) && raw.length >= 2) return raw;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return null;
+    try {
+      const parsed = JSON.parse(t) as unknown;
+      if (Array.isArray(parsed) && parsed.length >= 2) return parsed;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 /** Lê segmentos oficiais do block (segments_json enriquecido ou legado). */
 export function parseOfficialSegmentsFromBlock(
   block: Record<string, unknown>,
   lotLabel?: unknown,
 ): OfficialLotSegment[] {
-  const raw = block.segments_json;
-  if (!Array.isArray(raw) || raw.length < 2) return [];
+  const raw = readSegmentsJsonArray(block);
+  if (!raw) return [];
 
   const label = lotLabel ?? block.number ?? block.id;
   const parsed: OfficialLotSegment[] = [];

@@ -264,7 +264,7 @@ export function logConfrontationFieldCompare(
   console.error('[CONFRONTATION FIELD COMPARE] subsystem sources', {
     ...PERIMETER_SOURCE_BY_SUBSYSTEM,
     confrontationValidation:
-      'validateConfrontationLot → normalizeLotGeometry(block.geometry)',
+      'validateConfrontationLot → getOfficialConfrontationRing (segments_json UTM)',
   });
 
   for (let i = 0; i < Math.min(sampleCount, sorted.length); i++) {
