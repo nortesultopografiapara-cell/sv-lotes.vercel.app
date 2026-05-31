@@ -219,8 +219,75 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
     axisDy,
     angleDeg: getReadableRotation(axisDx, axisDy),
     narrow,
-    internalOffsetMm: narrow ? 2.5 : 3.5,
+    internalOffsetMm: narrow ? 2.5 : 4,
   };
+}
+
+type LotFrontContext = {
+  edge: EdgeGeometry;
+  inwardNx: number;
+  inwardNy: number;
+  maxInwardDepthMm: number;
+};
+
+type PlacedLabelZone = {
+  pos: [number, number];
+  radius: number;
+  kind: string;
+};
+
+function getFrontSideSegment(
+  verts: [number, number][],
+  frontEdgeIndex: number,
+): EdgeGeometry {
+  return getEdgeGeometry(verts, frontEdgeIndex);
+}
+
+/** Direção da frente (normal interna) e profundidade útil do lote no croqui. */
+function getLotFrontDirection(
+  verts: [number, number][],
+  frontEdgeIndex: number,
+): LotFrontContext {
+  const edge = getFrontSideSegment(verts, frontEdgeIndex);
+  let maxInwardDepthMm = 0;
+  for (const v of verts) {
+    const d =
+      (v[0] - edge.mid[0]) * edge.inNx + (v[1] - edge.mid[1]) * edge.inNy;
+    if (d > maxInwardDepthMm) maxInwardDepthMm = d;
+  }
+  if (maxInwardDepthMm < 8) maxInwardDepthMm = 8;
+  return {
+    edge,
+    inwardNx: edge.inNx,
+    inwardNy: edge.inNy,
+    maxInwardDepthMm,
+  };
+}
+
+function resolveLabelCollisions(
+  pos: [number, number],
+  radius: number,
+  placed: PlacedLabelZone[],
+  minGap = 3,
+): [number, number] {
+  let [x, y] = pos;
+  for (let pass = 0; pass < 10; pass++) {
+    let moved = false;
+    for (const zone of placed) {
+      const dx = x - zone.pos[0];
+      const dy = y - zone.pos[1];
+      const d = Math.hypot(dx, dy) || 0.001;
+      const need = radius + zone.radius + minGap;
+      if (d < need) {
+        const push = (need - d) / d;
+        x += dx * push;
+        y += dy * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return [x, y];
 }
 
 function pointInsidePolygon(
@@ -300,33 +367,31 @@ function positionAlongNormal(
   return [mid[0] + nx * offsetMm, mid[1] + ny * offsetMm];
 }
 
-/** Posição interna uniforme, paralela ao segmento (offset simétrico em todos os lados). */
+/** Offset perpendicular fixo (simétrico em todos os lados equivalentes). */
 function getSegmentInternalLabelPosition(
   edge: EdgeGeometry,
   polygon: [number, number][],
   baseOffsetMm: number,
 ): { x: number; y: number; offsetUsed: number } {
-  const steps = [1, 0.85, 0.7, 0.55].map((f) => baseOffsetMm * f);
+  const [x, y] = positionAlongNormal(
+    edge.mid,
+    edge.inNx,
+    edge.inNy,
+    baseOffsetMm,
+  );
+  if (pointInsidePolygon(x, y, polygon)) {
+    return { x, y, offsetUsed: baseOffsetMm };
+  }
 
-  for (const off of steps) {
+  for (const off of [baseOffsetMm - 0.5, baseOffsetMm - 1, baseOffsetMm - 1.5]) {
     if (off < 2) continue;
-    const [x, y] = positionAlongNormal(edge.mid, edge.inNx, edge.inNy, off);
-    if (pointInsidePolygon(x, y, polygon)) {
-      return { x, y, offsetUsed: off };
+    const [tx, ty] = positionAlongNormal(edge.mid, edge.inNx, edge.inNy, off);
+    if (pointInsidePolygon(tx, ty, polygon)) {
+      return { x: tx, y: ty, offsetUsed: off };
     }
   }
 
-  const c = centroid(polygon);
-  const pull = 0.12;
-  const x =
-    edge.mid[0] +
-    edge.inNx * 2 +
-    (c[0] - edge.mid[0]) * pull;
-  const y =
-    edge.mid[1] +
-    edge.inNy * 2 +
-    (c[1] - edge.mid[1]) * pull;
-  return { x, y, offsetUsed: 2 };
+  return { x, y, offsetUsed: baseOffsetMm };
 }
 
 /** Rótulo no lado externo do polígono (normal oposta ao centroide). */
@@ -439,7 +504,7 @@ function drawFrontStreetLabel(
   const fi = ((frontEdgeIndex % n) + n) % n;
   const edge = getEdgeGeometry(verts, fi);
   const narrow = lotSpanOnSheet(verts) < 38;
-  const streetOffset = narrow ? 12 : 15;
+  const streetOffset = (narrow ? 12 : 15) + 2;
   let [x, y] = edgeExternalLabelPos(edge, streetOffset);
   if (avoidBands?.length) {
     [x, y] = nudgeLabelOutsideBands(x, y, avoidBands);
@@ -538,91 +603,83 @@ function placeSideConfrontantLabels(
   labelAtEdgeExternal(doc, verts, esqIdx, sides.ladoEsquerdo, extOffset);
 }
 
-function minDistToPoints(pos: [number, number], others: ([number, number] | null)[]): number {
-  let min = Infinity;
-  for (const o of others) {
-    if (!o) continue;
-    const d = Math.hypot(pos[0] - o[0], pos[1] - o[1]);
-    if (d < min) min = d;
-  }
-  return min;
-}
+const LOT_BADGE_RADIUS_MM = 5.5;
+const FRONT_DEPTH_FRACTION = 0.27;
 
-function nudgeCenterInsideLot(
-  center: [number, number],
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
-  avoidPoints: ([number, number] | null)[],
-  minSep = 10,
-): [number, number] {
-  let [cx, cy] = center;
-  if (
-    pointInsidePolygon(cx, cy, verts) &&
-    minDistToPoints([cx, cy], avoidPoints) >= minSep
-  ) {
-    return [cx, cy];
-  }
-
-  const shifts = [0, 4, -4, 8, -8, 12, -12];
-  for (const d of shifts) {
-    const tx = cx + mainAxis.axisDx * d;
-    const ty = cy + mainAxis.axisDy * d;
-    if (
-      pointInsidePolygon(tx, ty, verts) &&
-      minDistToPoints([tx, ty], avoidPoints) >= minSep
-    ) {
-      return [tx, ty];
-    }
-  }
-  return center;
-}
-
-/** Número do lote (vermelho) acima da área (azul), alinhados ao eixo longitudinal. */
-function placeLotNumberAndAreaLabel(
+/** Círculo do lote voltado para a frente (entre rua e centro), ~20–35% da profundidade. */
+function placeLotNumberNearFront(
   doc: jsPDF,
   points: [number, number][],
   lotNum: string,
-  areaText: string,
-  mainAxis: LotMainAxis,
-  avoidPoints: ([number, number] | null)[],
-): { numberPos: [number, number]; areaPos: [number, number] } {
+  frontEdgeIndex: number,
+  placedZones: PlacedLabelZone[],
+): { badgePos: [number, number]; radius: number } {
   const verts = preparePolygonVertices(points);
-  const center = nudgeCenterInsideLot(
-    mainAxis.center,
-    verts,
-    mainAxis,
-    avoidPoints,
-  );
+  const front = getLotFrontDirection(verts, frontEdgeIndex);
+  const depthMm = front.maxInwardDepthMm * FRONT_DEPTH_FRACTION;
 
-  /** Empilha número acima da área ao longo do eixo longitudinal (padrão Civil 3D). */
-  let stackSign = 1;
-  if (Math.abs(mainAxis.axisDy) >= Math.abs(mainAxis.axisDx)) {
-    stackSign = mainAxis.axisDy > 0 ? -1 : 1;
-  } else {
-    stackSign = mainAxis.axisDx > 0 ? -1 : 1;
+  let badgePos: [number, number] = [
+    front.edge.mid[0] + front.inwardNx * depthMm,
+    front.edge.mid[1] + front.inwardNy * depthMm,
+  ];
+
+  if (!pointInsidePolygon(badgePos[0], badgePos[1], verts)) {
+    badgePos = [
+      front.edge.mid[0] + front.inwardNx * depthMm * 0.65,
+      front.edge.mid[1] + front.inwardNy * depthMm * 0.65,
+    ];
   }
 
-  const stack = mainAxis.narrow ? 4.5 : 5.5;
-  const numPos: [number, number] = [
-    center[0] + mainAxis.axisDx * stack * stackSign,
-    center[1] + mainAxis.axisDy * stack * stackSign,
-  ];
-  const areaPos: [number, number] = [
-    center[0] - mainAxis.axisDx * stack * stackSign * 0.95,
-    center[1] - mainAxis.axisDy * stack * stackSign * 0.95,
-  ];
+  badgePos = resolveLabelCollisions(
+    badgePos,
+    LOT_BADGE_RADIUS_MM,
+    placedZones,
+    3,
+  );
 
-  const lotFont = mainAxis.narrow ? 11 : 12;
-  const areaFont = mainAxis.narrow ? 10 : 11;
-
+  const r = LOT_BADGE_RADIUS_MM;
+  doc.setDrawColor(...BLACK);
+  doc.setFillColor(255, 255, 255);
+  doc.setLineWidth(0.45);
+  doc.circle(badgePos[0], badgePos[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(lotFont);
+  doc.setFontSize(11);
   doc.setTextColor(...RED);
-  doc.text(lotNum, numPos[0], numPos[1], {
-    align: 'center',
-    baseline: 'middle',
-    angle: mainAxis.angleDeg,
-  });
+  doc.text(lotNum, badgePos[0], badgePos[1] + 1.1, { align: 'center' });
+  doc.setTextColor(...BLACK);
+
+  return { badgePos, radius: r };
+}
+
+/** Área centralizada no lote, maior, eixo longitudinal, separada do círculo. */
+function placeAreaLabelCenter(
+  doc: jsPDF,
+  points: [number, number][],
+  areaText: string,
+  mainAxis: LotMainAxis,
+  placedZones: PlacedLabelZone[],
+): { areaPos: [number, number] } {
+  const verts = preparePolygonVertices(points);
+  let areaPos: [number, number] = [...mainAxis.center];
+
+  areaPos = resolveLabelCollisions(areaPos, 9, placedZones, 4);
+
+  if (!pointInsidePolygon(areaPos[0], areaPos[1], verts)) {
+    areaPos = [...mainAxis.center];
+  }
+
+  const shifts = [0, 3, -3, 6, -6, 9, -9];
+  for (const d of shifts) {
+    const tx = mainAxis.center[0] + mainAxis.axisDx * d;
+    const ty = mainAxis.center[1] + mainAxis.axisDy * d;
+    const candidate = resolveLabelCollisions([tx, ty], 9, placedZones, 4);
+    if (pointInsidePolygon(candidate[0], candidate[1], verts)) {
+      areaPos = candidate;
+      break;
+    }
+  }
+
+  const areaFont = (mainAxis.narrow ? 10 : 11) * 1.25;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(areaFont);
@@ -632,19 +689,9 @@ function placeLotNumberAndAreaLabel(
     baseline: 'middle',
     angle: mainAxis.angleDeg,
   });
-
   doc.setTextColor(...BLACK);
 
-  console.log('LOT_SHEET_CENTER_LABELS', {
-    lotNum,
-    areaText,
-    angleDeg: mainAxis.angleDeg,
-    numberPos: numPos,
-    areaPos,
-    offsetMm: mainAxis.internalOffsetMm,
-  });
-
-  return { numberPos: numPos, areaPos };
+  return { areaPos };
 }
 
 function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
@@ -1301,18 +1348,45 @@ export async function generateLotSheetPdf(
     labelAvoidBands,
   );
 
-  const avoidLabelPoints: ([number, number] | null)[] = [
-    ...measurePositions.map((p) => [p.x, p.y] as [number, number]),
-    frontMeasurePos ? [frontMeasurePos.x, frontMeasurePos.y] : null,
-    streetPos,
+  const placedZones: PlacedLabelZone[] = [
+    ...measurePositions.map((p) => ({
+      pos: [p.x, p.y] as [number, number],
+      radius: 4,
+      kind: 'distance',
+    })),
+    ...(streetPos
+      ? [{ pos: streetPos, radius: 6, kind: 'street' as const }]
+      : []),
+    ...(frontMeasurePos
+      ? [
+          {
+            pos: [frontMeasurePos.x, frontMeasurePos.y] as [number, number],
+            radius: 4,
+            kind: 'front_measure',
+          },
+        ]
+      : []),
   ];
-  const centerLabels = placeLotNumberAndAreaLabel(
+
+  const lotBadge = placeLotNumberNearFront(
     doc,
     sheetPts,
     lotNum,
+    frontEdge,
+    placedZones,
+  );
+  placedZones.push({
+    pos: lotBadge.badgePos,
+    radius: lotBadge.radius + 2,
+    kind: 'lot_badge',
+  });
+
+  const areaLabel = placeAreaLabelCenter(
+    doc,
+    sheetPts,
     input.measures.area,
     mainAxis,
-    avoidLabelPoints,
+    placedZones,
   );
 
   placeSideConfrontantLabels(doc, sheetPts, input.sideConfrontants, frontEdge);
@@ -1322,8 +1396,10 @@ export async function generateLotSheetPdf(
     streetName: input.sideConfrontants.frente,
     frontMeasurePos,
     streetPos,
-    centerLabels,
+    lotBadge: lotBadge.badgePos,
+    areaPos: areaLabel.areaPos,
     mainAxisAngleDeg: mainAxis.angleDeg,
+    distanceOffsetMm: mainAxis.internalOffsetMm,
     minGapMeasureToStreet:
       frontMeasurePos && streetPos
         ? Math.hypot(
