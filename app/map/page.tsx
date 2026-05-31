@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers } from 'lucide-react';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
@@ -58,6 +58,11 @@ import {
   parseOfficialSegmentsFromBlock,
   segmentsToPersistJson,
 } from '@/lib/officialLotMeasurements';
+import {
+  blockHasTxtOfficialData,
+  buildBlockMatchKey,
+  parseShapefileZipFile,
+} from '@/lib/shapefileImport';
 
 const GISMap = dynamic(() => import('@/components/map/GISMap'), { 
   ssr: false,
@@ -364,6 +369,11 @@ export default function MapPage() {
   const [importTxtFile, setImportTxtFile] = useState<File | null>(null);
   const [importingTxt, setImportingTxt] = useState(false);
   const [importTxtUtmZone, setImportTxtUtmZone] = useState('22S');
+
+  const [isImportShpModalOpen, setIsImportShpModalOpen] = useState(false);
+  const [importShpFile, setImportShpFile] = useState<File | null>(null);
+  const [importShpDefaultQuadra, setImportShpDefaultQuadra] = useState('');
+  const [importingShp, setImportingShp] = useState(false);
 
   // Map Tools States
   const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'|'dark'>('satellite');
@@ -1573,6 +1583,263 @@ export default function MapPage() {
     }
   };
 
+  const handleImportShapefile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importShpFile || !selectedProject || !user) return;
+    setImportingShp(true);
+
+    try {
+      let tenantId = user.tenant_id;
+      if (!tenantId) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .single();
+        if (userData?.tenant_id) tenantId = userData.tenant_id;
+      }
+
+      const isMasterAdmin =
+        user.email === 'severino@nortesultopografia.com.br' ||
+        user.email === 'nortesultopografiapara@gmail.com' ||
+        user.role === 'SUPER_ADMIN';
+
+      if (!tenantId && isMasterAdmin) tenantId = null;
+
+      if (!selectedProject.id) {
+        alert('Erro: Projeto não identificado. Atualize a página e tente novamente.');
+        return;
+      }
+
+      let finalTenantId = tenantId;
+      if (finalTenantId === 'MASTER-ADMIN') finalTenantId = null;
+
+      if (!finalTenantId && !isMasterAdmin) {
+        alert('Erro: Empresa não identificada. Faça login novamente.');
+        return;
+      }
+
+      const shapeLots = await parseShapefileZipFile(
+        importShpFile,
+        importShpDefaultQuadra,
+      );
+
+      let blocksQuery = supabase
+        .from('blocks')
+        .select('*')
+        .eq('project_id', selectedProject.id);
+      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+        blocksQuery = blocksQuery.or(
+          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
+        );
+      }
+      const { data: existingBlocks, error: loadError } = await blocksQuery;
+      if (loadError) throw loadError;
+
+      const blockByKey = new Map<string, Record<string, unknown>>();
+      for (const row of existingBlocks || []) {
+        const b = row as Record<string, unknown>;
+        const bn = String(b.block_name || b.name || '').trim();
+        const num = String(b.number || b.lot_number || '').trim();
+        if (!bn || !num) continue;
+        blockByKey.set(buildBlockMatchKey(bn, num), b);
+      }
+
+      const allPolys = shapeLots.map((l) => l.geometry.coordinates[0]);
+      const PRICE_PER_M2 = 0.0993035247984734;
+
+      let updatedVisual = 0;
+      let updatedFull = 0;
+      let inserted = 0;
+
+      const inserts: Record<string, unknown>[] = [];
+
+      for (const lot of shapeLots) {
+        const geom = {
+          type: 'Polygon' as const,
+          coordinates: lot.geometry.coordinates,
+        };
+        const key = buildBlockMatchKey(lot.quadra, lot.lote);
+        const existing = blockByKey.get(key);
+
+        if (existing?.id) {
+          const patch: Record<string, unknown> = { geometry: geom };
+          if (lot.matricula) patch.matricula = lot.matricula;
+
+          if (blockHasTxtOfficialData(existing)) {
+            const { error: upErr } = await supabase
+              .from('blocks')
+              .update(patch)
+              .eq('id', String(existing.id));
+            if (upErr) throw upErr;
+            updatedVisual++;
+          } else {
+            let calcArea = lot.area ?? 0;
+            let dims = {
+              frente: null as number | null,
+              fundo: null as number | null,
+              ladoD: null as number | null,
+              ladoE: null as number | null,
+            };
+            try {
+              if (geom.coordinates[0].length >= 4) {
+                const poly = turfPolygon(geom.coordinates);
+                const areaCalculada = turfArea(poly);
+                const areaCorrigida = areaCalculada * 0.9952546259435014;
+                if (calcArea <= 0) calcArea = areaCorrigida;
+                const calculatedDims = calculateLotDimensions(
+                  geom.coordinates[0],
+                  allPolys,
+                  lot.properties,
+                );
+                dims = {
+                  frente: calculatedDims.frente as unknown as number,
+                  fundo: calculatedDims.fundo as unknown as number,
+                  ladoD: calculatedDims.ladoDireito as unknown as number,
+                  ladoE: calculatedDims.ladoEsquerdo as unknown as number,
+                };
+              }
+            } catch (calcErr) {
+              console.warn('[SHP] medidas provisórias', calcErr);
+            }
+            if (calcArea <= 0) calcArea = 2500;
+            const finalArea = parseFloat(calcArea.toFixed(2));
+            patch.area = finalArea;
+            patch.frente = dims.frente !== null ? Number(dims.frente) : null;
+            patch.Fundo =
+              dims.fundo !== null
+                ? String(dims.fundo).replace(/[^0-9.]/g, '')
+                : null;
+            patch['Lado Dir.'] =
+              dims.ladoD !== null
+                ? String(dims.ladoD).replace(/[^0-9.]/g, '')
+                : null;
+            patch['Lado Esq.'] =
+              dims.ladoE !== null
+                ? String(dims.ladoE).replace(/[^0-9.]/g, '')
+                : null;
+            if (!existing.source_import) {
+              patch.source_import = 'SHAPEFILE';
+            }
+
+            const { error: upErr } = await supabase
+              .from('blocks')
+              .update(patch)
+              .eq('id', String(existing.id));
+            if (upErr) throw upErr;
+            updatedFull++;
+          }
+          continue;
+        }
+
+        let calcArea = lot.area ?? 0;
+        let dims = {
+          frente: null as number | null,
+          fundo: null as number | null,
+          ladoD: null as number | null,
+          ladoE: null as number | null,
+        };
+        try {
+          if (geom.coordinates[0].length >= 4) {
+            const poly = turfPolygon(geom.coordinates);
+            const areaCalculada = turfArea(poly);
+            const areaCorrigida = areaCalculada * 0.9952546259435014;
+            if (calcArea <= 0) calcArea = areaCorrigida;
+            const calculatedDims = calculateLotDimensions(
+              geom.coordinates[0],
+              allPolys,
+              lot.properties,
+            );
+            dims = {
+              frente: calculatedDims.frente as unknown as number,
+              fundo: calculatedDims.fundo as unknown as number,
+              ladoD: calculatedDims.ladoDireito as unknown as number,
+              ladoE: calculatedDims.ladoEsquerdo as unknown as number,
+            };
+          }
+        } catch (calcErr) {
+          console.warn('[SHP] medidas provisórias (insert)', calcErr);
+        }
+        if (calcArea <= 0) calcArea = 2500;
+        const finalArea = parseFloat(calcArea.toFixed(2));
+        const finalPrice = parseFloat((finalArea * PRICE_PER_M2).toFixed(2));
+        const lotNumber = String(lot.lote).trim();
+
+        inserts.push({
+          project_id: selectedProject.id,
+          name: lot.quadra,
+          block_name: lot.quadra,
+          number: lotNumber,
+          lot_number: lotNumber,
+          status: 'Disponível',
+          area: finalArea,
+          price: finalPrice,
+          geometry: geom,
+          tenant_id: finalTenantId,
+          company_id: finalTenantId,
+          frente: dims.frente !== null ? Number(dims.frente) : null,
+          Fundo:
+            dims.fundo !== null
+              ? String(dims.fundo).replace(/[^0-9.]/g, '')
+              : null,
+          'Lado Dir.':
+            dims.ladoD !== null
+              ? String(dims.ladoD).replace(/[^0-9.]/g, '')
+              : null,
+          'Lado Esq.':
+            dims.ladoE !== null
+              ? String(dims.ladoE).replace(/[^0-9.]/g, '')
+              : null,
+          source_import: 'SHAPEFILE',
+          ...(lot.matricula ? { matricula: lot.matricula } : {}),
+        });
+      }
+
+      if (inserts.length > 0) {
+        const { error: insertError } = await supabase
+          .from('blocks')
+          .insert(inserts);
+        if (insertError) throw insertError;
+        inserted = inserts.length;
+      }
+
+      try {
+        await clearProjectMapOfflineCache(selectedProject.id);
+      } catch (cacheErr) {
+        console.warn('[CACHE] falha ao limpar IndexedDB após shapefile', cacheErr);
+      }
+
+      const parts: string[] = [];
+      if (updatedVisual > 0) {
+        parts.push(
+          `${updatedVisual} lote(s) com TXT: geometria visual atualizada (medidas oficiais mantidas)`,
+        );
+      }
+      if (updatedFull > 0) {
+        parts.push(`${updatedFull} lote(s) existente(s) atualizado(s) com geometria e medidas provisórias`);
+      }
+      if (inserted > 0) {
+        parts.push(`${inserted} lote(s) novo(s) importado(s) do shapefile`);
+      }
+      alert(
+        parts.length > 0
+          ? `Shapefile processado.\n${parts.join('.\n')}.`
+          : 'Nenhuma alteração aplicada.',
+      );
+
+      setIsImportShpModalOpen(false);
+      setImportShpFile(null);
+      setImportShpDefaultQuadra('');
+      setMapRefreshKey((prev) => prev + 1);
+    } catch (err: unknown) {
+      console.error('Erro no import Shapefile: ', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert('Erro ao importar Shapefile: ' + msg);
+    } finally {
+      setImportingShp(false);
+    }
+  };
+
   const resolveStreetTenantId = () => {
     let validTenantId = selectedProject?.tenant_id;
     if (!validTenantId || validTenantId === 'MASTER-ADMIN') {
@@ -1895,6 +2162,15 @@ export default function MapPage() {
                     <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
                     <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (TXT)</span>
                  </button>
+
+                 <button
+                    type="button"
+                    onClick={() => setIsImportShpModalOpen(true)}
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                 >
+                    <Layers className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
+                 </button>
                  
                  <hr className="w-2/3 border-[#2d3340]" />
                </>
@@ -2207,6 +2483,75 @@ export default function MapPage() {
                        className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                     >
                        {importingTxt ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar TXT e Salvar</>}
+                    </button>
+
+                    <div className="pt-2 border-t border-[var(--color-border)]">
+                      <p className="text-[10px] text-[var(--color-text-muted)] mb-2">
+                        Polígono visual mais limpo (medidas oficiais continuam pelo TXT):
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsImportTxtModalOpen(false);
+                          setIsImportShpModalOpen(true);
+                        }}
+                        className="w-full py-2.5 rounded-lg border border-[var(--color-border)] text-gray-300 text-sm font-semibold hover:bg-[var(--color-background)] transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Layers className="w-4 h-4" />
+                        Importar Shapefile (.zip)
+                      </button>
+                    </div>
+                 </form>
+              </div>
+           </div>
+        )}
+
+        {isImportShpModalOpen && (
+           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
+                 <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
+                    <h3 className="font-bold text-white text-lg">Importar Shapefile (.zip)</h3>
+                    <button onClick={() => setIsImportShpModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                       <X className="w-5 h-5" />
+                    </button>
+                 </div>
+                 <form onSubmit={handleImportShapefile} className="p-6 flex flex-col gap-4">
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Envie um .zip com .shp, .shx, .dbf e .prj. O sistema associa cada polígono ao lote pela{' '}
+                      <strong className="text-gray-200">quadra + lote</strong> (atributos DBF).
+                      Se já houver TXT Civil 3D, apenas a geometria visual é substituída; medidas oficiais e{' '}
+                      <code className="text-[10px]">segments_json</code> permanecem.
+                    </p>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Quadra padrão (opcional)</label>
+                       <input
+                         type="text"
+                         value={importShpDefaultQuadra}
+                         onChange={(e) => setImportShpDefaultQuadra(e.target.value)}
+                         placeholder="Use se o DBF não tiver coluna quadra"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                       />
+                    </div>
+                    <div>
+                       <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Arquivo .zip</label>
+                       <input
+                         type="file"
+                         accept=".zip,application/zip"
+                         required
+                         onChange={(e) => setImportShpFile(e.target.files?.[0] || null)}
+                         className="w-full text-sm text-[var(--color-text-muted)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--color-primary)]/10 file:text-[var(--color-primary)] hover:file:bg-[var(--color-primary)]/20 file:transition-colors file:cursor-pointer cursor-pointer border border-[var(--color-border)] bg-[var(--color-background)] rounded-lg p-2"
+                       />
+                       <p className="text-[10px] text-[var(--color-text-muted)] mt-2">
+                         Campos reconhecidos: lote, quadra, area, matrícula (nomes variados no DBF).
+                       </p>
+                    </div>
+
+                    <button
+                       type="submit"
+                       disabled={importingShp}
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                    >
+                       {importingShp ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Layers className="w-5 h-5"/> Importar Shapefile</>}
                     </button>
                  </form>
               </div>
