@@ -38,7 +38,7 @@ import { resolveLotSideConfrontants } from '@/lib/lotConfrontations';
 import { buildMemorialDraftPlainText } from '@/lib/memorialDraft';
 import {
   formatMemorialTechnicalBlock,
-  normalizeTechnicalResponsible,
+  normalizeTechnicalResponsibleFromCompany,
 } from '@/lib/technicalResponsible';
 
 export type LotSheetGeometry = {
@@ -435,13 +435,6 @@ export async function loadLotSheetPayload(
     .eq('id', params.tenantId)
     .maybeSingle();
 
-  const { data: techRows } = await supabase
-    .from('technical_responsibles')
-    .select('*')
-    .eq('company_id', params.tenantId)
-    .eq('active', true)
-    .limit(1);
-
   const blockRecord = block as Record<string, unknown>;
   const officialTable = getOfficialLotSegmentTable(
     blockRecord,
@@ -543,8 +536,8 @@ export async function loadLotSheetPayload(
           localRing.length - 1,
         );
   const validation = createLotSheetValidation();
-  const techProfile = normalizeTechnicalResponsible(
-    (techRows?.[0] as Record<string, unknown>) || null,
+  const techProfile = normalizeTechnicalResponsibleFromCompany(
+    (company as Record<string, unknown>) || null,
   );
 
   const sideConfrontants = resolveLotSideConfrontants(

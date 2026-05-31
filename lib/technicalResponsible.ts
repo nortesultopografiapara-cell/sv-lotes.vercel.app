@@ -32,6 +32,27 @@ export const EMPTY_TECHNICAL_PROFILE: TechnicalResponsibleProfile = {
   stamp_url: "",
 };
 
+/** Perfil do RT a partir dos campos em `companies` (fonte oficial da prancha). */
+export function normalizeTechnicalResponsibleFromCompany(
+  company: Record<string, unknown> | null | undefined,
+): TechnicalResponsibleProfile {
+  if (!company || typeof company !== "object") {
+    return { ...EMPTY_TECHNICAL_PROFILE };
+  }
+  return normalizeTechnicalResponsible({
+    name: company.technical_responsible_name,
+    title: company.technical_responsible_role,
+    crea: company.technical_responsible_crea,
+    cau: company.technical_responsible_cau,
+    cft: company.technical_responsible_cft,
+    cpf: company.technical_responsible_cpf,
+    phone: company.technical_responsible_phone,
+    email: company.technical_responsible_email,
+    signature_url: company.technical_signature_url,
+    stamp_url: company.technical_stamp_url,
+  });
+}
+
 export function normalizeTechnicalResponsible(
   row: Record<string, unknown> | null | undefined,
 ): TechnicalResponsibleProfile {

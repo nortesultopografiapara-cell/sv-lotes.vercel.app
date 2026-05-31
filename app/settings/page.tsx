@@ -5,6 +5,34 @@ import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { Building2, Save, Upload, Loader2, ImagePlus, HardHat } from 'lucide-react';
 
+const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
+
+function resolveSettingsCompanyId(user: { tenant_id?: string; company_id?: string; role?: string } | null): string | null {
+  if (!user) return null;
+  if (typeof window !== 'undefined') {
+    const impersonating = localStorage.getItem('impersonating_tenant_id');
+    if (impersonating && user.role && PLATFORM_ADMIN_ROLES.includes(user.role)) {
+      return impersonating;
+    }
+  }
+  return user.tenant_id || user.company_id || null;
+}
+
+function technicalFromCompanyRow(data: Record<string, unknown>) {
+  return {
+    name: String(data.technical_responsible_name || '').trim(),
+    title: String(data.technical_responsible_role || '').trim(),
+    crea: String(data.technical_responsible_crea || '').trim(),
+    cau: String(data.technical_responsible_cau || '').trim(),
+    cft: String(data.technical_responsible_cft || '').trim(),
+    cpf: String(data.technical_responsible_cpf || '').trim(),
+    phone: String(data.technical_responsible_phone || '').trim(),
+    email: String(data.technical_responsible_email || '').trim(),
+    signature_url: String(data.technical_signature_url || '').trim(),
+    stamp_url: String(data.technical_stamp_url || '').trim(),
+  };
+}
+
 export default function SettingsPage() {
   const { user, loading: authLoading } = useSessionGuard();
   const [loading, setLoading] = useState(true);
@@ -32,11 +60,10 @@ export default function SettingsPage() {
     signature_url: '',
     stamp_url: '',
   });
-  const [technicalId, setTechnicalId] = useState<string | null>(null);
-
   useEffect(() => {
     async function loadCompany() {
-      if (!user?.tenant_id) {
+      const companyId = resolveSettingsCompanyId(user);
+      if (!companyId) {
         setLoading(false);
         return;
       }
@@ -44,36 +71,38 @@ export default function SettingsPage() {
       const { data, error } = await supabase
         .from('companies')
         .select('*')
-        .eq('id', user.tenant_id)
+        .eq('id', companyId)
         .single();
 
       if (!error && data) {
         setCompany(data);
-      }
+        let techState = technicalFromCompanyRow(data as Record<string, unknown>);
 
-      const { data: tech, error: techErr } = await supabase
-        .from('technical_responsibles')
-        .select('*')
-        .eq('company_id', user.tenant_id)
-        .eq('active', true)
-        .maybeSingle();
-
-      if (!techErr && tech) {
-        setTechnicalId(tech.id);
-        const rt = tech.registry_type || '';
-        const rn = tech.registry_number || '';
-        setTechnical({
-          name: tech.name || '',
-          title: tech.title || '',
-          crea: tech.crea || (rt === 'CREA' ? rn : ''),
-          cau: tech.cau || (rt === 'CAU' ? rn : ''),
-          cft: tech.cft || (rt === 'CFT' ? rn : ''),
-          cpf: tech.cpf || '',
-          phone: tech.phone || '',
-          email: tech.email || '',
-          signature_url: tech.signature_url || '',
-          stamp_url: tech.stamp_url || '',
-        });
+        if (!techState.name) {
+          const { data: tech } = await supabase
+            .from('technical_responsibles')
+            .select('*')
+            .eq('company_id', companyId)
+            .eq('active', true)
+            .maybeSingle();
+          if (tech) {
+            const rt = tech.registry_type || '';
+            const rn = tech.registry_number || '';
+            techState = {
+              name: tech.name || '',
+              title: tech.title || '',
+              crea: tech.crea || (rt === 'CREA' ? rn : ''),
+              cau: tech.cau || (rt === 'CAU' ? rn : ''),
+              cft: tech.cft || (rt === 'CFT' ? rn : ''),
+              cpf: tech.cpf || '',
+              phone: tech.phone || '',
+              email: tech.email || '',
+              signature_url: tech.signature_url || '',
+              stamp_url: tech.stamp_url || '',
+            };
+          }
+        }
+        setTechnical(techState);
       }
 
       setLoading(false);
@@ -89,7 +118,8 @@ export default function SettingsPage() {
   };
 
   const uploadImage = async (file: File, type: 'logo' | 'signature') => {
-      if (!user?.tenant_id) return null;
+      const tenantPath = resolveSettingsCompanyId(user) || company?.id;
+      if (!tenantPath) return null;
       if (file.size > 5 * 1024 * 1024) {
           alert("A imagem deve ter no máximo 5MB.");
           return null;
@@ -97,7 +127,7 @@ export default function SettingsPage() {
       
       const fileExt = file.name.split('.').pop() || 'png';
       const fileName = `${type}-${Date.now()}.${fileExt}`;
-      const filePath = `${user.tenant_id}/${fileName}`;
+      const filePath = `${tenantPath}/${fileName}`;
       
       const { error: uploadError } = await supabase.storage
           .from('company-assets')
@@ -161,6 +191,13 @@ export default function SettingsPage() {
      if (!company?.id) return;
      
      setSubmitting(true);
+     const signatureUrl =
+       technical.signature_url ||
+       company.technical_signature_url ||
+       null;
+     const stampUrl =
+       technical.stamp_url || company.technical_stamp_url || null;
+
      const { error } = await supabase
         .from('companies')
         .update({
@@ -174,7 +211,17 @@ export default function SettingsPage() {
            legal_representative: company.legal_representative,
            representative_cpf: company.representative_cpf,
            logo_url: company.logo_url,
-           signature_url: company.signature_url
+           signature_url: company.signature_url,
+           technical_responsible_name: technical.name.trim() || null,
+           technical_responsible_role: technical.title.trim() || null,
+           technical_responsible_crea: technical.crea.trim() || null,
+           technical_responsible_cau: technical.cau.trim() || null,
+           technical_responsible_cft: technical.cft.trim() || null,
+           technical_responsible_cpf: technical.cpf.trim() || null,
+           technical_responsible_phone: technical.phone.trim() || null,
+           technical_responsible_email: technical.email.trim() || null,
+           technical_signature_url: signatureUrl,
+           technical_stamp_url: stampUrl,
         })
         .eq('id', company.id);
 
@@ -184,44 +231,19 @@ export default function SettingsPage() {
         return;
      }
 
-     if (technical.name.trim()) {
-       const primaryType = technical.crea
-         ? 'CREA'
-         : technical.cft
-           ? 'CFT'
-           : technical.cau
-             ? 'CAU'
-             : null;
-       const primaryNumber =
-         technical.crea || technical.cft || technical.cau || null;
-       const techPayload = {
-         company_id: company.id,
-         name: technical.name.trim(),
-         title: technical.title || null,
-         crea: technical.crea || null,
-         cau: technical.cau || null,
-         cft: technical.cft || null,
-         cpf: technical.cpf || null,
-         registry_type: primaryType,
-         registry_number: primaryNumber,
-         phone: technical.phone || null,
-         email: technical.email || null,
-         signature_url: technical.signature_url || null,
-         stamp_url: technical.stamp_url || null,
-         active: true,
-         updated_at: new Date().toISOString(),
-       };
-       if (technicalId) {
-         await supabase.from('technical_responsibles').update(techPayload).eq('id', technicalId);
-       } else {
-         const { data: inserted } = await supabase
-           .from('technical_responsibles')
-           .insert([techPayload])
-           .select('id')
-           .single();
-         if (inserted?.id) setTechnicalId(inserted.id);
-       }
-     }
+     setCompany((prev: Record<string, unknown>) => ({
+       ...prev,
+       technical_responsible_name: technical.name.trim() || null,
+       technical_responsible_role: technical.title.trim() || null,
+       technical_responsible_crea: technical.crea.trim() || null,
+       technical_responsible_cau: technical.cau.trim() || null,
+       technical_responsible_cft: technical.cft.trim() || null,
+       technical_responsible_cpf: technical.cpf.trim() || null,
+       technical_responsible_phone: technical.phone.trim() || null,
+       technical_responsible_email: technical.email.trim() || null,
+       technical_signature_url: signatureUrl,
+       technical_stamp_url: stampUrl,
+     }));
 
      setSubmitting(false);
      alert("Configurações salvas com sucesso!");

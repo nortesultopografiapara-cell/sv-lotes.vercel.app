@@ -16,9 +16,12 @@ import {
 import {
   formatTechnicalRegistryLine,
   hasTechnicalResponsible,
-  normalizeTechnicalResponsible,
+  normalizeTechnicalResponsibleFromCompany,
   type TechnicalResponsibleProfile,
 } from '@/lib/technicalResponsible';
+
+const TECH_NOT_INFORMED_MSG =
+  'Responsável técnico não informado nas configurações da empresa.';
 
 export type GenerateLotSheetPdfInput = LotSheetPayload;
 
@@ -38,8 +41,6 @@ const LOT_SHEET_LEGAL_DISCLAIMER = {
     'Este documento não constitui prova de propriedade, posse ou domínio do imóvel.',
   ],
 } as const;
-
-const DISCLAIMER_BAND_H = 17;
 
 type Box = { x: number; y: number; w: number; h: number };
 
@@ -878,6 +879,140 @@ function drawConfrontationsBox(
   }
 }
 
+function drawTechnicalResponsiblePanel(
+  doc: jsPDF,
+  box: Box,
+  tech: TechnicalResponsibleProfile,
+  signatureBase64: string | null,
+  stampBase64: string | null,
+) {
+  const { x, y, w, h } = box;
+  const pad = 3;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  doc.rect(x, y, w, h);
+
+  const label = (
+    lx: number,
+    ly: number,
+    text: string,
+    bold = false,
+    size = 5,
+  ) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(...BLACK);
+    doc.text(text, lx, ly, { maxWidth: w - pad * 2 });
+  };
+
+  label(x + pad, y + 4, 'RESPONSÁVEL TÉCNICO', true, 6);
+
+  if (!hasTechnicalResponsible(tech)) {
+    const lines = doc.splitTextToSize(TECH_NOT_INFORMED_MSG, w - pad * 2) as string[];
+    let ly = y + 10;
+    for (const line of lines) {
+      label(x + pad, ly, line, false, 4.8);
+      ly += 3.6;
+    }
+    return;
+  }
+
+  let ty = y + 9;
+  label(x + pad, ty, `Nome: ${tech.name}`, false, 4.8);
+  ty += 3.6;
+  if (tech.title) {
+    label(x + pad, ty, `Cargo/Função: ${tech.title}`, false, 4.6);
+    ty += 3.4;
+  }
+  const reg = formatTechnicalRegistryLine(tech);
+  label(x + pad, ty, `CREA/CFT/CAU: ${reg}`, false, 4.5);
+  ty += 3.4;
+  if (tech.cpf) {
+    label(x + pad, ty, `CPF: ${tech.cpf}`, false, 4.5);
+    ty += 3.4;
+  }
+  if (tech.phone) {
+    label(x + pad, ty, `Tel.: ${tech.phone}`, false, 4.5);
+    ty += 3.4;
+  }
+  if (tech.email) {
+    label(x + pad, ty, `E-mail: ${tech.email}`, false, 4.5);
+    ty += 3.4;
+  }
+
+  const imgX = x + w - pad - 26;
+  let imgY = y + 7;
+  if (signatureBase64) {
+    try {
+      doc.addImage(signatureBase64, 'PNG', imgX, imgY, 24, 9);
+      label(x + pad, y + h - 12, 'Assinatura', false, 4.2);
+      imgY += 10;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (stampBase64) {
+    try {
+      doc.addImage(stampBase64, 'PNG', imgX, imgY, 22, 10);
+      label(x + pad, y + h - 6, 'Carimbo', false, 4.2);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function drawObservationsPanel(doc: jsPDF, box: Box) {
+  const { x, y, w, h } = box;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  doc.rect(x, y, w, h);
+
+  const lineH = 2.75;
+  let ly = y + 3.5;
+  doc.setTextColor(...BLACK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5.2);
+  doc.text('OBSERVAÇÕES E VALIDADE DA PRANCHA', x + 3, ly);
+  ly += lineH + 0.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(4.4);
+  for (const paragraph of LOT_SHEET_LEGAL_DISCLAIMER.paragraphs) {
+    const lines = doc.splitTextToSize(paragraph, w - 6) as string[];
+    for (const line of lines) {
+      doc.text(line, x + 3, ly);
+      ly += lineH;
+    }
+    ly += 0.3;
+  }
+}
+
+function drawBottomFooterSplit(
+  doc: jsPDF,
+  box: Box,
+  tech: TechnicalResponsibleProfile,
+  signatureBase64: string | null,
+  stampBase64: string | null,
+) {
+  const gap = 2;
+  const leftW = box.w * 0.49;
+  const leftBox: Box = { x: box.x, y: box.y, w: leftW, h: box.h };
+  const rightBox: Box = {
+    x: box.x + leftW + gap,
+    y: box.y,
+    w: box.w - leftW - gap,
+    h: box.h,
+  };
+  drawObservationsPanel(doc, leftBox);
+  drawTechnicalResponsiblePanel(
+    doc,
+    rightBox,
+    tech,
+    signatureBase64,
+    stampBase64,
+  );
+}
+
 function drawMetricTopoFooter(
   doc: jsPDF,
   box: Box,
@@ -890,10 +1025,7 @@ function drawMetricTopoFooter(
     scale: string;
     date: string;
     confrontants: LotSheetSideConfrontants;
-    tech: TechnicalResponsibleProfile;
     logoBase64: string | null;
-    signatureBase64: string | null;
-    stampBase64: string | null;
   },
 ) {
   const { x, y, w, h } = box;
@@ -949,78 +1081,9 @@ function drawMetricTopoFooter(
   label(rx, y + 10, `ESCALA: ${data.scale}`, true);
   label(rx + col * 1.15, y + 10, `DATA: ${data.date}`, true);
 
-  const confrontBoxH = 22;
-  const techBoxY = y + 14;
-  drawConfrontationsBox(doc, rx, techBoxY, rw, confrontBoxH, data.confrontants);
-
-  const rtBoxY = techBoxY + confrontBoxH + 1.5;
-  const techBoxH = h - 14 - confrontBoxH - 2;
-  doc.rect(rx, rtBoxY, rw, techBoxH);
-  label(rx + 2, rtBoxY + 4, 'RESPONSÁVEL TÉCNICO', true, 5.5);
-
-  if (!hasTechnicalResponsible(data.tech)) {
-    label(rx + 2, rtBoxY + 11, 'Não informado', false, 5.5);
-    return;
-  }
-
-  const tech = data.tech;
-  let ty = rtBoxY + 9;
-  label(rx + 2, ty, `Nome: ${tech.name || '—'}`, false, 5);
-  ty += 3.8;
-  if (tech.title) {
-    label(rx + 2, ty, `Cargo: ${tech.title}`, false, 5);
-    ty += 3.8;
-  }
-  const reg = formatTechnicalRegistryLine(tech);
-  label(rx + 2, ty, `CREA/CFT/CAU: ${reg}`, false, 4.8);
-  ty += 3.8;
-
-  const imgX = rx + rw - 28;
-  let imgY = rtBoxY + 6;
-  if (data.signatureBase64) {
-    try {
-      doc.addImage(data.signatureBase64, 'PNG', imgX, imgY, 24, 9);
-      label(rx + 2, rtBoxY + techBoxH - 14, 'Assinatura:', false, 4.5);
-      imgY += 10;
-    } catch {
-      /* ignore */
-    }
-  }
-  if (data.stampBase64) {
-    try {
-      doc.addImage(data.stampBase64, 'PNG', imgX, imgY, 22, 10);
-      label(rx + 2, rtBoxY + techBoxH - 8, 'Carimbo:', false, 4.5);
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-function drawLotSheetLegalDisclaimer(doc: jsPDF, box: Box) {
-  const { x, y, w, h } = box;
-  doc.setDrawColor(...BLACK);
-  doc.setLineWidth(0.25);
-  doc.rect(x, y, w, h);
-
-  const lineH = 2.85;
-  let ly = y + 3.2;
-
-  doc.setTextColor(...BLACK);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(5);
-  doc.text(LOT_SHEET_LEGAL_DISCLAIMER.title, x + 2, ly);
-  ly += lineH + 0.4;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(4.5);
-  for (const paragraph of LOT_SHEET_LEGAL_DISCLAIMER.paragraphs) {
-    const lines = doc.splitTextToSize(paragraph, w - 4) as string[];
-    for (const line of lines) {
-      doc.text(line, x + 2, ly);
-      ly += lineH;
-    }
-    ly += 0.35;
-  }
+  const confrontBoxY = y + 14;
+  const confrontBoxH = h - 14 - 2;
+  drawConfrontationsBox(doc, rx, confrontBoxY, rw, confrontBoxH, data.confrontants);
 }
 
 /**
@@ -1035,12 +1098,11 @@ export async function generateLotSheetPdf(
   });
 
   const company = input.company;
-  const tech = input.technicalResponsible;
   const logoBase64 = await loadReportHeaderLogoBase64(
     (company?.logo_url as string) || null,
   );
-  const techProfile = normalizeTechnicalResponsible(
-    tech as Record<string, unknown> | null,
+  const techProfile = normalizeTechnicalResponsibleFromCompany(
+    company as Record<string, unknown> | null,
   );
   const signatureBase64 = await loadOptionalImage(techProfile.signature_url);
   const stampBase64 = await loadOptionalImage(techProfile.stamp_url);
@@ -1057,8 +1119,8 @@ export async function generateLotSheetPdf(
   doc.setLineWidth(0.4);
   doc.rect(innerX, innerY, innerW, innerH);
 
-  const footerH = 48;
-  const disclaimerH = DISCLAIMER_BAND_H;
+  const bottomSplitH = 24;
+  const footerH = 40;
   const scaleBandH = 9;
   const tableRowH = 4.6;
   const tableHeaderH = 5.5;
@@ -1068,16 +1130,16 @@ export async function generateLotSheetPdf(
   const contentX = innerX + 3;
   const contentW = innerW - 6;
 
-  const disclaimerBox: Box = {
+  const bottomSplitBox: Box = {
     x: contentX,
-    y: innerY + innerH - disclaimerH - 1,
+    y: innerY + innerH - bottomSplitH - 1,
     w: contentW,
-    h: disclaimerH,
+    h: bottomSplitH,
   };
 
   const footerBox: Box = {
     x: contentX,
-    y: disclaimerBox.y - gap - footerH,
+    y: bottomSplitBox.y - gap - footerH,
     w: contentW,
     h: footerH,
   };
@@ -1198,13 +1260,16 @@ export async function generateLotSheetPdf(
     scale: formatScaleLabel(input.scaleLabel),
     date: new Date().toLocaleDateString('pt-BR'),
     confrontants: input.sideConfrontants,
-    tech: techProfile,
     logoBase64,
-    signatureBase64,
-    stampBase64,
   });
 
-  drawLotSheetLegalDisclaimer(doc, disclaimerBox);
+  drawBottomFooterSplit(
+    doc,
+    bottomSplitBox,
+    techProfile,
+    signatureBase64,
+    stampBase64,
+  );
 
   return doc;
 }
