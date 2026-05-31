@@ -2546,6 +2546,13 @@ export default function GISMap({
         console.groupEnd();
 
         if (blocksRes.data) {
+          const { runLotGeometryDiagnosticReport } = await import(
+            '@/lib/lotGeometryDiagnostic'
+          );
+          runLotGeometryDiagnosticReport(
+            blocksRes.data as Record<string, unknown>[],
+            { projectId, context: 'GISMap-load' },
+          );
           const allPolygons = blocksRes.data
             .filter((b: any) => b.geometry && b.geometry.type === "Polygon" && b.geometry.coordinates)
             .map((b: any) => b.geometry.coordinates[0]);

@@ -4,10 +4,8 @@
 
 import { supabase } from '@/lib/supabase';
 import { autoLotSideConfrontants } from '@/lib/lotConfrontations';
-import {
-  confrontationLotDiagnostics,
-  validateConfrontationLot,
-} from '@/lib/lotGeometryNormalize';
+import { runLotGeometryDiagnosticReport } from '@/lib/lotGeometryDiagnostic';
+import { validateConfrontationLot } from '@/lib/lotGeometryNormalize';
 import {
   PROJECT_CONFRONTATION_SNAPSHOT_VERSION,
   saveProjectConfrontationSnapshot,
@@ -83,6 +81,12 @@ export async function runAutomaticConfrontation(
       ? options.blocks
       : await fetchProjectBlocks(projectId, options.tenantId);
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
+
+  runLotGeometryDiagnosticReport(blocks, {
+    projectId,
+    context: 'automaticConfrontation',
+  });
+
   const streetGuides =
     options.streetGuides?.length
       ? options.streetGuides
@@ -97,8 +101,6 @@ export async function runAutomaticConfrontation(
     const lotLabel = String(
       block.number ?? block.lot ?? (blockId || '?'),
     );
-
-    console.log('[CONFRONTATION] lot', lotLabel, confrontationLotDiagnostics(block));
 
     if (!blockId) {
       skipped += 1;
