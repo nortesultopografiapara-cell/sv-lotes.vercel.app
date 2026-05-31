@@ -333,7 +333,70 @@ function lotUsefulCrossWidthMm(
   return maxT - minT;
 }
 
-/** Centro visual do espaço interno (não só centroide). */
+/** Centro lateral entre as duas laterais longas (perpendicular ao eixo principal). */
+function getCrossAxisCenter(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+): [number, number] {
+  const crossX = -mainAxis.axisDy;
+  const crossY = mainAxis.axisDx;
+  const ref = mainAxis.center;
+  let minT = Infinity;
+  let maxT = -Infinity;
+  for (const v of verts) {
+    const t = (v[0] - ref[0]) * crossX + (v[1] - ref[1]) * crossY;
+    minT = Math.min(minT, t);
+    maxT = Math.max(maxT, t);
+  }
+  const midT = (minT + maxT) / 2;
+  return [ref[0] + crossX * midT, ref[1] + crossY * midT];
+}
+
+function inwardDepthFromFront(
+  pos: [number, number],
+  front: LotFrontContext,
+): number {
+  return (
+    (pos[0] - front.edge.mid[0]) * front.inwardNx +
+    (pos[1] - front.edge.mid[1]) * front.inwardNy
+  );
+}
+
+function areaPlacementScore(
+  pos: [number, number],
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  badgePos: [number, number] | null,
+  placedZones: PlacedLabelZone[],
+  crossCenter: [number, number],
+): number {
+  if (!pointInsidePolygon(pos[0], pos[1], verts)) return -Infinity;
+
+  let score = minDistToPolygonEdges(pos, verts) * 2;
+
+  const crossX = -mainAxis.axisDy;
+  const crossY = mainAxis.axisDx;
+  const lateralOff = Math.abs(
+    (pos[0] - crossCenter[0]) * crossX + (pos[1] - crossCenter[1]) * crossY,
+  );
+  score -= lateralOff * 4;
+
+  const areaRadius = 14;
+  for (const zone of placedZones) {
+    const d = Math.hypot(pos[0] - zone.pos[0], pos[1] - zone.pos[1]);
+    const need = areaRadius + zone.radius + 6;
+    if (d < need) score -= (need - d) * 6;
+    if (zone.kind === 'lot_badge' && d < need + 4) score -= 80;
+  }
+
+  if (badgePos) {
+    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 45);
+  }
+
+  return score;
+}
+
+/** Centro visual: centralizado nas laterais e afastado do círculo (frente). */
 function getVisualCenter(
   verts: [number, number][],
   mainAxis: LotMainAxis,
@@ -341,47 +404,46 @@ function getVisualCenter(
   badgePos: [number, number] | null,
   placedZones: PlacedLabelZone[],
 ): [number, number] {
-  const xs = verts.map((p) => p[0]);
-  const ys = verts.map((p) => p[1]);
-  const bboxCenter: [number, number] = [
-    (Math.min(...xs) + Math.max(...xs)) / 2,
-    (Math.min(...ys) + Math.max(...ys)) / 2,
-  ];
-  const geoCenter = centroid(verts);
+  const crossCenter = getCrossAxisCenter(verts, mainAxis);
+  let pos: [number, number] = [...crossCenter];
 
-  const candidates: [number, number][] = [
-    geoCenter,
-    bboxCenter,
-    [
-      (bboxCenter[0] + geoCenter[0]) / 2,
-      (bboxCenter[1] + geoCenter[1]) / 2,
-    ],
-  ];
-
-  if (badgePos) {
-    const deepPoint: [number, number] = [
-      front.edge.mid[0] + front.inwardNx * front.maxInwardDepthMm * 0.62,
-      front.edge.mid[1] + front.inwardNy * front.maxInwardDepthMm * 0.62,
+  const targetDepth = front.maxInwardDepthMm * 0.52;
+  const depthDelta = targetDepth - inwardDepthFromFront(pos, front);
+  if (depthDelta > 0) {
+    pos = [
+      pos[0] + front.inwardNx * depthDelta,
+      pos[1] + front.inwardNy * depthDelta,
     ];
-    candidates.push([
-      (badgePos[0] + deepPoint[0]) / 2,
-      (badgePos[1] + deepPoint[1]) / 2,
-    ]);
-    candidates.push(deepPoint);
   }
 
-  let best = geoCenter;
-  let bestScore = -1;
+  if (!pointInsidePolygon(pos[0], pos[1], verts)) {
+    pos = [...crossCenter];
+  }
 
+  const crossX = -mainAxis.axisDy;
+  const crossY = mainAxis.axisDx;
+  const candidates: [number, number][] = [
+    pos,
+    crossCenter,
+    centroid(verts),
+  ];
+  for (const t of [-10, -7, -5, 5, 7, 10]) {
+    candidates.push([pos[0] + crossX * t, pos[1] + crossY * t]);
+  }
+
+  let best = pos;
+  let bestScore = -Infinity;
   for (const cand of candidates) {
-    if (!pointInsidePolygon(cand[0], cand[1], verts)) continue;
-    let score = minDistToPolygonEdges(cand, verts);
-    for (const zone of placedZones) {
-      const d = Math.hypot(cand[0] - zone.pos[0], cand[1] - zone.pos[1]);
-      score = Math.min(score, d - zone.radius);
-    }
-    if (score > bestScore) {
-      bestScore = score;
+    const s = areaPlacementScore(
+      cand,
+      verts,
+      mainAxis,
+      badgePos,
+      placedZones,
+      crossCenter,
+    );
+    if (s > bestScore) {
+      bestScore = s;
       best = cand;
     }
   }
@@ -394,43 +456,57 @@ function resolveAreaCollisions(
   verts: [number, number][],
   mainAxis: LotMainAxis,
   placedZones: PlacedLabelZone[],
+  badgePos: [number, number] | null,
+  crossCenter: [number, number],
 ): [number, number] {
   const areaRadius = 14;
-  let resolved = resolveLabelCollisions(pos, areaRadius, placedZones, 6);
+  const crossX = -mainAxis.axisDy;
+  const crossY = mainAxis.axisDx;
 
-  if (!pointInsidePolygon(resolved[0], resolved[1], verts)) {
-    resolved = [...mainAxis.center];
+  const candidates: [number, number][] = [pos];
+
+  for (const t of [-10, -8, -6, -4, 4, 6, 8, 10]) {
+    candidates.push([pos[0] + crossX * t, pos[1] + crossY * t]);
   }
 
-  const shifts = [
-    [0, 0],
-    [4, 0],
-    [-4, 0],
-    [0, 4],
-    [0, -4],
-    [6, 3],
-    [-6, 3],
-    [6, -3],
-    [-6, -3],
-  ];
-  for (const [along, cross] of shifts) {
-    const tx =
-      pos[0] + mainAxis.axisDx * along + -mainAxis.axisDy * cross;
-    const ty =
-      pos[1] + mainAxis.axisDy * along + mainAxis.axisDx * cross;
-    const candidate = resolveLabelCollisions(
-      [tx, ty],
-      areaRadius,
-      placedZones,
-      6,
-    );
-    if (pointInsidePolygon(candidate[0], candidate[1], verts)) {
-      resolved = candidate;
-      break;
+  if (badgePos) {
+    let awayX = crossCenter[0] - badgePos[0];
+    let awayY = crossCenter[1] - badgePos[1];
+    if (Math.hypot(awayX, awayY) < 0.5) {
+      awayX = pos[0] - badgePos[0];
+      awayY = pos[1] - badgePos[1];
+    }
+    const len = Math.hypot(awayX, awayY) || 1;
+    awayX /= len;
+    awayY /= len;
+    for (const d of [8, 12, 16, 20]) {
+      candidates.push([
+        pos[0] + awayX * d,
+        pos[1] + awayY * d,
+      ]);
     }
   }
 
-  return resolved;
+  let best = pos;
+  let bestScore = -Infinity;
+
+  for (let cand of candidates) {
+    cand = resolveLabelCollisions(cand, areaRadius, placedZones, 6);
+    const s = areaPlacementScore(
+      cand,
+      verts,
+      mainAxis,
+      badgePos,
+      placedZones,
+      crossCenter,
+    );
+    if (s > bestScore) {
+      bestScore = s;
+      best = cand;
+    }
+  }
+
+  return best;
 }
 
 function splitAreaLabelLines(
@@ -827,6 +903,7 @@ function placeAreaLabelCenter(
 ): { areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
+  const crossCenter = getCrossAxisCenter(verts, mainAxis);
   const visualCenter = getVisualCenter(
     verts,
     mainAxis,
@@ -839,6 +916,8 @@ function placeAreaLabelCenter(
     verts,
     mainAxis,
     placedZones,
+    badgePos,
+    crossCenter,
   );
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
