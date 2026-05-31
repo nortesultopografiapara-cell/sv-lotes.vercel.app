@@ -226,6 +226,14 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
 /** Escala de fontes/offsets apenas no croqui (não tabelas/rodapés). */
 const SKETCH_FONT_SCALE = 2;
 
+/** Ajuste fino da área no plano da prancha (após zona preferencial). */
+const AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM = 18;
+const AREA_LABEL_FINE_TUNE_SHEET_RIGHT_MM = 5;
+
+/** Refinos de legibilidade (somente vértices e medidas internas). */
+const VERTEX_FONT_EXTRA_SCALE = 1.3;
+const DISTANCE_FONT_EXTRA_SCALE = 1.2;
+
 type InnerUsableLotBox = {
   origin: [number, number];
   alongUx: number;
@@ -331,6 +339,19 @@ function getAreaPreferredPosition(
     pos = centroid(verts);
   }
   return pos;
+}
+
+/** Desloca a área em mm: +fundo (eixo interno da frente) e +direita na prancha. */
+function applyAreaLabelFineTune(
+  pos: [number, number],
+  front: LotFrontContext,
+): [number, number] {
+  return [
+    pos[0] +
+      front.inwardNx * AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM +
+      AREA_LABEL_FINE_TUNE_SHEET_RIGHT_MM,
+    pos[1] + front.inwardNy * AREA_LABEL_FINE_TUNE_TOWARD_FUNDO_MM,
+  ];
 }
 
 type LotFrontContext = {
@@ -679,9 +700,13 @@ function distanceLabelFontSize(
   edgeLenMm: number,
   narrow: boolean,
 ): number {
-  let size = sketchFontSize(narrow ? 5.5 : 6);
-  if (edgeLenMm < sketchOffsetMm(18)) size = Math.min(size, sketchFontSize(5));
-  if (edgeLenMm < sketchOffsetMm(12)) size = sketchFontSize(4.5);
+  let size = sketchFontSize(narrow ? 5.5 : 6) * DISTANCE_FONT_EXTRA_SCALE;
+  if (edgeLenMm < sketchOffsetMm(18)) {
+    size = Math.min(size, sketchFontSize(5) * DISTANCE_FONT_EXTRA_SCALE);
+  }
+  if (edgeLenMm < sketchOffsetMm(12)) {
+    size = sketchFontSize(4.5) * DISTANCE_FONT_EXTRA_SCALE;
+  }
   return size;
 }
 
@@ -814,7 +839,7 @@ function drawFrontStreetLabel(
 function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
   const verts = preparePolygonVertices(points);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(sketchFontSize(5.5));
+  doc.setFontSize(sketchFontSize(5.5) * VERTEX_FONT_EXTRA_SCALE);
   doc.setTextColor(...BLACK);
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
@@ -942,7 +967,7 @@ function placeAreaLabelCenter(
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
   const preferred = getAreaPreferredPosition(verts, mainAxis, front);
-  const areaPos = placeAreaLabelPreferredZone(
+  let areaPos = placeAreaLabelPreferredZone(
     preferred,
     verts,
     mainAxis,
@@ -950,6 +975,17 @@ function placeAreaLabelCenter(
     placedZones,
     badgePos,
   );
+  areaPos = applyAreaLabelFineTune(areaPos, front);
+  if (!pointInsidePolygon(areaPos[0], areaPos[1], verts)) {
+    areaPos = placeAreaLabelPreferredZone(
+      preferred,
+      verts,
+      mainAxis,
+      front,
+      placedZones,
+      badgePos,
+    );
+  }
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
   const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
