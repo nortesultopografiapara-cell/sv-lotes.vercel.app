@@ -3,7 +3,11 @@
  */
 
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
-import { resolveLotSideConfrontants } from "@/lib/lotConfrontations";
+import {
+  loadManualConfrontants,
+  resolveLotSideConfrontants,
+  type ManualSideConfrontants,
+} from "@/lib/lotConfrontations";
 import { getOfficialLotMeasurements } from "@/lib/officialLotMeasurements";
 import type { LotSheetSideConfrontants } from "@/lib/lotSheetEnrichment";
 
@@ -26,10 +30,19 @@ const formatMeasure = (val: unknown): string => {
   );
 };
 
+function formatConfrontantForContract(raw: string): string {
+  const v = String(raw || "").trim();
+  if (!v || v === "—" || /^não informado$/i.test(v)) {
+    return "confrontação pendente";
+  }
+  return v;
+}
+
 export function resolveContractLotSidesAndConfrontants(params: {
   block: Record<string, unknown>;
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
+  manualConfrontants?: ManualSideConfrontants | null;
 }): { sides: ContractLotSides; confrontants: LotSheetSideConfrontants } {
   const block = params.block;
   let sides: ContractLotSides = {
@@ -79,11 +92,17 @@ export function resolveContractLotSidesAndConfrontants(params: {
   };
 
   if (blockId && params.projectBlocks?.length) {
+    const manual =
+      params.manualConfrontants ??
+      (typeof window !== "undefined"
+        ? loadManualConfrontants(blockId)
+        : null);
     confrontants = resolveLotSideConfrontants(
       block,
       blockId,
       params.projectBlocks,
       params.streetGuides || [],
+      manual,
     );
   }
 
@@ -96,7 +115,7 @@ function formatBoundaryPart(
   confrontant: string,
 ): string {
   const m = formatMeasure(measure);
-  const c = confrontant.trim() || "não informado";
+  const c = formatConfrontantForContract(confrontant);
   return `${label}: <strong>${m}</strong> confrontando com <strong>${c}</strong>`;
 }
 
@@ -105,6 +124,7 @@ export function formatContractLotBoundariesClause(params: {
   block: Record<string, unknown>;
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
+  manualConfrontants?: ManualSideConfrontants | null;
 }): string {
   const { sides, confrontants } = resolveContractLotSidesAndConfrontants(
     params,
@@ -122,5 +142,5 @@ export function formatContractLotBoundariesClause(params: {
       sides.ladoEsquerdo,
       confrontants.ladoEsquerdo,
     ),
-  ].join(", ");
+  ].join("; ");
 }

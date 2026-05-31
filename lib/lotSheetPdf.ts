@@ -363,12 +363,30 @@ function drawEdgeMeasures(
   return placed;
 }
 
+type LabelAvoidBand = { yMin: number; yMax: number; pad?: number };
+
+function nudgeLabelOutsideBands(
+  x: number,
+  y: number,
+  bands: LabelAvoidBand[],
+): [number, number] {
+  let ny = y;
+  for (const band of bands) {
+    const pad = band.pad ?? 4;
+    if (ny >= band.yMin - pad && ny <= band.yMax + pad) {
+      ny = band.yMin - pad - 2;
+    }
+  }
+  return [x, Math.max(2, ny)];
+}
+
 /** Logradouro da frente: fora do lote, paralelo à divisa. */
 function drawFrontStreetLabel(
   doc: jsPDF,
   points: [number, number][],
   frontEdgeIndex: number,
   streetName: string,
+  avoidBands?: LabelAvoidBand[],
 ): [number, number] | null {
   const name = String(streetName || '').trim();
   if (!name || name === '—') return null;
@@ -381,7 +399,10 @@ function drawFrontStreetLabel(
   const edge = getEdgeGeometry(verts, fi);
   const narrow = lotSpanOnSheet(verts) < 38;
   const streetOffset = narrow ? 12 : 15;
-  const [x, y] = edgeExternalLabelPos(edge, streetOffset);
+  let [x, y] = edgeExternalLabelPos(edge, streetOffset);
+  if (avoidBands?.length) {
+    [x, y] = nudgeLabelOutsideBands(x, y, avoidBands);
+  }
 
   console.log('LOT_SHEET_FRONT_EDGE_DETECTED', {
     frontEdgeIndex: fi,
@@ -822,6 +843,8 @@ function drawConfrontationsBox(
   h: number,
   confrontants: LotSheetSideConfrontants,
 ) {
+  const padX = 3;
+  const padTop = 4;
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
   doc.rect(x, y, w, h);
@@ -831,25 +854,27 @@ function drawConfrontationsBox(
     ly: number,
     text: string,
     bold = false,
-    size = 4.8,
+    size = 4.5,
   ) => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
     doc.setFontSize(size);
     doc.setTextColor(...BLACK);
-    doc.text(text, lx, ly, { maxWidth: w - 4 });
+    doc.text(text, lx, ly, { maxWidth: w - padX * 2 });
   };
 
-  label(x + 2, y + 4, 'CONFRONTAÇÕES', true, 5.5);
-  let ly = y + 8;
+  label(x + padX, y + padTop, 'CONFRONTAÇÕES', true, 5.2);
+  let ly = y + padTop + 5;
   const rows: [string, string][] = [
-    ['Frente:', confrontants.frente || '—'],
-    ['Fundo:', confrontants.fundo || '—'],
-    ['Lado Direito:', confrontants.ladoDireito || '—'],
-    ['Lado Esquerdo:', confrontants.ladoEsquerdo || '—'],
+    ['Frente', confrontants.frente || '—'],
+    ['Fundo', confrontants.fundo || '—'],
+    ['Lado Direito', confrontants.ladoDireito || '—'],
+    ['Lado Esquerdo', confrontants.ladoEsquerdo || '—'],
   ];
+  const rowStep = (h - padTop - 6) / rows.length;
   for (const [k, v] of rows) {
-    label(x + 2, ly, `${k} ${v}`, false, 4.8);
-    ly += 3.2;
+    label(x + padX, ly, `${k}:`, false, 4.3);
+    label(x + padX + 18, ly, v, false, 4.3);
+    ly += Math.max(4.2, rowStep);
   }
 }
 
@@ -902,11 +927,7 @@ function drawMetricTopoFooter(
   ly += 4;
   label(x + 2, ly, `PROPRIETÁRIO: ${data.owner.name}`);
   ly += 4;
-  label(x + 2, ly, `CPF: ${data.owner.cpf}`);
-  ly += 4;
-  label(x + 2, ly, `NOME DO PAI: ${data.owner.fatherName}`);
-  ly += 4;
-  label(x + 2, ly, `NOME DA MÃE: ${data.owner.motherName}`);
+  label(x + 2, ly, `CPF/CNPJ: ${data.owner.cpf}`);
   ly += 4;
   label(x + 2, ly, `ENDEREÇO: ${data.owner.address}`);
   ly += 4;
@@ -928,12 +949,12 @@ function drawMetricTopoFooter(
   label(rx, y + 10, `ESCALA: ${data.scale}`, true);
   label(rx + col * 1.15, y + 10, `DATA: ${data.date}`, true);
 
-  const confrontBoxH = 16;
+  const confrontBoxH = 22;
   const techBoxY = y + 14;
   drawConfrontationsBox(doc, rx, techBoxY, rw, confrontBoxH, data.confrontants);
 
-  const rtBoxY = techBoxY + confrontBoxH + 1;
-  const techBoxH = h - 16 - confrontBoxH - 1;
+  const rtBoxY = techBoxY + confrontBoxH + 1.5;
+  const techBoxH = h - 14 - confrontBoxH - 2;
   doc.rect(rx, rtBoxY, rw, techBoxH);
   label(rx + 2, rtBoxY + 4, 'RESPONSÁVEL TÉCNICO', true, 5.5);
 
@@ -1036,7 +1057,7 @@ export async function generateLotSheetPdf(
   doc.setLineWidth(0.4);
   doc.rect(innerX, innerY, innerW, innerH);
 
-  const footerH = 46;
+  const footerH = 48;
   const disclaimerH = DISCLAIMER_BAND_H;
   const scaleBandH = 9;
   const tableRowH = 4.6;
@@ -1129,11 +1150,16 @@ export async function generateLotSheetPdf(
 
   const frontMeasurePos =
     measurePositions.find((p) => p.edgeIndex === frontEdge) ?? null;
+  const labelAvoidBands: LabelAvoidBand[] = [
+    { yMin: scaleY - 1, yMax: scaleY + scaleBandH + 8, pad: 6 },
+    { yMin: tableBox.y - 2, yMax: tableBox.y + tableBox.h + 2, pad: 5 },
+  ];
   const streetPos = drawFrontStreetLabel(
     doc,
     sheetPts,
     frontEdge,
     input.sideConfrontants.frente,
+    labelAvoidBands,
   );
 
   const badgePos = drawLotNumberBadge(doc, sheetPts, lotNum, frontEdge, [

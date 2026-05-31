@@ -716,12 +716,7 @@ export async function loadFreshRegenerationEntities(
   let streetGuides: Array<Record<string, unknown>> = [];
   if (projectId) {
     const [{ data: blocks }, { data: guides }] = await Promise.all([
-      supabase
-        .from('blocks')
-        .select(
-          'id, number, lot, block, block_name, quadra, geometry, front_segment_index, front_street_name, front_street_type, segments, area',
-        )
-        .eq('project_id', projectId),
+      supabase.from('blocks').select('*').eq('project_id', projectId),
       supabase.from('street_guides').select('*').eq('project_id', projectId),
     ]);
     projectBlocks = (blocks || []) as Array<Record<string, unknown>>;
@@ -830,6 +825,7 @@ export async function buildFreshSaleContractHtml(
     contractDate: new Date().toISOString(),
     projectBlocks,
     streetGuides,
+    manualConfrontants: null,
   });
 
   console.log('REGENERATE_HTML_GENERATED', {

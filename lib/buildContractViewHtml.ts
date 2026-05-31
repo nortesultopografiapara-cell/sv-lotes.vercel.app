@@ -5,6 +5,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
+import { loadManualConfrontants } from "@/lib/lotConfrontations";
 
 export async function buildContractViewHtml(
   supabase: SupabaseClient,
@@ -19,10 +20,30 @@ export async function buildContractViewHtml(
   },
 ): Promise<string> {
   const contract = params.contract;
-  const block =
+  let block =
     params.block ||
     (contract.blocks as Record<string, unknown>) ||
     {};
+
+  const blockId = String(
+    block.id || contract.block_id || "",
+  ).trim();
+
+  if (blockId) {
+    const { data: fullBlock } = await supabase
+      .from("blocks")
+      .select("*")
+      .eq("id", blockId)
+      .maybeSingle();
+    if (fullBlock) {
+      block = {
+        ...(fullBlock as Record<string, unknown>),
+        ...block,
+        id: blockId,
+      };
+    }
+  }
+
   const projectId =
     (contract.project_id as string) ||
     (block.project_id as string) ||
@@ -33,17 +54,16 @@ export async function buildContractViewHtml(
 
   if (projectId) {
     const [{ data: blocks }, { data: guides }] = await Promise.all([
-      supabase
-        .from("blocks")
-        .select(
-          "id, number, lot, block, block_name, quadra, geometry, front_segment_index, front_street_name, front_street_type, segments, area",
-        )
-        .eq("project_id", projectId),
+      supabase.from("blocks").select("*").eq("project_id", projectId),
       supabase.from("street_guides").select("*").eq("project_id", projectId),
     ]);
     projectBlocks = (blocks || []) as Record<string, unknown>[];
     streetGuides = (guides || []) as Record<string, unknown>[];
   }
+
+  const manualConfrontants = blockId
+    ? loadManualConfrontants(blockId)
+    : null;
 
   const sale = {
     ...(params.sale || (contract.sales as Record<string, unknown>) || {}),
@@ -69,5 +89,6 @@ export async function buildContractViewHtml(
     financeReceipts: params.receipts,
     projectBlocks,
     streetGuides,
+    manualConfrontants,
   });
 }

@@ -11,6 +11,7 @@ import {
   normalizeCompanyAddressLine,
 } from "@/lib/contractCompanyDisplay";
 import { formatContractLotBoundariesClause } from "@/lib/contractLotBoundaries";
+import type { ManualSideConfrontants } from "@/lib/lotConfrontations";
 import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
@@ -160,6 +161,7 @@ interface GenerateContractParams {
   /** Lotes do projeto — confrontações automáticas (mesma fonte da prancha). */
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
+  manualConfrontants?: ManualSideConfrontants | null;
 }
 
 export function generateContractHTML({
@@ -173,6 +175,7 @@ export function generateContractHTML({
   financeReceipts,
   projectBlocks,
   streetGuides,
+  manualConfrontants,
 }: GenerateContractParams) {
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", {
@@ -204,7 +207,10 @@ export function generateContractHTML({
 
   const toTitleCase = (str: string) => {
     if (!str) return "";
-    return str.toLowerCase().replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+    return str
+      .toLowerCase()
+      .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
+      .replace(/\bS\/n\b/g, "S/N");
   };
 
   // Extenso support for currency
@@ -285,6 +291,7 @@ export function generateContractHTML({
     block: block || {},
     projectBlocks,
     streetGuides,
+    manualConfrontants,
   });
 
   const chanfreClause =
@@ -491,7 +498,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${chanfreClause}${curvaClause}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: o imóvel identificado como <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${chanfreClause}${curvaClause}.
                 </p>
             </div>
 

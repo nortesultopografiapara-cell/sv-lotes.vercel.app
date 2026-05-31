@@ -6,7 +6,10 @@ import { normalizeSellerFromCompany } from "@/lib/contractSeller";
 
 function toTitleCase(str: string): string {
   if (!str) return "";
-  return str.toLowerCase().replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+  return str
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
+    .replace(/\bS\/n\b/g, "S/N");
 }
 
 /** Corrige endereços colados sem vírgulas e ", S" → ", S/N". */

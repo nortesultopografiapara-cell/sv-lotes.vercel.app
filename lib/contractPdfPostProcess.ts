@@ -13,19 +13,40 @@ export type ContractPdfChromeInput = {
   logoBase64: string | null;
 };
 
-/** Remove apenas páginas finais realmente vazias (evita apagar páginas 2–N do contrato). */
-export function removeTrailingBlankPdfPages(pdf: {
+type PdfWithText = {
   internal: { getNumberOfPages: () => number; pages?: unknown[] };
   deletePage: (n: number) => void;
-}): void {
-  const pages = pdf.internal.pages as unknown[] | undefined;
-  if (!pages) return;
+  getTextFromPage?: (n: number) => { items?: Array<{ str?: string }> };
+};
 
+/** Página sem conteúdo útil (só quebra de layout do html2pdf). */
+function isPdfPageEffectivelyEmpty(pdf: PdfWithText, pageNum: number): boolean {
+  const pages = pdf.internal.pages as unknown[] | undefined;
+  if (pages) {
+    const pageOps = pages[pageNum];
+    if (!Array.isArray(pageOps)) return false;
+    if (pageOps.length <= 5) return true;
+  }
+
+  if (typeof pdf.getTextFromPage !== "function") return false;
+
+  try {
+    const text = pdf.getTextFromPage(pageNum);
+    const items = text?.items || [];
+    const joined = items
+      .map((it) => String(it.str || "").trim())
+      .filter(Boolean)
+      .join("");
+    return joined.length < 25;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove páginas finais sem conteúdo (cabeçalho/rodapé são aplicados depois). */
+export function removeTrailingBlankPdfPages(pdf: PdfWithText): void {
   let total = pdf.internal.getNumberOfPages();
-  while (total > 1) {
-    const pageOps = pages[total];
-    if (!Array.isArray(pageOps)) break;
-    if (pageOps.length > 5) break;
+  while (total > 1 && isPdfPageEffectivelyEmpty(pdf, total)) {
     pdf.deletePage(total);
     total = pdf.internal.getNumberOfPages();
   }
@@ -53,6 +74,8 @@ export function applyContractPdfChrome(
     setDrawColor: (r: number, g?: number, b?: number) => void;
     setLineWidth: (w: number) => void;
     line: (x1: number, y1: number, x2: number, y2: number) => void;
+    getTextFromPage?: (n: number) => { items?: Array<{ str?: string }> };
+    deletePage: (n: number) => void;
   },
   data: ContractPdfChromeInput,
 ): void {
