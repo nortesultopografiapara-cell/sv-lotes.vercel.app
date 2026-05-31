@@ -219,8 +219,118 @@ function getLotMainAxis(verts: [number, number][]): LotMainAxis {
     axisDy,
     angleDeg: getReadableRotation(axisDx, axisDy),
     narrow,
-    internalOffsetMm: narrow ? 2.5 : 4,
+    internalOffsetMm: narrow ? 5 : 8,
   };
+}
+
+/** Escala de fontes/offsets apenas no croqui (não tabelas/rodapés). */
+const SKETCH_FONT_SCALE = 2;
+
+type InnerUsableLotBox = {
+  origin: [number, number];
+  alongUx: number;
+  alongUy: number;
+  crossUx: number;
+  crossUy: number;
+  alongMin: number;
+  alongMax: number;
+  crossMin: number;
+  crossMax: number;
+};
+
+function sketchFontSize(base: number): number {
+  return base * SKETCH_FONT_SCALE;
+}
+
+function sketchOffsetMm(base: number): number {
+  return base * SKETCH_FONT_SCALE;
+}
+
+/** Retângulo interno útil do lote (projeção along/cross, com margem). */
+function getInnerUsableLotBox(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  front: LotFrontContext,
+): InnerUsableLotBox {
+  const origin = front.edge.mid;
+  const alongUx = front.inwardNx;
+  const alongUy = front.inwardNy;
+  const crossUx = -mainAxis.axisDy;
+  const crossUy = mainAxis.axisDx;
+
+  let alongMin = Infinity;
+  let alongMax = -Infinity;
+  let crossMin = Infinity;
+  let crossMax = -Infinity;
+
+  for (const v of verts) {
+    const da = (v[0] - origin[0]) * alongUx + (v[1] - origin[1]) * alongUy;
+    const dc = (v[0] - origin[0]) * crossUx + (v[1] - origin[1]) * crossUy;
+    alongMin = Math.min(alongMin, da);
+    alongMax = Math.max(alongMax, da);
+    crossMin = Math.min(crossMin, dc);
+    crossMax = Math.max(crossMax, dc);
+  }
+
+  const alongSpan = alongMax - alongMin || 1;
+  const crossSpan = crossMax - crossMin || 1;
+  const alongInset = alongSpan * 0.14;
+  const crossInset = crossSpan * 0.14;
+
+  return {
+    origin,
+    alongUx,
+    alongUy,
+    crossUx,
+    crossUy,
+    alongMin: alongMin + alongInset,
+    alongMax: alongMax - alongInset,
+    crossMin: crossMin + crossInset,
+    crossMax: crossMax - crossInset,
+  };
+}
+
+function pointFromInnerBox(
+  inner: InnerUsableLotBox,
+  alongT: number,
+  crossT: number,
+): [number, number] {
+  return [
+    inner.origin[0] +
+      inner.alongUx * alongT +
+      inner.crossUx * crossT,
+    inner.origin[1] +
+      inner.alongUy * alongT +
+      inner.crossUy * crossT,
+  ];
+}
+
+/**
+ * Posição preferencial da área: ~50% da profundidade (fundo→frente), centro lateral no retângulo útil.
+ */
+function getAreaPreferredPosition(
+  verts: [number, number][],
+  mainAxis: LotMainAxis,
+  front: LotFrontContext,
+): [number, number] {
+  const inner = getInnerUsableLotBox(verts, mainAxis, front);
+  const alongSpan = inner.alongMax - inner.alongMin;
+  const depthFromFundo = 0.5;
+  const alongT = inner.alongMax - alongSpan * depthFromFundo;
+  const crossT = (inner.crossMin + inner.crossMax) / 2;
+  let pos = pointFromInnerBox(inner, alongT, crossT);
+
+  if (!pointInsidePolygon(pos[0], pos[1], verts)) {
+    pos = pointFromInnerBox(
+      inner,
+      inner.alongMin + alongSpan * 0.48,
+      crossT,
+    );
+  }
+  if (!pointInsidePolygon(pos[0], pos[1], verts)) {
+    pos = centroid(verts);
+  }
+  return pos;
 }
 
 type LotFrontContext = {
@@ -333,172 +443,95 @@ function lotUsefulCrossWidthMm(
   return maxT - minT;
 }
 
-/** Centro lateral entre as duas laterais longas (perpendicular ao eixo principal). */
-function getCrossAxisCenter(
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
-): [number, number] {
-  const crossX = -mainAxis.axisDy;
-  const crossY = mainAxis.axisDx;
-  const ref = mainAxis.center;
-  let minT = Infinity;
-  let maxT = -Infinity;
-  for (const v of verts) {
-    const t = (v[0] - ref[0]) * crossX + (v[1] - ref[1]) * crossY;
-    minT = Math.min(minT, t);
-    maxT = Math.max(maxT, t);
-  }
-  const midT = (minT + maxT) / 2;
-  return [ref[0] + crossX * midT, ref[1] + crossY * midT];
-}
-
-function inwardDepthFromFront(
-  pos: [number, number],
-  front: LotFrontContext,
-): number {
-  return (
-    (pos[0] - front.edge.mid[0]) * front.inwardNx +
-    (pos[1] - front.edge.mid[1]) * front.inwardNy
-  );
-}
-
 function areaPlacementScore(
   pos: [number, number],
   verts: [number, number][],
   mainAxis: LotMainAxis,
   badgePos: [number, number] | null,
   placedZones: PlacedLabelZone[],
-  crossCenter: [number, number],
+  preferred: [number, number],
 ): number {
   if (!pointInsidePolygon(pos[0], pos[1], verts)) return -Infinity;
 
   let score = minDistToPolygonEdges(pos, verts) * 2;
+  score -= Math.hypot(pos[0] - preferred[0], pos[1] - preferred[1]) * 6;
 
-  const crossX = -mainAxis.axisDy;
-  const crossY = mainAxis.axisDx;
-  const lateralOff = Math.abs(
-    (pos[0] - crossCenter[0]) * crossX + (pos[1] - crossCenter[1]) * crossY,
-  );
-  score -= lateralOff * 4;
-
-  const areaRadius = 14;
+  const areaRadius = sketchOffsetMm(7);
   for (const zone of placedZones) {
     const d = Math.hypot(pos[0] - zone.pos[0], pos[1] - zone.pos[1]);
-    const need = areaRadius + zone.radius + 6;
-    if (d < need) score -= (need - d) * 6;
-    if (zone.kind === 'lot_badge' && d < need + 4) score -= 80;
+    const need = areaRadius + zone.radius + sketchOffsetMm(3);
+    if (d < need) score -= (need - d) * 8;
+    if (zone.kind === 'lot_badge' && d < need + 6) score -= 120;
   }
 
   if (badgePos) {
-    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 45);
+    score += Math.min(Math.hypot(pos[0] - badgePos[0], pos[1] - badgePos[1]), 50);
   }
 
   return score;
 }
 
-/** Centro visual: centralizado nas laterais e afastado do círculo (frente). */
-function getVisualCenter(
+function placeAreaLabelPreferredZone(
+  preferred: [number, number],
   verts: [number, number][],
   mainAxis: LotMainAxis,
   front: LotFrontContext,
-  badgePos: [number, number] | null,
   placedZones: PlacedLabelZone[],
+  badgePos: [number, number] | null,
 ): [number, number] {
-  const crossCenter = getCrossAxisCenter(verts, mainAxis);
-  let pos: [number, number] = [...crossCenter];
+  const inner = getInnerUsableLotBox(verts, mainAxis, front);
+  const alongSpan = inner.alongMax - inner.alongMin;
+  const crossSpan = inner.crossMax - inner.crossMin;
+  const areaRadius = sketchOffsetMm(7);
 
-  const targetDepth = front.maxInwardDepthMm * 0.52;
-  const depthDelta = targetDepth - inwardDepthFromFront(pos, front);
-  if (depthDelta > 0) {
-    pos = [
-      pos[0] + front.inwardNx * depthDelta,
-      pos[1] + front.inwardNy * depthDelta,
-    ];
-  }
+  const candidates: [number, number][] = [preferred];
 
-  if (!pointInsidePolygon(pos[0], pos[1], verts)) {
-    pos = [...crossCenter];
-  }
-
-  const crossX = -mainAxis.axisDy;
-  const crossY = mainAxis.axisDx;
-  const candidates: [number, number][] = [
-    pos,
-    crossCenter,
-    centroid(verts),
-  ];
-  for (const t of [-10, -7, -5, 5, 7, 10]) {
-    candidates.push([pos[0] + crossX * t, pos[1] + crossY * t]);
-  }
-
-  let best = pos;
-  let bestScore = -Infinity;
-  for (const cand of candidates) {
-    const s = areaPlacementScore(
-      cand,
-      verts,
-      mainAxis,
-      badgePos,
-      placedZones,
-      crossCenter,
+  for (const df of [0.45, 0.5, 0.55, 0.48, 0.52]) {
+    candidates.push(
+      pointFromInnerBox(
+        inner,
+        inner.alongMax - alongSpan * df,
+        (inner.crossMin + inner.crossMax) / 2,
+      ),
     );
-    if (s > bestScore) {
-      bestScore = s;
-      best = cand;
-    }
   }
 
-  return best;
-}
-
-function resolveAreaCollisions(
-  pos: [number, number],
-  verts: [number, number][],
-  mainAxis: LotMainAxis,
-  placedZones: PlacedLabelZone[],
-  badgePos: [number, number] | null,
-  crossCenter: [number, number],
-): [number, number] {
-  const areaRadius = 14;
-  const crossX = -mainAxis.axisDy;
-  const crossY = mainAxis.axisDx;
-
-  const candidates: [number, number][] = [pos];
-
-  for (const t of [-10, -8, -6, -4, 4, 6, 8, 10]) {
-    candidates.push([pos[0] + crossX * t, pos[1] + crossY * t]);
+  for (const ct of [-0.2, -0.1, 0, 0.1, 0.2]) {
+    candidates.push(
+      pointFromInnerBox(
+        inner,
+        inner.alongMax - alongSpan * 0.5,
+        (inner.crossMin + inner.crossMax) / 2 + crossSpan * ct,
+      ),
+    );
   }
 
   if (badgePos) {
-    let awayX = crossCenter[0] - badgePos[0];
-    let awayY = crossCenter[1] - badgePos[1];
-    if (Math.hypot(awayX, awayY) < 0.5) {
-      awayX = pos[0] - badgePos[0];
-      awayY = pos[1] - badgePos[1];
-    }
+    let awayX = preferred[0] - badgePos[0];
+    let awayY = preferred[1] - badgePos[1];
     const len = Math.hypot(awayX, awayY) || 1;
     awayX /= len;
     awayY /= len;
-    for (const d of [8, 12, 16, 20]) {
+    for (const d of [10, 14, 18, 22]) {
       candidates.push([
-        pos[0] + awayX * d,
-        pos[1] + awayY * d,
+        preferred[0] + awayX * d,
+        preferred[1] + awayY * d,
       ]);
     }
   }
 
-  let best = pos;
+  let best = preferred;
   let bestScore = -Infinity;
 
   for (let cand of candidates) {
-    cand = resolveLabelCollisions(cand, areaRadius, placedZones, 6);
+    cand = resolveLabelCollisions(cand, areaRadius, placedZones, sketchOffsetMm(3));
     const s = areaPlacementScore(
       cand,
       verts,
       mainAxis,
       badgePos,
       placedZones,
-      crossCenter,
+      preferred,
     );
     if (s > bestScore) {
       bestScore = s;
@@ -518,10 +551,10 @@ function splitAreaLabelLines(
   const unit = unitMatch ? unitMatch[0].trim() : 'm²';
   const value = areaText.replace(/\s*(m²|M²|m2)\s*$/i, '').trim();
 
-  if (!narrow && usefulCrossWidthMm >= 26) {
+  if (!narrow && usefulCrossWidthMm >= sketchOffsetMm(26)) {
     return [areaText];
   }
-  if (usefulCrossWidthMm >= 22 && value.length <= 10) {
+  if (usefulCrossWidthMm >= sketchOffsetMm(22) && value.length <= 10) {
     return [areaText];
   }
   return [value, unit];
@@ -646,9 +679,9 @@ function distanceLabelFontSize(
   edgeLenMm: number,
   narrow: boolean,
 ): number {
-  let size = narrow ? 5.5 : 6;
-  if (edgeLenMm < 18) size = Math.min(size, 5);
-  if (edgeLenMm < 12) size = 4.5;
+  let size = sketchFontSize(narrow ? 5.5 : 6);
+  if (edgeLenMm < sketchOffsetMm(18)) size = Math.min(size, sketchFontSize(5));
+  if (edgeLenMm < sketchOffsetMm(12)) size = sketchFontSize(4.5);
   return size;
 }
 
@@ -741,7 +774,7 @@ function drawFrontStreetLabel(
   const fi = ((frontEdgeIndex % n) + n) % n;
   const edge = getEdgeGeometry(verts, fi);
   const narrow = lotSpanOnSheet(verts) < 38;
-  const streetOffset = (narrow ? 12 : 15) + 2;
+  const streetOffset = sketchOffsetMm((narrow ? 12 : 15) + 2);
   let [x, y] = edgeExternalLabelPos(edge, streetOffset);
   if (avoidBands?.length) {
     [x, y] = nudgeLabelOutsideBands(x, y, avoidBands);
@@ -766,13 +799,13 @@ function drawFrontStreetLabel(
   });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(narrow ? 6 : 7);
+  doc.setFontSize(sketchFontSize(narrow ? 6 : 7));
   doc.setTextColor(...BLACK);
   doc.text(name, x, y, {
     angle: edge.angleDeg,
     align: 'center',
     baseline: 'middle',
-    maxWidth: 58,
+    maxWidth: sketchOffsetMm(58),
   });
 
   return [x, y];
@@ -781,13 +814,17 @@ function drawFrontStreetLabel(
 function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
   const verts = preparePolygonVertices(points);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.5);
+  doc.setFontSize(sketchFontSize(5.5));
   doc.setTextColor(...BLACK);
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
   verts.forEach((p, i) => {
     doc.circle(p[0], p[1], 0.9, 'S');
-    doc.text(`M-${String(i + 1).padStart(2, '0')}`, p[0] + 2.2, p[1] - 1.2);
+    doc.text(
+      `M-${String(i + 1).padStart(2, '0')}`,
+      p[0] + sketchOffsetMm(2.2),
+      p[1] - sketchOffsetMm(1.2),
+    );
   });
 }
 
@@ -801,11 +838,14 @@ function labelAtEdgeExternal(
   if (!text || text === '—') return;
   const edge = getEdgeGeometry(verts, edgeIndex);
   const [x, y] = edgeExternalLabelPos(edge, offsetMm);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(sketchFontSize(6));
+  doc.setTextColor(...BLACK);
   doc.text(text, x, y, {
     angle: edge.angleDeg,
     align: 'center',
     baseline: 'middle',
-    maxWidth: 52,
+    maxWidth: sketchOffsetMm(52),
   });
 }
 
@@ -830,11 +870,9 @@ function placeSideConfrontantLabels(
   const dirIdx = (frenteIdx + 1) % n;
   const esqIdx = (frenteIdx + n - 1) % n;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
   doc.setTextColor(...BLACK);
 
-  const extOffset = 10;
+  const extOffset = sketchOffsetMm(10);
   labelAtEdgeExternal(doc, verts, fundoIdx, sides.fundo, extOffset);
   labelAtEdgeExternal(doc, verts, dirIdx, sides.ladoDireito, extOffset);
   labelAtEdgeExternal(doc, verts, esqIdx, sides.ladoEsquerdo, extOffset);
@@ -891,7 +929,7 @@ function placeLotNumberNearFront(
   return { badgePos, radius: r };
 }
 
-/** Área no centro visual do lote, fonte destacada, separada do círculo. */
+/** Área na zona preferencial central (retângulo útil), separada do círculo. */
 function placeAreaLabelCenter(
   doc: jsPDF,
   points: [number, number][],
@@ -903,21 +941,14 @@ function placeAreaLabelCenter(
 ): { areaPos: [number, number] } {
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
-  const crossCenter = getCrossAxisCenter(verts, mainAxis);
-  const visualCenter = getVisualCenter(
+  const preferred = getAreaPreferredPosition(verts, mainAxis, front);
+  const areaPos = placeAreaLabelPreferredZone(
+    preferred,
     verts,
     mainAxis,
     front,
-    badgePos,
-    placedZones,
-  );
-  const areaPos = resolveAreaCollisions(
-    visualCenter,
-    verts,
-    mainAxis,
     placedZones,
     badgePos,
-    crossCenter,
   );
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
