@@ -32,13 +32,32 @@ import {
   displayContractNumber,
   isValidStoredContractNumber,
 } from "@/lib/contractNumber";
-import { generateContractHTML } from "@/lib/contractTemplate";
 import { getReportHeaderLogoUrl } from "@/lib/reportBranding";
 import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
-import { removeTrailingBlankPdfPages } from "@/lib/contractPdfPostProcess";
+import { buildContractViewHtml } from "@/lib/buildContractViewHtml";
+import {
+  getCompanyDisplayName,
+  formatCompanyAddressForHeader,
+} from "@/lib/contractCompanyDisplay";
+import { applyContractPdfChrome } from "@/lib/contractPdfPostProcess";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
+
+function formatCNPJCPF(val: string): string {
+  if (!val) return "";
+  const numeric = val.replace(/\D/g, "");
+  if (numeric.length === 14) {
+    return numeric.replace(
+      /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
+      "$1.$2.$3/$4-$5",
+    );
+  }
+  if (numeric.length === 11) {
+    return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+  return val;
+}
 
 /** Resolve tenant/empresa ativa (perfil + impersonação super admin). */
 function resolveContractsTenantId(user: any): string | null {
@@ -415,6 +434,8 @@ export default function ContractsPage() {
     valorTotal: 0,
   });
   const [tenantData, setTenantData] = useState<any>(null);
+  const [contractViewHtml, setContractViewHtml] = useState<string | null>(null);
+  const [contractViewLoading, setContractViewLoading] = useState(false);
 
   useEffect(() => {
     async function loadTenant() {
@@ -614,6 +635,38 @@ export default function ContractsPage() {
     }
   }, [selectedContract?.id, user?.role, canShowRegenerateContract]);
 
+  useEffect(() => {
+    if (!selectedContract?.id || !tenantData) {
+      setContractViewHtml(null);
+      return;
+    }
+    let active = true;
+    (async () => {
+      setContractViewLoading(true);
+      try {
+        const block = enrichBlockForContract(selectedContract.blocks);
+        const html = await buildContractViewHtml(supabase, {
+          contract: selectedContract,
+          tenant: tenantData,
+          receipts,
+          block,
+        });
+        if (active) setContractViewHtml(html);
+      } catch (e) {
+        console.error("[CONTRATOS] contractViewHtml", e);
+        if (active) setContractViewHtml(null);
+      } finally {
+        if (active) setContractViewLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedContract, tenantData, receipts]);
+
+  const resolvedContractHtml =
+    contractViewHtml ?? selectedContract?.generated_html ?? null;
+
   const reloadContractsList = async () => {
     if (!user) return [];
     const resolvedTenantId = await resolveContractsTenantWithDb(user);
@@ -638,15 +691,40 @@ export default function ContractsPage() {
       await html2pdf()
         .from(element)
         .set({
-          margin: [10, 10, 10, 10],
+          margin: [35, 15, 25, 15],
           filename: `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`,
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "avoid-all"] },
         })
         .toPdf()
         .get("pdf")
-        .then((pdf: { internal: { getNumberOfPages: () => number; pages?: unknown[] }; deletePage: (n: number) => void; setPage: (n: number) => void }) => {
-          removeTrailingBlankPdfPages(pdf);
+        .then((pdf: any) => {
+          if (tenantData) {
+            const { addressLine, cityUfLine } =
+              formatCompanyAddressForHeader(tenantData);
+            applyContractPdfChrome(pdf, {
+              tenantName: getCompanyDisplayName(tenantData),
+              tenantCnpj: formatCNPJCPF(
+                tenantData?.cnpj || tenantData?.document || "",
+              ),
+              addressLine,
+              cityUfLine,
+              contractNumber: String(
+                ver.contract_number || selectedContract?.contract_number || "",
+              ),
+              logoBase64: null,
+            });
+          } else {
+            applyContractPdfChrome(pdf, {
+              tenantName: "Imobiliária",
+              tenantCnpj: "",
+              addressLine: "",
+              cityUfLine: "",
+              contractNumber: String(ver.contract_number || ""),
+              logoBase64: null,
+            });
+          }
         })
         .save();
     } catch (e) {
@@ -662,73 +740,35 @@ export default function ContractsPage() {
       const element = document.createElement("div");
 
       element.innerHTML =
-        selectedContract.generated_html || "<p>Contrato sem conteúdo.</p>";
-
-      const formatCNPJCPF = (val: string) => {
-        if (!val) return "";
-        const numeric = val.replace(/\D/g, "");
-        if (numeric.length === 14) {
-          return numeric.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
-        }
-        if (numeric.length === 11) {
-          return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-        }
-        return val;
-      };
-
-      const toTitleCase = (str: string) => {
-        if (!str) return "";
-        return str.toLowerCase().replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
-      };
-
-      const tenantName = tenantData?.name || tenantData?.razao_social || "Imobiliária";
-      const tenantCnpj = formatCNPJCPF(tenantData?.cnpj || tenantData?.document || "");
-      const tenantEmail = tenantData?.email || "";
-      const tenantPhone = tenantData?.phone || "";
-      const tenantAddress = toTitleCase(tenantData?.address || "");
-      
-      const isValid = (val: any) => typeof val === 'string' && val.trim() !== '' && !val.toLowerCase().includes('não informad') && val.toUpperCase() !== 'N/A';
-
-      const projName = 
-          (isValid(selectedContract.project_name_snapshot) ? selectedContract.project_name_snapshot : null) || 
-          (isValid(selectedContract.sales?.projects?.name) ? selectedContract.sales.projects.name : null) || 
-          (isValid(selectedContract.blocks?.projects?.name) ? selectedContract.blocks.projects.name : null) || 
-          (isValid(selectedContract.projects?.name) ? selectedContract.projects.name : null) || 
-          "Empreendimento/Projeto";
-            
-      const city = 
-          (isValid(selectedContract.project_city_snapshot) ? selectedContract.project_city_snapshot : null) || 
-          (isValid(selectedContract.projects?.city) ? selectedContract.projects.city : null) || 
-          (isValid(selectedContract.sales?.projects?.city) ? selectedContract.sales.projects.city : null) || 
-          (isValid(selectedContract.blocks?.projects?.city) ? selectedContract.blocks.projects.city : null) || 
-          "";
-      const uf = 
-          (isValid(selectedContract.project_uf_snapshot) ? selectedContract.project_uf_snapshot : null) || 
-          (isValid(selectedContract.projects?.uf) ? selectedContract.projects.uf : null) || 
-          (isValid(selectedContract.sales?.projects?.uf) ? selectedContract.sales.projects.uf : null) || 
-          (isValid(selectedContract.blocks?.projects?.uf) ? selectedContract.blocks.projects.uf : null) || 
-          "";
-
-      const clientName = selectedContract.customers?.name || "Cliente não informado";
-      const blockName = selectedContract.blocks?.block || selectedContract.blocks?.block_name || selectedContract.blocks?.quadra || selectedContract.blocks?.name || selectedContract.sales?.blocks?.block_name || selectedContract.sales?.blocks?.name || "?";
-      const lotNumber = selectedContract.blocks?.lot || selectedContract.blocks?.number || selectedContract.sales?.lot_number || selectedContract.sales?.blocks?.number || "?";
+        resolvedContractHtml || "<p>Contrato sem conteúdo.</p>";
 
       let logoBase64: string | null = null;
       if (getReportHeaderLogoUrl(tenantData?.logo_url)) {
-          try {
-              logoBase64 = await new Promise<string>((resolve, reject) => {
-                  const img = new Image();
-                  img.crossOrigin = 'Anonymous';
-                  img.onload = () => {
-                      const canvas = document.createElement('canvas');
-                      canvas.width = img.width; canvas.height = img.height;
-                      const ctx = canvas.getContext('2d');
-                      if (ctx) { ctx.drawImage(img, 0, 0); resolve(canvas.toDataURL('image/png')); } else reject();
-                  };
-                  img.onerror = reject; img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
-              });
-          } catch (err) {}
+        try {
+          logoBase64 = await new Promise<string>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.drawImage(img, 0, 0);
+                resolve(canvas.toDataURL("image/png"));
+              } else reject();
+            };
+            img.onerror = reject;
+            img.src = getReportHeaderLogoUrl(tenantData?.logo_url);
+          });
+        } catch {
+          /* ignore */
+        }
       }
+
+      const { addressLine, cityUfLine } = formatCompanyAddressForHeader(
+        tenantData || {},
+      );
 
       const opt = {
         margin: [35, 15, 25, 15],
@@ -736,83 +776,27 @@ export default function ContractsPage() {
         image: { type: "jpeg", quality: 1 },
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "avoid-all"] }
+        pagebreak: { mode: ["css", "avoid-all"] },
       };
 
-      html2pdf().from(element).set(opt).toPdf().get('pdf').then((pdf: any) => {
-        const totalPages = pdf.internal.getNumberOfPages();
-        const pageWidth = pdf.internal.pageSize.width;
-        const pageHeight = pdf.internal.pageSize.height;
-
-        for (let i = 1; i <= totalPages; i++) {
-          pdf.setPage(i);
-          
-          let titleX = 14;
-          if (logoBase64) {
-             pdf.addImage(logoBase64, 'PNG', 14, 10, 22, 12, undefined, 'FAST');
-             titleX = 39;
-          }
-
-          pdf.setFontSize(11);
-          pdf.setTextColor(20);
-          pdf.setFont("times", "bold");
-          const splitName = pdf.splitTextToSize(tenantName.toUpperCase(), 100); // reduced width to not overlap ctr number
-          pdf.text(splitName, titleX, 13);
-          
-          pdf.setFontSize(9);
-          pdf.setFont("times", "normal");
-          pdf.setTextColor(50);
-          
-          let yPos = 13 + (splitName.length * 3.5);
-          
-          let infoArray = [];
-          if (tenantCnpj) infoArray.push(`CNPJ: ${tenantCnpj}`);
-          let cityUf = [];
-          if (tenantData?.city) cityUf.push(tenantData.city);
-          if (tenantData?.state) cityUf.push(tenantData.state);
-          if (cityUf.length > 0) infoArray.push(cityUf.join(' - '));
-          
-          if (infoArray.length > 0) {
-              pdf.text(infoArray.join(' | '), titleX, yPos);
-              yPos += 3.5;
-          }
-          
-          if (tenantAddress) {
-              const splitAddr = pdf.splitTextToSize(`${tenantAddress}`, 140);
-              pdf.text(splitAddr, titleX, yPos);
-              yPos += (splitAddr.length * 3.5);
-          }
-
-          const rightX = pageWidth - 14;
-          const finalY = Math.max(yPos, 22) + 2;
-
-          // Contract number top right
-          pdf.setFontSize(8);
-          pdf.setTextColor(100);
-          pdf.text(
-            `Contrato nº ${displayContractNumber(selectedContract.contract_number)}`,
-            rightX,
-            13,
-            { align: "right" },
-          );
-
-          pdf.setDrawColor(150);
-          pdf.setLineWidth(0.3);
-          pdf.line(14, finalY, rightX, finalY);
-          
-          // RODAPÉ
-          pdf.setLineWidth(0.2);
-          pdf.line(14, pageHeight - 12, rightX, pageHeight - 12);
-          
-          pdf.setFontSize(7);
-          pdf.setTextColor(150);
-          pdf.setFont("times", "italic");
-          pdf.text(`Documento emitido digitalmente pelo SV LOTES GIS`, 14, pageHeight - 8);
-          
-          pdf.text(`Página ${i} de ${totalPages}`, rightX, pageHeight - 8, { align: 'right' });
-        }
-        removeTrailingBlankPdfPages(pdf);
-      }).save();
+      html2pdf()
+        .from(element)
+        .set(opt)
+        .toPdf()
+        .get("pdf")
+        .then((pdf: any) => {
+          applyContractPdfChrome(pdf, {
+            tenantName: getCompanyDisplayName(tenantData || {}),
+            tenantCnpj: formatCNPJCPF(
+              tenantData?.cnpj || tenantData?.document || "",
+            ),
+            addressLine,
+            cityUfLine,
+            contractNumber: String(selectedContract.contract_number || ""),
+            logoBase64,
+          });
+        })
+        .save();
     } catch (e) {
       alert(
         "Erro ao tentar baixar PDF. Certifique-se que html2pdf.js está instalado.",
@@ -829,7 +813,7 @@ export default function ContractsPage() {
               <html>
                   <head><title>Imprimir Contrato - ${selectedContract.contract_number || ""}</title></head>
                   <body style="font-family: sans-serif; padding: 20px;">
-                      ${selectedContract.generated_html || "<p>Contrato sem conteúdo.</p>"}
+                      ${resolvedContractHtml || "<p>Contrato sem conteúdo.</p>"}
                       <script>window.onload = function() { window.print(); }</script>
                   </body>
               </html>
@@ -1836,10 +1820,15 @@ export default function ContractsPage() {
                         </div>
                       )}
                       <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top p-8 text-black min-h-[800px]">
-                        {selectedContract.generated_html ? (
+                        {contractViewLoading ? (
+                          <div className="flex items-center justify-center py-32 text-gray-500">
+                            <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                            Atualizando contrato com dados da empresa…
+                          </div>
+                        ) : resolvedContractHtml ? (
                           <div
                             dangerouslySetInnerHTML={{
-                              __html: selectedContract.generated_html,
+                              __html: resolvedContractHtml,
                             }}
                           />
                         ) : (

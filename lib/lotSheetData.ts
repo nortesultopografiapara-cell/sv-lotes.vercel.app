@@ -35,6 +35,7 @@ import {
 } from '@/lib/officialLotMeasurements';
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
 import { resolveLotSideConfrontants } from '@/lib/lotConfrontations';
+import { buildMemorialDraftPlainText } from '@/lib/memorialDraft';
 import {
   formatMemorialTechnicalBlock,
   normalizeTechnicalResponsible,
@@ -102,6 +103,8 @@ export type LotSheetPayload = {
   memorialFrontClause: string;
   /** HTML do responsável técnico para memorial descritivo (próxima etapa). */
   memorialTechnicalHtml: string;
+  /** Texto base do memorial (botão "Gerar Memorial" — próxima etapa). */
+  memorialDraftPlain: string;
   /** Distâncias oficiais por aresta (índice = segment_index) para o croqui PDF. */
   officialEdgeLengths: string[];
   ignoredSegmentNote: string | null;
@@ -626,6 +629,12 @@ export async function loadLotSheetPayload(
     lotAddressLine,
     memorialFrontClause,
     memorialTechnicalHtml: formatMemorialTechnicalBlock(techProfile),
+    memorialDraftPlain: buildMemorialDraftPlainText({
+      block: blockRecord,
+      projectBlocks: blocksList,
+      streetGuides: guidesList,
+      technicalResponsible: techProfile as unknown as Record<string, unknown>,
+    }),
     technicalResponsible: techProfile as unknown as Record<string, unknown>,
     officialEdgeLengths,
     ignoredSegmentNote,

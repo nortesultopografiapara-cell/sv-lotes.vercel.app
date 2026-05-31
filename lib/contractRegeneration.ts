@@ -712,6 +712,22 @@ export async function loadFreshRegenerationEntities(
   console.log('REGENERATE_CONTRACT_CUSTOMER_DATA', customer);
   console.log('REGENERATE_CONTRACT_SALE_DATA', { ...sale, receipts_sum });
 
+  let projectBlocks: Array<Record<string, unknown>> = [];
+  let streetGuides: Array<Record<string, unknown>> = [];
+  if (projectId) {
+    const [{ data: blocks }, { data: guides }] = await Promise.all([
+      supabase
+        .from('blocks')
+        .select(
+          'id, number, lot, block, block_name, quadra, geometry, front_segment_index, front_street_name, front_street_type, segments, area',
+        )
+        .eq('project_id', projectId),
+      supabase.from('street_guides').select('*').eq('project_id', projectId),
+    ]);
+    projectBlocks = (blocks || []) as Array<Record<string, unknown>>;
+    streetGuides = (guides || []) as Array<Record<string, unknown>>;
+  }
+
   return {
     company,
     customer,
@@ -721,6 +737,8 @@ export async function loadFreshRegenerationEntities(
     receipts_sum,
     finance_receipts,
     seller,
+    projectBlocks,
+    streetGuides,
   };
 }
 
@@ -740,8 +758,17 @@ export async function buildFreshSaleContractHtml(
   receipts_sum: number;
 }> {
   const fresh = await loadFreshRegenerationEntities(supabase, contract, session);
-  const { company, customer, sale, block, project, receipts_sum, finance_receipts } =
-    fresh;
+  const {
+    company,
+    customer,
+    sale,
+    block,
+    project,
+    receipts_sum,
+    finance_receipts,
+    projectBlocks,
+    streetGuides,
+  } = fresh;
 
   const tenant = {
     ...company,
@@ -801,6 +828,8 @@ export async function buildFreshSaleContractHtml(
       ...contractPayloadPartial,
     },
     contractDate: new Date().toISOString(),
+    projectBlocks,
+    streetGuides,
   });
 
   console.log('REGENERATE_HTML_GENERATED', {

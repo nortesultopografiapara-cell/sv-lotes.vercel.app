@@ -3,6 +3,8 @@
  * Sem fallbacks de outra empresa ou assets estáticos da plataforma.
  */
 
+import { normalizeCompanyAddressLine } from "@/lib/contractCompanyDisplay";
+
 export type NormalizedSeller = {
   name: string;
   razaoSocial: string;
@@ -121,12 +123,15 @@ function displaySellerField(value: string): string {
 export function formatClassicSellerInstallationText(
   seller: NormalizedSeller,
 ): string {
-  const address = displaySellerField(seller.address);
+  const rawAddress = displaySellerField(seller.address);
+  const formattedAddress = rawAddress
+    ? normalizeCompanyAddressLine(rawAddress)
+    : "";
   const city = displaySellerField(seller.city);
   const state = displaySellerField(seller.state);
 
   const locationParts: string[] = [];
-  if (address) locationParts.push(address);
+  if (formattedAddress) locationParts.push(formattedAddress);
   if (city && state) locationParts.push(`${city} - ${state}`);
   else if (city) locationParts.push(city);
   else if (state) locationParts.push(state);

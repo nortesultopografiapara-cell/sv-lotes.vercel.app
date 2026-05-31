@@ -7,6 +7,7 @@ import type { LotSheetPayload } from '@/lib/lotSheetData';
 import type {
   LotSheetBlockSketch,
   LotSheetMetricRow,
+  LotSheetSideConfrontants,
 } from '@/lib/lotSheetEnrichment';
 import {
   loadImageAsBase64,
@@ -813,6 +814,45 @@ async function loadOptionalImage(url: string | null | undefined): Promise<string
   }
 }
 
+function drawConfrontationsBox(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  confrontants: LotSheetSideConfrontants,
+) {
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.25);
+  doc.rect(x, y, w, h);
+
+  const label = (
+    lx: number,
+    ly: number,
+    text: string,
+    bold = false,
+    size = 4.8,
+  ) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(...BLACK);
+    doc.text(text, lx, ly, { maxWidth: w - 4 });
+  };
+
+  label(x + 2, y + 4, 'CONFRONTAÇÕES', true, 5.5);
+  let ly = y + 8;
+  const rows: [string, string][] = [
+    ['Frente:', confrontants.frente || '—'],
+    ['Fundo:', confrontants.fundo || '—'],
+    ['Lado Direito:', confrontants.ladoDireito || '—'],
+    ['Lado Esquerdo:', confrontants.ladoEsquerdo || '—'],
+  ];
+  for (const [k, v] of rows) {
+    label(x + 2, ly, `${k} ${v}`, false, 4.8);
+    ly += 3.2;
+  }
+}
+
 function drawMetricTopoFooter(
   doc: jsPDF,
   box: Box,
@@ -824,6 +864,7 @@ function drawMetricTopoFooter(
     area: string;
     scale: string;
     date: string;
+    confrontants: LotSheetSideConfrontants;
     tech: TechnicalResponsibleProfile;
     logoBase64: string | null;
     signatureBase64: string | null;
@@ -887,18 +928,22 @@ function drawMetricTopoFooter(
   label(rx, y + 10, `ESCALA: ${data.scale}`, true);
   label(rx + col * 1.15, y + 10, `DATA: ${data.date}`, true);
 
+  const confrontBoxH = 16;
   const techBoxY = y + 14;
-  const techBoxH = h - 16;
-  doc.rect(rx, techBoxY, rw, techBoxH);
-  label(rx + 2, techBoxY + 4, 'RESPONSÁVEL TÉCNICO', true, 5.5);
+  drawConfrontationsBox(doc, rx, techBoxY, rw, confrontBoxH, data.confrontants);
+
+  const rtBoxY = techBoxY + confrontBoxH + 1;
+  const techBoxH = h - 16 - confrontBoxH - 1;
+  doc.rect(rx, rtBoxY, rw, techBoxH);
+  label(rx + 2, rtBoxY + 4, 'RESPONSÁVEL TÉCNICO', true, 5.5);
 
   if (!hasTechnicalResponsible(data.tech)) {
-    label(rx + 2, techBoxY + 11, 'Não informado', false, 5.5);
+    label(rx + 2, rtBoxY + 11, 'Não informado', false, 5.5);
     return;
   }
 
   const tech = data.tech;
-  let ty = techBoxY + 9;
+  let ty = rtBoxY + 9;
   label(rx + 2, ty, `Nome: ${tech.name || '—'}`, false, 5);
   ty += 3.8;
   if (tech.title) {
@@ -910,11 +955,11 @@ function drawMetricTopoFooter(
   ty += 3.8;
 
   const imgX = rx + rw - 28;
-  let imgY = techBoxY + 6;
+  let imgY = rtBoxY + 6;
   if (data.signatureBase64) {
     try {
       doc.addImage(data.signatureBase64, 'PNG', imgX, imgY, 24, 9);
-      label(rx + 2, techBoxY + techBoxH - 14, 'Assinatura:', false, 4.5);
+      label(rx + 2, rtBoxY + techBoxH - 14, 'Assinatura:', false, 4.5);
       imgY += 10;
     } catch {
       /* ignore */
@@ -923,7 +968,7 @@ function drawMetricTopoFooter(
   if (data.stampBase64) {
     try {
       doc.addImage(data.stampBase64, 'PNG', imgX, imgY, 22, 10);
-      label(rx + 2, techBoxY + techBoxH - 8, 'Carimbo:', false, 4.5);
+      label(rx + 2, rtBoxY + techBoxH - 8, 'Carimbo:', false, 4.5);
     } catch {
       /* ignore */
     }
@@ -1126,6 +1171,7 @@ export async function generateLotSheetPdf(
     area: input.measures.area,
     scale: formatScaleLabel(input.scaleLabel),
     date: new Date().toLocaleDateString('pt-BR'),
+    confrontants: input.sideConfrontants,
     tech: techProfile,
     logoBase64,
     signatureBase64,

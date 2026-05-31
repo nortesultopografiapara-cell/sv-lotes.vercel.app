@@ -5,31 +5,16 @@ import {
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
 import { formatCurveClause } from "@/lib/officialLotMeasurements";
+import { buildLotAddressLine } from "@/lib/streetGuide";
 import {
-  buildLotAddressLine,
-  formatMemorialFrontClause,
-} from "@/lib/streetGuide";
+  getCompanyDisplayName,
+  normalizeCompanyAddressLine,
+} from "@/lib/contractCompanyDisplay";
+import { formatContractLotBoundariesClause } from "@/lib/contractLotBoundaries";
 import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from "@/lib/contractSeller";
-
-const formatMeasure = (val: any) => {
-  if (val === null || val === undefined || val === "") {
-    return "não informado";
-  }
-
-  const num = Number(val);
-
-  if (isNaN(num)) return String(val);
-
-  return (
-    num.toLocaleString("pt-BR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }) + " m"
-  );
-};
 
 const formatArea = (val: any) => {
   if (!val) return "não informado";
@@ -172,6 +157,9 @@ interface GenerateContractParams {
   contractSnapshot?: any;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
+  /** Lotes do projeto — confrontações automáticas (mesma fonte da prancha). */
+  projectBlocks?: Record<string, unknown>[] | null;
+  streetGuides?: Record<string, unknown>[] | null;
 }
 
 export function generateContractHTML({
@@ -183,6 +171,8 @@ export function generateContractHTML({
   contractSnapshot,
   contractDate,
   financeReceipts,
+  projectBlocks,
+  streetGuides,
 }: GenerateContractParams) {
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", {
@@ -221,16 +211,14 @@ export function generateContractHTML({
   const extensoOptions = { mode: "currency", currency: { type: "BRL" } };
 
   const seller = normalizeSellerFromCompany(tenant);
-  const empresaNome = toTitleCase(
-    seller.name !== "Não informado" ? seller.name : seller.razaoSocial,
-  );
+  const empresaNome = getCompanyDisplayName(tenant);
   const empresaCnpj =
     seller.cnpj !== "Não informado"
       ? formatCNPJCPF(seller.cnpj)
       : "Não informado";
   const empresaEndereco =
     seller.address !== "Não informado"
-      ? toTitleCase(seller.address)
+      ? toTitleCase(normalizeCompanyAddressLine(seller.address))
       : "Não informado";
   const empresaCidade =
     seller.city !== "Não informado" ? toTitleCase(seller.city) : "Não informado";
@@ -291,33 +279,13 @@ export function generateContractHTML({
     "";
 
   const lotMeasures = resolveLotMeasuresFromBlock(block);
-  const { sides, chanfre: chanfreInfo, curva: curvaInfo } = lotMeasures;
+  const { chanfre: chanfreInfo, curva: curvaInfo } = lotMeasures;
 
-  const frente =
-    sides.frente ??
-    block?.frente ??
-    block?.Frente ??
-    "";
-
-  const fundo =
-    sides.fundo ??
-    block?.["Fundo"] ??
-    block?.fundo ??
-    "";
-
-  const ladoDireito =
-    sides.ladoDireito ??
-    block?.["Lado Dir."] ??
-    block?.ladoDireito ??
-    block?.lado_dir ??
-    "";
-
-  const ladoEsquerdo =
-    sides.ladoEsquerdo ??
-    block?.["Lado Esq."] ??
-    block?.ladoEsquerdo ??
-    block?.lado_esq ??
-    "";
+  const lotBoundariesClause = formatContractLotBoundariesClause({
+    block: block || {},
+    projectBlocks,
+    streetGuides,
+  });
 
   const chanfreClause =
     chanfreInfo && chanfreInfo.total > 0
@@ -329,7 +297,6 @@ export function generateContractHTML({
       : "";
 
   const lotAddressLine = buildLotAddressLine(block || {});
-  const memorialFrontClause = formatMemorialFrontClause(block || {});
   const lotLocationSuffix = lotAddressLine
     ? `, situado em <strong>${lotAddressLine}</strong>`
     : '';
@@ -524,7 +491,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>${memorialFrontClause !== 'confrontando pela frente com via de acesso' ? ` (${memorialFrontClause})` : ''}, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>${chanfreClause}${curvaClause}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${chanfreClause}${curvaClause}.
                 </p>
             </div>
 
