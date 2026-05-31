@@ -4,6 +4,7 @@ import {
   formatChanfreClause,
   resolveLotMeasuresFromBlock,
 } from "@/lib/lotChanfre";
+import { formatCurveClause } from "@/lib/officialLotMeasurements";
 import {
   buildLotAddressLine,
   formatMemorialFrontClause,
@@ -181,7 +182,7 @@ export function generateContractHTML({
     "";
 
   const lotMeasures = resolveLotMeasuresFromBlock(block);
-  const { sides, chanfre: chanfreInfo } = lotMeasures;
+  const { sides, chanfre: chanfreInfo, curva: curvaInfo } = lotMeasures;
 
   const frente =
     sides.frente ??
@@ -212,6 +213,10 @@ export function generateContractHTML({
   const chanfreClause =
     chanfreInfo && chanfreInfo.total > 0
       ? formatChanfreClause(chanfreInfo)
+      : "";
+  const curvaClause =
+    curvaInfo && curvaInfo.totalLength > 0
+      ? formatCurveClause(curvaInfo)
       : "";
 
   const lotAddressLine = buildLotAddressLine(block || {});
@@ -414,7 +419,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>${memorialFrontClause !== 'confrontando pela frente com via de acesso' ? ` (${memorialFrontClause})` : ''}, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>${chanfreClause}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: Uma chácara, sendo o <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, frente <strong>${formatMeasure(frente)}</strong>${memorialFrontClause !== 'confrontando pela frente com via de acesso' ? ` (${memorialFrontClause})` : ''}, fundo <strong>${formatMeasure(fundo)}</strong>, lateral esquerda <strong>${formatMeasure(ladoEsquerdo)}</strong>, lateral direita <strong>${formatMeasure(ladoDireito)}</strong>${chanfreClause}${curvaClause}.
                 </p>
             </div>
 

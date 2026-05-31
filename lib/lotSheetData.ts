@@ -86,6 +86,9 @@ export type LotSheetPayload = {
     ladoDireito: string;
     ladoEsquerdo: string;
     chanfre: string;
+    curva: string;
+    raio: string;
+    corda: string;
     area: string;
   };
   scaleLabel: string;
@@ -463,6 +466,19 @@ export async function loadLotSheetPayload(
   const chanfreStr = chanfre?.total
     ? `${chanfre.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
     : '—';
+  const curvaInfo = officialMeasures.curva;
+  const curvaStr =
+    curvaInfo && curvaInfo.totalLength > 0
+      ? `${curvaInfo.totalLength.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
+      : '—';
+  const raioStr =
+    curvaInfo?.radius != null && curvaInfo.radius > 0
+      ? `${curvaInfo.radius.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
+      : '—';
+  const cordaStr =
+    curvaInfo?.chord != null && curvaInfo.chord > 0
+      ? `${curvaInfo.chord.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m`
+      : '—';
 
   const ring = latLngRingFromBlock(blockRecord);
 
@@ -586,6 +602,9 @@ export async function loadLotSheetPayload(
       ladoDireito: formatMeasure(officialMeasures.ladoDireito),
       ladoEsquerdo: formatMeasure(officialMeasures.ladoEsquerdo),
       chanfre: chanfreStr,
+      curva: curvaStr,
+      raio: raioStr,
+      corda: cordaStr,
       area:
         officialMeasures.area != null
           ? `${officialMeasures.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} m²`

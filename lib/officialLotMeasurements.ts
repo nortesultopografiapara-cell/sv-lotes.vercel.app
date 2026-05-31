@@ -32,12 +32,31 @@ export type OfficialLotSegment = {
   end_east?: number | null;
 };
 
+export type OfficialLotCurveSegment = {
+  curveSegmentIndex: number;
+  curvaLength: number;
+  radius: number | null;
+  chord: number | null;
+};
+
+/** Curvas TXT — categoria própria (não entram em fundo nem laterais). */
+export type OfficialLotCurveInfo = {
+  curveSegmentIndex: number;
+  curvaLength: number;
+  radius: number | null;
+  chord: number | null;
+  segments: OfficialLotCurveSegment[];
+  totalLength: number;
+};
+
 export type OfficialLotMeasures = {
   frente: number | null;
   fundo: number | null;
   ladoDireito: number | null;
   ladoEsquerdo: number | null;
   chanfre: ChanfreInfo | null;
+  /** Curva(s) Civil 3D — separadas de frente/fundo/laterais quando não são a frente travada. */
+  curva: OfficialLotCurveInfo | null;
   area: number | null;
   perimeter: number | null;
   frontSegmentIndex: number | null;
@@ -50,8 +69,14 @@ export type RingPathResult = {
   totalLength: number;
 };
 
-const CHANFRE_MIN = 2;
+const CHANFRE_MIN = 1;
 const CHANFRE_MAX = 15;
+/** Após deflexão ~45°, só o segmento LINE curto (1–10 m) é chanfre. */
+const CHANFRE_DEFLECTION_MIN_M = 1;
+const CHANFRE_DEFLECTION_MAX_LENGTH_M = 10;
+/** Chanfre no fundo (Civil 3D): comprimento típico 1–5 m. */
+const CHANFRE_BACK_MIN_M = 1;
+const CHANFRE_BACK_MAX_M = 5;
 const MAX_SEGMENT_DISTANCE_M = 1000;
 /** Mesmo lado: variação de azimute entre segmentos consecutivos. */
 const COLINEAR_DEFLECTION_MAX_DEG = 10;
@@ -64,6 +89,54 @@ const CORNER_DEFLECTION_MAX_DEG = 100;
 const MAX_SIDE_TOTAL_M = 1000;
 const MAX_PERIMETER_M = 5000;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export function isOfficialCurveSegment(seg: OfficialLotSegment): boolean {
+  return seg.segment_type === "CURVE";
+}
+
+/** Soma comprimentos oficiais apenas de segmentos LINE. */
+export function sumLinePathDistances(
+  indexes: number[],
+  byIdx: Map<number, OfficialLotSegment>,
+): number {
+  return round2(
+    indexes.reduce((sum, idx) => {
+      const seg = byIdx.get(idx);
+      if (!seg || isOfficialCurveSegment(seg)) return sum;
+      const length = Number(seg.distance);
+      return isValidSegmentDistance(length) ? sum + length : sum;
+    }, 0),
+  );
+}
+
+export function extractOfficialCurveInfo(
+  segments: OfficialLotSegment[],
+): OfficialLotCurveInfo | null {
+  const curves: OfficialLotCurveSegment[] = [];
+  for (const s of segments) {
+    if (!isOfficialCurveSegment(s)) continue;
+    if (!isValidSegmentDistance(s.distance)) continue;
+    curves.push({
+      curveSegmentIndex: s.segment_index,
+      curvaLength: round2(s.distance),
+      radius:
+        s.radius != null && Number.isFinite(s.radius) ? round2(s.radius) : null,
+      chord:
+        s.chord != null && Number.isFinite(s.chord) ? round2(s.chord) : null,
+    });
+  }
+  if (curves.length === 0) return null;
+  const totalLength = round2(curves.reduce((a, c) => a + c.curvaLength, 0));
+  const primary = curves[0];
+  return {
+    curveSegmentIndex: primary.curveSegmentIndex,
+    curvaLength: primary.curvaLength,
+    radius: primary.radius,
+    chord: primary.chord,
+    segments: curves,
+    totalLength,
+  };
+}
 
 /** Única fonte de comprimento: distance/length do TXT — nunca north/east. */
 export function isValidSegmentDistance(length: number): boolean {
@@ -356,7 +429,8 @@ function isCornerDeflection(deflectionDeg: number): boolean {
 export function detectChanfreIndexesByDeflection(
   segments: OfficialLotSegment[],
   lotLabel?: unknown,
-  adjacentToFrontIndex?: number | null,
+  /** Se definido, retorna só chanfres nos vértices adjacentes à frente (esquina na frente). */
+  onlyAdjacentToFrontIndex?: number | null,
 ): number[] {
   const n = segments.length;
   if (n < 3) return [];
@@ -389,14 +463,21 @@ export function detectChanfreIndexesByDeflection(
 
     if (isChanfreDeflection(deflection)) {
       const idx = next.segment_index;
-      if (!chanfreIndexes.includes(idx)) {
+      if (isOfficialCurveSegment(next)) return;
+      const dist = Number(next.distance);
+      if (
+        isValidSegmentDistance(dist) &&
+        dist >= CHANFRE_DEFLECTION_MIN_M &&
+        dist <= CHANFRE_DEFLECTION_MAX_LENGTH_M &&
+        !chanfreIndexes.includes(idx)
+      ) {
         chanfreIndexes.push(idx);
         console.log("CHANFRE_DETECTED_BY_DEFLECTION", {
           lote: lotLabel ?? "?",
           vertexAfterSegment: cur.segment_index,
           chanfreSegmentIndex: idx,
           deflectionDeg: deflection,
-          distance: next.distance,
+          distance: dist,
         });
       }
     }
@@ -408,13 +489,13 @@ export function detectChanfreIndexesByDeflection(
   inspectVertex(ordered[n - 1], ordered[0], ordered[1], true);
 
   if (
-    adjacentToFrontIndex != null &&
-    Number.isFinite(adjacentToFrontIndex) &&
-    adjacentToFrontIndex >= 0 &&
+    onlyAdjacentToFrontIndex != null &&
+    Number.isFinite(onlyAdjacentToFrontIndex) &&
+    onlyAdjacentToFrontIndex >= 0 &&
     chanfreIndexes.length > 0
   ) {
     const ringPos = ordered.findIndex(
-      (s) => s.segment_index === adjacentToFrontIndex,
+      (s) => s.segment_index === onlyAdjacentToFrontIndex,
     );
     if (ringPos >= 0) {
       const prev = ordered[(ringPos - 1 + n) % n].segment_index;
@@ -425,6 +506,278 @@ export function detectChanfreIndexesByDeflection(
   }
 
   return chanfreIndexes;
+}
+
+/** Chanfre no fundo: deflexão de canto, 1–5 m, não adjacente à frente travada. */
+function detectBackChanfreIndexes(
+  segments: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  backSegmentIndex: number,
+  lotLabel?: unknown,
+): number[] {
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const n = ordered.length;
+  const ringPos = ordered.findIndex(
+    (s) => s.segment_index === frontSegmentIndex,
+  );
+  const frontAdjacent = new Set<number>();
+  if (ringPos >= 0) {
+    frontAdjacent.add(ordered[(ringPos - 1 + n) % n].segment_index);
+    frontAdjacent.add(ordered[(ringPos + 1) % n].segment_index);
+  }
+
+  const byDeflection = detectChanfreIndexesByDeflection(segments, lotLabel, null);
+  const picked = new Set<number>();
+  for (const idx of byDeflection) {
+    if (frontAdjacent.has(idx) || idx === backSegmentIndex) continue;
+    picked.add(idx);
+  }
+
+  for (const s of segments) {
+    if (
+      s.segment_index === frontSegmentIndex ||
+      s.segment_index === backSegmentIndex ||
+      frontAdjacent.has(s.segment_index)
+    ) {
+      continue;
+    }
+    if (
+      !isOfficialCurveSegment(s) &&
+      s.distance >= CHANFRE_BACK_MIN_M &&
+      s.distance <= CHANFRE_BACK_MAX_M &&
+      isValidSegmentDistance(s.distance)
+    ) {
+      picked.add(s.segment_index);
+    }
+  }
+
+  return [...picked];
+}
+
+/** Segmento TXT mais oposto à frente (âncora para fundo — não o grupo mais longo). */
+function findOppositeBackSegmentIndex(
+  segments: OfficialLotSegment[],
+  frontSegmentIndex: number,
+): number {
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const n = ordered.length;
+  const ringPos = ordered.findIndex(
+    (s) => s.segment_index === frontSegmentIndex,
+  );
+  const frontSeg = ordered[ringPos >= 0 ? ringPos : 0];
+  const frontNext = ordered[(ringPos + 1) % n];
+  const frontBearing = resolveSegmentBearing(frontSeg, frontNext);
+
+  let bestIdx = frontSegmentIndex;
+  let bestOpp = -1;
+  for (let i = 0; i < n; i++) {
+    const s = ordered[i];
+    if (s.segment_index === frontSegmentIndex) continue;
+    if (s.segment_type === "CURVE") continue;
+    const next = ordered[(i + 1) % n];
+    const opp = angularDifferenceDeg(
+      frontBearing,
+      resolveSegmentBearing(s, next),
+    );
+    if (opp > bestOpp) {
+      bestOpp = opp;
+      bestIdx = s.segment_index;
+    }
+  }
+  return bestIdx;
+}
+
+/** Caminho frente→fundo: só LINE vira lateral; CURVE ignorada; chanfre separado. */
+function partitionLinePathOnRing(
+  pathIndexes: number[],
+  chanfreSet: Set<number>,
+  frontSegmentIndex: number,
+  backSegmentIndex: number,
+  byIdx: Map<number, OfficialLotSegment>,
+): { lateral: number[]; chanfre: number[] } {
+  const lateral: number[] = [];
+  const chanfre: number[] = [];
+
+  for (const idx of pathIndexes) {
+    const seg = byIdx.get(idx);
+    if (!seg || isOfficialCurveSegment(seg)) continue;
+    if (idx === frontSegmentIndex || idx === backSegmentIndex) continue;
+    if (chanfreSet.has(idx)) {
+      chanfre.push(idx);
+      continue;
+    }
+    const d = Number(seg.distance);
+    if (
+      isValidSegmentDistance(d) &&
+      d >= CHANFRE_BACK_MIN_M &&
+      d <= CHANFRE_BACK_MAX_M
+    ) {
+      chanfre.push(idx);
+      continue;
+    }
+    lateral.push(idx);
+  }
+
+  return { lateral, chanfre };
+}
+
+/**
+ * Frente travada (rua/manual): percorre anel, fundo no segmento oposto, chanfre 1–5 m no fundo.
+ */
+function classifySidesByFrontAnchor(
+  segments: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  lotLabel?: unknown,
+  block?: Record<string, unknown> | null,
+): OfficialMeasurePaths {
+  const ordered = [...segments].sort((a, b) => a.segment_index - b.segment_index);
+  const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+  const emptyPaths: RingPathResult = { indexes: [], totalLength: 0 };
+
+  const frontSeg = byIdx.get(frontSegmentIndex);
+  const frenteLen =
+    frontSeg && isValidSegmentDistance(frontSeg.distance)
+      ? round2(frontSeg.distance)
+      : 0;
+
+  console.log("FRONT_ANCHOR_SEGMENT", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    frontSegmentIndex,
+    frenteM: frenteLen,
+    locked: isFrontSegmentLocked(block),
+    streetFront: hasStreetFrontIdentified(block ?? {}),
+  });
+
+  const backSegmentIndex = findOppositeBackSegmentIndex(
+    segments,
+    frontSegmentIndex,
+  );
+  console.log("BACK_SEGMENT_SELECTED", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    backSegmentIndex,
+    distanceM: byIdx.get(backSegmentIndex)?.distance,
+  });
+
+  const frontCornerChanfre = detectChanfreIndexesByDeflection(
+    segments,
+    lotLabel,
+    frontSegmentIndex,
+  );
+  const backChanfre = detectBackChanfreIndexes(
+    segments,
+    frontSegmentIndex,
+    backSegmentIndex,
+    lotLabel,
+  );
+  const chanfreIndexes = [
+    ...new Set([...frontCornerChanfre, ...backChanfre]),
+  ];
+  const chanfreSet = new Set(chanfreIndexes);
+  console.log("CHANFRE_SELECTED", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    chanfreIndexes,
+    distances: chanfreIndexes.map((i) => byIdx.get(i)?.distance),
+  });
+
+  const fundoStop = new Set([backSegmentIndex]);
+  const excludeWalk = new Set<number>([frontSegmentIndex]);
+
+  const pathAIndexes = collectRingArcFromFront(
+    ordered,
+    frontSegmentIndex,
+    fundoStop,
+    1,
+    excludeWalk,
+  );
+  const pathBIndexes = collectRingArcFromFront(
+    ordered,
+    frontSegmentIndex,
+    fundoStop,
+    -1,
+    excludeWalk,
+  );
+
+  const splitA = partitionLinePathOnRing(
+    pathAIndexes,
+    chanfreSet,
+    frontSegmentIndex,
+    backSegmentIndex,
+    byIdx,
+  );
+  const splitB = partitionLinePathOnRing(
+    pathBIndexes,
+    chanfreSet,
+    frontSegmentIndex,
+    backSegmentIndex,
+    byIdx,
+  );
+
+  const backSeg = byIdx.get(backSegmentIndex);
+  const fundoIndexes =
+    backSeg &&
+    !isOfficialCurveSegment(backSeg) &&
+    isValidSegmentDistance(backSeg.distance)
+      ? [backSegmentIndex]
+      : [];
+
+  let ladoDireitoIndexes = [...splitA.lateral];
+  let ladoEsquerdoIndexes = [...splitB.lateral];
+  if (ladoDireitoIndexes.length === 0 && ladoEsquerdoIndexes.length > 0) {
+    ladoDireitoIndexes = [...ladoEsquerdoIndexes];
+    ladoEsquerdoIndexes = [];
+  }
+
+  const pathA: RingPathResult = {
+    indexes: ladoDireitoIndexes,
+    totalLength: sumLinePathDistances(ladoDireitoIndexes, byIdx),
+  };
+  const pathB: RingPathResult = {
+    indexes: ladoEsquerdoIndexes,
+    totalLength: sumLinePathDistances(ladoEsquerdoIndexes, byIdx),
+  };
+  const pathFundo: RingPathResult = {
+    indexes: fundoIndexes,
+    totalLength: sumLinePathDistances(fundoIndexes, byIdx),
+  };
+
+  console.log("SIDE_RIGHT_SELECTED", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    indexes: ladoDireitoIndexes,
+    totalM: pathA.totalLength,
+  });
+  console.log("SIDE_LEFT_SELECTED", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    indexes: ladoEsquerdoIndexes,
+    totalM: pathB.totalLength,
+  });
+
+  const result = {
+    frente: frenteLen,
+    fundo: pathFundo.totalLength,
+    ladoDireito: pathA.totalLength,
+    ladoEsquerdo: pathB.totalLength,
+    pathA,
+    pathB,
+    pathFundo,
+    frontIndex: frontSegmentIndex,
+  };
+
+  console.log("LOT_SIDE_CLASSIFICATION_DEBUG", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    mode: "front_anchor",
+    frente: result.frente,
+    fundo: result.fundo,
+    ladoDireito: result.ladoDireito,
+    ladoEsquerdo: result.ladoEsquerdo,
+    chanfre: chanfreIndexes.map((i) => byIdx.get(i)?.distance),
+    pathA: pathAIndexes,
+    pathB: pathBIndexes,
+    splitA,
+    splitB,
+    fundoIndexes,
+  });
+
+  return result;
 }
 
 export type SegmentDeflectionGroup = {
@@ -809,12 +1162,23 @@ function sumPathDistances(
   indexes: number[],
   byIdx: Map<number, OfficialLotSegment>,
 ): number {
-  return round2(
-    indexes.reduce((sum, idx) => {
-      const length = Number(byIdx.get(idx)?.distance);
-      return isValidSegmentDistance(length) ? sum + length : sum;
-    }, 0),
-  );
+  return sumLinePathDistances(indexes, byIdx);
+}
+
+function filterRingPathForLineSides(
+  pathIndexes: number[],
+  chanfreSet: Set<number>,
+  frontSegmentIndex: number,
+  fundoStop: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  return pathIndexes.filter((idx) => {
+    const seg = byIdx.get(idx);
+    if (!seg || isOfficialCurveSegment(seg)) return false;
+    if (idx === frontSegmentIndex || fundoStop.has(idx)) return false;
+    if (chanfreSet.has(idx)) return false;
+    return true;
+  });
 }
 
 /**
@@ -850,10 +1214,19 @@ export function classifySidesByTxtRingPaths(
   const streetFront = hasStreetFrontIdentified(block ?? {});
   const cornerLotMode = lockedFront || streetFront;
 
+  if (cornerLotMode) {
+    return classifySidesByFrontAnchor(
+      segments,
+      frontSegmentIndex,
+      lotLabel,
+      block,
+    );
+  }
+
   const chanfreIndexes = detectChanfreIndexesByDeflection(
     segments,
     lotLabel,
-    cornerLotMode ? frontSegmentIndex : null,
+    null,
   );
   const chanfreSet = new Set(chanfreIndexes);
   const groups = groupSegmentsByDeflection(segments, lotLabel);
@@ -909,7 +1282,12 @@ export function classifySidesByTxtRingPaths(
   const withoutChanfre = (indexes: number[]) =>
     indexes.filter((idx) => !chanfreSet.has(idx));
 
-  const fundoIndexes = withoutChanfre(groups[backGroupIdx].segmentIndexes);
+  const fundoIndexes = withoutChanfre(
+    groups[backGroupIdx].segmentIndexes,
+  ).filter((idx) => {
+    const seg = byIdx.get(idx);
+    return seg != null && !isOfficialCurveSegment(seg);
+  });
   const fundoStop = new Set(fundoIndexes);
   const excludeWalk = new Set<number>([
     frontSegmentIndex,
@@ -974,17 +1352,31 @@ export function classifySidesByTxtRingPaths(
         : 0
       : frontGroup.totalLength;
 
+  const pathALine = filterRingPathForLineSides(
+    pathAIndexes,
+    chanfreSet,
+    frontSegmentIndex,
+    fundoStop,
+    byIdx,
+  );
+  const pathBLine = filterRingPathForLineSides(
+    pathBIndexes,
+    chanfreSet,
+    frontSegmentIndex,
+    fundoStop,
+    byIdx,
+  );
   const pathA: RingPathResult = {
-    indexes: pathAIndexes,
-    totalLength: sumPathDistances(pathAIndexes, byIdx),
+    indexes: pathALine,
+    totalLength: sumLinePathDistances(pathALine, byIdx),
   };
   const pathB: RingPathResult = {
-    indexes: pathBIndexes,
-    totalLength: sumPathDistances(pathBIndexes, byIdx),
+    indexes: pathBLine,
+    totalLength: sumLinePathDistances(pathBLine, byIdx),
   };
   const pathFundo: RingPathResult = {
     indexes: fundoIndexes,
-    totalLength: sumPathDistances(fundoIndexes, byIdx),
+    totalLength: sumLinePathDistances(fundoIndexes, byIdx),
   };
 
   const result = {
@@ -1185,6 +1577,7 @@ function computeChanfreFromTxtPaths(
 
   for (const seg of segments) {
     if (used.has(seg.segment_index)) continue;
+    if (isOfficialCurveSegment(seg)) continue;
     if (seg.distance >= CHANFRE_MIN && seg.distance <= CHANFRE_MAX) {
       chanfreSegs.push(seg.distance);
     }
@@ -1215,6 +1608,7 @@ function parseColumnFallback(block: Record<string, unknown>): OfficialLotMeasure
     ladoDireito: parse(block["Lado Dir."] ?? block.lado_direito),
     ladoEsquerdo: parse(block["Lado Esq."] ?? block.lado_esquerdo),
     chanfre: null,
+    curva: null,
     area: parse(block.area),
     perimeter,
     frontSegmentIndex: null,
@@ -1250,11 +1644,23 @@ function buildMeasuresFromSegments(
   const area =
     Number.isFinite(areaRaw) && areaRaw > 0 ? round2(areaRaw) : null;
 
-  const chanfreIndexes = detectChanfreIndexesByDeflection(
+  const lockedFront = isFrontSegmentLocked(block);
+  const streetFront = hasStreetFrontIdentified(block);
+  const backIdx = findOppositeBackSegmentIndex(segments, frontIdx);
+  const frontCornerChanfre = detectChanfreIndexesByDeflection(
     segments,
     label,
     frontIdx,
   );
+  const chanfreIndexes =
+    lockedFront || streetFront
+      ? [
+          ...new Set([
+            ...frontCornerChanfre,
+            ...detectBackChanfreIndexes(segments, frontIdx, backIdx, label),
+          ]),
+        ]
+      : detectChanfreIndexesByDeflection(segments, label, null);
   const chanfre = computeChanfreFromTxtPaths(
     segments,
     frontIdx,
@@ -1263,6 +1669,7 @@ function buildMeasuresFromSegments(
     paths.pathFundo,
     chanfreIndexes,
   );
+  const curva = extractOfficialCurveInfo(segments);
 
   return {
     frente: paths.frente > 0 ? paths.frente : null,
@@ -1270,6 +1677,7 @@ function buildMeasuresFromSegments(
     ladoDireito: paths.ladoDireito > 0 ? paths.ladoDireito : null,
     ladoEsquerdo: paths.ladoEsquerdo > 0 ? paths.ladoEsquerdo : null,
     chanfre,
+    curva,
     area,
     perimeter: perimeter > 0 ? perimeter : null,
     frontSegmentIndex: frontIdx,
@@ -1414,6 +1822,7 @@ export type OfficialSegmentClassification =
   | "lado_direito"
   | "lado_esquerdo"
   | "chanfre"
+  | "curva"
   | "perimetro";
 
 export type OfficialLotSegmentTableRow = {
@@ -1467,23 +1876,23 @@ function classifySegmentForTable(
   segment?: OfficialLotSegment,
   lotLabel?: unknown,
 ): OfficialSegmentClassification {
-  if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
-  let role: OfficialSegmentClassification = "perimetro";
-  if (segmentIndex === frontIdx) role = "frente";
-  else if (paths.pathFundo.indexes.includes(segmentIndex)) role = "fundo";
-  else if (paths.pathA.indexes.includes(segmentIndex)) role = "lado_direito";
-  else if (paths.pathB.indexes.includes(segmentIndex)) role = "lado_esquerdo";
-
-  if (segment?.segment_type === "CURVE") {
+  if (segment && isOfficialCurveSegment(segment)) {
     console.log("ARC_SIDE_CLASSIFIED", {
       lote: lotLabel ?? "?",
       segmentIndex,
-      role,
+      role: "curva",
       lengthM: segment.distance,
       radiusM: segment.radius,
+      chordM: segment.chord,
     });
+    return "curva";
   }
-  return role;
+  if (chanfreIndexes.includes(segmentIndex)) return "chanfre";
+  if (segmentIndex === frontIdx) return "frente";
+  if (paths.pathFundo.indexes.includes(segmentIndex)) return "fundo";
+  if (paths.pathA.indexes.includes(segmentIndex)) return "lado_direito";
+  if (paths.pathB.indexes.includes(segmentIndex)) return "lado_esquerdo";
+  return "perimetro";
 }
 
 /** Rótulo de distância para popup, memorial e prancha. */
@@ -1522,17 +1931,53 @@ export function formatCurveMemorialDescription(seg: OfficialLotSegment): string 
   return `segue em curva com desenvolvimento de ${dev} m, raio de ${raio} m e corda de ${corda} m`;
 }
 
+/** Cláusula de contrato para limite em curva (medidas oficiais TXT). */
+export function formatCurveClause(curva: OfficialLotCurveInfo): string {
+  if (curva.segments.length === 1) {
+    const s = curva.segments[0]!;
+    const dev = s.curvaLength.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const raio = (s.radius ?? 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const corda = (s.chord ?? 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `, com limite em curva de desenvolvimento <strong>${dev} m</strong>, raio <strong>${raio} m</strong> e corda <strong>${corda} m</strong>`;
+  }
+  const parts = curva.segments.map((s) => {
+    const dev = s.curvaLength.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `<strong>${dev} m</strong>`;
+  });
+  return `, com limites em curva (${parts.join(", ")})`;
+}
+
 function resolveChanfreSegmentIndexes(
   segments: OfficialLotSegment[],
   frontIdx: number,
   paths: OfficialMeasurePaths,
   lotLabel?: unknown,
+  block?: Record<string, unknown> | null,
 ): number[] {
-  const byDeflection = detectChanfreIndexesByDeflection(
-    segments,
-    lotLabel,
-    frontIdx,
-  );
+  if (isFrontSegmentLocked(block) || hasStreetFrontIdentified(block ?? {})) {
+    const backIdx = findOppositeBackSegmentIndex(segments, frontIdx);
+    const backChanfre = detectBackChanfreIndexes(
+      segments,
+      frontIdx,
+      backIdx,
+      lotLabel,
+    );
+    if (backChanfre.length > 0) return backChanfre;
+  }
+
+  const byDeflection = detectChanfreIndexesByDeflection(segments, lotLabel, null);
   if (byDeflection.length > 0) return byDeflection;
 
   const used = new Set<number>([
@@ -1544,6 +1989,7 @@ function resolveChanfreSegmentIndexes(
   const indexes: number[] = [];
   for (const seg of segments) {
     if (used.has(seg.segment_index)) continue;
+    if (isOfficialCurveSegment(seg)) continue;
     if (
       seg.distance >= CHANFRE_MIN &&
       seg.distance <= CHANFRE_MAX &&
@@ -1586,6 +2032,7 @@ export function getOfficialLotSegmentTable(
     frontIdx,
     paths,
     label,
+    lot,
   );
   const deflectionGroups = groupSegmentsByDeflection(segments, label);
 

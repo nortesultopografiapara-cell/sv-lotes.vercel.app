@@ -1,5 +1,8 @@
 import { pickBlockSideRaw } from '@/lib/blockLotNormalize';
-import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
+import {
+  getOfficialLotMeasurements,
+  type OfficialLotCurveInfo,
+} from '@/lib/officialLotMeasurements';
 
 /**
  * Chanfre: segmentos extras quando há mais de 4 lados em segments_json.
@@ -21,6 +24,7 @@ export type LotSideMeasures = {
 export type LotMeasuresResult = {
   sides: LotSideMeasures;
   chanfre: ChanfreInfo | null;
+  curva: OfficialLotCurveInfo | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -151,7 +155,7 @@ function resolveWithExtraSegments(
   }
 
   if (!bestPerm || !bestCombo) {
-    return { sides: columnTargets, chanfre: null };
+    return { sides: columnTargets, chanfre: null, curva: null };
   }
 
   const used = new Set(bestCombo);
@@ -165,7 +169,7 @@ function resolveWithExtraSegments(
   };
 
   if (chanfreSegments.length === 0) {
-    return { sides, chanfre: null };
+    return { sides, chanfre: null, curva: null };
   }
 
   const total = round2(chanfreSegments.reduce((sum, len) => sum + len, 0));
@@ -185,6 +189,7 @@ export function resolveLotMeasuresFromBlock(
   const empty: LotMeasuresResult = {
     sides: { frente: null, fundo: null, ladoDireito: null, ladoEsquerdo: null },
     chanfre: null,
+    curva: null,
   };
   if (!block) return empty;
 
@@ -209,6 +214,7 @@ export function resolveLotMeasuresFromBlock(
           ladoEsquerdo: official.ladoEsquerdo,
         },
         chanfre: official.chanfre,
+        curva: official.curva,
       };
     }
   }
@@ -217,11 +223,11 @@ export function resolveLotMeasuresFromBlock(
   const segmentLengths = parseSegmentLengthsFromJson(block.segments_json);
 
   if (segmentLengths.length === 0) {
-    return { sides: columnTargets, chanfre: null };
+    return { sides: columnTargets, chanfre: null, curva: null };
   }
 
   if (segmentLengths.length <= 4) {
-    return { sides: columnTargets, chanfre: null };
+    return { sides: columnTargets, chanfre: null, curva: null };
   }
 
   return resolveWithExtraSegments(segmentLengths, columnTargets);

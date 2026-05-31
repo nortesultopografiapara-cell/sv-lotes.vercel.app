@@ -1335,6 +1335,7 @@ type CleanLotMeasurements = {
   ladoDireito: number | null;
   ladoEsquerdo: number | null;
   chanfre: ChanfreInfo | null;
+  curva: import("@/lib/officialLotMeasurements").OfficialLotCurveInfo | null;
   area: number | null;
   perimeter: number | null;
 };
@@ -1441,6 +1442,7 @@ function getOfficialLotMeasurementsForPopup(
     ladoDireito: official.ladoDireito,
     ladoEsquerdo: official.ladoEsquerdo,
     chanfre: official.chanfre,
+    curva: official.curva,
     area: official.area ?? parseBlockSideLength(lot.area),
     perimeter: official.perimeter,
   };
@@ -1671,6 +1673,34 @@ function LotPopupContent({
                   {formatChanfreMeters(officialMeasures.chanfre.total)}
                 </span>
               </div>
+            )}
+            {officialMeasures.curva && officialMeasures.curva.totalLength > 0 && (
+              <>
+                <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-0.5">
+                  <span className="text-gray-500 text-[10px]">Curva:</span>{" "}
+                  <span className="text-gray-900 text-[11px] font-medium w-20 text-right">
+                    {officialMeasures.curva.totalLength.toFixed(2)} m
+                  </span>
+                </div>
+                {officialMeasures.curva.radius != null &&
+                  officialMeasures.curva.radius > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-[10px]">Raio:</span>{" "}
+                      <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
+                        {officialMeasures.curva.radius.toFixed(2)} m
+                      </span>
+                    </div>
+                  )}
+                {officialMeasures.curva.chord != null &&
+                  officialMeasures.curva.chord > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-[10px]">Corda:</span>{" "}
+                      <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
+                        {officialMeasures.curva.chord.toFixed(2)} m
+                      </span>
+                    </div>
+                  )}
+              </>
             )}
           </div>
         </div>
