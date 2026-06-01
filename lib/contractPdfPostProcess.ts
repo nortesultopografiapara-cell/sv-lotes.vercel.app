@@ -102,8 +102,13 @@ type PdfWithText = {
   getTextFromPage?: (n: number) => { items?: Array<{ str?: string }> };
 };
 
-const CONTRACT_BODY_MARKERS =
-  /cláusula|clausula|promitente|promissário|promissario|testemunha|instrumento|assinam|compromisso de compra/i;
+/** Texto contratual — se presente, a página nunca deve ser removida. */
+export const CONTRACT_KEEP_MARKERS =
+  /\b(cláusula|clausula|parágrafo|paragrafo|promitente|promissário|promissario|comprador|vendedor|testemunha|cpf|cnpj|assinatura|assinam|foro|multa|escritura|parcela|entrada|valor|instrumento|compromisso)\b/i;
+
+/** Somente cabeçalho/rodapé do chrome PDF (após processamento) ou lixo de layout. */
+const PDF_CHROME_ONLY_MARKERS =
+  /documento emitido digitalmente pelo sv lotes gis|página\s+\d+\s+de\s+\d+/i;
 
 export function extractPdfPageText(
   pdf: PdfWithText,
@@ -122,37 +127,55 @@ export function extractPdfPageText(
   }
 }
 
-/** Página com corpo contratual (cláusulas/assinaturas), não só rodapé HTML residual. */
-export function pdfPageHasContractBody(text: string): boolean {
+/** Qualquer trecho contratual na página → manter. */
+export function pdfPageHasContractualText(text: string): boolean {
   const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length < 20) return false;
-  return CONTRACT_BODY_MARKERS.test(normalized);
+  if (!normalized) return false;
+  return CONTRACT_KEEP_MARKERS.test(normalized);
 }
 
-/** Última página sem conteúdo útil do contrato (html2pdf / rodapé HTML órfão). */
+/** @deprecated use pdfPageHasContractualText */
+export function pdfPageHasContractBody(text: string): boolean {
+  return pdfPageHasContractualText(text);
+}
+
+/**
+ * Última página removível: só quando o texto extraído prova que é só rodapé/cabeçalho,
+ * sem cláusulas. Se não houver texto extraído, não remove (html2pdf costuma falhar nas páginas 2+).
+ */
 export function isContractPdfTrailingBlankPage(
   pdf: PdfWithText,
   pageNum: number,
 ): boolean {
   const text = extractPdfPageText(pdf, pageNum);
-  if (pdfPageHasContractBody(text)) return false;
+  const normalized = text.replace(/\s+/g, " ").trim();
 
-  const pages = pdf.internal.pages as unknown[] | undefined;
-  if (pages) {
-    const pageOps = pages[pageNum];
-    if (Array.isArray(pageOps) && pageOps.length <= 12) return true;
-  }
+  if (!normalized) return false;
 
-  return text.length < 80;
+  if (pdfPageHasContractualText(normalized)) return false;
+
+  const chromeOnly =
+    PDF_CHROME_ONLY_MARKERS.test(normalized) &&
+    normalized.length < 220 &&
+    !CONTRACT_KEEP_MARKERS.test(normalized);
+
+  const orphanCompanyFooter =
+    normalized.length < 140 &&
+    /\bcnpj\b/i.test(normalized) &&
+    !CONTRACT_KEEP_MARKERS.test(normalized) &&
+    !/cláusula|clausula|testemunha|promitente|promissário|promissario/i.test(
+      normalized,
+    );
+
+  return chromeOnly || orphanCompanyFooter;
 }
 
-/** Remove páginas finais sem conteúdo (cabeçalho/rodapé PDF são aplicados depois). */
+/** Remove no máximo a última página, e só se for comprovadamente vazia de contrato. */
 export function removeTrailingBlankPdfPages(pdf: PdfWithText): void {
-  let total = pdf.internal.getNumberOfPages();
-  while (total > 1 && isContractPdfTrailingBlankPage(pdf, total)) {
-    pdf.deletePage(total);
-    total = pdf.internal.getNumberOfPages();
-  }
+  const total = pdf.internal.getNumberOfPages();
+  if (total <= 1) return;
+  if (!isContractPdfTrailingBlankPage(pdf, total)) return;
+  pdf.deletePage(total);
 }
 
 /** Cabeçalho/rodapé em todas as páginas — chamar após remover páginas vazias. */
