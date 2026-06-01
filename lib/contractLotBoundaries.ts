@@ -1,15 +1,14 @@
 /**
- * Medidas e confrontações do lote para contrato — mesma fonte da prancha.
+ * Medidas do lote para contrato — somente dimensões (sem confrontações).
+ * Confrontações permanecem em memorial, prancha, GIS e relatórios técnicos.
  */
 
-import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 import {
-  loadManualConfrontants,
-  resolveLotSideConfrontants,
-  type ManualSideConfrontants,
-} from "@/lib/lotConfrontations";
-import { getOfficialLotMeasurements } from "@/lib/officialLotMeasurements";
-import type { LotSheetSideConfrontants } from "@/lib/lotSheetEnrichment";
+  formatChanfreMeters,
+  resolveLotMeasuresFromBlock,
+  type ChanfreInfo,
+} from '@/lib/lotChanfre';
+import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
 
 export type ContractLotSides = {
   frente: number | string | null;
@@ -19,33 +18,22 @@ export type ContractLotSides = {
 };
 
 const formatMeasure = (val: unknown): string => {
-  if (val === null || val === undefined || val === "") return "não informado";
+  if (val === null || val === undefined || val === '') return 'não informado';
   const num = Number(val);
   if (!Number.isFinite(num)) return String(val);
   return (
-    num.toLocaleString("pt-BR", {
+    num.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }) + " m"
+    }) + ' m'
   );
 };
 
-function formatConfrontantForContract(raw: string): string {
-  const v = String(raw || "").trim();
-  if (!v || v === "—" || /^não informado$/i.test(v)) {
-    return "confrontação pendente";
-  }
-  return v;
-}
-
-export function resolveContractLotSidesAndConfrontants(params: {
-  block: Record<string, unknown>;
-  projectId?: string;
-  projectBlocks?: Record<string, unknown>[] | null;
-  streetGuides?: Record<string, unknown>[] | null;
-  manualConfrontants?: ManualSideConfrontants | null;
-}): { sides: ContractLotSides; confrontants: LotSheetSideConfrontants } {
-  const block = params.block;
+/** Medidas oficiais do lote para cláusula contratual (sem vizinhos/ruas). */
+export function resolveContractLotSides(
+  block: Record<string, unknown> | null | undefined,
+): ContractLotSides {
+  const b = block ?? {};
   let sides: ContractLotSides = {
     frente: null,
     fundo: null,
@@ -53,10 +41,10 @@ export function resolveContractLotSidesAndConfrontants(params: {
     ladoEsquerdo: null,
   };
 
-  const segs = block.segments;
+  const segs = b.segments;
   if (Array.isArray(segs) && segs.length > 0) {
     try {
-      const official = getOfficialLotMeasurements(block);
+      const official = getOfficialLotMeasurements(b);
       sides = {
         frente: official.frente,
         fundo: official.fundo,
@@ -68,81 +56,58 @@ export function resolveContractLotSidesAndConfrontants(params: {
     }
   }
 
-  const fallback = resolveLotMeasuresFromBlock(block);
-  sides = {
-    frente: sides.frente ?? fallback.sides.frente ?? block.frente ?? null,
-    fundo: sides.fundo ?? fallback.sides.fundo ?? block.fundo ?? null,
+  const fallback = resolveLotMeasuresFromBlock(b);
+  return {
+    frente: sides.frente ?? fallback.sides.frente ?? b.frente ?? null,
+    fundo: sides.fundo ?? fallback.sides.fundo ?? b.fundo ?? null,
     ladoDireito:
       sides.ladoDireito ??
       fallback.sides.ladoDireito ??
-      block["Lado Dir."] ??
+      b['Lado Dir.'] ??
       null,
     ladoEsquerdo:
       sides.ladoEsquerdo ??
       fallback.sides.ladoEsquerdo ??
-      block["Lado Esq."] ??
+      b['Lado Esq.'] ??
       null,
   };
+}
 
-  const blockId = String(block.id || "").trim();
-  let confrontants: LotSheetSideConfrontants = {
-    frente: "",
-    fundo: "",
-    ladoDireito: "",
-    ladoEsquerdo: "",
-  };
+function formatBoundaryPart(label: string, measure: unknown): string {
+  return `${label}: <strong>${formatMeasure(measure)}</strong>`;
+}
 
-  if (blockId && params.projectBlocks?.length) {
-    const manual =
-      params.manualConfrontants ??
-      (typeof window !== "undefined"
-        ? loadManualConfrontants(blockId)
-        : null);
-    confrontants = resolveLotSideConfrontants(
-      block,
-      blockId,
-      params.projectBlocks,
-      params.streetGuides || [],
-      manual,
-      params.projectId,
-    );
+function formatChanfrePart(chanfre: ChanfreInfo): string | null {
+  if (!chanfre || chanfre.total <= 0 || !chanfre.segments.length) {
+    return null;
   }
-
-  return { sides, confrontants };
+  if (chanfre.segments.length === 1) {
+    return `Chanfre: <strong>${formatChanfreMeters(chanfre.segments[0])}</strong>`;
+  }
+  const parts = chanfre.segments.map((s) => formatChanfreMeters(s)).join(', ');
+  return `Chanfre: <strong>${parts}</strong>`;
 }
 
-function formatBoundaryPart(
-  label: string,
-  measure: unknown,
-  confrontant: string,
-): string {
-  const m = formatMeasure(measure);
-  const c = formatConfrontantForContract(confrontant);
-  return `${label}: <strong>${m}</strong> confrontando com <strong>${c}</strong>`;
-}
-
-/** Texto da Cláusula Primeira com medidas + confrontações. */
+/**
+ * Cláusula Primeira — medidas lineares (e chanfre, se houver), sem confrontações.
+ * Ex.: medindo: Frente: 10,00 m; Fundo: 10,00 m; ...
+ */
 export function formatContractLotBoundariesClause(params: {
   block: Record<string, unknown>;
-  projectBlocks?: Record<string, unknown>[] | null;
-  streetGuides?: Record<string, unknown>[] | null;
-  manualConfrontants?: ManualSideConfrontants | null;
 }): string {
-  const { sides, confrontants } = resolveContractLotSidesAndConfrontants(
-    params,
-  );
-  return [
-    formatBoundaryPart("Frente", sides.frente, confrontants.frente),
-    formatBoundaryPart("Fundo", sides.fundo, confrontants.fundo),
-    formatBoundaryPart(
-      "Lado Direito",
-      sides.ladoDireito,
-      confrontants.ladoDireito,
-    ),
-    formatBoundaryPart(
-      "Lado Esquerdo",
-      sides.ladoEsquerdo,
-      confrontants.ladoEsquerdo,
-    ),
-  ].join("; ");
+  const block = params.block ?? {};
+  const sides = resolveContractLotSides(block);
+  const { chanfre } = resolveLotMeasuresFromBlock(block);
+
+  const parts = [
+    formatBoundaryPart('Frente', sides.frente),
+    formatBoundaryPart('Fundo', sides.fundo),
+    formatBoundaryPart('Lado Direito', sides.ladoDireito),
+    formatBoundaryPart('Lado Esquerdo', sides.ladoEsquerdo),
+  ];
+
+  const chanfrePart = chanfre ? formatChanfrePart(chanfre) : null;
+  if (chanfrePart) parts.push(chanfrePart);
+
+  return `medindo: ${parts.join('; ')}.`;
 }

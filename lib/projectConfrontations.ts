@@ -1,5 +1,5 @@
 /**
- * Confrontações automáticas por projeto — fonte reutilizável (prancha, contrato, memorial).
+ * Confrontações automáticas por projeto — prancha, memorial, GIS e relatórios (não contrato).
  */
 
 import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';

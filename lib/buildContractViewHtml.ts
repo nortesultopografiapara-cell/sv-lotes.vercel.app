@@ -1,5 +1,5 @@
 /**
- * HTML do contrato para visualização/PDF com dados atuais da empresa e confrontações.
+ * HTML do contrato para visualização/PDF com dados atuais da empresa (medidas sem confrontações).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";

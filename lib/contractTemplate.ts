@@ -1,9 +1,6 @@
 const extenso = require("extenso");
 
-import {
-  formatChanfreClause,
-  resolveLotMeasuresFromBlock,
-} from "@/lib/lotChanfre";
+import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 import { formatCurveClause } from "@/lib/officialLotMeasurements";
 import { buildLotAddressLine } from "@/lib/streetGuide";
 import {
@@ -11,7 +8,6 @@ import {
   normalizeCompanyAddressLine,
 } from "@/lib/contractCompanyDisplay";
 import { formatContractLotBoundariesClause } from "@/lib/contractLotBoundaries";
-import type { ManualSideConfrontants } from "@/lib/lotConfrontations";
 import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
@@ -158,10 +154,10 @@ interface GenerateContractParams {
   contractSnapshot?: any;
   contractDate?: string;
   financeReceipts?: ContractFinanceReceiptRef[] | null;
-  /** Lotes do projeto — confrontações automáticas (mesma fonte da prancha). */
+  /** @deprecated Contrato não usa confrontações; mantido para compatibilidade de chamadas. */
   projectBlocks?: Record<string, unknown>[] | null;
   streetGuides?: Record<string, unknown>[] | null;
-  manualConfrontants?: ManualSideConfrontants | null;
+  manualConfrontants?: Record<string, unknown> | null;
 }
 
 export function generateContractHTML({
@@ -284,20 +280,12 @@ export function generateContractHTML({
     (isValid(sale?.blocks?.number) ? sale.blocks.number : null) ||
     "";
 
-  const lotMeasures = resolveLotMeasuresFromBlock(block);
-  const { chanfre: chanfreInfo, curva: curvaInfo } = lotMeasures;
+  const { curva: curvaInfo } = resolveLotMeasuresFromBlock(block);
 
   const lotBoundariesClause = formatContractLotBoundariesClause({
     block: block || {},
-    projectBlocks,
-    streetGuides,
-    manualConfrontants,
   });
 
-  const chanfreClause =
-    chanfreInfo && chanfreInfo.total > 0
-      ? formatChanfreClause(chanfreInfo)
-      : "";
   const curvaClause =
     curvaInfo && curvaInfo.totalLength > 0
       ? formatCurveClause(curvaInfo)
@@ -498,7 +486,7 @@ export function generateContractHTML({
 
             <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
-                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: o imóvel identificado como <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${chanfreClause}${curvaClause}.
+                    <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: o imóvel identificado como <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${curvaClause}
                 </p>
             </div>
 
