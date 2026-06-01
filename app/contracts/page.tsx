@@ -40,7 +40,10 @@ import {
   getCompanyDisplayName,
   formatCompanyAddressForHeader,
 } from "@/lib/contractCompanyDisplay";
-import { applyContractPdfChrome } from "@/lib/contractPdfPostProcess";
+import {
+  applyContractPdfChrome,
+  getContractHtml2pdfOptions,
+} from "@/lib/contractPdfPostProcess";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
 
@@ -690,13 +693,11 @@ export default function ContractsPage() {
       element.innerHTML = ver.generated_html;
       await html2pdf()
         .from(element)
-        .set({
-          margin: [35, 15, 25, 15],
-          filename: `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`,
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-          pagebreak: { mode: ["css", "avoid-all"] },
-        })
+        .set(
+          getContractHtml2pdfOptions(
+            `contrato_${ver.contract_number || "versao"}_v${ver.version ?? 1}.pdf`,
+          ),
+        )
         .toPdf()
         .get("pdf")
         .then((pdf: any) => {
@@ -770,14 +771,9 @@ export default function ContractsPage() {
         tenantData || {},
       );
 
-      const opt = {
-        margin: [35, 15, 25, 15],
-        filename: `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
-        image: { type: "jpeg", quality: 1 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["css", "avoid-all"] },
-      };
+      const opt = getContractHtml2pdfOptions(
+        `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
+      );
 
       html2pdf()
         .from(element)

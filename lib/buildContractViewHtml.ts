@@ -72,6 +72,7 @@ export async function buildContractViewHtml(
       (contract.sales as { finance_receipts?: unknown })?.finance_receipts,
   };
 
+  // PDF: app/contracts usa getContractHtml2pdfOptions + applyContractPdfChrome (sem página vazia extra).
   return generateContractHTML({
     tenant: params.tenant,
     customer:

@@ -8,6 +8,7 @@ import {
   normalizeCompanyAddressLine,
 } from "@/lib/contractCompanyDisplay";
 import { formatContractLotBoundariesClause } from "@/lib/contractLotBoundaries";
+import { CONTRACT_PDF_PRINT_CSS } from "@/lib/contractPdfPostProcess";
 import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
@@ -463,13 +464,14 @@ export function generateContractHTML({
     .join(" | ");
 
   return `
-        <div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
+        ${CONTRACT_PDF_PRINT_CSS}
+        <div class="sv-contract-document" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
 
-            <div style="text-align: center; margin-bottom: 25px; page-break-inside: avoid;">
+            <div class="contract-title">
                  <h2 style="font-family: 'Times New Roman', Times, serif; font-size: 17px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.3;">INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA</h2>
             </div>
             
-            <div style="page-break-inside: avoid; margin-bottom: 25px;">
+            <div class="contract-clause">
                 <p style="margin-bottom: 10px;">
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
                 </p>
@@ -478,25 +480,25 @@ export function generateContractHTML({
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 20px;">
+            <div class="contract-preamble">
                 <p style="margin-bottom: 0;">
                     Pelo presente instrumento particular, partes acima qualificadas têm entre si justo e acertado a celebração do presente compromisso de compra e venda que se regerá pelas cláusulas, termos e condições, estipuladas a seguir, que as partes mutuamente outorgam e aceitam, as quais comprometem cumprir e respeitar, por si, seus herdeiros e sucessores, na forma da lei:
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Primeira:</strong> O PROMITENTE VENDEDOR, pelo presente instrumento e na melhor forma de direito, declara-se senhor e legítimo possuidor, livre e desembaraçado de quaisquer ônus do imóvel a seguir descriminado: o imóvel identificado como <strong>LOTE ${lote} DA QUADRA ${quadra}</strong>${projectDescString}${lotLocationSuffix}, com área total de <strong>${formatArea(block?.area)}</strong>, ${lotBoundariesClause}${curvaClause}
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Segunda:</strong> Pelo presente instrumento e na melhor forma de direito, o PROMITENTE VENDEDOR promete vender ao PROMISSÁRIO COMPRADOR, que promete comprar, o imóvel descrito na cláusula primeira, pelo preço e condições descritas nas cláusulas seguintes.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 10px;">
                     <strong>Cláusula Terceira:</strong> O valor total do contrato é de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, o qual foi negociado de forma <strong>${tipoVenda.toUpperCase()}</strong>, pelo PROMISSÁRIO COMPRADOR ao PROMITENTE VENDEDOR no ato da assinatura do presente contrato, outorgando assim o PROMISSÁRIO VENDEDOR a mais ampla, geral e irrevogável quitação mediante emissão do termo de quitação pelo PROMITENTE VENDEDOR.
                 </p>
@@ -505,25 +507,25 @@ export function generateContractHTML({
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR, com o valor de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, entrada de <strong>${valorEntradaFmt} (${valorEntradaExtenso})</strong>, e o restante parcelado via boleto bancário em <strong>${qtdParcelas} parcelas iguais no valor de ${valorParcelaFmt} (${valorParcelaExtenso})</strong>. Sendo a primeira parcela para o dia <strong>${dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${dataUltimaParcelaFmt}</strong>. Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Quinta:</strong> A não quitação das cláusulas penais ou resolutórias, previstas neste contrato por parte de seus beneficiários, será sempre havida como mera tolerância, não importando nunca em novação das obrigações descumpridas, podendo ser aplicada a qualquer tempo, enquanto subsistir o inadimplemento. Em caso de desistência será ressarcido somente 40% do valor pago.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Sexta:</strong> Fica estabelecido a irretratabilidade e irrevogabilidade do presente contrato, podendo, se necessário, o PROMITENTE COMPRADOR ou seus eventuais sucessores, requerer adjudicação compulsória dos imóveis, nos termos da legislação vigente.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 10px;">
                     <strong>Cláusula Sétima:</strong> Fica estabelecido que a escritura definitiva de compra e venda somente será outorgada pelo PROMITENTE VENDEDOR ao PROMISSÁRIO COMPRADOR no prazo de 6 (seis) meses contados da data em que for expedido o decreto aprovando o loteamento.
                 </p>
@@ -532,31 +534,31 @@ export function generateContractHTML({
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Oitava:</strong> O presente contrato obriga aos contratantes, seus herdeiros e sucessores, os quais deverão igualmente observar e cumprir todos os termos, condições e cláusulas deste instrumento.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Nona:</strong> Fica estipulado que, a parte que descumprir quaisquer das cláusulas, termos ou condições do presente instrumento incorrerá na multa penal de 2% (dois por cento) do valor total do contrato, atualizada monetariamente de acordo com índice oficial vigente, sem prejuízo das outras penalidades também previstas neste instrumento.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Décima:</strong> Fica estabelecido que, em havendo necessidade de se recorrer às vias judiciais para solucionar qualquer controvérsia, a parte vencida arcará, além das despesas e custas processuais, com honorários advocatícios de 20% (vinte por cento) em favor da parte vencedora.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px; padding-bottom: 5px;">
+            <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">
                     <strong>Cláusula Décima Primeira:</strong> Fica eleito o foro ${foroText} para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes a qualquer outro, por mais especial que seja.
                 </p>
             </div>
 
-            <div style="page-break-inside: avoid; margin-bottom: 25px;">
+            <div class="contract-clause">
                 <p style="margin-bottom: 20px;">
                     E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
                 </p>
@@ -565,8 +567,8 @@ export function generateContractHTML({
                 </div>
             </div>
 
-            <div style="page-break-inside: avoid; margin-top: 40px; text-align: center;">
-                <div style="margin-bottom: 65px;">
+            <div class="contract-signatures">
+                <div class="signature-slot">
                     ${empresaAssinatura}
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
@@ -574,31 +576,31 @@ export function generateContractHTML({
                     <p style="margin: 4px 0 0 0; font-size: 9pt;">${empresaRepresentante}${empresaRepresentanteCpf !== "Não informado" ? ` — CPF: ${empresaRepresentanteCpf}` : ""}</p>
                 </div>
 
-                <div style="margin-bottom: 65px;">
+                <div class="signature-slot">
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${clienteNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMISSÁRIO COMPRADOR<br/>CPF: ${clienteCpfCnpj}</p>
                 </div>
 
-                <div style="margin-bottom: 65px;">
+                <div class="signature-slot">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 1</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
 
-                <div style="margin-bottom: 20px;">
+                <div class="signature-slot">
                     <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
                     <p style="margin: 0 0 8px 0; font-weight: bold;">TESTEMUNHA 2</p>
                     <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
                     <p style="margin: 0; font-size: 10pt;">CPF: ___________________________________________</p>
                 </div>
-            </div>
 
-            <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #444; text-align: center;">
-                <p style="margin: 0;">${empresaNome} — CNPJ ${empresaCnpj}</p>
-                <p style="margin: 4px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
-                ${vendedorContato ? `<p style="margin: 4px 0 0 0;">${vendedorContato}</p>` : ""}
+                <div class="contract-footer">
+                    <p style="margin: 0;">${empresaNome} — CNPJ ${empresaCnpj}</p>
+                    <p style="margin: 4px 0 0 0;">${empresaEndereco}, ${empresaCidade} - ${empresaUf}, CEP ${empresaCep}</p>
+                    ${vendedorContato ? `<p style="margin: 4px 0 0 0;">${vendedorContato}</p>` : ""}
+                </div>
             </div>
         </div>
     `;

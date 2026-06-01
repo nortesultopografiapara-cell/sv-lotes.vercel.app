@@ -13,40 +13,143 @@ export type ContractPdfChromeInput = {
   logoBase64: string | null;
 };
 
+/** CSS embutido no HTML do contrato — evita página extra após assinaturas. */
+export const CONTRACT_PDF_PRINT_CSS = `
+<style type="text/css">
+  .sv-contract-document .contract-clause {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    margin-bottom: 22px;
+  }
+  .sv-contract-document .contract-clause--tight {
+    margin-bottom: 18px;
+  }
+  .sv-contract-document .contract-title {
+    text-align: center;
+    margin-bottom: 22px;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .sv-contract-document .contract-preamble {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    margin-bottom: 18px;
+  }
+  .sv-contract-document .contract-signatures {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+    margin-top: 28px;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    text-align: center;
+  }
+  .sv-contract-document .contract-signatures .signature-slot {
+    margin-bottom: 40px;
+  }
+  .sv-contract-document .contract-signatures .signature-slot:last-of-type {
+    margin-bottom: 8px;
+  }
+  .sv-contract-document .contract-footer {
+    page-break-before: avoid;
+    break-before: avoid-page;
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+    margin-top: 12px;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+    font-size: 9pt;
+    color: #444;
+    text-align: center;
+  }
+  .sv-contract-document > *:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid-page !important;
+    margin-bottom: 0 !important;
+  }
+</style>
+`;
+
+export type ContractHtml2pdfOptions = {
+  margin: number[];
+  filename: string;
+  image: { type: string; quality: number };
+  html2canvas: { scale: number; useCORS: boolean };
+  jsPDF: { unit: string; format: string; orientation: string };
+  pagebreak: { mode: string[] };
+};
+
+/** Opções html2pdf — sem avoid-all (evita página vazia extra no final). */
+export function getContractHtml2pdfOptions(
+  filename: string,
+): ContractHtml2pdfOptions {
+  return {
+    margin: [35, 15, 25, 15],
+    filename,
+    image: { type: "jpeg", quality: 1 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["css"] },
+  };
+}
+
 type PdfWithText = {
   internal: { getNumberOfPages: () => number; pages?: unknown[] };
   deletePage: (n: number) => void;
   getTextFromPage?: (n: number) => { items?: Array<{ str?: string }> };
 };
 
-/** Página sem conteúdo útil (só quebra de layout do html2pdf). */
-function isPdfPageEffectivelyEmpty(pdf: PdfWithText, pageNum: number): boolean {
-  const pages = pdf.internal.pages as unknown[] | undefined;
-  if (pages) {
-    const pageOps = pages[pageNum];
-    if (!Array.isArray(pageOps)) return false;
-    if (pageOps.length <= 5) return true;
-  }
+const CONTRACT_BODY_MARKERS =
+  /cláusula|clausula|promitente|promissário|promissario|testemunha|instrumento|assinam|compromisso de compra/i;
 
-  if (typeof pdf.getTextFromPage !== "function") return false;
-
+export function extractPdfPageText(
+  pdf: PdfWithText,
+  pageNum: number,
+): string {
+  if (typeof pdf.getTextFromPage !== "function") return "";
   try {
     const text = pdf.getTextFromPage(pageNum);
     const items = text?.items || [];
-    const joined = items
+    return items
       .map((it) => String(it.str || "").trim())
       .filter(Boolean)
-      .join("");
-    return joined.length < 25;
+      .join(" ");
   } catch {
-    return false;
+    return "";
   }
 }
 
-/** Remove páginas finais sem conteúdo (cabeçalho/rodapé são aplicados depois). */
+/** Página com corpo contratual (cláusulas/assinaturas), não só rodapé HTML residual. */
+export function pdfPageHasContractBody(text: string): boolean {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length < 20) return false;
+  return CONTRACT_BODY_MARKERS.test(normalized);
+}
+
+/** Última página sem conteúdo útil do contrato (html2pdf / rodapé HTML órfão). */
+export function isContractPdfTrailingBlankPage(
+  pdf: PdfWithText,
+  pageNum: number,
+): boolean {
+  const text = extractPdfPageText(pdf, pageNum);
+  if (pdfPageHasContractBody(text)) return false;
+
+  const pages = pdf.internal.pages as unknown[] | undefined;
+  if (pages) {
+    const pageOps = pages[pageNum];
+    if (Array.isArray(pageOps) && pageOps.length <= 12) return true;
+  }
+
+  return text.length < 80;
+}
+
+/** Remove páginas finais sem conteúdo (cabeçalho/rodapé PDF são aplicados depois). */
 export function removeTrailingBlankPdfPages(pdf: PdfWithText): void {
   let total = pdf.internal.getNumberOfPages();
-  while (total > 1 && isPdfPageEffectivelyEmpty(pdf, total)) {
+  while (total > 1 && isContractPdfTrailingBlankPage(pdf, total)) {
     pdf.deletePage(total);
     total = pdf.internal.getNumberOfPages();
   }
