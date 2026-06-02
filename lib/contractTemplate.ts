@@ -13,6 +13,11 @@ import {
   formatClassicSellerInstallationText,
   normalizeSellerFromCompany,
 } from "@/lib/contractSeller";
+import {
+  formatContractIdentityDocumentSuffix,
+  formatContractSpouseQualificationSuffix,
+  formatSellerRepresentativeIdentitySuffix,
+} from "@/lib/contractIdentity";
 
 const formatArea = (val: any) => {
   if (!val) return "não informado";
@@ -238,13 +243,16 @@ export function generateContractHTML({
       ? formatCNPJCPF(seller.representativeCpf)
       : "Não informado";
   const sellerText = formatClassicSellerInstallationText(seller);
+  const vendedorRepresentanteIdentitySuffix =
+    formatSellerRepresentativeIdentitySuffix(tenant);
   const empresaAssinatura = seller.signatureUrl
     ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
     : "";
 
   const clienteNome = toTitleCase(customer?.name || "cliente não informado");
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");
-  const clienteRg = customer?.rg || "rg não informado";
+  const clienteIdentitySuffix = formatContractIdentityDocumentSuffix(customer);
+  const clienteConjugeSuffix = formatContractSpouseQualificationSuffix(customer);
   const clienteProfissao = toTitleCase(customer?.profession || "profissão não informada");
   const clienteEstadoCivil = toTitleCase(customer?.civil_state || "estado civil não informado");
   const clienteEndereco = toTitleCase(customer?.address || customer?.street || "endereço não informado");
@@ -476,7 +484,7 @@ export function generateContractHTML({
                     <strong>Promitente Proprietário Vendedor:</strong> <strong>${empresaNome}</strong>, CNPJ n° ${empresaCnpj}, ${sellerText}
                 </p>
                 <p style="margin-bottom: 10px;">
-                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}, Portador cédula de identidade n° ${clienteRg}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
+                    <strong>Promitente Comprador:</strong> <strong>${clienteNome}</strong>, CPF n° ${clienteCpfCnpj}, Brasileiro, Profissão: ${clienteProfissao}, Estado Civil: ${clienteEstadoCivil}${clienteIdentitySuffix}${clienteConjugeSuffix}, Residente e domiciliado na ${clienteEndereco}, Bairro ${clienteBairro}, CEP: ${clienteCep}, Cidade de ${clienteCidade} - ${clienteUf}.
                 </p>
             </div>
 
@@ -573,7 +581,7 @@ export function generateContractHTML({
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
-                    <p style="margin: 4px 0 0 0; font-size: 9pt;">${empresaRepresentante}${empresaRepresentanteCpf !== "Não informado" ? ` — CPF: ${empresaRepresentanteCpf}` : ""}</p>
+                    <p style="margin: 4px 0 0 0; font-size: 9pt;">${empresaRepresentante}${empresaRepresentanteCpf !== "Não informado" ? ` — CPF: ${empresaRepresentanteCpf}` : ""}${vendedorRepresentanteIdentitySuffix}</p>
                 </div>
 
                 <div class="signature-slot">

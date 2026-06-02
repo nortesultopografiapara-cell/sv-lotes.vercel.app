@@ -139,6 +139,8 @@ const contractHtml = generateContractHTML({
     name: 'Cliente Teste',
     document: '222.222.222-22',
     rg: '1234567',
+    rg_issuer: 'PC',
+    rg_issuer_state: 'PA',
     profession: 'Engenheiro',
     civil_state: 'Solteiro',
     address: 'Rua B',
@@ -184,6 +186,7 @@ const requiredSnippets = [
   'TESTEMUNHA 2',
   'LOTEAMENTO NOVA CARAJÁS',
   'LOTE 5 DA QUADRA 123',
+  'Portador da Cédula de Identidade RG nº 1234567, expedida pela PC/PA',
 ];
 
 for (const snippet of requiredSnippets) {

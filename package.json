@@ -15,7 +15,8 @@
     "test:geometry-diagnostic": "tsx scripts/mandatory-lot-geometry-diagnostic-tests.ts",
     "test:quadra123-confrontation": "tsx scripts/mandatory-quadra123-confrontation-tests.ts",
     "test:contract-lot-clause": "tsx scripts/mandatory-contract-lot-clause-tests.ts",
-    "test:contract-pdf-blank": "tsx scripts/mandatory-contract-pdf-blank-page-tests.ts"
+    "test:contract-pdf-blank": "tsx scripts/mandatory-contract-pdf-blank-page-tests.ts",
+    "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
