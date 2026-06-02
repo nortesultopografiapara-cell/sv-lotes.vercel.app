@@ -2828,7 +2828,7 @@ export default function MapPage() {
   // Lista de Projetos (quando map não está selecionado)
   return (
     <>
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in-up relative z-0">
+    <div className="sv-page sv-page--scroll-y flex-1 p-4 md:p-8 flex flex-col h-full fade-in-up relative z-0 min-w-0">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
@@ -2855,7 +2855,7 @@ export default function MapPage() {
         )}
       </header>
 
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm min-w-0 max-w-full">
         {/* Toolbar */}
         <div className="p-4 border-b border-[var(--color-border)] flex gap-4">
           <div className="relative flex-1 max-w-sm">
@@ -2870,106 +2870,250 @@ export default function MapPage() {
           </div>
         </div>
 
-        {/* List */}
-        <div className="flex-1 overflow-auto p-4">
+        {/* List — desktop/notebook: tabela; mobile: cards com nome completo */}
+        <div className="flex-1 overflow-auto min-w-0">
           {loading ? (
-             <div className="w-full h-full flex items-center justify-center">
+             <div className="w-full h-full flex items-center justify-center py-16">
                  <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
              </div>
           ) : filteredProjects.length > 0 ? (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-0">
-               {filteredProjects.map((p) => {
-                 const blocks = p.blocks || [];
-                 const total = blocks.length;
-                 const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
-                 const hasGis = blocks.some((l: any) => l.geometry != null);
-                 const pct = total > 0 ? (sold / total) * 100 : 0;
+             <>
+               {/* Tabela administrativa — notebook/desktop */}
+               <div className="hidden md:block min-w-0">
+                 <table className="w-full text-left border-collapse min-w-[720px]">
+                   <thead className="sticky top-0 z-10 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+                     <tr className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+                       <th className="p-3 pl-4 min-w-[200px]">Projeto / Loteamento</th>
+                       <th className="p-3 min-w-[120px]">Localização</th>
+                       <th className="p-3 text-center w-20">Lotes</th>
+                       <th className="p-3 min-w-[140px]">Vendas</th>
+                       <th className="p-3 text-center w-28">GIS</th>
+                       <th className="p-3 text-center w-28">KML</th>
+                       <th className="p-3 pr-4 text-right min-w-[200px]">Ações</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {filteredProjects.map((p) => {
+                       const blocks = p.blocks || [];
+                       const total = blocks.length;
+                       const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
+                       const hasGis = blocks.some((l: any) => l.geometry != null);
+                       const pct = total > 0 ? Math.round((sold / total) * 100) : 0;
+                       const locationLabel =
+                         p.location ||
+                         [p.city, p.uf || p.state].filter(Boolean).join(' - ') ||
+                         'Sem localização';
 
-                 return (
-                   <div
-                     key={p.id}
-                     className="relative bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-5 hover:border-[var(--color-primary)]/50 transition-colors flex flex-col"
-                   >
-                     <div className="flex justify-between items-start mb-4 gap-2">
-                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                         <div className="w-12 h-12 shrink-0 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
-                           <FolderOpen className="w-6 h-6" />
+                       return (
+                         <tr
+                           key={p.id}
+                           className="border-b border-[var(--color-border)]/80 hover:bg-white/[0.02] transition-colors"
+                         >
+                           <td className="p-3 pl-4 align-middle">
+                             <div className="flex items-start gap-3 min-w-0">
+                               <div className="w-10 h-10 shrink-0 rounded-lg bg-[var(--color-background)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
+                                 <FolderOpen className="w-5 h-5" />
+                               </div>
+                               <div className="min-w-0">
+                                 <p className="font-semibold text-white text-sm leading-snug break-words">
+                                   {p.name}
+                                 </p>
+                               </div>
+                             </div>
+                           </td>
+                           <td className="p-3 align-middle text-xs text-[var(--color-text-muted)]">
+                             <span className="break-words">{locationLabel}</span>
+                           </td>
+                           <td className="p-3 align-middle text-center">
+                             <span className="text-sm font-mono text-white tabular-nums">{total}</span>
+                           </td>
+                           <td className="p-3 align-middle">
+                             <div className="flex flex-col gap-1 min-w-[120px]">
+                               <span className="text-[11px] font-mono text-white tabular-nums">
+                                 {sold} / {total} ({pct}%)
+                               </span>
+                               <div className="w-full h-1.5 bg-[var(--color-background)] rounded-full overflow-hidden border border-[var(--color-border)]">
+                                 <div
+                                   className="h-full bg-[var(--color-primary)]"
+                                   style={{ width: `${pct}%` }}
+                                 />
+                               </div>
+                             </div>
+                           </td>
+                           <td className="p-3 align-middle text-center">
+                             {hasGis ? (
+                               <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase border border-[var(--color-success)]/20">
+                                 OK
+                               </span>
+                             ) : (
+                               <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase border border-[var(--color-warning)]/20">
+                                 Pendente
+                               </span>
+                             )}
+                           </td>
+                           <td className="p-3 align-middle text-center">
+                             {hasGis ? (
+                               <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-mono font-bold uppercase border border-emerald-500/20">
+                                 Importado
+                               </span>
+                             ) : (
+                               <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase border border-[var(--color-warning)]/20">
+                                 Falta KML
+                               </span>
+                             )}
+                           </td>
+                           <td className="p-3 pr-4 align-middle">
+                             <div className="flex items-center justify-end gap-2">
+                               {user?.role !== 'BROKER' && (
+                                 <>
+                                   <button
+                                     type="button"
+                                     title="Editar"
+                                     onClick={(e) => {
+                                       e.preventDefault();
+                                       e.stopPropagation();
+                                       openEditProject(p);
+                                     }}
+                                     className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white"
+                                   >
+                                     <Pencil className="w-4 h-4" />
+                                   </button>
+                                   <button
+                                     type="button"
+                                     title="Excluir"
+                                     onClick={(e) => {
+                                       e.preventDefault();
+                                       e.stopPropagation();
+                                       handleDeleteProject(p.id);
+                                     }}
+                                     className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)]"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </button>
+                                 </>
+                               )}
+                               <button
+                                 type="button"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleOpenProject(p);
+                                 }}
+                                 className="shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-2 whitespace-nowrap"
+                               >
+                                 <MapIcon className="w-4 h-4" /> Abrir Mapa
+                               </button>
+                             </div>
+                           </td>
+                         </tr>
+                       );
+                     })}
+                   </tbody>
+                 </table>
+               </div>
+
+               {/* Mobile — cards empilhados, nome completo */}
+               <div className="md:hidden flex flex-col gap-3 p-4">
+                 {filteredProjects.map((p) => {
+                   const blocks = p.blocks || [];
+                   const total = blocks.length;
+                   const sold = blocks.filter((l: any) => l.status === 'Vendido').length;
+                   const hasGis = blocks.some((l: any) => l.geometry != null);
+                   const pct = total > 0 ? Math.round((sold / total) * 100) : 0;
+                   const locationLabel =
+                     p.location ||
+                     [p.city, p.uf || p.state].filter(Boolean).join(' - ') ||
+                     'Sem localização';
+
+                   return (
+                     <div
+                       key={p.id}
+                       className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl p-4 flex flex-col gap-3"
+                     >
+                       <div className="flex items-start gap-3">
+                         <div className="w-10 h-10 shrink-0 rounded-lg bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-border)]">
+                           <FolderOpen className="w-5 h-5" />
                          </div>
-                         <div className="min-w-0">
-                           <h3 className="font-bold text-white text-lg leading-tight truncate">{p.name}</h3>
-                           <p className="text-xs font-mono text-[var(--color-text-muted)] uppercase mt-1 truncate">
-                             {p.location || 'Sem localização'}
+                         <div className="min-w-0 flex-1">
+                           <h3 className="font-bold text-white text-base leading-snug break-words">
+                             {p.name}
+                           </h3>
+                           <p className="text-xs text-[var(--color-text-muted)] mt-1 break-words">
+                             {locationLabel}
                            </p>
                          </div>
                        </div>
-                       {user?.role !== 'BROKER' && (
-                         <div className="relative z-[100] flex shrink-0 items-center gap-1">
-                           <button
-                             type="button"
-                             title="Editar"
-                             onClick={(e) => {
-                               e.preventDefault();
-                               e.stopPropagation();
-                               openEditProject(p);
-                             }}
-                             className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white cursor-pointer"
-                           >
-                             <Pencil className="w-4 h-4 shrink-0" />
-                           </button>
-                           <button
-                             type="button"
-                             title="Excluir"
-                             onClick={(e) => {
-                               e.preventDefault();
-                               e.stopPropagation();
-                               handleDeleteProject(p.id);
-                             }}
-                             className="relative z-[100] flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)] cursor-pointer"
-                           >
-                             <Trash2 className="w-4 h-4 shrink-0" />
-                           </button>
-                         </div>
-                       )}
-                     </div>
 
-                     <div className="mt-auto">
-                       <div className="flex items-center justify-between mb-2">
-                         <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
-                           Progresso de Vendas
-                         </span>
-                         <span className="text-xs font-mono text-white">
-                           {sold} / {total}
-                         </span>
+                       <div className="grid grid-cols-2 gap-2 text-xs">
+                         <div>
+                           <span className="text-[var(--color-text-muted)] uppercase tracking-wider text-[10px]">Lotes</span>
+                           <p className="font-mono text-white mt-0.5">{total}</p>
+                         </div>
+                         <div>
+                           <span className="text-[var(--color-text-muted)] uppercase tracking-wider text-[10px]">Vendas</span>
+                           <p className="font-mono text-white mt-0.5">{sold} / {total} ({pct}%)</p>
+                         </div>
                        </div>
-                       <div className="w-full h-2 bg-[var(--color-surface)] rounded-full overflow-hidden mb-4 border border-[var(--color-border)]">
+
+                       <div className="w-full h-1.5 bg-[var(--color-surface)] rounded-full overflow-hidden border border-[var(--color-border)]">
                          <div className="h-full bg-[var(--color-primary)]" style={{ width: `${pct}%` }} />
                        </div>
-                       <div className="flex items-center justify-between gap-2">
+
+                       <div className="flex flex-wrap gap-2">
                          {hasGis ? (
-                           <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-success)]/20">
-                             Sincronizado
-                           </span>
+                           <>
+                             <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px] font-mono font-bold uppercase border border-[var(--color-success)]/20">
+                               GIS OK
+                             </span>
+                             <span className="inline-flex px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-mono font-bold uppercase border border-emerald-500/20">
+                               KML Importado
+                             </span>
+                           </>
                          ) : (
-                           <span className="inline-flex items-center px-2 py-1 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase tracking-wider border border-[var(--color-warning)]/20">
-                             Falta KML
-                           </span>
+                           <>
+                             <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase border border-[var(--color-warning)]/20">
+                               GIS Pendente
+                             </span>
+                             <span className="inline-flex px-2 py-0.5 rounded bg-[var(--color-warning)]/10 text-[var(--color-warning)] text-[10px] font-mono font-bold uppercase border border-[var(--color-warning)]/20">
+                               Falta KML
+                             </span>
+                           </>
                          )}
+                       </div>
+
+                       <div className="flex items-center gap-2 pt-1">
                          <button
                            type="button"
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             handleOpenProject(p);
-                           }}
-                           className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2"
+                           onClick={() => handleOpenProject(p)}
+                           className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
                          >
                            <MapIcon className="w-4 h-4" /> Abrir Mapa
                          </button>
+                         {user?.role !== 'BROKER' && (
+                           <>
+                             <button
+                               type="button"
+                               title="Editar"
+                               onClick={() => openEditProject(p)}
+                               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white"
+                             >
+                               <Pencil className="w-4 h-4" />
+                             </button>
+                             <button
+                               type="button"
+                               title="Excluir"
+                               onClick={() => handleDeleteProject(p.id)}
+                               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-red-500/10 hover:text-[var(--color-danger)]"
+                             >
+                               <Trash2 className="w-4 h-4" />
+                             </button>
+                           </>
+                         )}
                        </div>
                      </div>
-                   </div>
-                 );
-               })}
-             </div>
+                   );
+                 })}
+               </div>
+             </>
           ) : !isBrowserOnline() ? (
              <div className="w-full h-full flex flex-col items-center justify-center text-center px-6 text-[var(--color-text-muted)] text-sm max-w-lg mx-auto">
                  Nenhum projeto disponível offline. Abra este projeto online pelo menos uma vez para armazená-lo neste dispositivo.
