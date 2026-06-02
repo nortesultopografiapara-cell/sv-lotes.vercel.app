@@ -175,7 +175,7 @@ function CompaniesPageContent() {
   const isEmpty = (companies ?? []).length === 0 && !dataLoading && !loadError;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full bg-[var(--color-background)]">
       <p className="text-xs font-mono font-bold text-emerald-400 mb-4 tracking-wide">
         MASTER_COMPANIES_RENDER_OK
       </p>

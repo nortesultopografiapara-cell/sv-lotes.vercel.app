@@ -280,7 +280,7 @@ export default function PlansPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
         <div>
           <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">
@@ -400,7 +400,7 @@ export default function PlansPage() {
          <p className="text-gray-400 text-[14px]">Gerencie os planos contratados pelas empresas da plataforma.</p>
       </div>
 
-      <div className="bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden">
+      <div className="bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden min-w-0 max-w-full">
         <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-end bg-[#0B0E14] rounded-t-2xl">
             <div className="relative w-full sm:w-[320px]">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -420,8 +420,8 @@ export default function PlansPage() {
             </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
+        <div className="sv-table-scroll">
+          <table className="w-full text-left border-collapse min-w-[800px]">
              <thead>
                 <tr className="bg-[#11161d] border-b border-white/5 border-t">
                    <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>

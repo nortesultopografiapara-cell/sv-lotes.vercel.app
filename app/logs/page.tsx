@@ -60,7 +60,7 @@ export default function MasterLogsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8">
       <header className="mb-6 flex items-center gap-3">
         <ScrollText className="w-7 h-7 text-[var(--color-primary)]" />
         <div>
@@ -76,8 +76,8 @@ export default function MasterLogsPage() {
       ) : rows.length === 0 ? (
         <p className="text-slate-500 text-sm">Nenhum log registrado ainda.</p>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full text-left text-sm">
+        <div className="rounded-xl border border-white/10 sv-table-scroll overflow-hidden">
+          <table className="w-full text-left text-sm table-fixed min-w-0">
             <thead className="bg-[var(--color-surface)]/80 text-slate-500 text-xs uppercase">
               <tr>
                 <th className="p-3">Data</th>
@@ -96,7 +96,7 @@ export default function MasterLogsPage() {
                   </td>
                   <td className="p-3 text-slate-300">{r.module || '—'}</td>
                   <td className="p-3 text-slate-300">{r.action || '—'}</td>
-                  <td className="p-3 text-slate-400">{r.description || '—'}</td>
+                  <td className="p-3 text-slate-400 max-w-0 truncate">{r.description || '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -98,7 +98,7 @@ export default function MasterProfilePage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111]">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 bg-[#0b1111]">
       <div className="max-w-4xl mx-auto space-y-6">
         
         <header className="mb-8">

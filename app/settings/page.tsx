@@ -303,7 +303,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto font-sans h-full overflow-y-auto">
+    <div className="sv-page sv-page--scroll-y p-8 max-w-4xl mx-auto font-sans h-full w-full">
       <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-800">
         <div className="w-12 h-12 bg-blue-900/30 rounded-xl flex items-center justify-center text-blue-400 border border-blue-800">
           <Building2 className="w-6 h-6" />

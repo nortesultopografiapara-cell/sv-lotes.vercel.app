@@ -107,10 +107,10 @@ export default function TemplatesPage() {
   if (authLoading) return null;
 
   return (
-    <div className="flex h-full font-sans bg-[var(--color-background)]">
+    <div className="sv-page flex h-full min-w-0 font-sans bg-[var(--color-background)] overflow-hidden">
       {/* Sidebar */}
       {!isEditing && (
-        <div className="w-full md:w-1/3 border-r border-[var(--color-border)] flex flex-col h-full shrink-0">
+        <div className="w-full md:w-[min(100%,320px)] md:max-w-[38%] border-r border-[var(--color-border)] flex flex-col h-full shrink-0 min-w-0">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
               <div className="flex items-center gap-3">
                   <a href="/contracts" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-surface)] text-gray-400 hover:text-white transition-colors">
@@ -154,9 +154,9 @@ export default function TemplatesPage() {
 
       {/* Editor Main Canvas */}
       {isEditing ? (
-         <div className="flex-1 flex flex-col items-center overflow-hidden bg-gray-100/5 h-full relative">
-              <div className="w-full bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4 flex items-center justify-between shrink-0">
-                   <div className="flex items-center gap-3">
+         <div className="flex-1 min-w-0 flex flex-col items-center overflow-hidden bg-gray-100/5 h-full relative">
+              <div className="w-full bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4 flex flex-wrap items-center justify-between gap-3 shrink-0 min-w-0">
+                   <div className="flex items-center gap-3 min-w-0 flex-1">
                        <button onClick={() => setIsEditing(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--color-border)] text-gray-400 hover:text-white transition-colors">
                            <ArrowLeft className="w-5 h-5" />
                        </button>
@@ -164,7 +164,7 @@ export default function TemplatesPage() {
                            type="text" 
                            value={editName}
                            onChange={e => setEditName(e.target.value)}
-                           className="bg-transparent border-none text-lg font-bold text-white focus:outline-none focus:ring-0 min-w-[300px]"
+                           className="bg-transparent border-none text-lg font-bold text-white focus:outline-none focus:ring-0 min-w-0 flex-1 max-w-full"
                            placeholder="Nome do Modelo" 
                        />
                    </div>

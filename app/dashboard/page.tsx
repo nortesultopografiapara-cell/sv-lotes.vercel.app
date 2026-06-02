@@ -376,8 +376,8 @@ function OperationalDashboard({ user }: { user: any }) {
   );
 
   return (
-    <div className="dashboard-premium flex-1 overflow-y-auto bg-[#0a0d14] relative flex flex-col">
-      <div className="p-4 md:p-6 lg:p-8 flex-1 max-w-[1800px] w-full mx-auto">
+    <div className="dashboard-premium sv-page sv-page--scroll-y bg-[#0a0d14] relative flex flex-col">
+      <div className="p-4 md:p-6 lg:p-8 flex-1 max-w-full w-full mx-auto min-w-0">
         <header className="dash-header">
           <div>
             <motion.h1
@@ -668,7 +668,7 @@ function OperationalDashboard({ user }: { user: any }) {
 
       {/* Footer Profissional */}
       <footer className="w-full mt-auto bg-[#11161d]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
-         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+         <div className="max-w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left min-w-0 px-4">
             <div>
                <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-gray-500 font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
                <p className="text-gray-500 text-[11px] mt-0.5">NORTE E SUL TOPOGRAFIA E SERVIÇOS LTDA-ME - CNPJ: 32.123.456/0001-00</p>

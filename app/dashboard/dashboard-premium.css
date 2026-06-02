@@ -5,6 +5,10 @@
   --dash-surface: rgba(17, 22, 29, 0.85);
   --dash-border: rgba(255, 255, 255, 0.06);
   --dash-accent: #3b82f6;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .dashboard-premium .dash-header {

@@ -426,7 +426,7 @@ export default function SaaSFinancePage() {
   const formatCurrency = (val: number) => formatSaasCurrency(val);
 
   return (
-    <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
         <div>
           <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">
@@ -459,7 +459,7 @@ export default function SaaSFinancePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6 min-w-0">
         <StatCard
           label="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
@@ -607,8 +607,8 @@ export default function SaaSFinancePage() {
         </div>
       )}
 
-      <div className={`flex flex-col lg:flex-row gap-6 mb-8 ${mainTab === 'contrato' ? 'hidden' : ''}`}>
-        <div className="flex-1 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+      <div className={`flex flex-col lg:flex-row gap-6 mb-8 min-w-0 ${mainTab === 'contrato' ? 'hidden' : ''}`}>
+        <div className="flex-1 min-w-0 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
           <div className="p-5 border-b border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
               <h3 className="text-[16px] font-bold text-white">Assinaturas das Empresas</h3>
@@ -649,8 +649,8 @@ export default function SaaSFinancePage() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[1100px]">
+          <div className="sv-table-scroll">
+            <table className="w-full text-left min-w-[880px]">
               <thead>
                 <tr className="border-b border-white/5">
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
@@ -827,7 +827,7 @@ export default function SaaSFinancePage() {
           </div>
         </div>
 
-        <div className="w-full lg:w-[300px] bg-[#11161d] border border-white/5 rounded-2xl p-5">
+        <div className="w-full lg:w-[300px] lg:max-w-[300px] shrink-0 min-w-0 bg-[#11161d] border border-white/5 rounded-2xl p-5">
           <h3 className="font-bold text-white text-[15px] mb-4">Filtros</h3>
           <div className="space-y-4">
             <FilterSelect label="Plano" value={filterPlan} onChange={setFilterPlan}>

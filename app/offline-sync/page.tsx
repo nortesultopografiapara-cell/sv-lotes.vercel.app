@@ -224,7 +224,7 @@ export default function OfflineSyncAdminPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8">
       <header className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
           <CloudOff className="w-7 h-7 text-[var(--color-primary)]" />
@@ -282,7 +282,7 @@ export default function OfflineSyncAdminPage() {
       )}
 
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6 min-w-0">
           <StatCard label="Pendente" value={summary.pending} tone="amber" />
           <StatCard label="Sincronizado" value={summary.synced} tone="emerald" />
           <StatCard label="Erro" value={summary.error} tone="red" />
@@ -296,8 +296,8 @@ export default function OfflineSyncAdminPage() {
           Nenhuma ação na fila offline deste dispositivo.
         </p>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[900px]">
+        <div className="rounded-xl border border-white/10 sv-table-scroll">
+          <table className="w-full text-left text-sm min-w-[720px]">
             <thead className="bg-[var(--color-surface)]/80 text-slate-500 text-xs uppercase">
               <tr>
                 <th className="p-3">Data</th>

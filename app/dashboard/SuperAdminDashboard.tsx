@@ -89,12 +89,12 @@ function DashboardSkeleton() {
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111] animate-pulse">
       <div className="h-4 w-48 bg-white/5 rounded mb-8" />
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4 min-w-0">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="h-28 bg-[#151a23] border border-[#1f232b] rounded-2xl" />
         ))}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 min-w-0">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="h-20 bg-[#151a23] border border-[#1f232b] rounded-xl" />
         ))}
@@ -186,7 +186,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
   const dateLabel = todayLabel();
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-[#0b1111]">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 bg-[#0b1111]">
       <div className="md:hidden flex justify-between items-start mb-6 pt-2 gap-3">
         <div className="min-w-0 flex-1">
           <SvLotesLogo size={36} showText subtitle="Painel Master SaaS" className="mb-3" />
@@ -234,7 +234,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4 min-w-0">
         <KpiCard
           title="Total de Empresas"
           value={stats.totalCompanies}
@@ -275,7 +275,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
         />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 min-w-0">
         <OpCard label="Total de Usuários" value={stats.totalUsers} icon={Users} color="text-blue-500/50" />
         <OpCard label="Total de Corretores" value={stats.totalBrokers} icon={UserPlus} color="text-purple-500/50" />
         <OpCard label="Total de Empreendimentos" value={stats.totalProjects} icon={MapIcon} color="text-blue-300/50" />
@@ -407,16 +407,16 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8">
-        <div className="xl:col-span-3 bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-lg flex flex-col overflow-hidden">
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8 min-w-0">
+        <div className="xl:col-span-3 bg-[#151a23] border border-[#1f232b] rounded-2xl shadow-lg flex flex-col overflow-hidden min-w-0">
           <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
             <h3 className="text-[15px] font-semibold text-gray-200">Empresas Recentes</h3>
             <Link href="/companies" className="text-xs font-semibold text-blue-500 hover:text-blue-400">
               Ver todas
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="sv-table-scroll">
+            <table className="w-full text-left border-collapse min-w-[720px]">
               <thead>
                 <tr className="border-b border-[#1f232b] text-[10px] font-bold text-gray-500 tracking-wider uppercase">
                   <th className="p-4 pl-6">Empresa</th>

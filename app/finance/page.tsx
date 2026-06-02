@@ -2551,7 +2551,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="finance-premium flex-1 overflow-y-auto bg-[#0a0d14] p-4 md:p-6 lg:p-7 text-white h-full font-sans">
+    <div className="finance-premium flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto bg-[#0a0d14] p-4 md:p-6 lg:p-7 text-white h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -2563,7 +2563,7 @@ export default function FinancePage() {
       )}
 
       {/* HEADER */}
-      <header className="mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+      <header className="mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 min-w-0 max-w-full">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
             Módulo Financeiro
@@ -2572,7 +2572,7 @@ export default function FinancePage() {
             Contratos · Títulos · Inadimplência
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center mt-4 md:mt-0 w-full md:w-auto">
+        <div className="finance-header-actions mt-4 md:mt-0 md:w-auto">
           
           <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Trash2 className="w-4 h-4" />
@@ -2701,7 +2701,7 @@ export default function FinancePage() {
       <>
       {/* FILTERS — barra compacta sticky */}
       <div className="finance-filters-bar" role="search">
-        <div className="relative finance-filter-search shrink-0">
+        <div className="relative finance-filter-search">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
           <input
             type="text"
@@ -2764,8 +2764,8 @@ export default function FinancePage() {
       </div>
 
       {/* TABELA PARCELAS — prioridade visual */}
-      <div className="finance-table-panel mb-6 flex flex-col">
-        <div className="finance-table-scroll overflow-x-auto">
+      <div className="finance-table-panel mb-6 flex flex-col min-w-0 max-w-full">
+        <div className="finance-table-scroll">
           <table className="finance-table finance-table-parcels text-left">
             <colgroup>
               <col className="finance-col-check" />
@@ -2904,7 +2904,7 @@ export default function FinancePage() {
       )}
 
       {activeTab === 'caixa' && (
-      <div className="finance-table-panel min-h-[360px]">
+      <div className="finance-table-panel min-h-[360px] min-w-0 max-w-full">
          <div className="px-4 py-2.5 border-b border-[#1f232b]/80 bg-[#12161f]/90 flex items-center gap-2">
             <Wallet className="w-4 h-4 text-blue-400" />
             <h3 className="text-white font-semibold text-xs uppercase tracking-wider">
@@ -2917,7 +2917,7 @@ export default function FinancePage() {
             </div>
          ) : (
             <div className="finance-table-scroll">
-            <table className="finance-table text-sm" style={{ minWidth: 1200 }}>
+            <table className="finance-table finance-table-caixa text-sm">
                <thead>
                   <tr>
                      <th>Data</th>
@@ -2948,8 +2948,8 @@ export default function FinancePage() {
                             )}
                          </td>
                          <td className="text-slate-400">{item.category}</td>
-                         <td className="max-w-[280px] whitespace-normal text-slate-400">
-                            <span className="text-slate-200 line-clamp-1">{item.description}</span>
+                         <td className="finance-col-desc finance-cell-ellipsis text-slate-400">
+                            <span className="text-slate-200 block truncate">{item.description}</span>
                             <span className="block text-[10px] text-slate-500 mt-0.5">
                               {flowDisplayLabel(item.customerName, item.isManual)}
                               {item.brokerName ? ` · ${flowDisplayLabel(item.brokerName, item.isManual)}` : ''}

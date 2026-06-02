@@ -211,8 +211,8 @@ export const PaymentTableRow = memo(
           <div className="font-semibold text-slate-200 truncate">{contractNo}</div>
           <div className="text-[11px] text-slate-500 truncate">{loteDesc}</div>
         </td>
-        <td className="finance-col-client text-slate-300 truncate">{clientName}</td>
-        <td className="finance-col-project text-slate-400 truncate">{projectName}</td>
+        <td className="finance-col-client finance-cell-ellipsis text-slate-300">{clientName}</td>
+        <td className="finance-col-project finance-cell-ellipsis text-slate-400">{projectName}</td>
         <td className="finance-col-parcel text-center">
           {isEntry ? (
             <FinanceStatusBadge status="entrada" />

@@ -65,6 +65,44 @@
     @apply text-slate-900 bg-white;
     color-scheme: light;
   }
+
+  /* Shell responsivo — evita overflow horizontal na página principal */
+  .sv-page {
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .sv-page--scroll-y {
+    overflow-y: auto;
+  }
+
+  .sv-table-panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .sv-table-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sv-modal-panel {
+    width: 100%;
+    max-width: min(95vw, 42rem);
+  }
+
+  .sv-modal-panel--wide {
+    max-width: min(95vw, 56rem);
+  }
 }
 
 /* Scrollbar styles to match the premium look */

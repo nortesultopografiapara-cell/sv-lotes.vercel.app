@@ -930,7 +930,7 @@ export default function CorretoresPage() {
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309']; // Ouro, Prata, Bronze
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex flex-col h-full bg-[#0b0c10] text-gray-200">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col h-full bg-[#0b0c10] text-gray-200">
       
       {/* Header */}
       <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -976,7 +976,7 @@ export default function CorretoresPage() {
       </header>
 
       {/* Top Cards Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8 min-w-0">
          <div className="bg-[#121318] border border-gray-800/80 rounded-xl p-5 flex flex-col justify-between shadow-lg relative overflow-hidden">
              <div className="flex items-center gap-4 mb-4">
                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-500">
@@ -1064,10 +1064,10 @@ export default function CorretoresPage() {
          </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
+      <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0 min-w-0">
         
         {/* Main Table Area */}
-        <div className="flex-1 flex flex-col bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl overflow-hidden relative">
+        <div className="flex-1 min-w-0 flex flex-col bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl overflow-hidden relative">
           <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
             <h2 className="text-sm font-bold font-mono text-gray-300 uppercase tracking-widest">Lista de Corretores</h2>
             <div className="flex gap-2">
@@ -1094,8 +1094,8 @@ export default function CorretoresPage() {
             </div>
           </div>
           
-          <div className="overflow-x-auto flex-1">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+          <div className="sv-table-scroll flex-1">
+            <table className="w-full text-left border-collapse min-w-[760px]">
               <thead>
                 <tr className="bg-[#0b0c10]/50 border-b border-gray-800/80">
                   <th className="p-4 text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Corretor</th>
@@ -1211,7 +1211,7 @@ export default function CorretoresPage() {
         </div>
 
         {/* Side Panels - Ranking & Activities */}
-        <div className="w-full lg:w-[350px] flex flex-col gap-6">
+        <div className="w-full lg:w-[350px] lg:max-w-[350px] shrink-0 min-w-0 flex flex-col gap-6">
            
            {/* Ranking Card */}
            <div className="bg-[#121318] border border-gray-800/80 rounded-xl shadow-xl flex flex-col p-5">

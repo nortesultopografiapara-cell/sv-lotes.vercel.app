@@ -47,7 +47,7 @@ export default function CRMPage() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">CRM Imobiliário</h1>
@@ -61,7 +61,7 @@ export default function CRMPage() {
         </button>
       </header>
 
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm min-w-0 max-w-full">
         <div className="p-4 border-b border-[var(--color-border)] flex gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 w-5 h-5 text-[var(--color-text-muted)]" />
@@ -78,7 +78,7 @@ export default function CRMPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div className="sv-table-scroll flex-1">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>

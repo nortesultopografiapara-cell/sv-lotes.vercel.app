@@ -273,7 +273,7 @@ export default function CustomersPage() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col h-full fade-in relative">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full fade-in relative">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Clientes</h1>
@@ -290,7 +290,7 @@ export default function CustomersPage() {
         </button>
       </header>
 
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl flex-1 flex flex-col overflow-hidden shadow-sm min-w-0 max-w-full">
         <div className="p-4 border-b border-[var(--color-border)] flex gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 w-5 h-5 text-[var(--color-text-muted)]" />
@@ -307,8 +307,8 @@ export default function CustomersPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
+        <div className="sv-table-scroll flex-1">
+          <table className="w-full text-left border-collapse min-w-[640px]">
             <thead className="sticky top-0 bg-[var(--color-surface)] border-b border-[var(--color-border)] z-10">
               <tr>
                 <th className="p-4 text-[10px] font-mono text-[var(--color-text-muted)] uppercase tracking-wider font-bold">Cliente</th>

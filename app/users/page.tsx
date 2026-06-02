@@ -121,7 +121,7 @@ export default function UsersPage() {
    };
 
    return (
-      <div className="flex-1 p-4 md:p-8 overflow-y-auto bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
+      <div className="sv-page sv-page--scroll-y p-4 md:p-8 bg-[#070b14] min-h-full font-sans text-gray-200 selection:bg-blue-500/30">
          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
             <div>
                <h1 className="text-[28px] font-bold text-white tracking-tight leading-tight">Usuários</h1>
@@ -192,9 +192,9 @@ export default function UsersPage() {
             </div>
          </div>
 
-         <div className="flex gap-4">
+         <div className="flex flex-col xl:flex-row gap-4 min-w-0">
             {/* TABELA */}
-            <div className="flex-1 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden min-h-[500px]">
+            <div className="flex-1 min-w-0 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 overflow-hidden min-h-[500px]">
                <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row items-center gap-3 justify-between bg-[#0B0E14] rounded-t-2xl">
                   <div className="relative w-full sm:w-[320px]">
                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -211,8 +211,8 @@ export default function UsersPage() {
                   </button>
                </div>
                
-               <div className="overflow-x-auto flex-1">
-                  <table className="w-full text-left border-collapse min-w-[900px]">
+               <div className="sv-table-scroll flex-1">
+                  <table className="w-full text-left border-collapse min-w-[720px]">
                      <thead>
                         <tr className="bg-[#11161d] border-b border-white/5 border-t">
                            <th className="p-4 text-[12px] text-gray-400 font-medium">Usuário</th>
@@ -315,7 +315,7 @@ export default function UsersPage() {
             </div>
 
             {/* SIDEBAR DE FILTROS */}
-            <div className="w-[280px] bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 p-5 shrink-0">
+            <div className="w-full xl:w-[280px] xl:max-w-[280px] bg-[#11161d] border border-white/5 rounded-2xl flex flex-col mb-8 p-5 shrink-0 min-w-0">
                <div className="flex items-center justify-between mb-6">
                   <h3 className="font-bold text-white text-[15px]">Filtros</h3>
                   <button className="text-gray-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>

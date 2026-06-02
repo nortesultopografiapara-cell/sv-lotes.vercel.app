@@ -1414,9 +1414,9 @@ export default function ContractsPage() {
   if (authLoading) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden">
+    <div className="sv-page flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden">
       {/* Top Banner Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-6 border-b border-[var(--color-border)] bg-[#11151c]">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[#11151c] min-w-0">
         <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">
@@ -1483,9 +1483,9 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-w-0">
         {/* SIDEBAR LIST */}
-        <div className="w-1/3 min-w-[350px] max-w-[450px] flex flex-col border-r border-[#1f232b] bg-[#0b0e14]">
+        <div className="flex-none w-full max-w-[min(100%,280px)] sm:max-w-[min(38%,300px)] flex flex-col border-r border-[#1f232b] bg-[#0b0e14] min-w-0">
           <div className="p-4 border-b border-[#1f232b]">
             <div className="relative mb-2">
               <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
@@ -1610,7 +1610,7 @@ export default function ContractsPage() {
         </div>
 
         {/* MAIN PREVIEW PANEL */}
-        <div className="flex-1 bg-[#11151c] flex flex-col overflow-hidden relative">
+        <div className="flex-1 min-w-0 bg-[#11151c] flex flex-col overflow-hidden relative">
           {selectedContract ? (
             <>
               <div className="p-6 border-b border-[#1f232b]">
@@ -1640,7 +1640,7 @@ export default function ContractsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
                     {getStatusLabel(selectedContract.status) === "Pendente" && (
                       <button
                         onClick={handleAtivarContrato}
@@ -1709,7 +1709,7 @@ export default function ContractsPage() {
                 </div>
 
                 {/* Header Infos */}
-                <div className="grid grid-cols-4 gap-4 text-sm mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 text-sm mt-4">
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Cliente</p>
                     <p className="font-semibold text-gray-200">
@@ -1770,7 +1770,7 @@ export default function ContractsPage() {
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-6 px-6 border-b border-[#1f232b]">
+              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[#1f232b] overflow-x-auto min-w-0">
                 {[
                   "Visualização",
                   "Dados do Contrato",
@@ -1781,7 +1781,7 @@ export default function ContractsPage() {
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-gray-500 hover:text-gray-300"}`}
+                    className={`py-3 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-gray-500 hover:text-gray-300"}`}
                   >
                     {tab}
                   </button>
@@ -1789,10 +1789,10 @@ export default function ContractsPage() {
               </div>
 
               {/* Body Content */}
-              <div className="flex-1 overflow-hidden flex bg-[#0b0e14]">
+              <div className="flex-1 overflow-hidden flex bg-[#0b0e14] min-w-0">
                 {activeTab === "Visualização" && (
                   <>
-                    <div className="flex-1 p-6 overflow-y-auto">
+                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden">
                       {(!selectedContract.generated_html ||
                         selectedContract.generated_html.length < 500) && (
                         <div className="max-w-[800px] mx-auto mb-4 bg-blue-900/40 border border-blue-500/50 p-4 rounded-lg flex items-center justify-between">
@@ -1839,7 +1839,7 @@ export default function ContractsPage() {
                     </div>
 
                     {/* Timeline Sidebar inside preview */}
-                    <div className="w-[300px] border-l border-[#1f232b] bg-[#11151c] p-6 overflow-y-auto hidden xl:block">
+                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[#1f232b] bg-[#11151c] p-4 sm:p-6 overflow-y-auto shrink-0">
                       <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                         <History className="w-4 h-4 text-gray-400" />
                         Histórico de versões
