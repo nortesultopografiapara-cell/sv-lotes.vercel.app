@@ -1483,9 +1483,9 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden min-w-0">
+      <div className="flex flex-col xl:flex-row flex-1 overflow-hidden min-w-0">
         {/* SIDEBAR LIST */}
-        <div className="flex-none w-full max-w-[min(100%,280px)] sm:max-w-[min(38%,300px)] flex flex-col border-r border-[#1f232b] bg-[#0b0e14] min-w-0">
+        <div className="flex-none w-full xl:w-[min(100%,380px)] xl:max-w-[400px] flex flex-col border-b xl:border-b-0 border-r border-[#1f232b] bg-[#0b0e14] min-w-0 max-h-[42vh] xl:max-h-none shrink-0">
           <div className="p-4 border-b border-[#1f232b]">
             <div className="relative mb-2">
               <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
@@ -1546,60 +1546,62 @@ export default function ContractsPage() {
                   <button
                     key={c.id}
                     onClick={() => setSelectedContract(c)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all duration-200 ${
+                    className={`w-full text-left p-3.5 rounded-xl border transition-all duration-200 ${
                       isSelected
                         ? "bg-[#1a2333] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
                         : "bg-[#11151c] border-[#1f232b] hover:border-[#2d3340] hover:bg-[#151a23]"
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedContractIds.has(c.id)}
-                          onChange={(e) =>
-                            toggleContractSelection(c.id, e as any)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-0.5"
-                        />
-                        <FileText
-                          className={`w-4 h-4 ${isSelected ? "text-[var(--color-primary)]" : "text-gray-400"}`}
-                        />
-                        <span className="font-mono text-sm font-bold text-white">
-                          {cnum}
-                        </span>
-                      </div>
-                      <div
-                        className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}
-                      >
-                        {getStatusLabel(c.status)}
-                      </div>
-                    </div>
-                    <div className="text-sm font-semibold text-gray-200 truncate pr-4">
-                      {c.customer_name || c.customers?.name || "Cliente não informado"}
-                    </div>
-                    {(c.customers?.document || c.customers?.cpf) && (
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        CPF/CNPJ: {c.customers?.document || c.customers?.cpf}
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-end mt-3">
-                      <div>
-                        <div className="text-xs text-gray-400">{projName}</div>
-                        <div className="text-[10px] text-gray-500">{loc}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-white">
+                    <div className="flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedContractIds.has(c.id)}
+                        onChange={(e) =>
+                          toggleContractSelection(c.id, e as any)
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-1 shrink-0"
+                      />
+                      <FileText
+                        className={`w-4 h-4 shrink-0 mt-1 ${isSelected ? "text-[var(--color-primary)]" : "text-gray-400"}`}
+                      />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-mono text-sm font-bold text-white break-words">
+                            Contrato nº {cnum}
+                          </span>
+                          <span className="text-gray-600 hidden sm:inline">|</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}
+                          >
+                            {getStatusLabel(c.status)}
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-100 leading-snug break-words whitespace-normal">
+                          Cliente:{' '}
+                          {c.customer_name || c.customers?.name || "Cliente não informado"}
+                        </p>
+                        <p className="text-xs text-gray-400 leading-snug break-words whitespace-normal">
+                          Projeto: {projName}
+                          {loc && loc !== "Localização não informada" ? (
+                            <span className="text-gray-500"> | {loc}</span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-gray-300 leading-snug break-words whitespace-normal">
+                          Valor:{' '}
                           {new Intl.NumberFormat("pt-BR", {
                             style: "currency",
                             currency: "BRL",
                           }).format(val)}
-                        </div>
-                        <div className="text-[10px] text-gray-500">
+                          <span className="text-gray-600 mx-1.5">|</span>
+                          Data:{' '}
                           {new Date(c.created_at).toLocaleDateString("pt-BR")}
-                        </div>
+                        </p>
+                        {(c.customers?.document || c.customers?.cpf) && (
+                          <p className="text-[10px] text-gray-500 break-words">
+                            CPF/CNPJ: {c.customers?.document || c.customers?.cpf}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </button>

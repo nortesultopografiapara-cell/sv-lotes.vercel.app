@@ -208,6 +208,57 @@
   table-layout: fixed;
 }
 
+.finance-premium .finance-table.finance-table-parcels .finance-col-info {
+  width: auto;
+  min-width: 0;
+}
+
+.finance-premium .finance-table.finance-table-parcels tbody tr.finance-parcel-row {
+  height: auto;
+  min-height: 4.25rem;
+  max-height: none;
+}
+
+.finance-premium .finance-table.finance-table-parcels tbody td {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  vertical-align: middle;
+  padding: 0.65rem 0.75rem;
+}
+
+.finance-premium .finance-table.finance-table-parcels tbody td.finance-col-check {
+  vertical-align: top;
+  padding-top: 0.85rem;
+}
+
+.finance-premium .finance-parcel-line-primary,
+.finance-premium .finance-parcel-line-secondary {
+  margin: 0;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.finance-premium .finance-parcel-line-primary {
+  font-size: 0.8125rem;
+  color: #cbd5e1;
+  margin-bottom: 0.35rem;
+}
+
+.finance-premium .finance-parcel-line-secondary {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.finance-premium .finance-parcel-sep {
+  display: inline-block;
+  margin: 0 0.35rem;
+  color: #475569;
+  user-select: none;
+}
+
 .finance-premium .finance-table.finance-table-caixa {
   table-layout: fixed;
   min-width: 0;
@@ -473,14 +524,16 @@
     font-size: 0.75rem;
   }
 
-  .finance-premium .finance-col-client,
-  .finance-premium .finance-col-project,
-  .finance-premium .finance-table tbody td.finance-col-client,
-  .finance-premium .finance-table tbody td.finance-col-project {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 0;
+  .finance-premium .finance-table.finance-table-parcels tbody td {
+    padding: 0.55rem 0.6rem;
+  }
+
+  .finance-premium .finance-parcel-line-primary {
+    font-size: 0.75rem;
+  }
+
+  .finance-premium .finance-parcel-line-secondary {
+    font-size: 0.6875rem;
   }
 
   .finance-premium .finance-col-actions,

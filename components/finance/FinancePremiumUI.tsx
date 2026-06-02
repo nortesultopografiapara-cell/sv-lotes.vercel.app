@@ -197,47 +197,63 @@ export const PaymentTableRow = memo(
     const amount = Number(p.amount) || 0;
     const paidAmount = isPaid ? Number(p.paid_amount) || amount : 0;
 
+    const dueFmt = dueStr
+      ? new Date(`${dueStr}T12:00:00Z`).toLocaleDateString('pt-BR')
+      : '—';
+    const parcelLabel = isEntry
+      ? 'Entrada'
+      : `Parcela ${parcelInfo}${maxParcel}`;
+
     return (
-      <tr className="group">
-        <td className="finance-col-check">
+      <tr className="group finance-parcel-row">
+        <td className="finance-col-check align-top">
           <input
             type="checkbox"
             checked={selected}
             onChange={onToggle}
-            className="rounded border-slate-600"
+            className="rounded border-slate-600 mt-1"
           />
         </td>
-        <td className="finance-col-contract">
-          <div className="font-semibold text-slate-200 truncate">{contractNo}</div>
-          <div className="text-[11px] text-slate-500 truncate">{loteDesc}</div>
-        </td>
-        <td className="finance-col-client finance-cell-ellipsis text-slate-300">{clientName}</td>
-        <td className="finance-col-project finance-cell-ellipsis text-slate-400">{projectName}</td>
-        <td className="finance-col-parcel text-center">
-          {isEntry ? (
-            <FinanceStatusBadge status="entrada" />
-          ) : (
-            <span className="font-mono text-xs text-slate-400">
-              {parcelInfo}
-              {maxParcel}
+        <td className="finance-col-info">
+          <p className="finance-parcel-line-primary">
+            <span className="font-semibold text-slate-100">
+              Contrato nº {contractNo}
             </span>
-          )}
+            <span className="finance-parcel-sep">|</span>
+            <span>
+              Cliente:{' '}
+              <span className="font-medium text-slate-200">{clientName}</span>
+            </span>
+            <span className="finance-parcel-sep">|</span>
+            <span className="inline-flex items-center gap-1.5">
+              Status:{' '}
+              <FinanceStatusBadge status={computedStatus} />
+            </span>
+          </p>
+          <p className="finance-parcel-line-secondary">
+            <span>
+              Projeto:{' '}
+              <span className="text-slate-300">{projectName}</span>
+            </span>
+            <span className="finance-parcel-sep">|</span>
+            <span>{loteDesc}</span>
+            <span className="finance-parcel-sep">|</span>
+            <span>{parcelLabel}</span>
+            <span className="finance-parcel-sep">|</span>
+            <span>Vencimento: {dueFmt}</span>
+            <span className="finance-parcel-sep">|</span>
+            <span className="font-medium text-slate-200">
+              Valor: {formatCurrency(amount)}
+            </span>
+            {(isPaid || paidAmount > 0) && (
+              <>
+                <span className="finance-parcel-sep">|</span>
+                <span>Pago: {formatCurrency(paidAmount)}</span>
+              </>
+            )}
+          </p>
         </td>
-        <td className="finance-col-due text-slate-300">
-          {dueStr
-            ? new Date(`${dueStr}T12:00:00Z`).toLocaleDateString('pt-BR')
-            : '—'}
-        </td>
-        <td className="finance-col-amount text-right font-medium text-slate-200">
-          {formatCurrency(amount)}
-        </td>
-        <td className="finance-col-paid text-right text-slate-400">
-          {formatCurrency(paidAmount)}
-        </td>
-        <td className="finance-col-status text-center">
-          <FinanceStatusBadge status={computedStatus} />
-        </td>
-        <td className="finance-col-actions finance-sticky-actions text-center">
+        <td className="finance-col-actions finance-sticky-actions align-middle">
           <div className="finance-actions-row">
             <FinanceParcelActionBtn title="Visualizar" onClick={onView}>
               <Eye />

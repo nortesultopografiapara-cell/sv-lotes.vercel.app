@@ -2769,14 +2769,7 @@ export default function FinancePage() {
           <table className="finance-table finance-table-parcels text-left">
             <colgroup>
               <col className="finance-col-check" />
-              <col className="finance-col-contract" />
-              <col className="finance-col-client" />
-              <col className="finance-col-project" />
-              <col className="finance-col-parcel" />
-              <col className="finance-col-due" />
-              <col className="finance-col-amount" />
-              <col className="finance-col-paid" />
-              <col className="finance-col-status" />
+              <col className="finance-col-info" />
               <col className="finance-col-actions" />
             </colgroup>
             <thead>
@@ -2799,14 +2792,7 @@ export default function FinancePage() {
                     aria-label="Selecionar todos"
                   />
                 </th>
-                <th className="finance-col-contract">Contrato / Lote</th>
-                <th className="finance-col-client">Cliente</th>
-                <th className="finance-col-project">Projeto</th>
-                <th className="finance-col-parcel text-center">Parcela</th>
-                <th className="finance-col-due">Vencimento</th>
-                <th className="finance-col-amount text-right">Valor Parcela</th>
-                <th className="finance-col-paid text-right">Valor Pago</th>
-                <th className="finance-col-status text-center">Status</th>
+                <th className="finance-col-info">Parcela / Cliente / Projeto</th>
                 <th className="finance-col-actions finance-sticky-actions text-center">
                   Ações
                 </th>
@@ -2814,7 +2800,7 @@ export default function FinancePage() {
             </thead>
             <tbody>
               {loading ? (
-                <FinanceTableLoading colSpan={10} />
+                <FinanceTableLoading colSpan={3} />
               ) : currentPayments.length > 0 ? (
                 currentPayments.map((p) => (
                   <PaymentTableRow
@@ -2834,7 +2820,7 @@ export default function FinancePage() {
                 ))
               ) : (
                 <FinanceTableEmpty
-                  colSpan={10}
+                  colSpan={3}
                   message="Nenhum registro encontrado para os filtros selecionados."
                 />
               )}
