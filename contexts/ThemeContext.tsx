@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -65,6 +66,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [brandTheme, setBrandThemeState] = useState<BrandTheme>(() =>
     typeof window !== 'undefined' ? getStoredBrand() : DEFAULT_BRAND,
   );
+  const themeRef = useRef(theme);
+  const brandRef = useRef(brandTheme);
+  themeRef.current = theme;
+  brandRef.current = brandTheme;
 
   useEffect(() => {
     const storedTheme = getStoredTheme();
@@ -74,29 +79,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyAppearanceToDocument(storedTheme, storedBrand);
   }, []);
 
-  const setTheme = useCallback(
-    (next: ThemeMode) => {
-      setThemeState(next);
-      persistAndApply(next, brandTheme);
-    },
-    [brandTheme],
-  );
+  const setTheme = useCallback((next: ThemeMode) => {
+    setThemeState(next);
+    themeRef.current = next;
+    persistAndApply(next, brandRef.current);
+  }, []);
 
-  const setBrandTheme = useCallback(
-    (next: BrandTheme) => {
-      setBrandThemeState(next);
-      persistAndApply(theme, next);
-    },
-    [theme],
-  );
+  const setBrandTheme = useCallback((next: BrandTheme) => {
+    setBrandThemeState(next);
+    brandRef.current = next;
+    persistAndApply(themeRef.current, next);
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
       const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
-      persistAndApply(next, brandTheme);
+      themeRef.current = next;
+      persistAndApply(next, brandRef.current);
       return next;
     });
-  }, [brandTheme]);
+  }, []);
 
   const value = useMemo(
     () => ({

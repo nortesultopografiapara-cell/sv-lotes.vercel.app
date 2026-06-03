@@ -1,7 +1,32 @@
 /**
- * SV LOTES — Design tokens globais (dark / light)
- * Consumir via var(--bg-main), var(--text-primary), etc.
+ * SV LOTES — Design tokens globais (dark / light + brand)
+ * Consumir via var(--bg-main), var(--text-primary), var(--brand-primary), etc.
  */
+
+/* Branding primeiro — NUNCA sobrescrever com :root depois destes blocos */
+html[data-brand='orange'] {
+  --brand-primary: #f97316;
+  --brand-secondary: #ea580c;
+  --brand-light: #fed7aa;
+}
+
+html[data-brand='blue'] {
+  --brand-primary: #2563eb;
+  --brand-secondary: #1d4ed8;
+  --brand-light: #bfdbfe;
+}
+
+html[data-brand='green'] {
+  --brand-primary: #16a34a;
+  --brand-secondary: #15803d;
+  --brand-light: #bbf7d0;
+}
+
+html[data-brand='purple'] {
+  --brand-primary: #7c3aed;
+  --brand-secondary: #6d28d9;
+  --brand-light: #ddd6fe;
+}
 
 :root,
 [data-theme='dark'] {
@@ -111,7 +136,87 @@
   color: var(--text-muted);
 }
 
-[data-theme='light'] .sv-theme-muted {
+.sv-theme-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.sv-theme-text {
+  color: var(--text-primary);
+}
+
+.sv-theme-muted {
+  color: var(--text-muted);
+}
+
+.sv-theme-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+.sv-theme-field {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.sv-theme-field:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+}
+
+.sv-theme-field::placeholder {
+  color: var(--text-muted);
+}
+
+.sv-theme-upload-zone {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+}
+
+.sv-theme-upload-preview {
+  border: 1px solid var(--border-color);
+  background-color: color-mix(in srgb, var(--bg-main) 40%, var(--bg-card));
+}
+
+.sv-theme-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  background-color: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  color: var(--brand-primary);
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.sv-theme-upload-btn:hover:not(:disabled) {
+  background-color: var(--brand-primary);
+  color: #fff;
+  border-color: var(--brand-primary);
+}
+
+.sv-theme-upload-btn:disabled {
+  opacity: 0.5;
+}
+
+.sv-theme-section-icon {
   color: var(--text-secondary);
 }
 
@@ -185,41 +290,6 @@
 
 [data-theme='light'] .finance-premium .finance-kpi-value {
   color: var(--text-primary);
-}
-
-/* ------------------------------------------------------------------ */
-/* Branding institucional — data-brand (independente de dark/light)   */
-/* ------------------------------------------------------------------ */
-
-[data-brand='orange'] {
-  --brand-primary: #f97316;
-  --brand-secondary: #ea580c;
-  --brand-light: #fed7aa;
-}
-
-[data-brand='blue'] {
-  --brand-primary: #2563eb;
-  --brand-secondary: #1d4ed8;
-  --brand-light: #bfdbfe;
-}
-
-[data-brand='green'] {
-  --brand-primary: #16a34a;
-  --brand-secondary: #15803d;
-  --brand-light: #bbf7d0;
-}
-
-[data-brand='purple'] {
-  --brand-primary: #7c3aed;
-  --brand-secondary: #6d28d9;
-  --brand-light: #ddd6fe;
-}
-
-/* Fallback antes do script de init */
-:root {
-  --brand-primary: #f97316;
-  --brand-secondary: #ea580c;
-  --brand-light: #fed7aa;
 }
 
 /* Utilitários de marca */

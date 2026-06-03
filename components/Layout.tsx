@@ -469,8 +469,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   href={item.href!}
                   className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-medium ${
                     isActive 
-                      ? 'bg-[var(--color-primary)]/10 text-white border border-[var(--color-primary)]/20 shadow-sm' 
-                      : 'text-[var(--color-text-muted)] hover:text-white hover:bg-[var(--color-surface)]/50 border border-transparent'
+                      ? 'bg-[var(--color-primary)]/10 text-[var(--text-primary)] border border-[var(--color-primary)]/20 shadow-sm' 
+                      : 'text-[var(--color-text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--color-surface)]/50 border border-transparent'
                   }`}
                 >
                   {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
@@ -514,7 +514,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
                     isActive 
                       ? 'bg-[var(--color-surface-bright)] text-[var(--color-primary)] border border-[var(--color-primary)]/20' 
-                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-white border border-transparent'
+                      : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-bright)] hover:text-[var(--text-primary)] border border-transparent'
                   }`}
                 >
                   {item.icon && <item.icon className={`w-5 h-5 ${item.color}`} />}
@@ -611,18 +611,18 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="p-2">
                     {user?.role === 'SUPER_ADMIN' ? (
-                      <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+                      <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors">
                         <User className="w-4 h-4" /> Meu Perfil Master
                       </Link>
                     ) : (
                       <>
-                        <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left">
+                        <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left">
                           <User className="w-4 h-4" /> Meu Perfil
                         </button>
-                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
+                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left mt-1">
                           <Lock className="w-4 h-4" /> Alterar Senha
                         </button>
-                        <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-left mt-1">
+                        <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left mt-1">
                           <Shield className="w-4 h-4" /> Segurança
                         </button>
                       </>

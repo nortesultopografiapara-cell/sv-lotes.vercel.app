@@ -14,13 +14,15 @@ const THEME_OPTIONS: { id: ThemeMode; label: string; icon: typeof Moon }[] = [
   { id: 'light', label: 'Claro', icon: Sun },
 ];
 
+const BRAND_OPTIONS: BrandTheme[] = ['orange', 'blue', 'green', 'purple'];
+
 export function ThemeAppearanceSection() {
   const { theme, setTheme, brandTheme, setBrandTheme } = useTheme();
 
   return (
     <section className="sv-theme-card rounded-xl border p-6 shadow-lg space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-[var(--text-primary)] tracking-tight">
+        <h2 className="text-lg font-bold sv-theme-text tracking-tight">
           Aparência
         </h2>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -44,9 +46,14 @@ export function ThemeAppearanceSection() {
                 onClick={() => setTheme(opt.id)}
                 className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all ${
                   selected
-                    ? 'border-[var(--brand-primary)] sv-brand-muted-bg ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]'
+                    ? 'sv-brand-muted-bg sv-brand-muted-border ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]'
                     : 'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--color-border-hover)]'
                 }`}
+                style={
+                  selected
+                    ? { borderColor: 'var(--brand-primary)' }
+                    : undefined
+                }
                 aria-pressed={selected}
               >
                 <span
@@ -63,15 +70,18 @@ export function ThemeAppearanceSection() {
                     <span
                       className={`inline-flex h-4 w-4 items-center justify-center rounded-full border-2 ${
                         selected
-                          ? 'border-[var(--brand-primary)]'
+                          ? 'sv-brand-border'
                           : 'border-[var(--border-color)]'
                       }`}
                     >
                       {selected ? (
-                        <span className="h-2 w-2 rounded-full bg-[var(--brand-primary)]" />
+                        <span
+                          className="h-2 w-2 rounded-full sv-brand-bg"
+                          style={{ backgroundColor: 'var(--brand-primary)' }}
+                        />
                       ) : null}
                     </span>
-                    <span className="font-semibold text-[var(--text-primary)]">
+                    <span className="font-semibold sv-theme-text">
                       {opt.label}
                     </span>
                   </span>
@@ -92,7 +102,7 @@ export function ThemeAppearanceSection() {
           Cor institucional
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {BRAND_THEMES.map((id) => {
+          {BRAND_OPTIONS.map((id) => {
             const meta = BRAND_LABELS[id];
             const selected = brandTheme === id;
             const swatch = BRAND_PRIMARY_HEX[id];
@@ -100,12 +110,17 @@ export function ThemeAppearanceSection() {
               <button
                 key={id}
                 type="button"
-                onClick={() => setBrandTheme(id as BrandTheme)}
+                onClick={() => {
+                  setBrandTheme(id);
+                }}
                 className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all ${
                   selected
-                    ? 'border-[var(--brand-primary)] sv-brand-muted-bg ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]'
+                    ? 'sv-brand-muted-bg ring-1 ring-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]'
                     : 'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--color-border-hover)]'
                 }`}
+                style={{
+                  borderColor: selected ? swatch : undefined,
+                }}
                 aria-pressed={selected}
               >
                 <span
@@ -118,10 +133,10 @@ export function ThemeAppearanceSection() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span
-                      className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                      className="h-3 w-3 shrink-0 rounded-full border border-[var(--border-color)]"
                       style={{ backgroundColor: swatch }}
                     />
-                    <span className="font-semibold text-[var(--text-primary)]">
+                    <span className="font-semibold sv-theme-text">
                       {meta.title}
                     </span>
                   </span>
