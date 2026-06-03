@@ -2,7 +2,7 @@
  * Confrontação por segmento UTM (segments_json oficial — mesma base da prancha).
  */
 
-import { formatStreetDisplay } from '@/lib/streetGuide';
+import { resolveFrenteConfrontantLabel } from '@/lib/resolveFrontStreetGuide';
 import {
   confrontantFromStreetGuidesForUtmSegment,
   type StreetGuideConfrontInput,
@@ -426,18 +426,6 @@ function resolveSideSegmentIndexes(
   return { segments, sides, frontIndex };
 }
 
-function resolveFrenteLabel(block: Record<string, unknown>): string {
-  const rawFront = String(block.front_street_name || '').trim();
-  const frontDisplay = formatStreetDisplay(
-    block.front_street_type as string | undefined,
-    rawFront || undefined,
-  );
-  if (rawFront && !/sem nome/i.test(rawFront)) {
-    return frontDisplay || rawFront;
-  }
-  return 'Rua / via de acesso';
-}
-
 export type BuildSideConfrontantsResult = LotSheetSideConfrontants & {
   ringSource: OfficialConfrontationRingSource;
   confidence: number;
@@ -466,7 +454,7 @@ export function buildSideConfrontantsFromSegments(
 
   if (!segments.length) {
     return {
-      frente: resolveFrenteLabel(block),
+      frente: resolveFrenteConfrontantLabel(block, [], [], streetGuides),
       fundo: '—',
       ladoDireito: '—',
       ladoEsquerdo: '—',
@@ -513,7 +501,12 @@ export function buildSideConfrontantsFromSegments(
   const confidence = matched / 3;
 
   return {
-    frente: resolveFrenteLabel(block),
+    frente: resolveFrenteConfrontantLabel(
+      block,
+      sides.frente,
+      segments,
+      streetGuides as StreetGuideConfrontInput[],
+    ),
     fundo,
     ladoDireito,
     ladoEsquerdo,

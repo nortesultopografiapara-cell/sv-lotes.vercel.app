@@ -70,6 +70,7 @@ import {
   scoreSegmentStreetProximity,
   type StreetGuideLineInput,
 } from '@/lib/lotStreetFrontDetection';
+import { persistBlockPatch } from '@/lib/blockFrontPersist';
 import {
   blockHasTxtOfficialData,
   buildBlockMatchKey,
@@ -823,33 +824,35 @@ export default function MapPage() {
        });
 
        if (updates.length > 0) {
-           const updatePromises = updates.map((updateObj) => {
-              if (!updateObj.id) return Promise.resolve({ error: { message: "Mock error for no id" } });
+           const updatePromises = updates.map(async (updateObj) => {
+              if (!updateObj.id) return;
               const patch: Record<string, unknown> = {
                   frente: updateObj.frente !== null ? Number(updateObj.frente) : null,
                   'Fundo': updateObj.fundo !== null ? String(updateObj.fundo).replace(/[^0-9.]/g, '') : null,
                   'Lado Dir.': updateObj.lado_direito !== null ? String(updateObj.lado_direito).replace(/[^0-9.]/g, '') : null,
                   'Lado Esq.': updateObj.lado_esquerdo !== null ? String(updateObj.lado_esquerdo).replace(/[^0-9.]/g, '') : null,
-                  updated_at: new Date().toISOString(),
               };
               if (updateObj.front_segment_index != null) {
                 patch.front_segment_index = updateObj.front_segment_index;
+              }
+              if (updateObj.front_source) {
+                patch.front_source = updateObj.front_source;
               }
               if (updateObj.front_street_name) {
                 patch.front_street_name = updateObj.front_street_name;
                 patch.front_street_type = updateObj.front_street_type ?? 'Rua';
                 patch.front_street_width = updateObj.front_street_width ?? null;
                 patch.front_street_id = updateObj.front_street_id ?? null;
+              } else if (updateObj.front_source === 'auto') {
+                patch.front_street_name = null;
+                patch.front_street_type = null;
+                patch.front_street_width = null;
+                patch.front_street_id = null;
               }
-              return supabase.from('blocks').update(patch).eq('id', updateObj.id as string);
+              await persistBlockPatch(supabase, updateObj.id as string, patch);
            });
            
-           const results = await Promise.all(updatePromises);
-           const errors = results.filter(r => r.error && r.error.message !== "Mock error for no id").map(r => r.error);
-           if (errors.length > 0) {
-               console.error("Updates errors:", errors);
-               throw new Error("Falha ao atualizar alguns lotes. " + (errors[0]?.message || "Erro desconhecido."));
-           }
+           await Promise.all(updatePromises);
        }
 
        alert(`Frentes identificadas e recalculadas para ${updates.length} lotes!`);

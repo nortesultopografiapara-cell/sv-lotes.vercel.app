@@ -71,6 +71,11 @@ import {
   logSupabaseFrontSaveFailure,
   persistManualLotFront,
 } from "@/lib/blockFrontPersist";
+import {
+  resolveFrontStreetGuideForLot,
+  resolveLotFrontStreetDisplay,
+  streetFieldsFromGuideMatch,
+} from "@/lib/resolveFrontStreetGuide";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -1431,6 +1436,7 @@ function getOfficialLotMeasurementsForPopup(
 function LotPopupContent({
   lot,
   cleanedCoords,
+  streetGuides = [],
   onAction,
   onRequestCustomerForm,
   onRequestClear,
@@ -1449,6 +1455,7 @@ function LotPopupContent({
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
+  streetGuides?: any[];
   onAction: (lot: any, action: string, newPrice?: number) => void;
   onRequestCustomerForm: (lot: any, action: string, newPrice: number) => void;
   onRequestClear: (lot: any, newPrice: number) => void;
@@ -1484,6 +1491,11 @@ function LotPopupContent({
   const officialMeasures = useMemo(
     () => getOfficialLotMeasurementsForPopup(lot),
     [lot],
+  );
+
+  const frontStreetLabel = useMemo(
+    () => resolveLotFrontStreetDisplay(lot, streetGuides),
+    [lot, streetGuides],
   );
 
   const txtSegments = useMemo(() => {
@@ -1600,13 +1612,13 @@ function LotPopupContent({
                   : "--"}
               </span>
             </div>
-            {lot.frontStreetDisplay && (
+            {frontStreetLabel && (
               <div className="col-span-2 flex justify-between items-start border-t border-emerald-100 pt-1 mt-0.5 bg-emerald-50/80 -mx-1 px-1 rounded">
                 <span className="text-gray-600 text-[10px] font-semibold">
                   Frente para:
                 </span>
                 <span className="text-emerald-800 text-[10px] font-bold text-right max-w-[160px] leading-tight">
-                  {lot.frontStreetDisplay}
+                  {frontStreetLabel}
                 </span>
               </div>
             )}
@@ -2201,6 +2213,24 @@ export default function GISMap({
   );
   const [frontCorrectSaving, setFrontCorrectSaving] = useState(false);
 
+  const displayLots = useMemo(
+    () =>
+      lots.map((lot) => {
+        const frontStreetDisplay = resolveLotFrontStreetDisplay(
+          lot,
+          streetGuides,
+        );
+        if (
+          frontStreetDisplay === lot.frontStreetDisplay ||
+          (!frontStreetDisplay && !lot.frontStreetDisplay)
+        ) {
+          return lot;
+        }
+        return { ...lot, frontStreetDisplay: frontStreetDisplay ?? null };
+      }),
+    [lots, streetGuides],
+  );
+
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
     if (!lot?.id) return;
     setFrontCorrectSaving(true);
@@ -2216,16 +2246,20 @@ export default function GISMap({
         source_import: lot.source_import ?? "TXT_CIVIL3D",
       };
       const measures = getOfficialLotMeasurements(block, lot.number);
+      const streetMatch = resolveFrontStreetGuideForLot(block, streetGuides);
+      const streetFields = streetFieldsFromGuideMatch(streetMatch);
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
         measures,
+        streetMatch,
       });
       const { patch, frontSourcePersisted } = await persistManualLotFront(
         supabase,
         lot.id,
         measures,
         segmentIndex,
+        streetFields,
       );
       console.log("BLOCK_FRONT_SAVE_OK", {
         blockId: lot.id,
@@ -2234,6 +2268,16 @@ export default function GISMap({
         frontSourcePersisted,
         patch,
       });
+      const updatedDisplay = resolveLotFrontStreetDisplay(
+        {
+          ...lot,
+          front_segment_index: segmentIndex,
+          front_street_name: streetFields.front_street_name,
+          front_street_id: streetFields.front_street_id,
+          front_street_type: streetFields.front_street_type,
+        },
+        streetGuides,
+      );
       setLots((prev) =>
         prev.map((l) =>
           l.id === lot.id
@@ -2245,6 +2289,10 @@ export default function GISMap({
                 "Lado Esq.": measures.ladoEsquerdo,
                 front_segment_index: segmentIndex,
                 front_source: frontSourcePersisted ? "manual" : l.front_source,
+                frontStreetName: streetFields.front_street_name,
+                frontStreetId: streetFields.front_street_id,
+                frontStreetType: streetFields.front_street_type,
+                frontStreetDisplay: updatedDisplay,
               }
             : l,
         ),
@@ -2642,9 +2690,11 @@ export default function GISMap({
                 frontStreetType: b.front_street_type || null,
                 frontStreetWidth: b.front_street_width ?? null,
                 frontStreetId: b.front_street_id || null,
-                frontStreetDisplay: b.front_street_name
-                  ? formatStreetDisplay(b.front_street_type, b.front_street_name)
-                  : null,
+                frontStreetDisplay:
+                  resolveLotFrontStreetDisplay(b, streetGuides) ||
+                  (b.front_street_name
+                    ? formatStreetDisplay(b.front_street_type, b.front_street_name)
+                    : null),
               };
             })
             .filter((b) => b.bounds.length > 0);
@@ -3475,7 +3525,7 @@ export default function GISMap({
           enabled={showPermanentLabels && !sheetPickActive}
         />
 
-        {lots
+        {displayLots
           .filter((lot) => lot.bounds.length > 0)
           .map((lot) => {
             const color = getStatusColor(lot.status);
@@ -3556,6 +3606,7 @@ export default function GISMap({
                     <Popup>
                       <LotPopupContent
                         lot={lot}
+                        streetGuides={streetGuides}
                         cleanedCoords={positions}
                         onAction={handleLotAction}
                         onRequestCustomerForm={(l, a, p) => openCustomerForm(l, a, p)}
@@ -3641,6 +3692,7 @@ export default function GISMap({
                 <Popup>
                   <LotPopupContent
                     lot={block}
+                    streetGuides={streetGuides}
                     cleanedCoords={positions}
                     onAction={handleLotAction}
                     onRequestCustomerForm={(l, a, p) =>

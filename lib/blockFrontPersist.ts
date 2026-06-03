@@ -7,6 +7,7 @@ import {
   officialMeasuresToBlockFields,
   type OfficialLotMeasures,
 } from '@/lib/officialLotMeasurements';
+import type { FrontStreetPersistFields } from '@/lib/resolveFrontStreetGuide';
 
 export type PostgrestErrorLike = {
   message?: string;
@@ -58,11 +59,63 @@ export function isUnknownColumnError(error: unknown, column: string): boolean {
   );
 }
 
+function findUnknownColumnInPatch(
+  error: unknown,
+  patch: Record<string, unknown>,
+): string | null {
+  for (const key of Object.keys(patch)) {
+    if (isUnknownColumnError(error, key)) return key;
+  }
+  return null;
+}
+
+/** Update em blocks removendo colunas ausentes no schema (produção sem migration). */
+export async function persistBlockPatch(
+  supabase: SupabaseClient,
+  blockId: string,
+  patch: Record<string, unknown>,
+): Promise<{ patch: Record<string, unknown>; droppedColumns: string[] }> {
+  let current = { ...patch };
+  const dropped: string[] = [];
+  const maxAttempts = 16;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { error } = await supabase
+      .from('blocks')
+      .update(current)
+      .eq('id', blockId);
+
+    if (!error) {
+      return { patch: current, droppedColumns: dropped };
+    }
+
+    const col = findUnknownColumnInPatch(error, current);
+    if (!col) {
+      logSupabaseFrontSaveFailure('BLOCK_PATCH_FAILED', error, {
+        blockId,
+        payload: current,
+      });
+      throw error;
+    }
+
+    delete current[col];
+    dropped.push(col);
+    console.warn('BLOCK_PATCH: coluna ausente, removendo do update:', col, {
+      blockId,
+    });
+  }
+
+  throw new Error('BLOCK_PATCH: excedeu tentativas de fallback de colunas');
+}
+
 /** Patch mínimo e compatível com blocks em produção (sem updated_at). */
 export function buildManualFrontPatch(
   measures: OfficialLotMeasures,
   frontSegmentIndex: number,
-  options?: { includeFrontSource?: boolean },
+  options?: {
+    includeFrontSource?: boolean;
+    street?: FrontStreetPersistFields;
+  },
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {
     ...officialMeasuresToBlockFields(measures, frontSegmentIndex),
@@ -71,75 +124,48 @@ export function buildManualFrontPatch(
   if (options?.includeFrontSource) {
     patch.front_source = 'manual';
   }
+  if (options?.street) {
+    patch.front_street_id = options.street.front_street_id;
+    patch.front_street_name = options.street.front_street_name;
+    patch.front_street_type = options.street.front_street_type;
+  }
   return patch;
 }
 
 export type PersistManualFrontResult = {
   patch: Record<string, unknown>;
   frontSourcePersisted: boolean;
+  streetFieldsPersisted: boolean;
 };
 
 /**
- * Grava frente manual; se `front_source` não existir no schema, repete sem esse campo.
+ * Grava frente manual + logradouro; remove campos que não existirem no schema.
  */
 export async function persistManualLotFront(
   supabase: SupabaseClient,
   blockId: string,
   measures: OfficialLotMeasures,
   frontSegmentIndex: number,
+  street?: FrontStreetPersistFields,
 ): Promise<PersistManualFrontResult> {
-  const withSource = buildManualFrontPatch(measures, frontSegmentIndex, {
+  const fullPatch = buildManualFrontPatch(measures, frontSegmentIndex, {
     includeFrontSource: true,
+    street,
   });
 
-  let { error } = await supabase
-    .from('blocks')
-    .update(withSource)
-    .eq('id', blockId);
+  const { patch, droppedColumns } = await persistBlockPatch(
+    supabase,
+    blockId,
+    fullPatch,
+  );
 
-  if (error && isUnknownColumnError(error, 'front_source')) {
-    const withoutSource = buildManualFrontPatch(measures, frontSegmentIndex, {
-      includeFrontSource: false,
-    });
-    console.warn(
-      'BLOCK_FRONT_SAVE: coluna front_source ausente — salvando apenas front_segment_index e medidas.',
-      { blockId, frontSegmentIndex },
-    );
-    const retry = await supabase
-      .from('blocks')
-      .update(withoutSource)
-      .eq('id', blockId);
-    error = retry.error;
-    if (!error) {
-      return { patch: withoutSource, frontSourcePersisted: false };
-    }
-  }
-
-  if (error && isUnknownColumnError(error, 'updated_at')) {
-    const withoutUpdated = buildManualFrontPatch(measures, frontSegmentIndex, {
-      includeFrontSource: !isUnknownColumnError(error, 'front_source'),
-    });
-    const retry = await supabase
-      .from('blocks')
-      .update(withoutUpdated)
-      .eq('id', blockId);
-    error = retry.error;
-    if (!error) {
-      return {
-        patch: withoutUpdated,
-        frontSourcePersisted: Boolean(withoutUpdated.front_source),
-      };
-    }
-  }
-
-  if (error) {
-    logSupabaseFrontSaveFailure('BLOCK_FRONT_SAVE_FAILED', error, {
-      blockId,
-      frontSegmentIndex,
-      payload: withSource,
-    });
-    throw error;
-  }
-
-  return { patch: withSource, frontSourcePersisted: true };
+  return {
+    patch,
+    frontSourcePersisted:
+      'front_source' in patch &&
+      !droppedColumns.includes('front_source'),
+    streetFieldsPersisted:
+      street != null &&
+      !droppedColumns.some((c) => c.startsWith('front_street')),
+  };
 }

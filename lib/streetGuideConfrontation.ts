@@ -4,8 +4,42 @@
 
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
+import { getOfficialConfrontationRing } from '@/lib/officialConfrontationRing';
 import { scoreSegmentStreetProximity } from '@/lib/lotStreetFrontDetection';
 import type { Segment } from '@/utils/calculateLotDimensions';
+
+function utmToLngLat(
+  east: number,
+  north: number,
+  anchorLat: number,
+  anchorLng: number,
+  anchorEast: number,
+  anchorNorth: number,
+): [number, number] {
+  const mPerDegLat = 111320;
+  const mPerDegLng =
+    111320 * Math.cos((anchorLat * Math.PI) / 180) || 111320;
+  return [
+    anchorLng + (east - anchorEast) / mPerDegLng,
+    anchorLat + (north - anchorNorth) / mPerDegLat,
+  ];
+}
+
+function anchorFromBlock(
+  block: Record<string, unknown>,
+): { lat: number; lng: number; east: number; north: number } | null {
+  const geom = normalizeLotGeometry(block);
+  const official = getOfficialConfrontationRing(block);
+  if (!geom.ok || !official.ok || !geom.ring[0] || !official.ring[0]) {
+    return null;
+  }
+  return {
+    lat: geom.ring[0][0],
+    lng: geom.ring[0][1],
+    east: official.ring[0][0],
+    north: official.ring[0][1],
+  };
+}
 
 /** Tolerância padrão (m) — segmento da aresta próximo/paralelo à linha de rua. */
 export const STREET_GUIDE_CONFRONT_TOLERANCE_M = 0.35;
@@ -69,16 +103,38 @@ export function lngLatEdgeFromUtmSegment(
   block: Record<string, unknown>,
 ): { p1: [number, number]; p2: [number, number] } | null {
   const geom = normalizeLotGeometry(block);
-  if (!geom.ok || geom.ring.length < 3) return null;
-  const ring = geom.ring;
-  const n = ring.length;
-  const i = Math.min(Math.max(0, seg.originalIndex), n - 2);
-  const a = ring[i];
-  const b = ring[(i + 1) % (n - 1)];
-  if (!a || !b) return null;
+  if (geom.ok && geom.ring.length >= 3) {
+    const ring = geom.ring;
+    const n = ring.length;
+    const i = Math.min(Math.max(0, seg.originalIndex), n - 2);
+    const a = ring[i];
+    const b = ring[(i + 1) % (n - 1)];
+    if (!a || !b) return null;
+    return {
+      p1: [a[1], a[0]],
+      p2: [b[1], b[0]],
+    };
+  }
+
+  const anchor = anchorFromBlock(block);
+  if (!anchor) return null;
   return {
-    p1: [a[1], a[0]],
-    p2: [b[1], b[0]],
+    p1: utmToLngLat(
+      seg.p1[0],
+      seg.p1[1],
+      anchor.lat,
+      anchor.lng,
+      anchor.east,
+      anchor.north,
+    ),
+    p2: utmToLngLat(
+      seg.p2[0],
+      seg.p2[1],
+      anchor.lat,
+      anchor.lng,
+      anchor.east,
+      anchor.north,
+    ),
   };
 }
 
