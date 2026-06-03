@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
+import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
 import {
   buildStreetGuideInsertPayload,
@@ -427,7 +428,12 @@ export default function MapPage() {
   const [assistedConfrontationMode, setAssistedConfrontationMode] =
     useState(false);
   const [insertConfrontantTool, setInsertConfrontantTool] = useState(false);
-  const [memorialModalOpen, setMemorialModalOpen] = useState(false);
+  const [memorialPickMode, setMemorialPickMode] = useState(false);
+  const [memorialTarget, setMemorialTarget] = useState<{
+    id: string;
+    number?: string;
+    block?: string;
+  } | null>(null);
 
   const [lotSheetTarget, setLotSheetTarget] = useState<{
     id: string;
@@ -2429,8 +2435,15 @@ export default function MapPage() {
 
                  <button
                    type="button"
-                   onClick={() => setMemorialModalOpen(true)}
-                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b] transition-colors group relative"
+                   onClick={() => {
+                     setMemorialTarget(null);
+                     setMemorialPickMode(true);
+                     setLotSheetPickMode(false);
+                     setLotSheetTarget(null);
+                     setMeasureActive(false);
+                     setDrawStreetActive(false);
+                   }}
+                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${memorialPickMode || memorialTarget ? 'bg-[#f59e0b]/20 text-[#fbbf24]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'}`}
                  >
                    <ScrollText className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Memorial Descritivo</span>
@@ -2554,6 +2567,16 @@ export default function MapPage() {
               setLotSheetPickMode(false);
               console.log('LOT_SHEET_MODAL_OPEN_WITH_LOT', { id: lot.id, number: lot.number });
             }}
+            memorialPickMode={memorialPickMode}
+            onMemorialLotPick={(lot) => {
+              if (!memorialPickMode) return;
+              setMemorialTarget(lot);
+              setMemorialPickMode(false);
+            }}
+            onGenerateMemorialFromPopup={(lot) => {
+              setMemorialTarget(lot);
+              setMemorialPickMode(false);
+            }}
             assistedConfrontationMode={assistedConfrontationMode}
             insertConfrontantTool={insertConfrontantTool}
           />
@@ -2576,46 +2599,30 @@ export default function MapPage() {
           />
         )}
 
-        {memorialModalOpen && selectedProject && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
-                <h3 className="font-bold text-[var(--text-primary)] text-lg">Memorial Descritivo</h3>
-                <button
-                  type="button"
-                  onClick={() => setMemorialModalOpen(false)}
-                  className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-5 text-sm text-[var(--text-secondary)] space-y-3">
-                {lotSheetTarget ? (
-                  <p>
-                    Lote <strong className="text-[var(--text-primary)]">{lotSheetTarget.number || lotSheetTarget.id}</strong> selecionado.
-                    A geração completa do memorial descritivo está em preparação (sprint v1.9).
-                  </p>
-                ) : (
-                  <p>
-                    Projeto <strong className="text-[var(--text-primary)]">{selectedProject.name}</strong>.
-                    Selecione um lote no mapa para priorizar o memorial unitário, ou aguarde a geração em lote do projeto.
-                  </p>
-                )}
-                <p className="text-xs text-[var(--text-muted)]">
-                  Os textos usarão segmentos oficiais TXT, confrontações automáticas e responsável técnico da empresa.
-                </p>
-              </div>
-              <div className="px-5 pb-5">
-                <button
-                  type="button"
-                  onClick={() => setMemorialModalOpen(false)}
-                  className="w-full py-2.5 rounded-lg sv-brand-btn-primary font-semibold text-sm"
-                >
-                  Entendi
-                </button>
-              </div>
-            </div>
+        {memorialPickMode && !memorialTarget && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
+            <p className="text-xs font-semibold text-amber-100 bg-[var(--bg-card)]/95 border border-amber-500/40 rounded-lg px-3 py-2 shadow-lg text-center">
+              Selecione um lote no mapa para gerar o memorial descritivo
+            </p>
           </div>
+        )}
+
+        {memorialTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
+          <MemorialGenerateModal
+            projectId={selectedProject.id}
+            tenantId={String(saasTenantId || user?.tenant_id || selectedProject.tenant_id)}
+            lot={memorialTarget}
+            onClose={() => {
+              setMemorialPickMode(false);
+              setMemorialTarget(null);
+            }}
+            onSelectAnotherLot={() => {
+              setMemorialTarget(null);
+              setMemorialPickMode(true);
+              setMeasureActive(false);
+              setDrawStreetActive(false);
+            }}
+          />
         )}
 
         {lotSheetTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (

@@ -1512,6 +1512,7 @@ function LotPopupContent({
   assistedConfrontationMode,
   onEditConfrontationSide,
   allBlocksForConfront = [],
+  onGenerateMemorial,
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
@@ -1535,6 +1536,7 @@ function LotPopupContent({
   assistedConfrontationMode?: boolean;
   onEditConfrontationSide?: (lot: any, side: SideRole) => void;
   allBlocksForConfront?: Record<string, unknown>[];
+  onGenerateMemorial?: (lot: any) => void;
 }) {
   console.log("GIS_POPUP_RENDER", {
     lotId: lot?.id,
@@ -1871,6 +1873,21 @@ function LotPopupContent({
                   Corrigir frente do lote
                 </button>
               )}
+            </div>
+          )}
+
+        {userRole !== "BROKER" &&
+          onGenerateMemorial &&
+          Array.isArray(lot.segments_json) &&
+          lot.segments_json.length >= 2 && (
+            <div className="border-t border-gray-200 pt-2 mt-2">
+              <button
+                type="button"
+                onClick={() => onGenerateMemorial(lot)}
+                className="w-full py-2 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-900"
+              >
+                Gerar Memorial
+              </button>
             </div>
           )}
 
@@ -2299,6 +2316,9 @@ export default function GISMap({
   labelsMinZoom,
   lotSheetPickMode = false,
   onLotSheetLotPick,
+  memorialPickMode = false,
+  onMemorialLotPick,
+  onGenerateMemorialFromPopup,
   focusBlockName = null,
   focusBlockKey = 0,
   assistedConfrontationMode = false,
@@ -2327,6 +2347,19 @@ export default function GISMap({
     number?: string;
     block?: string;
   }) => void;
+  /** Modo seleção de lote para memorial descritivo */
+  memorialPickMode?: boolean;
+  onMemorialLotPick?: (lot: {
+    id: string;
+    number?: string;
+    block?: string;
+  }) => void;
+  /** Abre geração de memorial a partir do popup do lote */
+  onGenerateMemorialFromPopup?: (lot: {
+    id: string;
+    number?: string;
+    block?: string;
+  }) => void;
   /** Modo revisão pós confrontação automática (GIS-005). */
   assistedConfrontationMode?: boolean;
   insertConfrontantTool?: boolean;
@@ -2341,6 +2374,8 @@ export default function GISMap({
   const showPermanentLabels =
     labelsMinZoom == null || mapZoom >= labelsMinZoom;
   const sheetPickActive = Boolean(lotSheetPickMode);
+  const memorialPickActive = Boolean(memorialPickMode);
+  const mapLotPickActive = sheetPickActive || memorialPickActive;
   const [frontCorrectLotId, setFrontCorrectLotId] = useState<string | null>(
     null,
   );
@@ -3833,27 +3868,30 @@ export default function GISMap({
                 <GisSanitizeDebugMarkers lotId={lot.id} validation={validation} />
                 <Polygon
                   positions={positions}
-                  interactive={sheetPickActive || !(drawStreetActive || measureActive)}
+                  interactive={mapLotPickActive || !(drawStreetActive || measureActive)}
                   pathOptions={{
                     color: strokeColor,
-                    fillColor: sheetPickActive ? "#4999e9" : color,
-                    fillOpacity: sheetPickActive ? 0.35 : 0.75,
+                    fillColor: mapLotPickActive ? "#4999e9" : color,
+                    fillOpacity: mapLotPickActive ? 0.35 : 0.75,
                     stroke: SHOW_BOUNDARY_LINES,
                     weight: borderWeight,
                   }}
                   eventHandlers={{
                     click: () => {
+                      const pick = {
+                        id: lot.id,
+                        number: String(lot.number || ''),
+                        block: String(lot.block || ''),
+                      };
                       if (sheetPickActive && onLotSheetLotPick) {
-                        console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
-                        onLotSheetLotPick({
-                          id: lot.id,
-                          number: String(lot.number || ''),
-                          block: String(lot.block || ''),
-                        });
+                        console.log('LOT_SHEET_MAP_LOT_CLICK', pick);
+                        onLotSheetLotPick(pick);
+                      } else if (memorialPickActive && onMemorialLotPick) {
+                        onMemorialLotPick(pick);
                       }
                     },
                     mouseover: (e) => {
-                      if (sheetPickActive) return;
+                      if (mapLotPickActive) return;
                       const layer = e.target;
                       layer.setStyle({
                         fillOpacity: 1,
@@ -3861,7 +3899,7 @@ export default function GISMap({
                       });
                     },
                     mouseout: (e) => {
-                      if (sheetPickActive) return;
+                      if (mapLotPickActive) return;
                       const layer = e.target;
                       layer.setStyle({
                         fillOpacity: 0.75,
@@ -3870,7 +3908,7 @@ export default function GISMap({
                     },
                   }}
                 >
-                  {!sheetPickActive && (
+                  {!mapLotPickActive && (
                     <Popup>
                       <LotPopupContent
                         lot={lot}
@@ -3903,6 +3941,11 @@ export default function GISMap({
                           openConfrontationEditor(l, side)
                         }
                         allBlocksForConfront={blocksForConfront}
+                        onGenerateMemorial={
+                          onGenerateMemorialFromPopup
+                            ? (l) => onGenerateMemorialFromPopup(l)
+                            : undefined
+                        }
                       />
                     </Popup>
                   )}

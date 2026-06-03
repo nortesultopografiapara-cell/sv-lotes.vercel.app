@@ -1,72 +1,27 @@
 /**
- * Memorial descritivo — estrutura para botão "Gerar Memorial" (próxima etapa).
- * Usa segmentos oficiais, confrontações e responsável técnico.
+ * Memorial descritivo — compatibilidade e texto rápido.
  */
 
-import { buildLotConfrontationAudit } from "@/lib/assistedConfrontation";
-import { getOfficialLotSegmentTable } from "@/lib/officialLotMeasurements";
-import { resolveLotSideConfrontants } from "@/lib/lotConfrontations";
-import {
-  formatMemorialTechnicalBlock,
-  normalizeTechnicalResponsible,
-} from "@/lib/technicalResponsible";
+import { buildMemorialDescriptionText } from '@/lib/memorial/memorialText';
+import { buildMemorialSegments } from '@/lib/memorial/memorialGeometry';
+import type { MemorialDraftInput } from '@/lib/memorial/memorialTypes';
 
-export type MemorialDraftInput = {
-  block: Record<string, unknown>;
-  projectId?: string;
-  projectBlocks?: Record<string, unknown>[];
-  streetGuides?: Record<string, unknown>[];
-  technicalResponsible?: Record<string, unknown> | null;
-};
+export type { MemorialDraftInput };
 
-/** Texto narrativo base (vértice M-01, frente, laterais, fundo). */
-export function buildMemorialDraftPlainText(input: MemorialDraftInput): string {
+/** Texto narrativo completo (MEM-001). */
+export function buildMemorialDraftPlainText(
+  input: MemorialDraftInput,
+): string {
   const block = input.block;
-  const blockId = String(block.id || "");
-  const table = getOfficialLotSegmentTable(block);
-  const audit =
-    blockId && input.projectBlocks?.length
-      ? buildLotConfrontationAudit(
-          block,
-          blockId,
-          input.projectBlocks,
-          input.streetGuides || [],
-        )
-      : null;
-
-  const confrontants =
-    audit?.confrontants ??
-    (blockId && input.projectBlocks?.length
-      ? resolveLotSideConfrontants(
-          block,
-          blockId,
-          input.projectBlocks,
-          input.streetGuides || [],
-          undefined,
-          input.projectId,
-        )
-      : {
-          frente: String(block.front_street_name || "via de acesso"),
-          fundo: "lote vizinho",
-          ladoDireito: "lote vizinho",
-          ladoEsquerdo: "lote vizinho",
-        });
-
-  const startVertex = table.rows[0]?.de || "M-01";
-  const pendingNote = audit?.hasPending
-    ? "\n\nATENÇÃO: Este lote possui confrontações pendentes (A DEFINIR)."
-    : "";
-  const lines: string[] = [
-    `Inicia-se no vértice ${startVertex}...`,
-    `Segue confrontando pela frente com ${confrontants.frente || "via de acesso"}...`,
-    `Lado direito confrontando com ${confrontants.ladoDireito || "lote vizinho"}...`,
-    `Fundo confrontando com ${confrontants.fundo || "lote vizinho"}...`,
-    `Lado esquerdo confrontando com ${confrontants.ladoEsquerdo || "lote vizinho"}...`,
-  ];
-
-  const tech = normalizeTechnicalResponsible(
-    input.technicalResponsible || null,
+  const blockId = String(block.id || '');
+  const segments = buildMemorialSegments(
+    block,
+    blockId,
+    input.projectBlocks || [],
+    (input.streetGuides || []) as import('@/lib/streetGuideConfrontation').StreetGuideConfrontInput[],
   );
-  const techHtml = formatMemorialTechnicalBlock(tech);
-  return `${lines.join("\n")}${pendingNote}\n\n${techHtml.replace(/<[^>]+>/g, " ").trim()}`;
+  if (!segments.length) {
+    return 'Memorial indisponível: sem segmentos oficiais válidos.';
+  }
+  return buildMemorialDescriptionText(segments);
 }
