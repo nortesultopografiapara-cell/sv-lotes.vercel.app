@@ -7,9 +7,12 @@ import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
 import {
   confrontantFromStreetGuidesForSegment,
   confrontantFromStreetGuidesForUtmSegment,
+  lngLatEdgeFromUtmSegment,
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
   type StreetGuideConfrontInput,
 } from '@/lib/streetGuideConfrontation';
+import distance from '@turf/distance';
+import { point } from '@turf/helpers';
 import { scoreSegmentStreetProximity } from '@/lib/lotStreetFrontDetection';
 import {
   getOfficialConfrontationRing,
@@ -144,7 +147,7 @@ export function lngLatEdgeAtRingIndex(
 }
 
 /** Melhor aresta do anel WGS84 próxima a alguma street_guide (quando front_segment_index ausente). */
-function detectFrontEdgeIndexFromGuides(
+export function detectFrontEdgeIndexFromGuides(
   block: Record<string, unknown>,
   streetGuides: StreetGuideConfrontInput[],
   toleranceM: number,
@@ -184,30 +187,13 @@ function detectFrontEdgeIndexFromGuides(
   return { edgeIndex: bestEdge, distanceM: bestDist };
 }
 
-function resolveFromWgs84FrontEdge(
+function matchGuideAtWgs84RingEdge(
   block: Record<string, unknown>,
   streetGuides: StreetGuideConfrontInput[],
+  ringEdgeIndex: number,
   toleranceM: number,
 ): FrontStreetGuideMatch | null {
-  let edgeIndex =
-    typeof block.front_segment_index === 'number'
-      ? block.front_segment_index
-      : typeof (block as Record<string, unknown>).frontSegmentIndex ===
-          'number'
-        ? ((block as Record<string, unknown>).frontSegmentIndex as number)
-        : -1;
-
-  if (edgeIndex < 0) {
-    const detected = detectFrontEdgeIndexFromGuides(
-      block,
-      streetGuides,
-      toleranceM,
-    );
-    if (!detected) return null;
-    edgeIndex = detected.edgeIndex;
-  }
-
-  const edge = lngLatEdgeAtRingIndex(block, edgeIndex);
+  const edge = lngLatEdgeAtRingIndex(block, ringEdgeIndex);
   if (!edge) return null;
 
   const hit = confrontantFromStreetGuidesForSegment(
@@ -229,6 +215,82 @@ function resolveFromWgs84FrontEdge(
   }
 
   return matchFromHit(hit, streetGuides, dist, toleranceM);
+}
+
+function storedWgs84FrontRingIndex(block: Record<string, unknown>): number {
+  if (typeof block.front_segment_index === 'number' && block.front_segment_index >= 0) {
+    return block.front_segment_index;
+  }
+  const alt = (block as Record<string, unknown>).frontSegmentIndex;
+  return typeof alt === 'number' && alt >= 0 ? alt : -1;
+}
+
+/**
+ * Índice do segmento UTM fundido cuja aresta WGS84 coincide com ringEdgeIndex do mapa.
+ */
+export function matchMergedSegmentIndexToWgs84RingEdge(
+  block: Record<string, unknown>,
+  segments: Segment[],
+  ringEdgeIndex: number,
+  maxMidpointDistM = 2,
+): number {
+  const targetEdge = lngLatEdgeAtRingIndex(block, ringEdgeIndex);
+  if (!targetEdge || !segments.length) return -1;
+
+  const tm: [number, number] = [
+    (targetEdge.p1[0] + targetEdge.p2[0]) / 2,
+    (targetEdge.p1[1] + targetEdge.p2[1]) / 2,
+  ];
+
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  for (let i = 0; i < segments.length; i++) {
+    const utmEdge = lngLatEdgeFromUtmSegment(segments[i], block);
+    if (!utmEdge) continue;
+    const sm: [number, number] = [
+      (utmEdge.p1[0] + utmEdge.p2[0]) / 2,
+      (utmEdge.p1[1] + utmEdge.p2[1]) / 2,
+    ];
+    const d = distance(point(tm), point(sm), { units: 'meters' });
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+
+  return bestDist <= maxMidpointDistM ? bestIdx : -1;
+}
+
+function resolveFromWgs84FrontEdge(
+  block: Record<string, unknown>,
+  streetGuides: StreetGuideConfrontInput[],
+  toleranceM: number,
+): FrontStreetGuideMatch | null {
+  const storedIdx = storedWgs84FrontRingIndex(block);
+
+  if (storedIdx >= 0) {
+    const fromStored = matchGuideAtWgs84RingEdge(
+      block,
+      streetGuides,
+      storedIdx,
+      toleranceM,
+    );
+    if (fromStored) return fromStored;
+  }
+
+  const detected = detectFrontEdgeIndexFromGuides(
+    block,
+    streetGuides,
+    toleranceM,
+  );
+  if (!detected) return null;
+
+  return matchGuideAtWgs84RingEdge(
+    block,
+    streetGuides,
+    detected.edgeIndex,
+    toleranceM,
+  );
 }
 
 function readSegmentsJsonArray(block: Record<string, unknown>): unknown[] | null {
@@ -444,5 +506,5 @@ export function resolveFrenteConfrontantLabel(
   const fromSeg = confrontantNameFromFrontSegmentJson(block);
   if (fromSeg && !/sem nome/i.test(fromSeg)) return fromSeg;
 
-  return 'A definir';
+  return 'A DEFINIR';
 }

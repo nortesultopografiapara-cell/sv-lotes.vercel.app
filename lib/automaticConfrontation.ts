@@ -3,6 +3,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
 import { buildLotConfrontationAudit } from '@/lib/assistedConfrontation';
 import { buildSideConfrontantsWithSources } from '@/lib/lotSegmentConfrontation';
 import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
@@ -136,8 +137,20 @@ export async function runAutomaticConfrontation(
       const source = validation.ringSource ?? 'segments_json';
       sourceCounts[source] = (sourceCounts[source] || 0) + 1;
 
+      const blockForAudit =
+        built.sources.frente === 'street_guide' && !built.pending.frente
+          ? applyAutoFrontStreetToBlockSegments(
+              block,
+              built.frente,
+              'street_guide',
+              blocks,
+              project,
+              streetGuides as import('@/lib/streetGuideConfrontation').StreetGuideConfrontInput[],
+            )
+          : block;
+
       const audit = buildLotConfrontationAudit(
-        block,
+        blockForAudit,
         blockId,
         blocks,
         streetGuides,

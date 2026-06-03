@@ -12,11 +12,13 @@ import {
   applyConfrontantToSegmentRows,
   getSegmentConfrontantRecord,
 } from '@/lib/segmentConfrontantPersist';
+import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
 import {
   buildSideConfrontantsWithSources,
   resolveSideSegmentIndexes,
   type SideRole,
 } from '@/lib/lotSegmentConfrontation';
+import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 
 export type SideAuditEntry = {
@@ -94,6 +96,18 @@ export function buildLotConfrontationAudit(
     project,
   );
 
+  const blockResolved =
+    built.sources.frente === 'street_guide' && !built.pending.frente
+      ? applyAutoFrontStreetToBlockSegments(
+          block,
+          built.frente,
+          'street_guide',
+          allBlocks,
+          project,
+          streetGuides as StreetGuideConfrontInput[],
+        )
+      : block;
+
   const sideEntries = {} as Record<SideRole, SideAuditEntry>;
   let pendingCount = 0;
   for (const role of [
@@ -119,7 +133,7 @@ export function buildLotConfrontationAudit(
     const seg = built.segments[mergedIdx];
     const oi =
       typeof seg?.originalIndex === 'number' ? seg.originalIndex : mergedIdx;
-    const manual = getSegmentConfrontantRecord(block, oi);
+    const manual = getSegmentConfrontantRecord(blockResolved, oi);
     const role = sideRoleForSegmentIndex(mergedIdx, built.sides);
     const sideAudit = role ? sideEntries[role] : null;
 
@@ -170,6 +184,7 @@ export function officialSegmentIndexesForSide(
   allBlocks: Record<string, unknown>[],
   side: SideRole,
   project?: Record<string, unknown> | null,
+  streetGuides: StreetGuideConfrontInput[] = [],
 ): number[] {
   const official = getOfficialConfrontationRing(block, project);
   if (!official.ok) return [];
@@ -177,6 +192,7 @@ export function officialSegmentIndexesForSide(
     block,
     official.ring,
     [],
+    streetGuides,
   );
   const out: number[] = [];
   for (const mergedIdx of sides[side]) {

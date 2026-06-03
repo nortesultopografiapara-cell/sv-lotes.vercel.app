@@ -9,6 +9,8 @@ import {
 } from '@/lib/confrontantTypes';
 import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import {
+  detectFrontEdgeIndexFromGuides,
+  matchMergedSegmentIndexToWgs84RingEdge,
   resolveFrenteConfrontantLabel,
   resolveFrontStreetGuideForLot,
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
@@ -46,7 +48,7 @@ export type SideConfrontantResult = {
   pending: boolean;
 };
 
-function manualConfrontantForSide(
+function segmentConfrontantForSide(
   block: Record<string, unknown>,
   segmentIndexes: number[],
   segments: Segment[],
@@ -57,10 +59,18 @@ function manualConfrontantForSide(
     const oi =
       typeof seg.originalIndex === 'number' ? seg.originalIndex : idx;
     const rec = getSegmentConfrontantRecord(block, oi);
-    if (rec?.confrontant) {
+    if (!rec?.confrontant) continue;
+    if (rec.confrontant_source === 'manual') {
       return {
         label: rec.confrontant,
         source: 'manual',
+        pending: false,
+      };
+    }
+    if (rec.confrontant_source === 'street_guide') {
+      return {
+        label: rec.confrontant,
+        source: 'street_guide',
         pending: false,
       };
     }
@@ -74,8 +84,12 @@ function resolveFrenteWithSource(
   segments: Segment[],
   streetGuides: StreetGuideConfrontInput[],
 ): SideConfrontantResult {
-  const manual = manualConfrontantForSide(block, frontSegmentIndexes, segments);
-  if (manual) return manual;
+  const fromSegment = segmentConfrontantForSide(
+    block,
+    frontSegmentIndexes,
+    segments,
+  );
+  if (fromSegment) return fromSegment;
 
   const saved = String(block.front_street_name || '').trim();
   if (saved && !/sem nome/i.test(saved) && !/^a\s*definir$/i.test(saved)) {
@@ -366,12 +380,12 @@ function bestConfrontantForSide(
   side?: 'ladoEsquerdo' | 'ladoDireito',
   streetGuides: Record<string, unknown>[] = [],
 ): SideConfrontantResult {
-  const manual = manualConfrontantForSide(
+  const fromSegment = segmentConfrontantForSide(
     targetBlock,
     segmentIndexes,
     segments,
   );
-  if (manual) return manual;
+  if (fromSegment) return fromSegment;
 
   let bestLabel = '—';
   let bestScore = -Infinity;
@@ -466,6 +480,7 @@ export function resolveSideSegmentIndexes(
   block: Record<string, unknown>,
   utmRing: [number, number][],
   allPolysUtm: number[][][],
+  streetGuides: StreetGuideConfrontInput[] = [],
 ): { segments: Segment[]; sides: SideSegmentIndexes; frontIndex: number } {
   const emptySides: SideSegmentIndexes = {
     frente: [],
@@ -487,11 +502,36 @@ export function resolveSideSegmentIndexes(
   let frontIndex = -1;
   const stored = block.front_segment_index;
   if (typeof stored === 'number' && stored >= 0) {
-    const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
-    if (byOriginal >= 0) {
-      frontIndex = byOriginal;
-    } else if (stored < segments.length) {
-      frontIndex = stored;
+    const byWgs = matchMergedSegmentIndexToWgs84RingEdge(
+      block,
+      segments,
+      stored,
+    );
+    if (byWgs >= 0) {
+      frontIndex = byWgs;
+    } else {
+      const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
+      if (byOriginal >= 0) {
+        frontIndex = byOriginal;
+      } else if (stored < segments.length) {
+        frontIndex = stored;
+      }
+    }
+  }
+
+  if (frontIndex < 0 && streetGuides.length > 0) {
+    const detected = detectFrontEdgeIndexFromGuides(
+      block,
+      streetGuides,
+      STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
+    );
+    if (detected) {
+      const byGuide = matchMergedSegmentIndexToWgs84RingEdge(
+        block,
+        segments,
+        detected.edgeIndex,
+      );
+      if (byGuide >= 0) frontIndex = byGuide;
     }
   }
 
@@ -586,6 +626,7 @@ export function buildSideConfrontantsWithSources(
     block,
     utmRing,
     allPolysUtm,
+    streetGuides as StreetGuideConfrontInput[],
   );
 
   if (!segments.length) {

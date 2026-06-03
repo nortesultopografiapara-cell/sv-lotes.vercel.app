@@ -24,7 +24,7 @@ export type LotAutoConfrontationRecord = {
 };
 
 /** Incrementar quando a heurística de confrontação mudar. */
-export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 6;
+export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 7;
 
 export type ProjectConfrontationSnapshot = {
   projectId: string;
