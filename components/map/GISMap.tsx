@@ -66,6 +66,7 @@ import {
   type Segment,
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
+import { computeOfficialLotLabelPosition } from "@/lib/lotLabelPosition";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -86,6 +87,9 @@ import { runLotGeometryDiagnosticReport } from "@/lib/lotGeometryDiagnostic";
  * Lotes: contorno via stroke sanitizado (SHOW_BOUNDARY_LINES)
  */
 const SHOW_AUXILIARY_LINES = false;
+
+/** Linhas de rua (street_guides) — independente de SHOW_AUXILIARY_LINES. */
+const SHOW_STREET_GUIDE_LINES = true;
 
 /** Contorno dos lotes (geometria sanitizada). */
 const SHOW_BOUNDARY_LINES = true;
@@ -606,6 +610,7 @@ type StreetGuideForLabel = {
 
 type LotLabelMeta = {
   frente?: number | null;
+  frontSegmentIndex?: number | null;
   frontStreetName?: string | null;
   frontStreetDisplay?: string | null;
   frontStreetId?: string | null;
@@ -739,48 +744,19 @@ function frontSegmentMidpoint(seg: {
   return [(seg.p1[1] + seg.p2[1]) / 2, (seg.p1[0] + seg.p2[0]) / 2];
 }
 
-/**
- * Fase 1: centróide.
- * Fase 2: meio da frente + 2,5 m para dentro, se frente identificada (DB ou logradouro).
- */
+/** Rótulo obedece front_segment_index oficial — não depende de linhas de rua visíveis. */
 function computeLotLabelPosition(
   bounds: LatLngPair[],
-  lot?: LotLabelMeta,
-  streetGuides: StreetGuideForLabel[] = [],
+  lot?: LotLabelMeta & { front_segment_index?: number | null },
 ): LatLngPair {
-  const centroid = polygonCentroid(bounds);
-  if (bounds.length < 3) return centroid;
-
-  const ring = boundsToLngLatRing(bounds);
-  const segments = extractSegments(ring, []);
-  if (segments.length === 0) return centroid;
-
-  const hasDbFront = Boolean(
-    lot?.frontStreetName ||
-      lot?.frontStreetDisplay ||
-      lot?.frontStreetId,
-  );
-  const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
-  const hasFrenteMedida = frenteLen > 0 && hasDbFront;
-
-  const visibleGuides = streetGuides.filter(
-    (g) => g.visible !== false && g.active !== false,
-  );
-  const guideFrontSeg =
-    visibleGuides.length > 0
-      ? findFrontSegmentByStreetGuides(ring, visibleGuides)
-      : null;
-
-  const frontIdentified = hasDbFront || hasFrenteMedida || guideFrontSeg != null;
-  if (!frontIdentified) return centroid;
-
-  let frontSeg =
-    guideFrontSeg ||
-    (hasFrenteMedida ? pickFrontSegmentByFrenteLength(segments, frenteLen) : null) ||
-    detectFront(segments);
-
-  const frontMid = frontSegmentMidpoint(frontSeg);
-  return offsetPointToward(frontMid, centroid, LABEL_INWARD_OFFSET_METERS);
+  return computeOfficialLotLabelPosition(bounds, {
+    frente: lot?.frente,
+    frontSegmentIndex:
+      lot?.frontSegmentIndex ?? lot?.front_segment_index ?? null,
+    frontStreetName: lot?.frontStreetName,
+    frontStreetDisplay: lot?.frontStreetDisplay,
+    frontStreetId: lot?.frontStreetId,
+  });
 }
 
 function labelCircleSizePx(zoom: number): number {
@@ -874,12 +850,10 @@ function LotLabelsOverlay({
   items,
   mapZoom,
   enabled,
-  streetGuides = [],
 }: {
   items: LotLabelItem[];
   mapZoom: number;
   enabled: boolean;
-  streetGuides?: StreetGuideForLabel[];
 }) {
   const map = useMap();
   const [pixelOffsets, setPixelOffsets] = useState<Record<string, [number, number]>>(
@@ -891,11 +865,11 @@ function LotLabelsOverlay({
     for (const item of items) {
       mapPos.set(
         item.id,
-        computeLotLabelPosition(item.bounds, item.lot, streetGuides),
+        computeLotLabelPosition(item.bounds, item.lot),
       );
     }
     return mapPos;
-  }, [items, streetGuides]);
+  }, [items]);
 
   useEffect(() => {
     if (!enabled || items.length === 0) {
@@ -2243,10 +2217,10 @@ export default function GISMap({
         segmentIndex,
         measures,
       });
-      const patch = buildBlockPatchFromOfficialMeasures(
-        measures,
-        segmentIndex,
-      );
+      const patch = {
+        ...buildBlockPatchFromOfficialMeasures(measures, segmentIndex),
+        front_source: 'manual',
+      };
       const { error } = await supabase
         .from("blocks")
         .update(patch)
@@ -2343,14 +2317,6 @@ export default function GISMap({
     }
     return items;
   }, [lots, lotGeometryValidations]);
-
-  const streetGuidesForLabels = useMemo(
-    () =>
-      streetGuidesVisible
-        ? streetGuides.filter((g) => g.visible !== false && g.active !== false)
-        : [],
-    [streetGuides, streetGuidesVisible],
-  );
 
   // States para Medição (Measure Tool)
   const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
@@ -3495,7 +3461,6 @@ export default function GISMap({
           items={lotLabelItems}
           mapZoom={mapZoom}
           enabled={showPermanentLabels && !sheetPickActive}
-          streetGuides={streetGuidesForLabels}
         />
 
         {lots
@@ -3687,7 +3652,7 @@ export default function GISMap({
             );
           })}
 
-        {SHOW_AUXILIARY_LINES &&
+        {SHOW_STREET_GUIDE_LINES &&
           streetGuidesVisible &&
           streetGuides.map((guide) => {
             const geo = guide.geometry_geojson || guide.geometry;
@@ -3709,6 +3674,13 @@ export default function GISMap({
                   weight: 4,
                   dashArray: guide.active === false ? "4, 6" : "10, 10",
                 }}
+                eventHandlers={
+                  onEditStreetGuide
+                    ? {
+                        click: () => onEditStreetGuide(guide),
+                      }
+                    : undefined
+                }
               >
                 <Tooltip permanent direction="center" className="street-guide-label">
                   <span

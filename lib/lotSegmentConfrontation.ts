@@ -4,6 +4,10 @@
 
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
+  confrontantFromStreetGuidesForUtmSegment,
+  type StreetGuideConfrontInput,
+} from '@/lib/streetGuideConfrontation';
+import {
   getOfficialConfrontationRing,
   planarBearingDeg,
   planarDistanceM,
@@ -270,9 +274,23 @@ function bestConfrontantForSide(
   allPolysUtm: number[][][],
   project?: Record<string, unknown> | null,
   side?: 'ladoEsquerdo' | 'ladoDireito',
+  streetGuides: Record<string, unknown>[] = [],
 ): string {
   let bestLabel = '—';
   let bestScore = -Infinity;
+
+  if (streetGuides.length > 0) {
+    for (const idx of segmentIndexes) {
+      const target = segments[idx];
+      if (!target) continue;
+      const fromStreet = confrontantFromStreetGuidesForUtmSegment(
+        target,
+        targetBlock,
+        streetGuides as StreetGuideConfrontInput[],
+      );
+      if (fromStreet?.label) return fromStreet.label;
+    }
+  }
 
   const tryPass = (maxPerp: number) => {
     for (const idx of segmentIndexes) {
@@ -339,8 +357,13 @@ function resolveSideSegmentIndexes(
 
   let frontIndex = -1;
   const stored = block.front_segment_index;
-  if (typeof stored === 'number' && stored >= 0 && stored < segments.length) {
-    frontIndex = stored;
+  if (typeof stored === 'number' && stored >= 0) {
+    const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
+    if (byOriginal >= 0) {
+      frontIndex = byOriginal;
+    } else if (stored < segments.length) {
+      frontIndex = stored;
+    }
   }
 
   const classified = classifyLotSidesFromSegments(segments, {
@@ -428,7 +451,7 @@ export function buildSideConfrontantsFromSegments(
   targetId: string,
   targetRing: [number, number][],
   blocks: Record<string, unknown>[],
-  _streetGuides: Record<string, unknown>[],
+  streetGuides: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
 ): BuildSideConfrontantsResult {
   const official = getOfficialConfrontationRing(block, project);
@@ -460,6 +483,8 @@ export function buildSideConfrontantsFromSegments(
     targetId,
     allPolysUtm,
     project,
+    undefined,
+    streetGuides,
   );
   const ladoDireito = bestConfrontantForSide(
     sides.ladoDireito,
@@ -470,6 +495,7 @@ export function buildSideConfrontantsFromSegments(
     allPolysUtm,
     project,
     'ladoDireito',
+    streetGuides,
   );
   const ladoEsquerdo = bestConfrontantForSide(
     sides.ladoEsquerdo,
@@ -480,6 +506,7 @@ export function buildSideConfrontantsFromSegments(
     allPolysUtm,
     project,
     'ladoEsquerdo',
+    streetGuides,
   );
 
   const matched = [fundo, ladoDireito, ladoEsquerdo].filter((l) => l !== '—').length;

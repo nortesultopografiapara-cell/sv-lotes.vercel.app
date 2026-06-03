@@ -788,6 +788,7 @@ export default function MapPage() {
                  lado_direito: finalDir,
                  lado_esquerdo: finalEsq,
                  front_segment_index: frontSegmentIndex,
+                 front_source: bestGuide ? 'street_guide' : 'auto',
              };
              if (bestGuide) {
                row.front_street_name = formatStreetDisplay(
