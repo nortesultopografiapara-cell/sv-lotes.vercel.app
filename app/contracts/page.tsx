@@ -1439,8 +1439,16 @@ export default function ContractsPage() {
     selectedContractIds.size === filteredContracts.length;
   const bulkDeleteCount = selectedContractIds.size;
 
+  const contractNumLabel = selectedContract
+    ? displayContractNumber(selectedContract.contract_number)
+    : "";
+
   return (
-    <div className="sv-page flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden">
+    <div
+      className={`sv-page flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden ${
+        selectedContract ? "contracts-page--contract-selected" : ""
+      }`}
+    >
       {/* Mobile: busca + ações em massa (antes dos indicadores) */}
       <div className="contracts-mobile-top md:hidden">
         <div className="relative">
@@ -1617,7 +1625,7 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 contracts-list-scroll">
             {loading ? (
               <div className="flex justify-center p-8">
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
@@ -1740,7 +1748,7 @@ export default function ContractsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                  <div className="contracts-header-actions-desktop flex flex-wrap items-center gap-2 justify-end">
                     {getStatusLabel(selectedContract.status) === "Pendente" && (
                       <button
                         onClick={handleAtivarContrato}
@@ -1892,7 +1900,7 @@ export default function ContractsPage() {
               <div className="flex-1 overflow-hidden flex bg-[#0b0e14] min-w-0">
                 {activeTab === "Visualização" && (
                   <>
-                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden">
+                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad">
                       {(!selectedContract.generated_html ||
                         selectedContract.generated_html.length < 500) && (
                         <div className="max-w-[800px] mx-auto mb-4 bg-blue-900/40 border border-blue-500/50 p-4 rounded-lg flex items-center justify-between">
@@ -2043,7 +2051,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Dados do Contrato" && (
-                  <div className="flex-1 p-6 overflow-y-auto">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Dados Principais do Contrato
@@ -2179,7 +2187,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Parcelas" && (
-                  <div className="flex-1 p-6 overflow-y-auto">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Parcelas do Contrato
@@ -2264,7 +2272,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Arquivos" && (
-                  <div className="flex-1 p-6 overflow-y-auto">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Arquivos Anexados
@@ -2312,7 +2320,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Histórico" && (
-                  <div className="flex-1 p-6 overflow-y-auto">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto space-y-6">
                       <div className="bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
                         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -2472,8 +2480,8 @@ export default function ContractsPage() {
                 )}
               </div>
 
-              {/* BOTTOM ACTION BAR */}
-              <div className="p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
+              {/* BOTTOM ACTION BAR — desktop/tablet */}
+              <div className="contracts-desktop-action-bar p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
                 <ActionBtn
                   onClick={handleBaixarPDF}
                   icon={<Download />}
@@ -2546,6 +2554,101 @@ export default function ContractsPage() {
           )}
         </div>
       </div>
+
+      {/* Mobile: ações fixas acima da bottom navigation */}
+      {selectedContract && (
+        <div
+          className="contracts-mobile-action-dock md:hidden"
+          role="region"
+          aria-label="Ações do contrato selecionado"
+        >
+          <p className="contracts-mobile-action-dock-title">
+            <strong>Contrato nº {contractNumLabel}</strong>
+          </p>
+          <div className="contracts-mobile-action-dock-scroll">
+            <div className="contracts-mobile-action-dock-grid">
+              <button
+                type="button"
+                onClick={() => void handleBaixarPDF()}
+                className="contracts-mobile-action-btn contracts-mobile-action-btn--primary"
+              >
+                <Download />
+                Gerar PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleGerarCarne()}
+                className="contracts-mobile-action-btn"
+              >
+                <Receipt />
+                Carnê
+              </button>
+              <a
+                href="/contracts/templates"
+                className="contracts-mobile-action-btn"
+              >
+                <Edit />
+                Modelos
+              </a>
+              {canShowRegenerateContract && (
+                <button
+                  type="button"
+                  onClick={openRegenerateModal}
+                  disabled={regeneratingContract}
+                  className="contracts-mobile-action-btn contracts-mobile-action-btn--amber"
+                >
+                  <RefreshCw
+                    className={regeneratingContract ? "animate-spin" : ""}
+                  />
+                  Regenerar
+                </button>
+              )}
+              {getStatusLabel(selectedContract.status) === "Pendente" && (
+                <button
+                  type="button"
+                  onClick={handleAtivarContrato}
+                  className="contracts-mobile-action-btn contracts-mobile-action-btn--success"
+                >
+                  <CheckCircle2 />
+                  Ativar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleImprimir}
+                className="contracts-mobile-action-btn"
+              >
+                <Printer />
+                Imprimir
+              </button>
+              <button
+                type="button"
+                onClick={handleReenviar}
+                className="contracts-mobile-action-btn contracts-mobile-action-btn--purple"
+              >
+                <Send />
+                Reenviar
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("Templates")}
+                className="contracts-mobile-action-btn"
+              >
+                <Edit />
+                Editar modelo
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelar}
+                className="contracts-mobile-action-btn contracts-mobile-action-btn--danger"
+              >
+                <X />
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {contractToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-3 rounded-xl bg-[#1a1f2b] border border-amber-500/40 text-amber-100 text-sm font-medium shadow-xl max-w-md text-center">
