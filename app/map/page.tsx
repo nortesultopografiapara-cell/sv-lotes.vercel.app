@@ -424,6 +424,9 @@ export default function MapPage() {
   const [focusBlockKey, setFocusBlockKey] = useState(0);
   const [lotSheetPickMode, setLotSheetPickMode] = useState(false);
   const [confrontationRunning, setConfrontationRunning] = useState(false);
+  const [assistedConfrontationMode, setAssistedConfrontationMode] =
+    useState(false);
+  const [insertConfrontantTool, setInsertConfrontantTool] = useState(false);
   const [memorialModalOpen, setMemorialModalOpen] = useState(false);
 
   const [lotSheetTarget, setLotSheetTarget] = useState<{
@@ -502,6 +505,7 @@ export default function MapPage() {
           skipSummary +
           errLines,
       );
+      setAssistedConfrontationMode(true);
       setMapRefreshKey((k) => k + 1);
     } catch (err: unknown) {
       const msg =
@@ -2389,6 +2393,42 @@ export default function MapPage() {
 
                  <button
                    type="button"
+                   onClick={() => {
+                     setAssistedConfrontationMode((v) => !v);
+                     setInsertConfrontantTool(false);
+                   }}
+                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
+                     assistedConfrontationMode
+                       ? 'bg-amber-500/20 text-amber-400'
+                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-amber-400'
+                   }`}
+                 >
+                   <Eye className="w-4 h-4 md:w-5 md:h-5" />
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
+                     Revisar Confrontações
+                   </span>
+                 </button>
+
+                 <button
+                   type="button"
+                   onClick={() => {
+                     setInsertConfrontantTool((v) => !v);
+                     setAssistedConfrontationMode(true);
+                   }}
+                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
+                     insertConfrontantTool
+                       ? 'bg-sky-500/20 text-sky-400'
+                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-sky-400'
+                   }`}
+                 >
+                   <PenTool className="w-4 h-4 md:w-5 md:h-5" />
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
+                     Inserir Confrontante
+                   </span>
+                 </button>
+
+                 <button
+                   type="button"
                    onClick={() => setMemorialModalOpen(true)}
                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b] transition-colors group relative"
                  >
@@ -2514,6 +2554,8 @@ export default function MapPage() {
               setLotSheetPickMode(false);
               console.log('LOT_SHEET_MODAL_OPEN_WITH_LOT', { id: lot.id, number: lot.number });
             }}
+            assistedConfrontationMode={assistedConfrontationMode}
+            insertConfrontantTool={insertConfrontantTool}
           />
         </div>
 

@@ -3,13 +3,17 @@
  */
 
 import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
+import type { ConfrontantSource } from '@/lib/confrontantTypes';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
+import type { SideRole } from '@/lib/lotSegmentConfrontation';
 
 export type LotAutoConfrontationRecord = {
   blockId: string;
   lotNumber: string;
   block?: string;
   confrontants: LotSheetSideConfrontants;
+  sources?: Partial<Record<SideRole, ConfrontantSource>>;
+  pendingSides?: Partial<Record<SideRole, boolean>>;
   front: string;
   back: string;
   left: string;
@@ -20,7 +24,7 @@ export type LotAutoConfrontationRecord = {
 };
 
 /** Incrementar quando a heurística de confrontação mudar. */
-export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 5;
+export const PROJECT_CONFRONTATION_SNAPSHOT_VERSION = 6;
 
 export type ProjectConfrontationSnapshot = {
   projectId: string;

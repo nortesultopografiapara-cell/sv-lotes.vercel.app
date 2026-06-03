@@ -3,7 +3,8 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import { autoLotSideConfrontants } from '@/lib/lotConfrontations';
+import { buildLotConfrontationAudit } from '@/lib/assistedConfrontation';
+import { buildSideConfrontantsWithSources } from '@/lib/lotSegmentConfrontation';
 import type { OfficialConfrontationRingSource } from '@/lib/officialConfrontationRing';
 import { validateConfrontationLot } from '@/lib/lotGeometryNormalize';
 import {
@@ -123,41 +124,49 @@ export async function runAutomaticConfrontation(
     }
 
     try {
-      const confrontants = autoLotSideConfrontants(
+      const built = buildSideConfrontantsWithSources(
         block,
         blockId,
+        validation.ring,
         blocks,
         streetGuides,
-        validation.ring,
         project,
       );
 
       const source = validation.ringSource ?? 'segments_json';
       sourceCounts[source] = (sourceCounts[source] || 0) + 1;
 
-      const confidence =
-        typeof (confrontants as { confidence?: number }).confidence === 'number'
-          ? (confrontants as { confidence: number }).confidence
-          : 0.5;
+      const audit = buildLotConfrontationAudit(
+        block,
+        blockId,
+        blocks,
+        streetGuides,
+        project,
+      );
 
       lots.push({
         blockId,
         lotNumber: lotLabel,
         block: String(block.block_name ?? block.name ?? ''),
-        confrontants: {
-          frente: confrontants.frente,
-          fundo: confrontants.fundo,
-          ladoDireito: confrontants.ladoDireito,
-          ladoEsquerdo: confrontants.ladoEsquerdo,
-        },
-        front: confrontants.frente,
-        back: confrontants.fundo,
-        left: confrontants.ladoEsquerdo,
-        right: confrontants.ladoDireito,
+        confrontants: built,
+        sources: built.sources,
+        pendingSides: built.pending,
+        front: built.frente,
+        back: built.fundo,
+        left: built.ladoEsquerdo,
+        right: built.ladoDireito,
         source,
-        confidence,
+        confidence: built.confidence,
         computedAt: batchAt,
       });
+
+      if (audit.hasPending) {
+        console.log('CONFRONTATION_PENDING_SIDES', {
+          blockId,
+          lotNumber: lotLabel,
+          pending: audit.pendingCount,
+        });
+      }
       processed += 1;
     } catch (e: unknown) {
       skipped += 1;

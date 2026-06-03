@@ -83,9 +83,18 @@ export function resolveLotSideConfrontants(
   projectId?: string,
 ): LotSheetSideConfrontants {
   const ring = latLngRingFromBlock(block);
-  const auto =
-    (projectId ? getProjectLotConfrontants(projectId, blockId) : null) ??
-    buildSideConfrontants(block, blockId, ring, blocks, streetGuides);
+  /** Recalcula com segments_json manual (prioridade sobre snapshot). */
+  const computed = buildSideConfrontants(
+    block,
+    blockId,
+    ring,
+    blocks,
+    streetGuides,
+  );
+  const snap = projectId
+    ? getProjectLotConfrontants(projectId, blockId)
+    : null;
+  const auto = computed.frente ? computed : (snap ?? computed);
   const stored = manual ?? loadManualConfrontants(blockId);
   if (!stored) return auto;
   return {

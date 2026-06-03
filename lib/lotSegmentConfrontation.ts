@@ -2,6 +2,12 @@
  * Confrontação por segmento UTM (segments_json oficial — mesma base da prancha).
  */
 
+import {
+  normalizeConfrontantLabel,
+  PENDING_CONFRONTANT_LABEL,
+  type ConfrontantSource,
+} from '@/lib/confrontantTypes';
+import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import { resolveFrenteConfrontantLabel } from '@/lib/resolveFrontStreetGuide';
 import {
   confrontantFromStreetGuidesForUtmSegment,
@@ -27,8 +33,73 @@ const MAX_PERPENDICULAR_FALLBACK_M = 1.5;
 const MAX_ANGLE_DIFF_DEG = 10;
 const MIN_OVERLAP_RATIO = 0.4;
 
-type SideRole = 'frente' | 'fundo' | 'ladoDireito' | 'ladoEsquerdo';
-type SideSegmentIndexes = Record<SideRole, number[]>;
+export type SideRole = 'frente' | 'fundo' | 'ladoDireito' | 'ladoEsquerdo';
+export type SideSegmentIndexes = Record<SideRole, number[]>;
+
+export type SideConfrontantResult = {
+  label: string;
+  source: ConfrontantSource;
+  pending: boolean;
+};
+
+function manualConfrontantForSide(
+  block: Record<string, unknown>,
+  segmentIndexes: number[],
+  segments: Segment[],
+): SideConfrontantResult | null {
+  for (const idx of segmentIndexes) {
+    const seg = segments[idx];
+    if (!seg) continue;
+    const oi =
+      typeof seg.originalIndex === 'number' ? seg.originalIndex : idx;
+    const rec = getSegmentConfrontantRecord(block, oi);
+    if (rec?.confrontant) {
+      return {
+        label: rec.confrontant,
+        source: 'manual',
+        pending: false,
+      };
+    }
+  }
+  return null;
+}
+
+function resolveFrenteWithSource(
+  block: Record<string, unknown>,
+  frontSegmentIndexes: number[],
+  segments: Segment[],
+  streetGuides: StreetGuideConfrontInput[],
+): SideConfrontantResult {
+  const manual = manualConfrontantForSide(block, frontSegmentIndexes, segments);
+  if (manual) return manual;
+
+  const saved = String(block.front_street_name || '').trim();
+  if (saved && !/sem nome/i.test(saved)) {
+    return {
+      label: resolveFrenteConfrontantLabel(
+        block,
+        frontSegmentIndexes,
+        segments,
+        streetGuides,
+      ),
+      source: 'street_guide',
+      pending: false,
+    };
+  }
+
+  const label = resolveFrenteConfrontantLabel(
+    block,
+    frontSegmentIndexes,
+    segments,
+    streetGuides,
+  );
+  const pending = label === PENDING_CONFRONTANT_LABEL;
+  let source: ConfrontantSource = pending ? 'undefined' : 'auto';
+  if (!pending && /rua|avenida|estrada|vicinal|central/i.test(label)) {
+    source = 'street_guide';
+  }
+  return { label, source, pending };
+}
 
 function diffAngleDeg(a1: number, a2: number): number {
   let diff = Math.abs(a1 - a2) % 360;
@@ -275,7 +346,14 @@ function bestConfrontantForSide(
   project?: Record<string, unknown> | null,
   side?: 'ladoEsquerdo' | 'ladoDireito',
   streetGuides: Record<string, unknown>[] = [],
-): string {
+): SideConfrontantResult {
+  const manual = manualConfrontantForSide(
+    targetBlock,
+    segmentIndexes,
+    segments,
+  );
+  if (manual) return manual;
+
   let bestLabel = '—';
   let bestScore = -Infinity;
 
@@ -288,7 +366,13 @@ function bestConfrontantForSide(
         targetBlock,
         streetGuides as StreetGuideConfrontInput[],
       );
-      if (fromStreet?.label) return fromStreet.label;
+      if (fromStreet?.label) {
+        return {
+          label: normalizeConfrontantLabel(fromStreet.label),
+          source: 'street_guide',
+          pending: false,
+        };
+      }
     }
   }
 
@@ -327,13 +411,39 @@ function bestConfrontantForSide(
       allPolysUtm,
       project,
     );
-    if (seq) return seq;
+    if (seq) {
+      return {
+        label: normalizeConfrontantLabel(seq),
+        source: 'neighbor',
+        pending: false,
+      };
+    }
   }
 
-  return bestLabel;
+  if (bestLabel !== '—' && /^lote\s/i.test(bestLabel)) {
+    return {
+      label: bestLabel,
+      source: 'neighbor',
+      pending: false,
+    };
+  }
+
+  if (bestLabel !== '—') {
+    return {
+      label: normalizeConfrontantLabel(bestLabel),
+      source: 'auto',
+      pending: false,
+    };
+  }
+
+  return {
+    label: PENDING_CONFRONTANT_LABEL,
+    source: 'undefined',
+    pending: true,
+  };
 }
 
-function resolveSideSegmentIndexes(
+export function resolveSideSegmentIndexes(
   block: Record<string, unknown>,
   utmRing: [number, number][],
   allPolysUtm: number[][][],
@@ -431,17 +541,24 @@ export type BuildSideConfrontantsResult = LotSheetSideConfrontants & {
   confidence: number;
 };
 
+export type BuildSideConfrontantsWithSourcesResult = BuildSideConfrontantsResult & {
+  sources: Record<SideRole, ConfrontantSource>;
+  pending: Record<SideRole, boolean>;
+  sides: SideSegmentIndexes;
+  segments: Segment[];
+};
+
 /**
  * Confrontantes por segmento UTM oficial (segments_json).
  */
-export function buildSideConfrontantsFromSegments(
+export function buildSideConfrontantsWithSources(
   block: Record<string, unknown>,
   targetId: string,
   targetRing: [number, number][],
   blocks: Record<string, unknown>[],
   streetGuides: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
-): BuildSideConfrontantsResult {
+): BuildSideConfrontantsWithSourcesResult {
   const official = getOfficialConfrontationRing(block, project);
   const utmRing = official.ok ? official.ring : targetRing;
   const allPolysUtm = buildAllPolysUtm(blocks, project);
@@ -453,17 +570,43 @@ export function buildSideConfrontantsFromSegments(
   );
 
   if (!segments.length) {
+    const frente = resolveFrenteWithSource(block, [], [], streetGuides);
+    const empty: SideConfrontantResult = {
+      label: PENDING_CONFRONTANT_LABEL,
+      source: 'undefined',
+      pending: true,
+    };
     return {
-      frente: resolveFrenteConfrontantLabel(block, [], [], streetGuides),
-      fundo: '—',
-      ladoDireito: '—',
-      ladoEsquerdo: '—',
+      frente: frente.label,
+      fundo: empty.label,
+      ladoDireito: empty.label,
+      ladoEsquerdo: empty.label,
       ringSource: official.source,
       confidence: 0,
+      sources: {
+        frente: frente.source,
+        fundo: 'undefined',
+        ladoDireito: 'undefined',
+        ladoEsquerdo: 'undefined',
+      },
+      pending: {
+        frente: frente.pending,
+        fundo: true,
+        ladoDireito: true,
+        ladoEsquerdo: true,
+      },
+      sides,
+      segments,
     };
   }
 
-  const fundo = bestConfrontantForSide(
+  const frenteR = resolveFrenteWithSource(
+    block,
+    sides.frente,
+    segments,
+    streetGuides as StreetGuideConfrontInput[],
+  );
+  const fundoR = bestConfrontantForSide(
     sides.fundo,
     segments,
     blocks,
@@ -474,7 +617,7 @@ export function buildSideConfrontantsFromSegments(
     undefined,
     streetGuides,
   );
-  const ladoDireito = bestConfrontantForSide(
+  const dirR = bestConfrontantForSide(
     sides.ladoDireito,
     segments,
     blocks,
@@ -485,7 +628,7 @@ export function buildSideConfrontantsFromSegments(
     'ladoDireito',
     streetGuides,
   );
-  const ladoEsquerdo = bestConfrontantForSide(
+  const esqR = bestConfrontantForSide(
     sides.ladoEsquerdo,
     segments,
     blocks,
@@ -497,21 +640,56 @@ export function buildSideConfrontantsFromSegments(
     streetGuides,
   );
 
-  const matched = [fundo, ladoDireito, ladoEsquerdo].filter((l) => l !== '—').length;
+  const matched = [fundoR, dirR, esqR].filter((r) => !r.pending).length;
   const confidence = matched / 3;
 
   return {
-    frente: resolveFrenteConfrontantLabel(
-      block,
-      sides.frente,
-      segments,
-      streetGuides as StreetGuideConfrontInput[],
-    ),
-    fundo,
-    ladoDireito,
-    ladoEsquerdo,
+    frente: frenteR.label,
+    fundo: fundoR.label,
+    ladoDireito: dirR.label,
+    ladoEsquerdo: esqR.label,
     ringSource: official.source,
     confidence,
+    sources: {
+      frente: frenteR.source,
+      fundo: fundoR.source,
+      ladoDireito: dirR.source,
+      ladoEsquerdo: esqR.source,
+    },
+    pending: {
+      frente: frenteR.pending,
+      fundo: fundoR.pending,
+      ladoDireito: dirR.pending,
+      ladoEsquerdo: esqR.pending,
+    },
+    sides,
+    segments,
+  };
+}
+
+export function buildSideConfrontantsFromSegments(
+  block: Record<string, unknown>,
+  targetId: string,
+  targetRing: [number, number][],
+  blocks: Record<string, unknown>[],
+  streetGuides: Record<string, unknown>[],
+  project?: Record<string, unknown> | null,
+): BuildSideConfrontantsResult {
+  const full = buildSideConfrontantsWithSources(
+    block,
+    targetId,
+    targetRing,
+    blocks,
+    streetGuides,
+    project,
+  );
+  return {
+    frente: full.frente,
+    fundo: full.fundo,
+    ladoDireito: full.ladoDireito,
+    ladoEsquerdo: full.ladoEsquerdo,
+    ringSource: full.ringSource,
+    confidence: full.confidence,
   };
 }
 

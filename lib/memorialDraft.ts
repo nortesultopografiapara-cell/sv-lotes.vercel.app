@@ -3,6 +3,7 @@
  * Usa segmentos oficiais, confrontações e responsável técnico.
  */
 
+import { buildLotConfrontationAudit } from "@/lib/assistedConfrontation";
 import { getOfficialLotSegmentTable } from "@/lib/officialLotMeasurements";
 import { resolveLotSideConfrontants } from "@/lib/lotConfrontations";
 import {
@@ -23,8 +24,19 @@ export function buildMemorialDraftPlainText(input: MemorialDraftInput): string {
   const block = input.block;
   const blockId = String(block.id || "");
   const table = getOfficialLotSegmentTable(block);
-  const confrontants =
+  const audit =
     blockId && input.projectBlocks?.length
+      ? buildLotConfrontationAudit(
+          block,
+          blockId,
+          input.projectBlocks,
+          input.streetGuides || [],
+        )
+      : null;
+
+  const confrontants =
+    audit?.confrontants ??
+    (blockId && input.projectBlocks?.length
       ? resolveLotSideConfrontants(
           block,
           blockId,
@@ -38,9 +50,12 @@ export function buildMemorialDraftPlainText(input: MemorialDraftInput): string {
           fundo: "lote vizinho",
           ladoDireito: "lote vizinho",
           ladoEsquerdo: "lote vizinho",
-        };
+        });
 
   const startVertex = table.rows[0]?.de || "M-01";
+  const pendingNote = audit?.hasPending
+    ? "\n\nATENÇÃO: Este lote possui confrontações pendentes (A DEFINIR)."
+    : "";
   const lines: string[] = [
     `Inicia-se no vértice ${startVertex}...`,
     `Segue confrontando pela frente com ${confrontants.frente || "via de acesso"}...`,
@@ -53,5 +68,5 @@ export function buildMemorialDraftPlainText(input: MemorialDraftInput): string {
     input.technicalResponsible || null,
   );
   const techHtml = formatMemorialTechnicalBlock(tech);
-  return `${lines.join("\n")}\n\n${techHtml.replace(/<[^>]+>/g, " ").trim()}`;
+  return `${lines.join("\n")}${pendingNote}\n\n${techHtml.replace(/<[^>]+>/g, " ").trim()}`;
 }

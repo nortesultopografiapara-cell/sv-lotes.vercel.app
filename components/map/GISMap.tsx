@@ -76,6 +76,18 @@ import {
   resolveLotFrontStreetDisplay,
   streetFieldsFromGuideMatch,
 } from "@/lib/resolveFrontStreetGuide";
+import {
+  applyManualConfrontantToBlock,
+  buildLotConfrontationAudit,
+  findPropagationTargets,
+  officialSegmentIndexesForSide,
+  type LotConfrontationAudit,
+  type PropagationScope,
+} from "@/lib/assistedConfrontation";
+import type { ConfrontantPresetType } from "@/lib/confrontantTypes";
+import type { SideRole } from "@/lib/lotSegmentConfrontation";
+import { persistBlockSegmentsJson } from "@/lib/segmentConfrontantPersist";
+import { InformConfrontantModal } from "@/components/map/InformConfrontantModal";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -555,20 +567,47 @@ function logGeometryRender(
 }
 
 /** Arestas explícitas do polígono — só quando SHOW_BOUNDARY_LINES=true. */
+function edgeColorForConfrontStatus(
+  status: 'resolved' | 'pending' | 'manual' | 'conflict' | undefined,
+): string {
+  switch (status) {
+    case 'pending':
+      return '#eab308';
+    case 'manual':
+      return '#3b82f6';
+    case 'conflict':
+      return '#ef4444';
+    case 'resolved':
+      return '#22c55e';
+    default:
+      return '#94a3b8';
+  }
+}
+
 function LotBoundaryEdgePolylines({
   positions,
   lot,
   strokeColor,
   frontCorrectActive,
   onEdgePick,
+  assistedConfrontationActive,
+  onConfrontEdgePick,
+  segmentEdgeByIndex,
 }: {
   positions: LatLngPair[];
   lot: { id?: string; number?: string; geometryType?: string };
   strokeColor: string;
   frontCorrectActive?: boolean;
   onEdgePick?: (segmentIndex: number) => void;
+  assistedConfrontationActive?: boolean;
+  onConfrontEdgePick?: (segmentIndex: number) => void;
+  segmentEdgeByIndex?: Map<number, { status: 'resolved' | 'pending' | 'manual' | 'conflict' }>;
 }) {
-  if (!SHOW_BOUNDARY_LINES || positions.length < 2) return null;
+  const showEdges =
+    SHOW_BOUNDARY_LINES ||
+    frontCorrectActive ||
+    assistedConfrontationActive;
+  if (!showEdges || positions.length < 2) return null;
 
   const lines: React.ReactNode[] = [];
   const isRing = positions.length >= 3;
@@ -579,25 +618,42 @@ function LotBoundaryEdgePolylines({
     const b = positions[isRing ? (i + 1) % positions.length : i + 1];
     const seg: LatLngPair[] = [a, b];
     logGeometryRender("Polyline", { ...lot, geometryType: "boundary-edge" }, seg.length);
+    const edgeMeta = segmentEdgeByIndex?.get(i);
+    const pickConfront = Boolean(
+      assistedConfrontationActive && onConfrontEdgePick,
+    );
+    const pickFront = Boolean(frontCorrectActive && onEdgePick);
+    const color = pickConfront
+      ? edgeColorForConfrontStatus(edgeMeta?.status)
+      : frontCorrectActive
+        ? "#f59e0b"
+        : strokeColor;
     lines.push(
       <Polyline
         key={`${lot.id ?? lot.number}-edge-${i}`}
         positions={seg}
-        interactive={Boolean(frontCorrectActive && onEdgePick)}
+        interactive={pickConfront || pickFront}
         pathOptions={{
-          color: frontCorrectActive ? "#f59e0b" : strokeColor,
-          weight: frontCorrectActive ? 4 : 1,
-          opacity: frontCorrectActive ? 1 : 0.9,
+          color,
+          weight: pickConfront || frontCorrectActive ? 5 : 1,
+          opacity: pickConfront || frontCorrectActive ? 1 : 0.9,
         }}
         eventHandlers={
-          frontCorrectActive && onEdgePick
+          pickConfront
             ? {
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
-                  onEdgePick(i);
+                  onConfrontEdgePick!(i);
                 },
               }
-            : undefined
+            : pickFront
+              ? {
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    onEdgePick!(i);
+                  },
+                }
+              : undefined
         }
       />,
     );
@@ -1452,6 +1508,10 @@ function LotPopupContent({
   onCancelCorrectFront,
   onPickFrontSegment,
   frontCorrectSaving,
+  confrontationAudit,
+  assistedConfrontationMode,
+  onEditConfrontationSide,
+  allBlocksForConfront = [],
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
@@ -1471,6 +1531,10 @@ function LotPopupContent({
   onCancelCorrectFront?: () => void;
   onPickFrontSegment?: (lot: any, segmentIndex: number) => void;
   frontCorrectSaving?: boolean;
+  confrontationAudit?: LotConfrontationAudit | null;
+  assistedConfrontationMode?: boolean;
+  onEditConfrontationSide?: (lot: any, side: SideRole) => void;
+  allBlocksForConfront?: Record<string, unknown>[];
 }) {
   console.log("GIS_POPUP_RENDER", {
     lotId: lot?.id,
@@ -1620,6 +1684,56 @@ function LotPopupContent({
                 <span className="text-emerald-800 text-[10px] font-bold text-right max-w-[160px] leading-tight">
                   {frontStreetLabel}
                 </span>
+              </div>
+            )}
+            {(confrontationAudit || assistedConfrontationMode) && (
+              <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
+                <span className="text-gray-600 text-[10px] font-semibold block mb-1">
+                  Confrontações
+                </span>
+                <div className="space-y-1">
+                  {(
+                    [
+                      ['frente', 'Frente'],
+                      ['fundo', 'Fundo'],
+                      ['ladoDireito', 'Lado Dir.'],
+                      ['ladoEsquerdo', 'Lado Esq.'],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const entry = confrontationAudit?.sides[key];
+                    const text =
+                      entry?.label ??
+                      String(
+                        (lot as Record<string, unknown>)[key] ?? 'A DEFINIR',
+                      );
+                    const origin = entry?.sourceLabel ?? '—';
+                    return (
+                      <div
+                        key={key}
+                        className="flex justify-between items-center gap-1 text-[10px]"
+                      >
+                        <span className="text-gray-500 shrink-0">{label}:</span>
+                        <span className="text-gray-900 font-medium text-right leading-tight">
+                          {text}{' '}
+                          <span className="text-gray-400 font-normal">
+                            ({origin})
+                          </span>
+                        </span>
+                        {onEditConfrontationSide && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onEditConfrontationSide(lot, key as SideRole)
+                            }
+                            className="shrink-0 text-[9px] font-bold text-blue-600 hover:underline"
+                          >
+                            Editar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
             <div className="flex justify-between items-center">
@@ -2173,6 +2287,8 @@ export default function GISMap({
   onLotSheetLotPick,
   focusBlockName = null,
   focusBlockKey = 0,
+  assistedConfrontationMode = false,
+  insertConfrontantTool = false,
 }: {
   projectId?: string;
   activeLayer?: "streets" | "satellite" | "dark";
@@ -2197,6 +2313,9 @@ export default function GISMap({
     number?: string;
     block?: string;
   }) => void;
+  /** Modo revisão pós confrontação automática (GIS-005). */
+  assistedConfrontationMode?: boolean;
+  insertConfrontantTool?: boolean;
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -2212,6 +2331,11 @@ export default function GISMap({
     null,
   );
   const [frontCorrectSaving, setFrontCorrectSaving] = useState(false);
+  const [confrontEdit, setConfrontEdit] = useState<{
+    lot: any;
+    side: SideRole;
+    segmentIndexes: number[];
+  } | null>(null);
 
   const displayLots = useMemo(
     () =>
@@ -2230,6 +2354,50 @@ export default function GISMap({
       }),
     [lots, streetGuides],
   );
+
+  const blocksForConfront = useMemo(
+    () =>
+      displayLots.map((l) => ({
+        ...l,
+        id: l.id,
+        number: l.number,
+        block_name: l.block,
+        segments_json: l.segments_json,
+        front_segment_index: l.front_segment_index,
+        front_street_name: l.frontStreetName,
+      })) as Record<string, unknown>[],
+    [displayLots],
+  );
+
+  const confrontationAudits = useMemo(() => {
+    const map = new Map<string, LotConfrontationAudit>();
+    if (!assistedConfrontationMode && !insertConfrontantTool) return map;
+    for (const lot of displayLots) {
+      if (!lot?.id) continue;
+      map.set(
+        lot.id,
+        buildLotConfrontationAudit(
+          {
+            ...lot,
+            block_name: lot.block,
+            segments_json: lot.segments_json,
+            front_segment_index: lot.front_segment_index,
+            front_street_name: lot.frontStreetName,
+          },
+          lot.id,
+          blocksForConfront,
+          streetGuides,
+        ),
+      );
+    }
+    return map;
+  }, [
+    displayLots,
+    blocksForConfront,
+    streetGuides,
+    assistedConfrontationMode,
+    insertConfrontantTool,
+  ]);
 
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
     if (!lot?.id) return;
@@ -2309,6 +2477,92 @@ export default function GISMap({
       alert(`Erro ao salvar frente: ${msg}`);
     } finally {
       setFrontCorrectSaving(false);
+    }
+  };
+
+  const openConfrontationEditor = (
+    lot: any,
+    side: SideRole,
+    segmentIndexes?: number[],
+  ) => {
+    const indexes =
+      segmentIndexes?.length
+        ? segmentIndexes
+        : officialSegmentIndexesForSide(
+            {
+              ...lot,
+              block_name: lot.block,
+              segments_json: lot.segments_json,
+              front_segment_index: lot.front_segment_index,
+            },
+            blocksForConfront,
+            side,
+          );
+    setConfrontEdit({ lot, side, segmentIndexes: indexes });
+  };
+
+  const handleConfrontEdgePick = (lot: any, edgeIndex: number) => {
+    if (!assistedConfrontationMode && !insertConfrontantTool) return;
+    let side: SideRole = "fundo";
+    const block = {
+      ...lot,
+      block_name: lot.block,
+      segments_json: lot.segments_json,
+      front_segment_index: lot.front_segment_index,
+    };
+    for (const role of [
+      "frente",
+      "fundo",
+      "ladoDireito",
+      "ladoEsquerdo",
+    ] as SideRole[]) {
+      const idxs = officialSegmentIndexesForSide(
+        block,
+        blocksForConfront,
+        role,
+      );
+      if (idxs.includes(edgeIndex)) {
+        side = role;
+        break;
+      }
+    }
+    openConfrontationEditor(lot, side, [edgeIndex]);
+  };
+
+  const handleConfirmConfrontant = async (
+    confrontant: string,
+    confrontantType: ConfrontantPresetType | string | null,
+    scope: PropagationScope,
+    _targetBlockIds: string[],
+  ) => {
+    if (!confrontEdit?.lot?.id || !projectId) return;
+    const sourceBlock = {
+      ...confrontEdit.lot,
+      block_name: confrontEdit.lot.block,
+      segments_json: confrontEdit.lot.segments_json,
+      front_segment_index: confrontEdit.lot.front_segment_index,
+    };
+    const targets = findPropagationTargets(
+      blocksForConfront,
+      sourceBlock,
+      confrontEdit.lot.id,
+      confrontEdit.side,
+      scope,
+    );
+    for (const t of targets) {
+      const updated = applyManualConfrontantToBlock(
+        t.block,
+        t.segmentIndexes,
+        confrontant,
+        confrontantType,
+      );
+      const rows = updated.segments_json as Record<string, unknown>[];
+      await persistBlockSegmentsJson(supabase, t.blockId, rows);
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === t.blockId ? { ...l, segments_json: rows } : l,
+        ),
+      );
     }
   };
 
@@ -3625,6 +3879,16 @@ export default function GISMap({
                         onCancelCorrectFront={() => setFrontCorrectLotId(null)}
                         onPickFrontSegment={handlePickFrontSegment}
                         frontCorrectSaving={frontCorrectSaving}
+                        confrontationAudit={
+                          confrontationAudits.get(lot.id) ?? null
+                        }
+                        assistedConfrontationMode={
+                          assistedConfrontationMode || insertConfrontantTool
+                        }
+                        onEditConfrontationSide={(l, side) =>
+                          openConfrontationEditor(l, side)
+                        }
+                        allBlocksForConfront={blocksForConfront}
                       />
                     </Popup>
                   )}
@@ -3636,6 +3900,23 @@ export default function GISMap({
                   frontCorrectActive={frontCorrectLotId === lot.id}
                   onEdgePick={(edgeIndex) =>
                     void handlePickFrontSegment(lot, edgeIndex)
+                  }
+                  assistedConfrontationActive={
+                    (assistedConfrontationMode || insertConfrontantTool) &&
+                    frontCorrectLotId !== lot.id
+                  }
+                  onConfrontEdgePick={(edgeIndex) =>
+                    handleConfrontEdgePick(lot, edgeIndex)
+                  }
+                  segmentEdgeByIndex={
+                    new Map(
+                      (confrontationAudits.get(lot.id)?.segmentEdges ?? []).map(
+                        (e) => [
+                          e.ringEdgeIndex,
+                          { status: e.status },
+                        ],
+                      ),
+                    )
                   }
                 />
               </Fragment>
@@ -3843,6 +4124,56 @@ export default function GISMap({
             escolha o segmento no popup do lote.
           </p>
         </div>
+      )}
+
+      {(assistedConfrontationMode || insertConfrontantTool) && (
+        <div className="absolute bottom-4 left-4 z-[500] pointer-events-none max-w-xs">
+          <div className="bg-[#11141a]/95 border border-[var(--color-border)] rounded-lg px-3 py-2 text-[10px] text-gray-200 space-y-1 shadow-lg">
+            <p className="font-bold text-white">Confrontação assistida</p>
+            <p>
+              <span className="inline-block w-2 h-2 rounded-full bg-[#22c55e] mr-1" />
+              Verde = automático
+            </p>
+            <p>
+              <span className="inline-block w-2 h-2 rounded-full bg-[#eab308] mr-1" />
+              Amarelo = A DEFINIR (clique no lado)
+            </p>
+            <p>
+              <span className="inline-block w-2 h-2 rounded-full bg-[#3b82f6] mr-1" />
+              Azul = manual confirmado
+            </p>
+            <p>
+              <span className="inline-block w-2 h-2 rounded-full bg-[#ef4444] mr-1" />
+              Vermelho = baixa confiança
+            </p>
+          </div>
+        </div>
+      )}
+
+      {insertConfrontantTool && !frontCorrectLotId && (
+        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
+          <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
+            Inserir confrontante: clique no lado do lote (arestas coloridas) ou use
+            Editar no popup.
+          </p>
+        </div>
+      )}
+
+      {confrontEdit && projectId && (
+        <InformConfrontantModal
+          projectId={projectId}
+          blockId={confrontEdit.lot.id}
+          block={{
+            ...confrontEdit.lot,
+            block_name: confrontEdit.lot.block,
+            segments_json: confrontEdit.lot.segments_json,
+          }}
+          allBlocks={blocksForConfront}
+          side={confrontEdit.side}
+          segmentIndexes={confrontEdit.segmentIndexes}
+          onClose={() => setConfrontEdit(null)}
+          onConfirm={handleConfirmConfrontant}
+        />
       )}
 
       {measureActive && measureStr && (
