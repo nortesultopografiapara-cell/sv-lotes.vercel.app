@@ -1841,7 +1841,7 @@ export default function ContractsPage() {
                         type="button"
                         onClick={openRegenerateModal}
                         disabled={regeneratingContract}
-                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 sv-brand-btn-primary rounded-lg transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
                       >
                         <RefreshCw
                           className={`w-4 h-4 ${regeneratingContract ? "animate-spin" : ""}`}
@@ -2670,7 +2670,7 @@ export default function ContractsPage() {
                   type="button"
                   onClick={openRegenerateModal}
                   disabled={regeneratingContract}
-                  className="contracts-mobile-action-btn contracts-mobile-action-btn--amber"
+                  className="contracts-mobile-action-btn sv-brand-muted-bg sv-brand-text sv-brand-muted-border"
                 >
                   <RefreshCw
                     className={regeneratingContract ? "animate-spin" : ""}
@@ -2864,7 +2864,7 @@ function ActionBtn({
     warning:
       "border-[var(--color-warning)]/30 text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10",
     amber:
-      "border-amber-500/40 text-amber-300 hover:bg-amber-500/15 bg-amber-600/10",
+      "sv-brand-muted-border text-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_15%,transparent)] sv-brand-muted-bg",
     danger:
       "border-[var(--color-danger)]/30 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10",
   };

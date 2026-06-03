@@ -246,8 +246,8 @@
   }
 
   .contracts-mobile-action-btn--primary {
-    border-color: rgba(41, 128, 185, 0.45);
-    color: var(--color-primary, #2980b9);
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+    color: var(--brand-primary);
   }
 
   .contracts-mobile-action-btn--success {
@@ -255,10 +255,10 @@
     color: #4ade80;
   }
 
-  .contracts-mobile-action-btn--amber {
-    border-color: rgba(245, 158, 11, 0.45);
-    color: #fbbf24;
-    background: rgba(217, 119, 6, 0.12);
+  .contracts-mobile-action-btn--brand {
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+    color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
   }
 
   .contracts-mobile-action-btn--danger {

@@ -14,8 +14,8 @@
   --color-border: var(--border-color);
   --color-border-hover: #334155;
 
-  --color-primary: var(--color-primary-brand);
-  --color-primary-hover: var(--color-primary-hover-brand);
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-secondary);
 
   --color-success: var(--success);
   --color-warning: var(--warning);

@@ -2951,7 +2951,7 @@ export default function FinancePage() {
                          </td>
                          <td className="text-center">
                             {item.status === 'estornado' ? (
-                              <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-orange-500/30 bg-orange-500/10 text-orange-400">Estornado</span>
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider sv-brand-badge">Estornado</span>
                             ) : (
                               <span className="inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Ativo</span>
                             )}

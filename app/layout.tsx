@@ -52,6 +52,7 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${inter.variable} ${jetbrainsMono.variable}`}
       data-theme="dark"
+      data-brand="orange"
       suppressHydrationWarning
     >
       <head>

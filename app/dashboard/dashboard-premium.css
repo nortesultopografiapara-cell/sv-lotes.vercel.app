@@ -4,7 +4,7 @@
   --dash-bg: var(--bg-main);
   --dash-surface: var(--bg-card);
   --dash-border: var(--border-color);
-  --dash-accent: var(--color-info);
+  --dash-accent: var(--brand-primary);
   color: var(--text-primary);
   width: 100%;
   max-width: 100%;

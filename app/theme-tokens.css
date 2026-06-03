@@ -27,8 +27,6 @@
   --danger: #ef4444;
   --info: #3b82f6;
 
-  --color-primary-brand: #f97316;
-  --color-primary-hover-brand: #ea580c;
   --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.35);
 
   /* Aliases legados (Tailwind @theme + componentes existentes) */
@@ -38,8 +36,8 @@
   --color-surface-bright: var(--bg-elevated);
   --color-border: var(--border-color);
   --color-border-hover: #334155;
-  --color-primary: var(--color-primary-brand);
-  --color-primary-hover: var(--color-primary-hover-brand);
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-secondary);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -72,8 +70,6 @@
   --danger: #dc2626;
   --info: #2563eb;
 
-  --color-primary-brand: #2563eb;
-  --color-primary-hover-brand: #1d4ed8;
   --shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
 
   --color-background: var(--bg-main);
@@ -82,8 +78,8 @@
   --color-surface-bright: var(--bg-elevated);
   --color-border: var(--border-color);
   --color-border-hover: #cbd5e1;
-  --color-primary: var(--color-primary-brand);
-  --color-primary-hover: var(--color-primary-hover-brand);
+  --color-primary: var(--brand-primary);
+  --color-primary-hover: var(--brand-secondary);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -189,4 +185,79 @@
 
 [data-theme='light'] .finance-premium .finance-kpi-value {
   color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------ */
+/* Branding institucional — data-brand (independente de dark/light)   */
+/* ------------------------------------------------------------------ */
+
+[data-brand='orange'] {
+  --brand-primary: #f97316;
+  --brand-secondary: #ea580c;
+  --brand-light: #fed7aa;
+}
+
+[data-brand='blue'] {
+  --brand-primary: #2563eb;
+  --brand-secondary: #1d4ed8;
+  --brand-light: #bfdbfe;
+}
+
+[data-brand='green'] {
+  --brand-primary: #16a34a;
+  --brand-secondary: #15803d;
+  --brand-light: #bbf7d0;
+}
+
+[data-brand='purple'] {
+  --brand-primary: #7c3aed;
+  --brand-secondary: #6d28d9;
+  --brand-light: #ddd6fe;
+}
+
+/* Fallback antes do script de init */
+:root {
+  --brand-primary: #f97316;
+  --brand-secondary: #ea580c;
+  --brand-light: #fed7aa;
+}
+
+/* Utilitários de marca */
+.sv-brand-text {
+  color: var(--brand-primary);
+}
+
+.sv-brand-bg {
+  background-color: var(--brand-primary);
+}
+
+.sv-brand-border {
+  border-color: var(--brand-primary);
+}
+
+.sv-brand-ring {
+  --tw-ring-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
+
+.sv-brand-muted-bg {
+  background-color: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+}
+
+.sv-brand-muted-border {
+  border-color: color-mix(in srgb, var(--brand-primary) 28%, transparent);
+}
+
+.sv-brand-btn-primary {
+  background-color: var(--brand-primary);
+  color: #fff;
+}
+
+.sv-brand-btn-primary:hover {
+  background-color: var(--brand-secondary);
+}
+
+.sv-brand-badge {
+  color: var(--brand-primary);
+  background-color: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 32%, transparent);
 }

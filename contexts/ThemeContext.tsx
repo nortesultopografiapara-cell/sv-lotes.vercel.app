@@ -9,14 +9,26 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import {
+  BRAND_STORAGE_KEY,
+  DEFAULT_BRAND,
+  getStoredBrand,
+  type BrandTheme,
+} from '@/lib/brandTheme';
+import {
+  applyAppearanceToDocument,
+  type ThemeMode,
+} from '@/lib/applyAppearance';
 import { THEME_STORAGE_KEY } from '@/lib/themeInitScript';
 
-export type ThemeMode = 'dark' | 'light';
+export type { ThemeMode } from '@/lib/applyAppearance';
 
 type ThemeContextValue = {
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
+  brandTheme: BrandTheme;
+  setBrandTheme: (brand: BrandTheme) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -31,55 +43,70 @@ export function getStoredTheme(): ThemeMode {
   }
 }
 
+/** @deprecated Use applyAppearanceToDocument */
 export function applyThemeToDocument(theme: ThemeMode) {
-  if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', theme);
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    meta.setAttribute(
-      'theme-color',
-      theme === 'light' ? '#2563EB' : '#0B1121',
-    );
+  applyAppearanceToDocument(theme, getStoredBrand());
+}
+
+function persistAndApply(theme: ThemeMode, brand: BrandTheme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+    localStorage.setItem(BRAND_STORAGE_KEY, brand);
+  } catch {
+    /* ignore */
   }
+  applyAppearanceToDocument(theme, brand);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeMode>(() =>
     typeof window !== 'undefined' ? getStoredTheme() : 'dark',
   );
+  const [brandTheme, setBrandThemeState] = useState<BrandTheme>(() =>
+    typeof window !== 'undefined' ? getStoredBrand() : DEFAULT_BRAND,
+  );
 
   useEffect(() => {
-    const stored = getStoredTheme();
-    setThemeState(stored);
-    applyThemeToDocument(stored);
+    const storedTheme = getStoredTheme();
+    const storedBrand = getStoredBrand();
+    setThemeState(storedTheme);
+    setBrandThemeState(storedBrand);
+    applyAppearanceToDocument(storedTheme, storedBrand);
   }, []);
 
-  const setTheme = useCallback((next: ThemeMode) => {
-    setThemeState(next);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      /* ignore quota / private mode */
-    }
-    applyThemeToDocument(next);
-  }, []);
+  const setTheme = useCallback(
+    (next: ThemeMode) => {
+      setThemeState(next);
+      persistAndApply(next, brandTheme);
+    },
+    [brandTheme],
+  );
+
+  const setBrandTheme = useCallback(
+    (next: BrandTheme) => {
+      setBrandThemeState(next);
+      persistAndApply(theme, next);
+    },
+    [theme],
+  );
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
       const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
-      try {
-        localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch {
-        /* ignore */
-      }
-      applyThemeToDocument(next);
+      persistAndApply(next, brandTheme);
       return next;
     });
-  }, []);
+  }, [brandTheme]);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toggleTheme }),
-    [theme, setTheme, toggleTheme],
+    () => ({
+      theme,
+      setTheme,
+      toggleTheme,
+      brandTheme,
+      setBrandTheme,
+    }),
+    [theme, setTheme, toggleTheme, brandTheme, setBrandTheme],
   );
 
   return (

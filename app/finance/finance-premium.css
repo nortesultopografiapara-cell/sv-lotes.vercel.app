@@ -4,8 +4,8 @@
   --fin-bg: var(--bg-main);
   --fin-surface: var(--bg-card);
   --fin-border: var(--border-color);
-  --fin-accent: var(--color-info);
-  --fin-glow: color-mix(in srgb, var(--color-info) 18%, transparent);
+  --fin-accent: var(--brand-primary);
+  --fin-glow: color-mix(in srgb, var(--brand-primary) 18%, transparent);
   color: var(--text-primary);
   box-sizing: border-box;
   width: 100%;
