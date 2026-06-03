@@ -8,6 +8,10 @@ import {
   resolveFrontSegmentFromIndex,
   type LatLngPair,
 } from '../lib/lotLabelPosition';
+import {
+  formatSupabaseError,
+  isUnknownColumnError,
+} from '../lib/blockFrontPersist';
 import { extractSegments } from '../utils/calculateLotDimensions';
 
 function assert(cond: boolean, msg: string) {
@@ -84,4 +88,24 @@ function testVisibilityIndependent() {
 testFrontIndexZero();
 testLots12_13_19_20_34_indexMapping();
 testVisibilityIndependent();
+
+function testSupabaseErrorFormat() {
+  const msg = formatSupabaseError({
+    message: 'column blocks.front_source does not exist',
+    code: 'PGRST204',
+    details: 'Check schema',
+  });
+  assert(msg.includes('PGRST204'), 'deve incluir code');
+  assert(msg.includes('front_source'), 'deve incluir message');
+  assert(
+    isUnknownColumnError(
+      { message: 'Could not find the front_source column', code: 'PGRST204' },
+      'front_source',
+    ),
+    'detecta coluna ausente',
+  );
+  console.log('OK testSupabaseErrorFormat');
+}
+
+testSupabaseErrorFormat();
 console.log('mandatory-lot-label-front-tests: all passed');

@@ -1817,7 +1817,6 @@ export function buildBlockPatchFromOfficialMeasures(
   return {
     ...officialMeasuresToBlockFields(measures, frontSegmentIndex),
     front_segment_index: frontSegmentIndex,
-    updated_at: new Date().toISOString(),
   };
 }
 

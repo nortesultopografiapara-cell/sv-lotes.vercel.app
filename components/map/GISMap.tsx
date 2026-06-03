@@ -53,7 +53,6 @@ import {
   type ChanfreInfo,
 } from "@/lib/lotChanfre";
 import {
-  buildBlockPatchFromOfficialMeasures,
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
 } from "@/lib/officialLotMeasurements";
@@ -67,6 +66,11 @@ import {
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
 import { computeOfficialLotLabelPosition } from "@/lib/lotLabelPosition";
+import {
+  formatSupabaseError,
+  logSupabaseFrontSaveFailure,
+  persistManualLotFront,
+} from "@/lib/blockFrontPersist";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -2217,15 +2221,19 @@ export default function GISMap({
         segmentIndex,
         measures,
       });
-      const patch = {
-        ...buildBlockPatchFromOfficialMeasures(measures, segmentIndex),
-        front_source: 'manual',
-      };
-      const { error } = await supabase
-        .from("blocks")
-        .update(patch)
-        .eq("id", lot.id);
-      if (error) throw error;
+      const { patch, frontSourcePersisted } = await persistManualLotFront(
+        supabase,
+        lot.id,
+        measures,
+        segmentIndex,
+      );
+      console.log("BLOCK_FRONT_SAVE_OK", {
+        blockId: lot.id,
+        lotNumber: lot.number,
+        frontSegmentIndex: segmentIndex,
+        frontSourcePersisted,
+        patch,
+      });
       setLots((prev) =>
         prev.map((l) =>
           l.id === lot.id
@@ -2236,16 +2244,20 @@ export default function GISMap({
                 "Lado Dir.": measures.ladoDireito,
                 "Lado Esq.": measures.ladoEsquerdo,
                 front_segment_index: segmentIndex,
+                front_source: frontSourcePersisted ? "manual" : l.front_source,
               }
             : l,
         ),
       );
       setFrontCorrectLotId(null);
-      alert(
-        `Frente do lote ${lot.number} definida no segmento ${segmentIndex + 1}.`,
-      );
+      alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro desconhecido";
+      logSupabaseFrontSaveFailure('GISMap.handlePickFrontSegment', err, {
+        blockId: lot.id,
+        frontSegmentIndex: segmentIndex,
+        lotNumber: lot.number,
+      });
+      const msg = formatSupabaseError(err);
       alert(`Erro ao salvar frente: ${msg}`);
     } finally {
       setFrontCorrectSaving(false);
