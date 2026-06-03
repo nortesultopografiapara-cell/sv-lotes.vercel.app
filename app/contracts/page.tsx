@@ -268,6 +268,51 @@ function buildLocationDisplay(blockName: string, lotNumber: string): string {
   return "Localização não informada";
 }
 
+const DOCK_EMPTY = "Não informado";
+
+/** Resumo compacto para o painel de ações mobile. */
+function resolveMobileDockSummary(contract: any) {
+  const contractNo =
+    displayContractNumber(contract.contract_number) || DOCK_EMPTY;
+  const clientRaw =
+    contract.customer_name ||
+    contract.customers?.name ||
+    resolveCustomerName(contract.customers, contract);
+  const projectRaw =
+    contract.project_name ||
+    contract.project_name_snapshot ||
+    contract.sales?.projects?.name ||
+    contract.blocks?.projects?.name ||
+    contract.projects?.name ||
+    "";
+  const locRaw =
+    contract.location_display ||
+    buildLocationDisplay(
+      resolveBlockQuadra(contract.blocks),
+      resolveLotNumber(contract.blocks, contract),
+    );
+  const lote =
+    locRaw && locRaw !== "Localização não informada" ? locRaw : "";
+  const val =
+    Number(contract.sale_value_display) ||
+    resolveContractSaleValue(contract, contract.sales, contract.blocks);
+  const valueFmt =
+    val > 0
+      ? new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }).format(val)
+      : "";
+
+  return {
+    contractNo,
+    client: String(clientRaw || "").trim() || DOCK_EMPTY,
+    project: String(projectRaw || "").trim() || DOCK_EMPTY,
+    lote: lote || "",
+    valueFmt: valueFmt || DOCK_EMPTY,
+  };
+}
+
 async function fetchRowsByIds(
   table: string,
   select: string,
@@ -1439,8 +1484,11 @@ export default function ContractsPage() {
     selectedContractIds.size === filteredContracts.length;
   const bulkDeleteCount = selectedContractIds.size;
 
-  const contractNumLabel = selectedContract
-    ? displayContractNumber(selectedContract.contract_number)
+  const mobileDockSummary = selectedContract
+    ? resolveMobileDockSummary(selectedContract)
+    : null;
+  const mobileDockStatusLabel = selectedContract
+    ? getStatusLabel(selectedContract.status).toUpperCase()
     : "";
 
   return (
@@ -2556,15 +2604,42 @@ export default function ContractsPage() {
       </div>
 
       {/* Mobile: ações fixas acima da bottom navigation */}
-      {selectedContract && (
+      {selectedContract && mobileDockSummary && (
         <div
           className="contracts-mobile-action-dock md:hidden"
           role="region"
           aria-label="Ações do contrato selecionado"
         >
-          <p className="contracts-mobile-action-dock-title">
-            <strong>Contrato nº {contractNumLabel}</strong>
-          </p>
+          <div className="contracts-mobile-dock-summary">
+            <div className="contracts-mobile-dock-summary-head">
+              <span className="contracts-mobile-dock-contract">
+                Contrato {mobileDockSummary.contractNo}
+              </span>
+              <span
+                className={`contracts-mobile-dock-status ${getStatusColor(selectedContract.status)}`}
+              >
+                {mobileDockStatusLabel}
+              </span>
+            </div>
+            <p className="contracts-mobile-dock-line">
+              <span className="contracts-mobile-dock-label">Cliente:</span>{" "}
+              {mobileDockSummary.client}
+            </p>
+            <p className="contracts-mobile-dock-line">
+              <span className="contracts-mobile-dock-label">Projeto:</span>{" "}
+              {mobileDockSummary.project}
+            </p>
+            {mobileDockSummary.lote ? (
+              <p className="contracts-mobile-dock-line">
+                <span className="contracts-mobile-dock-label">Lote:</span>{" "}
+                {mobileDockSummary.lote}
+              </p>
+            ) : null}
+            <p className="contracts-mobile-dock-line contracts-mobile-dock-line--valor">
+              <span className="contracts-mobile-dock-label">Valor:</span>{" "}
+              {mobileDockSummary.valueFmt}
+            </p>
+          </div>
           <div className="contracts-mobile-action-dock-scroll">
             <div className="contracts-mobile-action-dock-grid">
               <button

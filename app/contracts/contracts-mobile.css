@@ -105,7 +105,7 @@
 /* Altura da bottom navigation do app (Layout.tsx) */
 :root {
   --contracts-app-bottom-nav: 72px;
-  --contracts-mobile-dock-max-h: 220px;
+  --contracts-mobile-dock-max-h: 260px;
   --contracts-mobile-reserve: calc(
     var(--contracts-app-bottom-nav) + var(--contracts-mobile-dock-max-h) + 0.5rem
   );
@@ -132,18 +132,70 @@
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
   }
 
-  .contracts-mobile-action-dock-title {
-    margin: 0 0 0.375rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: #94a3b8;
-    line-height: 1.3;
+  .contracts-mobile-dock-summary {
     flex-shrink: 0;
+    margin-bottom: 0.375rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid #1f232b;
+    max-width: 100%;
+    min-width: 0;
   }
 
-  .contracts-mobile-action-dock-title strong {
-    color: #f1f5f9;
+  .contracts-mobile-dock-summary-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+    min-width: 0;
+  }
+
+  .contracts-mobile-dock-contract {
+    font-size: 0.6875rem;
     font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1.25;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .contracts-mobile-dock-status {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.4rem;
+    border-radius: 9999px;
+    border-width: 1px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .contracts-mobile-dock-line {
+    margin: 0;
+    font-size: 0.625rem;
+    line-height: 1.35;
+    color: #cbd5e1;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .contracts-mobile-dock-line + .contracts-mobile-dock-line {
+    margin-top: 0.125rem;
+  }
+
+  .contracts-mobile-dock-line--valor {
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+
+  .contracts-mobile-dock-label {
+    color: #64748b;
+    font-weight: 600;
   }
 
   .contracts-mobile-action-dock-scroll {
