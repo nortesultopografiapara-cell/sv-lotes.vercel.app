@@ -146,7 +146,7 @@ function PricingCard({ plan }: { plan: LandingPlan }) {
 
 export function LandingPricing() {
   return (
-    <section id="planos" className="landing-section landing-pricing-section border-t border-[var(--color-border)]/40">
+    <section id="planos" className="landing-section landing-pricing-section border-t border-[var(--color-border)]/40 scroll-mt-24">
       <div className="text-center mb-12">
         <p className="landing-badge inline-block text-[10px] font-semibold uppercase tracking-widest mb-3 px-3 py-1 rounded-full">
           Planos & Assinaturas

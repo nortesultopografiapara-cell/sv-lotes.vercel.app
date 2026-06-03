@@ -6,8 +6,8 @@ import { LandingScreenshot } from './LandingScreenshot';
 export function LandingMapDemo() {
   return (
     <section
-      id="mapa-demo"
-      className="landing-section landing-map-demo border-t border-[var(--color-border)]/40"
+      id="mapa-gis"
+      className="landing-section landing-map-demo border-t border-[var(--color-border)]/40 scroll-mt-24"
     >
       <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
         <div className="order-2 lg:order-1">

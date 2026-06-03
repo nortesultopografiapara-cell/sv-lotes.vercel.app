@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Building2,
@@ -25,7 +25,7 @@ import {
 import { LandingScreenshot } from './LandingScreenshot';
 import { LandingMapDemo } from './LandingMapDemo';
 import { LandingPricing } from './LandingPricing';
-import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
+import { LandingHeader } from './LandingHeader';
 import {
   LANDING_CONTACT,
   LANDING_SERVICES,
@@ -147,26 +147,17 @@ export function LandingPage() {
     return () => clearInterval(t);
   }, []);
 
-  const scrollToRecursos = useCallback(() => {
-    document.getElementById('recursos')?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
   const prevSlide = () =>
     setGalleryIndex((i) => (i - 1 + GALLERY_SCREENS.length) % GALLERY_SCREENS.length);
   const nextSlide = () => setGalleryIndex((i) => (i + 1) % GALLERY_SCREENS.length);
 
   return (
     <div className="landing-page">
-      <header className={`landing-header ${headerScrolled ? 'is-scrolled' : ''}`}>
-        <SvLotesLogo href="/" size={40} showText subtitle="Gestão para loteadoras" />
-        <Link href="/login" className="landing-btn-primary text-sm py-2 px-4 shrink-0">
-          Entrar no Sistema
-        </Link>
-      </header>
+      <LandingHeader scrolled={headerScrolled} />
 
       <main className="relative z-[1] pt-[4.5rem]">
         {/* Hero */}
-        <section className="landing-section pt-8 md:pt-12 pb-16 md:pb-24">
+        <section id="inicio" className="landing-section pt-8 md:pt-12 pb-16 md:pb-24 scroll-mt-24">
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
             <RevealSection>
               <p className="landing-badge inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest mb-4 px-3 py-1.5 rounded-full">
@@ -185,9 +176,9 @@ export function LandingPage() {
                   Entrar no Sistema
                   <ArrowRight className="w-4 h-4" />
                 </Link>
-                <button type="button" onClick={scrollToRecursos} className="landing-btn-ghost">
+                <a href="#recursos" className="landing-btn-ghost">
                   Conhecer recursos
-                </button>
+                </a>
               </div>
             </RevealSection>
 
@@ -200,7 +191,7 @@ export function LandingPage() {
         </section>
 
         {/* Recursos */}
-        <section id="recursos" className="landing-section border-t border-[var(--color-border)]/40">
+        <section id="recursos" className="landing-section border-t border-[var(--color-border)]/40 scroll-mt-24">
           <RevealSection className="text-center mb-12">
             <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Recursos principais</h2>
             <p className="landing-section-subtitle max-w-2xl mx-auto">
@@ -235,7 +226,7 @@ export function LandingPage() {
         </section>
 
         {/* Galeria */}
-        <section id="galeria" className="landing-section border-t border-[var(--color-border)]/40">
+        <section id="galeria" className="landing-section border-t border-[var(--color-border)]/40 scroll-mt-24">
           <RevealSection className="text-center mb-8">
             <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Galeria de telas reais</h2>
             <p className="landing-section-subtitle max-w-2xl mx-auto">
@@ -322,7 +313,7 @@ export function LandingPage() {
         </RevealSection>
 
         {/* Benefícios */}
-        <section className="landing-section border-t border-[var(--color-border)]/40">
+        <section id="beneficios" className="landing-section border-t border-[var(--color-border)]/40 scroll-mt-24">
           <RevealSection className="max-w-3xl mx-auto text-center">
             <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-4">
               Benefícios para loteadoras
@@ -366,7 +357,7 @@ export function LandingPage() {
         </section>
 
         {/* Contato */}
-        <section id="contato" className="landing-section border-t border-[var(--color-border)]/40 pb-16">
+        <section id="contato" className="landing-section border-t border-[var(--color-border)]/40 pb-16 scroll-mt-24">
           <RevealSection className="text-center mb-10">
             <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Contato</h2>
             <p className="landing-section-subtitle max-w-2xl mx-auto">
