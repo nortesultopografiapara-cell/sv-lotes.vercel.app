@@ -1493,7 +1493,7 @@ export default function ContractsPage() {
 
   return (
     <div
-      className={`sv-page flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden ${
+      className={`sv-page flex flex-col h-full font-sans overflow-hidden ${
         selectedContract ? "contracts-page--contract-selected" : ""
       }`}
     >
@@ -1503,7 +1503,7 @@ export default function ContractsPage() {
           <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
           <input
             type="text"
-            className="w-full pl-9 pr-4 py-2 text-sm bg-[#11151c] border border-[#1f232b] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+            className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
             placeholder="Buscar por cliente, contrato, projeto..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -1513,7 +1513,7 @@ export default function ContractsPage() {
           <label>
             <input
               type="checkbox"
-              className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
               checked={allFilteredSelected}
               onChange={handleSelectAll}
             />
@@ -1564,8 +1564,8 @@ export default function ContractsPage() {
       </div>
 
       {/* Desktop / tablet: cards de resumo */}
-      <div className="hidden md:grid md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[#11151c] min-w-0">
-        <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+      <div className="hidden md:grid md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[var(--bg-card)] min-w-0">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">
               Contratos Ativos
@@ -1577,7 +1577,7 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">Assinados</p>
             <h3 className="text-2xl font-bold">{stats.assinados}</h3>
@@ -1593,7 +1593,7 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">Pendentes</p>
             <h3 className="text-2xl font-bold">{stats.pendentes}</h3>
@@ -1603,7 +1603,7 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">Cancelados</p>
             <h3 className="text-2xl font-bold">{stats.cancelados}</h3>
@@ -1613,7 +1613,7 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">
               Val Total Contratado
@@ -1634,18 +1634,18 @@ export default function ContractsPage() {
       <div className="flex flex-col xl:flex-row flex-1 overflow-hidden min-w-0 max-md:min-h-0">
         {/* SIDEBAR LIST */}
         <div
-          className={`flex flex-col border-b xl:border-b-0 border-r border-[#1f232b] bg-[#0b0e14] min-w-0 w-full xl:w-[min(100%,380px)] xl:max-w-[400px] shrink-0 md:flex-none md:max-h-[42vh] xl:max-h-none max-md:min-h-0 ${
+          className={`flex flex-col border-b xl:border-b-0 border-r border-[var(--border-color)] bg-[var(--bg-main)] min-w-0 w-full xl:w-[min(100%,380px)] xl:max-w-[400px] shrink-0 md:flex-none md:max-h-[42vh] xl:max-h-none max-md:min-h-0 ${
             selectedContract
               ? "max-md:flex-none max-md:max-h-[36vh]"
               : "max-md:flex-1 max-md:max-h-none"
           }`}
         >
-          <div className="hidden md:block p-4 border-b border-[#1f232b] shrink-0">
+          <div className="hidden md:block p-4 border-b border-[var(--border-color)] shrink-0">
             <div className="relative mb-2">
               <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
               <input
                 type="text"
-                className="w-full pl-9 pr-4 py-2 text-sm bg-[#11151c] border border-[#1f232b] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
                 placeholder="Buscar por cliente, contrato, projeto..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1655,7 +1655,7 @@ export default function ContractsPage() {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+                  className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
                   checked={allFilteredSelected}
                   onChange={handleSelectAll}
                 />
@@ -1699,7 +1699,7 @@ export default function ContractsPage() {
                     className={`w-full text-left p-3 max-md:p-3 md:p-3.5 rounded-xl border transition-all duration-200 ${
                       isSelected
                         ? "bg-[#1a2333] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
-                        : "bg-[#11151c] border-[#1f232b] hover:border-[#2d3340] hover:bg-[#151a23]"
+                        : "bg-[var(--bg-card)] border-[var(--border-color)] hover:border-[var(--border-color)] hover:bg-[#151a23]"
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
@@ -1710,7 +1710,7 @@ export default function ContractsPage() {
                           toggleContractSelection(c.id, e as any)
                         }
                         onClick={(e) => e.stopPropagation()}
-                        className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-1 shrink-0"
+                        className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-1 shrink-0"
                       />
                       <FileText
                         className={`w-4 h-4 shrink-0 mt-1 ${isSelected ? "text-[var(--color-primary)]" : "text-gray-400"}`}
@@ -1763,13 +1763,13 @@ export default function ContractsPage() {
 
         {/* MAIN PREVIEW PANEL — oculto no mobile até haver seleção */}
         <div
-          className={`flex-1 min-w-0 bg-[#11151c] flex-col overflow-hidden relative min-h-0 ${
+          className={`flex-1 min-w-0 bg-[var(--bg-card)] flex-col overflow-hidden relative min-h-0 ${
             selectedContract ? "flex max-md:flex-1" : "hidden md:flex"
           }`}
         >
           {selectedContract ? (
             <>
-              <div className="p-6 border-b border-[#1f232b]">
+              <div className="p-6 border-b border-[var(--border-color)]">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -1808,27 +1808,27 @@ export default function ContractsPage() {
                     )}
                     {/* Botão Dropdown "Modelos" */}
                     <div className="relative group">
-                      <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-gray-300 border border-[#2d3340] rounded-lg hover:bg-[#1a1f2b] transition-colors text-sm font-medium">
+                      <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-gray-300 border border-[var(--border-color)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium">
                         Modelos
                         <ChevronDown className="w-4 h-4" />
                       </button>
-                      <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1f2b] border border-[#2d3340] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                      <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
                         <a
                           href="/contracts/templates"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50"
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50"
                         >
                           Novo Contrato
                         </a>
                         <a
                           href="/contracts/templates"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50"
+                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50"
                         >
                           Modelos
                         </a>
-                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">
+                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50">
                           Gerar PDF
                         </button>
-                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[#2d3340]/50">
+                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50">
                           Exportar
                         </button>
                         <button className="block w-full text-left px-4 py-2 text-sm text-[var(--color-success)] hover:bg-[var(--color-success)]/10 hover:text-[var(--color-success)]">
@@ -1852,7 +1852,7 @@ export default function ContractsPage() {
                     <button
                       type="button"
                       onClick={() => void handleBaixarPDF()}
-                      className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] text-gray-200 rounded-lg hover:bg-[#1a1f2b] transition-colors text-sm font-medium"
+                      className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-gray-200 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
                     >
                       <Download className="w-4 h-4" />
                       Baixar PDF
@@ -1926,7 +1926,7 @@ export default function ContractsPage() {
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[#1f232b] overflow-x-auto min-w-0">
+              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[var(--border-color)] overflow-x-auto min-w-0">
                 {[
                   "Visualização",
                   "Dados do Contrato",
@@ -1945,7 +1945,7 @@ export default function ContractsPage() {
               </div>
 
               {/* Body Content */}
-              <div className="flex-1 overflow-hidden flex bg-[#0b0e14] min-w-0">
+              <div className="flex-1 overflow-hidden flex bg-[var(--bg-main)] min-w-0">
                 {activeTab === "Visualização" && (
                   <>
                     <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad">
@@ -1971,7 +1971,7 @@ export default function ContractsPage() {
                           </button>
                         </div>
                       )}
-                      <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[#2d3340] origin-top p-8 text-black min-h-[800px]">
+                      <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[var(--border-color)] origin-top p-8 text-black min-h-[800px]">
                         {contractViewLoading ? (
                           <div className="flex items-center justify-center py-32 text-gray-500">
                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
@@ -1995,7 +1995,7 @@ export default function ContractsPage() {
                     </div>
 
                     {/* Timeline Sidebar inside preview */}
-                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[#1f232b] bg-[#11151c] p-4 sm:p-6 overflow-y-auto shrink-0">
+                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[var(--border-color)] bg-[var(--bg-card)] p-4 sm:p-6 overflow-y-auto shrink-0">
                       <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                         <History className="w-4 h-4 text-gray-400" />
                         Histórico de versões
@@ -2007,7 +2007,7 @@ export default function ContractsPage() {
                         ).map((ver: any) => (
                           <div
                             key={ver.id}
-                            className="flex items-center justify-between gap-2 p-3 rounded-lg bg-[#0b0e14] border border-[#2d3340] text-xs"
+                            className="flex items-center justify-between gap-2 p-3 rounded-lg bg-[var(--bg-main)] border border-[var(--border-color)] text-xs"
                           >
                             <div>
                               <p className="font-semibold text-gray-200">
@@ -2100,7 +2100,7 @@ export default function ContractsPage() {
 
                 {activeTab === "Dados do Contrato" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
-                    <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                    <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Dados Principais do Contrato
                       </h3>
@@ -2236,14 +2236,14 @@ export default function ContractsPage() {
 
                 {activeTab === "Parcelas" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
-                    <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                    <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Parcelas do Contrato
                       </h3>
                       {receipts.length > 0 ? (
                         <table className="w-full text-left text-sm text-gray-300">
                           <thead>
-                            <tr className="border-b border-[#2d3340] text-gray-500">
+                            <tr className="border-b border-[var(--border-color)] text-gray-500">
                               <th className="py-2">Parcela</th>
                               <th className="py-2">Vencimento</th>
                               <th className="py-2">Valor</th>
@@ -2256,7 +2256,7 @@ export default function ContractsPage() {
                             {receipts.map((r, idx) => (
                               <tr
                                 key={r.id}
-                                className="border-b border-[#2d3340]/50 last:border-0 border-t-transparent hover:bg-[#2d3340]/20 transition-colors"
+                                className="border-b border-[var(--border-color)]/50 last:border-0 border-t-transparent hover:bg-[#2d3340]/20 transition-colors"
                               >
                                 <td className="py-3 font-mono">
                                   {r.installment_number || idx + 1}
@@ -2321,7 +2321,7 @@ export default function ContractsPage() {
 
                 {activeTab === "Arquivos" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
-                    <div className="max-w-[800px] mx-auto bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                    <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Arquivos Anexados
                       </h3>
@@ -2329,7 +2329,7 @@ export default function ContractsPage() {
                       <div className="flex gap-4 mb-8">
                         <button
                           onClick={handleBaixarPDF}
-                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-[var(--color-primary)] transition-colors w-32"
+                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--color-primary)] transition-colors w-32"
                         >
                           <Download className="w-8 h-8 text-[var(--color-primary)] mb-2" />
                           <span className="text-sm font-medium text-white">
@@ -2338,7 +2338,7 @@ export default function ContractsPage() {
                         </button>
                         <button
                           onClick={handleImprimir}
-                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-info transition-colors w-32"
+                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-info transition-colors w-32"
                         >
                           <Printer className="w-8 h-8 text-info mb-2" />
                           <span className="text-sm font-medium text-white">
@@ -2347,7 +2347,7 @@ export default function ContractsPage() {
                         </button>
                         <button
                           onClick={handleGerarCarne}
-                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[#2d3340] bg-[#11151c] hover:border-warning transition-colors w-32"
+                          className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-warning transition-colors w-32"
                         >
                           <Receipt className="w-8 h-8 text-warning mb-2" />
                           <span className="text-sm font-medium text-white">
@@ -2356,7 +2356,7 @@ export default function ContractsPage() {
                         </button>
                       </div>
 
-                      <div className="text-center py-10 border-2 border-dashed border-[#2d3340] rounded-xl text-gray-500">
+                      <div className="text-center py-10 border-2 border-dashed border-[var(--border-color)] rounded-xl text-gray-500">
                         <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
                         <p>Nenhum arquivo anexado ainda.</p>
                         <p className="text-xs mt-1">
@@ -2370,7 +2370,7 @@ export default function ContractsPage() {
                 {activeTab === "Histórico" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto space-y-6">
-                      <div className="bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                      <div className="bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                           <History className="w-5 h-5 text-gray-400" />
                           Histórico de versões
@@ -2382,7 +2382,7 @@ export default function ContractsPage() {
                           ).map((ver: any) => (
                             <div
                               key={ver.id}
-                              className="flex items-center justify-between gap-3 p-4 rounded-lg bg-[#11151c] border border-[#2d3340]"
+                              className="flex items-center justify-between gap-3 p-4 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)]"
                             >
                               <div>
                                 <p className="text-sm font-semibold text-gray-200">
@@ -2415,7 +2415,7 @@ export default function ContractsPage() {
                           ))}
                         </div>
                       </div>
-                    <div className="bg-[#1a1f2b] p-6 rounded-lg border border-[#2d3340]">
+                    <div className="bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-white mb-6">
                         Linha do Tempo
                       </h3>
@@ -2529,7 +2529,7 @@ export default function ContractsPage() {
               </div>
 
               {/* BOTTOM ACTION BAR — desktop/tablet */}
-              <div className="contracts-desktop-action-bar p-4 border-t border-[#1f232b] bg-[#11151c] flex flex-wrap items-center justify-center gap-3">
+              <div className="contracts-desktop-action-bar p-4 border-t border-[var(--border-color)] bg-[var(--bg-card)] flex flex-wrap items-center justify-center gap-3">
                 <ActionBtn
                   onClick={handleBaixarPDF}
                   icon={<Download />}
@@ -2578,7 +2578,7 @@ export default function ContractsPage() {
 
                 <button
                   onClick={handleGerarCarne}
-                  className="flex items-center gap-2 px-4 py-2 border border-[#2d3340] hover:bg-[#1a1f2b] text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] hover:bg-[var(--bg-elevated)] text-gray-300 rounded-lg text-sm font-medium transition-colors"
                 >
                   <Receipt className="w-4 h-4" />
                   Gerar Carnê
@@ -2588,7 +2588,7 @@ export default function ContractsPage() {
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-              <div className="w-24 h-24 rounded-full bg-[#1a1f2b] flex items-center justify-center mb-6">
+              <div className="w-24 h-24 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mb-6">
                 <FileText className="w-10 h-10 opacity-30" />
               </div>
               <h3 className="text-xl font-bold text-gray-400 mb-2">
@@ -2726,7 +2726,7 @@ export default function ContractsPage() {
       )}
 
       {contractToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-3 rounded-xl bg-[#1a1f2b] border border-amber-500/40 text-amber-100 text-sm font-medium shadow-xl max-w-md text-center">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-3 rounded-xl bg-[var(--bg-elevated)] border border-amber-500/40 text-amber-100 text-sm font-medium shadow-xl max-w-md text-center">
           {contractToast}
         </div>
       )}
@@ -2741,7 +2741,7 @@ export default function ContractsPage() {
       {/* Modal de Senha para Exclusão */}
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4">
-          <div className="bg-[#1a1f2b] border border-[#2d3340] rounded-xl p-6 max-w-sm w-full shadow-2xl">
+          <div className="bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-red-500" />
@@ -2763,7 +2763,7 @@ export default function ContractsPage() {
               placeholder="Sua senha"
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="w-full px-4 py-2 bg-[#11151c] border border-[#2d3340] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500 mb-6"
+              className="w-full px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500 mb-6"
               autoFocus
             />
             <div className="flex justify-end gap-3">

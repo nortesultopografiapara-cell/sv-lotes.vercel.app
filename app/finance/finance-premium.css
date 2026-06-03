@@ -1,11 +1,12 @@
 /* SV LOTES — Financeiro premium ERP/SaaS */
 
 .finance-premium {
-  --fin-bg: #0a0d14;
-  --fin-surface: rgba(19, 22, 28, 0.72);
-  --fin-border: rgba(45, 51, 64, 0.55);
-  --fin-accent: #3b82f6;
-  --fin-glow: rgba(59, 130, 246, 0.15);
+  --fin-bg: var(--bg-main);
+  --fin-surface: var(--bg-card);
+  --fin-border: var(--border-color);
+  --fin-accent: var(--color-info);
+  --fin-glow: color-mix(in srgb, var(--color-info) 18%, transparent);
+  color: var(--text-primary);
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;

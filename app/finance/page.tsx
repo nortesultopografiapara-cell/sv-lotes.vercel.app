@@ -2551,7 +2551,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="finance-premium flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto bg-[#0a0d14] p-4 md:p-6 lg:p-7 text-white h-full font-sans">
+    <div className="finance-premium flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-7 h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -2565,7 +2565,7 @@ export default function FinancePage() {
       {/* HEADER */}
       <header className="mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 min-w-0 max-w-full">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
+          <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
             Módulo Financeiro
           </h1>
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mt-0.5">

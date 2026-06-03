@@ -1,41 +1,47 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./theme-tokens.css";
 
 @theme {
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
-  
-  --color-background: #0B1121;
-  --color-surface-dim: #111827;
-  --color-surface: #151E2E;
-  --color-surface-bright: #1E293B;
-  
-  --color-border: #1E293B;
+
+  --color-background: var(--bg-main);
+  --color-surface-dim: var(--bg-sidebar);
+  --color-surface: var(--bg-card);
+  --color-surface-bright: var(--bg-elevated);
+
+  --color-border: var(--border-color);
   --color-border-hover: #334155;
-  
-  --color-primary: #F97316; /* Orange */
-  --color-primary-hover: #EA580C;
-  
-  --color-success: #22C55E;
-  --color-warning: #EAB308;
-  --color-danger: #EF4444;
-  --color-info: #3B82F6;
-  --color-purple: #A855F7;
-  
-  --color-text-main: #F8FAFC;
-  --color-text-muted: #94A3B8;
+
+  --color-primary: var(--color-primary-brand);
+  --color-primary-hover: var(--color-primary-hover-brand);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-purple: var(--color-purple);
+
+  --color-text-main: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
 }
 
 @layer base {
+  html {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+  }
+
   body {
-    background-color: var(--color-background);
-    color: var(--color-text-main);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 }
 
-/* Inputs em modais comerciais do mapa GIS (fundo claro — não herdam texto claro do tema dark) */
+/* Inputs em modais comerciais do mapa GIS (fundo claro — não herdam texto do tema da página) */
 @layer components {
   .form-input-light {
     @apply bg-white text-slate-900 placeholder:text-slate-400 border border-slate-300;
@@ -66,7 +72,6 @@
     color-scheme: light;
   }
 
-  /* Shell responsivo — evita overflow horizontal na página principal */
   .sv-page {
     box-sizing: border-box;
     flex: 1 1 auto;
@@ -74,6 +79,8 @@
     max-width: 100%;
     min-width: 0;
     overflow-x: hidden;
+    background-color: var(--bg-main);
+    color: var(--text-primary);
   }
 
   .sv-page--scroll-y {
@@ -98,6 +105,9 @@
   .sv-modal-panel {
     width: 100%;
     max-width: min(95vw, 42rem);
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
   }
 
   .sv-modal-panel--wide {
@@ -105,23 +115,21 @@
   }
 }
 
-/* Scrollbar styles to match the premium look */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-background);
+  background: var(--bg-main);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-bright);
+  background: var(--bg-elevated);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-hover);
 }
 
-/* Leaflet dark theme override */
 .leaflet-container {
   background: var(--color-surface-dim) !important;
   font-family: var(--font-sans) !important;
@@ -137,7 +145,7 @@
 }
 .leaflet-bar {
   border: none !important;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+  box-shadow: var(--shadow-elevated) !important;
 }
 .leaflet-bar a {
   background-color: var(--color-surface) !important;

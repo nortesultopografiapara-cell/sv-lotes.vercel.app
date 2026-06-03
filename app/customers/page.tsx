@@ -276,7 +276,7 @@ export default function CustomersPage() {
     <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full fade-in relative">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Clientes</h1>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">Clientes</h1>
           <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider">
             Gestão de Clientes e Lotes
           </p>
@@ -299,7 +299,7 @@ export default function CustomersPage() {
               placeholder="Buscar por nome, email ou CPF..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)]"
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
           <button className="px-4 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text-muted)] flex items-center gap-2 hover:text-white transition-colors">
@@ -367,34 +367,34 @@ export default function CustomersPage() {
             <form onSubmit={handleSaveCustomer} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome Completo *</label>
-                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Ex: João da Silva" />
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Ex: João da Silva" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CPF / CNPJ</label>
-                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
+                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">RG</label>
-                  <input type="text" value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="0000000" />
+                  <input type="text" value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="0000000" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Telefone</label>
-                   <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="(11) 99999-9999" />
+                   <input type="tel" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="(11) 99999-9999" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">E-mail</label>
-                   <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="joao@exemplo.com" />
+                   <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="joao@exemplo.com" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Profissão</label>
-                   <input type="text" value={formData.profession} onChange={e => setFormData({...formData, profession: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Empresário" />
+                   <input type="text" value={formData.profession} onChange={e => setFormData({...formData, profession: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Empresário" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Estado Civil</label>
-                   <select value={formData.marital_status} onChange={e => setFormData({...formData, marital_status: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]">
+                   <select value={formData.marital_status} onChange={e => setFormData({...formData, marital_status: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]">
                        <option value="">Selecione...</option>
                        <option value="SOLTEIRO(A)">Solteiro(a)</option>
                        <option value="CASADO(A)">Casado(a)</option>
@@ -407,31 +407,31 @@ export default function CustomersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Endereço (Rua, Número)</label>
-                   <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua Exemplo, 123" />
+                   <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Rua Exemplo, 123" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Bairro</label>
-                   <input type="text" value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="Centro" />
+                   <input type="text" value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Centro" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Cidade</label>
-                   <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="São Paulo" />
+                   <input type="text" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="São Paulo" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Estado (UF)</label>
-                   <input type="text" maxLength={2} value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="SP" />
+                   <input type="text" maxLength={2} value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="SP" />
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CEP</label>
-                   <input type="text" value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]" placeholder="00000-000" />
+                   <input type="text" value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="00000-000" />
                 </div>
               </div>
               {formData.id && (
                   <div>
                     <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Status</label>
-                    <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-[var(--color-primary)]">
+                    <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]">
                         <option value="ativo">Ativo</option>
                         <option value="inativo">Inativo</option>
                     </select>
@@ -509,12 +509,12 @@ export default function CustomersPage() {
 
                <div>
                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Senha do Administrador *</label>
-                 <input required type="password" value={deleteModalPassword} onChange={e => setDeleteModalPassword(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-red-500" placeholder="Digite sua senha" />
+                 <input required type="password" value={deleteModalPassword} onChange={e => setDeleteModalPassword(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-red-500" placeholder="Digite sua senha" />
                </div>
 
                <div>
                  <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Para confirmar, digite EXCLUIR CLIENTE abaixo *</label>
-                 <input required type="text" value={deleteModalConfirmText} onChange={e => setDeleteModalConfirmText(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-white focus:outline-none focus:border-red-500" placeholder="EXCLUIR CLIENTE" />
+                 <input required type="text" value={deleteModalConfirmText} onChange={e => setDeleteModalConfirmText(e.target.value)} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-red-500" placeholder="EXCLUIR CLIENTE" />
                </div>
 
                <div className="pt-4 flex gap-3">

@@ -3,8 +3,8 @@
 .contracts-mobile-stats-wrap {
   flex-shrink: 0;
   padding: 0.5rem 1rem 0.625rem;
-  border-bottom: 1px solid var(--color-border, #1f232b);
-  background: #11151c;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
 }
 
 .contracts-mobile-stats-scroll {
@@ -36,8 +36,8 @@
   height: 4.75rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.75rem;
-  border: 1px solid var(--color-border, #2d3340);
-  background: #1a1f2b;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
   white-space: nowrap;
   scroll-snap-align: start;
 }
@@ -70,7 +70,7 @@
   flex-shrink: 0;
   padding: 0.75rem 1rem 0.5rem;
   border-bottom: 1px solid #1f232b;
-  background: #0b0e14;
+  background: var(--bg-main);
 }
 
 .contracts-mobile-bulk {
@@ -127,8 +127,8 @@
     z-index: 310;
     max-height: var(--contracts-mobile-dock-max-h);
     padding: 0.5rem 0.75rem 0.625rem;
-    background: #11151c;
-    border-top: 1px solid #2d3340;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
   }
 
@@ -136,7 +136,7 @@
     flex-shrink: 0;
     margin-bottom: 0.375rem;
     padding-bottom: 0.375rem;
-    border-bottom: 1px solid #1f232b;
+    border-bottom: 1px solid var(--border-color);
     max-width: 100%;
     min-width: 0;
   }

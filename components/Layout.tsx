@@ -151,10 +151,10 @@ function NotificationBell({ user }: { user: any }) {
       </button>
 
       {show && (
-        <div className="absolute right-0 mt-2 w-72 bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl overflow-hidden z-[9999]" style={{ top: '100%' }}>
-           <div className="p-4 border-b border-[#1f232b] flex justify-between items-center bg-[#181c25]">
-              <h3 className="font-semibold text-white">Notificações</h3>
-              <span className="text-xs bg-[#1f232b] text-gray-300 px-2 py-0.5 rounded font-bold">
+        <div className="absolute right-0 mt-2 w-72 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden z-[9999]" style={{ top: '100%' }}>
+           <div className="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-elevated)]">
+              <h3 className="font-semibold text-[var(--text-primary)]">Notificações</h3>
+              <span className="text-xs bg-[var(--bg-main)] text-[var(--text-secondary)] px-2 py-0.5 rounded font-bold">
                  {totalAlerts} Alertas
               </span>
            </div>
@@ -569,13 +569,13 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (
-          <header className="h-16 w-full flex items-center justify-between px-6 lg:px-8 border-b border-white/5 flex-shrink-0 bg-[var(--color-background)]">
+          <header className="h-16 w-full flex items-center justify-between px-6 lg:px-8 border-b border-[var(--border-subtle)] flex-shrink-0 bg-[var(--bg-navbar)]">
             <div className="min-w-0">
-              <h1 className="text-base font-medium text-white flex items-center gap-1.5 truncate">
-                <span className="text-slate-500 font-normal">Olá,</span>
+              <h1 className="text-base font-medium text-[var(--text-primary)] flex items-center gap-1.5 truncate">
+                <span className="text-[var(--text-secondary)] font-normal">Olá,</span>
                 <strong className="truncate">{user?.name || 'Usuário'}</strong>
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 {isSuperAdmin
                   ? 'Painel Master · SaaS'
                   : user?.role === 'BROKER'
@@ -604,10 +604,10 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)] group-hover:text-white transition-colors" />
                 </div>
                 
-                <div className="absolute right-0 mt-2 w-56 bg-[#1a1f29] border border-[#2d3340] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
-                  <div className="p-4 border-b border-[#2d3340] bg-[#151a23]">
-                    <p className="font-semibold text-white truncate">{user?.name}</p>
-                    <p className="text-xs text-gray-400 mt-1 truncate">{user?.email}</p>
+                <div className="absolute right-0 mt-2 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden text-sm">
+                  <div className="p-4 border-b border-[var(--border-color)] bg-[var(--bg-elevated)]">
+                    <p className="font-semibold text-[var(--text-primary)] truncate">{user?.name}</p>
+                    <p className="text-xs text-[var(--text-secondary)] mt-1 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
                     {user?.role === 'SUPER_ADMIN' ? (

@@ -1,0 +1,192 @@
+/**
+ * SV LOTES — Design tokens globais (dark / light)
+ * Consumir via var(--bg-main), var(--text-primary), etc.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-main: #0b1121;
+  --bg-card: #151e2e;
+  --bg-elevated: #1e293b;
+  --bg-sidebar: #111827;
+  --bg-navbar: #0b1121;
+  --bg-input: #151e2e;
+  --bg-overlay: rgba(15, 23, 42, 0.75);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --border-color: #1e293b;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+  --info: #3b82f6;
+
+  --color-primary-brand: #f97316;
+  --color-primary-hover-brand: #ea580c;
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  /* Aliases legados (Tailwind @theme + componentes existentes) */
+  --color-background: var(--bg-main);
+  --color-surface-dim: var(--bg-sidebar);
+  --color-surface: var(--bg-card);
+  --color-surface-bright: var(--bg-elevated);
+  --color-border: var(--border-color);
+  --color-border-hover: #334155;
+  --color-primary: var(--color-primary-brand);
+  --color-primary-hover: var(--color-primary-hover-brand);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-purple: #a855f7;
+  --color-text-main: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-main: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-elevated: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-navbar: #ffffff;
+  --bg-input: #ffffff;
+  --bg-overlay: rgba(15, 23, 42, 0.4);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --border-color: #e2e8f0;
+  --border-subtle: rgba(15, 23, 42, 0.08);
+
+  --success: #16a34a;
+  --warning: #ca8a04;
+  --danger: #dc2626;
+  --info: #2563eb;
+
+  --color-primary-brand: #2563eb;
+  --color-primary-hover-brand: #1d4ed8;
+  --shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
+
+  --color-background: var(--bg-main);
+  --color-surface-dim: #e2e8f0;
+  --color-surface: var(--bg-card);
+  --color-surface-bright: var(--bg-elevated);
+  --color-border: var(--border-color);
+  --color-border-hover: #cbd5e1;
+  --color-primary: var(--color-primary-brand);
+  --color-primary-hover: var(--color-primary-hover-brand);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-purple: #7c3aed;
+  --color-text-main: var(--text-primary);
+  --color-text-muted: var(--text-secondary);
+}
+
+/* Utilitários de tema reutilizáveis */
+.sv-theme-page {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.sv-theme-card {
+  background-color: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.sv-theme-input {
+  background-color: var(--bg-input);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.sv-theme-input::placeholder {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .sv-theme-muted {
+  color: var(--text-secondary);
+}
+
+/* GIS / Leaflet — light */
+[data-theme='light'] .leaflet-container {
+  background: #e2e8f0 !important;
+}
+
+[data-theme='light'] .leaflet-popup-content-wrapper,
+[data-theme='light'] .leaflet-popup-tip {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+[data-theme='light'] .leaflet-bar a {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme='light'] .leaflet-bar a:hover {
+  background-color: var(--bg-elevated) !important;
+}
+
+/* Mobile contracts dock — tokens */
+[data-theme='light'] .contracts-mobile-action-dock,
+[data-theme='light'] .contracts-mobile-dock-summary,
+[data-theme='light'] .contracts-mobile-stats-wrap {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+}
+
+[data-theme='light'] .contracts-mobile-stat-chip,
+[data-theme='light'] .contracts-mobile-action-btn {
+  background: var(--bg-elevated);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .contracts-mobile-dock-contract,
+[data-theme='light'] .contracts-mobile-dock-line--valor {
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .contracts-mobile-dock-line {
+  color: var(--text-secondary);
+}
+
+/* Financeiro / Dashboard — superfícies premium */
+[data-theme='light'] .finance-premium .finance-kpi-card,
+[data-theme='light'] .finance-premium .finance-table-panel,
+[data-theme='light'] .finance-premium .finance-filter-input {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme='light'] .dashboard-premium .dash-kpi-top,
+[data-theme='light'] .dashboard-premium .dash-chart-card {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme='light'] .finance-premium .finance-kpi-title,
+[data-theme='light'] .finance-premium .finance-kpi-sub {
+  color: var(--text-secondary);
+}
+
+[data-theme='light'] .finance-premium .finance-kpi-value {
+  color: var(--text-primary);
+}

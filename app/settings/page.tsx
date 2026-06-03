@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { Building2, Save, Upload, Loader2, ImagePlus, HardHat } from 'lucide-react';
+import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette } from 'lucide-react';
+import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
@@ -304,17 +305,35 @@ export default function SettingsPage() {
 
   return (
     <div className="sv-page sv-page--scroll-y p-8 max-w-4xl mx-auto font-sans h-full w-full">
-      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-gray-800">
-        <div className="w-12 h-12 bg-blue-900/30 rounded-xl flex items-center justify-center text-blue-400 border border-blue-800">
+      <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[var(--border-color)]">
+        <div className="w-12 h-12 bg-[var(--color-primary)]/15 rounded-xl flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-primary)]/25">
           <Building2 className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Configurações da Empresa</h1>
-          <p className="text-sm text-gray-400">Gerencie os dados e identidades da sua empresa para contratos e recibos.</p>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Configurações</h1>
+          <p className="text-sm text-[var(--text-secondary)]">Empresa, aparência e identidade para contratos e recibos.</p>
         </div>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-8 bg-[var(--color-surface)] p-6 rounded-xl shadow-lg border border-[var(--color-border)]">
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
+          <Palette className="w-4 h-4" />
+          <span className="text-xs font-semibold uppercase tracking-wider">Aparência</span>
+        </div>
+        <ThemeAppearanceSection />
+      </div>
+
+      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[var(--border-color)]">
+        <div className="w-10 h-10 bg-[var(--color-info)]/15 rounded-lg flex items-center justify-center text-[var(--color-info)] border border-[var(--color-info)]/25">
+          <Building2 className="w-5 h-5" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-[var(--text-primary)]">Dados da empresa</h2>
+          <p className="text-sm text-[var(--text-secondary)]">Informações legais e técnicas.</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-8 sv-theme-card p-6 rounded-xl shadow-lg border">
         
         <div className="space-y-4">
            <h2 className="text-base font-semibold text-white border-b border-[var(--color-border)] pb-2 flex items-center gap-2">

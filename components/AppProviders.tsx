@@ -5,6 +5,7 @@ import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { registerGlobalErrorHandlers } from '@/lib/appErrorReporting';
 import { ServiceWorkerRegister } from '@/components/offline/ServiceWorkerRegister';
 import { registerOfflineCacheDebug } from '@/lib/offline/offlineCacheDebug';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -14,8 +15,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <AppErrorBoundary>
-      <ServiceWorkerRegister />
-      {children}
+      <ThemeProvider>
+        <ServiceWorkerRegister />
+        {children}
+      </ThemeProvider>
     </AppErrorBoundary>
   );
 }

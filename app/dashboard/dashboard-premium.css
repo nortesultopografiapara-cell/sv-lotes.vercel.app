@@ -1,10 +1,11 @@
 /* SV LOTES — Dashboard premium SaaS */
 
 .dashboard-premium {
-  --dash-bg: #0a0d14;
-  --dash-surface: rgba(17, 22, 29, 0.85);
-  --dash-border: rgba(255, 255, 255, 0.06);
-  --dash-accent: #3b82f6;
+  --dash-bg: var(--bg-main);
+  --dash-surface: var(--bg-card);
+  --dash-border: var(--border-color);
+  --dash-accent: var(--color-info);
+  color: var(--text-primary);
   width: 100%;
   max-width: 100%;
   min-width: 0;

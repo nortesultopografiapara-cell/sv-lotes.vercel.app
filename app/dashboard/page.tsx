@@ -376,7 +376,7 @@ function OperationalDashboard({ user }: { user: any }) {
   );
 
   return (
-    <div className="dashboard-premium sv-page sv-page--scroll-y bg-[#0a0d14] relative flex flex-col">
+    <div className="dashboard-premium sv-page sv-page--scroll-y relative flex flex-col">
       <div className="p-4 md:p-6 lg:p-8 flex-1 max-w-full w-full mx-auto min-w-0">
         <header className="dash-header">
           <div>

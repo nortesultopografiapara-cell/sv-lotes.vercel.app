@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/Layout';
 import { AppProviders } from '@/components/AppProviders';
+import { THEME_INIT_SCRIPT } from '@/lib/themeInitScript';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -35,7 +36,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  themeColor: '#f97316',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#2563EB' },
+    { media: '(prefers-color-scheme: dark)', color: '#0B1121' },
+  ],
 };
 
 export default function RootLayout({
@@ -44,7 +48,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="pt-BR"
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      data-theme="dark"
+      suppressHydrationWarning
+    >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
+      </head>
       <body suppressHydrationWarning>
         <AppProviders>
           <Sidebar>{children}</Sidebar>
