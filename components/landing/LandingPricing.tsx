@@ -67,13 +67,6 @@ function PricingCard({ plan }: { plan: LandingPlan }) {
       className={`landing-pricing-card landing-glass relative flex flex-col h-full overflow-hidden ${
         plan.highlighted ? 'landing-pricing-card--featured' : ''
       }`}
-      style={
-        plan.highlighted
-          ? {
-              boxShadow: `0 0 0 1px ${accent.border}, 0 24px 60px -12px ${accent.glow}`,
-            }
-          : undefined
-      }
     >
       <PlanPreviewBg plan={plan} />
 
@@ -88,31 +81,31 @@ function PricingCard({ plan }: { plan: LandingPlan }) {
           {plan.name}
         </p>
         <div className="mb-5">
-          <p className="text-3xl sm:text-[2rem] font-bold text-white tracking-tight">
+          <p className="landing-section-title text-3xl sm:text-[2rem] font-bold tracking-tight">
             {plan.price}
-            <span className="text-base font-medium text-slate-500">{plan.period}</span>
+            <span className="text-base font-medium landing-muted">{plan.period}</span>
           </p>
         </div>
 
-        <ul className="space-y-2.5 mb-6 pb-6 border-b border-white/8">
-          <li className="flex items-center gap-2.5 text-sm text-slate-300">
+        <ul className="space-y-2.5 mb-6 pb-6 border-b landing-plan-divider">
+          <li className="flex items-center gap-2.5 text-sm landing-body">
             <MapIcon className={`w-4 h-4 shrink-0 ${accent.text}`} />
             <span>
-              <strong className="text-white">{plan.projects}</strong> loteamentos
+              <strong className="landing-strong">{plan.projects}</strong> loteamentos
             </span>
           </li>
-          <li className="flex items-center gap-2.5 text-sm text-slate-300">
+          <li className="flex items-center gap-2.5 text-sm landing-body">
             <Users className={`w-4 h-4 shrink-0 ${accent.text}`} />
             <span>
-              <strong className="text-white">{plan.brokers}</strong> corretores
+              <strong className="landing-strong">{plan.brokers}</strong> corretores
             </span>
           </li>
         </ul>
 
         <ul className="space-y-2 flex-1 mb-6">
           {LANDING_PLAN_FEATURES.map((f) => (
-            <li key={f} className="flex items-start gap-2 text-sm text-slate-400">
-              <Check className="w-4 h-4 text-emerald-500/90 shrink-0 mt-0.5" />
+            <li key={f} className="flex items-start gap-2 text-sm landing-body">
+              <Check className="w-4 h-4 text-[var(--success)] shrink-0 mt-0.5" />
               <span>{f}</span>
             </li>
           ))}
@@ -124,7 +117,7 @@ function PricingCard({ plan }: { plan: LandingPlan }) {
             className={
               plan.highlighted
                 ? 'landing-btn-primary w-full text-center'
-                : 'landing-btn-ghost w-full text-center border-white/15'
+                : 'landing-btn-ghost w-full text-center'
             }
           >
             Escolher Plano
@@ -155,13 +148,13 @@ export function LandingPricing() {
   return (
     <section id="planos" className="landing-section landing-pricing-section border-t border-[var(--color-border)]/40">
       <div className="text-center mb-12">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--color-primary)] mb-3">
+        <p className="landing-badge inline-block text-[10px] font-semibold uppercase tracking-widest mb-3 px-3 py-1 rounded-full">
           Planos & Assinaturas
         </p>
-        <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3 tracking-tight">
+        <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3 tracking-tight">
           Planos para cada tamanho de loteadora
         </h2>
-        <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto text-base">
+        <p className="landing-section-subtitle max-w-2xl mx-auto text-base">
           Escolha o plano ideal para sua operação crescer com tecnologia.
         </p>
       </div>
@@ -176,7 +169,7 @@ export function LandingPricing() {
         {LANDING_PLAN_EXTRAS.map((extra) => (
           <span
             key={extra}
-            className="inline-flex items-center gap-2 text-sm text-slate-400"
+            className="inline-flex items-center gap-2 text-sm landing-body"
           >
             <Check className="w-4 h-4 text-[var(--color-primary)]" />
             {extra}

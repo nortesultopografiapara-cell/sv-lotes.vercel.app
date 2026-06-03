@@ -11,13 +11,13 @@ export function LandingMapDemo() {
     >
       <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
         <div className="order-2 lg:order-1">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400/90 mb-3">
+          <p className="landing-badge inline-block text-[10px] font-semibold uppercase tracking-widest mb-3 px-3 py-1 rounded-full">
             Demonstração do mapa
           </p>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 tracking-tight">
+          <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-4 tracking-tight">
             Venda lotes direto no mapa GIS
           </h2>
-          <p className="text-[var(--color-text-muted)] leading-relaxed mb-6">
+          <p className="landing-lead leading-relaxed mb-6">
             Visualize status por cores, consulte metragem e feche negócios no terreno com a mesma
             interface que sua equipe usa no escritório — em tempo real.
           </p>
@@ -27,8 +27,8 @@ export function LandingMapDemo() {
               'Georreferenciamento e camadas do empreendimento',
               'Integração com contratos e financeiro',
             ].map((item) => (
-              <li key={item} className="flex items-center gap-2 text-sm text-slate-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <li key={item} className="flex items-center gap-2 text-sm landing-body">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0" />
                 {item}
               </li>
             ))}
@@ -48,8 +48,8 @@ export function LandingMapDemo() {
             </div>
           </div>
           <div className="absolute -bottom-3 -left-3 landing-glass px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-lg">
-            <MapIcon className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-medium text-slate-300">Mapa GIS em produção</span>
+            <MapIcon className="w-4 h-4 text-[var(--success)]" />
+            <span className="text-xs font-medium landing-body">Mapa GIS em produção</span>
           </div>
         </div>
       </div>

@@ -1,8 +1,10 @@
+/* SV LOTES — Landing pública (dark premium + light SaaS) */
+
 .landing-page {
-  --landing-glow: rgba(249, 115, 22, 0.35);
+  --landing-glow: color-mix(in srgb, var(--brand-primary) 35%, transparent);
   min-height: 100vh;
-  background: var(--color-background);
-  color: var(--color-text-main);
+  background: var(--bg-main);
+  color: var(--text-primary);
   overflow-x: hidden;
 }
 
@@ -13,8 +15,37 @@
   pointer-events: none;
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, var(--landing-glow), transparent 55%),
-    radial-gradient(ellipse 40% 30% at 100% 50%, rgba(34, 197, 94, 0.08), transparent 50%);
+    radial-gradient(ellipse 40% 30% at 100% 50%, color-mix(in srgb, var(--success) 8%, transparent), transparent 50%);
   z-index: 0;
+}
+
+/* Tipografia semântica */
+.landing-section-title {
+  color: var(--text-primary);
+}
+
+.landing-section-subtitle,
+.landing-lead {
+  color: var(--text-secondary);
+}
+
+.landing-muted {
+  color: var(--text-muted);
+}
+
+.landing-body {
+  color: var(--text-secondary);
+}
+
+.landing-strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.landing-badge {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, transparent);
 }
 
 .landing-header {
@@ -27,22 +58,29 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.875rem 1.25rem;
-  background: rgba(11, 17, 33, 0.72);
+  background: color-mix(in srgb, var(--bg-main) 72%, transparent);
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+  border-bottom: 1px solid var(--border-color);
   transition: box-shadow 0.3s ease, background 0.3s ease;
 }
 
 .landing-header.is-scrolled {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  background: rgba(11, 17, 33, 0.92);
+  box-shadow: var(--shadow-elevated);
+  background: color-mix(in srgb, var(--bg-main) 94%, transparent);
 }
 
 .landing-glass {
-  background: rgba(21, 30, 46, 0.55);
+  background: color-mix(in srgb, var(--bg-card) 55%, transparent);
   backdrop-filter: blur(14px);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
   border-radius: 1rem;
+}
+
+.landing-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-elevated);
 }
 
 .landing-btn-primary {
@@ -53,17 +91,17 @@
   padding: 0.75rem 1.5rem;
   font-weight: 700;
   font-size: 0.9375rem;
-  color: white;
-  background: var(--color-primary);
+  color: var(--text-on-brand);
+  background: var(--brand-primary);
   border-radius: 0.625rem;
-  box-shadow: 0 4px 20px rgba(249, 115, 22, 0.35);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--brand-primary) 35%, transparent);
   transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .landing-btn-primary:hover {
-  background: var(--color-primary-hover);
+  background: var(--brand-secondary);
   transform: translateY(-1px);
-  box-shadow: 0 6px 28px rgba(249, 115, 22, 0.45);
+  box-shadow: 0 6px 28px color-mix(in srgb, var(--brand-primary) 45%, transparent);
 }
 
 .landing-btn-ghost {
@@ -74,16 +112,27 @@
   padding: 0.75rem 1.5rem;
   font-weight: 600;
   font-size: 0.9375rem;
-  color: var(--color-text-main);
-  background: rgba(30, 41, 59, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-card-alt) 70%, transparent);
+  border: 1px solid var(--border-color);
   border-radius: 0.625rem;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
 .landing-btn-ghost:hover {
-  border-color: rgba(249, 115, 22, 0.4);
-  background: rgba(30, 41, 59, 0.8);
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  background: var(--bg-card-alt);
+  color: var(--text-primary);
+}
+
+.landing-nav-btn {
+  color: var(--text-secondary);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.landing-nav-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-alt);
 }
 
 .landing-section {
@@ -115,8 +164,8 @@
   transition: transform 0.6s ease;
   box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(148, 163, 184, 0.1),
-    0 0 80px rgba(249, 115, 22, 0.12);
+    0 0 0 1px var(--border-color),
+    0 0 80px color-mix(in srgb, var(--brand-primary) 12%, transparent);
   border-radius: 0.875rem;
   overflow: hidden;
 }
@@ -133,8 +182,8 @@
 
 .landing-feature-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(249, 115, 22, 0.25);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  border-color: color-mix(in srgb, var(--brand-primary) 28%, transparent);
+  box-shadow: var(--shadow-elevated);
 }
 
 .landing-gallery-stage {
@@ -151,7 +200,7 @@
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease, filter 0.5s ease;
   border-radius: 0.75rem;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-elevated);
 }
 
 .landing-gallery-card.is-active {
@@ -162,25 +211,25 @@
 .landing-gallery-card.is-prev {
   z-index: 2;
   opacity: 0.55;
-  filter: brightness(0.7);
+  filter: brightness(0.85);
 }
 
 .landing-gallery-card.is-next {
   z-index: 1;
   opacity: 0.35;
-  filter: brightness(0.5);
+  filter: brightness(0.75);
 }
 
 .landing-dot {
   width: 8px;
   height: 8px;
   border-radius: 9999px;
-  background: rgba(148, 163, 184, 0.35);
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
   transition: background 0.2s ease, transform 0.2s ease;
 }
 
 .landing-dot.is-active {
-  background: var(--color-primary);
+  background: var(--brand-primary);
   transform: scale(1.25);
 }
 
@@ -231,8 +280,8 @@
 }
 
 .landing-contact-card:hover {
-  border-color: rgba(249, 115, 22, 0.22);
-  background: rgba(30, 41, 59, 0.35);
+  border-color: color-mix(in srgb, var(--brand-primary) 28%, transparent);
+  background: var(--bg-card-alt);
 }
 
 .landing-btn-whatsapp {
@@ -243,7 +292,7 @@
   padding: 0.75rem 1.5rem;
   font-weight: 700;
   font-size: 0.9375rem;
-  color: white;
+  color: #fff;
   background: #25d366;
   border-radius: 0.625rem;
   box-shadow: 0 4px 20px rgba(37, 211, 102, 0.35);
@@ -284,8 +333,8 @@
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border-radius: 0.625rem;
-  background: rgba(15, 23, 42, 0.45);
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: color-mix(in srgb, var(--bg-main) 55%, var(--bg-card));
+  border: 1px solid var(--border-color);
 }
 
 .landing-map-demo-visual {
@@ -308,7 +357,7 @@
   width: min(90%, 48rem);
   height: 24rem;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--brand-primary) 12%, transparent) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -318,12 +367,16 @@
 
 .landing-pricing-card:hover {
   transform: translateY(-6px);
-  border-color: rgba(148, 163, 184, 0.2);
+  border-color: var(--border-color);
 }
 
 .landing-pricing-card--featured {
   transform: scale(1.02);
   z-index: 2;
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-primary) 50%, transparent),
+    0 24px 60px -12px color-mix(in srgb, var(--brand-primary) 22%, transparent) !important;
 }
 
 .landing-pricing-card--featured:hover {
@@ -344,43 +397,220 @@
   text-transform: uppercase;
   padding: 0.35rem 0.75rem;
   border-radius: 9999px;
-  color: white;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.45);
+  color: var(--text-on-brand);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--brand-primary) 40%, transparent);
 }
 
 .landing-pricing-btn-secondary {
   height: 2.5rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--text-secondary);
   border-radius: 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card-alt);
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .landing-pricing-btn-secondary:hover {
-  background: rgba(30, 41, 59, 0.8);
-  border-color: rgba(59, 130, 246, 0.35);
-  color: #fff;
+  background: var(--bg-elevated);
+  border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  color: var(--text-primary);
 }
 
 .landing-pricing-btn-whatsapp {
   height: 2.5rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #86efac;
+  color: #15803d;
   border-radius: 0.5rem;
-  border: 1px solid rgba(37, 211, 102, 0.2);
-  background: rgba(37, 211, 102, 0.08);
-  transition: background 0.2s ease, border-color 0.2s ease;
+  border: 1px solid color-mix(in srgb, #25d366 35%, transparent);
+  background: color-mix(in srgb, #25d366 10%, var(--bg-card));
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .landing-pricing-btn-whatsapp:hover {
+  background: color-mix(in srgb, #25d366 18%, var(--bg-card));
+  border-color: #25d366;
+  color: #166534;
+}
+
+.landing-cta-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.landing-cta-card > * {
+  position: relative;
+}
+
+.landing-plan-divider {
+  border-color: var(--border-color);
+}
+
+/* ——— Tema escuro: glass premium ——— */
+[data-theme='dark'] .landing-glass {
+  background: rgba(21, 30, 46, 0.55);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+[data-theme='dark'] .landing-header {
+  background: rgba(11, 17, 33, 0.72);
+  border-bottom-color: rgba(30, 41, 59, 0.6);
+}
+
+[data-theme='dark'] .landing-header.is-scrolled {
+  background: rgba(11, 17, 33, 0.92);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .landing-btn-ghost {
+  color: var(--text-primary);
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+[data-theme='dark'] .landing-btn-ghost:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+}
+
+[data-theme='dark'] .landing-gallery-card.is-prev {
+  filter: brightness(0.7);
+}
+
+[data-theme='dark'] .landing-gallery-card.is-next {
+  filter: brightness(0.5);
+}
+
+[data-theme='dark'] .landing-hero-shot-inner {
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(148, 163, 184, 0.1),
+    0 0 80px color-mix(in srgb, var(--brand-primary) 12%, transparent);
+}
+
+[data-theme='dark'] .landing-contact-card:hover {
+  background: rgba(30, 41, 59, 0.35);
+}
+
+[data-theme='dark'] .landing-service-item {
+  background: rgba(15, 23, 42, 0.45);
+  border-color: rgba(148, 163, 184, 0.08);
+}
+
+[data-theme='dark'] .landing-pricing-btn-secondary {
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(148, 163, 184, 0.15);
+}
+
+[data-theme='dark'] .landing-pricing-btn-secondary:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+  color: #fff;
+}
+
+[data-theme='dark'] .landing-pricing-btn-whatsapp {
+  color: #86efac;
+  background: rgba(37, 211, 102, 0.08);
+  border-color: rgba(37, 211, 102, 0.2);
+}
+
+[data-theme='dark'] .landing-pricing-btn-whatsapp:hover {
   background: rgba(37, 211, 102, 0.15);
   border-color: rgba(37, 211, 102, 0.4);
   color: #fff;
+}
+
+/* ——— Tema claro: SaaS limpo ——— */
+[data-theme='light'] .landing-page {
+  --landing-glow: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+}
+
+[data-theme='light'] .landing-page::before {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -15%, var(--landing-glow), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 100% 40%, color-mix(in srgb, var(--brand-light) 40%, transparent), transparent 55%);
+}
+
+[data-theme='light'] .landing-glass,
+[data-theme='light'] .landing-feature-card,
+[data-theme='light'] .landing-cta-card {
+  background: var(--bg-card);
+  backdrop-filter: none;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme='light'] .landing-header {
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme='light'] .landing-header.is-scrolled {
+  box-shadow: var(--shadow-elevated);
+  background: var(--bg-card);
+}
+
+[data-theme='light'] .landing-hero-shot-inner {
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme='light'] .landing-gallery-card {
+  box-shadow: var(--shadow-elevated);
+}
+
+[data-theme='light'] .landing-gallery-card.is-prev,
+[data-theme='light'] .landing-gallery-card.is-next {
+  opacity: 0.45;
+  filter: brightness(0.95);
+}
+
+[data-theme='light'] .landing-feature-card:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, transparent);
+}
+
+[data-theme='light'] .landing-pricing-card {
+  background: var(--bg-card);
+}
+
+[data-theme='light'] .landing-pricing-card--featured {
+  border-color: var(--brand-primary) !important;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--brand-primary) 35%, transparent),
+    var(--shadow-elevated) !important;
+}
+
+[data-theme='light'] .landing-contact-card {
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border-color);
+}
+
+[data-theme='light'] .landing-service-item {
+  background: var(--bg-card-alt);
+}
+
+[data-theme='light'] .landing-page .text-emerald-400 {
+  color: #059669;
+}
+
+[data-theme='light'] .landing-page .text-blue-400 {
+  color: #2563eb;
+}
+
+[data-theme='light'] .landing-page .text-purple-400 {
+  color: #7c3aed;
+}
+
+[data-theme='light'] .landing-page .text-cyan-400 {
+  color: #0891b2;
+}
+
+[data-theme='light'] .landing-page .text-orange-400 {
+  color: var(--brand-primary);
 }
 
 @media (max-width: 768px) {

@@ -16,7 +16,6 @@ import {
   MapPin,
   Phone,
   QrCode,
-  Shield,
   User,
   Users,
   Wallet,
@@ -31,6 +30,7 @@ import {
   LANDING_CONTACT,
   LANDING_SERVICES,
   SCREEN_LABELS,
+  type ScreenId,
 } from './ScreenMocks';
 import './landing.css';
 
@@ -169,14 +169,14 @@ export function LandingPage() {
         <section className="landing-section pt-8 md:pt-12 pb-16 md:pb-24">
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
             <RevealSection>
-              <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] mb-4 px-3 py-1.5 rounded-full landing-glass">
+              <p className="landing-badge inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest mb-4 px-3 py-1.5 rounded-full">
                 <Sparkles className="w-3.5 h-3.5" />
                 Plataforma para loteadoras
               </p>
-              <h1 className="text-3xl sm:text-4xl lg:text-[2.65rem] font-bold text-white leading-tight tracking-tight mb-5">
-                SV LOTES — Gestão Inteligente para Loteadoras
+              <h1 className="landing-section-title text-3xl sm:text-4xl lg:text-[2.65rem] font-bold leading-tight tracking-tight mb-5">
+                <span className="sv-brand-text">SV LOTES</span> — Gestão Inteligente para Loteadoras
               </h1>
-              <p className="text-base sm:text-lg text-[var(--color-text-muted)] leading-relaxed mb-8 max-w-xl">
+              <p className="landing-lead text-base sm:text-lg leading-relaxed mb-8 max-w-xl">
                 Venda lotes pelo mapa, gere contratos, parcelas, carnês, recibos e controle
                 financeiro em uma única plataforma.
               </p>
@@ -202,8 +202,8 @@ export function LandingPage() {
         {/* Recursos */}
         <section id="recursos" className="landing-section border-t border-[var(--color-border)]/40">
           <RevealSection className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">Recursos principais</h2>
-            <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto">
+            <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Recursos principais</h2>
+            <p className="landing-section-subtitle max-w-2xl mx-auto">
               Tudo que sua loteadora precisa para vender, contratar e cobrar com eficiência.
             </p>
           </RevealSection>
@@ -224,8 +224,8 @@ export function LandingPage() {
                   >
                     <f.icon className="w-5 h-5" />
                   </div>
-                  <h3 className="text-lg font-bold text-white mb-2">{f.title}</h3>
-                  <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
+                  <h3 className="landing-section-title text-lg font-bold mb-2">{f.title}</h3>
+                  <p className="landing-body text-sm leading-relaxed">
                     {f.description}
                   </p>
                 </article>
@@ -237,8 +237,8 @@ export function LandingPage() {
         {/* Galeria */}
         <section id="galeria" className="landing-section border-t border-[var(--color-border)]/40">
           <RevealSection className="text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">Galeria de telas reais</h2>
-            <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto">
+            <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Galeria de telas reais</h2>
+            <p className="landing-section-subtitle max-w-2xl mx-auto">
               Interface premium, dark mode e fluxos pensados para o dia a dia da loteadora.
             </p>
           </RevealSection>
@@ -272,7 +272,7 @@ export function LandingPage() {
                   <div className="aspect-[16/10] rounded-md overflow-hidden relative">
                     <LandingScreenshot id={id} />
                   </div>
-                  <p className="text-center text-xs font-medium text-slate-400 mt-2 pb-1">
+                  <p className="text-center text-xs font-medium landing-muted mt-2 pb-1">
                     {SCREEN_LABELS[id]}
                   </p>
                 </div>
@@ -284,7 +284,7 @@ export function LandingPage() {
             <button
               type="button"
               onClick={prevSlide}
-              className="w-10 h-10 rounded-full landing-glass flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+              className="w-10 h-10 rounded-full landing-glass landing-nav-btn flex items-center justify-center"
               aria-label="Tela anterior"
             >
               <ChevronLeft className="w-5 h-5" />
@@ -303,7 +303,7 @@ export function LandingPage() {
             <button
               type="button"
               onClick={nextSlide}
-              className="w-10 h-10 rounded-full landing-glass flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+              className="w-10 h-10 rounded-full landing-glass landing-nav-btn flex items-center justify-center"
               aria-label="Próxima tela"
             >
               <ChevronRight className="w-5 h-5" />
@@ -324,20 +324,20 @@ export function LandingPage() {
         {/* Benefícios */}
         <section className="landing-section border-t border-[var(--color-border)]/40">
           <RevealSection className="max-w-3xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4">
+            <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-4">
               Benefícios para loteadoras
             </h2>
-            <p className="text-[var(--color-text-muted)] mb-10 leading-relaxed">
+            <p className="landing-section-subtitle mb-10 leading-relaxed">
               O SV LOTES centraliza vendas, jurídico e financeiro para você focar no crescimento
               do empreendimento — não em planilhas dispersas.
             </p>
             <ul className="space-y-4 text-left max-w-xl mx-auto">
               {BENEFITS.map((text) => (
                 <li key={text} className="flex items-start gap-3">
-                  <span className="mt-1 w-5 h-5 rounded-full bg-[var(--color-primary)]/20 flex items-center justify-center shrink-0">
-                    <Shield className="w-3 h-3 text-[var(--color-primary)]" />
+                  <span className="mt-1 w-5 h-5 rounded-full bg-[color-mix(in_srgb,var(--success)_18%,transparent)] flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-3 h-3 text-[var(--success)]" />
                   </span>
-                  <span className="text-slate-300 text-sm sm:text-base">{text}</span>
+                  <span className="landing-body text-sm sm:text-base">{text}</span>
                 </li>
               ))}
             </ul>
@@ -347,13 +347,13 @@ export function LandingPage() {
         {/* CTA final */}
         <section className="landing-section pb-8">
           <RevealSection>
-            <div className="landing-glass rounded-2xl p-8 sm:p-12 text-center relative overflow-hidden">
-              <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-[var(--color-primary)] opacity-15 blur-3xl pointer-events-none" />
-              <LayoutDashboard className="w-10 h-10 text-[var(--color-primary)] mx-auto mb-4" />
-              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-4 relative">
+            <div className="landing-cta-card landing-glass rounded-2xl p-8 sm:p-12 text-center">
+              <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-[color-mix(in_srgb,var(--brand-primary)_15%,transparent)] blur-3xl pointer-events-none" />
+              <LayoutDashboard className="w-10 h-10 sv-brand-text mx-auto mb-4 relative" />
+              <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-4 relative">
                 Modernize sua loteadora com o SV LOTES
               </h2>
-              <p className="text-[var(--color-text-muted)] max-w-lg mx-auto mb-8 relative">
+              <p className="landing-section-subtitle max-w-lg mx-auto mb-8 relative">
                 Acesse o workspace da sua empresa e comece a operar vendas, contratos e
                 financeiro na mesma plataforma.
               </p>
@@ -368,8 +368,8 @@ export function LandingPage() {
         {/* Contato */}
         <section id="contato" className="landing-section border-t border-[var(--color-border)]/40 pb-16">
           <RevealSection className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">Contato</h2>
-            <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto">
+            <h2 className="landing-section-title text-2xl sm:text-3xl font-bold mb-3">Contato</h2>
+            <p className="landing-section-subtitle max-w-2xl mx-auto">
               Fale com a equipe técnica da SV Topografia e Projetos — suporte ao SV LOTES e
               serviços de engenharia.
             </p>
@@ -383,11 +383,11 @@ export function LandingPage() {
                     <User className="w-7 h-7 text-[var(--color-primary)]" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-xl font-bold text-white">{LANDING_CONTACT.name}</h3>
-                    <p className="text-sm text-[var(--color-primary)] mt-0.5 font-medium">
+                    <h3 className="landing-section-title text-xl font-bold">{LANDING_CONTACT.name}</h3>
+                    <p className="text-sm sv-brand-text mt-0.5 font-medium">
                       {LANDING_CONTACT.role}
                     </p>
-                    <p className="text-sm text-[var(--color-text-muted)] mt-2 flex items-center gap-2">
+                    <p className="landing-body text-sm mt-2 flex items-center gap-2">
                       <Building2 className="w-4 h-4 shrink-0" />
                       {LANDING_CONTACT.company}
                     </p>
@@ -403,10 +403,10 @@ export function LandingPage() {
                       <Phone className="w-5 h-5 text-emerald-400" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                      <p className="text-[10px] uppercase tracking-wider landing-muted font-semibold mb-0.5">
                         Telefone
                       </p>
-                      <p className="text-sm text-slate-200">
+                      <p className="text-sm landing-strong">
                         {LANDING_CONTACT.phones[0]} / {LANDING_CONTACT.phones[1]}
                       </p>
                     </div>
@@ -420,10 +420,10 @@ export function LandingPage() {
                       <Mail className="w-5 h-5 text-blue-400" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                      <p className="text-[10px] uppercase tracking-wider landing-muted font-semibold mb-0.5">
                         E-mail
                       </p>
-                      <p className="text-sm text-slate-200 break-all">{LANDING_CONTACT.email}</p>
+                      <p className="text-sm landing-strong break-all">{LANDING_CONTACT.email}</p>
                     </div>
                   </a>
 
@@ -437,10 +437,10 @@ export function LandingPage() {
                       <Globe className="w-5 h-5 text-[var(--color-primary)]" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                      <p className="text-[10px] uppercase tracking-wider landing-muted font-semibold mb-0.5">
                         Site
                       </p>
-                      <p className="text-sm text-slate-200">{LANDING_CONTACT.website}</p>
+                      <p className="text-sm landing-strong">{LANDING_CONTACT.website}</p>
                     </div>
                   </a>
 
@@ -449,10 +449,10 @@ export function LandingPage() {
                       <MapPin className="w-5 h-5 text-purple-400" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
+                      <p className="text-[10px] uppercase tracking-wider landing-muted font-semibold mb-0.5">
                         Cidade
                       </p>
-                      <p className="text-sm text-slate-200">{LANDING_CONTACT.city}</p>
+                      <p className="text-sm landing-strong">{LANDING_CONTACT.city}</p>
                     </div>
                   </div>
                 </div>
@@ -482,8 +482,8 @@ export function LandingPage() {
                     <Compass className="w-5 h-5 text-cyan-400" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-white">Serviços prestados</h3>
-                    <p className="text-xs text-[var(--color-text-muted)]">
+                    <h3 className="landing-section-title text-lg font-bold">Serviços prestados</h3>
+                    <p className="text-xs landing-muted">
                       Engenharia e geotecnologia para o seu empreendimento
                     </p>
                   </div>
@@ -492,13 +492,13 @@ export function LandingPage() {
                 <ul className="space-y-3 flex-1">
                   {LANDING_SERVICES.map((service) => (
                     <li key={service} className="landing-service-item">
-                      <CheckCircle2 className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-                      <span className="text-sm text-slate-200">{service}</span>
+                      <CheckCircle2 className="w-5 h-5 text-[var(--success)] shrink-0" />
+                      <span className="text-sm landing-body">{service}</span>
                     </li>
                   ))}
                 </ul>
 
-                <p className="mt-8 pt-6 border-t border-[var(--color-border)]/50 text-center text-sm italic text-slate-400">
+                <p className="mt-8 pt-6 border-t border-[var(--border-color)] text-center text-sm italic landing-muted">
                   {LANDING_CONTACT.slogan}
                 </p>
               </div>
@@ -508,11 +508,11 @@ export function LandingPage() {
       </main>
 
       <footer className="relative z-[1] border-t border-[var(--color-border)]/50 py-10 px-4 text-center">
-        <p className="text-sm font-medium text-slate-300 mb-2">{LANDING_CONTACT.slogan}</p>
-        <p className="text-xs text-[var(--color-text-muted)]">
+        <p className="text-sm font-medium landing-body mb-2">{LANDING_CONTACT.slogan}</p>
+        <p className="text-xs landing-muted">
           {LANDING_CONTACT.company} · Parauapebas - PA
         </p>
-        <p className="text-xs text-[var(--color-text-muted)] font-mono mt-2">
+        <p className="text-xs landing-muted font-mono mt-2">
           SV LOTES · Gestão & GIS © {new Date().getFullYear()}
         </p>
       </footer>
