@@ -8,7 +8,11 @@ import {
   type ConfrontantSource,
 } from '@/lib/confrontantTypes';
 import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
-import { resolveFrenteConfrontantLabel } from '@/lib/resolveFrontStreetGuide';
+import {
+  resolveFrenteConfrontantLabel,
+  resolveFrontStreetGuideForLot,
+  STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
+} from '@/lib/resolveFrontStreetGuide';
 import {
   confrontantFromStreetGuidesForUtmSegment,
   type StreetGuideConfrontInput,
@@ -74,7 +78,7 @@ function resolveFrenteWithSource(
   if (manual) return manual;
 
   const saved = String(block.front_street_name || '').trim();
-  if (saved && !/sem nome/i.test(saved)) {
+  if (saved && !/sem nome/i.test(saved) && !/^a\s*definir$/i.test(saved)) {
     return {
       label: resolveFrenteConfrontantLabel(
         block,
@@ -87,15 +91,30 @@ function resolveFrenteWithSource(
     };
   }
 
+  const guideMatch = resolveFrontStreetGuideForLot(
+    block,
+    streetGuides as StreetGuideConfrontInput[],
+    STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
+  );
+  if (guideMatch?.streetGuideName) {
+    return {
+      label: guideMatch.streetGuideName,
+      source: 'street_guide',
+      pending: false,
+    };
+  }
+
   const label = resolveFrenteConfrontantLabel(
     block,
     frontSegmentIndexes,
     segments,
     streetGuides,
   );
-  const pending = label === PENDING_CONFRONTANT_LABEL;
+  const pending =
+    label === PENDING_CONFRONTANT_LABEL ||
+    /^a\s*definir$/i.test(label.trim());
   let source: ConfrontantSource = pending ? 'undefined' : 'auto';
-  if (!pending && /rua|avenida|estrada|vicinal|central/i.test(label)) {
+  if (!pending && /rua|avenida|estrada|vicinal|central|interna/i.test(label)) {
     source = 'street_guide';
   }
   return { label, source, pending };

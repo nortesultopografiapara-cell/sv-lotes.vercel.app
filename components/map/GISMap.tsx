@@ -1562,6 +1562,14 @@ function LotPopupContent({
     [lot, streetGuides],
   );
 
+  const frenteConfrontLabel = useMemo(
+    () =>
+      frontStreetLabel ??
+      confrontationAudit?.sides.frente.label ??
+      null,
+    [frontStreetLabel, confrontationAudit],
+  );
+
   const txtSegments = useMemo(() => {
     const table = getOfficialLotSegmentTable(
       lot as Record<string, unknown>,
@@ -1702,11 +1710,17 @@ function LotPopupContent({
                   ).map(([key, label]) => {
                     const entry = confrontationAudit?.sides[key];
                     const text =
-                      entry?.label ??
-                      String(
-                        (lot as Record<string, unknown>)[key] ?? 'A DEFINIR',
-                      );
-                    const origin = entry?.sourceLabel ?? '—';
+                      key === 'frente' && frenteConfrontLabel
+                        ? frenteConfrontLabel
+                        : entry?.label ??
+                          String(
+                            (lot as Record<string, unknown>)[key] ??
+                              'A DEFINIR',
+                          );
+                    const origin =
+                      key === 'frente' && frontStreetLabel
+                        ? 'rua'
+                        : entry?.sourceLabel ?? '—';
                     return (
                       <div
                         key={key}

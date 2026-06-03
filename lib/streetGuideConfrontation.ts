@@ -41,8 +41,11 @@ function anchorFromBlock(
   };
 }
 
-/** Tolerância padrão (m) — segmento da aresta próximo/paralelo à linha de rua. */
+/** Tolerância padrão (m) — confrontação automática lateral/fundo. */
 export const STREET_GUIDE_CONFRONT_TOLERANCE_M = 0.35;
+
+/** Tolerância (m) — vincular frente do lote à street_guide (popup / exibição). */
+export const STREET_GUIDE_LOT_FRONT_TOLERANCE_M = 1.0;
 
 export type StreetGuideConfrontInput = {
   id?: string;
