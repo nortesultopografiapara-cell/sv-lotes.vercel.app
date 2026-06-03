@@ -44,8 +44,29 @@ import {
   applyContractPdfChrome,
   getContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
+import "./contracts-mobile.css";
 
 const PLATFORM_ADMIN_ROLES = ["SUPER_ADMIN", "MASTER-ADMIN", "MASTER_ADMIN"];
+
+/** Valor compacto para faixa de KPIs no mobile (ex.: R$ 1,13M). */
+function formatCompactCurrencyBRL(value: number): string {
+  const n = Number(value) || 0;
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    const s = m.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+    return `R$ ${s}M`;
+  }
+  if (n >= 10_000) {
+    const k = n / 1_000;
+    const s = k.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    return `R$ ${s}k`;
+  }
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
 
 function formatCNPJCPF(val: string): string {
   if (!val) return "";
@@ -1413,10 +1434,81 @@ export default function ContractsPage() {
 
   if (authLoading) return null;
 
+  const allFilteredSelected =
+    filteredContracts.length > 0 &&
+    selectedContractIds.size === filteredContracts.length;
+  const bulkDeleteCount = selectedContractIds.size;
+
   return (
     <div className="sv-page flex flex-col h-full bg-[#0b0e14] text-white font-sans overflow-hidden">
-      {/* Top Banner Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[#11151c] min-w-0">
+      {/* Mobile: busca + ações em massa (antes dos indicadores) */}
+      <div className="contracts-mobile-top md:hidden">
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            className="w-full pl-9 pr-4 py-2 text-sm bg-[#11151c] border border-[#1f232b] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+            placeholder="Buscar por cliente, contrato, projeto..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="contracts-mobile-bulk">
+          <label>
+            <input
+              type="checkbox"
+              className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              checked={allFilteredSelected}
+              onChange={handleSelectAll}
+            />
+            <span>Selecionar</span>
+          </label>
+          <button
+            type="button"
+            onClick={handleLimparTestes}
+            disabled={bulkDeleteCount === 0}
+            className={`contracts-mobile-bulk-delete transition-colors ${
+              bulkDeleteCount > 0
+                ? "text-red-400 hover:text-red-300"
+                : "text-gray-600 cursor-not-allowed"
+            }`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Excluir{bulkDeleteCount > 0 ? ` (${bulkDeleteCount})` : ""}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile: indicadores horizontais */}
+      <div className="contracts-mobile-stats-wrap md:hidden" aria-label="Resumo de contratos">
+        <div className="contracts-mobile-stats-scroll">
+          <div className="contracts-mobile-stat-chip">
+            <span className="contracts-mobile-stat-label">Ativos</span>
+            <span className="contracts-mobile-stat-value">{stats.ativos}</span>
+          </div>
+          <div className="contracts-mobile-stat-chip">
+            <span className="contracts-mobile-stat-label">Pendentes</span>
+            <span className="contracts-mobile-stat-value">{stats.pendentes}</span>
+          </div>
+          <div className="contracts-mobile-stat-chip">
+            <span className="contracts-mobile-stat-label">Assinados</span>
+            <span className="contracts-mobile-stat-value">{stats.assinados}</span>
+          </div>
+          <div className="contracts-mobile-stat-chip">
+            <span className="contracts-mobile-stat-label">Cancelados</span>
+            <span className="contracts-mobile-stat-value">{stats.cancelados}</span>
+          </div>
+          <div className="contracts-mobile-stat-chip contracts-mobile-stat-chip--valor">
+            <span className="contracts-mobile-stat-label">Valor total</span>
+            <span className="contracts-mobile-stat-value contracts-mobile-stat-value--currency">
+              {formatCompactCurrencyBRL(stats.valorTotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop / tablet: cards de resumo */}
+      <div className="hidden md:grid md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[#11151c] min-w-0">
         <div className="bg-[#1a1f2b] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
             <p className="text-gray-400 text-sm font-medium mb-1">
@@ -1483,10 +1575,16 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      <div className="flex flex-col xl:flex-row flex-1 overflow-hidden min-w-0">
+      <div className="flex flex-col xl:flex-row flex-1 overflow-hidden min-w-0 max-md:min-h-0">
         {/* SIDEBAR LIST */}
-        <div className="flex-none w-full xl:w-[min(100%,380px)] xl:max-w-[400px] flex flex-col border-b xl:border-b-0 border-r border-[#1f232b] bg-[#0b0e14] min-w-0 max-h-[42vh] xl:max-h-none shrink-0">
-          <div className="p-4 border-b border-[#1f232b]">
+        <div
+          className={`flex flex-col border-b xl:border-b-0 border-r border-[#1f232b] bg-[#0b0e14] min-w-0 w-full xl:w-[min(100%,380px)] xl:max-w-[400px] shrink-0 md:flex-none md:max-h-[42vh] xl:max-h-none max-md:min-h-0 ${
+            selectedContract
+              ? "max-md:flex-none max-md:max-h-[36vh]"
+              : "max-md:flex-1 max-md:max-h-none"
+          }`}
+        >
+          <div className="hidden md:block p-4 border-b border-[#1f232b] shrink-0">
             <div className="relative mb-2">
               <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
               <input
@@ -1502,23 +1600,19 @@ export default function ContractsPage() {
                 <input
                   type="checkbox"
                   className="rounded border-gray-600 bg-[#11151c] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                  checked={
-                    selectedContractIds.size > 0 &&
-                    selectedContractIds.size === filteredContracts.length
-                  }
+                  checked={allFilteredSelected}
                   onChange={handleSelectAll}
                 />
                 <span className="text-xs text-gray-400">Selecionar todos</span>
               </label>
               <button
+                type="button"
                 onClick={handleLimparTestes}
-                disabled={selectedContractIds.size === 0}
-                className={`text-xs transition-colors flex items-center gap-1 ${selectedContractIds.size > 0 ? "text-red-400 hover:text-red-300" : "text-gray-600 cursor-not-allowed"}`}
+                disabled={bulkDeleteCount === 0}
+                className={`text-xs transition-colors flex items-center gap-1 ${bulkDeleteCount > 0 ? "text-red-400 hover:text-red-300" : "text-gray-600 cursor-not-allowed"}`}
               >
                 <Trash2 className="w-3 h-3" /> Excluir selecionados{" "}
-                {selectedContractIds.size > 0
-                  ? `(${selectedContractIds.size})`
-                  : ""}
+                {bulkDeleteCount > 0 ? `(${bulkDeleteCount})` : ""}
               </button>
             </div>
           </div>
@@ -1546,7 +1640,7 @@ export default function ContractsPage() {
                   <button
                     key={c.id}
                     onClick={() => setSelectedContract(c)}
-                    className={`w-full text-left p-3.5 rounded-xl border transition-all duration-200 ${
+                    className={`w-full text-left p-3 max-md:p-3 md:p-3.5 rounded-xl border transition-all duration-200 ${
                       isSelected
                         ? "bg-[#1a2333] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
                         : "bg-[#11151c] border-[#1f232b] hover:border-[#2d3340] hover:bg-[#151a23]"
@@ -1611,8 +1705,12 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        {/* MAIN PREVIEW PANEL */}
-        <div className="flex-1 min-w-0 bg-[#11151c] flex flex-col overflow-hidden relative">
+        {/* MAIN PREVIEW PANEL — oculto no mobile até haver seleção */}
+        <div
+          className={`flex-1 min-w-0 bg-[#11151c] flex-col overflow-hidden relative min-h-0 ${
+            selectedContract ? "flex max-md:flex-1" : "hidden md:flex"
+          }`}
+        >
           {selectedContract ? (
             <>
               <div className="p-6 border-b border-[#1f232b]">
