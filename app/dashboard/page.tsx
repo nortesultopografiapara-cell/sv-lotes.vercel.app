@@ -336,7 +336,7 @@ function OperationalDashboard({ user }: { user: any }) {
     }
     return {
       icon: FileText,
-      color: 'bg-slate-500/10 text-slate-400',
+      color: 'bg-[var(--bg-card-alt)] text-[var(--text-secondary)]',
       dotColor: '#64748b',
     };
   };
@@ -383,32 +383,32 @@ function OperationalDashboard({ user }: { user: any }) {
             <motion.h1
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-xl md:text-2xl font-semibold text-white tracking-tight"
+              className="text-xl md:text-2xl font-semibold text-[var(--text-primary)] tracking-tight"
             >
               {getGreeting()}, {user?.name?.split(' ')[0] || 'Admin'}{' '}
               <span className="inline-block">👋</span>
             </motion.h1>
-            <p className="text-slate-500 text-sm mt-0.5">
+            <p className="text-[var(--text-muted)] text-sm mt-0.5">
               Bem-vindo ao painel de gestão da sua loteadora
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-right">
-              <p className="text-white font-mono text-lg font-semibold tabular-nums">
+              <p className="text-[var(--text-primary)] font-mono text-lg font-semibold tabular-nums">
                 {currentTime.toLocaleTimeString('pt-BR', {
                   hour: '2-digit',
                   minute: '2-digit',
                   second: '2-digit',
                 })}
               </p>
-              <p className="text-[11px] text-slate-500 capitalize max-w-[220px]">
+              <p className="text-[11px] text-[var(--text-muted)] capitalize max-w-[220px]">
                 {formatDateBR(currentTime)}
               </p>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-[#121820]/90 px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]/90 px-2 py-1.5">
               <label
                 htmlFor="project-select"
-                className="text-slate-500 text-[10px] font-semibold uppercase tracking-wide pl-1"
+                className="text-[var(--text-muted)] text-[10px] font-semibold uppercase tracking-wide pl-1"
               >
                 Empreendimento
               </label>
@@ -416,7 +416,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 id="project-select"
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="bg-[#1a232f] border border-white/10 text-white text-sm py-1 px-2 rounded-md focus:outline-none focus:border-blue-500 min-w-[160px] max-w-[220px]"
+                className="bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-sm py-1 px-2 rounded-md focus:outline-none focus:border-blue-500 min-w-[160px] max-w-[220px]"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -513,8 +513,8 @@ function OperationalDashboard({ user }: { user: any }) {
               mapExpanded ? 'fixed inset-4 z-[9999]' : ''
             }`}
           >
-            <div className="px-4 py-2.5 flex justify-between items-center border-b border-white/5 bg-[#12161f]/90 shrink-0">
-              <h2 className="text-sm font-semibold text-white">Mapa do empreendimento</h2>
+            <div className="px-4 py-2.5 flex justify-between items-center border-b border-[var(--border-subtle)] bg-[var(--bg-card)]/90 shrink-0">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Mapa do empreendimento</h2>
             </div>
             <div className="dash-map-body group">
               {selectedProjectId ? (
@@ -557,30 +557,30 @@ function OperationalDashboard({ user }: { user: any }) {
               </div>
 
               <div className="dash-map-legend">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
                   Legenda
                 </p>
-                <div className="space-y-2 text-xs text-slate-300">
+                <div className="space-y-2 text-xs text-[var(--text-secondary)]">
                   <div className="flex justify-between gap-4">
                     <span className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
                       Disponível
                     </span>
-                    <span className="font-mono text-white">{loading ? '—' : stats.available}</span>
+                    <span className="font-mono text-[var(--text-primary)]">{loading ? '—' : stats.available}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
                       Reservado
                     </span>
-                    <span className="font-mono text-white">{loading ? '—' : stats.reserved}</span>
+                    <span className="font-mono text-[var(--text-primary)]">{loading ? '—' : stats.reserved}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
                       Vendido
                     </span>
-                    <span className="font-mono text-white">{loading ? '—' : stats.sold}</span>
+                    <span className="font-mono text-[var(--text-primary)]">{loading ? '—' : stats.sold}</span>
                   </div>
                 </div>
               </div>
@@ -588,8 +588,8 @@ function OperationalDashboard({ user }: { user: any }) {
           </div>
 
           <div className="dash-activity-panel">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-white/5 shrink-0">
-              <h2 className="text-sm font-semibold text-white">Atividades recentes</h2>
+            <div className="px-4 py-3 flex items-center justify-between border-b border-[var(--border-subtle)] shrink-0">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Atividades recentes</h2>
               <Link
                 href="/"
                 className="text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors"
@@ -637,7 +637,7 @@ function OperationalDashboard({ user }: { user: any }) {
           <ChartCardShell
             title="Vendas por mês"
             action={
-              <select className="text-[10px] text-slate-500 bg-transparent border border-white/10 rounded px-1 py-0.5 outline-none">
+              <select className="text-[10px] text-[var(--text-muted)] bg-transparent border border-[var(--border-subtle)] rounded px-1 py-0.5 outline-none">
                 <option>Este ano</option>
               </select>
             }
@@ -667,13 +667,13 @@ function OperationalDashboard({ user }: { user: any }) {
       </div>
 
       {/* Footer Profissional */}
-      <footer className="w-full mt-auto bg-[#11161d]/80 backdrop-blur-md border-t border-white/5 py-5 px-6">
+      <footer className="w-full mt-auto bg-[var(--bg-card)]/80 backdrop-blur-md border-t border-[var(--border-subtle)] py-5 px-6">
          <div className="max-w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left min-w-0 px-4">
             <div>
-               <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-gray-500 font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
-               <p className="text-gray-500 text-[11px] mt-0.5">NORTE E SUL TOPOGRAFIA E SERVIÇOS LTDA-ME - CNPJ: 32.123.456/0001-00</p>
+               <p className="text-[#60a5fa] text-[13px] font-semibold tracking-wide">SV LOTES <span className="text-[var(--text-muted)] font-normal ml-1">- Gestão Imobiliária Inteligente</span></p>
+               <p className="text-[var(--text-muted)] text-[11px] mt-0.5">NORTE E SUL TOPOGRAFIA E SERVIÇOS LTDA-ME - CNPJ: 32.123.456/0001-00</p>
             </div>
-            <div className="text-gray-600 text-[11px] font-mono">
+            <div className="text-[var(--text-muted)] text-[11px] font-mono">
                Versão 2.1.0
             </div>
          </div>

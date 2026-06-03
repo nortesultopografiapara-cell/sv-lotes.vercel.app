@@ -38,7 +38,9 @@ html[data-brand='purple'] {
   --bg-sidebar: #111827;
   --bg-navbar: #0b1121;
   --bg-input: #151e2e;
+  --bg-card-alt: #1e293b;
   --bg-overlay: rgba(15, 23, 42, 0.75);
+  --text-on-brand: #ffffff;
 
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
@@ -81,7 +83,9 @@ html[data-brand='purple'] {
   --bg-sidebar: #ffffff;
   --bg-navbar: #ffffff;
   --bg-input: #ffffff;
+  --bg-card-alt: #f1f5f9;
   --bg-overlay: rgba(15, 23, 42, 0.4);
+  --text-on-brand: #ffffff;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
@@ -122,8 +126,75 @@ html[data-brand='purple'] {
 
 .sv-theme-card {
   background-color: var(--bg-card);
-  border-color: var(--border-color);
+  border: 1px solid var(--border-color);
   color: var(--text-primary);
+}
+
+.sv-theme-card-alt {
+  background-color: var(--bg-card-alt);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.sv-theme-panel {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.sv-theme-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--text-primary);
+}
+
+.sv-theme-table thead th {
+  background-color: var(--bg-card-alt);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+}
+
+.sv-theme-table tbody td {
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.sv-theme-table tbody tr:hover td {
+  background-color: var(--bg-card-alt);
+}
+
+.sv-theme-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card-alt);
+  color: var(--text-primary);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sv-theme-button:hover:not(:disabled) {
+  background-color: var(--bg-elevated);
+  border-color: var(--color-border-hover);
+}
+
+.sv-theme-button--primary {
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--text-on-brand);
+}
+
+.sv-theme-button--primary:hover:not(:disabled) {
+  background-color: var(--brand-secondary);
+  border-color: var(--brand-secondary);
 }
 
 .sv-theme-input {
@@ -290,6 +361,67 @@ html[data-brand='purple'] {
 
 [data-theme='light'] .finance-premium .finance-kpi-value {
   color: var(--text-primary);
+}
+
+/* Premium modules — forçar tokens em modo claro */
+[data-theme='light'] .dashboard-premium,
+[data-theme='light'] .finance-premium {
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .dashboard-premium .dash-map-panel,
+[data-theme='light'] .dashboard-premium .dash-chart-card,
+[data-theme='light'] .dashboard-premium .dash-kpi-metric,
+[data-theme='light'] .finance-premium .finance-table thead th,
+[data-theme='light'] .finance-premium .finance-table tbody td {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+[data-theme='light'] .dashboard-premium .text-white,
+[data-theme='light'] .finance-premium .text-white,
+[data-theme='light'] .dashboard-premium .text-slate-500,
+[data-theme='light'] .finance-premium .text-slate-500,
+[data-theme='light'] .dashboard-premium .text-gray-500,
+[data-theme='light'] .finance-premium .text-gray-500 {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .dashboard-premium .text-slate-400,
+[data-theme='light'] .finance-premium .text-slate-400,
+[data-theme='light'] .dashboard-premium .text-gray-400,
+[data-theme='light'] .finance-premium .text-gray-400 {
+  color: var(--text-secondary);
+}
+
+[data-theme='light'] .dashboard-premium .text-slate-300,
+[data-theme='light'] .finance-premium .text-slate-300 {
+  color: var(--text-secondary);
+}
+
+[data-theme='light'] .dashboard-premium [class*='bg-[#'],
+[data-theme='light'] .finance-premium [class*='bg-[#'],
+[data-theme='light'] .dashboard-premium .bg-slate-900,
+[data-theme='light'] .finance-premium .bg-slate-900 {
+  background-color: var(--bg-card) !important;
+}
+
+/* GIS shell */
+[data-theme='light'] .gis-shell-panel {
+  background-color: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .gis-shell-panel .text-white,
+[data-theme='light'] .gis-shell-panel .text-gray-300,
+[data-theme='light'] .gis-shell-panel .text-gray-400 {
+  color: var(--text-primary);
+}
+
+[data-theme='light'] .gis-shell-panel .text-gray-500 {
+  color: var(--text-muted);
 }
 
 /* Utilitários de marca */

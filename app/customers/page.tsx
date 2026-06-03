@@ -283,7 +283,7 @@ export default function CustomersPage() {
         </div>
         <button 
            onClick={() => setIsModalOpen(true)}
-           className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+           className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-primary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
         >
           <Plus className="w-5 h-5" />
           Novo Cliente
@@ -302,7 +302,7 @@ export default function CustomersPage() {
               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
-          <button className="px-4 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text-muted)] flex items-center gap-2 hover:text-white transition-colors">
+          <button className="px-4 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text-muted)] flex items-center gap-2 hover:text-[var(--text-primary)] transition-colors">
             <Filter className="w-4 h-4" /> Filtros
           </button>
         </div>
@@ -359,8 +359,8 @@ export default function CustomersPage() {
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
-              <h3 className="font-bold text-lg text-white">{formData.id ? 'Editar Cliente' : 'Novo Cliente'}</h3>
-              <button disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="p-2 text-[var(--color-text-muted)] hover:text-white rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+              <h3 className="font-bold text-lg text-[var(--text-primary)]">{formData.id ? 'Editar Cliente' : 'Novo Cliente'}</h3>
+              <button disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -438,10 +438,10 @@ export default function CustomersPage() {
                   </div>
               )}
               <div className="pt-4 flex gap-3">
-                 <button type="button" disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-white hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
+                 <button type="button" disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-[var(--text-primary)] hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
                    Cancelar
                  </button>
-                 <button type="submit" disabled={submitting} className={`flex-1 px-4 py-2 bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2`}>
+                 <button type="submit" disabled={submitting} className={`flex-1 px-4 py-2 bg-[var(--color-primary)] text-[var(--text-primary)] hover:bg-[var(--color-primary-hover)] font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2`}>
                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}
                  </button>
               </div>
@@ -454,26 +454,26 @@ export default function CustomersPage() {
          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
              <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
-               <h3 className="font-bold text-lg text-white">Visualizar Cliente</h3>
-               <button onClick={() => setIsViewModalOpen(false)} className="p-2 text-[var(--color-text-muted)] hover:text-white rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+               <h3 className="font-bold text-lg text-[var(--text-primary)]">Visualizar Cliente</h3>
+               <button onClick={() => setIsViewModalOpen(false)} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                  <X className="w-5 h-5" />
                </button>
              </div>
              <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">Nome</span><span className="text-white">{selectedCustomer.name || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">Documento (CPF/CNPJ)</span><span className="text-white font-mono">{selectedCustomer.cpf_cnpj || selectedCustomer.document || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">RG</span><span className="text-white font-mono">{selectedCustomer.rg || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">Telefone</span><span className="text-white font-mono">{selectedCustomer.phone || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">E-mail</span><span className="text-white">{selectedCustomer.email || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">Profissão</span><span className="text-white">{selectedCustomer.profession || '-'}</span></div>
-                   <div><span className="text-[var(--color-text-muted)] block text-xs">Estado Civil</span><span className="text-white">{selectedCustomer.marital_status || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">Nome</span><span className="text-[var(--text-primary)]">{selectedCustomer.name || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">Documento (CPF/CNPJ)</span><span className="text-[var(--text-primary)] font-mono">{selectedCustomer.cpf_cnpj || selectedCustomer.document || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">RG</span><span className="text-[var(--text-primary)] font-mono">{selectedCustomer.rg || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">Telefone</span><span className="text-[var(--text-primary)] font-mono">{selectedCustomer.phone || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">E-mail</span><span className="text-[var(--text-primary)]">{selectedCustomer.email || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">Profissão</span><span className="text-[var(--text-primary)]">{selectedCustomer.profession || '-'}</span></div>
+                   <div><span className="text-[var(--color-text-muted)] block text-xs">Estado Civil</span><span className="text-[var(--text-primary)]">{selectedCustomer.marital_status || '-'}</span></div>
                    <div><span className="text-[var(--color-text-muted)] block text-xs">Status</span>
-                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${selectedCustomer.status === 'inativo' ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' : 'bg-[#2ad271]/10 text-[#2ad271]'}`}>
+                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${selectedCustomer.status === 'inativo' ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' : 'bg-[color-mix(in_srgb,var(--success)_12%,transparent)] text-[var(--success)]'}`}>
                        {selectedCustomer.status?.toUpperCase() || 'ATIVO'}
                      </span>
                    </div>
-                   <div className="col-span-2"><span className="text-[var(--color-text-muted)] block text-xs">Endereço</span><span className="text-white">{[selectedCustomer.address, selectedCustomer.neighborhood, selectedCustomer.city, selectedCustomer.state, selectedCustomer.cep].filter(Boolean).join(', ') || '-'}</span></div>
+                   <div className="col-span-2"><span className="text-[var(--color-text-muted)] block text-xs">Endereço</span><span className="text-[var(--text-primary)]">{[selectedCustomer.address, selectedCustomer.neighborhood, selectedCustomer.city, selectedCustomer.state, selectedCustomer.cep].filter(Boolean).join(', ') || '-'}</span></div>
                 </div>
              </div>
            </div>
@@ -487,20 +487,20 @@ export default function CustomersPage() {
                  <Lock className="w-5 h-5 text-red-500" />
                  <h3 className="font-bold text-lg text-red-500">Atenção: Exclusão Protegida</h3>
                </div>
-               <button onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="p-2 text-[var(--color-text-muted)] hover:text-white rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
+               <button onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                  <X className="w-5 h-5" />
                </button>
              </div>
              <form onSubmit={confirmDeleteLinkedCustomer} className="p-5 space-y-4">
                
                <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-4 space-y-2 text-sm text-[var(--color-text-muted)]">
-                 <p className="text-white font-medium mb-2">Este cliente possui vínculos importantes:</p>
+                 <p className="text-[var(--text-primary)] font-medium mb-2">Este cliente possui vínculos importantes:</p>
                  <div className="grid grid-cols-2 gap-2">
-                    <div><span className="font-medium text-gray-400">Cliente:</span> <br/><span className="text-white truncate block" title={deleteModalCustomer.name}>{deleteModalCustomer.name}</span></div>
-                    <div><span className="font-medium text-gray-400">CPF/CNPJ:</span> <br/><span className="text-white">{deleteModalCustomer.cpf_cnpj || deleteModalCustomer.document || '-'}</span></div>
-                    <div><span className="font-medium text-gray-400">Lotes vinculados:</span> <br/><span className="text-white">{deleteModalCustomer.blocks?.length || 0}</span></div>
-                    <div><span className="font-medium text-gray-400">Contratos:</span> <br/><span className="text-white">{deleteModalStats.contractCount || 0}</span></div>
-                    <div className="col-span-2"><span className="font-medium text-gray-400">Registros financeiros:</span> <span className="text-white">{deleteModalStats.receiptCount || 0}</span></div>
+                    <div><span className="font-medium text-[var(--text-secondary)]">Cliente:</span> <br/><span className="text-[var(--text-primary)] truncate block" title={deleteModalCustomer.name}>{deleteModalCustomer.name}</span></div>
+                    <div><span className="font-medium text-[var(--text-secondary)]">CPF/CNPJ:</span> <br/><span className="text-[var(--text-primary)]">{deleteModalCustomer.cpf_cnpj || deleteModalCustomer.document || '-'}</span></div>
+                    <div><span className="font-medium text-[var(--text-secondary)]">Lotes vinculados:</span> <br/><span className="text-[var(--text-primary)]">{deleteModalCustomer.blocks?.length || 0}</span></div>
+                    <div><span className="font-medium text-[var(--text-secondary)]">Contratos:</span> <br/><span className="text-[var(--text-primary)]">{deleteModalStats.contractCount || 0}</span></div>
+                    <div className="col-span-2"><span className="font-medium text-[var(--text-secondary)]">Registros financeiros:</span> <span className="text-[var(--text-primary)]">{deleteModalStats.receiptCount || 0}</span></div>
                  </div>
                  <p className="mt-4 pt-4 border-t border-[var(--color-border)] text-xs text-amber-500 font-medium">
                    A exclusão irá desvincular este cliente de todos os lotes, contratos e compras acima informadas. Os registros não serão apagados, constarão sem cliente atrelado.
@@ -518,10 +518,10 @@ export default function CustomersPage() {
                </div>
 
                <div className="pt-4 flex gap-3">
-                  <button type="button" disabled={isDeletingWithLinks} onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-white hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
+                  <button type="button" disabled={isDeletingWithLinks} onClick={() => { setDeleteModalCustomer(null); setDeleteModalPassword(''); setDeleteModalConfirmText(''); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-[var(--text-primary)] hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
                     Cancelar
                   </button>
-                  <button type="submit" disabled={isDeletingWithLinks || deleteModalConfirmText !== 'EXCLUIR CLIENTE' || !deleteModalPassword} className={`flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50`}>
+                  <button type="submit" disabled={isDeletingWithLinks || deleteModalConfirmText !== 'EXCLUIR CLIENTE' || !deleteModalPassword} className={`flex-1 px-4 py-2 bg-red-600 text-[var(--text-primary)] hover:bg-red-700 font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50`}>
                     {isDeletingWithLinks ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar Exclusão'}
                   </button>
                </div>
@@ -547,7 +547,7 @@ function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, 
             )}
           </div>
           <div>
-            <div className="font-bold text-sm text-white flex items-center gap-2">
+            <div className="font-bold text-sm text-[var(--text-primary)] flex items-center gap-2">
                {name}
                {status === 'inativo' && <span className="bg-[var(--color-danger)]/10 text-[var(--color-danger)] text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Inativo</span>}
             </div>

@@ -47,8 +47,8 @@
   border: 1px solid var(--dash-border);
   background: linear-gradient(
     145deg,
-    rgba(22, 30, 48, 0.9) 0%,
-    rgba(14, 18, 28, 0.75) 100%
+    color-mix(in srgb, var(--bg-card) 92%, var(--brand-primary)) 0%,
+    var(--bg-card-alt) 100%
   );
   backdrop-filter: blur(8px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
@@ -62,7 +62,7 @@
 
 .dashboard-premium .dash-kpi-top:hover {
   transform: translateY(-2px);
-  border-color: rgba(59, 130, 246, 0.25);
+  border-color: color-mix(in srgb, var(--brand-primary) 28%, transparent);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
 }
 
@@ -90,13 +90,13 @@
   padding: 0.75rem 0.9rem;
   border-radius: 0.75rem;
   border: 1px solid var(--dash-border);
-  background: rgba(17, 22, 29, 0.72);
+  background: color-mix(in srgb, var(--bg-card) 88%, transparent);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .dashboard-premium .dash-kpi-metric:hover {
-  background: rgba(21, 26, 35, 0.9);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--bg-card-alt);
+  border-color: var(--border-color);
 }
 
 .dashboard-premium .dash-map-grid {
@@ -115,7 +115,7 @@
 .dashboard-premium .dash-map-panel {
   border-radius: 0.875rem;
   border: 1px solid var(--dash-border);
-  background: #11161d;
+  background: var(--bg-card);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -144,7 +144,7 @@
 .dashboard-premium .dash-activity-panel {
   border-radius: 0.875rem;
   border: 1px solid var(--dash-border);
-  background: rgba(17, 22, 29, 0.9);
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
   min-height: 360px;
@@ -172,8 +172,8 @@
   z-index: 400;
   padding: 0.75rem 1rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 20, 28, 0.75);
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-card) 90%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -195,18 +195,18 @@
   padding: 0.4rem 0.65rem;
   font-size: 0.6875rem;
   font-weight: 600;
-  color: #cbd5e1;
-  background: rgba(15, 20, 28, 0.8);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-card) 85%, transparent);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   transition: all 0.2s ease;
 }
 
 .dashboard-premium .dash-map-btn:hover {
-  color: #fff;
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--brand-primary) 22%, transparent);
 }
 
 .dashboard-premium .dash-charts-grid {
@@ -232,7 +232,7 @@
   padding: 1rem;
   border-radius: 0.875rem;
   border: 1px solid var(--dash-border);
-  background: rgba(17, 22, 29, 0.88);
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
   transition: transform 0.2s ease, border-color 0.2s ease;
@@ -240,7 +240,7 @@
 }
 
 .dashboard-premium .dash-chart-card:hover {
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-color);
   transform: translateY(-1px);
 }
 

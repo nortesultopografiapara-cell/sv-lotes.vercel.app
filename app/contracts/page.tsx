@@ -673,7 +673,7 @@ export default function ContractsPage() {
     if (st === "ativo" || st === "active")
       return "text-[var(--color-primary)] bg-[var(--color-primary)]/10 border-[var(--color-primary)]/20";
     if (st === "superseded")
-      return "text-gray-400 bg-gray-500/10 border-gray-500/20";
+      return "text-[var(--text-secondary)] bg-gray-500/10 border-gray-500/20";
     return "text-[var(--color-warning)] bg-[var(--color-warning)]/10 border-[var(--color-warning)]/20";
   };
 
@@ -1500,10 +1500,10 @@ export default function ContractsPage() {
       {/* Mobile: busca + ações em massa (antes dos indicadores) */}
       <div className="contracts-mobile-top md:hidden">
         <div className="relative">
-          <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
+          <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-[var(--text-muted)]" />
           <input
             type="text"
-            className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+            className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
             placeholder="Buscar por cliente, contrato, projeto..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -1526,7 +1526,7 @@ export default function ContractsPage() {
             className={`contracts-mobile-bulk-delete transition-colors ${
               bulkDeleteCount > 0
                 ? "text-red-400 hover:text-red-300"
-                : "text-gray-600 cursor-not-allowed"
+                : "text-[var(--text-muted)] cursor-not-allowed"
             }`}
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -1567,7 +1567,7 @@ export default function ContractsPage() {
       <div className="hidden md:grid md:grid-cols-5 gap-4 p-4 sm:p-6 border-b border-[var(--color-border)] bg-[var(--bg-card)] min-w-0">
         <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm font-medium mb-1">
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">
               Contratos Ativos
             </p>
             <h3 className="text-2xl font-bold">{stats.ativos}</h3>
@@ -1579,7 +1579,7 @@ export default function ContractsPage() {
 
         <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm font-medium mb-1">Assinados</p>
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Assinados</p>
             <h3 className="text-2xl font-bold">{stats.assinados}</h3>
             <p className="text-[10px] text-[var(--color-success)] mt-1 font-medium">
               {stats.ativos > 0
@@ -1595,7 +1595,7 @@ export default function ContractsPage() {
 
         <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm font-medium mb-1">Pendentes</p>
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Pendentes</p>
             <h3 className="text-2xl font-bold">{stats.pendentes}</h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center text-[var(--color-warning)]">
@@ -1605,7 +1605,7 @@ export default function ContractsPage() {
 
         <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm font-medium mb-1">Cancelados</p>
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Cancelados</p>
             <h3 className="text-2xl font-bold">{stats.cancelados}</h3>
           </div>
           <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 flex items-center justify-center text-[var(--color-danger)]">
@@ -1615,7 +1615,7 @@ export default function ContractsPage() {
 
         <div className="bg-[var(--bg-elevated)] border border-[var(--color-border)] p-4 rounded-xl flex items-center justify-between">
           <div>
-            <p className="text-gray-400 text-sm font-medium mb-1">
+            <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">
               Val Total Contratado
             </p>
             <h3 className="text-xl lg:text-2xl font-bold">
@@ -1642,10 +1642,10 @@ export default function ContractsPage() {
         >
           <div className="hidden md:block p-4 border-b border-[var(--border-color)] shrink-0">
             <div className="relative mb-2">
-              <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-gray-500" />
+              <SearchIcon className="absolute left-3 top-2.5 w-4 h-4 text-[var(--text-muted)]" />
               <input
                 type="text"
-                className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:outline-none focus:border-[var(--color-primary)] transition-all"
                 placeholder="Buscar por cliente, contrato, projeto..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1659,13 +1659,13 @@ export default function ContractsPage() {
                   checked={allFilteredSelected}
                   onChange={handleSelectAll}
                 />
-                <span className="text-xs text-gray-400">Selecionar todos</span>
+                <span className="text-xs text-[var(--text-secondary)]">Selecionar todos</span>
               </label>
               <button
                 type="button"
                 onClick={handleLimparTestes}
                 disabled={bulkDeleteCount === 0}
-                className={`text-xs transition-colors flex items-center gap-1 ${bulkDeleteCount > 0 ? "text-red-400 hover:text-red-300" : "text-gray-600 cursor-not-allowed"}`}
+                className={`text-xs transition-colors flex items-center gap-1 ${bulkDeleteCount > 0 ? "text-red-400 hover:text-red-300" : "text-[var(--text-muted)] cursor-not-allowed"}`}
               >
                 <Trash2 className="w-3 h-3" /> Excluir selecionados{" "}
                 {bulkDeleteCount > 0 ? `(${bulkDeleteCount})` : ""}
@@ -1679,7 +1679,7 @@ export default function ContractsPage() {
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
               </div>
             ) : filteredContracts.length === 0 ? (
-              <div className="text-center text-gray-500 p-8 text-sm">
+              <div className="text-center text-[var(--text-muted)] p-8 text-sm">
                 Nenhum contrato encontrado.
               </div>
             ) : (
@@ -1698,8 +1698,8 @@ export default function ContractsPage() {
                     onClick={() => setSelectedContract(c)}
                     className={`w-full text-left p-3 max-md:p-3 md:p-3.5 rounded-xl border transition-all duration-200 ${
                       isSelected
-                        ? "bg-[#1a2333] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
-                        : "bg-[var(--bg-card)] border-[var(--border-color)] hover:border-[var(--border-color)] hover:bg-[#151a23]"
+                        ? "bg-[var(--bg-card-alt)] border-[var(--color-primary)]/40 shadow-[0_0_15px_rgba(41,128,185,0.1)]"
+                        : "bg-[var(--bg-card)] border-[var(--border-color)] hover:border-[var(--border-color)] hover:bg-[var(--bg-card-alt)]"
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
@@ -1713,42 +1713,42 @@ export default function ContractsPage() {
                         className="rounded border-gray-600 bg-[var(--bg-card)] text-[var(--color-primary)] focus:ring-[var(--color-primary)] cursor-pointer mt-1 shrink-0"
                       />
                       <FileText
-                        className={`w-4 h-4 shrink-0 mt-1 ${isSelected ? "text-[var(--color-primary)]" : "text-gray-400"}`}
+                        className={`w-4 h-4 shrink-0 mt-1 ${isSelected ? "text-[var(--color-primary)]" : "text-[var(--text-secondary)]"}`}
                       />
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="font-mono text-sm font-bold text-white break-words">
+                          <span className="font-mono text-sm font-bold text-[var(--text-primary)] break-words">
                             Contrato nº {cnum}
                           </span>
-                          <span className="text-gray-600 hidden sm:inline">|</span>
+                          <span className="text-[var(--text-muted)] hidden sm:inline">|</span>
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${getStatusColor(c.status)}`}
                           >
                             {getStatusLabel(c.status)}
                           </span>
                         </div>
-                        <p className="text-sm font-semibold text-gray-100 leading-snug break-words whitespace-normal">
+                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-snug break-words whitespace-normal">
                           Cliente:{' '}
                           {c.customer_name || c.customers?.name || "Cliente não informado"}
                         </p>
-                        <p className="text-xs text-gray-400 leading-snug break-words whitespace-normal">
+                        <p className="text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal">
                           Projeto: {projName}
                           {loc && loc !== "Localização não informada" ? (
-                            <span className="text-gray-500"> | {loc}</span>
+                            <span className="text-[var(--text-muted)]"> | {loc}</span>
                           ) : null}
                         </p>
-                        <p className="text-xs text-gray-300 leading-snug break-words whitespace-normal">
+                        <p className="text-xs text-[var(--text-secondary)] leading-snug break-words whitespace-normal">
                           Valor:{' '}
                           {new Intl.NumberFormat("pt-BR", {
                             style: "currency",
                             currency: "BRL",
                           }).format(val)}
-                          <span className="text-gray-600 mx-1.5">|</span>
+                          <span className="text-[var(--text-muted)] mx-1.5">|</span>
                           Data:{' '}
                           {new Date(c.created_at).toLocaleDateString("pt-BR")}
                         </p>
                         {(c.customers?.document || c.customers?.cpf) && (
-                          <p className="text-[10px] text-gray-500 break-words">
+                          <p className="text-[10px] text-[var(--text-muted)] break-words">
                             CPF/CNPJ: {c.customers?.document || c.customers?.cpf}
                           </p>
                         )}
@@ -1778,7 +1778,7 @@ export default function ContractsPage() {
                     <div>
                       <h2 className="text-xl font-bold flex items-center gap-3 flex-wrap">
                         {displayContractNumber(selectedContract.contract_number)}
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-white/10 bg-white/5 text-gray-300">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-[var(--border-subtle)] bg-white/5 text-[var(--text-secondary)]">
                           Versão {selectedContract.version ?? 1}
                         </span>
                         <span
@@ -1787,7 +1787,7 @@ export default function ContractsPage() {
                           {getStatusLabel(selectedContract.status)}
                         </span>
                       </h2>
-                      <p className="text-[11px] text-gray-500 mt-0.5">
+                      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                         Gerado em:{" "}
                         {new Date(
                           selectedContract.regenerated_at ||
@@ -1800,7 +1800,7 @@ export default function ContractsPage() {
                     {getStatusLabel(selectedContract.status) === "Pendente" && (
                       <button
                         onClick={handleAtivarContrato}
-                        className="flex items-center gap-2 px-4 py-2 bg-[var(--color-success)] text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium shadow-sm"
+                        className="flex items-center gap-2 px-4 py-2 bg-[var(--color-success)] text-[var(--text-primary)] rounded-lg hover:bg-green-600 transition-colors text-sm font-medium shadow-sm"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         Ativar Contrato
@@ -1808,27 +1808,27 @@ export default function ContractsPage() {
                     )}
                     {/* Botão Dropdown "Modelos" */}
                     <div className="relative group">
-                      <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-gray-300 border border-[var(--border-color)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium">
+                      <button className="flex items-center gap-2 px-4 py-2 bg-transparent text-[var(--text-secondary)] border border-[var(--border-color)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium">
                         Modelos
                         <ChevronDown className="w-4 h-4" />
                       </button>
                       <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
                         <a
                           href="/contracts/templates"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50"
+                          className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50"
                         >
                           Novo Contrato
                         </a>
                         <a
                           href="/contracts/templates"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50"
+                          className="block px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50"
                         >
                           Modelos
                         </a>
-                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50">
+                        <button className="block w-full text-left px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50">
                           Gerar PDF
                         </button>
-                        <button className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[var(--color-primary)] hover:text-white border-b border-[var(--border-color)]/50">
+                        <button className="block w-full text-left px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--color-primary)] hover:text-[var(--text-primary)] border-b border-[var(--border-color)]/50">
                           Exportar
                         </button>
                         <button className="block w-full text-left px-4 py-2 text-sm text-[var(--color-success)] hover:bg-[var(--color-success)]/10 hover:text-[var(--color-success)]">
@@ -1852,12 +1852,12 @@ export default function ContractsPage() {
                     <button
                       type="button"
                       onClick={() => void handleBaixarPDF()}
-                      className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-gray-200 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
+                      className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg hover:bg-[var(--bg-elevated)] transition-colors text-sm font-medium"
                     >
                       <Download className="w-4 h-4" />
                       Baixar PDF
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[#1f6b9c] transition-colors text-sm font-medium shadow-sm">
+                    <button className="sv-theme-button sv-theme-button--primary flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-medium shadow-sm">
                       <Send className="w-4 h-4" />
                       Assinar via WhatsApp
                     </button>
@@ -1867,13 +1867,13 @@ export default function ContractsPage() {
                 {/* Header Infos */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 text-sm mt-4">
                   <div>
-                    <p className="text-gray-500 text-xs mb-1">Cliente</p>
-                    <p className="font-semibold text-gray-200">
+                    <p className="text-[var(--text-muted)] text-xs mb-1">Cliente</p>
+                    <p className="font-semibold text-[var(--text-primary)]">
                       {selectedContract.customer_name ||
                         selectedContract.customers?.name ||
                         "Cliente não informado"}
                     </p>
-                    <p className="text-[10px] text-gray-500">
+                    <p className="text-[10px] text-[var(--text-muted)]">
                       CPF:{" "}
                       {selectedContract.customers?.document ||
                         selectedContract.customers?.cpf ||
@@ -1881,8 +1881,8 @@ export default function ContractsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs mb-1">Projeto</p>
-                    <p className="font-semibold text-gray-200">
+                    <p className="text-[var(--text-muted)] text-xs mb-1">Projeto</p>
+                    <p className="font-semibold text-[var(--text-primary)]">
                       {selectedContract.project_name ||
                         selectedContract.project_name_snapshot ||
                         selectedContract.sales?.projects?.name ||
@@ -1892,8 +1892,8 @@ export default function ContractsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs mb-1">Localização</p>
-                    <p className="font-semibold text-gray-200">
+                    <p className="text-[var(--text-muted)] text-xs mb-1">Localização</p>
+                    <p className="font-semibold text-[var(--text-primary)]">
                       {selectedContract.location_display ||
                         buildLocationDisplay(
                           resolveBlockQuadra(selectedContract.blocks),
@@ -1905,10 +1905,10 @@ export default function ContractsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs mb-1">
+                    <p className="text-[var(--text-muted)] text-xs mb-1">
                       Valor do Contrato
                     </p>
-                    <p className="font-semibold text-gray-200">
+                    <p className="font-semibold text-[var(--text-primary)]">
                       {new Intl.NumberFormat("pt-BR", {
                         style: "currency",
                         currency: "BRL",
@@ -1937,7 +1937,7 @@ export default function ContractsPage() {
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`py-3 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-gray-500 hover:text-gray-300"}`}
+                    className={`py-3 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${activeTab === tab ? "border-[var(--color-primary)] text-[var(--color-primary)]" : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                   >
                     {tab}
                   </button>
@@ -1965,7 +1965,7 @@ export default function ContractsPage() {
                           <button
                             type="button"
                             onClick={openRegenerateModal}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-[var(--text-primary)] text-sm font-semibold rounded-lg transition-colors"
                           >
                             Regenerar Contrato
                           </button>
@@ -1973,7 +1973,7 @@ export default function ContractsPage() {
                       )}
                       <div className="max-w-[800px] mx-auto bg-white rounded shadow-lg overflow-hidden border border-[var(--border-color)] origin-top p-8 text-black min-h-[800px]">
                         {contractViewLoading ? (
-                          <div className="flex items-center justify-center py-32 text-gray-500">
+                          <div className="flex items-center justify-center py-32 text-[var(--text-muted)]">
                             <Loader2 className="w-8 h-8 animate-spin mr-2" />
                             Atualizando contrato com dados da empresa…
                           </div>
@@ -1984,7 +1984,7 @@ export default function ContractsPage() {
                             }}
                           />
                         ) : (
-                          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 h-full py-32">
+                          <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-secondary)] h-full py-32">
                             <FileText className="w-16 h-16 mb-4 opacity-30" />
                             <p>
                               Contrato gerado sem conteúdo. Verifique o modelo.
@@ -1996,8 +1996,8 @@ export default function ContractsPage() {
 
                     {/* Timeline Sidebar inside preview */}
                     <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[var(--border-color)] bg-[var(--bg-card)] p-4 sm:p-6 overflow-y-auto shrink-0">
-                      <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                        <History className="w-4 h-4 text-gray-400" />
+                      <h3 className="text-sm font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                        <History className="w-4 h-4 text-[var(--text-secondary)]" />
                         Histórico de versões
                       </h3>
                       <div className="space-y-2 mb-6">
@@ -2010,7 +2010,7 @@ export default function ContractsPage() {
                             className="flex items-center justify-between gap-2 p-3 rounded-lg bg-[var(--bg-main)] border border-[var(--border-color)] text-xs"
                           >
                             <div>
-                              <p className="font-semibold text-gray-200">
+                              <p className="font-semibold text-[var(--text-primary)]">
                                 Versão {ver.version ?? 1}
                                 <span
                                   className={`ml-2 px-1.5 py-0.5 rounded text-[10px] border ${getStatusColor(ver.status)}`}
@@ -2018,7 +2018,7 @@ export default function ContractsPage() {
                                   {getStatusLabel(ver.status)}
                                 </span>
                               </p>
-                              <p className="text-gray-500 mt-0.5">
+                              <p className="text-[var(--text-muted)] mt-0.5">
                                 {new Date(
                                   ver.regenerated_at || ver.created_at,
                                 ).toLocaleString("pt-BR")}
@@ -2042,7 +2042,7 @@ export default function ContractsPage() {
                           </div>
                         ))}
                       </div>
-                      <h3 className="text-sm font-bold text-white mb-6">
+                      <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">
                         Linha do Tempo
                       </h3>
                       <div className="space-y-6">
@@ -2101,73 +2101,73 @@ export default function ContractsPage() {
                 {activeTab === "Dados do Contrato" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
-                      <h3 className="text-lg font-bold text-white mb-6">
+                      <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Dados Principais do Contrato
                       </h3>
                       <div className="grid grid-cols-2 gap-6">
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">
                             Número do Contrato
                           </p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {displayContractNumber(
                               selectedContract.contract_number,
                             )}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Status</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Status</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {getStatusLabel(selectedContract.status)}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Cliente</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Cliente</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.customers?.name}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">CPF/CNPJ</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">CPF/CNPJ</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.customers?.document ||
                               selectedContract.customers?.cpf}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">RG</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">RG</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.customers?.rg || "-"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Projeto</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Projeto</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.projects?.name ||
                               selectedContract.sales?.projects?.name ||
                               selectedContract.project_name_snapshot}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Quadra</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Quadra</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.blocks?.block_name ||
                               selectedContract.blocks?.name ||
                               selectedContract.sales?.blocks?.block_name}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Lote</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Lote</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.blocks?.number ||
                               selectedContract.sales?.blocks?.number}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">
                             Valor Total
                           </p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {new Intl.NumberFormat("pt-BR", {
                               style: "currency",
                               currency: "BRL",
@@ -2182,8 +2182,8 @@ export default function ContractsPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">Entrada</p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">Entrada</p>
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {new Intl.NumberFormat("pt-BR", {
                               style: "currency",
                               currency: "BRL",
@@ -2193,18 +2193,18 @@ export default function ContractsPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">
                             Quantidade de Parcelas
                           </p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.sales?.installments || "-"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">
                             Valor da Parcela
                           </p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {new Intl.NumberFormat("pt-BR", {
                               style: "currency",
                               currency: "BRL",
@@ -2216,10 +2216,10 @@ export default function ContractsPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-500 text-xs mb-1">
+                          <p className="text-[var(--text-muted)] text-xs mb-1">
                             Data da Venda
                           </p>
-                          <p className="font-semibold text-gray-200">
+                          <p className="font-semibold text-[var(--text-primary)]">
                             {selectedContract.sales?.created_at
                               ? new Date(
                                   selectedContract.sales.created_at,
@@ -2237,13 +2237,13 @@ export default function ContractsPage() {
                 {activeTab === "Parcelas" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
-                      <h3 className="text-lg font-bold text-white mb-6">
+                      <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Parcelas do Contrato
                       </h3>
                       {receipts.length > 0 ? (
-                        <table className="w-full text-left text-sm text-gray-300">
+                        <table className="w-full text-left text-sm text-[var(--text-secondary)]">
                           <thead>
-                            <tr className="border-b border-[var(--border-color)] text-gray-500">
+                            <tr className="border-b border-[var(--border-color)] text-[var(--text-muted)]">
                               <th className="py-2">Parcela</th>
                               <th className="py-2">Vencimento</th>
                               <th className="py-2">Valor</th>
@@ -2256,7 +2256,7 @@ export default function ContractsPage() {
                             {receipts.map((r, idx) => (
                               <tr
                                 key={r.id}
-                                className="border-b border-[var(--border-color)]/50 last:border-0 border-t-transparent hover:bg-[#2d3340]/20 transition-colors"
+                                className="border-b border-[var(--border-color)]/50 last:border-0 border-t-transparent hover:bg-[var(--bg-card-alt)]/20 transition-colors"
                               >
                                 <td className="py-3 font-mono">
                                   {r.installment_number || idx + 1}
@@ -2310,7 +2310,7 @@ export default function ContractsPage() {
                           </tbody>
                         </table>
                       ) : (
-                        <div className="text-center py-10 text-gray-500">
+                        <div className="text-center py-10 text-[var(--text-muted)]">
                           <Wallet className="w-12 h-12 mx-auto mb-3 opacity-30" />
                           <p>Nenhuma parcela encontrada para este contrato.</p>
                         </div>
@@ -2322,7 +2322,7 @@ export default function ContractsPage() {
                 {activeTab === "Arquivos" && (
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
-                      <h3 className="text-lg font-bold text-white mb-6">
+                      <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Arquivos Anexados
                       </h3>
 
@@ -2332,7 +2332,7 @@ export default function ContractsPage() {
                           className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--color-primary)] transition-colors w-32"
                         >
                           <Download className="w-8 h-8 text-[var(--color-primary)] mb-2" />
-                          <span className="text-sm font-medium text-white">
+                          <span className="text-sm font-medium text-[var(--text-primary)]">
                             Baixar PDF
                           </span>
                         </button>
@@ -2341,7 +2341,7 @@ export default function ContractsPage() {
                           className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-info transition-colors w-32"
                         >
                           <Printer className="w-8 h-8 text-info mb-2" />
-                          <span className="text-sm font-medium text-white">
+                          <span className="text-sm font-medium text-[var(--text-primary)]">
                             Imprimir
                           </span>
                         </button>
@@ -2350,13 +2350,13 @@ export default function ContractsPage() {
                           className="flex flex-col items-center justify-center p-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-warning transition-colors w-32"
                         >
                           <Receipt className="w-8 h-8 text-warning mb-2" />
-                          <span className="text-sm font-medium text-white">
+                          <span className="text-sm font-medium text-[var(--text-primary)]">
                             Gerar Carnê
                           </span>
                         </button>
                       </div>
 
-                      <div className="text-center py-10 border-2 border-dashed border-[var(--border-color)] rounded-xl text-gray-500">
+                      <div className="text-center py-10 border-2 border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-muted)]">
                         <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
                         <p>Nenhum arquivo anexado ainda.</p>
                         <p className="text-xs mt-1">
@@ -2371,8 +2371,8 @@ export default function ContractsPage() {
                   <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
                     <div className="max-w-[800px] mx-auto space-y-6">
                       <div className="bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                          <History className="w-5 h-5 text-gray-400" />
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                          <History className="w-5 h-5 text-[var(--text-secondary)]" />
                           Histórico de versões
                         </h3>
                         <div className="space-y-2">
@@ -2385,11 +2385,11 @@ export default function ContractsPage() {
                               className="flex items-center justify-between gap-3 p-4 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)]"
                             >
                               <div>
-                                <p className="text-sm font-semibold text-gray-200">
+                                <p className="text-sm font-semibold text-[var(--text-primary)]">
                                   Versão {ver.version ?? 1} —{" "}
                                   {getStatusLabel(ver.status)}
                                 </p>
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="text-xs text-[var(--text-muted)] mt-1">
                                   Gerado em:{" "}
                                   {new Date(
                                     ver.regenerated_at || ver.created_at,
@@ -2416,7 +2416,7 @@ export default function ContractsPage() {
                         </div>
                       </div>
                     <div className="bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
-                      <h3 className="text-lg font-bold text-white mb-6">
+                      <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Linha do Tempo
                       </h3>
                       <div className="space-y-6 ml-4">
@@ -2574,24 +2574,24 @@ export default function ContractsPage() {
                   color="danger"
                 />
 
-                <div className="h-8 w-[1px] bg-[#2d3340] mx-2 hidden sm:block"></div>
+                <div className="h-8 w-[1px] bg-[var(--border-color)] mx-2 hidden sm:block"></div>
 
                 <button
                   onClick={handleGerarCarne}
-                  className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] hover:bg-[var(--bg-elevated)] text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] rounded-lg text-sm font-medium transition-colors"
                 >
                   <Receipt className="w-4 h-4" />
                   Gerar Carnê
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                  <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
                 </button>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+            <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-muted)]">
               <div className="w-24 h-24 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mb-6">
                 <FileText className="w-10 h-10 opacity-30" />
               </div>
-              <h3 className="text-xl font-bold text-gray-400 mb-2">
+              <h3 className="text-xl font-bold text-[var(--text-secondary)] mb-2">
                 Nenhum contrato selecionado
               </h3>
               <p className="text-sm">
@@ -2743,18 +2743,18 @@ export default function ContractsPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[9999] p-4">
           <div className="bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <h3 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-red-500" />
                 Confirmar Exclusão
               </h3>
               <button
                 onClick={() => setShowPasswordModal(false)}
-                className="text-gray-400 hover:text-white"
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-gray-300 mb-4">
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
               Digite sua senha para confirmar a exclusão de{" "}
               {selectedContractIds.size} contrato(s).
             </p>
@@ -2763,13 +2763,13 @@ export default function ContractsPage() {
               placeholder="Sua senha"
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
-              className="w-full px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-red-500 mb-6"
+              className="w-full px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder-gray-500 focus:outline-none focus:border-red-500 mb-6"
               autoFocus
             />
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowPasswordModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 disabled={isDeleting}
               >
                 Cancelar
@@ -2777,7 +2777,7 @@ export default function ContractsPage() {
               <button
                 onClick={executeDelete}
                 disabled={isDeleting || !passwordInput}
-                className={`px-4 py-2 text-sm font-bold text-white rounded-lg transition-colors flex items-center gap-2 ${
+                className={`px-4 py-2 text-sm font-bold text-[var(--text-primary)] rounded-lg transition-colors flex items-center gap-2 ${
                   isDeleting || !passwordInput
                     ? "bg-red-500/50 cursor-not-allowed"
                     : "bg-red-500 hover:bg-red-600"
@@ -2812,12 +2812,12 @@ function TimelineItem({
     danger: "text-[var(--color-danger)] bg-[var(--color-danger)]/20",
     info: "text-[var(--color-info)] bg-[var(--color-info)]/20",
     purple: "text-purple-400 bg-purple-500/20",
-    inactive: "text-gray-500 bg-[#1f232b]",
+    inactive: "text-[var(--text-muted)] bg-[var(--bg-card-alt)]",
   };
 
   return (
     <div className="flex gap-4 relative">
-      <div className="absolute left-[15px] top-8 bottom-[-24px] w-[2px] bg-[#1f232b] z-0"></div>
+      <div className="absolute left-[15px] top-8 bottom-[-24px] w-[2px] bg-[var(--bg-card-alt)] z-0"></div>
       <div
         className={`w-8 h-8 rounded-full flex items-center justify-center z-10 shrink-0 ${active ? colors[color] : colors["inactive"]}`}
       >
@@ -2825,19 +2825,19 @@ function TimelineItem({
       </div>
       <div>
         <p
-          className={`text-sm font-bold ${active ? "text-gray-200" : "text-gray-500"}`}
+          className={`text-sm font-bold ${active ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}
         >
           {title}
         </p>
-        {date && <p className="text-xs text-gray-500 mt-0.5">{date}</p>}
+        {date && <p className="text-xs text-[var(--text-muted)] mt-0.5">{date}</p>}
         {subtitle && (
           <p
-            className={`text-xs mt-0.5 ${active && color === "warning" ? "text-[var(--color-warning)]" : "text-gray-500"}`}
+            className={`text-xs mt-0.5 ${active && color === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}
           >
             {subtitle}
           </p>
         )}
-        {author && <p className="text-[10px] text-gray-600 mt-1">{author}</p>}
+        {author && <p className="text-[10px] text-[var(--text-muted)] mt-1">{author}</p>}
       </div>
     </div>
   );

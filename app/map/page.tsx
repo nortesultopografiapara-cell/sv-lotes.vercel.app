@@ -2159,13 +2159,13 @@ export default function MapPage() {
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up max-h-[90vh] flex flex-col">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-            <h3 className="font-bold text-white text-lg">
+            <h3 className="font-bold text-[var(--text-primary)] text-lg">
               {projectFormMode === 'edit' ? 'Editar Projeto' : 'Novo Projeto'}
             </h3>
             <button
               type="button"
               onClick={closeProjectForm}
-              className="text-[var(--color-text-muted)] hover:text-white transition-colors"
+              className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -2193,7 +2193,7 @@ export default function MapPage() {
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 placeholder="Ex: Loteamento Bosque das Árvores"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -2207,7 +2207,7 @@ export default function MapPage() {
                   value={newProjectCity}
                   onChange={(e) => setNewProjectCity(e.target.value)}
                   placeholder="Ex: Parauapebas"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                 />
               </div>
               <div>
@@ -2221,7 +2221,7 @@ export default function MapPage() {
                   value={newProjectUf}
                   onChange={(e) => setNewProjectUf(e.target.value.toUpperCase())}
                   placeholder="Ex: PA"
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
                 />
               </div>
             </div>
@@ -2234,7 +2234,7 @@ export default function MapPage() {
                 value={newProjectNbhd}
                 onChange={(e) => setNewProjectNbhd(e.target.value)}
                 placeholder="Ex: Centro"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
               />
             </div>
             <div>
@@ -2246,7 +2246,7 @@ export default function MapPage() {
                 value={newProjectAddr}
                 onChange={(e) => setNewProjectAddr(e.target.value)}
                 placeholder="Endereço principal da área"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
               />
             </div>
             <div>
@@ -2258,14 +2258,14 @@ export default function MapPage() {
                 value={newProjectForum}
                 onChange={(e) => setNewProjectForum(e.target.value)}
                 placeholder="Ex: Parauapebas (Deixe vazio para usar a cidade)"
-                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
               />
             </div>
 
             <button
               type="submit"
               disabled={projectFormSubmitting}
-              className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+              className="w-full shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
             >
               {projectFormSubmitting ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -2292,14 +2292,14 @@ export default function MapPage() {
       <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
         <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
-           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+           <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--text-secondary)]">
                 <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--text-secondary)]">
                 <div className="w-3 h-3 rounded-sm bg-[#eab308] border border-[#ca8a04]" /> Reservado
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium text-gray-400">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--text-secondary)]">
                 <div className="w-3 h-3 rounded-sm bg-[#ef4444] border border-[#dc2626]" /> Vendido
               </div>
            </div>
@@ -2310,7 +2310,7 @@ export default function MapPage() {
           <button
             type="button"
             onClick={handleBack}
-            className="flex items-center justify-center p-2.5 bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] shadow-lg rounded-lg text-gray-400 hover:text-white hover:bg-[#2d3340] transition-colors"
+            className="gis-shell-panel flex items-center justify-center p-2.5 bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] shadow-lg rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] transition-colors"
             title="Voltar aos projetos"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -2320,7 +2320,7 @@ export default function MapPage() {
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}
         <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
-           <div className="bg-[#11141a]/95 backdrop-blur-md border border-[#2d3340] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
+           <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
              
              {user?.role !== 'BROKER' && (
                <>
@@ -2335,37 +2335,37 @@ export default function MapPage() {
                    onRequestDelete={setDeleteQuadraConfirm}
                  />
 
-                 <hr className="w-2/3 border-[#2d3340]" />
+                 <hr className="w-2/3 border-[var(--border-color)]" />
 
                  {/* Import — oficial: TXT Civil 3D */}
                  {SHOW_LEGACY_GIS_IMPORT && (
                    <button
                      type="button"
                      onClick={() => setIsImportModalOpen(true)}
-                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
                    >
                      <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                     <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
+                     <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
                    </button>
                  )}
 
                  <button
                     type="button"
                     onClick={() => setIsImportTxtModalOpen(true)}
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
                  >
                     <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Importar TXT Civil 3D</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Importar TXT Civil 3D</span>
                  </button>
 
                  {SHOW_LEGACY_GIS_IMPORT && (
                    <button
                      type="button"
                      onClick={() => setIsImportShpModalOpen(true)}
-                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
                    >
                      <Layers className="w-4 h-4 md:w-5 md:h-5" />
-                     <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
+                     <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
                    </button>
                  )}
 
@@ -2373,45 +2373,45 @@ export default function MapPage() {
                    type="button"
                    onClick={() => void handleRunAutomaticConfrontation()}
                    disabled={confrontationRunning}
-                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#22c55e] transition-colors group relative disabled:opacity-40"
+                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#22c55e] transition-colors group relative disabled:opacity-40"
                  >
                    {confrontationRunning ? (
                      <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" />
                    ) : (
                      <GitCompare className="w-4 h-4 md:w-5 md:h-5" />
                    )}
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Confrontação Automática</span>
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Confrontação Automática</span>
                  </button>
 
                  <button
                    type="button"
                    onClick={() => setMemorialModalOpen(true)}
-                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
+                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b] transition-colors group relative"
                  >
                    <ScrollText className="w-4 h-4 md:w-5 md:h-5" />
-                   <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Memorial Descritivo</span>
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Memorial Descritivo</span>
                  </button>
                  
-                 <hr className="w-2/3 border-[#2d3340]" />
+                 <hr className="w-2/3 border-[var(--border-color)]" />
                </>
              )}
              
              {/* GPS */}
              <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#10b981]'}`}
              >
                 <Navigation className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
              </button>
              
              {/* Medição */}
              <button 
                 onClick={() => setMeasureActive(!measureActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#4999e9]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9]'}`}
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
              </button>
 
              {/* Prancha PDF */}
@@ -2425,10 +2425,10 @@ export default function MapPage() {
                   setDrawStreetActive(false);
                   console.log('LOT_SHEET_PICK_MODE_ENABLED');
                 }}
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetPickMode || lotSheetTarget ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#c084fc]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetPickMode || lotSheetTarget ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#c084fc]'}`}
              >
                 <Printer className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha do Lote</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha do Lote</span>
              </button>
              
              {/* Map Style */}
@@ -2438,43 +2438,43 @@ export default function MapPage() {
                    else if (activeLayer === 'streets') setActiveLayer('dark');
                    else setActiveLayer('satellite');
                 }} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b] transition-colors group relative"
+                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b] transition-colors group relative"
              >
                 <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                    {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
                 </span>
              </button>
              
              {user?.role !== 'BROKER' && (
                <>
-                 <hr className="w-2/3 border-[#2d3340]" />
+                 <hr className="w-2/3 border-[var(--border-color)]" />
                  
                  {/* Linha de Rua */}
                  <button 
                     onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#10b981]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#10b981]'}`}
                  >
                     <PenTool className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
                  </button>
                  
                  {/* Identificar Frentes */}
                  <button 
                     onClick={handleIdentifyFronts} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-gray-400 hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
                  >
                     <Scan className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
                  </button>
                  
                  {/* Visibility Toggle */}
                  <button 
                     onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-gray-800 text-[#f59e0b]' : 'bg-transparent hover:bg-gray-800 text-gray-400 hover:text-[#f59e0b]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[#f59e0b]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'}`}
                  >
                     {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[#1a1f29] border border-[#2d3340] text-[10px] font-bold text-gray-300 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
                        {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
                     </span>
                  </button>
@@ -2515,7 +2515,7 @@ export default function MapPage() {
 
         {lotSheetPickMode && !lotSheetTarget && (
           <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
-            <p className="text-xs font-semibold text-amber-100 bg-[#11141a]/95 border border-amber-500/40 rounded-lg px-3 py-2 shadow-lg text-center">
+            <p className="text-xs font-semibold text-amber-100 bg-[var(--bg-card)]/95 border border-amber-500/40 rounded-lg px-3 py-2 shadow-lg text-center">
               Selecione um lote no mapa para gerar a prancha
             </p>
           </div>
@@ -2532,30 +2532,30 @@ export default function MapPage() {
 
         {memorialModalOpen && selectedProject && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-            <div className="bg-[#11141a] border border-[#2d3340] rounded-xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-[#2d3340]">
-                <h3 className="font-bold text-white text-lg">Memorial Descritivo</h3>
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-md">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-color)]">
+                <h3 className="font-bold text-[var(--text-primary)] text-lg">Memorial Descritivo</h3>
                 <button
                   type="button"
                   onClick={() => setMemorialModalOpen(false)}
-                  className="p-1 text-gray-400 hover:text-white"
+                  className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-5 text-sm text-gray-300 space-y-3">
+              <div className="p-5 text-sm text-[var(--text-secondary)] space-y-3">
                 {lotSheetTarget ? (
                   <p>
-                    Lote <strong className="text-white">{lotSheetTarget.number || lotSheetTarget.id}</strong> selecionado.
+                    Lote <strong className="text-[var(--text-primary)]">{lotSheetTarget.number || lotSheetTarget.id}</strong> selecionado.
                     A geração completa do memorial descritivo está em preparação (sprint v1.9).
                   </p>
                 ) : (
                   <p>
-                    Projeto <strong className="text-white">{selectedProject.name}</strong>.
+                    Projeto <strong className="text-[var(--text-primary)]">{selectedProject.name}</strong>.
                     Selecione um lote no mapa para priorizar o memorial unitário, ou aguarde a geração em lote do projeto.
                   </p>
                 )}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--text-muted)]">
                   Os textos usarão segmentos oficiais TXT, confrontações automáticas e responsável técnico da empresa.
                 </p>
               </div>
@@ -2563,7 +2563,7 @@ export default function MapPage() {
                 <button
                   type="button"
                   onClick={() => setMemorialModalOpen(false)}
-                  className="w-full py-2.5 rounded-lg bg-[#4999e9] text-white font-semibold text-sm hover:bg-[#3d82c4]"
+                  className="w-full py-2.5 rounded-lg sv-brand-btn-primary font-semibold text-sm"
                 >
                   Entendi
                 </button>
@@ -2597,8 +2597,8 @@ export default function MapPage() {
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
               <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
                  <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-                    <h3 className="font-bold text-white text-lg">Importar Lotes (KML)</h3>
-                    <button onClick={() => setIsImportModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                    <h3 className="font-bold text-[var(--text-primary)] text-lg">Importar Lotes (KML)</h3>
+                    <button onClick={() => setIsImportModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors">
                        <X className="w-5 h-5" />
                     </button>
                  </div>
@@ -2609,7 +2609,7 @@ export default function MapPage() {
                          type="text" required
                          value={importQuadra} onChange={e => setImportQuadra(e.target.value)}
                          placeholder="Ex: A, B, C, Quadra 1..."
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
                        />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -2619,14 +2619,14 @@ export default function MapPage() {
                             type="number" required
                             value={importLoteInicial} onChange={e => setImportLoteInicial(e.target.value)}
                             placeholder="Ex: 1"
-                            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                           />
                        </div>
                        <div>
                           <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Ordenação</label>
                           <select 
                              value={importOrdem} onChange={e => setImportOrdem(e.target.value as 'ASC'|'DESC')}
-                             className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                             className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                           >
                              <option value="ASC">Crescente (1,2,3)</option>
                              <option value="DESC">Decrescente (3,2,1)</option>
@@ -2645,7 +2645,7 @@ export default function MapPage() {
 
                     <button 
                        type="submit" disabled={importing}
-                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                     >
                        {importing ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar e Salvar</>}
                     </button>
@@ -2658,12 +2658,12 @@ export default function MapPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
               <div className="p-4 border-b border-[var(--color-border)]">
-                <h3 className="font-bold text-white text-lg">Excluir quadra</h3>
+                <h3 className="font-bold text-[var(--text-primary)] text-lg">Excluir quadra</h3>
               </div>
               <div className="p-6">
-                <p className="text-sm text-gray-300 leading-relaxed">
+                <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                   Deseja excluir somente a{' '}
-                  <strong className="text-white">
+                  <strong className="text-[var(--text-primary)]">
                     {formatQuadraLabel(deleteQuadraConfirm)}
                   </strong>
                   ?
@@ -2677,7 +2677,7 @@ export default function MapPage() {
                     type="button"
                     disabled={Boolean(quadraActionLoading)}
                     onClick={() => setDeleteQuadraConfirm(null)}
-                    className="flex-1 py-2.5 rounded-lg border border-[var(--color-border)] text-gray-300 font-semibold hover:bg-[var(--color-background)] transition-colors disabled:opacity-50"
+                    className="flex-1 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--text-secondary)] font-semibold hover:bg-[var(--color-background)] transition-colors disabled:opacity-50"
                   >
                     Cancelar
                   </button>
@@ -2685,7 +2685,7 @@ export default function MapPage() {
                     type="button"
                     disabled={Boolean(quadraActionLoading)}
                     onClick={handleConfirmDeleteQuadra}
-                    className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-[var(--text-primary)] font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {quadraActionLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2704,8 +2704,8 @@ export default function MapPage() {
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
               <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
                  <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-                    <h3 className="font-bold text-white text-lg">Importar Lotes (TXT Civil 3D)</h3>
-                    <button onClick={() => setIsImportTxtModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                    <h3 className="font-bold text-[var(--text-primary)] text-lg">Importar Lotes (TXT Civil 3D)</h3>
+                    <button onClick={() => setIsImportTxtModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors">
                        <X className="w-5 h-5" />
                     </button>
                  </div>
@@ -2714,7 +2714,7 @@ export default function MapPage() {
                         <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Zona UTM</label>
                         <select 
                           value={importTxtUtmZone} onChange={e => setImportTxtUtmZone(e.target.value)}
-                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)]"
+                          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
                         >
                            <option value="21S">Zona 21 Sul (21S)</option>
                            <option value="22S">Zona 22 Sul (22S)</option>
@@ -2728,7 +2728,7 @@ export default function MapPage() {
                          type="text" required
                          value={importTxtQuadra} onChange={e => setImportTxtQuadra(e.target.value)}
                          placeholder="Ex: A, B, C..."
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
                        />
                     </div>
                     <div>
@@ -2742,7 +2742,7 @@ export default function MapPage() {
 
                     <button 
                        type="submit" disabled={importingTxt}
-                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                     >
                        {importingTxt ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Upload className="w-5 h-5"/> Processar TXT e Salvar</>}
                     </button>
@@ -2757,7 +2757,7 @@ export default function MapPage() {
                           setIsImportTxtModalOpen(false);
                           setIsImportShpModalOpen(true);
                         }}
-                        className="w-full py-2.5 rounded-lg border border-[var(--color-border)] text-gray-300 text-sm font-semibold hover:bg-[var(--color-background)] transition-colors flex items-center justify-center gap-2"
+                        className="w-full py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--text-secondary)] text-sm font-semibold hover:bg-[var(--color-background)] transition-colors flex items-center justify-center gap-2"
                       >
                         <Layers className="w-4 h-4" />
                         Importar Shapefile (.zip)
@@ -2772,15 +2772,15 @@ export default function MapPage() {
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
               <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-md overflow-hidden shadow-2xl fade-in-up">
                  <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-                    <h3 className="font-bold text-white text-lg">Importar Shapefile (.zip)</h3>
-                    <button onClick={() => setIsImportShpModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-white transition-colors">
+                    <h3 className="font-bold text-[var(--text-primary)] text-lg">Importar Shapefile (.zip)</h3>
+                    <button onClick={() => setIsImportShpModalOpen(false)} className="text-[var(--color-text-muted)] hover:text-[var(--text-primary)] transition-colors">
                        <X className="w-5 h-5" />
                     </button>
                  </div>
                  <form onSubmit={handleImportShapefile} className="p-6 flex flex-col gap-4">
-                    <p className="text-xs text-gray-400 leading-relaxed">
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                       Envie um .zip com .shp, .shx, .dbf e .prj. O sistema associa cada polígono ao lote pela{' '}
-                      <strong className="text-gray-200">quadra + lote</strong> (atributos DBF).
+                      <strong className="text-[var(--text-primary)]">quadra + lote</strong> (atributos DBF).
                       Se já houver TXT Civil 3D, apenas a geometria visual é substituída; medidas oficiais e{' '}
                       <code className="text-[10px]">segments_json</code> permanecem.
                     </p>
@@ -2791,7 +2791,7 @@ export default function MapPage() {
                          value={importShpDefaultQuadra}
                          onChange={(e) => setImportShpDefaultQuadra(e.target.value)}
                          placeholder="Use se o DBF não tiver coluna quadra"
-                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-white focus:outline-none focus:border-[var(--color-primary)] uppercase"
+                         className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)] uppercase"
                        />
                     </div>
                     <div>
@@ -2811,7 +2811,7 @@ export default function MapPage() {
                     <button
                        type="submit"
                        disabled={importingShp}
-                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-white font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
+                       className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 text-[var(--text-primary)] font-bold py-3 mt-2 rounded-lg transition-colors flex justify-center items-center gap-2"
                     >
                        {importingShp ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Layers className="w-5 h-5"/> Importar Shapefile</>}
                     </button>
@@ -2831,7 +2831,7 @@ export default function MapPage() {
     <div className="sv-page sv-page--scroll-y flex-1 p-4 md:p-8 flex flex-col h-full fade-in-up relative z-0 min-w-0">
       <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Mapa GIS & Projetos</h1>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">Mapa GIS & Projetos</h1>
           <p className="text-sm font-mono text-[var(--color-text-muted)] uppercase tracking-wider flexitems-center gap-2">
             Gestão Unificada de Loteamentos
             {user?.role !== 'SUPER_ADMIN' && projectLimit !== null && (
@@ -2847,7 +2847,7 @@ export default function MapPage() {
         {user?.role !== 'BROKER' && (
           <button 
             onClick={openCreateProject}
-            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-primary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
           >
             <Plus className="w-5 h-5" />
             Novo Projeto
@@ -2865,7 +2865,7 @@ export default function MapPage() {
               placeholder="Buscar loteamentos..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--color-primary)]"
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg py-2 pl-10 pr-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
           </div>
         </div>
@@ -2915,7 +2915,7 @@ export default function MapPage() {
                                  <FolderOpen className="w-5 h-5" />
                                </div>
                                <div className="min-w-0">
-                                 <p className="font-semibold text-white text-sm leading-snug break-words">
+                                 <p className="font-semibold text-[var(--text-primary)] text-sm leading-snug break-words">
                                    {p.name}
                                  </p>
                                </div>
@@ -2925,11 +2925,11 @@ export default function MapPage() {
                              <span className="break-words">{locationLabel}</span>
                            </td>
                            <td className="p-3 align-middle text-center">
-                             <span className="text-sm font-mono text-white tabular-nums">{total}</span>
+                             <span className="text-sm font-mono text-[var(--text-primary)] tabular-nums">{total}</span>
                            </td>
                            <td className="p-3 align-middle">
                              <div className="flex flex-col gap-1 min-w-[120px]">
-                               <span className="text-[11px] font-mono text-white tabular-nums">
+                               <span className="text-[11px] font-mono text-[var(--text-primary)] tabular-nums">
                                  {sold} / {total} ({pct}%)
                                </span>
                                <div className="w-full h-1.5 bg-[var(--color-background)] rounded-full overflow-hidden border border-[var(--color-border)]">
@@ -2974,7 +2974,7 @@ export default function MapPage() {
                                        e.stopPropagation();
                                        openEditProject(p);
                                      }}
-                                     className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white"
+                                     className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--text-primary)]"
                                    >
                                      <Pencil className="w-4 h-4" />
                                    </button>
@@ -2998,7 +2998,7 @@ export default function MapPage() {
                                    e.stopPropagation();
                                    handleOpenProject(p);
                                  }}
-                                 className="shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-2 whitespace-nowrap"
+                                 className="shrink-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-primary)] px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-2 whitespace-nowrap"
                                >
                                  <MapIcon className="w-4 h-4" /> Abrir Mapa
                                </button>
@@ -3034,7 +3034,7 @@ export default function MapPage() {
                            <FolderOpen className="w-5 h-5" />
                          </div>
                          <div className="min-w-0 flex-1">
-                           <h3 className="font-bold text-white text-base leading-snug break-words">
+                           <h3 className="font-bold text-[var(--text-primary)] text-base leading-snug break-words">
                              {p.name}
                            </h3>
                            <p className="text-xs text-[var(--color-text-muted)] mt-1 break-words">
@@ -3046,11 +3046,11 @@ export default function MapPage() {
                        <div className="grid grid-cols-2 gap-2 text-xs">
                          <div>
                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider text-[10px]">Lotes</span>
-                           <p className="font-mono text-white mt-0.5">{total}</p>
+                           <p className="font-mono text-[var(--text-primary)] mt-0.5">{total}</p>
                          </div>
                          <div>
                            <span className="text-[var(--color-text-muted)] uppercase tracking-wider text-[10px]">Vendas</span>
-                           <p className="font-mono text-white mt-0.5">{sold} / {total} ({pct}%)</p>
+                           <p className="font-mono text-[var(--text-primary)] mt-0.5">{sold} / {total} ({pct}%)</p>
                          </div>
                        </div>
 
@@ -3084,7 +3084,7 @@ export default function MapPage() {
                          <button
                            type="button"
                            onClick={() => handleOpenProject(p)}
-                           className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+                           className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-primary)] px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
                          >
                            <MapIcon className="w-4 h-4" /> Abrir Mapa
                          </button>
@@ -3094,7 +3094,7 @@ export default function MapPage() {
                                type="button"
                                title="Editar"
                                onClick={() => openEditProject(p)}
-                               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/10 hover:text-white"
+                               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--text-primary)]"
                              >
                                <Pencil className="w-4 h-4" />
                              </button>

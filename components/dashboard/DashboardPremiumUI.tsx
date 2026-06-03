@@ -58,10 +58,10 @@ export function DashboardTopKpi({
       />
       <div className="relative flex items-start justify-between gap-3 h-full">
         <div className="flex flex-col justify-center min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1">
             {title}
           </p>
-          <h3 className="text-2xl xl:text-[1.65rem] font-bold text-white tabular-nums tracking-tight">
+          <h3 className="text-2xl xl:text-[1.65rem] font-bold text-[var(--text-primary)] tabular-nums tracking-tight">
             {loading ? (
               <span className="dash-skeleton inline-block h-8 w-24" />
             ) : isCurrency ? (
@@ -74,17 +74,17 @@ export function DashboardTopKpi({
               <CountUp end={value} duration={1.2} separator="." />
             )}
           </h3>
-          <p className="text-[11px] text-slate-500 mt-1 truncate">
+          <p className="text-[11px] text-[var(--text-muted)] mt-1 truncate">
             {subtitle ||
               (percent ? (
                 <span style={{ color }}>
-                  {percent}% <span className="text-slate-500">do total</span>
+                  {percent}% <span className="text-[var(--text-muted)]">do total</span>
                 </span>
               ) : null)}
           </p>
         </div>
         <div
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/5"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border-subtle)]"
           style={{ backgroundColor: `${color}18`, color }}
         >
           <Icon className="h-5 w-5" strokeWidth={1.75} />
@@ -114,29 +114,29 @@ export function DashboardMetricKpi({
   return (
     <div className="dash-kpi-metric relative overflow-hidden">
       {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#11161d]/80">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg-card)]/80">
           <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
         </div>
       )}
       <div className="flex items-center gap-3 h-full">
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/5"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)]"
           style={{ backgroundColor: `${color}14`, color }}
         >
           <Icon className="h-4 w-4" strokeWidth={1.75} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">
+          <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] truncate">
             {title}
           </p>
-          <p className="text-base font-bold text-white tabular-nums truncate mt-0.5">
+          <p className="text-base font-bold text-[var(--text-primary)] tabular-nums truncate mt-0.5">
             {new Intl.NumberFormat('pt-BR', {
               style: 'currency',
               currency: 'BRL',
               maximumFractionDigits: 0,
             }).format(value)}
           </p>
-          <p className="text-[10px] text-slate-500 truncate flex items-center gap-0.5">
+          <p className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-0.5">
             {trend && <ArrowUpRight className="h-3 w-3 text-emerald-500 shrink-0" />}
             {subtitle || trend}
           </p>
@@ -162,23 +162,23 @@ export function DashboardActivityItem({
   iconColor: string;
 }) {
   return (
-    <div className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-white/[0.03] border border-transparent hover:border-white/5 transition-all duration-200">
+    <div className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-white/[0.03] border border-transparent hover:border-[var(--border-subtle)] transition-all duration-200">
       <div
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/5 ${iconColor}`}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] ${iconColor}`}
       >
         <Icon className="h-4 w-4" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-medium text-slate-200 truncate">{title}</p>
+          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{title}</p>
           <span
             className="h-2 w-2 rounded-full shrink-0 mt-1.5"
             style={{ backgroundColor: dotColor }}
             title={dotColor}
           />
         </div>
-        <p className="text-[10px] text-slate-500 truncate">{subtitle}</p>
-        <p className="text-[10px] text-slate-600 mt-0.5">{time}</p>
+        <p className="text-[10px] text-[var(--text-muted)] truncate">{subtitle}</p>
+        <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{time}</p>
       </div>
     </div>
   );
@@ -187,11 +187,11 @@ export function DashboardActivityItem({
 export function DashboardEmptyActivities() {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-center px-4 py-8">
-      <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center mb-3">
+      <div className="w-14 h-14 rounded-2xl bg-white/5 border border-[var(--border-subtle)] flex items-center justify-center mb-3">
         <span className="text-2xl opacity-60">📋</span>
       </div>
-      <p className="text-sm font-medium text-slate-400">Nenhuma atividade recente</p>
-      <p className="text-xs text-slate-600 mt-1">
+      <p className="text-sm font-medium text-[var(--text-secondary)]">Nenhuma atividade recente</p>
+      <p className="text-xs text-[var(--text-muted)] mt-1">
         Vendas, reservas e contratos aparecerão aqui
       </p>
     </div>
@@ -200,10 +200,10 @@ export function DashboardEmptyActivities() {
 
 export function MapLoadingSkeleton() {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b1111] gap-3">
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg-main)] gap-3">
       <div className="w-full h-full max-w-md dash-skeleton opacity-30" />
       <Loader2 className="h-7 w-7 animate-spin text-blue-400 relative z-10 -mt-32" />
-      <p className="text-xs text-slate-500 relative z-10">Carregando mapa…</p>
+      <p className="text-xs text-[var(--text-muted)] relative z-10">Carregando mapa…</p>
     </div>
   );
 }
@@ -281,8 +281,8 @@ export const LotsDonutChart = memo(function LotsDonutChart({
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-[9px] text-slate-500 uppercase tracking-wider">Total</span>
-          <span className="text-xl font-bold text-white">{totalLotes}</span>
+          <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">Total</span>
+          <span className="text-xl font-bold text-[var(--text-primary)]">{totalLotes}</span>
         </div>
       </div>
       <div className="flex-1 space-y-2.5 pr-1">
@@ -293,9 +293,9 @@ export const LotsDonutChart = memo(function LotsDonutChart({
                 className="h-2 w-2 rounded-full shrink-0"
                 style={{ backgroundColor: d.color }}
               />
-              <span className="text-xs text-slate-300">{d.name}</span>
+              <span className="text-xs text-[var(--text-secondary)]">{d.name}</span>
             </div>
-            <span className="text-[10px] text-slate-500 pl-4 block">
+            <span className="text-[10px] text-[var(--text-muted)] pl-4 block">
               {d.value} ({totalLotes > 0 ? ((d.value / totalLotes) * 100).toFixed(1) : 0}%)
             </span>
           </div>
@@ -353,19 +353,19 @@ export function FinancialSummaryCard({
     <div className="dash-chart-body flex flex-col justify-between gap-3 py-1">
       <div className="space-y-2">
         <div className="flex justify-between items-center text-xs">
-          <span className="text-slate-500">Entradas</span>
+          <span className="text-[var(--text-muted)]">Entradas</span>
           <span className="font-semibold text-emerald-400 tabular-nums">
             {loading ? '—' : formatCurrency(entradas)}
           </span>
         </div>
         <div className="flex justify-between items-center text-xs">
-          <span className="text-slate-500">Saídas</span>
+          <span className="text-[var(--text-muted)]">Saídas</span>
           <span className="font-semibold text-rose-400 tabular-nums">
             {loading ? '—' : formatCurrency(saidas)}
           </span>
         </div>
-        <div className="flex justify-between items-center pt-2 border-t border-white/5 text-sm">
-          <span className="text-slate-300 font-medium">Saldo</span>
+        <div className="flex justify-between items-center pt-2 border-t border-[var(--border-subtle)] text-sm">
+          <span className="text-[var(--text-secondary)] font-medium">Saldo</span>
           <span
             className={`font-bold tabular-nums flex items-center gap-1 ${positive ? 'text-blue-400' : 'text-rose-400'}`}
           >
@@ -380,8 +380,8 @@ export function FinancialSummaryCard({
       </div>
       <div>
         <div className="flex justify-between text-[10px] mb-1">
-          <span className="text-slate-500 uppercase tracking-wider font-semibold">Margem</span>
-          <span className="text-white font-bold">
+          <span className="text-[var(--text-muted)] uppercase tracking-wider font-semibold">Margem</span>
+          <span className="text-[var(--text-primary)] font-bold">
             {loading
               ? '—'
               : `${margemPercent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
@@ -410,7 +410,7 @@ export function ChartCardShell({
   return (
     <div className="dash-chart-card">
       <div className="flex items-center justify-between mb-3 shrink-0">
-        <h3 className="text-xs font-bold text-white uppercase tracking-wide">{title}</h3>
+        <h3 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wide">{title}</h3>
         {action}
       </div>
       <div className="dash-chart-body">{children}</div>

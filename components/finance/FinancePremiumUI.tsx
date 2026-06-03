@@ -24,7 +24,7 @@ export function FinanceStatCard({
   title,
   value,
   subtitle,
-  subtitleColor = 'text-slate-500',
+  subtitleColor = 'text-[var(--text-muted)]',
   icon,
   iconWrapClass = 'bg-blue-500/10 text-blue-400',
   loading,
@@ -59,13 +59,13 @@ export function FinanceStatusBadge({ status }: { status: string }) {
     cls += ' border-rose-500/35 bg-rose-500/10 text-rose-400';
     label = 'ATRASADO';
   } else if (s === 'cancelado' || s === 'canceled') {
-    cls += ' border-slate-500/30 bg-slate-500/10 text-slate-400';
+    cls += ' border-[var(--border-color)] bg-[var(--bg-card-alt)] text-[var(--text-secondary)]';
     label = 'CANCELADO';
   } else if (s === 'entrada' || s === 'entry') {
     cls += ' border-blue-500/35 bg-blue-500/12 text-blue-400';
     label = 'ENTRADA';
   } else {
-    cls += ' border-slate-500/25 bg-transparent text-slate-400';
+    cls += ' border-[var(--border-color)] bg-transparent text-[var(--text-secondary)]';
   }
 
   return <span className={cls}>{label}</span>;
@@ -99,7 +99,7 @@ export function FinanceTableLoading({ colSpan }: { colSpan: number }) {
     <tr>
       <td colSpan={colSpan} className="py-12 text-center">
         <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-blue-400" />
-        <p className="text-sm text-slate-400">Sincronizando registros…</p>
+        <p className="text-sm text-[var(--text-secondary)]">Sincronizando registros…</p>
       </td>
     </tr>
   );
@@ -114,7 +114,7 @@ export const FinanceTableEmpty = memo(function FinanceTableEmpty({
 }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="py-10 text-center text-sm text-slate-500">
+      <td colSpan={colSpan} className="py-10 text-center text-sm text-[var(--text-muted)]">
         {message}
       </td>
     </tr>
@@ -211,18 +211,18 @@ export const PaymentTableRow = memo(
             type="checkbox"
             checked={selected}
             onChange={onToggle}
-            className="rounded border-slate-600 mt-1"
+            className="rounded border-[var(--border-color)] mt-1"
           />
         </td>
         <td className="finance-col-info">
           <p className="finance-parcel-line-primary">
-            <span className="font-semibold text-slate-100">
+            <span className="font-semibold text-[var(--text-primary)]">
               Contrato nº {contractNo}
             </span>
             <span className="finance-parcel-sep">|</span>
             <span>
               Cliente:{' '}
-              <span className="font-medium text-slate-200">{clientName}</span>
+              <span className="font-medium text-[var(--text-primary)]">{clientName}</span>
             </span>
             <span className="finance-parcel-sep">|</span>
             <span className="inline-flex items-center gap-1.5">
@@ -233,7 +233,7 @@ export const PaymentTableRow = memo(
           <p className="finance-parcel-line-secondary">
             <span>
               Projeto:{' '}
-              <span className="text-slate-300">{projectName}</span>
+              <span className="text-[var(--text-secondary)]">{projectName}</span>
             </span>
             <span className="finance-parcel-sep">|</span>
             <span>{loteDesc}</span>
@@ -242,7 +242,7 @@ export const PaymentTableRow = memo(
             <span className="finance-parcel-sep">|</span>
             <span>Vencimento: {dueFmt}</span>
             <span className="finance-parcel-sep">|</span>
-            <span className="font-medium text-slate-200">
+            <span className="font-medium text-[var(--text-primary)]">
               Valor: {formatCurrency(amount)}
             </span>
             {(isPaid || paidAmount > 0) && (

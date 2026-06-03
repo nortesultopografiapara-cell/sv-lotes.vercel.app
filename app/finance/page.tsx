@@ -2555,7 +2555,7 @@ export default function FinancePage() {
       {financeToast && (
         <div
           role="status"
-          className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-[#1a2e24] px-4 py-3 text-sm text-emerald-300 shadow-lg"
+          className="fixed bottom-6 right-6 z-[100] flex items-center gap-2 rounded-lg border border-[var(--success)]/30 bg-[color-mix(in_srgb,var(--success)_12%,var(--bg-card))] px-4 py-3 text-sm text-[var(--success)] shadow-lg"
         >
           <CheckCircle className="h-4 w-4 shrink-0" />
           {financeToast}
@@ -2568,49 +2568,49 @@ export default function FinancePage() {
           <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] tracking-tight">
             Módulo Financeiro
           </h1>
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mt-0.5">
+          <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-[0.2em] mt-0.5">
             Contratos · Títulos · Inadimplência
           </p>
         </div>
         <div className="finance-header-actions mt-4 md:mt-0 md:w-auto">
           
-          <button onClick={handleBulkDelete} className="bg-transparent border border-[#f04449]/30 hover:bg-[#f04449]/10 text-[#f04449] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleBulkDelete} className="bg-transparent border border-[var(--danger)]/30 hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Trash2 className="w-4 h-4" />
             Limpar
           </button>
           
-          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportResumidoPDF} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportResumidoPDF} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4 text-[#e74c3c]" />
             PDF Res.
           </button>
-          <button onClick={handleExportResumidoExcel} className="bg-[#1a1f29] border border-[#2d3340] hover:bg-[#2d3340] text-gray-300 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportResumidoExcel} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4 text-[#27ae60]" />
             Excel Res.
           </button>
 
-          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
 
           <button onClick={() => setShowProjectReportModal(true)} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all text-sm w-full md:w-auto">
             <PieChart className="w-4 h-4" />
             Fluxo por Empreendimento
           </button>
 
-          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
 
           <button onClick={() => { setEditingCashMovementId(null); setSaidaForm({ ...INITIAL_SAIDA_FORM }); setShowSaidaModal(true); }} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
             <TrendingDown className="w-4 h-4" />
             Registrar Saída
           </button>
 
-          <div className="h-6 w-[1px] bg-[#1f232b] hidden md:block mx-1"></div>
+          <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
 
-          <button onClick={handleExportPDF} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportPDF} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4" />
             PDF Compl.
           </button>
-          <button onClick={handleExportExcel} className="bg-transparent border border-[#2d3340] hover:bg-[#1a1f29] text-gray-400 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
+          <button onClick={handleExportExcel} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Download className="w-4 h-4" />
             Excel Compl.
           </button>
@@ -2672,7 +2672,7 @@ export default function FinancePage() {
               : `${stats.qtyLate} em atraso · dentro do ideal`
           }
           subtitleColor={
-            stats.inadimplencia > 5 ? 'text-rose-400/90' : 'text-slate-500'
+            stats.inadimplencia > 5 ? 'text-rose-400/90' : 'text-[var(--text-muted)]'
           }
           icon={<AlertCircle />}
           iconWrapClass="bg-rose-500/12 text-rose-400"
@@ -2702,7 +2702,7 @@ export default function FinancePage() {
       {/* FILTERS — barra compacta sticky */}
       <div className="finance-filters-bar" role="search">
         <div className="relative finance-filter-search">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)] pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -2756,7 +2756,7 @@ export default function FinancePage() {
         <button
           type="button"
           onClick={clearFilters}
-          className="finance-filter-input shrink-0 flex items-center gap-1.5 px-3 hover:bg-slate-800/80 whitespace-nowrap"
+          className="finance-filter-input shrink-0 flex items-center gap-1.5 px-3 hover:bg-[var(--bg-card-alt)]/80 whitespace-nowrap"
         >
           <Filter className="w-3.5 h-3.5" />
           Limpar filtros
@@ -2777,7 +2777,7 @@ export default function FinancePage() {
                 <th className="finance-col-check">
                   <input
                     type="checkbox"
-                    className="rounded border-slate-600"
+                    className="rounded border-[var(--border-color)]"
                     onChange={(e) => {
                       if (e.target.checked) {
                         setSelectedIds(new Set(currentPayments.map((p) => p.id)));
@@ -2830,13 +2830,13 @@ export default function FinancePage() {
         
         {/* Pagination Footer */}
         {!loading && filteredPayments.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[#1f232b] text-sm text-gray-400 gap-4 bg-[#11141a]">
+          <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-[var(--border-color)] text-sm text-[var(--text-secondary)] gap-4 bg-[var(--bg-card)]">
              <div>Mostrando {(currentPage - 1) * itemsPerPage + 1} a {Math.min(currentPage * itemsPerPage, filteredPayments.length)} de {filteredPayments.length} registros</div>
              <div className="flex items-center gap-1">
                 <button 
                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                    disabled={currentPage === 1}
-                   className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#1f232b] disabled:opacity-50 transition-colors">
+                   className="w-8 h-8 flex items-center justify-center rounded hover:bg-[var(--bg-card-alt)] disabled:opacity-50 transition-colors">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 
@@ -2851,7 +2851,7 @@ export default function FinancePage() {
                       <button 
                          key={pageNum}
                          onClick={() => setCurrentPage(pageNum)}
-                         className={`w-8 h-8 flex items-center justify-center rounded text-xs font-semibold transition-colors ${currentPage === pageNum ? 'bg-[#1f232b] text-white' : 'hover:bg-[#1f232b]'}`}>
+                         className={`w-8 h-8 flex items-center justify-center rounded text-xs font-semibold transition-colors ${currentPage === pageNum ? 'bg-[var(--bg-card-alt)] text-[var(--text-primary)]' : 'hover:bg-[var(--bg-card-alt)]'}`}>
                          {pageNum}
                       </button>
                    )
@@ -2860,7 +2860,7 @@ export default function FinancePage() {
                 <button 
                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                    disabled={currentPage === totalPages}
-                   className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#1f232b] disabled:opacity-50 transition-colors">
+                   className="w-8 h-8 flex items-center justify-center rounded hover:bg-[var(--bg-card-alt)] disabled:opacity-50 transition-colors">
                    <ChevronRight className="w-4 h-4" />
                 </button>
              </div>
@@ -2869,7 +2869,7 @@ export default function FinancePage() {
                <select 
                   value={itemsPerPage}
                   onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                  className="bg-transparent border border-[#1f232b] rounded px-2 py-1 outline-none">
+                  className="bg-transparent border border-[var(--border-color)] rounded px-2 py-1 outline-none">
                  <option value={10}>10</option>
                  <option value={25}>25</option>
                  <option value={50}>50</option>
@@ -2879,7 +2879,7 @@ export default function FinancePage() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#1f232b]/60 bg-[#13161c]/50 px-4 py-3 mb-4 text-xs text-slate-500">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-color)]/60 bg-[var(--bg-card)]/50 px-4 py-3 mb-4 text-xs text-[var(--text-muted)]">
         <BookOpen className="w-4 h-4 text-blue-400/70 shrink-0" />
         <span>
           Use os filtros para refinar · <Eye className="w-3 h-3 inline" /> detalhes ·{' '}
@@ -2891,14 +2891,14 @@ export default function FinancePage() {
 
       {activeTab === 'caixa' && (
       <div className="finance-table-panel min-h-[360px] min-w-0 max-w-full">
-         <div className="px-4 py-2.5 border-b border-[#1f232b]/80 bg-[#12161f]/90 flex items-center gap-2">
+         <div className="px-4 py-2.5 border-b border-[var(--border-color)]/80 bg-[var(--bg-card)]/90 flex items-center gap-2">
             <Wallet className="w-4 h-4 text-blue-400" />
-            <h3 className="text-white font-semibold text-xs uppercase tracking-wider">
+            <h3 className="text-[var(--text-primary)] font-semibold text-xs uppercase tracking-wider">
                Fluxo de caixa
             </h3>
          </div>
          {cashFlowItems.length === 0 ? (
-            <div className="p-10 text-center text-slate-500 text-sm">
+            <div className="p-10 text-center text-[var(--text-muted)] text-sm">
                Nenhuma movimentação de caixa registrada ainda.
             </div>
          ) : (
@@ -2919,7 +2919,7 @@ export default function FinancePage() {
                <tbody>
                   {cashFlowItems.map((item) => (
                       <tr key={item.id} className="group">
-                         <td className="text-slate-300 font-medium">
+                         <td className="text-[var(--text-secondary)] font-medium">
                             {formatFlowDate(item.movement_date)}
                          </td>
                          <td className="font-semibold">
@@ -2933,20 +2933,20 @@ export default function FinancePage() {
                               </span>
                             )}
                          </td>
-                         <td className="text-slate-400">{item.category}</td>
-                         <td className="finance-col-desc finance-cell-ellipsis text-slate-400">
-                            <span className="text-slate-200 block truncate">{item.description}</span>
-                            <span className="block text-[10px] text-slate-500 mt-0.5">
+                         <td className="text-[var(--text-secondary)]">{item.category}</td>
+                         <td className="finance-col-desc finance-cell-ellipsis text-[var(--text-secondary)]">
+                            <span className="text-[var(--text-primary)] block truncate">{item.description}</span>
+                            <span className="block text-[10px] text-[var(--text-muted)] mt-0.5">
                               {flowDisplayLabel(item.customerName, item.isManual)}
                               {item.brokerName ? ` · ${flowDisplayLabel(item.brokerName, item.isManual)}` : ''}
                             </span>
                          </td>
-                         <td className="text-slate-500 text-[10px] uppercase">
+                         <td className="text-[var(--text-muted)] text-[10px] uppercase">
                             {item.source === 'finance_receipts' && 'Parcela'}
                             {item.source === 'cash_movements' && 'Caixa'}
                             {item.source === 'broker_commissions' && 'Comissão'}
                          </td>
-                         <td className="text-right font-mono text-slate-100">
+                         <td className="text-right font-mono text-[var(--text-primary)]">
                             {formatCurrency(item.amount)}
                          </td>
                          <td className="text-center">
@@ -2972,37 +2972,37 @@ export default function FinancePage() {
 
       {selectedFlowItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">Detalhes da Movimentação</h3>
-              <button onClick={() => setSelectedFlowItem(null)} className="text-gray-500 hover:text-white transition-colors">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center">
+              <h3 className="text-lg font-bold text-[var(--text-primary)]">Detalhes da Movimentação</h3>
+              <button onClick={() => setSelectedFlowItem(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-3 text-sm text-gray-300">
+            <div className="p-6 space-y-3 text-sm text-[var(--text-secondary)]">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <span className="text-xs text-gray-500 block">Data</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Data</span>
                   {formatFlowDate(selectedFlowItem.movement_date)}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Tipo</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Tipo</span>
                   {selectedFlowItem.tipo === 'entrada' ? 'Entrada' : 'Saída'}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Categoria</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Categoria</span>
                   {selectedFlowItem.category}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Valor</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Valor</span>
                   {formatCurrency(selectedFlowItem.amount)}
                 </div>
                 <div className="col-span-2">
-                  <span className="text-xs text-gray-500 block">Descrição</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Descrição</span>
                   {selectedFlowItem.description}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Cliente</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Cliente</span>
                   {selectedFlowItem.metadata?.customer_manual ||
                     flowDisplayLabel(
                       selectedFlowItem.customerName,
@@ -3011,14 +3011,14 @@ export default function FinancePage() {
                 </div>
                 {selectedFlowItem.metadata?.beneficiary_document && (
                   <div>
-                    <span className="text-xs text-gray-500 block">CPF/CNPJ</span>
+                    <span className="text-xs text-[var(--text-muted)] block">CPF/CNPJ</span>
                     {formatBeneficiaryDocument(
                       selectedFlowItem.metadata.beneficiary_document,
                     )}
                   </div>
                 )}
                 <div>
-                  <span className="text-xs text-gray-500 block">Fornecedor / Beneficiário</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Fornecedor / Beneficiário</span>
                   {selectedFlowItem.metadata?.beneficiary_manual ||
                     flowDisplayLabel(
                       selectedFlowItem.brokerName,
@@ -3026,11 +3026,11 @@ export default function FinancePage() {
                     )}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Projeto</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Projeto</span>
                   {flowDisplayLabel(selectedFlowItem.projectName, selectedFlowItem.isManual)}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block">Contrato</span>
+                  <span className="text-xs text-[var(--text-muted)] block">Contrato</span>
                   {selectedFlowItem.metadata?.contract_manual ||
                     (selectedFlowItem.contractNumber &&
                     selectedFlowItem.contractNumber !== 'Lançamento manual'
@@ -3040,13 +3040,13 @@ export default function FinancePage() {
                 </div>
                 {selectedFlowItem.tipo === 'saida' && (
                   <div>
-                    <span className="text-xs text-gray-500 block">Forma de pagamento</span>
+                    <span className="text-xs text-[var(--text-muted)] block">Forma de pagamento</span>
                     {resolveFlowPaymentMethod(selectedFlowItem)}
                   </div>
                 )}
                 {selectedFlowItem.locationLabel && selectedFlowItem.locationLabel !== 'Lançamento manual' && (
                   <div className="col-span-2">
-                    <span className="text-xs text-gray-500 block">Quadra / Lote</span>
+                    <span className="text-xs text-[var(--text-muted)] block">Quadra / Lote</span>
                     {selectedFlowItem.locationLabel}
                   </div>
                 )}
@@ -3058,32 +3058,32 @@ export default function FinancePage() {
 
       {selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-[#1f232b] flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">Detalhes do Recebimento</h3>
-              <button onClick={() => setSelectedPayment(null)} className="text-gray-500 hover:text-white transition-colors">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center">
+              <h3 className="text-lg font-bold text-[var(--text-primary)]">Detalhes do Recebimento</h3>
+              <button onClick={() => setSelectedPayment(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4 text-sm text-gray-300">
+            <div className="p-6 space-y-4 text-sm text-[var(--text-secondary)]">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Cliente</span>
-                  <div className="font-medium text-white">{selectedPayment.customers?.name || 'Não localizado'}</div>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Cliente</span>
+                  <div className="font-medium text-[var(--text-primary)]">{selectedPayment.customers?.name || 'Não localizado'}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Lote / Contrato</span>
-                  <div className="font-medium text-white">
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Projeto / Lote / Contrato</span>
+                  <div className="font-medium text-[var(--text-primary)]">
                     {selectedPayment.projects?.name || selectedPayment.sales?.projects?.name || selectedPayment.blocks?.projects?.name || 'Projeto'} - QD {selectedPayment.blocks?.block_name || selectedPayment.blocks?.name} LT {selectedPayment.blocks?.number}
-                    <div className="text-xs text-gray-400 mt-1 uppercase">CT: {selectedPayment.sales?.contracts?.[0]?.contract_number || (selectedPayment.sales?.id ? 'CT-' + new Date(selectedPayment.created_at || new Date()).getFullYear() + '-' + selectedPayment.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N')}</div>
+                    <div className="text-xs text-[var(--text-secondary)] mt-1 uppercase">CT: {selectedPayment.sales?.contracts?.[0]?.contract_number || (selectedPayment.sales?.id ? 'CT-' + new Date(selectedPayment.created_at || new Date()).getFullYear() + '-' + selectedPayment.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N')}</div>
                   </div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Vencimento</span>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Vencimento</span>
                   <div>{selectedPayment.due_date ? new Date((selectedPayment.due_date?.split('T')[0]) + 'T12:00:00Z').toLocaleDateString('pt-BR') : '-'}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Parcela</span>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Parcela</span>
                   <div>
                     {selectedPayment.installment_number === 0 || selectedPayment.installment_number === '0' ? (
                        <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">ENTRADA</span>
@@ -3093,24 +3093,24 @@ export default function FinancePage() {
                   </div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Parcela</span>
-                  <div className="font-medium text-white">{formatCurrency(Number(selectedPayment.amount) || 0)}</div>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Valor Parcela</span>
+                  <div className="font-medium text-[var(--text-primary)]">{formatCurrency(Number(selectedPayment.amount) || 0)}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Valor Pago</span>
-                  <div className="font-medium text-white">{formatCurrency(selectedPayment.status === 'pago' || selectedPayment.status === 'PAID' ? (Number(selectedPayment.paid_amount) || Number(selectedPayment.amount)) : 0)}</div>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Valor Pago</span>
+                  <div className="font-medium text-[var(--text-primary)]">{formatCurrency(selectedPayment.status === 'pago' || selectedPayment.status === 'PAID' ? (Number(selectedPayment.paid_amount) || Number(selectedPayment.amount)) : 0)}</div>
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Status</span>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Status</span>
                   <FinanceStatusBadge status={selectedPayment.status || 'pendente'} />
                 </div>
                 <div>
-                  <span className="block text-xs font-semibold text-gray-500 mb-1">Data Criação</span>
+                  <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Data Criação</span>
                   <div>{selectedPayment.created_at ? new Date(selectedPayment.created_at).toLocaleDateString('pt-BR') : '-'}</div>
                 </div>
               </div>
-              <div className="pt-4 border-t border-[#1f232b]">
-                <div className="text-[10px] text-gray-500 font-mono space-y-1">
+              <div className="pt-4 border-t border-[var(--border-color)]">
+                <div className="text-[10px] text-[var(--text-muted)] font-mono space-y-1">
                   <div>Sale ID: {selectedPayment.sale_id || '-'}</div>
                   <div>Customer ID: {selectedPayment.customer_id || '-'}</div>
                   <div>Receipt ID: {selectedPayment.id}</div>
@@ -3123,10 +3123,10 @@ export default function FinancePage() {
 
       {showSaidaModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleRegistrarSaida}>
-              <div className="p-6 border-b border-[#1f232b] flex justify-between items-center sticky top-0 bg-[#13161c] z-10">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center sticky top-0 bg-[var(--bg-card)] z-10">
+                <h3 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   {editingCashMovementId ? 'Editar Saída' : 'Registrar Saída'}
                 </h3>
@@ -3137,25 +3137,25 @@ export default function FinancePage() {
                     setEditingCashMovementId(null);
                     setSaidaForm({ ...INITIAL_SAIDA_FORM });
                   }}
-                  className="text-gray-500 hover:text-white transition-colors"
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-6 space-y-4 text-sm text-gray-300">
+              <div className="p-6 space-y-4 text-sm text-[var(--text-secondary)]">
                 {loadingSaidaLookups && (
-                  <div className="flex items-center gap-2 text-gray-500 text-xs">
+                  <div className="flex items-center gap-2 text-[var(--text-muted)] text-xs">
                     <Loader2 className="w-3 h-3 animate-spin" /> Carregando projetos, contratos e corretores…
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Categoria *</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Categoria *</label>
                     <select
                       required
                       value={saidaForm.category}
                       onChange={(e) => setSaidaForm({ ...saidaForm, category: e.target.value })}
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
                     >
                       {SAIDA_CATEGORIES.map((cat) => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -3163,31 +3163,31 @@ export default function FinancePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Data *</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Data *</label>
                     <input
                       required
                       type="date"
                       value={saidaForm.movement_date}
                       onChange={(e) => setSaidaForm({ ...saidaForm, movement_date: e.target.value })}
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Descrição / Destino *</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Descrição / Destino *</label>
                   <input
                     required
                     type="text"
                     value={saidaForm.description}
                     onChange={(e) => setSaidaForm({ ...saidaForm, description: e.target.value })}
                     placeholder="Para onde foi o dinheiro ou do que se trata..."
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Valor (R$) *</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Valor (R$) *</label>
                   <input
                     required
                     type="text"
@@ -3195,19 +3195,19 @@ export default function FinancePage() {
                     value={saidaForm.amount}
                     onChange={(e) => setSaidaForm({ ...saidaForm, amount: e.target.value })}
                     placeholder="5685,37 ou 5685.37"
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Forma de pagamento *</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Forma de pagamento *</label>
                   <select
                     required
                     value={saidaForm.payment_method}
                     onChange={(e) =>
                       setSaidaForm({ ...saidaForm, payment_method: e.target.value })
                     }
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
                   >
                     {SAIDA_PAYMENT_METHODS.map((method) => (
                       <option key={method} value={method}>
@@ -3218,7 +3218,7 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Projeto / Loteamento (opcional)</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Projeto / Loteamento (opcional)</label>
                   <select
                     value={saidaForm.project_id}
                     onChange={(e) =>
@@ -3233,7 +3233,7 @@ export default function FinancePage() {
                         lote_manual: '',
                       })
                     }
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
                   >
                     <option value="">Sem vínculo de projeto</option>
                     {financeProjects.map((proj) => (
@@ -3243,11 +3243,11 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Contrato (opcional)</label>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Contrato (opcional)</label>
                   <select
                     value={saidaForm.contract_id}
                     onChange={(e) => applyContractToSaidaForm(e.target.value)}
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500"
                   >
                     <option value="">Nenhum contrato</option>
                     {contractsForSaida.map((c) => (
@@ -3259,7 +3259,7 @@ export default function FinancePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">
                     Contrato manual (sem vínculo no sistema)
                   </label>
                   <input
@@ -3270,13 +3270,13 @@ export default function FinancePage() {
                       setSaidaForm({ ...saidaForm, contract_number_manual: e.target.value })
                     }
                     placeholder="Ex.: 000000001/2026"
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente (cadastro)</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Cliente (cadastro)</label>
                     <select
                       disabled={!!saidaForm.contract_id}
                       value={saidaForm.customer_id}
@@ -3287,7 +3287,7 @@ export default function FinancePage() {
                           customer_manual: '',
                         })
                       }
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     >
                       <option value="">Nenhum / texto manual abaixo</option>
                       {financeCustomers.map((cust) => (
@@ -3298,7 +3298,7 @@ export default function FinancePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Cliente manual</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Cliente manual</label>
                     <input
                       type="text"
                       disabled={!!saidaForm.contract_id || !!saidaForm.customer_id}
@@ -3307,11 +3307,11 @@ export default function FinancePage() {
                         setSaidaForm({ ...saidaForm, customer_manual: e.target.value })
                       }
                       placeholder="Ex.: João Vitor Magão"
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">
                       CPF/CNPJ do beneficiário
                     </label>
                     <input
@@ -3325,11 +3325,11 @@ export default function FinancePage() {
                         })
                       }
                       placeholder="000.000.000-00 ou CNPJ"
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 font-mono"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 font-mono"
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">
                       Fornecedor / Beneficiário
                     </label>
                     <input
@@ -3342,11 +3342,11 @@ export default function FinancePage() {
                         })
                       }
                       placeholder="Nome do fornecedor ou beneficiário do pagamento"
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Quadra manual</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Quadra manual</label>
                     <input
                       type="text"
                       disabled={!!saidaForm.contract_id}
@@ -3355,11 +3355,11 @@ export default function FinancePage() {
                         setSaidaForm({ ...saidaForm, quadra_manual: e.target.value })
                       }
                       placeholder="Ex.: A"
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Lote manual</label>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Lote manual</label>
                     <input
                       type="text"
                       disabled={!!saidaForm.contract_id}
@@ -3368,13 +3368,13 @@ export default function FinancePage() {
                         setSaidaForm({ ...saidaForm, lote_manual: e.target.value })
                       }
                       placeholder="Ex.: 12"
-                      className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                      className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">
                     Corretor {saidaForm.category === 'Comissão' ? '*' : '(opcional)'}
                   </label>
                   <select
@@ -3390,7 +3390,7 @@ export default function FinancePage() {
                         broker_manual: e.target.value ? '' : saidaForm.broker_manual,
                       })
                     }
-                    className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 cursor-pointer focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     disabled={
                       !!saidaForm.beneficiary_manual.trim() && !saidaForm.broker_id
                     }
@@ -3414,15 +3414,15 @@ export default function FinancePage() {
                       })
                     }
                     placeholder="Corretor manual (opcional, se não usar cadastro)"
-                    className="mt-2 w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                    className="mt-2 w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                   />
                 </div>
               </div>
-              <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
-                 <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
+              <div className="p-6 border-t border-[var(--border-color)] flex justify-end gap-3">
+                 <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                    Cancelar
                  </button>
-                 <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded shadow transition-colors">
+                 <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 text-[var(--text-primary)] text-sm font-bold rounded shadow transition-colors">
                    {editingCashMovementId ? 'Salvar alterações' : 'Confirmar Saída'}
                  </button>
               </div>
@@ -3433,21 +3433,21 @@ export default function FinancePage() {
 
       {showProjectReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#13161c] border border-[#1f232b] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
-            <div className="px-6 border-b border-[#1f232b] h-16 flex items-center justify-between bg-[#0b0e14]/50">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
+            <div className="px-6 border-b border-[var(--border-color)] h-16 flex items-center justify-between bg-[var(--bg-card-alt)]/50">
+              <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                 <PieChart className="w-5 h-5 text-indigo-500" />
                 Relatório de Fluxo de Caixa
               </h2>
-              <button disabled={isGeneratingPr} onClick={() => setShowProjectReportModal(false)} className="text-gray-500 hover:text-white transition-colors">
+              <button disabled={isGeneratingPr} onClick={() => setShowProjectReportModal(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Projeto/Loteamento</label>
-                <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Projeto/Loteamento</label>
+                <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                    <option value="Todos">Consolidado (Todos)</option>
                    {projectsList.map((p, i) => <option key={i} value={p}>{p}</option>)}
                 </select>
@@ -3455,27 +3455,27 @@ export default function FinancePage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Inicial (Opcional)</label>
-                  <input type="date" value={prStartDate} onChange={e => setPrStartDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Data Inicial (Opcional)</label>
+                  <input type="date" value={prStartDate} onChange={e => setPrStartDate(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Data Final (Opcional)</label>
-                  <input type="date" value={prEndDate} onChange={e => setPrEndDate(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Data Final (Opcional)</label>
+                  <input type="date" value={prEndDate} onChange={e => setPrEndDate(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo de Movimento</label>
-                    <select value={prType} onChange={e => setPrType(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Tipo de Movimento</label>
+                    <select value={prType} onChange={e => setPrType(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                        <option value="Todos">Todos</option>
                        <option value="Entradas">Somente Entradas</option>
                        <option value="Saídas">Somente Saídas</option>
                     </select>
                  </div>
                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1">Situação</label>
-                    <select value={prStatus} onChange={e => setPrStatus(e.target.value)} className="w-full bg-[#1c212a] text-white border border-[#2d3340] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Situação</label>
+                    <select value={prStatus} onChange={e => setPrStatus(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
                        <option value="Todos">Todas</option>
                        <option value="Pago">Pgto / Efetivado</option>
                        <option value="Pendente">Pendente</option>
@@ -3484,8 +3484,8 @@ export default function FinancePage() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-[#1f232b] flex justify-end gap-3">
-               <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">
+            <div className="p-6 border-t border-[var(--border-color)] flex justify-end gap-3">
+               <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                  Cancelar
                </button>
                <button disabled={isGeneratingPr} type="button" onClick={() => handleGenerateProjectReport('pdf')} className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 text-indigo-400 text-sm font-bold rounded shadow flex items-center gap-2 transition-colors">
