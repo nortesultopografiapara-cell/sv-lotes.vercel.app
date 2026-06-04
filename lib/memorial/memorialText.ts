@@ -1,12 +1,50 @@
 /**
- * Texto narrativo do memorial descritivo.
+ * Texto narrativo do memorial descritivo (padrão SIGEF/INCRA).
  */
 
 import { isPendingConfrontantLabel } from '@/lib/confrontantTypes';
-import type { MemorialIdentification, MemorialSegmentRow, MemorialSideSummary } from '@/lib/memorial/memorialTypes';
+import type {
+  MemorialIdentification,
+  MemorialSegmentRow,
+  MemorialSideSummary,
+} from '@/lib/memorial/memorialTypes';
 
-const UTM_FOOTNOTE =
-  'Todas as coordenadas aqui descritas estão referenciadas ao Sistema Geodésico Brasileiro, datum SIRGAS2000, no sistema UTM, fuso correspondente ao projeto. Todos os azimutes, distâncias, área e perímetro foram calculados no plano de projeção UTM.';
+export const MEMORIAL_GEODESIC_FOOTNOTE =
+  'Todas as coordenadas aqui descritas estão georreferenciadas ao Sistema Geodésico Brasileiro, datum SIRGAS2000, representadas no Sistema UTM, fuso correspondente ao projeto. Todos os azimutes, distâncias, área e perímetro foram calculados no plano de projeção UTM.';
+
+function confrontantForText(label: string): string {
+  return label.trim().toUpperCase();
+}
+
+function segmentRunText(seg: MemorialSegmentRow): string {
+  const target = seg.toVertex;
+  const coords = `N ${seg.coordNEnd} e E ${seg.coordEEnd}`;
+  if (seg.isCurve && seg.curveDescription) {
+    return `${seg.curveDescription}, até o vértice ${target}, de coordenadas ${coords}`;
+  }
+  return `azimute ${seg.azimuth} e distância de ${seg.distanceLabel} até o vértice ${target}, de coordenadas ${coords}`;
+}
+
+type ConfrontantGroup = {
+  confrontant: string;
+  segments: MemorialSegmentRow[];
+};
+
+function groupConsecutiveByConfrontant(
+  segments: MemorialSegmentRow[],
+): ConfrontantGroup[] {
+  const groups: ConfrontantGroup[] = [];
+  for (const seg of segments) {
+    const key = seg.confrontant;
+    const last = groups[groups.length - 1];
+    if (last && last.confrontant === key) {
+      last.segments.push(seg);
+    } else {
+      groups.push({ confrontant: key, segments: [seg] });
+    }
+  }
+  return groups;
+}
 
 export function buildMemorialDescriptionParagraphs(
   segments: MemorialSegmentRow[],
@@ -21,28 +59,32 @@ export function buildMemorialDescriptionParagraphs(
     `Inicia-se a descrição deste perímetro no vértice ${first.fromVertex}, de coordenadas N ${first.coordNStart} e E ${first.coordEStart};`,
   );
 
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]!;
-    const confront = seg.confrontant.toUpperCase();
-    const target = seg.toVertex;
-    const coords = `N ${seg.coordNEnd} e E ${seg.coordEEnd}`;
+  const groups = groupConsecutiveByConfrontant(segments);
 
-    if (seg.isCurve && seg.curveDescription) {
+  for (const group of groups) {
+    const confront = confrontantForText(group.confrontant);
+    const items = group.segments;
+
+    if (items.length === 1) {
+      const seg = items[0]!;
       paragraphs.push(
-        `deste, ${seg.curveDescription}, confrontando com ${confront}, até o vértice ${target}, de coordenadas ${coords};`,
+        `Deste segue confrontando com ${confront}, com ${segmentRunText(seg)};`,
       );
-    } else {
-      paragraphs.push(
-        `deste, segue confrontando com ${confront}, com azimute ${seg.azimuth} e distância de ${seg.distanceLabel} até o vértice ${target}, de coordenadas ${coords};`,
-      );
+      continue;
+    }
+
+    paragraphs.push(
+      `Deste segue confrontando com ${confront}, com os seguintes azimutes e distâncias:`,
+    );
+    for (const seg of items) {
+      paragraphs.push(`— ${segmentRunText(seg)};`);
     }
   }
 
-  const last = segments[segments.length - 1]!;
   paragraphs.push(
-    `deste, retorna ao vértice ${first.fromVertex}, ponto inicial da descrição deste perímetro.`,
+    `Deste, retorna ao vértice ${first.fromVertex}, ponto inicial da descrição deste perímetro.`,
   );
-  paragraphs.push(UTM_FOOTNOTE);
+  paragraphs.push(MEMORIAL_GEODESIC_FOOTNOTE);
 
   return paragraphs;
 }
@@ -57,8 +99,8 @@ export function buildMemorialObservations(
 ): string[] {
   const obs: string[] = [
     'A planta anexa é parte integrante deste memorial descritivo.',
-    'As confrontações foram obtidas a partir da geometria oficial do lote e da confrontação assistida do sistema SV LOTES.',
-    'Este memorial foi gerado automaticamente pelo sistema SV LOTES, com base nos dados cadastrados pela empresa responsável.',
+    'As confrontações foram obtidas a partir da geometria oficial do lote e das confrontações confirmadas no sistema SV LOTES.',
+    'Este documento foi gerado automaticamente pelo sistema SV LOTES.',
   ];
   if (hasPending) {
     const pendingCount = segments.filter((s) =>
@@ -108,6 +150,7 @@ export function buildMemorialIdentificationFields(
   };
 }
 
+/** Quadro resumo — confrontantes do mapa (nunca medidas numéricas dos lados). */
 export function buildMemorialSideSummary(
   auditSides: {
     frente: string;
@@ -115,25 +158,14 @@ export function buildMemorialSideSummary(
     ladoDireito: string;
     ladoEsquerdo: string;
   } | null,
-  measures: {
-    frente: number | null;
-    fundo: number | null;
-    ladoDireito: number | null;
-    ladoEsquerdo: number | null;
-    chanfre: string;
-  },
-  formatDist: (n: number) => string,
+  chanfre: string,
 ): MemorialSideSummary {
   return {
-    frente: auditSides?.frente ?? (measures.frente != null ? formatDist(measures.frente) : '—'),
-    fundo: auditSides?.fundo ?? (measures.fundo != null ? formatDist(measures.fundo) : '—'),
-    ladoDireito:
-      auditSides?.ladoDireito ??
-      (measures.ladoDireito != null ? formatDist(measures.ladoDireito) : '—'),
-    ladoEsquerdo:
-      auditSides?.ladoEsquerdo ??
-      (measures.ladoEsquerdo != null ? formatDist(measures.ladoEsquerdo) : '—'),
-    chanfre: measures.chanfre,
+    frente: auditSides?.frente?.trim() || '—',
+    fundo: auditSides?.fundo?.trim() || '—',
+    ladoDireito: auditSides?.ladoDireito?.trim() || '—',
+    ladoEsquerdo: auditSides?.ladoEsquerdo?.trim() || '—',
+    chanfre,
   };
 }
 

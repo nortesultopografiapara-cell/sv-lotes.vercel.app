@@ -7,6 +7,7 @@ import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
 import { normalizeStreetGuideRow } from '@/lib/streetGuide';
 import {
   buildLotConfrontationAuditForMemorial,
+  buildMemorialSideSummaryFromAudit,
   memorialHasPendingConfrontations,
 } from '@/lib/memorial/memorialConfrontants';
 import { buildMemorialSegments } from '@/lib/memorial/memorialGeometry';
@@ -14,7 +15,6 @@ import {
   buildMemorialDescriptionText,
   buildMemorialIdentificationFields,
   buildMemorialObservations,
-  buildMemorialSideSummary,
 } from '@/lib/memorial/memorialText';
 import {
   displayOrNotInformed,
@@ -145,15 +145,6 @@ export async function loadMemorialPayload(
       ? formatMemorialDistanceM(measures.chanfre.total)
       : '—';
 
-  const auditSides = audit
-    ? {
-        frente: audit.sides.frente.label,
-        fundo: audit.sides.fundo.label,
-        ladoDireito: audit.sides.ladoDireito.label,
-        ladoEsquerdo: audit.sides.ladoEsquerdo.label,
-      }
-    : null;
-
   return {
     block: blockRecord,
     project: projectRecord,
@@ -175,17 +166,7 @@ export async function loadMemorialPayload(
       formatMemorialAreaM2,
       formatMemorialDistanceM,
     ),
-    sides: buildMemorialSideSummary(
-      auditSides,
-      {
-        frente: measures.frente,
-        fundo: measures.fundo,
-        ladoDireito: measures.ladoDireito,
-        ladoEsquerdo: measures.ladoEsquerdo,
-        chanfre: chanfreStr,
-      },
-      formatMemorialDistanceM,
-    ),
+    sides: buildMemorialSideSummaryFromAudit(audit, chanfreStr),
     segments,
     descriptionText: buildMemorialDescriptionText(segments),
     observations: buildMemorialObservations(segments, hasPending),

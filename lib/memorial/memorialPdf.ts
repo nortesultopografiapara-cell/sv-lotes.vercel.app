@@ -1,5 +1,5 @@
 /**
- * PDF do memorial descritivo (MEM-001).
+ * PDF do memorial descritivo (MEM-001) — layout SIGEF/INCRA.
  */
 
 import { jsPDF } from 'jspdf';
@@ -18,6 +18,7 @@ const MARGIN = 14;
 const PAGE_W = 210;
 const PAGE_H = 297;
 const LINE = 5.5;
+const HEADER_LINE = 4.2;
 
 function writeWrapped(
   doc: jsPDF,
@@ -39,12 +40,38 @@ function writeWrapped(
   return y;
 }
 
+function writeCenteredLines(
+  doc: jsPDF,
+  lines: string[],
+  y: number,
+  fontSize: number,
+  boldFirst = false,
+): number {
+  doc.setFontSize(fontSize);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trim()) continue;
+    doc.setFont('helvetica', boldFirst && i === 0 ? 'bold' : 'normal');
+    doc.text(line, PAGE_W / 2, y, { align: 'center' });
+    y += HEADER_LINE;
+  }
+  return y;
+}
+
 function formatDateBr(d: Date): string {
   return d.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
   });
+}
+
+function formatRegistrySigef(tech: MemorialPayload['technical']): string {
+  const parts: string[] = [];
+  if (tech.crea) parts.push(`CREA: ${tech.crea}`);
+  if (tech.cft) parts.push(`CFT: ${tech.cft}`);
+  if (tech.cau) parts.push(`CAU: ${tech.cau}`);
+  return parts.join(' · ');
 }
 
 export async function generateMemorialPdf(
@@ -59,31 +86,31 @@ export async function generateMemorialPdf(
   );
   if (logoB64) {
     try {
-      doc.addImage(logoB64, 'PNG', MARGIN, y, 28, 14);
+      doc.addImage(logoB64, 'PNG', PAGE_W / 2 - 14, y, 28, 14);
+      y += 18;
     } catch {
       /* ignore */
     }
   }
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text(payload.company.fantasyName, MARGIN + 32, y + 4);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  const companyLines: string[] = [
+    payload.company.fantasyName || payload.company.name,
+    payload.company.cnpj !== 'Não informado'
+      ? `CNPJ: ${payload.company.cnpj}`
+      : '',
+    payload.company.phone !== 'Não informado'
+      ? `Telefone: ${payload.company.phone}`
+      : '',
+    payload.company.email !== 'Não informado'
+      ? `E-mail: ${payload.company.email}`
+      : '',
+    payload.company.address !== 'Não informado'
+      ? payload.company.address
+      : '',
+  ].filter(Boolean);
+
+  y = writeCenteredLines(doc, companyLines, y, 8.5, true);
   y += 6;
-  doc.text(`CNPJ: ${payload.company.cnpj}`, MARGIN + 32, y);
-  y += 4;
-  doc.text(
-    `${payload.company.phone} · ${payload.company.email}`,
-    MARGIN + 32,
-    y,
-  );
-  y += 4;
-  if (payload.company.address !== 'Não informado') {
-    doc.text(payload.company.address, MARGIN + 32, y, { maxWidth: maxW - 32 });
-    y += 6;
-  }
-  y = Math.max(y, 28);
 
   doc.setDrawColor(180);
   doc.line(MARGIN, y, PAGE_W - MARGIN, y);
@@ -130,8 +157,21 @@ export async function generateMemorialPdf(
     ['Chanfre:', sides.chanfre],
   ];
   for (const [label, value] of summary) {
-    doc.text(`${label} ${value}`, MARGIN, y);
-    y += LINE;
+    doc.setFont('helvetica', 'bold');
+    doc.text(label, MARGIN, y);
+    doc.setFont('helvetica', 'normal');
+    const lines = doc.splitTextToSize(value, maxW - 42);
+    if (lines.length === 1) {
+      doc.text(lines[0]!, MARGIN + 38, y);
+      y += LINE;
+    } else {
+      doc.text(lines[0]!, MARGIN + 38, y);
+      y += LINE;
+      for (let i = 1; i < lines.length; i++) {
+        doc.text(lines[i]!, MARGIN + 38, y);
+        y += LINE;
+      }
+    }
   }
   y += 4;
 
@@ -154,7 +194,7 @@ export async function generateMemorialPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   for (const obs of payload.observations) {
-    y = writeWrapped(doc, obs, MARGIN, y, maxW);
+    y = writeWrapped(doc, `• ${obs}`, MARGIN, y, maxW);
     y += 2;
   }
 
@@ -174,18 +214,19 @@ export async function generateMemorialPdf(
       : id.municipality.split('/')[1] || '';
   doc.setFontSize(9);
   doc.text(
-    `${city}${uf ? `/${uf}` : ''}, ${formatDateBr(new Date(payload.generatedAt))}.`,
-    MARGIN,
+    `${city}${uf ? ` - ${uf}` : ''}, ${formatDateBr(new Date(payload.generatedAt))}.`,
+    PAGE_W / 2,
     y,
+    { align: 'center' },
   );
-  y += 12;
+  y += 14;
 
   const sigUrl = payload.company.signatureUrl;
   if (sigUrl) {
     try {
       const sigB64 = await loadImageAsBase64(sigUrl);
-      doc.addImage(sigB64, 'PNG', MARGIN, y, 40, 16);
-      y += 18;
+      doc.addImage(sigB64, 'PNG', PAGE_W / 2 - 20, y, 40, 16);
+      y += 20;
     } catch {
       /* ignore */
     }
@@ -194,20 +235,34 @@ export async function generateMemorialPdf(
   const tech = payload.technical;
   if (hasTechnicalResponsible(tech)) {
     doc.setFont('helvetica', 'bold');
-    doc.text(tech.name || 'Não informado', MARGIN, y);
-    y += LINE;
+    doc.setFontSize(10);
+    doc.text(tech.name || '—', PAGE_W / 2, y, { align: 'center' });
+    y += LINE + 1;
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
     if (tech.title) {
-      doc.text(tech.title, MARGIN, y);
+      doc.text(tech.title, PAGE_W / 2, y, { align: 'center' });
       y += LINE;
     }
-    const reg = formatTechnicalRegistryLine(tech);
-    if (reg !== '—') {
-      doc.text(reg, MARGIN, y);
+    const reg = formatRegistrySigef(tech);
+    if (reg) {
+      doc.text(reg, PAGE_W / 2, y, { align: 'center' });
       y += LINE;
+    } else {
+      const legacy = formatTechnicalRegistryLine(tech);
+      if (legacy !== '—') {
+        doc.text(legacy, PAGE_W / 2, y, { align: 'center' });
+        y += LINE;
+      }
     }
   } else {
-    doc.text('Responsável técnico: Não informado', MARGIN, y);
+    doc.setFontSize(9);
+    doc.text(
+      'Responsável técnico: Não informado',
+      PAGE_W / 2,
+      y,
+      { align: 'center' },
+    );
   }
 
   return doc;

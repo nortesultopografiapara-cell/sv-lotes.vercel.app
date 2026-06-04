@@ -1,8 +1,12 @@
 /**
- * Confrontante por segmento — prioridade oficial (segments_json + auditoria).
+ * Confrontante por segmento — mesma prioridade do painel do mapa (auditoria assistida).
  */
 
-import { buildLotConfrontationAudit } from '@/lib/assistedConfrontation';
+import {
+  buildLotConfrontationAudit,
+  officialSegmentIndexesForSide,
+  type LotConfrontationAudit,
+} from '@/lib/assistedConfrontation';
 import {
   isPendingConfrontantLabel,
   PENDING_CONFRONTANT_LABEL,
@@ -10,11 +14,10 @@ import {
 } from '@/lib/confrontantTypes';
 import type { OfficialSegmentClassification } from '@/lib/officialLotMeasurements';
 import { formatStreetDisplay } from '@/lib/streetGuide';
-import { resolveFrontStreetGuideForLot } from '@/lib/resolveFrontStreetGuide';
 import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
 import type { SideRole } from '@/lib/lotSegmentConfrontation';
-import type { LotConfrontationAudit } from '@/lib/assistedConfrontation';
+import type { MemorialSideSummary } from '@/lib/memorial/memorialTypes';
 
 export type SegmentConfrontantResolved = {
   label: string;
@@ -27,76 +30,135 @@ function isUsableStreetName(raw: string): boolean {
   return !/^a\s*definir$/i.test(t);
 }
 
-function sideRoleFromClassification(
-  c: OfficialSegmentClassification,
-): SideRole | null {
-  switch (c) {
-    case 'frente':
-      return 'frente';
-    case 'fundo':
-      return 'fundo';
-    case 'lado_direito':
-      return 'ladoDireito';
-    case 'lado_esquerdo':
-      return 'ladoEsquerdo';
-    default:
-      return null;
-  }
-}
-
-function labelFromAuditSide(
+/** Confrontante do segmento conforme auditoria do mapa (segmentEdges). */
+export function confrontantFromAuditForSegment(
   audit: LotConfrontationAudit | null,
-  role: SideRole,
+  segmentIndex: number,
 ): SegmentConfrontantResolved | null {
   if (!audit) return null;
-  const entry = audit.sides[role];
-  if (!entry?.label || isPendingConfrontantLabel(entry.label)) return null;
-  return { label: entry.label, source: entry.source };
+  const edge = audit.segmentEdges.find((e) => e.segmentIndex === segmentIndex);
+  if (!edge?.confrontant || isPendingConfrontantLabel(edge.confrontant)) {
+    return null;
+  }
+  return {
+    label: edge.confrontant,
+    source: edge.source,
+  };
+}
+
+function confrontantFromAuditSideMapping(
+  audit: LotConfrontationAudit | null,
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  projectBlocks: Record<string, unknown>[],
+  project: Record<string, unknown> | null | undefined,
+  streetGuides: StreetGuideConfrontInput[],
+): SegmentConfrontantResolved | null {
+  if (!audit || !projectBlocks.length) return null;
+  const roles: SideRole[] = [
+    'frente',
+    'fundo',
+    'ladoDireito',
+    'ladoEsquerdo',
+  ];
+  for (const role of roles) {
+    const indexes = officialSegmentIndexesForSide(
+      block,
+      projectBlocks,
+      role,
+      project,
+      streetGuides,
+    );
+    if (!indexes.includes(segmentIndex)) continue;
+    const side = audit.sides[role];
+    if (!side?.label || isPendingConfrontantLabel(side.label)) continue;
+    return { label: side.label, source: side.source };
+  }
+  return null;
+}
+
+export function buildMemorialSideSummaryFromAudit(
+  audit: LotConfrontationAudit | null,
+  chanfre: string,
+): MemorialSideSummary {
+  if (!audit) {
+    return {
+      frente: '—',
+      fundo: '—',
+      ladoDireito: '—',
+      ladoEsquerdo: '—',
+      chanfre,
+    };
+  }
+  const c = audit.confrontants;
+  const s = audit.sides;
+  return {
+    frente: c.frente || s.frente.label || '—',
+    fundo: c.fundo || s.fundo.label || '—',
+    ladoDireito: c.ladoDireito || s.ladoDireito.label || '—',
+    ladoEsquerdo: c.ladoEsquerdo || s.ladoEsquerdo.label || '—',
+    chanfre,
+  };
 }
 
 /**
- * Prioridade: manual em segments_json → frente/rua → auditoria por lado → A DEFINIR.
+ * Prioridade (igual ao popup):
+ * 1. confrontante manual/auto confirmado em segments_json
+ * 2. auditoria assistida (lados + segmentEdges — sem recalcular heurística extra)
+ * 3. frente salva (front_street_name) só para segmento de frente sem auditoria
+ * 4. A DEFINIR
  */
 export function resolveMemorialSegmentConfrontant(
   block: Record<string, unknown>,
   segmentIndex: number,
-  classification: OfficialSegmentClassification,
+  _classification: OfficialSegmentClassification,
   audit: LotConfrontationAudit | null,
   streetGuides: StreetGuideConfrontInput[],
+  projectBlocks: Record<string, unknown>[] = [],
+  project?: Record<string, unknown> | null,
 ): SegmentConfrontantResolved {
-  const rec = getSegmentConfrontantRecord(block, segmentIndex);
-  if (rec?.confrontant && !isPendingConfrontantLabel(rec.confrontant)) {
+  const manual = getSegmentConfrontantRecord(block, segmentIndex);
+  if (manual?.confrontant && !isPendingConfrontantLabel(manual.confrontant)) {
     return {
-      label: rec.confrontant,
-      source: rec.confrontant_source || 'manual',
+      label: manual.confrontant,
+      source: manual.confrontant_source || 'manual',
     };
   }
 
+  const fromAudit = confrontantFromAuditForSegment(audit, segmentIndex);
+  if (fromAudit) return fromAudit;
+
+  const fromSide = confrontantFromAuditSideMapping(
+    audit,
+    block,
+    segmentIndex,
+    projectBlocks,
+    project,
+    streetGuides,
+  );
+  if (fromSide) return fromSide;
+
   const savedStreet = String(block.front_street_name || '').trim();
-  if (classification === 'frente' && isUsableStreetName(savedStreet)) {
+  const frontIdx =
+    typeof block.front_segment_index === 'number'
+      ? block.front_segment_index
+      : -1;
+  if (
+    segmentIndex === frontIdx &&
+    isUsableStreetName(savedStreet)
+  ) {
     const label =
-      formatStreetDisplay(block.front_street_type as string | undefined, savedStreet) ||
-      savedStreet;
+      formatStreetDisplay(
+        block.front_street_type as string | undefined,
+        savedStreet,
+      ) || savedStreet;
     return { label, source: 'street_guide' };
   }
 
-  if (classification === 'frente' && streetGuides.length) {
-    const match = resolveFrontStreetGuideForLot(block, streetGuides);
-    if (match?.streetGuideName && !/sem nome/i.test(match.streetGuideName)) {
-      return { label: match.streetGuideName, source: 'street_guide' };
-    }
-  }
-
-  const role = sideRoleFromClassification(classification);
-  if (role) {
-    const fromSide = labelFromAuditSide(audit, role);
-    if (fromSide) return fromSide;
-  }
-
-  if (rec?.confrontant) {
+  if (manual?.confrontant) {
     return {
-      label: rec.confrontant,
-      source: rec.confrontant_source || 'undefined',
+      label: manual.confrontant,
+      source: manual.confrontant_source || 'undefined',
     };
   }
 
@@ -129,4 +191,17 @@ export function memorialHasPendingConfrontations(
 ): boolean {
   if (audit?.hasPending) return true;
   return segments.some((s) => isPendingConfrontantLabel(s.confrontant));
+}
+
+/** Rótulos dos quatro lados para quadro resumo (popup). */
+export function memorialConfrontantSidesFromAudit(
+  audit: LotConfrontationAudit | null,
+): Record<SideRole, string> | null {
+  if (!audit) return null;
+  return {
+    frente: audit.sides.frente.label,
+    fundo: audit.sides.fundo.label,
+    ladoDireito: audit.sides.ladoDireito.label,
+    ladoEsquerdo: audit.sides.ladoEsquerdo.label,
+  };
 }

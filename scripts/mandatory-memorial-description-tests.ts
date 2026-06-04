@@ -24,6 +24,8 @@ import {
   buildMemorialDescriptionParagraphs,
   MEMORIAL_PENDING_CONFIRM_MESSAGE,
 } from '../lib/memorial/memorialText';
+import { buildLotConfrontationAudit } from '../lib/assistedConfrontation';
+import { buildMemorialSideSummaryFromAudit } from '../lib/memorial/memorialConfrontants';
 import { applyConfrontantToSegmentRows } from '../lib/segmentConfrontantPersist';
 
 function assert(cond: boolean, msg: string) {
@@ -134,6 +136,7 @@ function testManualConfrontant() {
     'lado_direito',
     null,
     [],
+    [updated],
   );
   assert(c.label === 'Área Remanescente', c.label);
   assert(c.source === 'manual', c.source);
@@ -145,7 +148,7 @@ function testStreetName() {
     front_street_name: 'RUA INTERNA 01',
     front_street_type: 'Rua',
   });
-  const c = resolveMemorialSegmentConfrontant(block, 0, 'frente', null, []);
+  const c = resolveMemorialSegmentConfrontant(block, 0, 'frente', null, [], [block]);
   assert(/INTERNA\s*01/i.test(c.label), c.label);
   console.log('OK testStreetName');
 }
@@ -185,6 +188,103 @@ function testVertexLabels() {
   console.log('OK testVertexLabels');
 }
 
+function testSigefGrouping() {
+  const segs = [
+    {
+      segmentIndex: 0,
+      fromVertex: 'V-01',
+      toVertex: 'V-02',
+      coordNStart: '1',
+      coordEStart: '2',
+      coordNEnd: '3',
+      coordEEnd: '4',
+      azimuth: "90°00'00\"",
+      distanceM: 10,
+      distanceLabel: '10,00 m',
+      confrontant: 'LOTE 05',
+      confrontantSource: 'neighbor' as const,
+      isCurve: false,
+      curveDescription: null,
+      northStart: 0,
+      eastStart: 0,
+      northEnd: 0,
+      eastEnd: 10,
+    },
+    {
+      segmentIndex: 1,
+      fromVertex: 'V-02',
+      toVertex: 'V-03',
+      coordNStart: '3',
+      coordEStart: '4',
+      coordNEnd: '5',
+      coordEEnd: '6',
+      azimuth: "180°00'00\"",
+      distanceM: 12,
+      distanceLabel: '12,00 m',
+      confrontant: 'LOTE 05',
+      confrontantSource: 'neighbor' as const,
+      isCurve: false,
+      curveDescription: null,
+      northStart: 0,
+      eastStart: 10,
+      northEnd: 10,
+      eastEnd: 10,
+    },
+    {
+      segmentIndex: 2,
+      fromVertex: 'V-03',
+      toVertex: 'V-04',
+      coordNStart: '5',
+      coordEStart: '6',
+      coordNEnd: '7',
+      coordEEnd: '8',
+      azimuth: "270°00'00\"",
+      distanceM: 10,
+      distanceLabel: '10,00 m',
+      confrontant: 'RUA TESTE',
+      confrontantSource: 'street_guide' as const,
+      isCurve: false,
+      curveDescription: null,
+      northStart: 10,
+      eastStart: 10,
+      northEnd: 10,
+      eastEnd: 0,
+    },
+  ];
+  const paras = buildMemorialDescriptionParagraphs(segs);
+  const joined = paras.join('\n');
+  assert(/seguintes azimutes e distâncias/i.test(joined), 'agrupa LOTE 05');
+  assert(/LOTE 05/.test(joined), 'menciona confrontante agrupado');
+  assert(/RUA TESTE/.test(joined), 'rua em trecho separado');
+  console.log('OK testSigefGrouping');
+}
+
+function testAuditMatchesPopupSides() {
+  const base = lotBlock('01', 4, {
+    front_segment_index: 0,
+    front_street_name: 'RUA ACESSO',
+    front_street_type: 'Rua',
+  });
+  const lot1 = {
+    ...base,
+    segments_json: applyConfrontantToSegmentRows(
+      base,
+      [2],
+      'Lote 02',
+      'lot',
+      'manual',
+    ),
+  };
+  const audit = buildLotConfrontationAudit(lot1, lot1.id as string, [lot1], []);
+  const segs = buildMemorialSegments(lot1, lot1.id as string, [lot1], []);
+  const summary = buildMemorialSideSummaryFromAudit(audit, '—');
+  assert(/ACESSO|Rua/i.test(summary.frente), `frente ${summary.frente}`);
+  const fundoSeg = segs.find((s) => s.segmentIndex === 2);
+  assert(fundoSeg != null, 'seg fundo');
+  assert(fundoSeg!.confrontant === 'Lote 02', `fundo seg ${fundoSeg!.confrontant}`);
+  console.log('OK testAuditMatchesPopupSides');
+}
+
 testFourVertices();
 testManyVertices();
 testClosesAtV01();
@@ -195,4 +295,6 @@ testCoordFormat();
 testAzimuthDms();
 testBrFormats();
 testVertexLabels();
+testSigefGrouping();
+testAuditMatchesPopupSides();
 console.log('mandatory-memorial-description-tests: all passed');

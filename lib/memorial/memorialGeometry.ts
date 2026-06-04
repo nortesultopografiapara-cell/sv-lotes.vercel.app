@@ -78,6 +78,8 @@ export function buildMemorialSegments(
       row.classification,
       audit,
       guides,
+      projectBlocks,
+      project,
     );
 
     const isCurve =
