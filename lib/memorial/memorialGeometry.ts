@@ -18,7 +18,10 @@ import {
   resolveMemorialSegmentConfrontant,
 } from '@/lib/memorial/memorialConfrontants';
 import type { MemorialSegmentRow } from '@/lib/memorial/memorialTypes';
-import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
+import {
+  asStreetGuideList,
+  type StreetGuideConfrontInput,
+} from '@/lib/streetGuideConfrontation';
 
 export function getOfficialSegmentTableForMemorial(
   block: Record<string, unknown>,
@@ -36,11 +39,12 @@ export function buildMemorialSegments(
 ): MemorialSegmentRow[] {
   const table = getOfficialSegmentTableForMemorial(block, project);
   const parsed = parseOfficialSegmentsFromBlock(block, block.number ?? block.id);
+  const guides = asStreetGuideList(streetGuides);
   const audit = buildLotConfrontationAuditForMemorial(
     block,
     blockId,
     projectBlocks,
-    streetGuides as Record<string, unknown>[],
+    guides as Record<string, unknown>[],
     project,
   );
 
@@ -73,7 +77,7 @@ export function buildMemorialSegments(
       row.segment_index,
       row.classification,
       audit,
-      streetGuides,
+      guides,
     );
 
     const isCurve =

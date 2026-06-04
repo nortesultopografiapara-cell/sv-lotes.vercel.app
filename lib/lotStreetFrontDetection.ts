@@ -7,6 +7,7 @@ import { lineString, point } from "@turf/helpers";
 import distance from "@turf/distance";
 import nearestPointOnLine from "@turf/nearest-point-on-line";
 import type { OfficialLotSegment } from "@/lib/officialLotMeasurements";
+import { flattenLineStringCoordinates } from "@/lib/streetGuideConfrontation";
 
 export type StreetGuideLineInput = {
   id?: string;
@@ -27,13 +28,18 @@ function nearestDistM(
   lngLat: [number, number],
   guideCoords: number[][],
 ): number {
-  if (guideCoords.length < 2) return Infinity;
-  const line = lineString(guideCoords);
-  const pt = point(lngLat);
-  const np = nearestPointOnLine(line, pt);
-  const dist = np.properties?.dist;
-  if (typeof dist === "number" && Number.isFinite(dist)) return dist;
-  return distance(pt, np, { units: "meters" });
+  const lineCoords = flattenLineStringCoordinates(guideCoords) ?? guideCoords;
+  if (!Array.isArray(lineCoords) || lineCoords.length < 2) return Infinity;
+  try {
+    const line = lineString(lineCoords);
+    const pt = point(lngLat);
+    const np = nearestPointOnLine(line, pt);
+    const dist = np.properties?.dist;
+    if (typeof dist === "number" && Number.isFinite(dist)) return dist;
+    return distance(pt, np, { units: "meters" });
+  } catch {
+    return Infinity;
+  }
 }
 
 export function scoreSegmentStreetProximity(
@@ -41,13 +47,22 @@ export function scoreSegmentStreetProximity(
   p2LngLat: [number, number],
   guideCoords: number[][],
 ): SegmentStreetProximityScore {
-  const d1 = nearestDistM(p1LngLat, guideCoords);
-  const d2 = nearestDistM(p2LngLat, guideCoords);
+  const lineCoords =
+    flattenLineStringCoordinates(guideCoords) ?? guideCoords;
+  if (!Array.isArray(lineCoords) || lineCoords.length < 2) {
+    return {
+      minDistM: Infinity,
+      avgDistM: Infinity,
+      parallelVarianceM: Infinity,
+    };
+  }
+  const d1 = nearestDistM(p1LngLat, lineCoords);
+  const d2 = nearestDistM(p2LngLat, lineCoords);
   const mid: [number, number] = [
     (p1LngLat[0] + p2LngLat[0]) / 2,
     (p1LngLat[1] + p2LngLat[1]) / 2,
   ];
-  const dMid = nearestDistM(mid, guideCoords);
+  const dMid = nearestDistM(mid, lineCoords);
   return {
     minDistM: Math.min(d1, d2, dMid),
     avgDistM: (d1 + d2) / 2,

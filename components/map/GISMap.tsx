@@ -65,6 +65,7 @@ import {
   type Segment,
 } from "@/utils/calculateLotDimensions";
 import { formatStreetDisplay } from "@/lib/streetGuide";
+import { flattenLineStringCoordinates } from "@/lib/streetGuideConfrontation";
 import { computeOfficialLotLabelPosition } from "@/lib/lotLabelPosition";
 import {
   formatSupabaseError,
@@ -4056,10 +4057,11 @@ export default function GISMap({
 
         {SHOW_STREET_GUIDE_LINES &&
           streetGuidesVisible &&
-          streetGuides.map((guide) => {
+          (Array.isArray(streetGuides) ? streetGuides : []).map((guide) => {
             const geo = guide.geometry_geojson || guide.geometry;
-            if (!geo?.coordinates) return null;
-            const pts = geo.coordinates.map((c: number[]) => [c[1], c[0]]);
+            const line = flattenLineStringCoordinates(geo?.coordinates);
+            if (!line) return null;
+            const pts = line.map((c: number[]) => [c[1], c[0]]);
             const label =
               guide.displayName ||
               formatStreetDisplay(guide.type, guide.name);

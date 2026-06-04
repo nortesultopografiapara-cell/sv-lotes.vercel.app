@@ -52,15 +52,44 @@ export type StreetGuideConfrontInput = {
   name?: string | null;
   type?: string | null;
   active?: boolean | null;
-  geometry?: { coordinates?: number[][] };
-  geometry_geojson?: { coordinates?: number[][] };
+  geometry?: { coordinates?: unknown };
+  geometry_geojson?: { coordinates?: unknown };
 };
+
+function isLngLatPosition(p: unknown): p is [number, number] {
+  return (
+    Array.isArray(p) &&
+    typeof p[0] === 'number' &&
+    typeof p[1] === 'number' &&
+    (p.length < 3 || typeof p[2] === 'number')
+  );
+}
+
+/** LineString ou primeiro anel/linha de GeoJSON aninhado (Polygon / MultiLineString). */
+export function flattenLineStringCoordinates(coords: unknown): number[][] | null {
+  if (!Array.isArray(coords) || coords.length < 1) return null;
+  if (coords.length === 1) {
+    return flattenLineStringCoordinates(coords[0]);
+  }
+  if (isLngLatPosition(coords[0]) && isLngLatPosition(coords[1])) {
+    return coords as number[][];
+  }
+  for (const part of coords) {
+    const line = flattenLineStringCoordinates(part);
+    if (line) return line;
+  }
+  return null;
+}
+
+export function asStreetGuideList(
+  guides: StreetGuideConfrontInput[] | Record<string, unknown>[] | null | undefined,
+): StreetGuideConfrontInput[] {
+  return Array.isArray(guides) ? (guides as StreetGuideConfrontInput[]) : [];
+}
 
 function guideCoords(g: StreetGuideConfrontInput): number[][] | null {
   const geo = g.geometry_geojson || g.geometry;
-  const coords = geo?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-  return coords;
+  return flattenLineStringCoordinates(geo?.coordinates);
 }
 
 /**
@@ -77,7 +106,7 @@ export function confrontantFromStreetGuidesForSegment(
   let bestGuideId: string | undefined;
   let bestDist = Infinity;
 
-  for (const g of guides) {
+  for (const g of asStreetGuideList(guides)) {
     if (g.active === false) continue;
     const coords = guideCoords(g);
     if (!coords) continue;

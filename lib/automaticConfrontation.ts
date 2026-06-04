@@ -92,10 +92,11 @@ export async function runAutomaticConfrontation(
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
   const project = options.project ?? null;
 
-  const streetGuides =
-    options.streetGuides?.length
+  const streetGuidesRaw =
+    options.streetGuides != null
       ? options.streetGuides
       : await fetchProjectStreetGuides(projectId);
+  const streetGuides = Array.isArray(streetGuidesRaw) ? streetGuidesRaw : [];
 
   const lots: LotAutoConfrontationRecord[] = [];
   let processed = 0;

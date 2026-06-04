@@ -16,6 +16,7 @@ import {
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
 } from '@/lib/resolveFrontStreetGuide';
 import {
+  asStreetGuideList,
   confrontantFromStreetGuidesForUtmSegment,
   type StreetGuideConfrontInput,
 } from '@/lib/streetGuideConfrontation';
@@ -618,6 +619,7 @@ export function buildSideConfrontantsWithSources(
   streetGuides: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
 ): BuildSideConfrontantsWithSourcesResult {
+  const guides = asStreetGuideList(streetGuides);
   const official = getOfficialConfrontationRing(block, project);
   const utmRing = official.ok ? official.ring : targetRing;
   const allPolysUtm = buildAllPolysUtm(blocks, project);
@@ -626,11 +628,11 @@ export function buildSideConfrontantsWithSources(
     block,
     utmRing,
     allPolysUtm,
-    streetGuides as StreetGuideConfrontInput[],
+    guides,
   );
 
   if (!segments.length) {
-    const frente = resolveFrenteWithSource(block, [], [], streetGuides);
+    const frente = resolveFrenteWithSource(block, [], [], guides);
     const empty: SideConfrontantResult = {
       label: PENDING_CONFRONTANT_LABEL,
       source: 'undefined',
@@ -664,7 +666,7 @@ export function buildSideConfrontantsWithSources(
     block,
     sides.frente,
     segments,
-    streetGuides as StreetGuideConfrontInput[],
+    guides,
   );
   const fundoR = bestConfrontantForSide(
     sides.fundo,
@@ -675,7 +677,7 @@ export function buildSideConfrontantsWithSources(
     allPolysUtm,
     project,
     undefined,
-    streetGuides,
+    guides,
   );
   const dirR = bestConfrontantForSide(
     sides.ladoDireito,
@@ -686,7 +688,7 @@ export function buildSideConfrontantsWithSources(
     allPolysUtm,
     project,
     'ladoDireito',
-    streetGuides,
+    guides,
   );
   const esqR = bestConfrontantForSide(
     sides.ladoEsquerdo,
@@ -697,7 +699,7 @@ export function buildSideConfrontantsWithSources(
     allPolysUtm,
     project,
     'ladoEsquerdo',
-    streetGuides,
+    guides,
   );
 
   const matched = [fundoR, dirR, esqR].filter((r) => !r.pending).length;

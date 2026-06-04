@@ -197,6 +197,20 @@ function isCurveSegmentRaw(raw: Record<string, unknown>): boolean {
   return t === "CURVE" || (raw.radius != null && Number(raw.radius) > 0);
 }
 
+/** Comprimento planar UTM quando distance/length no JSON está zerado mas há vértices. */
+function segmentLengthFromEndpoints(raw: Record<string, unknown>): number | null {
+  const north = Number(raw.north ?? raw.northing ?? raw.Northing ?? raw.y);
+  const east = Number(raw.east ?? raw.easting ?? raw.Easting ?? raw.x);
+  const endNorth = Number(
+    raw.end_north ?? raw.endNorth ?? raw.EndNorth ?? raw.end_northing,
+  );
+  const endEast = Number(raw.end_east ?? raw.endEast ?? raw.EndEast ?? raw.end_easting);
+  if (!Number.isFinite(north) || !Number.isFinite(east)) return null;
+  if (!Number.isFinite(endNorth) || !Number.isFinite(endEast)) return null;
+  const len = Math.hypot(endEast - east, endNorth - north);
+  return isValidSegmentDistance(len) ? round2(len) : null;
+}
+
 export function extractOfficialSegmentDistance(
   raw: Record<string, unknown>,
   lotLabel?: unknown,
@@ -278,6 +292,16 @@ export function extractOfficialSegmentDistance(
     }
 
     return round2(length);
+  }
+
+  const fromEndpoints = segmentLengthFromEndpoints(raw);
+  if (fromEndpoints != null) {
+    console.log("OFFICIAL_DISTANCE_FROM_ENDPOINTS", {
+      lote: label,
+      index: idx,
+      length: fromEndpoints,
+    });
+    return fromEndpoints;
   }
 
   return null;

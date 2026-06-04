@@ -5,8 +5,10 @@
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import { normalizeLotGeometry } from '@/lib/lotGeometryNormalize';
 import {
+  asStreetGuideList,
   confrontantFromStreetGuidesForSegment,
   confrontantFromStreetGuidesForUtmSegment,
+  flattenLineStringCoordinates,
   lngLatEdgeFromUtmSegment,
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
   type StreetGuideConfrontInput,
@@ -81,9 +83,7 @@ export type FrontStreetPersistFields = {
 
 function guideCoords(g: StreetGuideConfrontInput): number[][] | null {
   const geo = g.geometry_geojson || g.geometry;
-  const coords = geo?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-  return coords;
+  return flattenLineStringCoordinates(geo?.coordinates);
 }
 
 function matchFromHit(
@@ -152,6 +152,7 @@ export function detectFrontEdgeIndexFromGuides(
   streetGuides: StreetGuideConfrontInput[],
   toleranceM: number,
 ): { edgeIndex: number; distanceM: number } | null {
+  const guides = asStreetGuideList(streetGuides);
   const geom = normalizeLotGeometry(block);
   if (!geom.ok) return null;
   const verts = openLatLngVerts(geom.ring);
@@ -167,7 +168,7 @@ export function detectFrontEdgeIndexFromGuides(
       verts[(i + 1) % n][1],
       verts[(i + 1) % n][0],
     ];
-    for (const g of streetGuides) {
+    for (const g of guides) {
       if (g.active === false) continue;
       const coords = guideCoords(g);
       if (!coords) continue;
@@ -207,7 +208,7 @@ function matchGuideAtWgs84RingEdge(
   const p1: [number, number] = edge.p1;
   const p2: [number, number] = edge.p2;
   let dist = Infinity;
-  for (const g of streetGuides) {
+  for (const g of asStreetGuideList(streetGuides)) {
     const coords = guideCoords(g);
     if (!coords) continue;
     const sc = scoreSegmentStreetProximity(p1, p2, coords);
