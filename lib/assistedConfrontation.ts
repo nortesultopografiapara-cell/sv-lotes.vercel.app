@@ -174,8 +174,6 @@ export function buildLotConfrontationAudit(
       typeof seg?.originalIndex === 'number' ? seg.originalIndex : mergedIdx;
     const manual = getSegmentConfrontantRecord(blockResolved, oi);
     const role = sideRoleForSegmentIndex(mergedIdx, built.sides);
-    const lateralSide =
-      role === 'ladoDireito' || role === 'ladoEsquerdo' ? role : undefined;
     const perSegment = resolveConfrontantForMergedSegment(
       mergedIdx,
       built.segments,
@@ -184,7 +182,7 @@ export function buildLotConfrontationAudit(
       blockId,
       allPolysUtm,
       project,
-      lateralSide,
+      role ?? undefined,
       guides,
     );
 

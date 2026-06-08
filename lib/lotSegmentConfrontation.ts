@@ -19,9 +19,13 @@ import {
   resolveFrontStreetGuideForLot,
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
 } from '@/lib/resolveFrontStreetGuide';
+import { scoreSegmentStreetProximity } from '@/lib/lotStreetFrontDetection';
 import {
   asStreetGuideList,
   confrontantFromStreetGuidesForUtmSegment,
+  flattenLineStringCoordinates,
+  lngLatEdgeFromUtmSegment,
+  STREET_GUIDE_CONFRONT_TOLERANCE_M,
   type StreetGuideConfrontInput,
 } from '@/lib/streetGuideConfrontation';
 import {
@@ -374,6 +378,54 @@ function trySequenceConfrontant(
   return labelFromBlock(neighbor);
 }
 
+function guideCoordsFromInput(g: StreetGuideConfrontInput): number[][] | null {
+  const geo = g.geometry_geojson || g.geometry;
+  return flattenLineStringCoordinates(geo?.coordinates);
+}
+
+/** Segmento realmente voltado para a rua (esquina), não só canto próximo à guia. */
+function segmentQualifiesAsRealStreetFace(
+  target: Segment,
+  targetBlock: Record<string, unknown>,
+  streetGuides: StreetGuideConfrontInput[],
+): boolean {
+  const edge = lngLatEdgeFromUtmSegment(target, targetBlock);
+  if (!edge) return false;
+  const tol = STREET_GUIDE_CONFRONT_TOLERANCE_M;
+  for (const g of asStreetGuideList(streetGuides)) {
+    if (g.active === false) continue;
+    const coords = guideCoordsFromInput(g);
+    if (!coords || coords.length < 2) continue;
+    const score = scoreSegmentStreetProximity(edge.p1, edge.p2, coords);
+    if (
+      score.minDistM <= tol &&
+      score.parallelVarianceM <= tol * 2
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function mayApplyStreetGuideConfrontant(
+  sideRole: SideRole | undefined,
+  target: Segment,
+  targetBlock: Record<string, unknown>,
+  streetGuides: StreetGuideConfrontInput[],
+  neighborResolved: boolean,
+): boolean {
+  if (neighborResolved && sideRole !== 'frente') return false;
+  if (sideRole === 'frente') return true;
+  if (
+    sideRole === 'fundo' ||
+    sideRole === 'ladoDireito' ||
+    sideRole === 'ladoEsquerdo'
+  ) {
+    return segmentQualifiesAsRealStreetFace(target, targetBlock, streetGuides);
+  }
+  return segmentQualifiesAsRealStreetFace(target, targetBlock, streetGuides);
+}
+
 /** Confrontante de um único segmento UTM fundido (mergedIdx). */
 export function resolveConfrontantForMergedSegment(
   mergedIdx: number,
@@ -383,7 +435,7 @@ export function resolveConfrontantForMergedSegment(
   targetBlockId: string,
   allPolysUtm: number[][][],
   project?: Record<string, unknown> | null,
-  side?: 'ladoEsquerdo' | 'ladoDireito',
+  sideRole?: SideRole,
   streetGuides: StreetGuideConfrontInput[] = [],
 ): SideConfrontantResult {
   const target = segments[mergedIdx];
@@ -404,21 +456,6 @@ export function resolveConfrontantForMergedSegment(
       source: rec.confrontant_source || 'manual',
       pending: false,
     };
-  }
-
-  if (streetGuides.length > 0) {
-    const fromStreet = confrontantFromStreetGuidesForUtmSegment(
-      target,
-      targetBlock,
-      streetGuides,
-    );
-    if (fromStreet?.label) {
-      return {
-        label: normalizeConfrontantLabel(fromStreet.label),
-        source: 'street_guide',
-        pending: false,
-      };
-    }
   }
 
   let bestLabel = '—';
@@ -445,10 +482,12 @@ export function resolveConfrontantForMergedSegment(
   tryPass(MAX_PERPENDICULAR_M);
   if (bestScore <= -Infinity) tryPass(MAX_PERPENDICULAR_FALLBACK_M);
 
-  if (bestLabel === '—' && side) {
+  const neighborResolved = bestLabel !== '—';
+
+  if (!neighborResolved && (sideRole === 'ladoEsquerdo' || sideRole === 'ladoDireito')) {
     const seq = trySequenceConfrontant(
       targetBlock,
-      side,
+      sideRole,
       [mergedIdx],
       segments,
       candidateBlocks,
@@ -464,11 +503,45 @@ export function resolveConfrontantForMergedSegment(
     }
   }
 
-  if (bestLabel !== '—' && /^lote\s/i.test(bestLabel)) {
-    return { label: bestLabel, source: 'neighbor', pending: false };
+  if (neighborResolved && sideRole !== 'frente') {
+    if (/^lote\s/i.test(bestLabel)) {
+      return { label: bestLabel, source: 'neighbor', pending: false };
+    }
+    return {
+      label: normalizeConfrontantLabel(bestLabel),
+      source: 'auto',
+      pending: false,
+    };
   }
 
-  if (bestLabel !== '—') {
+  if (
+    mayApplyStreetGuideConfrontant(
+      sideRole,
+      target,
+      targetBlock,
+      streetGuides,
+      neighborResolved,
+    ) &&
+    streetGuides.length > 0
+  ) {
+    const fromStreet = confrontantFromStreetGuidesForUtmSegment(
+      target,
+      targetBlock,
+      streetGuides,
+    );
+    if (fromStreet?.label) {
+      return {
+        label: normalizeConfrontantLabel(fromStreet.label),
+        source: 'street_guide',
+        pending: false,
+      };
+    }
+  }
+
+  if (neighborResolved) {
+    if (/^lote\s/i.test(bestLabel)) {
+      return { label: bestLabel, source: 'neighbor', pending: false };
+    }
     return {
       label: normalizeConfrontantLabel(bestLabel),
       source: 'auto',
@@ -492,7 +565,7 @@ export function confrontantsForSide(
   targetBlockId: string,
   allPolysUtm: number[][][],
   project?: Record<string, unknown> | null,
-  side?: 'ladoEsquerdo' | 'ladoDireito',
+  side?: SideRole,
   streetGuides: StreetGuideConfrontInput[] = [],
 ): SideConfrontantResult {
   if (!segmentIndexes.length) {
@@ -723,7 +796,7 @@ export function buildSideConfrontantsWithSources(
     targetId,
     allPolysUtm,
     project,
-    undefined,
+    'fundo',
     guides,
   );
   const dirR = confrontantsForSide(

@@ -155,9 +155,14 @@ function rectBounds(w: number, h: number): [number, number][] {
   ];
 }
 
-function blockWithGeometry(id: string, num: string, east: number, north: number) {
-  const w = 12;
-  const h = 25;
+function blockWithGeometry(
+  id: string,
+  num: string,
+  east: number,
+  north: number,
+  w = 12,
+  h = 25,
+) {
   const bounds = rectBounds(w, h);
   const coords = bounds.map(([lat, lng]) => [lng, lat]);
   return {
@@ -240,10 +245,139 @@ function testWgs84EdgeToUtmSegmentIndexForConfrontPick() {
   console.log('OK testWgs84EdgeToUtmSegmentIndexForConfrontPick');
 }
 
+/**
+ * Lote 5 (quadra 123): frente para RUA 02; laterais e fundo confrontam lotes vizinhos.
+ * A linha de rua não pode substituir confrontantes em lateral/fundo.
+ */
+function testLot5StreetOnlyOnFrontNeighborsOnSides() {
+  const w = 10;
+  const h = 24;
+  const baseEast = 50050;
+  const baseNorth = 7500025;
+
+  const lot4 = blockWithGeometry('l4', '4', baseEast - w, baseNorth, w, h);
+  const lot5 = {
+    ...blockWithGeometry('l5', '5', baseEast, baseNorth, w, h),
+    block_name: '123',
+    front_street_name: 'RUA 02',
+    front_street_type: 'rua',
+  };
+  const lot6 = blockWithGeometry('l6', '6', baseEast + w, baseNorth, w, h);
+  const lot7 = blockWithGeometry('l7', '7', baseEast, baseNorth + h, w, h);
+
+  for (const b of [lot4, lot5, lot6, lot7]) {
+    b.block_name = '123';
+  }
+
+  const streetGuide = {
+    id: 'sg-rua-02',
+    name: '02',
+    type: 'rua',
+    active: true,
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [LNG0 - 30 / M_PER_DEG_LNG, LAT0],
+        [LNG0 + 50 / M_PER_DEG_LNG, LAT0],
+      ],
+    },
+  };
+
+  const allBlocks = [lot4, lot5, lot6, lot7];
+  const built = buildSideConfrontantsWithSources(
+    lot5,
+    'l5',
+    [],
+    allBlocks,
+    [streetGuide],
+  );
+
+  assert(
+    /RUA\s*02/i.test(built.frente),
+    `frente deve ser RUA 02, obteve: ${built.frente}`,
+  );
+  assert(built.sources.frente === 'street_guide', 'frente source street_guide');
+  assert(
+    /^lote\s*4$/i.test(built.ladoEsquerdo.trim()),
+    `esquerdo deve ser Lote 4, obteve: ${built.ladoEsquerdo}`,
+  );
+  assert(
+    /^lote\s*6$/i.test(built.ladoDireito.trim()),
+    `direito deve ser Lote 6, obteve: ${built.ladoDireito}`,
+  );
+  assert(
+    /^lote\s*7$/i.test(built.fundo.trim()),
+    `fundo deve ser Lote 7, obteve: ${built.fundo}`,
+  );
+  assert(
+    built.sources.ladoEsquerdo === 'neighbor' ||
+      built.sources.ladoDireito === 'neighbor' ||
+      built.sources.fundo === 'neighbor',
+    'laterais/fundo devem vir de vizinho',
+  );
+  assert(
+    built.sources.ladoEsquerdo !== 'street_guide' &&
+      built.sources.ladoDireito !== 'street_guide' &&
+      built.sources.fundo !== 'street_guide',
+    'rua não pode ser source de lateral/fundo',
+  );
+
+  const audit = buildLotConfrontationAudit(lot5, 'l5', allBlocks, [streetGuide]);
+  assert(/RUA\s*02/i.test(audit.sides.frente.label), 'auditoria frente RUA 02');
+  assert(
+    /^lote\s*4$/i.test(audit.sides.ladoEsquerdo.label.trim()),
+    `auditoria esq: ${audit.sides.ladoEsquerdo.label}`,
+  );
+  assert(
+    /^lote\s*6$/i.test(audit.sides.ladoDireito.label.trim()),
+    `auditoria dir: ${audit.sides.ladoDireito.label}`,
+  );
+  assert(
+    /^lote\s*7$/i.test(audit.sides.fundo.label.trim()),
+    `auditoria fundo: ${audit.sides.fundo.label}`,
+  );
+
+  for (const edge of audit.segmentEdges) {
+    const role =
+      audit.sides.frente.segmentIndexes.includes(
+        built.segments.findIndex((s) => s.originalIndex === edge.segmentIndex),
+      )
+        ? 'frente'
+        : audit.sides.fundo.segmentIndexes.includes(
+              built.segments.findIndex(
+                (s) => s.originalIndex === edge.segmentIndex,
+              ),
+            )
+          ? 'fundo'
+          : audit.sides.ladoDireito.segmentIndexes.includes(
+                built.segments.findIndex(
+                  (s) => s.originalIndex === edge.segmentIndex,
+                ),
+              )
+            ? 'ladoDireito'
+            : audit.sides.ladoEsquerdo.segmentIndexes.includes(
+                  built.segments.findIndex(
+                    (s) => s.originalIndex === edge.segmentIndex,
+                  ),
+                )
+              ? 'ladoEsquerdo'
+              : null;
+    if (role && role !== 'frente' && edge.confrontant) {
+      assert(
+        !/RUA\s*02/i.test(edge.confrontant),
+        `segmento ${edge.segmentIndex} (${role}) não pode ser rua: ${edge.confrontant}`,
+      );
+    }
+  }
+
+  console.log('OK testLot5StreetOnlyOnFrontNeighborsOnSides');
+}
+
 testPendingLabel();
 testManualOverridesAuto();
 testAuditPendingFundo();
 testManualNotClearedByRebuild();
 testSegmentEdgeWgs84UtmAlignment();
 testWgs84EdgeToUtmSegmentIndexForConfrontPick();
+testLot5StreetOnlyOnFrontNeighborsOnSides();
 console.log('mandatory-assisted-confrontation-tests: all passed');
