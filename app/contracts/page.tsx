@@ -37,6 +37,12 @@ import { normalizeBlockForContractRegeneration } from "@/lib/blockLotNormalize";
 import { resolveLotMeasuresFromBlock } from "@/lib/lotChanfre";
 import { buildContractViewHtml } from "@/lib/buildContractViewHtml";
 import {
+  CustomerContractValidationError,
+  validateCustomerForContractFromContract,
+  type CustomerContractValidation,
+} from "@/lib/validateCustomerForContract";
+import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
+import {
   getCompanyDisplayName,
   formatCompanyAddressForHeader,
 } from "@/lib/contractCompanyDisplay";
@@ -505,6 +511,19 @@ export default function ContractsPage() {
   const [tenantData, setTenantData] = useState<any>(null);
   const [contractViewHtml, setContractViewHtml] = useState<string | null>(null);
   const [contractViewLoading, setContractViewLoading] = useState(false);
+  const [customerContractValidation, setCustomerContractValidation] =
+    useState<CustomerContractValidation | null>(null);
+
+  const ensureCustomerValidForContractAction = (
+    contract: Record<string, unknown> | null | undefined,
+  ): boolean => {
+    const validation = validateCustomerForContractFromContract(contract);
+    if (!validation.valid) {
+      setCustomerContractValidation(validation);
+      return false;
+    }
+    return true;
+  };
 
   useEffect(() => {
     async function loadTenant() {
@@ -723,7 +742,12 @@ export default function ContractsPage() {
         if (active) setContractViewHtml(html);
       } catch (e) {
         console.error("[CONTRATOS] contractViewHtml", e);
-        if (active) setContractViewHtml(null);
+        if (active) {
+          setContractViewHtml(null);
+          if (e instanceof CustomerContractValidationError) {
+            setCustomerContractValidation(e.validation);
+          }
+        }
       } finally {
         if (active) setContractViewLoading(false);
       }
@@ -802,6 +826,7 @@ export default function ContractsPage() {
 
   const handleBaixarPDF = async () => {
     if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
     try {
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
@@ -869,6 +894,7 @@ export default function ContractsPage() {
 
   const handleImprimir = () => {
     if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
     const printWindow = window.open("", "_blank");
     if (printWindow) {
       printWindow.document.write(`
@@ -886,6 +912,7 @@ export default function ContractsPage() {
 
   const handleAtivarContrato = async () => {
     if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) return;
     if (
       !confirm(
         "Tem certeza que deseja marcar este contrato como assinado e ativá-lo?",
@@ -1391,6 +1418,10 @@ export default function ContractsPage() {
 
   const confirmRegenerateContract = async () => {
     if (!selectedContract) return;
+    if (!ensureCustomerValidForContractAction(selectedContract)) {
+      setShowRegenerateModal(false);
+      return;
+    }
     console.log("CONTRACT_REGENERATE_CONFIRM", {
       contractId: selectedContract.id,
     });
@@ -1417,6 +1448,16 @@ export default function ContractsPage() {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
+        if (json.missingFields?.length) {
+          setCustomerContractValidation({
+            valid: false,
+            missingFields: json.missingFields,
+            missingRequired: json.missingFields,
+            missingRecommended: [],
+            customerId: json.customerId,
+          });
+          return;
+        }
         throw new Error(json.error || "Erro ao regenerar contrato");
       }
 
@@ -2736,6 +2777,12 @@ export default function ContractsPage() {
         busy={regeneratingContract}
         onCancel={() => setShowRegenerateModal(false)}
         onConfirm={() => void confirmRegenerateContract()}
+      />
+
+      <CustomerContractValidationModal
+        open={Boolean(customerContractValidation)}
+        validation={customerContractValidation}
+        onClose={() => setCustomerContractValidation(null)}
       />
 
       {/* Modal de Senha para Exclusão */}

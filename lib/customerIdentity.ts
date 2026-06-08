@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { logCustomerAudit } from '@/lib/customerAudit';
 
 export type CustomerRecord = {
   id: string;
@@ -497,9 +498,11 @@ export async function resolveOrCreateCustomer(
     projectId: string;
     isSuperAdmin: boolean;
     lotTenantId?: string | null;
+    changedBy?: string | null;
   },
 ): Promise<{ customerId: string; reused: boolean; clientId: string | null }> {
-  const { form, tenantId, projectId, isSuperAdmin, lotTenantId } = params;
+  const { form, tenantId, projectId, isSuperAdmin, lotTenantId, changedBy } =
+    params;
   const effectiveTenantId = tenantId || lotTenantId || null;
 
   let customerId: string | null = form.selected_customer_id || null;
@@ -521,6 +524,15 @@ export async function resolveOrCreateCustomer(
 
   if (customerId) {
     console.log('CUSTOMER_REUSED', { customerId, source: 'selected' });
+    if (existingRecord) {
+      await logCustomerAudit(supabase, {
+        customerId,
+        oldData: existingRecord,
+        newData: { ...existingRecord, ...payload },
+        changedBy,
+        source: 'sale_create',
+      });
+    }
     const { error: updErr } = await supabase
       .from('customers')
       .update(payload)
@@ -547,6 +559,13 @@ export async function resolveOrCreateCustomer(
       );
       console.log('CUSTOMER_REUSED', { customerId });
       console.log('CUSTOMER_DUPLICATE_PREVENTED', { customerId });
+      await logCustomerAudit(supabase, {
+        customerId,
+        oldData: existingRecord,
+        newData: { ...existingRecord, ...mergedPayload },
+        changedBy,
+        source: 'sale_create',
+      });
       await supabase.from('customers').update(mergedPayload).eq('id', customerId);
     } else if (existing.length > 1) {
       throw new Error(

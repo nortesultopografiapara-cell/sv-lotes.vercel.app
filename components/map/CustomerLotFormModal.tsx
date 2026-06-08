@@ -10,6 +10,10 @@ import {
   loadCustomerById,
   type CustomerFormValues,
 } from '@/lib/customerIdentity';
+import {
+  validateCustomerForContract,
+  type CustomerContractValidation,
+} from '@/lib/validateCustomerForContract';
 
 export type LotFormState = CustomerFormValues & {
   payment_type: string;
@@ -73,6 +77,7 @@ type Props = {
   brokers?: { id: string; name: string }[];
   onClose: () => void;
   onConfirm: (data: LotFormConfirmPayload) => Promise<void>;
+  onCustomerValidationFailed?: (validation: CustomerContractValidation) => void;
 };
 
 export function CustomerLotFormModal({
@@ -87,6 +92,7 @@ export function CustomerLotFormModal({
   brokers = [],
   onClose,
   onConfirm,
+  onCustomerValidationFailed,
 }: Props) {
   const isEditMode = mode === 'edit';
   const [formData, setFormData] = useState<LotFormState>(() => ({
@@ -237,6 +243,19 @@ export function CustomerLotFormModal({
           alert('Por favor, preencha a data de vencimento da primeira parcela.');
           return;
         }
+      }
+    }
+
+    if (actionName === 'Vendido' || isEditMode) {
+      const validation = validateCustomerForContract({
+        ...formData,
+        id: formData.selected_customer_id || undefined,
+        civil_state: formData.civil_state,
+        marital_status: formData.civil_state,
+      });
+      if (!validation.valid) {
+        onCustomerValidationFailed?.(validation);
+        return;
       }
     }
 

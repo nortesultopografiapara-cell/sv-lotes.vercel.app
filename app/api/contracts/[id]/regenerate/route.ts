@@ -5,6 +5,7 @@ import {
   regenerateSaleContract,
   resolveRegenerationSession,
 } from '@/lib/contractRegeneration';
+import { CustomerContractValidationError } from '@/lib/validateCustomerForContract';
 import {
   createAdminSupabase,
   getRequestAuthUser,
@@ -112,6 +113,18 @@ export async function POST(
           receivedId: e.receivedId || receivedId,
         },
         { status: 404 },
+      );
+    }
+
+    if (e instanceof CustomerContractValidationError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: e.message,
+          missingFields: e.validation.missingRequired,
+          customerId: e.validation.customerId,
+        },
+        { status: 400 },
       );
     }
 

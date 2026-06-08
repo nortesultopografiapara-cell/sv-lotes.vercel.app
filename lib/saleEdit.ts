@@ -12,6 +12,7 @@ import {
   type CustomerFormValues,
   type CustomerRecord,
 } from '@/lib/customerIdentity';
+import { logCustomerAudit } from '@/lib/customerAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
@@ -333,6 +334,14 @@ export async function updateSaleFromEdit(
     customerBefore,
     customerPatchFromForm(data),
   );
+
+  await logCustomerAudit(supabase, {
+    customerId,
+    oldData: customerBefore,
+    newData: { ...customerBefore, ...customerPatch },
+    changedBy: userId,
+    source: 'sale_edit',
+  });
 
   const { error: custUpdErr } = await supabase
     .from('customers')

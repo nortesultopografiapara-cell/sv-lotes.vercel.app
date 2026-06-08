@@ -1,14 +1,18 @@
 'use client';
 
-import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Edit, Trash2, Eye, Lock } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Edit, Trash2, Eye, Lock, History } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { mergePreservingCustomerFields } from '@/lib/customerIdentity';
+import { logCustomerAudit } from '@/lib/customerAudit';
+import { CustomerAuditHistoryModal } from '@/components/customers/CustomerAuditHistoryModal';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 
 export default function CustomersPage() {
   const { user, loading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +27,26 @@ export default function CustomersPage() {
   const [deleteModalPassword, setDeleteModalPassword] = useState('');
   const [deleteModalConfirmText, setDeleteModalConfirmText] = useState('');
   const [isDeletingWithLinks, setIsDeletingWithLinks] = useState(false);
+  const [auditHistoryCustomer, setAuditHistoryCustomer] = useState<any>(null);
+  const editOpenedRef = useRef(false);
+
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (
+      !editId ||
+      loading ||
+      authLoading ||
+      customers.length === 0 ||
+      editOpenedRef.current
+    ) {
+      return;
+    }
+    const target = customers.find((c) => c.id === editId);
+    if (target) {
+      editOpenedRef.current = true;
+      handleEditClick(target);
+    }
+  }, [searchParams, customers, loading, authLoading]);
 
   useEffect(() => {
     let isMounted = true;
@@ -124,6 +148,7 @@ export default function CustomersPage() {
         rg: formData.rg?.trim() || null,
         profession: formData.profession?.trim().toUpperCase() || null,
         marital_status: formData.marital_status?.trim().toUpperCase() || null,
+        civil_state: formData.marital_status?.trim().toUpperCase() || null,
         neighborhood: formData.neighborhood?.trim().toUpperCase() || null,
         city: formData.city?.trim().toUpperCase() || null,
         state: formData.state?.trim().toUpperCase() || null,
@@ -141,6 +166,13 @@ export default function CustomersPage() {
             .eq('id', customerId)
             .maybeSingle();
           payload = mergePreservingCustomerFields(existingRow, payload);
+          await logCustomerAudit(supabase, {
+            customerId,
+            oldData: existingRow as Record<string, unknown>,
+            newData: { ...(existingRow as Record<string, unknown>), ...payload },
+            changedBy: user?.id,
+            source: 'customer_form',
+          });
           let updateQuery = supabase.from('customers').update(payload).eq('id', customerId);
           updateQuery = applyTenantFilter(updateQuery, rlsCtx, 'customers');
           const { error: custError } = await updateQuery;
@@ -185,6 +217,10 @@ export default function CustomersPage() {
   const handleViewClick = (customer: any) => {
     setSelectedCustomer(customer);
     setIsViewModalOpen(true);
+  };
+
+  const handleHistoryClick = (customer: any) => {
+    setAuditHistoryCustomer(customer);
   };
 
   const handleDeleteClick = async (customer: any) => {
@@ -346,6 +382,7 @@ export default function CustomersPage() {
                       status={c.status}
                       onEdit={() => handleEditClick(c)}
                       onView={() => handleViewClick(c)}
+                      onHistory={() => handleHistoryClick(c)}
                       onDelete={() => handleDeleteClick(c)}
                     />
                   );
@@ -486,6 +523,13 @@ export default function CustomersPage() {
            </div>
          </div>
       )}
+      {auditHistoryCustomer && (
+        <CustomerAuditHistoryModal
+          customer={auditHistoryCustomer}
+          onClose={() => setAuditHistoryCustomer(null)}
+        />
+      )}
+
       {deleteModalCustomer && (
          <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -540,7 +584,7 @@ export default function CustomersPage() {
   );
 }
 
-function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, onEdit, onView, onDelete }: any) {
+function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, onEdit, onView, onHistory, onDelete }: any) {
   const hasLots = blocks && blocks.filter((b: any) => b.status && b.status !== 'Disponível').length > 0;
 
   return (
@@ -596,6 +640,9 @@ function CustomerRow({ name, cpf_cnpj, email, phone, blocks, createdAt, status, 
             </button>
             <button onClick={onEdit} title="Editar" className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors">
                <Edit className="w-4 h-4" />
+            </button>
+            <button onClick={onHistory} title="Histórico" className="p-1.5 text-amber-500 hover:bg-amber-500/10 rounded transition-colors">
+               <History className="w-4 h-4" />
             </button>
             <button 
               onClick={onDelete} 

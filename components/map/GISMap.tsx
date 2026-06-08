@@ -41,6 +41,11 @@ import {
   mergeCustomerData,
   resolveOrCreateCustomer,
 } from "@/lib/customerIdentity";
+import {
+  validateCustomerForContract,
+  type CustomerContractValidation,
+} from "@/lib/validateCustomerForContract";
+import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
@@ -2380,6 +2385,8 @@ export default function GISMap({
     side: SideRole;
     segmentIndexes: number[];
   } | null>(null);
+  const [customerContractValidation, setCustomerContractValidation] =
+    useState<CustomerContractValidation | null>(null);
 
   const displayLots = useMemo(
     () =>
@@ -2793,6 +2800,16 @@ export default function GISMap({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
+        if (json.missingFields?.length) {
+          setCustomerContractValidation({
+            valid: false,
+            missingFields: json.missingFields,
+            missingRequired: json.missingFields,
+            missingRecommended: [],
+            customerId: json.customerId,
+          });
+          return;
+        }
         throw new Error(json.error || "Falha ao regenerar contrato");
       }
       alert("Contrato regenerado com sucesso.");
@@ -3247,6 +3264,7 @@ export default function GISMap({
         projectId: finalProjectId,
         isSuperAdmin: user.role === "SUPER_ADMIN",
         lotTenantId: lot.tenant_id,
+        changedBy: user.id,
       });
 
       if (reused) {
@@ -3511,6 +3529,24 @@ export default function GISMap({
             }
 
             console.log("[VENDA] contract_number gerado", contractNumber);
+
+            const customerForContract = {
+              ...fullCustomer,
+              id: customerId,
+            };
+            const contractValidation =
+              validateCustomerForContract(customerForContract);
+            if (!contractValidation.valid) {
+              setCustomerContractValidation(contractValidation);
+              console.warn("[VENDA] contrato bloqueado — dados obrigatórios", {
+                missing: contractValidation.missingRequired,
+                customerId,
+              });
+              alert(
+                "Venda e financeiro salvos, mas o contrato não foi gerado: faltam dados obrigatórios do comprador. Complete o cadastro do cliente.",
+              );
+              return;
+            }
 
             const blockRow = (await fetchBlockForContract(lot.id)) || lot;
             const contractHtml = generateContractHTML({
@@ -4327,6 +4363,7 @@ export default function GISMap({
           initialFormData={customerForm.editContext?.form}
           brokers={brokersList}
           onClose={() => setCustomerForm(null)}
+          onCustomerValidationFailed={setCustomerContractValidation}
           onConfirm={async (data) => {
             if (customerForm.mode === "edit" && customerForm.editContext) {
               const ctx = customerForm.editContext;
@@ -4412,6 +4449,12 @@ export default function GISMap({
           }}
         />
       )}
+
+      <CustomerContractValidationModal
+        open={Boolean(customerContractValidation)}
+        validation={customerContractValidation}
+        onClose={() => setCustomerContractValidation(null)}
+      />
 
       {clearConfirmModal && (
         <ClearConfirmModal

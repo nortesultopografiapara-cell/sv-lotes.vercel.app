@@ -17,6 +17,8 @@
     "test:contract-lot-clause": "tsx scripts/mandatory-contract-lot-clause-tests.ts",
     "test:contract-pdf-blank": "tsx scripts/mandatory-contract-pdf-blank-page-tests.ts",
     "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts",
+    "test:contract-validation": "tsx scripts/mandatory-contract-validation-tests.ts",
+    "test:customer-preservation": "tsx scripts/mandatory-customer-data-preservation-tests.ts",
     "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts"
   },
   "dependencies": {

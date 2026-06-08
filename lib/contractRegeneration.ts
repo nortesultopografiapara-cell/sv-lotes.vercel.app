@@ -4,6 +4,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { mergeCustomerData, normalizeDocument } from '@/lib/customerIdentity';
+import {
+  assertCustomerValidForContract,
+  validateCustomerForContract,
+} from '@/lib/validateCustomerForContract';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import {
   ensureValidContractNumber,
@@ -338,11 +342,10 @@ export function validateSaleContractRegeneration(ctx: {
     missing.push('Empresa');
   }
 
-  const customerName =
-    (ctx.customer?.name as string) ||
-    (ctx.customer?.full_name as string) ||
-    '';
-  if (!customerName.trim()) missing.push('Nome do cliente');
+  const customerValidation = validateCustomerForContract(ctx.customer);
+  if (!customerValidation.valid) {
+    missing.push(...customerValidation.missingRequired);
+  }
 
   if (missing.length) {
     return {
@@ -822,6 +825,8 @@ export async function buildFreshSaleContractHtml(
   }
 
   console.log('REGENERATE_TEMPLATE_USED', 'current_contract_template');
+
+  assertCustomerValidForContract(customerWithId);
 
   const html = generateContractHTML({
     tenant,

@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mergeCustomerData } from "@/lib/customerIdentity";
+import { assertCustomerValidForContract } from "@/lib/validateCustomerForContract";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
@@ -73,16 +74,20 @@ export async function buildContractViewHtml(
       (contract.sales as { finance_receipts?: unknown })?.finance_receipts,
   };
 
+  const mergedCustomer = mergeCustomerData(
+    params.customer ||
+      (contract.customers as Record<string, unknown>) ||
+      {},
+    params.sale || (contract.sales as Record<string, unknown>) || {},
+    contract.customers as Record<string, unknown>,
+  );
+
+  assertCustomerValidForContract(mergedCustomer);
+
   // PDF: app/contracts usa getContractHtml2pdfOptions + applyContractPdfChrome (sem página vazia extra).
   return generateContractHTML({
     tenant: params.tenant,
-    customer: mergeCustomerData(
-      params.customer ||
-        (contract.customers as Record<string, unknown>) ||
-        {},
-      params.sale || (contract.sales as Record<string, unknown>) || {},
-      contract.customers as Record<string, unknown>,
-    ),
+    customer: mergedCustomer,
     project:
       params.project ||
       (contract.projects as Record<string, unknown>) ||
