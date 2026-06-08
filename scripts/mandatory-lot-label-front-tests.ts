@@ -12,7 +12,15 @@ import {
   formatSupabaseError,
   isUnknownColumnError,
 } from '../lib/blockFrontPersist';
+import { resolveFrontWgs84RingIndex } from '../lib/resolveFrontStreetGuide';
 import { extractSegments } from '../utils/calculateLotDimensions';
+
+const BASE_EAST = 50000;
+const BASE_NORTH = 7500000;
+const LAT0 = -23.5;
+const LNG0 = -46.6;
+const M_PER_DEG_LAT = 111320;
+const M_PER_DEG_LNG = 111320 * Math.cos((LAT0 * Math.PI) / 180);
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -67,6 +75,146 @@ function testLots12_13_19_20_34_indexMapping() {
   console.log('OK testLots12_13_19_20_34_indexMapping');
 }
 
+function toLngLat(east: number, north: number): [number, number] {
+  return [LNG0 + east / M_PER_DEG_LNG, LAT0 + north / M_PER_DEG_LAT];
+}
+
+function utmRectSegments(
+  east0: number,
+  north0: number,
+  widthM: number,
+  depthM: number,
+): Record<string, unknown>[] {
+  const e1 = east0 + widthM;
+  const n1 = north0 + depthM;
+  return [
+    {
+      segment_index: 0,
+      north: north0,
+      east: east0,
+      end_north: north0,
+      end_east: e1,
+      distance: widthM,
+    },
+    {
+      segment_index: 1,
+      north: north0,
+      east: e1,
+      end_north: n1,
+      end_east: e1,
+      distance: depthM,
+    },
+    {
+      segment_index: 2,
+      north: n1,
+      east: e1,
+      end_north: n1,
+      end_east: east0,
+      distance: widthM,
+    },
+    {
+      segment_index: 3,
+      north: n1,
+      east: east0,
+      end_north: north0,
+      end_east: east0,
+      distance: depthM,
+    },
+  ];
+}
+
+function syntheticLotBounds(
+  east0: number,
+  north0: number,
+  widthM: number,
+  depthM: number,
+): LatLngPair[] {
+  const relEast = east0 - BASE_EAST;
+  const relNorth = north0 - BASE_NORTH;
+  const toLatLng = (east: number, north: number): LatLngPair => [
+    LAT0 + north / M_PER_DEG_LAT,
+    LNG0 + east / M_PER_DEG_LNG,
+  ];
+  return [
+    toLatLng(relEast, relNorth),
+    toLatLng(relEast + widthM, relNorth),
+    toLatLng(relEast + widthM, relNorth + depthM),
+    toLatLng(relEast, relNorth + depthM),
+  ];
+}
+
+function edgeMidFromBounds(bounds: LatLngPair[], edgeIndex: number): LatLngPair {
+  const n = bounds.length;
+  const i = edgeIndex % n;
+  const a = bounds[i];
+  const b = bounds[(i + 1) % n];
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+function distanceToEdgeMid(
+  pos: LatLngPair,
+  bounds: LatLngPair[],
+  ringEdge: number,
+): number {
+  const mid = edgeMidFromBounds(bounds, ringEdge);
+  return Math.hypot(pos[0] - mid[0], pos[1] - mid[1]);
+}
+
+/** front_segment_index UTM (1 = leste) deve posicionar label na frente leste, não no centróide. */
+function testUtmFrontSegmentIndexEastSide() {
+  const east0 = BASE_EAST;
+  const north0 = BASE_NORTH;
+  const widthM = 12;
+  const depthM = 25;
+  const bounds = syntheticLotBounds(east0, north0, widthM, depthM);
+  const segments_json = utmRectSegments(east0, north0, widthM, depthM);
+  const ringLngLat = bounds.map(([lat, lng]) => [lng, lat]);
+  ringLngLat.push(ringLngLat[0]);
+  const block = {
+    bounds,
+    segments_json,
+    front_segment_index: 1,
+    geometry: { type: 'Polygon', coordinates: [ringLngLat] },
+  };
+  const ringIdx = resolveFrontWgs84RingIndex(block);
+  assert(ringIdx === 1, `UTM índice 1 deve mapear aresta leste WGS84, obteve ${ringIdx}`);
+
+  const pos = computeOfficialLotLabelPosition(bounds, {
+    frontSegmentIndex: 1,
+    segments_json,
+    frontStreetName: 'RUA 01',
+    frente: widthM,
+  });
+
+  const distEast = distanceToEdgeMid(pos, bounds, 1);
+  const distSouth = distanceToEdgeMid(pos, bounds, 0);
+  const distNorth = distanceToEdgeMid(pos, bounds, 2);
+  assert(
+    distEast < distSouth && distEast < distNorth,
+    `label deve ficar na frente leste (east=${distEast}, south=${distSouth})`,
+  );
+  console.log('OK testUtmFrontSegmentIndexEastSide');
+}
+
+/** Com índice salvo, não recalcula frente — label permanece na aresta indicada. */
+function testStoredFrontIndexWithoutStreetName() {
+  const bounds = rectBounds();
+  const pos = computeOfficialLotLabelPosition(bounds, {
+    frontSegmentIndex: 0,
+  });
+  const centroid = bounds.reduce(
+    (acc, p) => [acc[0] + p[0] / bounds.length, acc[1] + p[1] / bounds.length],
+    [0, 0],
+  ) as LatLngPair;
+  const distToSouth = Math.abs(pos[0] - (-1.455));
+  const distToCentroid = Math.hypot(pos[0] - centroid[0], pos[1] - centroid[1]);
+  assert(
+    distToSouth < distToCentroid,
+    'com front_segment_index salvo, label deve obedecer aresta mesmo sem nome de rua',
+  );
+  console.log('OK testStoredFrontIndexWithoutStreetName');
+}
+
 function testVisibilityIndependent() {
   const bounds = rectBounds();
   const withFront = computeOfficialLotLabelPosition(bounds, {
@@ -87,6 +235,8 @@ function testVisibilityIndependent() {
 
 testFrontIndexZero();
 testLots12_13_19_20_34_indexMapping();
+testUtmFrontSegmentIndexEastSide();
+testStoredFrontIndexWithoutStreetName();
 testVisibilityIndependent();
 
 function testSupabaseErrorFormat() {

@@ -4,6 +4,10 @@
  */
 
 import {
+  lngLatEdgeAtRingIndex,
+  resolveFrontWgs84RingIndex,
+} from '@/lib/resolveFrontStreetGuide';
+import {
   detectFront,
   extractSegments,
   type Segment,
@@ -17,6 +21,8 @@ export type LotLabelPositionInput = {
   frontStreetName?: string | null;
   frontStreetDisplay?: string | null;
   frontStreetId?: string | null;
+  /** segments_json UTM — necessário para normalizar índice UTM → aresta WGS84. */
+  segments_json?: unknown;
 };
 
 const LABEL_INWARD_OFFSET_METERS = 2.5;
@@ -147,8 +153,106 @@ function ensureInsideLot(
   return centroid;
 }
 
+function openBoundsVerts(bounds: LatLngPair[]): LatLngPair[] {
+  const out: LatLngPair[] = [];
+  for (const p of bounds) {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-9) {
+      out.push(p);
+    }
+  }
+  if (out.length > 2) {
+    const f = out[0];
+    const l = out[out.length - 1];
+    if (Math.hypot(f[0] - l[0], f[1] - l[1]) < 1e-9) out.pop();
+  }
+  return out;
+}
+
+/** GeoJSON explícito evita inversão lat/lng em normalizeLotGeometry (ambos |coord| < 90). */
+function labelBlockFromBounds(
+  bounds: LatLngPair[],
+  lot?: LotLabelPositionInput | null,
+  storedIdx?: number | null,
+): Record<string, unknown> {
+  const ringLngLat = bounds.map(([lat, lng]) => [lng, lat]);
+  if (ringLngLat.length >= 3) {
+    const first = ringLngLat[0];
+    const last = ringLngLat[ringLngLat.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) {
+      ringLngLat.push([first[0], first[1]]);
+    }
+  }
+  return {
+    bounds,
+    segments_json: lot?.segments_json ?? null,
+    front_segment_index: storedIdx ?? lot?.frontSegmentIndex ?? null,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [ringLngLat],
+    },
+  };
+}
+
+function edgeMidFromBounds(
+  bounds: LatLngPair[],
+  edgeIndex: number,
+): LatLngPair | null {
+  const verts = openBoundsVerts(bounds);
+  if (verts.length < 2 || edgeIndex < 0) return null;
+  const n = verts.length;
+  const i = edgeIndex % n;
+  const a = verts[i];
+  const b = verts[(i + 1) % n];
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+function labelPositionFromRingEdge(
+  bounds: LatLngPair[],
+  block: Record<string, unknown>,
+  ringEdgeIndex: number,
+): LatLngPair | null {
+  const centroid = polygonCentroid(bounds);
+  let frontMid = edgeMidFromBounds(bounds, ringEdgeIndex);
+  if (!frontMid) {
+    const edge = lngLatEdgeAtRingIndex(block, ringEdgeIndex);
+    if (!edge) return null;
+    frontMid = [
+      (edge.p1[1] + edge.p2[1]) / 2,
+      (edge.p1[0] + edge.p2[0]) / 2,
+    ];
+  }
+  const offset = offsetPointToward(
+    frontMid,
+    centroid,
+    LABEL_INWARD_OFFSET_METERS,
+  );
+  return ensureInsideLot(offset, bounds, centroid, frontMid);
+}
+
+function labelPositionFromSegment(
+  bounds: LatLngPair[],
+  frontSeg: Segment,
+): LatLngPair {
+  const centroid = polygonCentroid(bounds);
+  const frontMid = frontSegmentMidpoint(frontSeg);
+  const offset = offsetPointToward(
+    frontMid,
+    centroid,
+    LABEL_INWARD_OFFSET_METERS,
+  );
+  return ensureInsideLot(offset, bounds, centroid, frontMid);
+}
+
+function hasOfficialFrontStreet(lot?: LotLabelPositionInput | null): boolean {
+  return Boolean(
+    lot?.frontStreetName || lot?.frontStreetDisplay || lot?.frontStreetId,
+  );
+}
+
 /**
- * Posição do label: prioridade front_segment_index → frente+rua → detectFront → centróide.
+ * Posição do label: prioridade front_segment_index normalizado → frente+rua → detectFront → centróide.
+ * Com front_segment_index salvo, não recalcula frente (detectFront).
  */
 export function computeOfficialLotLabelPosition(
   bounds: LatLngPair[],
@@ -157,40 +261,46 @@ export function computeOfficialLotLabelPosition(
   const centroid = polygonCentroid(bounds);
   if (bounds.length < 3) return centroid;
 
-  const ring = boundsToLngLatRing(bounds);
-  const segments = extractSegments(ring, []);
-  if (segments.length === 0) return centroid;
-
   const storedIdx =
     lot?.frontSegmentIndex != null && Number.isFinite(Number(lot.frontSegmentIndex))
       ? Number(lot.frontSegmentIndex)
       : null;
 
-  let frontSeg: Segment | null = null;
-
   if (storedIdx != null && storedIdx >= 0) {
-    frontSeg = resolveFrontSegmentFromIndex(segments, storedIdx);
-  }
-
-  if (!frontSeg) {
-    const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
-    const hasDbFront = Boolean(
-      lot?.frontStreetName || lot?.frontStreetDisplay || lot?.frontStreetId,
-    );
-    if (frenteLen > 0 && hasDbFront) {
-      frontSeg = pickFrontSegmentByFrenteLength(segments, frenteLen);
+    const block = labelBlockFromBounds(bounds, lot, storedIdx);
+    const ringIdx = resolveFrontWgs84RingIndex(block);
+    if (ringIdx >= 0) {
+      const fromRing = labelPositionFromRingEdge(bounds, block, ringIdx);
+      if (fromRing) return fromRing;
     }
+
+    const fromRaw = labelPositionFromRingEdge(bounds, block, storedIdx);
+    if (fromRaw) return fromRaw;
+
+    const ring = boundsToLngLatRing(bounds);
+    const segments = extractSegments(ring, []);
+    const frontSeg = resolveFrontSegmentFromIndex(segments, storedIdx);
+    if (frontSeg) return labelPositionFromSegment(bounds, frontSeg);
+
+    return centroid;
+  }
+
+  const ring = boundsToLngLatRing(bounds);
+  const segments = extractSegments(ring, []);
+  if (segments.length === 0) return centroid;
+
+  let frontSeg: Segment | null = null;
+  const frenteLen = lot?.frente != null ? Number(lot.frente) : 0;
+  const hasDbFront = hasOfficialFrontStreet(lot);
+
+  if (frenteLen > 0 && hasDbFront) {
+    frontSeg = pickFrontSegmentByFrenteLength(segments, frenteLen);
   }
 
   if (!frontSeg) {
-    const hasDbFront = Boolean(
-      lot?.frontStreetName || lot?.frontStreetDisplay || lot?.frontStreetId,
-    );
     if (!hasDbFront) return centroid;
     frontSeg = detectFront(segments);
   }
 
-  const frontMid = frontSegmentMidpoint(frontSeg);
-  const offset = offsetPointToward(frontMid, centroid, LABEL_INWARD_OFFSET_METERS);
-  return ensureInsideLot(offset, bounds, centroid, frontMid);
+  return labelPositionFromSegment(bounds, frontSeg);
 }

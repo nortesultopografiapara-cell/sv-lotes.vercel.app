@@ -823,6 +823,7 @@ function computeLotLabelPosition(
     frontStreetName: lot?.frontStreetName,
     frontStreetDisplay: lot?.frontStreetDisplay,
     frontStreetId: lot?.frontStreetId,
+    segments_json: (lot as { segments_json?: unknown })?.segments_json,
   });
 }
 
