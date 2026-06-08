@@ -12,7 +12,11 @@ import {
   PENDING_CONFRONTANT_LABEL,
   type ConfrontantSource,
 } from '@/lib/confrontantTypes';
-import type { OfficialSegmentClassification } from '@/lib/officialLotMeasurements';
+import {
+  parseOfficialSegmentsFromBlock,
+  type OfficialSegmentClassification,
+} from '@/lib/officialLotMeasurements';
+import { resolveStoredFrontAsOfficialSegmentIndex } from '@/lib/resolveFrontStreetGuide';
 import { formatStreetDisplay } from '@/lib/streetGuide';
 import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
@@ -139,10 +143,12 @@ export function resolveMemorialSegmentConfrontant(
   if (fromSide) return fromSide;
 
   const savedStreet = String(block.front_street_name || '').trim();
+  const officialSegments = parseOfficialSegmentsFromBlock(
+    block,
+    block.number ?? block.id,
+  );
   const frontIdx =
-    typeof block.front_segment_index === 'number'
-      ? block.front_segment_index
-      : -1;
+    resolveStoredFrontAsOfficialSegmentIndex(block, officialSegments) ?? -1;
   if (
     segmentIndex === frontIdx &&
     isUsableStreetName(savedStreet)

@@ -20,6 +20,7 @@ import {
 } from '@/lib/lotSegmentConfrontation';
 import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
+import { wgs84RingEdgeForMergedSegmentIndex } from '@/lib/resolveFrontStreetGuide';
 
 export type SideAuditEntry = {
   label: string;
@@ -152,8 +153,14 @@ export function buildLotConfrontationAudit(
       status = 'conflict';
     }
 
+    const ringEdgeIdx = wgs84RingEdgeForMergedSegmentIndex(
+      block,
+      built.segments,
+      mergedIdx,
+    );
+
     segmentEdges.push({
-      ringEdgeIndex: oi,
+      ringEdgeIndex: ringEdgeIdx >= 0 ? ringEdgeIdx : oi,
       segmentIndex: oi,
       status,
       confrontant,

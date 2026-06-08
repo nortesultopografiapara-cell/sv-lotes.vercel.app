@@ -12,6 +12,7 @@ import {
   findFrontSegmentIndexTouchingStreet,
   type StreetGuideLineInput,
 } from "@/lib/lotStreetFrontDetection";
+import { resolveStoredFrontAsOfficialSegmentIndex } from "@/lib/resolveFrontStreetGuide";
 
 export type OfficialSegmentKind = "LINE" | "CURVE";
 
@@ -1533,20 +1534,18 @@ export function resolveFrontSegmentIndex(
   segments: OfficialLotSegment[],
 ): number | null {
   const hasStreet = hasStreetFrontIdentified(block);
-  const stored = block.front_segment_index;
+  const resolved = resolveStoredFrontAsOfficialSegmentIndex(block, segments);
 
-  if (typeof stored === "number" && Number.isFinite(stored) && stored >= 0) {
-    const idx =
-      stored < segments.length ? stored : stored % Math.max(segments.length, 1);
-    if (hasStreet || stored >= 0) {
+  if (resolved != null) {
+    if (hasStreet || isFrontSegmentLocked(block)) {
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lote: block.number ?? block.id,
-        frontIndex: idx,
+        frontIndex: resolved,
         street: hasStreet,
         source: "front_segment_index",
       });
     }
-    return idx;
+    return resolved;
   }
 
   if (hasStreet) {

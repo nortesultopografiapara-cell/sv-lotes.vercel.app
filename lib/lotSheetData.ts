@@ -527,14 +527,10 @@ export async function loadLotSheetPayload(
       ? 'Segmento inválido ignorado'
       : null;
 
-  const storedFront = blockRecord.front_segment_index;
-  const frontEdgeIndex =
-    typeof storedFront === 'number' && Number.isFinite(storedFront) && storedFront >= 0
-      ? Math.min(Math.floor(storedFront), localRing.length - 1)
-      : Math.min(
-          officialMeasures.frontSegmentIndex ?? 0,
-          localRing.length - 1,
-        );
+  const frontEdgeIndex = Math.min(
+    officialMeasures.frontSegmentIndex ?? 0,
+    localRing.length - 1,
+  );
   const validation = createLotSheetValidation();
   const techProfile = normalizeTechnicalResponsibleFromCompany(
     (company as Record<string, unknown>) || null,

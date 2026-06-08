@@ -11,6 +11,7 @@ import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 import {
   detectFrontEdgeIndexFromGuides,
   matchMergedSegmentIndexToWgs84RingEdge,
+  resolveFrontUtmMergedSegmentIndex,
   resolveFrenteConfrontantLabel,
   resolveFrontStreetGuideForLot,
   STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
@@ -500,25 +501,7 @@ export function resolveSideSegmentIndexes(
     return { segments: [], sides: emptySides, frontIndex: -1 };
   }
 
-  let frontIndex = -1;
-  const stored = block.front_segment_index;
-  if (typeof stored === 'number' && stored >= 0) {
-    const byWgs = matchMergedSegmentIndexToWgs84RingEdge(
-      block,
-      segments,
-      stored,
-    );
-    if (byWgs >= 0) {
-      frontIndex = byWgs;
-    } else {
-      const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
-      if (byOriginal >= 0) {
-        frontIndex = byOriginal;
-      } else if (stored < segments.length) {
-        frontIndex = stored;
-      }
-    }
-  }
+  let frontIndex = resolveFrontUtmMergedSegmentIndex(block, segments);
 
   if (frontIndex < 0 && streetGuides.length > 0) {
     const detected = detectFrontEdgeIndexFromGuides(

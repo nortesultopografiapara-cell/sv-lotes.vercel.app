@@ -649,8 +649,8 @@ export function calculateLotDimensions(coords: number[][], allPolys: number[][][
     }
 
     // Nunca devolver lados vazios, fallback p/ Centroid ou maior lado
-    if (result.ladoDireito === 0 && result.ladoEsquerdo === 0 && segments.length > 0) {
-        const longest = segments.sort((a,b) => b.length - a.length)[0].length;
+    if (result.ladoDireito === 0 && result.ladoEsquerdo === 0 && rawSegments.length > 0) {
+        const longest = rawSegments.sort((a,b) => b.length - a.length)[0].length;
         result.ladoDireito = longest;
         result.ladoEsquerdo = longest;
     } else if (result.ladoDireito === 0 && result.ladoEsquerdo > 0) {

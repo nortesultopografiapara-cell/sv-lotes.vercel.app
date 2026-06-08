@@ -15,6 +15,10 @@ import {
   getSegmentConfrontantRecord,
 } from '../lib/segmentConfrontantPersist';
 import { buildSideConfrontantsWithSources } from '../lib/lotSegmentConfrontation';
+import {
+  matchMergedSegmentIndexToWgs84RingEdge,
+  wgs84RingEdgeForMergedSegmentIndex,
+} from '../lib/resolveFrontStreetGuide';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -135,8 +139,80 @@ function testManualNotClearedByRebuild() {
   console.log('OK testManualNotClearedByRebuild');
 }
 
+const LAT0 = -23.5;
+const LNG0 = -46.6;
+const M_PER_DEG_LAT = 111320;
+const M_PER_DEG_LNG = 111320 * Math.cos((LAT0 * Math.PI) / 180);
+
+function rectBounds(w: number, h: number): [number, number][] {
+  return [
+    [LAT0, LNG0],
+    [LAT0, LNG0 + w / M_PER_DEG_LNG],
+    [LAT0 + h / M_PER_DEG_LAT, LNG0 + w / M_PER_DEG_LNG],
+    [LAT0 + h / M_PER_DEG_LAT, LNG0],
+  ];
+}
+
+function blockWithGeometry(id: string, num: string, east: number, north: number) {
+  const w = 12;
+  const h = 25;
+  const bounds = rectBounds(w, h);
+  const coords = bounds.map(([lat, lng]) => [lng, lat]);
+  return {
+    id,
+    number: num,
+    block_name: '02',
+    front_segment_index: 0,
+    front_street_name: 'RUA CENTRAL 01',
+    bounds,
+    geometry: { type: 'Polygon', coordinates: [coords] },
+    segments_json: utmRectSegments(east, north, w, h),
+  };
+}
+
+/** QA-004: ringEdgeIndex WGS84 deve corresponder ao segmentIndex UTM no mapa. */
+function testSegmentEdgeWgs84UtmAlignment() {
+  const b = blockWithGeometry('d1', '01', 50000, 7500000);
+  const audit = buildLotConfrontationAudit(b, 'd1', [b], []);
+  assert(audit.segmentEdges.length >= 4, 'segmentEdges preenchidos');
+
+  const built = buildSideConfrontantsWithSources(b, 'd1', [], [b], []);
+  for (const edge of audit.segmentEdges) {
+    assert(
+      typeof edge.segmentIndex === 'number',
+      'segmentIndex UTM definido',
+    );
+    const mergedIdx = built.segments.findIndex(
+      (s) => s.originalIndex === edge.segmentIndex,
+    );
+    if (mergedIdx < 0) continue;
+
+    const ringEdge = wgs84RingEdgeForMergedSegmentIndex(
+      b,
+      built.segments,
+      mergedIdx,
+    );
+    assert(
+      edge.ringEdgeIndex === ringEdge,
+      `ringEdgeIndex ${edge.ringEdgeIndex} != WGS84 ${ringEdge} (UTM ${edge.segmentIndex})`,
+    );
+
+    const roundTrip = matchMergedSegmentIndexToWgs84RingEdge(
+      b,
+      built.segments,
+      edge.ringEdgeIndex,
+    );
+    assert(
+      roundTrip === mergedIdx,
+      `round-trip falhou: WGS84 ${edge.ringEdgeIndex} → UTM merged ${roundTrip} (esperado ${mergedIdx})`,
+    );
+  }
+  console.log('OK testSegmentEdgeWgs84UtmAlignment');
+}
+
 testPendingLabel();
 testManualOverridesAuto();
 testAuditPendingFundo();
 testManualNotClearedByRebuild();
+testSegmentEdgeWgs84UtmAlignment();
 console.log('mandatory-assisted-confrontation-tests: all passed');

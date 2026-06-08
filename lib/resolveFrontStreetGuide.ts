@@ -218,12 +218,134 @@ function matchGuideAtWgs84RingEdge(
   return matchFromHit(hit, streetGuides, dist, toleranceM);
 }
 
-function storedWgs84FrontRingIndex(block: Record<string, unknown>): number {
-  if (typeof block.front_segment_index === 'number' && block.front_segment_index >= 0) {
+/**
+ * Lê front_segment_index bruto do block.
+ * Pode ser aresta WGS84 (clique no mapa) ou segment_index UTM (seletor TXT).
+ */
+export function readStoredFrontSegmentIndex(
+  block: Record<string, unknown>,
+): number {
+  if (
+    typeof block.front_segment_index === 'number' &&
+    block.front_segment_index >= 0
+  ) {
     return block.front_segment_index;
   }
-  const alt = (block as Record<string, unknown>).frontSegmentIndex;
+  const alt = block.frontSegmentIndex;
   return typeof alt === 'number' && alt >= 0 ? alt : -1;
+}
+
+/** Índice no array mergeCurvedSegments (UTM) para a frente oficial. */
+export function resolveFrontUtmMergedSegmentIndex(
+  block: Record<string, unknown>,
+  segments: Segment[],
+): number {
+  const stored = readStoredFrontSegmentIndex(block);
+  if (stored < 0 || !segments.length) return -1;
+
+  const byWgs = matchMergedSegmentIndexToWgs84RingEdge(block, segments, stored);
+  if (byWgs >= 0) return byWgs;
+
+  const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
+  if (byOriginal >= 0) return byOriginal;
+
+  if (stored < segments.length) return stored;
+
+  return -1;
+}
+
+/**
+ * Resolve segment_index UTM oficial a partir de front_segment_index
+ * (WGS84 ou UTM).
+ */
+export function resolveStoredFrontAsOfficialSegmentIndex(
+  block: Record<string, unknown>,
+  officialSegments: Array<{ segment_index: number }>,
+): number | null {
+  const stored = readStoredFrontSegmentIndex(block);
+  if (stored < 0 || !officialSegments.length) return null;
+
+  if (officialSegments.some((s) => s.segment_index === stored)) {
+    return stored;
+  }
+
+  const official = getOfficialConfrontationRing(block);
+  if (official.ok) {
+    const coords = utmRingToClosedCoords(official.ring);
+    if (coords.length >= 4) {
+      const merged = mergeCurvedSegments(
+        extractUtmSegmentsLocal(coords, []),
+        20,
+      );
+      const mergedIdx = resolveFrontUtmMergedSegmentIndex(block, merged);
+      if (mergedIdx >= 0) {
+        const origIdx = merged[mergedIdx]?.originalIndex;
+        if (
+          typeof origIdx === 'number' &&
+          officialSegments.some((s) => s.segment_index === origIdx)
+        ) {
+          return origIdx;
+        }
+      }
+    }
+  }
+
+  if (stored < officialSegments.length) {
+    return officialSegments[stored]?.segment_index ?? null;
+  }
+
+  return null;
+}
+
+/**
+ * Índice de aresta WGS84 no anel lat/lng — usado no mapa e labels.
+ */
+export function resolveFrontWgs84RingIndex(
+  block: Record<string, unknown>,
+  mergedUtmSegments?: Segment[],
+): number {
+  const stored = readStoredFrontSegmentIndex(block);
+  if (stored < 0) return -1;
+
+  const geom = normalizeLotGeometry(block);
+  if (!geom.ok || geom.ring.length < 3) return stored;
+
+  const verts = openLatLngVerts(geom.ring);
+  const n = verts.length;
+
+  let merged = mergedUtmSegments;
+  if (!merged?.length) {
+    const official = getOfficialConfrontationRing(block);
+    if (official.ok) {
+      const coords = utmRingToClosedCoords(official.ring);
+      if (coords.length >= 4) {
+        merged = mergeCurvedSegments(
+          extractUtmSegmentsLocal(coords, []),
+          20,
+        );
+      }
+    }
+  }
+
+  if (merged?.length) {
+    const byWgs = matchMergedSegmentIndexToWgs84RingEdge(block, merged, stored);
+    if (byWgs >= 0) return stored;
+
+    for (let edgeIdx = 0; edgeIdx < n; edgeIdx++) {
+      const matched = matchMergedSegmentIndexToWgs84RingEdge(
+        block,
+        merged,
+        edgeIdx,
+      );
+      if (matched < 0) continue;
+      const seg = merged[matched];
+      if (seg.originalIndex === stored || matched === stored) {
+        return edgeIdx;
+      }
+    }
+  }
+
+  return stored;
 }
 
 /**
@@ -262,12 +384,47 @@ export function matchMergedSegmentIndexToWgs84RingEdge(
   return bestDist <= maxMidpointDistM ? bestIdx : -1;
 }
 
+/**
+ * Índice de aresta WGS84 no anel lat/lng para um segmento UTM fundido (inverso de
+ * matchMergedSegmentIndexToWgs84RingEdge). Usado para colorir auditoria no mapa.
+ */
+export function wgs84RingEdgeForMergedSegmentIndex(
+  block: Record<string, unknown>,
+  segments: Segment[],
+  mergedIdx: number,
+  maxMidpointDistM = 2,
+): number {
+  if (mergedIdx < 0 || mergedIdx >= segments.length) return -1;
+
+  const geom = normalizeLotGeometry(block);
+  if (!geom.ok || geom.ring.length < 3) {
+    const oi = segments[mergedIdx]?.originalIndex;
+    return typeof oi === 'number' && oi >= 0 ? oi : mergedIdx;
+  }
+
+  const verts = openLatLngVerts(geom.ring);
+  const n = verts.length;
+
+  for (let edgeIdx = 0; edgeIdx < n; edgeIdx++) {
+    const matched = matchMergedSegmentIndexToWgs84RingEdge(
+      block,
+      segments,
+      edgeIdx,
+      maxMidpointDistM,
+    );
+    if (matched === mergedIdx) return edgeIdx;
+  }
+
+  const oi = segments[mergedIdx]?.originalIndex;
+  return typeof oi === 'number' && oi >= 0 ? oi : mergedIdx;
+}
+
 function resolveFromWgs84FrontEdge(
   block: Record<string, unknown>,
   streetGuides: StreetGuideConfrontInput[],
   toleranceM: number,
 ): FrontStreetGuideMatch | null {
-  const storedIdx = storedWgs84FrontRingIndex(block);
+  const storedIdx = resolveFrontWgs84RingIndex(block);
 
   if (storedIdx >= 0) {
     const fromStored = matchGuideAtWgs84RingEdge(
@@ -312,17 +469,28 @@ function readSegmentsJsonArray(block: Record<string, unknown>): unknown[] | null
 export function confrontantNameFromFrontSegmentJson(
   block: Record<string, unknown>,
 ): string | null {
-  const stored = block.front_segment_index;
-  if (typeof stored !== 'number' || stored < 0) return null;
   const raw = readSegmentsJsonArray(block);
   if (!raw) return null;
+
+  const officialSegments = raw.map((row, i) => {
+    const s = row as Record<string, unknown>;
+    return {
+      segment_index:
+        typeof s.segment_index === 'number' ? s.segment_index : i,
+    };
+  });
+  const resolvedIdx = resolveStoredFrontAsOfficialSegmentIndex(
+    block,
+    officialSegments,
+  );
+  if (resolvedIdx == null) return null;
 
   const item = raw.find((row, i) => {
     if (row == null || typeof row !== 'object') return false;
     const s = row as Record<string, unknown>;
     const idx =
       typeof s.segment_index === 'number' ? s.segment_index : i;
-    return idx === stored;
+    return idx === resolvedIdx;
   }) as Record<string, unknown> | undefined;
 
   if (!item) return null;
@@ -354,13 +522,7 @@ function extractFrontUtmSegment(
   );
   if (!segments.length) return null;
 
-  let frontIndex = -1;
-  const stored = block.front_segment_index;
-  if (typeof stored === 'number' && stored >= 0) {
-    const byOriginal = segments.findIndex((s) => s.originalIndex === stored);
-    if (byOriginal >= 0) frontIndex = byOriginal;
-    else if (stored < segments.length) frontIndex = stored;
-  }
+  const frontIndex = resolveFrontUtmMergedSegmentIndex(block, segments);
   if (frontIndex < 0) return null;
   return segments[frontIndex] ?? null;
 }
