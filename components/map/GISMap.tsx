@@ -46,8 +46,6 @@ import {
   type SaleEditLoadedContext,
 } from "@/lib/saleEdit";
 import {
-  chanfreTooltipText,
-  formatChanfreMeters,
   parseBlockSideLength,
   resolveLotMeasuresFromBlock,
   type ChanfreInfo,
@@ -1635,6 +1633,15 @@ function LotPopupContent({
   const [editablePrice, setEditablePrice] = useState(currentPrice);
   const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [popupTab, setPopupTab] = useState<
+    "resumo" | "confrontacoes" | "comercial"
+  >("resumo");
+
+  const quadraLabel = String(lot.block ?? lot.block_name ?? "").trim();
+  const formattedPrice = currentPrice.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1660,444 +1667,389 @@ function LotPopupContent({
     }
   };
 
+  const confrontationRows = (
+    [
+      ["frente", "Frente"],
+      ["fundo", "Fundo"],
+      ["ladoDireito", "Lado Direito"],
+      ["ladoEsquerdo", "Lado Esquerdo"],
+    ] as const
+  ).map(([key, label]) => {
+    const entry = confrontationAudit?.sides[key];
+    const text =
+      key === "frente" && frenteConfrontLabel
+        ? frenteConfrontLabel
+        : entry?.label ??
+          String((lot as Record<string, unknown>)[key] ?? "A DEFINIR");
+    const origin =
+      key === "frente" && frontStreetLabel
+        ? "rua"
+        : entry?.sourceLabel ?? "—";
+    return { key, label, text, origin };
+  });
+
+  const popupTabs = [
+    { id: "resumo" as const, label: "Resumo" },
+    { id: "confrontacoes" as const, label: "Confrontações" },
+    { id: "comercial" as const, label: "Comercial" },
+  ];
+
   return (
-    <div className="p-2 min-w-[320px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
-      <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-lg text-gray-900">
-          Lote {displayNum}
+    <div className="p-2 min-w-[300px] max-w-[340px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-bold text-sm text-gray-900 leading-tight">
+            Lote {displayNum}
+            {quadraLabel ? (
+              <span className="text-gray-500 font-semibold">
+                {" "}
+                / QD {quadraLabel}
+              </span>
+            ) : null}
+          </h3>
+          {lot.customerName && lot.status !== "Disponível" && (
+            <p className="text-[10px] text-gray-600 truncate mt-0.5">
+              {lot.customerName}
+            </p>
+          )}
+        </div>
+        <span
+          className="shrink-0 text-white text-[10px] font-bold px-2 py-0.5 rounded"
+          style={{ backgroundColor: color }}
+        >
+          {getStatusLabel(lot.status)}
         </span>
       </div>
 
-      <div className="space-y-2 mb-4 text-sm">
-        <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Projeto:</span>
-          <span className="text-gray-900 text-right max-w-[150px] truncate">
-            {lot.projectName}
-          </span>
-        </div>
-        <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Quadra:</span>
-          <span className="text-gray-900">{lot.block}</span>
-        </div>
-        <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Lote:</span>
-          <span className="text-gray-900">{displayNum}</span>
-        </div>
-        {lot.customerName && lot.status !== "Disponível" && (
-          <div className="flex justify-between border-b pb-1 bg-yellow-50 px-1 rounded -mx-1">
-            <span className="text-gray-600 font-semibold">Cliente:</span>
-            <span className="text-gray-900 text-right max-w-[140px] truncate font-medium">
-              {lot.customerName}
+      <div className="flex border-b border-gray-200 mb-2 -mx-0.5">
+        {popupTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setPopupTab(tab.id)}
+            className={`flex-1 px-1 py-1.5 text-[10px] font-bold border-b-2 transition-colors ${
+              popupTab === tab.id
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {popupTab === "resumo" && (
+        <div className="space-y-1.5 text-[11px]">
+          <div className="flex justify-between items-center py-0.5">
+            <span className="text-gray-500">Área</span>
+            <span className="font-medium text-gray-900">
+              {area.toLocaleString("pt-BR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}{" "}
+              m²
             </span>
           </div>
-        )}
-        <div className="flex justify-between items-center border-b pb-1 mt-1">
-          <span className="text-gray-600 font-semibold">Status:</span>
-          <span
-            className="text-white text-[11px] font-bold px-2 py-0.5 rounded"
-            style={{ backgroundColor: color }}
-          >
-            {getStatusLabel(lot.status)}
-          </span>
-        </div>
-        <div className="flex justify-between border-b pb-1">
-          <span className="text-gray-600 font-semibold">Área (m²):</span>
-          <span className="text-gray-900">
-            {area.toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-        <div className="border-b pb-2 mb-1 mt-1">
-          <span className="text-gray-600 font-semibold text-xs mb-1 block">
-            Dimensões do Lote
-          </span>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-gray-50 p-2 rounded w-full border border-gray-100">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Frente:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {officialMeasures.frente != null
-                  ? `${officialMeasures.frente.toFixed(2)} m`
-                  : "--"}
-              </span>
-            </div>
-            {frontStreetLabel && (
-              <div className="col-span-2 flex justify-between items-start border-t border-emerald-100 pt-1 mt-0.5 bg-emerald-50/80 -mx-1 px-1 rounded">
-                <span className="text-gray-600 text-[10px] font-semibold">
-                  Frente para:
-                </span>
-                <span className="text-emerald-800 text-[10px] font-bold text-right max-w-[160px] leading-tight">
-                  {frontStreetLabel}
-                </span>
-              </div>
-            )}
-            {(confrontationAudit || assistedConfrontationMode) && (
-              <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
-                <span className="text-gray-600 text-[10px] font-semibold block mb-1">
-                  Confrontações
-                </span>
-                <div className="space-y-1">
-                  {(
-                    [
-                      ['frente', 'Frente'],
-                      ['fundo', 'Fundo'],
-                      ['ladoDireito', 'Lado Dir.'],
-                      ['ladoEsquerdo', 'Lado Esq.'],
-                    ] as const
-                  ).map(([key, label]) => {
-                    const entry = confrontationAudit?.sides[key];
-                    const text =
-                      key === 'frente' && frenteConfrontLabel
-                        ? frenteConfrontLabel
-                        : entry?.label ??
-                          String(
-                            (lot as Record<string, unknown>)[key] ??
-                              'A DEFINIR',
-                          );
-                    const origin =
-                      key === 'frente' && frontStreetLabel
-                        ? 'rua'
-                        : entry?.sourceLabel ?? '—';
-                    return (
-                      <div
-                        key={key}
-                        className="flex justify-between items-center gap-1 text-[10px]"
-                      >
-                        <span className="text-gray-500 shrink-0">{label}:</span>
-                        <span className="text-gray-900 font-medium text-right leading-tight">
-                          {text}{' '}
-                          <span className="text-gray-400 font-normal">
-                            ({origin})
-                          </span>
-                        </span>
-                        {onEditConfrontationSide && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onEditConfrontationSide(lot, key as SideRole)
-                            }
-                            className="shrink-0 text-[9px] font-bold text-blue-600 hover:underline"
-                          >
-                            Editar
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Fundo:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {officialMeasures.fundo != null
-                  ? `${officialMeasures.fundo.toFixed(2)} m`
-                  : "--"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Lado Dir:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {officialMeasures.ladoDireito != null
-                  ? `${officialMeasures.ladoDireito.toFixed(2)} m`
-                  : "--"}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-[10px]">Lado Esq:</span>{" "}
-              <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                {officialMeasures.ladoEsquerdo != null
-                  ? `${officialMeasures.ladoEsquerdo.toFixed(2)} m`
-                  : "--"}
-              </span>
-            </div>
-            {officialMeasures.perimeter != null && officialMeasures.perimeter > 0 && (
-              <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-0.5">
-                <span className="text-gray-500 text-[10px]">Perímetro:</span>{" "}
-                <span className="text-gray-900 text-[11px] font-medium w-20 text-right">
-                  {officialMeasures.perimeter.toFixed(2)} m
-                </span>
-              </div>
-            )}
-            {officialMeasures.chanfre && officialMeasures.chanfre.total > 0 && (
-              <div
-                className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-1 cursor-help"
-                title={chanfreTooltipText(officialMeasures.chanfre)}
-              >
-                <span className="text-[10px] font-semibold text-gray-500">Chanfre:</span>{" "}
-                <span className="font-bold text-gray-900 text-[11px]">
-                  {formatChanfreMeters(officialMeasures.chanfre.total)}
-                </span>
-              </div>
-            )}
-            {officialMeasures.curva && officialMeasures.curva.totalLength > 0 && (
-              <>
-                <div className="col-span-2 flex justify-between items-center border-t border-gray-100 pt-1 mt-0.5">
-                  <span className="text-gray-500 text-[10px]">Curva:</span>{" "}
-                  <span className="text-gray-900 text-[11px] font-medium w-20 text-right">
-                    {officialMeasures.curva.totalLength.toFixed(2)} m
-                  </span>
-                </div>
-                {officialMeasures.curva.radius != null &&
-                  officialMeasures.curva.radius > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 text-[10px]">Raio:</span>{" "}
-                      <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                        {officialMeasures.curva.radius.toFixed(2)} m
-                      </span>
-                    </div>
-                  )}
-                {officialMeasures.curva.chord != null &&
-                  officialMeasures.curva.chord > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 text-[10px]">Corda:</span>{" "}
-                      <span className="text-gray-900 text-[11px] font-medium w-16 text-right">
-                        {officialMeasures.curva.chord.toFixed(2)} m
-                      </span>
-                    </div>
-                  )}
-              </>
-            )}
+          <div className="flex justify-between items-center py-0.5">
+            <span className="text-gray-500">Frente</span>
+            <span className="font-medium text-gray-900">
+              {officialMeasures.frente != null
+                ? `${officialMeasures.frente.toFixed(2)} m`
+                : "—"}
+            </span>
           </div>
-        </div>
+          {frontStreetLabel && (
+            <div className="flex justify-between items-start gap-2 py-0.5 px-1.5 -mx-0.5 rounded bg-emerald-50/80">
+              <span className="text-gray-600 shrink-0">Frente para</span>
+              <span className="text-emerald-800 font-semibold text-right leading-tight">
+                {frontStreetLabel}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between items-center py-0.5">
+            <span className="text-gray-500">Valor</span>
+            <span className="font-semibold text-gray-900">{formattedPrice}</span>
+          </div>
+          {isSold && lot.customerName && (
+            <div className="flex justify-between items-center py-0.5">
+              <span className="text-gray-500">Cliente</span>
+              <span className="font-medium text-gray-900 text-right truncate max-w-[160px]">
+                {lot.customerName}
+              </span>
+            </div>
+          )}
 
-        {userRole !== "BROKER" &&
-          Array.isArray(lot.segments_json) &&
-          lot.segments_json.length >= 3 &&
-          onStartCorrectFront && (
-            <div className="border-t border-gray-200 pt-2 mt-2">
-              {frontCorrectActive ? (
-                <div className="space-y-2">
-                  <p className="text-[10px] font-semibold text-amber-800 leading-snug">
-                    Clique no lado correto no mapa ou escolha o segmento TXT:
-                  </p>
-                  <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
-                    {txtSegments.map((seg) => (
-                      <button
-                        key={seg.segment_index}
-                        type="button"
-                        disabled={frontCorrectSaving}
-                        onClick={() =>
-                          onPickFrontSegment?.(lot, seg.segment_index)
-                        }
-                        className="text-left px-2 py-1.5 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10px] font-medium text-gray-900 disabled:opacity-50"
-                      >
-                        Seg. {seg.segment_index + 1} —{" "}
-                        {seg.distanceLabel ??
-                          `${seg.distance.toFixed(2)} m`}
-                        {lot.front_segment_index === seg.segment_index
-                          ? " (frente atual)"
-                          : ""}
-                      </button>
-                    ))}
+          {userRole !== "BROKER" &&
+            Array.isArray(lot.segments_json) &&
+            lot.segments_json.length >= 3 &&
+            onStartCorrectFront && (
+              <div className="pt-1.5 border-t border-gray-100">
+                {frontCorrectActive ? (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-amber-800 leading-snug">
+                      Clique no lado correto no mapa ou escolha o segmento TXT:
+                    </p>
+                    <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                      {txtSegments.map((seg) => (
+                        <button
+                          key={seg.segment_index}
+                          type="button"
+                          disabled={frontCorrectSaving}
+                          onClick={() =>
+                            onPickFrontSegment?.(lot, seg.segment_index)
+                          }
+                          className="text-left px-2 py-1 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-[10px] font-medium text-gray-900 disabled:opacity-50"
+                        >
+                          Seg. {seg.segment_index + 1} —{" "}
+                          {seg.distanceLabel ??
+                            `${seg.distance.toFixed(2)} m`}
+                          {lot.front_segment_index === seg.segment_index
+                            ? " (frente atual)"
+                            : ""}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onCancelCorrectFront}
+                      className="w-full text-[10px] font-semibold text-gray-600 hover:text-gray-900 py-0.5"
+                    >
+                      Cancelar
+                    </button>
                   </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={onCancelCorrectFront}
-                    className="w-full text-[10px] font-semibold text-gray-600 hover:text-gray-900 py-1"
+                    onClick={() => onStartCorrectFront(lot)}
+                    className="w-full py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
                   >
-                    Cancelar
+                    Corrigir frente do lote
                   </button>
-                </div>
+                )}
+              </div>
+            )}
+
+          {userRole !== "BROKER" &&
+            onGenerateMemorial &&
+            Array.isArray(lot.segments_json) &&
+            lot.segments_json.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => onGenerateMemorial(lot)}
+                className="w-full py-1.5 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[10px] font-bold text-amber-900"
+              >
+                Gerar Memorial
+              </button>
+            )}
+        </div>
+      )}
+
+      {popupTab === "confrontacoes" && (
+        <div className="space-y-1 text-[11px]">
+          {(confrontationAudit || assistedConfrontationMode) ? (
+            confrontationRows.map(({ key, label, text, origin }) => (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-1 py-0.5 border-b border-gray-50 last:border-0"
+              >
+                <span className="text-gray-500 shrink-0 w-[72px]">{label}</span>
+                <span className="flex-1 text-gray-900 font-medium text-right leading-tight min-w-0">
+                  <span className="block truncate">{text}</span>
+                  <span className="text-[9px] text-gray-400 font-normal">
+                    ({origin})
+                  </span>
+                </span>
+                {onEditConfrontationSide && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onEditConfrontationSide(lot, key as SideRole)
+                    }
+                    className="shrink-0 text-[9px] font-bold text-blue-600 hover:underline px-1"
+                  >
+                    Editar
+                  </button>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="text-[10px] text-gray-500 py-2 text-center leading-snug">
+              Ative a revisão de confrontações ou execute a confrontação
+              automática para ver os lados.
+            </p>
+          )}
+        </div>
+      )}
+
+      {popupTab === "comercial" && (
+        <div className="space-y-2 text-[11px]">
+          <div className="flex justify-between items-center gap-2">
+            <span className="text-gray-500 shrink-0">Valor do lote</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={editablePrice}
+                onChange={(e) => setEditablePrice(Number(e.target.value))}
+                className="w-24 px-1.5 py-1 text-right text-[11px] border border-gray-300 rounded font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-gray-900"
+              />
+              <button
+                onClick={handleSavePrice}
+                disabled={isSavingPrice || editablePrice === currentPrice}
+                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                  savedSuccess
+                    ? "bg-green-500 text-white"
+                    : editablePrice !== currentPrice
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {isSavingPrice ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : savedSuccess ? (
+                  "Salvo"
+                ) : (
+                  "Salvar"
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-1">
+            <button
+              onClick={() => {
+                if (isSold) {
+                  onRequestClear(lot, currentPrice);
+                } else {
+                  onAction(lot, "Disponível", currentPrice);
+                }
+              }}
+              disabled={actionLoading === lot.id}
+              className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-1.5 rounded"
+            >
+              Disponibilizar
+            </button>
+            <button
+              onClick={() => {
+                if (isSold) {
+                  alert(
+                    "Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.",
+                  );
+                  return;
+                }
+                onRequestCustomerForm(lot, "Reservado", currentPrice);
+              }}
+              disabled={actionLoading === lot.id || isSold}
+              title={isSold ? "Este lote já está vendido" : "Reservar lote"}
+              className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-yellow-400 text-yellow-900 hover:bg-yellow-500"}`}
+            >
+              Reservar
+            </button>
+            <button
+              onClick={() => {
+                if (isSold) {
+                  alert(
+                    "Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.",
+                  );
+                  return;
+                }
+                if (!isBrowserOnline()) {
+                  blockOfflineSale();
+                  return;
+                }
+                onRequestCustomerForm(lot, "Vendido", currentPrice);
+              }}
+              disabled={actionLoading === lot.id || isSold}
+              title={isSold ? "Este lote já está vendido" : "Vender lote"}
+              className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}
+            >
+              Vender
+            </button>
+            <button
+              onClick={() => onRequestClear(lot, currentPrice)}
+              disabled={actionLoading === lot.id}
+              className="flex-none px-1.5 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
+              title="Limpar status"
+            >
+              {actionLoading === lot.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
+              <span className="text-[8px] leading-tight">Limpar</span>
+            </button>
+          </div>
+
+          {isSold && (
+            <div className="grid grid-cols-2 gap-1 pt-1 border-t border-gray-100">
+              {(() => {
+                console.log("SHOW_EDIT_SALE_BUTTON", {
+                  lotStatus: lot.status,
+                  userRole,
+                  canEditSale,
+                  hasHandler: Boolean(onEditSale),
+                });
+                return null;
+              })()}
+              {onEditSale && (
                 <button
                   type="button"
-                  onClick={() => onStartCorrectFront(lot)}
-                  className="w-full py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-900"
+                  onClick={() => {
+                    if (!canEditSale) {
+                      alert(
+                        "Apenas administradores podem editar vendas concluídas.",
+                      );
+                      return;
+                    }
+                    onEditSale(lot);
+                  }}
+                  disabled={actionLoading === lot.id}
+                  className={`col-span-2 flex items-center justify-center gap-1.5 px-2 py-1.5 text-white text-[10px] font-bold rounded-lg transition-colors disabled:opacity-50 ${
+                    canEditSale
+                      ? "bg-orange-500 hover:bg-orange-600"
+                      : "bg-orange-400/60 cursor-not-allowed"
+                  }`}
                 >
-                  Corrigir frente do lote
+                  <Pencil className="w-3 h-3" />
+                  Editar Venda
+                </button>
+              )}
+              {onViewContract && (
+                <button
+                  type="button"
+                  onClick={() => onViewContract(lot)}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg"
+                >
+                  <FileText className="w-3 h-3" />
+                  Ver Contrato
+                </button>
+              )}
+              {onRegenerateContract && lot.contractId && (
+                <button
+                  type="button"
+                  onClick={() => onRegenerateContract(lot)}
+                  disabled={actionLoading === `regen-${lot.id}`}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 ${actionLoading === `regen-${lot.id}` ? "animate-spin" : ""}`}
+                  />
+                  Regenerar contrato
+                </button>
+              )}
+              {onViewFinance && lot.saleId && (
+                <button
+                  type="button"
+                  onClick={() => onViewFinance(lot)}
+                  className="col-span-2 flex items-center justify-center gap-1 px-2 py-1.5 border border-gray-300 text-gray-800 hover:bg-gray-50 text-[10px] font-bold rounded-lg"
+                >
+                  <Wallet className="w-3 h-3" />
+                  Ver Financeiro
                 </button>
               )}
             </div>
           )}
-
-        {userRole !== "BROKER" &&
-          onGenerateMemorial &&
-          Array.isArray(lot.segments_json) &&
-          lot.segments_json.length >= 2 && (
-            <div className="border-t border-gray-200 pt-2 mt-2">
-              <button
-                type="button"
-                onClick={() => onGenerateMemorial(lot)}
-                className="w-full py-2 rounded-lg border border-amber-400 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-900"
-              >
-                Gerar Memorial
-              </button>
-            </div>
-          )}
-
-        <div className="flex justify-between items-center pt-1">
-          <span className="text-gray-600 font-semibold mb-1">
-            Valor do Lote (R$):
-          </span>
-          <div className="flex items-center gap-1 justify-end">
-            <input
-              type="number"
-              value={editablePrice}
-              onChange={(e) => setEditablePrice(Number(e.target.value))}
-              className="w-24 px-1 py-1 text-right text-sm border border-gray-300 rounded font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-gray-900"
-            />
-            <button
-              onClick={handleSavePrice}
-              disabled={isSavingPrice || editablePrice === currentPrice}
-              className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
-                savedSuccess 
-                  ? 'bg-green-500 text-white' 
-                  : editablePrice !== currentPrice
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              {isSavingPrice ? <Loader2 className="w-3 h-3 animate-spin"/> : (savedSuccess ? "Salvo" : "Salvar")}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {isSold && (
-        <div className="mb-3 space-y-2">
-          <span className="text-sm font-semibold text-gray-800 block">
-            Venda concluída
-          </span>
-          <div className="grid grid-cols-2 gap-1.5">
-            {(() => {
-              console.log("SHOW_EDIT_SALE_BUTTON", {
-                lotStatus: lot.status,
-                userRole,
-                canEditSale,
-                hasHandler: Boolean(onEditSale),
-              });
-              return null;
-            })()}
-            {onEditSale && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEditSale) {
-                    alert(
-                      "Apenas administradores podem editar vendas concluídas.",
-                    );
-                    return;
-                  }
-                  onEditSale(lot);
-                }}
-                disabled={actionLoading === lot.id}
-                className={`col-span-2 flex items-center justify-center gap-1.5 px-3 py-2 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 ${
-                  canEditSale
-                    ? "bg-orange-500 hover:bg-orange-600"
-                    : "bg-orange-400/60 cursor-not-allowed"
-                }`}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                Editar Venda
-              </button>
-            )}
-            {onViewContract && (
-              <button
-                type="button"
-                onClick={() => onViewContract(lot)}
-                className="flex items-center justify-center gap-1 px-2 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg"
-              >
-                <FileText className="w-3 h-3" />
-                Ver Contrato
-              </button>
-            )}
-            {onRegenerateContract && lot.contractId && (
-              <button
-                type="button"
-                onClick={() => onRegenerateContract(lot)}
-                disabled={actionLoading === `regen-${lot.id}`}
-                className="flex items-center justify-center gap-1 px-2 py-2 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold rounded-lg disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3 h-3 ${actionLoading === `regen-${lot.id}` ? "animate-spin" : ""}`} />
-                Regenerar contrato
-              </button>
-            )}
-            {onViewFinance && lot.saleId && (
-              <button
-                type="button"
-                onClick={() => onViewFinance(lot)}
-                className="col-span-2 flex items-center justify-center gap-1 px-2 py-2 border border-gray-300 text-gray-800 hover:bg-gray-50 text-[10px] font-bold rounded-lg"
-              >
-                <Wallet className="w-3 h-3" />
-                Ver Financeiro
-              </button>
-            )}
-          </div>
         </div>
       )}
-
-      <div className="mb-2">
-        <span className="text-sm font-semibold text-gray-800">
-          Ações de comercial
-        </span>
-        <div className="flex gap-1 mt-1">
-          <button
-            onClick={() => {
-               if (isSold) {
-                 onRequestClear(lot, currentPrice);
-               } else {
-                 onAction(lot, "Disponível", currentPrice);
-               }
-            }}
-            disabled={actionLoading === lot.id}
-            className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-2 rounded"
-          >
-            Disponibilizar
-          </button>
-          <button
-            onClick={() => {
-              if (isSold) {
-                alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
-                return;
-              }
-              onRequestCustomerForm(lot, "Reservado", currentPrice);
-            }}
-            disabled={actionLoading === lot.id || isSold}
-            title={isSold ? "Este lote já está vendido" : "Reservar lote"}
-            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
-          >
-            Reservar
-          </button>
-          <button
-            onClick={() => {
-              if (isSold) {
-                alert("Este lote já está vendido. Para vender novamente, primeiro disponibilize o lote usando a liberação administrativa com senha.");
-                return;
-              }
-              if (!isBrowserOnline()) {
-                blockOfflineSale();
-                return;
-              }
-              onRequestCustomerForm(lot, "Vendido", currentPrice);
-            }}
-            disabled={actionLoading === lot.id || isSold}
-            title={isSold ? "Este lote já está vendido" : "Vender lote"}
-            className={`flex-1 text-[10px] font-bold py-2 rounded transition-colors ${isSold ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
-          >
-            Vender
-          </button>
-          <button
-            onClick={() => onRequestClear(lot, currentPrice)}
-            disabled={actionLoading === lot.id}
-            className="flex-none px-2 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
-          >
-            {actionLoading === lot.id ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Trash2 className="w-3 h-3" />
-            )}
-            <span className="text-[8px] leading-tight">Limpar</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 text-xs text-gray-500 justify-center pb-1">
-        <span className="text-green-500 text-lg leading-none">●</span> /
-        <span className="text-yellow-400 text-lg leading-none">●</span> /
-        <span className="text-red-500 text-lg leading-none">●</span>
-      </div>
     </div>
   );
 }
