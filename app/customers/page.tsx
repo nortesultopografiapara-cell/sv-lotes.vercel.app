@@ -4,6 +4,7 @@ import { Search, Plus, Filter, Phone, Mail, MoreHorizontal, Loader2, Home, X, Ed
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import { mergePreservingCustomerFields } from '@/lib/customerIdentity';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 
 export default function CustomersPage() {
@@ -134,6 +135,12 @@ export default function CustomersPage() {
       }
 
       if (customerId) {
+          const { data: existingRow } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('id', customerId)
+            .maybeSingle();
+          payload = mergePreservingCustomerFields(existingRow, payload);
           let updateQuery = supabase.from('customers').update(payload).eq('id', customerId);
           updateQuery = applyTenantFilter(updateQuery, rlsCtx, 'customers');
           const { error: custError } = await updateQuery;

@@ -37,7 +37,10 @@ import {
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
-import { resolveOrCreateCustomer } from "@/lib/customerIdentity";
+import {
+  mergeCustomerData,
+  resolveOrCreateCustomer,
+} from "@/lib/customerIdentity";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
@@ -3441,8 +3444,14 @@ export default function GISMap({
 
           let fullCustomer = customerData;
           if (customerId) {
-            const { data: custDb } = await supabase.from("customers").select("*").eq("id", customerId).single();
-            if (custDb) fullCustomer = { ...custDb, ...customerData };
+            const { data: custDb } = await supabase
+              .from("customers")
+              .select("*")
+              .eq("id", customerId)
+              .single();
+            if (custDb) {
+              fullCustomer = mergeCustomerData(custDb, customerData);
+            }
           }
 
           const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);

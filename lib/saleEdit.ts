@@ -4,7 +4,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  customerPatchFromForm,
   customerToFormValues,
+  mergeCustomerData,
+  mergePreservingCustomerFields,
+  normalizeDocument,
   type CustomerFormValues,
   type CustomerRecord,
 } from '@/lib/customerIdentity';
@@ -101,6 +105,25 @@ export async function loadSaleEditContext(
   if (custErr || !customer) {
     throw new Error('Não foi possível carregar o cliente da venda.');
   }
+
+  let customerMerged = customer as CustomerRecord;
+  const doc = normalizeDocument(
+    String(customer.cpf_cnpj || customer.document || ''),
+  );
+  if (doc.length >= 11) {
+    const { data: clientRow } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('cpf_cnpj', doc)
+      .maybeSingle();
+    if (clientRow) {
+      customerMerged = mergeCustomerData(
+        customer,
+        clientRow,
+      ) as CustomerRecord;
+    }
+  }
+
   console.log('EDIT_SALE_CUSTOMER_LOADED', { customerId });
 
   const { data: receipts } = await supabase
@@ -155,7 +178,7 @@ export async function loadSaleEditContext(
     .maybeSingle();
 
   const form = {
-    ...customerToFormValues(customer as CustomerRecord),
+    ...customerToFormValues(customerMerged),
     payment_type: paymentType,
     discount_value: discountVal > 0 ? String(discountVal) : '',
     down_payment: String(sale.down_payment ?? entryReceipt?.amount ?? 0),
@@ -176,7 +199,7 @@ export async function loadSaleEditContext(
     lotPrice,
     form,
     saleBefore: { ...sale },
-    customerBefore: { ...customer },
+    customerBefore: { ...customerMerged },
   };
 }
 
@@ -306,26 +329,10 @@ export async function updateSaleFromEdit(
   const finalPrice = data.lot_value;
   const brokerId = data.broker_id?.trim() ? data.broker_id : null;
 
-  const customerPatch = {
-    name: data.name?.trim(),
-    cpf_cnpj: data.cpf_cnpj || null,
-    document: data.cpf_cnpj || null,
-    rg: data.rg || null,
-    rg_issuer: data.rg_issuer || null,
-    rg_issuer_state: data.rg_issuer_state || null,
-    phone: data.phone || null,
-    email: data.email || null,
-    profession: data.profession || null,
-    civil_state: data.civil_state || null,
-    marital_status: data.civil_state || null,
-    address: data.address || null,
-    neighborhood: data.neighborhood || null,
-    city: data.city || null,
-    state: data.state_uf || null,
-    state_uf: data.state_uf || null,
-    cep: data.zip_code || null,
-    zip_code: data.zip_code || null,
-  };
+  const customerPatch = mergePreservingCustomerFields(
+    customerBefore,
+    customerPatchFromForm(data),
+  );
 
   const { error: custUpdErr } = await supabase
     .from('customers')

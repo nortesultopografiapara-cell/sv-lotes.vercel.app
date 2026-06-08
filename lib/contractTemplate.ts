@@ -253,13 +253,26 @@ export function generateContractHTML({
   const clienteCpfCnpj = formatCNPJCPF(customer?.document || customer?.cpf || "cpf/cnpj não informado");
   const clienteIdentitySuffix = formatContractIdentityDocumentSuffix(customer);
   const clienteConjugeSuffix = formatContractSpouseQualificationSuffix(customer);
-  const clienteProfissao = toTitleCase(customer?.profession || "profissão não informada");
-  const clienteEstadoCivil = toTitleCase(customer?.civil_state || "estado civil não informado");
-  const clienteEndereco = toTitleCase(customer?.address || customer?.street || "endereço não informado");
+  const clienteProfissao = toTitleCase(
+    customer?.profession || "profissão não informada",
+  );
+  const clienteEstadoCivil = toTitleCase(
+    customer?.civil_state || customer?.marital_status || "estado civil não informado",
+  );
+  const clienteEndereco = toTitleCase(
+    customer?.address || customer?.street || "endereço não informado",
+  );
   const clienteBairro = toTitleCase(customer?.neighborhood || "bairro não informado");
   const clienteCidade = toTitleCase(customer?.city || "cidade não informada");
-  const clienteUf = (customer?.state_uf || "").toUpperCase() || "UF";
-  const clienteCep = customer?.zip_code || "cep não informado";
+  const clienteUf = (
+    customer?.state_uf ||
+    customer?.state ||
+    ""
+  )
+    .toString()
+    .toUpperCase() || "UF";
+  const clienteCep =
+    customer?.zip_code || customer?.cep || "cep não informado";
 
   const empreendimentoNome = toTitleCase(
     (isValid(project?.name) ? project.name : null) ||

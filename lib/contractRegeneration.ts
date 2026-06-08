@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { mergeCustomerData, normalizeDocument } from '@/lib/customerIdentity';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import {
   ensureValidContractNumber,
@@ -641,6 +642,21 @@ export async function loadFreshRegenerationEntities(
       tenantId,
       'Cliente',
     );
+
+    const doc = normalizeDocument(
+      String(customer.cpf_cnpj || customer.document || ''),
+    );
+    if (doc.length >= 11) {
+      let clientQuery = supabase
+        .from('clients')
+        .select('*')
+        .eq('cpf_cnpj', doc);
+      clientQuery = clientQuery.eq('tenant_id', tenantId);
+      const { data: clientRow } = await clientQuery.maybeSingle();
+      if (clientRow) {
+        customer = mergeCustomerData(customer, clientRow);
+      }
+    }
   }
 
   let receipts_sum = 0;
@@ -774,7 +790,7 @@ export async function buildFreshSaleContractHtml(
     id: (sale.id as string) || (contract.sale_id as string),
   };
   const customerWithId = {
-    ...customer,
+    ...mergeCustomerData(customer, sale, contract.customers as Record<string, unknown>),
     id: (customer.id as string) || (contract.customer_id as string),
   };
   const blockWithId = {

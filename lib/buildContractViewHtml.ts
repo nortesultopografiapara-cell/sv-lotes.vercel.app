@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mergeCustomerData } from "@/lib/customerIdentity";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
@@ -75,10 +76,13 @@ export async function buildContractViewHtml(
   // PDF: app/contracts usa getContractHtml2pdfOptions + applyContractPdfChrome (sem página vazia extra).
   return generateContractHTML({
     tenant: params.tenant,
-    customer:
+    customer: mergeCustomerData(
       params.customer ||
-      (contract.customers as Record<string, unknown>) ||
-      {},
+        (contract.customers as Record<string, unknown>) ||
+        {},
+      params.sale || (contract.sales as Record<string, unknown>) || {},
+      contract.customers as Record<string, unknown>,
+    ),
     project:
       params.project ||
       (contract.projects as Record<string, unknown>) ||
