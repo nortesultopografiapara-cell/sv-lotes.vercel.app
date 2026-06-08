@@ -12,7 +12,6 @@ import {
   buildBlockSketch,
   buildCardinalConfrontants,
   buildProjectMap,
-  buildSideConfrontants,
   buildVertexTableFromOfficialSegments,
   createLotSheetValidation,
   segmentTableToMemorialRows,
@@ -34,7 +33,10 @@ import {
   officialSegmentTableToEdgeLabels,
 } from '@/lib/officialLotMeasurements';
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
-import { resolveLotSideConfrontants } from '@/lib/lotConfrontations';
+import {
+  buildLotConfrontationAudit,
+  confrontantsFromAudit,
+} from '@/lib/assistedConfrontation';
 import { buildMemorialDraftPlainText } from '@/lib/memorialDraft';
 import {
   formatMemorialTechnicalBlock,
@@ -536,14 +538,14 @@ export async function loadLotSheetPayload(
     (company as Record<string, unknown>) || null,
   );
 
-  const sideConfrontants = resolveLotSideConfrontants(
+  const confrontationAudit = buildLotConfrontationAudit(
     blockRecord,
     params.blockId,
     blocksList,
     guidesList,
-    undefined,
-    params.projectId,
+    project as Record<string, unknown>,
   );
+  const sideConfrontants = confrontantsFromAudit(confrontationAudit);
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
     block as Record<string, unknown>,

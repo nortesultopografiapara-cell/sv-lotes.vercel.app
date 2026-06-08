@@ -4,6 +4,7 @@
 
 import {
   buildLotConfrontationAudit,
+  confrontantsFromAudit,
   officialSegmentIndexesForSide,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
@@ -85,22 +86,8 @@ export function buildMemorialSideSummaryFromAudit(
   audit: LotConfrontationAudit | null,
   chanfre: string,
 ): MemorialSideSummary {
-  if (!audit) {
-    return {
-      frente: '—',
-      fundo: '—',
-      ladoDireito: '—',
-      ladoEsquerdo: '—',
-      chanfre,
-    };
-  }
-  const c = audit.confrontants;
-  const s = audit.sides;
   return {
-    frente: c.frente || s.frente.label || '—',
-    fundo: c.fundo || s.fundo.label || '—',
-    ladoDireito: c.ladoDireito || s.ladoDireito.label || '—',
-    ladoEsquerdo: c.ladoEsquerdo || s.ladoEsquerdo.label || '—',
+    ...confrontantsFromAudit(audit),
     chanfre,
   };
 }

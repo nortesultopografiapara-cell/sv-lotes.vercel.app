@@ -24,7 +24,10 @@ import {
   buildMemorialDescriptionParagraphs,
   MEMORIAL_PENDING_CONFIRM_MESSAGE,
 } from '../lib/memorial/memorialText';
-import { buildLotConfrontationAudit } from '../lib/assistedConfrontation';
+import {
+  buildLotConfrontationAudit,
+  confrontantsFromAudit,
+} from '../lib/assistedConfrontation';
 import { buildMemorialSideSummaryFromAudit } from '../lib/memorial/memorialConfrontants';
 import { applyConfrontantToSegmentRows } from '../lib/segmentConfrontantPersist';
 
@@ -259,6 +262,41 @@ function testSigefGrouping() {
   console.log('OK testSigefGrouping');
 }
 
+/** QA-006: prancha PDF deve usar os mesmos confrontantes do memorial (auditoria). */
+function testLotSheetConfrontantsMatchMemorialAudit() {
+  const base = lotBlock('12', 4, {
+    front_segment_index: 0,
+    front_street_name: 'RUA ACESSO',
+    front_street_type: 'Rua',
+  });
+  const lot = {
+    ...base,
+    segments_json: applyConfrontantToSegmentRows(
+      base,
+      [2],
+      'Lote 02',
+      'lot',
+      'manual',
+    ),
+  };
+  const audit = buildLotConfrontationAudit(lot, lot.id as string, [lot], []);
+  const sheetSides = confrontantsFromAudit(audit);
+  const memorialSummary = buildMemorialSideSummaryFromAudit(audit, '—');
+  for (const key of [
+    'frente',
+    'fundo',
+    'ladoDireito',
+    'ladoEsquerdo',
+  ] as const) {
+    assert(
+      sheetSides[key] === memorialSummary[key],
+      `prancha/memorial divergem em ${key}: ${sheetSides[key]} vs ${memorialSummary[key]}`,
+    );
+  }
+  assert(sheetSides.fundo === 'Lote 02', `fundo prancha ${sheetSides.fundo}`);
+  console.log('OK testLotSheetConfrontantsMatchMemorialAudit');
+}
+
 function testAuditMatchesPopupSides() {
   const base = lotBlock('01', 4, {
     front_segment_index: 0,
@@ -296,5 +334,6 @@ testAzimuthDms();
 testBrFormats();
 testVertexLabels();
 testSigefGrouping();
+testLotSheetConfrontantsMatchMemorialAudit();
 testAuditMatchesPopupSides();
 console.log('mandatory-memorial-description-tests: all passed');

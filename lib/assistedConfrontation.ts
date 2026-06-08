@@ -49,6 +49,28 @@ export type LotConfrontationAudit = {
   hasPending: boolean;
 };
 
+/** Confrontantes por lado — mesma regra do memorial e do mapa (auditoria assistida). */
+export function confrontantsFromAudit(
+  audit: LotConfrontationAudit | null,
+): LotSheetSideConfrontants {
+  if (!audit) {
+    return {
+      frente: '—',
+      fundo: '—',
+      ladoDireito: '—',
+      ladoEsquerdo: '—',
+    };
+  }
+  const c = audit.confrontants;
+  const s = audit.sides;
+  return {
+    frente: c.frente || s.frente.label || '—',
+    fundo: c.fundo || s.fundo.label || '—',
+    ladoDireito: c.ladoDireito || s.ladoDireito.label || '—',
+    ladoEsquerdo: c.ladoEsquerdo || s.ladoEsquerdo.label || '—',
+  };
+}
+
 export type PropagationScope = 'lot_only' | 'quadra_same_side' | 'aligned_nearby';
 
 function sameQuadra(
