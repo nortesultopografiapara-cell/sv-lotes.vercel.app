@@ -66,11 +66,12 @@ import {
   parseOfficialSegmentsFromBlock,
 } from '@/lib/officialLotMeasurements';
 import {
-  findFrontSegmentIndexTouchingStreet,
-  pickStreetGuideForFrontSegment,
-  scoreSegmentStreetProximity,
+  closedRingLngLat,
+  identifyLotFrontFromStreetGuides,
+  TOUCH_STREET_MAX_M,
   type StreetGuideLineInput,
 } from '@/lib/lotStreetFrontDetection';
+import { flattenLineStringCoordinates } from '@/lib/streetGuideConfrontation';
 import { persistBlockPatch } from '@/lib/blockFrontPersist';
 import { normalizeFrontSegmentIndexForPersist } from '@/lib/resolveFrontStreetGuide';
 import {
@@ -627,7 +628,6 @@ export default function MapPage() {
        
        // Only dynamically import turf logic to avoid SSR issues if necessary or just await import
        const turfHelpers = await import('@turf/helpers');
-       const turfNearestOnLine = await import('@turf/nearest-point-on-line');
        const turfDistance = await import('@turf/distance');
        const { extractSegments, detectSides, normalizeDimensions } = await import('@/utils/calculateLotDimensions');
 
@@ -640,11 +640,11 @@ export default function MapPage() {
        if (error) throw error;
        if (!blocks || blocks.length === 0) return;
 
-       // 2. Prepare guide lines
+       // 2. Prepare guide lines (polilinha completa — flatten para multiponto)
        const streetGuideLines: StreetGuideLineInput[] = visibleGuides
          .map((g) => {
            const geo = g.geometry_geojson || g.geometry;
-           const coordinates = geo?.coordinates;
+           const coordinates = flattenLineStringCoordinates(geo?.coordinates);
            if (!coordinates || coordinates.length < 2) return null;
            return {
              id: g.id != null ? String(g.id) : undefined,
@@ -665,72 +665,39 @@ export default function MapPage() {
           const segments = extractSegments(coords, []);
           const officialSegs = parseOfficialSegmentsFromBlock(block);
 
-          let frontSegmentIndex: number | null = null;
-          let bestGuide: (typeof visibleGuides)[number] | null = null;
-          let bestTouchM = Infinity;
+          const neighborRingsLngLat = blocks
+            .filter(
+              (b) =>
+                b.id &&
+                String(b.id) !== String(block.id) &&
+                b.geometry?.type === 'Polygon' &&
+                b.geometry?.coordinates?.[0]?.length >= 4,
+            )
+            .map((b) => closedRingLngLat(b.geometry.coordinates[0]));
 
-          if (
-            officialSegs.length >= 3 &&
-            block.source_import === 'TXT_CIVIL3D'
-          ) {
-            frontSegmentIndex = findFrontSegmentIndexTouchingStreet(
-              officialSegs,
-              coords,
-              streetGuideLines,
-              null,
-              block.number,
-            );
-            const matchedGuide = pickStreetGuideForFrontSegment(
-              coords,
-              streetGuideLines,
-              frontSegmentIndex,
-              officialSegs.length,
-            );
-            if (matchedGuide?.id) {
-              bestGuide =
-                visibleGuides.find(
-                  (g) => String(g.id) === String(matchedGuide.id),
-                ) ?? null;
-            }
-            const ring = coords;
-            const ri = Math.min(frontSegmentIndex, ring.length - 2);
-            const p1 = ring[ri] as [number, number];
-            const p2 = ring[ri + 1] as [number, number];
-            for (const gl of streetGuideLines) {
-              const sc = scoreSegmentStreetProximity(p1, p2, gl.coordinates);
-              bestTouchM = Math.min(bestTouchM, sc.minDistM);
-            }
-          } else {
-            let bestSegment: (typeof segments)[0] | null = null;
-            for (const seg of segments) {
-              const pA = turfHelpers.point(seg.p1);
-              const pB = turfHelpers.point(seg.p2);
-              const mid = turfHelpers.point([
-                (seg.p1[0] + seg.p2[0]) / 2,
-                (seg.p1[1] + seg.p2[1]) / 2,
-              ]);
-              for (let gi = 0; gi < streetGuideLines.length; gi++) {
-                const guide = turfHelpers.lineString(
-                  streetGuideLines[gi].coordinates,
-                );
-                const d1 = turfNearestOnLine.default(guide, pA).properties.dist || 0;
-                const d2 = turfNearestOnLine.default(guide, pB).properties.dist || 0;
-                const dMid =
-                  turfNearestOnLine.default(guide, mid).properties.dist || 0;
-                const minDist = Math.min(d1, d2, dMid);
-                if (minDist < bestTouchM) {
-                  bestTouchM = minDist;
-                  bestSegment = seg;
-                  bestGuide = visibleGuides[gi];
-                }
-              }
-            }
-            if (bestSegment) {
-              frontSegmentIndex = bestSegment.originalIndex ?? 0;
-            }
-          }
+          const frontMatch = identifyLotFrontFromStreetGuides(
+            coords,
+            streetGuideLines,
+            {
+              segments: officialSegs,
+              neighborRingsLngLat,
+              block,
+              lotLabel: block.number,
+            },
+          );
 
-          if (frontSegmentIndex != null && bestTouchM < 50) {
+          if (!frontMatch) continue;
+
+          const frontSegmentIndex = frontMatch.segmentIndex;
+          const bestTouchM = frontMatch.minDistM;
+          const bestGuide =
+            frontMatch.guide?.id != null
+              ? visibleGuides.find(
+                  (g) => String(g.id) === String(frontMatch.guide!.id),
+                ) ?? null
+              : null;
+
+          if (frontSegmentIndex != null && bestTouchM < TOUCH_STREET_MAX_M) {
              const frenteLength =
                officialSegs.find((s) => s.segment_index === frontSegmentIndex)
                  ?.distance ??
@@ -795,7 +762,7 @@ export default function MapPage() {
              if (!block.id) continue;
              const persistedFrontIdx = normalizeFrontSegmentIndexForPersist(
                block,
-               frontSegmentIndex,
+               frontMatch.ringEdgeIndex,
              );
              const row: Record<string, unknown> = {
                  id: block.id,

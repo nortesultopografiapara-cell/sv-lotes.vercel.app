@@ -16,7 +16,12 @@ import {
   resolveFrenteConfrontantLabel,
 } from '../lib/resolveFrontStreetGuide';
 import { flattenLineStringCoordinates } from '../lib/streetGuideConfrontation';
-import { scoreSegmentStreetProximity } from '../lib/lotStreetFrontDetection';
+import {
+  identifyLotFrontFromStreetGuides,
+  isLotEdgeInternal,
+  scoreSegmentStreetProximity,
+} from '../lib/lotStreetFrontDetection';
+import { computeOfficialLotLabelPosition } from '../lib/lotLabelPosition';
 import {
   buildStreetGuideInsertPayload,
   emptyStreetGuideForm,
@@ -357,6 +362,99 @@ function testMultiPointStreetGuideFrontOnMiddleSegment() {
   console.log('OK testMultiPointStreetGuideFrontOnMiddleSegment');
 }
 
+/** Rua curva na frente sul; lateral leste (25 m) é divisa interna com lote vizinho. */
+function testCurvedStreetPicksFrontNotInternalLateral() {
+  const east0 = BASE_EAST;
+  const north0 = BASE_NORTH;
+  const widthM = 12;
+  const depthM = 25;
+  const block = lotBlock('55', 0, east0, north0);
+  const neighborEast = lotBlock('56', 0, east0 + widthM, north0);
+
+  const ring = (block.geometry as { coordinates: number[][][] }).coordinates[0];
+  const neighborRing = (
+    neighborEast.geometry as { coordinates: number[][][] }
+  ).coordinates[0];
+
+  const southEdge = ring[0];
+  const southNext = ring[1];
+  assert(
+    isLotEdgeInternal(
+      southEdge as [number, number],
+      southNext as [number, number],
+      [],
+    ) === false,
+    'frente sul não é divisa',
+  );
+  const eastEdge = ring[1];
+  const eastNext = ring[2];
+  assert(
+    isLotEdgeInternal(
+      eastEdge as [number, number],
+      eastNext as [number, number],
+      [neighborRing],
+    ),
+    'lateral leste deve ser divisa interna',
+  );
+
+  const guideRaw = multiPointGuideAlongSouth(
+    'g-curve',
+    'RUA CURVA FRENTE',
+    east0,
+    north0,
+    widthM,
+    -0.25,
+  );
+  const guides = [
+    {
+      id: guideRaw.id,
+      coordinates: guideRaw.geometry.coordinates,
+    },
+  ];
+
+  const match = identifyLotFrontFromStreetGuides(ring, guides, {
+    neighborRingsLngLat: [neighborRing],
+    block,
+    lotLabel: '55',
+  });
+
+  assert(match != null, 'deve identificar frente');
+  assert(
+    match!.ringEdgeIndex === 0,
+    `frente deve ser aresta sul (0), obteve ${match!.ringEdgeIndex}`,
+  );
+  assert(
+    match!.segmentIndex === 0,
+    `segment_index deve ser 0 (frente 12 m), obteve ${match!.segmentIndex}`,
+  );
+  assert(
+    match!.minDistM < 1.0,
+    `distância à polilinha ${match!.minDistM}m`,
+  );
+  assert(
+    match!.segmentIndex !== 1,
+    'não deve escolher lateral leste (25 m) encostada no vizinho',
+  );
+
+  const bounds = (block.bounds as [number, number][]) ?? [];
+  const labelPos = computeOfficialLotLabelPosition(bounds, {
+    frontSegmentIndex: match!.ringEdgeIndex,
+    segments_json: block.segments_json,
+    frontStreetName: 'RUA CURVA FRENTE',
+    frente: widthM,
+  });
+  const southMidLat = (bounds[0][0] + bounds[1][0]) / 2;
+  const eastMidLng = (bounds[1][1] + bounds[2][1]) / 2;
+  const distSouth = Math.abs(labelPos[0] - southMidLat);
+  const distEast = Math.abs(labelPos[1] - eastMidLng);
+  assert(
+    distSouth < distEast,
+    'label deve ficar na frente sul, não na lateral leste',
+  );
+
+  console.log('OK testCurvedStreetPicksFrontNotInternalLateral');
+}
+
 function testLegacyTwoPointGuideStillWorks() {
   const east0 = BASE_EAST;
   const north0 = BASE_NORTH;
@@ -386,5 +484,6 @@ testSchemaFallbackDetectsMissingColumn();
 testFrenteLabelFromProximity();
 testMultiPointStreetGuidePayloadAndRead();
 testMultiPointStreetGuideFrontOnMiddleSegment();
+testCurvedStreetPicksFrontNotInternalLateral();
 testLegacyTwoPointGuideStillWorks();
 console.log('mandatory-front-street-name-tests: all passed');
