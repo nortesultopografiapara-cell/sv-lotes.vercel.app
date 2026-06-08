@@ -572,26 +572,30 @@ export function resolveFrontStreetGuideForLot(
   toleranceM: number = STREET_GUIDE_LOT_FRONT_TOLERANCE_M,
 ): FrontStreetGuideMatch | null {
   if (!streetGuides.length) return null;
+  try {
+    const wgs = resolveFromWgs84FrontEdge(block, streetGuides, toleranceM);
+    if (wgs) return wgs;
 
-  const wgs = resolveFromWgs84FrontEdge(block, streetGuides, toleranceM);
-  if (wgs) return wgs;
+    const official = getOfficialConfrontationRing(block);
+    const allPolysUtm = official.ok
+      ? [utmRingToClosedCoords(official.ring)]
+      : [];
+    const frontSeg = extractFrontUtmSegment(block, allPolysUtm);
+    if (!frontSeg) return null;
 
-  const official = getOfficialConfrontationRing(block);
-  const allPolysUtm = official.ok
-    ? [utmRingToClosedCoords(official.ring)]
-    : [];
-  const frontSeg = extractFrontUtmSegment(block, allPolysUtm);
-  if (!frontSeg) return null;
+    const hit = confrontantFromStreetGuidesForUtmSegment(
+      frontSeg,
+      block,
+      streetGuides,
+      toleranceM,
+    );
+    if (!hit?.label) return null;
 
-  const hit = confrontantFromStreetGuidesForUtmSegment(
-    frontSeg,
-    block,
-    streetGuides,
-    toleranceM,
-  );
-  if (!hit?.label) return null;
-
-  return matchFromHit(hit, streetGuides, 0, toleranceM);
+    return matchFromHit(hit, streetGuides, 0, toleranceM);
+  } catch (err) {
+    console.warn('resolveFrontStreetGuideForLot fallback', block.id ?? block.number, err);
+    return null;
+  }
 }
 
 export function streetFieldsFromGuideMatch(
@@ -609,6 +613,52 @@ export function streetFieldsFromGuideMatch(
     front_street_name: match.streetGuideName,
     front_street_type: match.streetGuideType,
   };
+}
+
+/** GeoJSON explícito a partir de bounds [lat,lng] — evita inversão lat/lng. */
+export function blockWithGeometryFromBounds(
+  block: Record<string, unknown>,
+): Record<string, unknown> {
+  const bounds = block.bounds;
+  if (!Array.isArray(bounds) || bounds.length < 3) return block;
+  const ringLngLat: number[][] = [];
+  for (const item of bounds) {
+    if (!Array.isArray(item) || item.length < 2) continue;
+    const lat = Number(item[0]);
+    const lng = Number(item[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    ringLngLat.push([lng, lat]);
+  }
+  if (ringLngLat.length < 3) return block;
+  const first = ringLngLat[0];
+  const last = ringLngLat[ringLngLat.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    ringLngLat.push([first[0], first[1]]);
+  }
+  return {
+    ...block,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [ringLngLat],
+    },
+  };
+}
+
+/**
+ * Normaliza índice bruto (UTM segment_index ou aresta WGS84) para aresta WGS84 canônica.
+ * Usar antes de persistir front_segment_index.
+ */
+export function normalizeFrontSegmentIndexForPersist(
+  block: Record<string, unknown>,
+  rawIndex: number,
+): number {
+  if (!Number.isFinite(rawIndex) || rawIndex < 0) return -1;
+  const probe = blockWithGeometryFromBounds({
+    ...block,
+    front_segment_index: rawIndex,
+  });
+  const resolved = resolveFrontWgs84RingIndex(probe);
+  return resolved >= 0 ? resolved : rawIndex;
 }
 
 function lotBlockFromLotLike(lot: Record<string, unknown>): Record<string, unknown> {

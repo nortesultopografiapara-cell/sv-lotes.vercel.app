@@ -73,6 +73,8 @@ import {
   persistManualLotFront,
 } from "@/lib/blockFrontPersist";
 import {
+  blockWithGeometryFromBounds,
+  normalizeFrontSegmentIndexForPersist,
   resolveFrontStreetGuideForLot,
   resolveLotFrontStreetDisplay,
   streetFieldsFromGuideMatch,
@@ -536,6 +538,9 @@ function boundsFromBlockGeometry(
   }
 
   const bounds: LatLngPair[] = [];
+  if (!Array.isArray(ring)) {
+    return { bounds, geometryType: gType, coordCount: 0 };
+  }
   for (const c of ring) {
     if (!Array.isArray(c) || c.length < 2) continue;
     const lng = Number(c[0]);
@@ -1487,17 +1492,31 @@ function chanfreFromClassified(
 function getOfficialLotMeasurementsForPopup(
   lot: Record<string, unknown>,
 ): CleanLotMeasurements {
-  const official = getOfficialLotMeasurements(lot, lot.number);
-  return {
-    frente: official.frente,
-    fundo: official.fundo,
-    ladoDireito: official.ladoDireito,
-    ladoEsquerdo: official.ladoEsquerdo,
-    chanfre: official.chanfre,
-    curva: official.curva,
-    area: official.area ?? parseBlockSideLength(lot.area),
-    perimeter: official.perimeter,
-  };
+  try {
+    const official = getOfficialLotMeasurements(lot, lot.number);
+    return {
+      frente: official.frente,
+      fundo: official.fundo,
+      ladoDireito: official.ladoDireito,
+      ladoEsquerdo: official.ladoEsquerdo,
+      chanfre: official.chanfre,
+      curva: official.curva,
+      area: official.area ?? parseBlockSideLength(lot.area),
+      perimeter: official.perimeter,
+    };
+  } catch (err) {
+    console.warn('GIS_POPUP_MEASURES_FALLBACK', lot.id ?? lot.number, err);
+    return {
+      frente: parseBlockSideLength(lot.frente),
+      fundo: parseBlockSideLength(lot.Fundo ?? lot.fundo),
+      ladoDireito: parseBlockSideLength(lot['Lado Dir.']),
+      ladoEsquerdo: parseBlockSideLength(lot['Lado Esq.']),
+      chanfre: null,
+      curva: null,
+      area: parseBlockSideLength(lot.area),
+      perimeter: null,
+    };
+  }
 }
 
 /** Único popup comercial do mapa GIS (Disponibilizar / Reservar / Vender / Editar Venda). */
@@ -1585,19 +1604,24 @@ function LotPopupContent({
   );
 
   const txtSegments = useMemo(() => {
-    const table = getOfficialLotSegmentTable(
-      lot as Record<string, unknown>,
-      null,
-    );
-    return table.validRows.map((row) => ({
-      segment_index: row.segment_index,
-      distance: row.distanceM as number,
-      distanceLabel: row.distancia,
-      classification: row.classification,
-      isCurve:
-        row.distancia.includes("curva") ||
-        row.distancia.includes("Curva R="),
-    }));
+    try {
+      const table = getOfficialLotSegmentTable(
+        lot as Record<string, unknown>,
+        null,
+      );
+      return table.validRows.map((row) => ({
+        segment_index: row.segment_index,
+        distance: row.distanceM as number,
+        distanceLabel: row.distancia,
+        classification: row.classification,
+        isCurve:
+          row.distancia.includes("curva") ||
+          row.distancia.includes("Curva R="),
+      }));
+    } catch (err) {
+      console.warn('GIS_POPUP_TXT_SEGMENTS_FALLBACK', lot?.id, err);
+      return [];
+    }
   }, [lot]);
 
   const area = (officialMeasures.area ?? Number(lot.area)) || 0;
@@ -2439,21 +2463,25 @@ export default function GISMap({
     if (!assistedConfrontationMode && !insertConfrontantTool) return map;
     for (const lot of displayLots) {
       if (!lot?.id) continue;
-      map.set(
-        lot.id,
-        buildLotConfrontationAudit(
-          {
-            ...lot,
-            block_name: lot.block,
-            segments_json: lot.segments_json,
-            front_segment_index: lot.front_segment_index,
-            front_street_name: lot.frontStreetName,
-          },
+      try {
+        map.set(
           lot.id,
-          blocksForConfront,
-          streetGuides,
-        ),
-      );
+          buildLotConfrontationAudit(
+            blockWithGeometryFromBounds({
+              ...lot,
+              block_name: lot.block,
+              segments_json: lot.segments_json,
+              front_segment_index: lot.front_segment_index,
+              front_street_name: lot.frontStreetName,
+            }),
+            lot.id,
+            blocksForConfront,
+            streetGuides,
+          ),
+        );
+      } catch (err) {
+        console.warn('CONFRONTATION_AUDIT_SKIP', lot.id, err);
+      }
     }
     return map;
   }, [
@@ -2468,15 +2496,26 @@ export default function GISMap({
     if (!lot?.id) return;
     setFrontCorrectSaving(true);
     try {
-      const block: Record<string, unknown> = {
+      const blockBase = blockWithGeometryFromBounds({
         ...lot,
-        front_segment_index: segmentIndex,
         segments_json: lot.segments_json,
         number: lot.number,
         area: lot.area,
         front_street_name: lot.frontStreetName,
         front_street_id: lot.frontStreetId,
         source_import: lot.source_import ?? "TXT_CIVIL3D",
+      });
+      const persistedFrontIdx = normalizeFrontSegmentIndexForPersist(
+        blockBase,
+        segmentIndex,
+      );
+      if (persistedFrontIdx < 0) {
+        throw new Error('Índice de frente inválido');
+      }
+      const block: Record<string, unknown> = {
+        ...blockBase,
+        front_segment_index: persistedFrontIdx,
+        front_source: 'manual',
       };
       const measures = getOfficialLotMeasurements(block, lot.number);
       const streetMatch = resolveFrontStreetGuideForLot(block, streetGuides);
@@ -2484,6 +2523,7 @@ export default function GISMap({
       console.log("FRONT_SEGMENT_MANUAL_LOCKED", {
         lotId: lot.id,
         segmentIndex,
+        persistedFrontIdx,
         measures,
         streetMatch,
       });
@@ -2491,20 +2531,20 @@ export default function GISMap({
         supabase,
         lot.id,
         measures,
-        segmentIndex,
+        persistedFrontIdx,
         streetFields,
       );
       console.log("BLOCK_FRONT_SAVE_OK", {
         blockId: lot.id,
         lotNumber: lot.number,
-        frontSegmentIndex: segmentIndex,
+        frontSegmentIndex: persistedFrontIdx,
         frontSourcePersisted,
         patch,
       });
       const updatedDisplay = resolveLotFrontStreetDisplay(
         {
           ...lot,
-          front_segment_index: segmentIndex,
+          front_segment_index: persistedFrontIdx,
           front_street_name: streetFields.front_street_name,
           front_street_id: streetFields.front_street_id,
           front_street_type: streetFields.front_street_type,
@@ -2520,7 +2560,7 @@ export default function GISMap({
                 Fundo: measures.fundo,
                 "Lado Dir.": measures.ladoDireito,
                 "Lado Esq.": measures.ladoEsquerdo,
-                front_segment_index: segmentIndex,
+                front_segment_index: persistedFrontIdx,
                 front_source: frontSourcePersisted ? "manual" : l.front_source,
                 frontStreetName: streetFields.front_street_name,
                 frontStreetId: streetFields.front_street_id,
@@ -2956,22 +2996,37 @@ export default function GISMap({
                 }
               }
 
-              const lotMeasures = resolveLotMeasuresFromBlock({
-                ...b,
-                frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
-                Fundo:
-                  b.Fundo !== null && b.Fundo !== undefined
-                    ? b.Fundo
-                    : dimsFromGeo?.fundo,
-                "Lado Dir.":
-                  b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
-                    ? b["Lado Dir."]
-                    : dimsFromGeo?.ladoDireito,
-                "Lado Esq.":
-                  b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
-                    ? b["Lado Esq."]
-                    : dimsFromGeo?.ladoEsquerdo,
-              });
+              let lotMeasures: ReturnType<typeof resolveLotMeasuresFromBlock>;
+              try {
+                lotMeasures = resolveLotMeasuresFromBlock({
+                  ...b,
+                  frente: b.frente !== null ? b.frente : dimsFromGeo?.frente,
+                  Fundo:
+                    b.Fundo !== null && b.Fundo !== undefined
+                      ? b.Fundo
+                      : dimsFromGeo?.fundo,
+                  "Lado Dir.":
+                    b["Lado Dir."] !== null && b["Lado Dir."] !== undefined
+                      ? b["Lado Dir."]
+                      : dimsFromGeo?.ladoDireito,
+                  "Lado Esq.":
+                    b["Lado Esq."] !== null && b["Lado Esq."] !== undefined
+                      ? b["Lado Esq."]
+                      : dimsFromGeo?.ladoEsquerdo,
+                });
+              } catch (measureErr) {
+                console.warn('GISMAP_LOT_MEASURES_SKIP', b.number, measureErr);
+                lotMeasures = {
+                  sides: {
+                    frente: parseBlockSideLength(b.frente),
+                    fundo: parseBlockSideLength(b.Fundo ?? b.fundo),
+                    ladoDireito: parseBlockSideLength(b["Lado Dir."]),
+                    ladoEsquerdo: parseBlockSideLength(b["Lado Esq."]),
+                  },
+                  chanfre: null,
+                  curva: null,
+                };
+              }
 
               return {
                 id: b.id,

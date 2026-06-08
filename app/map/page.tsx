@@ -72,6 +72,7 @@ import {
   type StreetGuideLineInput,
 } from '@/lib/lotStreetFrontDetection';
 import { persistBlockPatch } from '@/lib/blockFrontPersist';
+import { normalizeFrontSegmentIndexForPersist } from '@/lib/resolveFrontStreetGuide';
 import {
   blockHasTxtOfficialData,
   buildBlockMatchKey,
@@ -792,13 +793,18 @@ export default function MapPage() {
              }
 
              if (!block.id) continue;
+             const persistedFrontIdx = normalizeFrontSegmentIndexForPersist(
+               block,
+               frontSegmentIndex,
+             );
              const row: Record<string, unknown> = {
                  id: block.id,
                  frente: finalFrente,
                  fundo: finalFundo,
                  lado_direito: finalDir,
                  lado_esquerdo: finalEsq,
-                 front_segment_index: frontSegmentIndex,
+                 front_segment_index:
+                   persistedFrontIdx >= 0 ? persistedFrontIdx : frontSegmentIndex,
                  front_source: bestGuide ? 'street_guide' : 'auto',
              };
              if (bestGuide) {

@@ -451,7 +451,7 @@ export function mergeCurvedSegments(segments: Segment[], tolerance: number = 20)
             let isCollinear = Math.min(diff, diffRev) <= tolerance;
 
             if (isCollinear && currentGroup[currentGroup.length - 1].originalIndex === segments[segments.length - 1].originalIndex) {
-                merged[0] = createMergedSegment([...currentGroup, ...firstGroup]);
+                merged[0] = createMergedSegment([...currentGroup, firstGroup]);
             } else {
                 merged.push(createMergedSegment(currentGroup));
             }

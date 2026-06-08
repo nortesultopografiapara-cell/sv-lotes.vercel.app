@@ -79,6 +79,13 @@ export function confrontantsFromAudit(
 
 export type PropagationScope = 'lot_only' | 'quadra_same_side' | 'aligned_nearby';
 
+function ensureSideIndexArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (x): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0,
+  );
+}
+
 function sameQuadra(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
@@ -98,7 +105,7 @@ function sideRoleForSegmentIndex(
     'ladoDireito',
     'ladoEsquerdo',
   ] as SideRole[]) {
-    const segIdxList = sides[role];
+    const segIdxList = ensureSideIndexArray(sides[role]);
     for (const mergedIdx of segIdxList) {
       if (mergedIdx === segmentIndex) return role;
     }
@@ -249,7 +256,7 @@ export function officialSegmentIndexesForSide(
     streetGuides,
   );
   const out: number[] = [];
-  for (const mergedIdx of sides[side]) {
+  for (const mergedIdx of ensureSideIndexArray(sides[side])) {
     const seg = segments[mergedIdx];
     if (!seg) continue;
     out.push(

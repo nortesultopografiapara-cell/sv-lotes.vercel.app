@@ -782,8 +782,12 @@ function classifySidesByFrontAnchor(
       ? [backSegmentIndex]
       : [];
 
-  let ladoDireitoIndexes = [...splitA.lateral];
-  let ladoEsquerdoIndexes = [...splitB.lateral];
+  let ladoDireitoIndexes = Array.isArray(splitA.lateral)
+    ? [...splitA.lateral]
+    : [];
+  let ladoEsquerdoIndexes = Array.isArray(splitB.lateral)
+    ? [...splitB.lateral]
+    : [];
   if (ladoDireitoIndexes.length === 0 && ladoEsquerdoIndexes.length > 0) {
     ladoDireitoIndexes = [...ladoEsquerdoIndexes];
     ladoEsquerdoIndexes = [];
@@ -1404,7 +1408,10 @@ export function classifySidesByTxtRingPaths(
       for (let guard = 0; guard < numGroups; guard++) {
         g = (g + step + numGroups) % numGroups;
         if (g === toGroup) break;
-        indexes.push(...withoutChanfre(groups[g].segmentIndexes));
+        const groupIdxs = Array.isArray(groups[g]?.segmentIndexes)
+          ? groups[g].segmentIndexes
+          : [];
+        indexes.push(...withoutChanfre(groupIdxs));
       }
       return indexes;
     };
@@ -1644,10 +1651,10 @@ function computeChanfreFromTxtPaths(
 
   const used = new Set([
     frontIdx,
-    ...pathA.indexes,
-    ...pathB.indexes,
-    ...pathFundo.indexes,
-    ...chanfreByDeflection,
+    ...(Array.isArray(pathA.indexes) ? pathA.indexes : []),
+    ...(Array.isArray(pathB.indexes) ? pathB.indexes : []),
+    ...(Array.isArray(pathFundo.indexes) ? pathFundo.indexes : []),
+    ...(Array.isArray(chanfreByDeflection) ? chanfreByDeflection : []),
   ]);
   const chanfreSegs: number[] = [];
 
@@ -1770,48 +1777,53 @@ export function getOfficialLotMeasurements(
   lotNumber?: unknown,
 ): OfficialLotMeasures {
   const label = lotNumber ?? block.number ?? block.id ?? "?";
-  const segments = parseOfficialSegmentsFromBlock(block, label);
+  try {
+    const segments = parseOfficialSegmentsFromBlock(block, label);
 
-  console.log("LOT_SEGMENTS", label, segments);
+    console.log("LOT_SEGMENTS", label, segments);
 
-  let result = buildMeasuresFromSegments(block, segments, label);
+    let result = buildMeasuresFromSegments(block, segments, label);
 
-  if (result) {
-    console.log("LOT_FRONT_SEGMENT", label, result.frontSegmentIndex);
-  }
-
-  if (result && failsMeasureSanity(result)) {
-    console.log("LOT_MEASURE_SANITY_FAIL", label, result);
-    const strictSegments = sanitizeOfficialSegments(
-      parseOfficialSegmentsFromBlock(block, label),
-      label,
-    );
-    const retry = buildMeasuresFromSegments(block, strictSegments, label);
-    if (retry && !failsMeasureSanity(retry)) {
-      result = retry;
-    } else {
-      const fallback = parseColumnFallback(block);
-      if (!failsMeasureSanity(fallback)) {
-        console.log("LOT_OFFICIAL_MEASURES", label, fallback, "(columns after sanity)");
-        return { ...fallback, segmentCount: segments.length };
-      }
-      result = {
-        ...result,
-        ladoDireito: null,
-        ladoEsquerdo: null,
-        perimeter: null,
-      };
+    if (result) {
+      console.log("LOT_FRONT_SEGMENT", label, result.frontSegmentIndex);
     }
-  }
 
-  if (!result) {
-    const fallback = parseColumnFallback(block);
-    console.log("LOT_OFFICIAL_MEASURES", label, fallback);
-    return fallback;
-  }
+    if (result && failsMeasureSanity(result)) {
+      console.log("LOT_MEASURE_SANITY_FAIL", label, result);
+      const strictSegments = sanitizeOfficialSegments(
+        parseOfficialSegmentsFromBlock(block, label),
+        label,
+      );
+      const retry = buildMeasuresFromSegments(block, strictSegments, label);
+      if (retry && !failsMeasureSanity(retry)) {
+        result = retry;
+      } else {
+        const fallback = parseColumnFallback(block);
+        if (!failsMeasureSanity(fallback)) {
+          console.log("LOT_OFFICIAL_MEASURES", label, fallback, "(columns after sanity)");
+          return { ...fallback, segmentCount: segments.length };
+        }
+        result = {
+          ...result,
+          ladoDireito: null,
+          ladoEsquerdo: null,
+          perimeter: null,
+        };
+      }
+    }
 
-  console.log("LOT_OFFICIAL_MEASURES", label, result);
-  return result;
+    if (!result) {
+      const fallback = parseColumnFallback(block);
+      console.log("LOT_OFFICIAL_MEASURES", label, fallback);
+      return fallback;
+    }
+
+    console.log("LOT_OFFICIAL_MEASURES", label, result);
+    return result;
+  } catch (err) {
+    console.warn("LOT_OFFICIAL_MEASURES_SAFE_FALLBACK", label, err);
+    return parseColumnFallback(block);
+  }
 }
 
 /** Fallback legado: associa frente por comprimento (não usar se já há rua identificada). */
@@ -2093,6 +2105,7 @@ export function getOfficialLotSegmentTable(
 
   if (segments.length < 2) return empty;
 
+  try {
   const measures = getOfficialLotMeasurements(lot, label);
   let frontIdx = measures.frontSegmentIndex ?? 0;
   if (frontIdx >= segments.length) frontIdx = 0;
@@ -2175,6 +2188,10 @@ export function getOfficialLotSegmentTable(
     ignoredInvalidCount,
     measures,
   };
+  } catch (err) {
+    console.warn("LOT_SEGMENT_TABLE_SAFE_FALLBACK", label, err);
+    return empty;
+  }
 }
 
 /** Rótulos de distância por aresta para desenho da prancha (índice = segment_index). */

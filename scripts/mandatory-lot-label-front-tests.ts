@@ -9,11 +9,17 @@ import {
   type LatLngPair,
 } from '../lib/lotLabelPosition';
 import {
+  buildManualFrontPatch,
   formatSupabaseError,
   isUnknownColumnError,
 } from '../lib/blockFrontPersist';
-import { resolveFrontWgs84RingIndex } from '../lib/resolveFrontStreetGuide';
-import { extractSegments } from '../utils/calculateLotDimensions';
+import { officialSegmentIndexesForSide } from '../lib/assistedConfrontation';
+import { getOfficialLotMeasurements } from '../lib/officialLotMeasurements';
+import {
+  normalizeFrontSegmentIndexForPersist,
+  resolveFrontWgs84RingIndex,
+} from '../lib/resolveFrontStreetGuide';
+import { extractSegments, mergeCurvedSegments } from '../utils/calculateLotDimensions';
 
 const BASE_EAST = 50000;
 const BASE_NORTH = 7500000;
@@ -285,4 +291,98 @@ function testSupabaseErrorFormat() {
 }
 
 testSupabaseErrorFormat();
+
+/** Fluxo salvar frente / confrontação: nunca lança "is not iterable". */
+function testSaveFrontFlowNeverThrowsIterable() {
+  const east0 = BASE_EAST;
+  const north0 = BASE_NORTH;
+  const widthM = 12;
+  const depthM = 25;
+  const bounds = syntheticLotBounds(east0, north0, widthM, depthM);
+  const segments_json = utmRectSegments(east0, north0, widthM, depthM);
+  const ringLngLat = bounds.map(([lat, lng]) => [lng, lat]);
+  ringLngLat.push(ringLngLat[0]);
+  const block: Record<string, unknown> = {
+    id: 'save-front-test',
+    number: '12',
+    source_import: 'TXT_CIVIL3D',
+    bounds,
+    segments_json,
+    front_street_name: 'RUA 01',
+    front_source: 'manual',
+    geometry: { type: 'Polygon', coordinates: [ringLngLat] },
+  };
+
+  for (const rawIdx of [0, 1, 2, 3, 99]) {
+    let measures;
+    try {
+      const persisted = normalizeFrontSegmentIndexForPersist(block, rawIdx);
+      assert(persisted >= 0, `índice ${rawIdx} deve normalizar`);
+      measures = getOfficialLotMeasurements(
+        { ...block, front_segment_index: persisted },
+        '12',
+      );
+      buildManualFrontPatch(measures, persisted, { includeFrontSource: true });
+      officialSegmentIndexesForSide(
+        { ...block, front_segment_index: persisted },
+        [block],
+        'frente',
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`save-front rawIdx=${rawIdx} lançou: ${msg}`);
+    }
+    assert(measures != null, `medidas para índice ${rawIdx}`);
+  }
+  console.log('OK testSaveFrontFlowNeverThrowsIterable');
+}
+
+/** sides[role] inválido não derruba officialSegmentIndexesForSide. */
+function testOfficialSegmentIndexesWithCorruptSides() {
+  const block: Record<string, unknown> = {
+    id: 'corrupt-sides',
+    number: '1',
+    segments_json: utmRectSegments(BASE_EAST, BASE_NORTH, 10, 20),
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-48.49, -1.455],
+          [-48.4895, -1.455],
+          [-48.4895, -1.4545],
+          [-48.49, -1.4545],
+          [-48.49, -1.455],
+        ],
+      ],
+    },
+  };
+  try {
+    const idxs = officialSegmentIndexesForSide(block, [block], 'frente');
+    assert(Array.isArray(idxs), 'deve retornar array');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`officialSegmentIndexesForSide: ${msg}`);
+  }
+  console.log('OK testOfficialSegmentIndexesWithCorruptSides');
+}
+
+/** mergeCurvedSegments: fechamento colinear do anel não lança "is not iterable". */
+function testMergeCurvedSegmentsClosingColinear() {
+  const ring = rectBounds().map(([lat, lng]) => [lng, lat]);
+  ring.push(ring[0]);
+  const segments = extractSegments(ring, []);
+  let merged;
+  try {
+    merged = mergeCurvedSegments(segments, 20);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`mergeCurvedSegments lançou: ${msg}`);
+  }
+  assert(merged.length >= 1, 'deve fundir segmentos do retângulo');
+  console.log('OK testMergeCurvedSegmentsClosingColinear');
+}
+
+testSaveFrontFlowNeverThrowsIterable();
+testOfficialSegmentIndexesWithCorruptSides();
+testMergeCurvedSegmentsClosingColinear();
 console.log('mandatory-lot-label-front-tests: all passed');

@@ -613,8 +613,12 @@ export function resolveSideSegmentIndexes(
         (lat.p1[1] + lat.p2[1]) / 2 - (front.p1[1] + front.p2[1]) / 2;
       const cross = fx * my - fy * mx;
       if (cross < 0) {
-        pathDireito = ringPaths.pathB.indexes;
-        pathEsquerdo = ringPaths.pathA.indexes;
+        pathDireito = Array.isArray(ringPaths.pathB?.indexes)
+          ? ringPaths.pathB.indexes
+          : [];
+        pathEsquerdo = Array.isArray(ringPaths.pathA?.indexes)
+          ? ringPaths.pathA.indexes
+          : [];
       }
     }
   }
