@@ -76,6 +76,7 @@ import {
   resolveFrontStreetGuideForLot,
   resolveLotFrontStreetDisplay,
   streetFieldsFromGuideMatch,
+  utmSegmentIndexFromWgs84RingEdge,
 } from "@/lib/resolveFrontStreetGuide";
 import {
   applyManualConfrontantToBlock,
@@ -2560,6 +2561,7 @@ export default function GISMap({
       segments_json: lot.segments_json,
       front_segment_index: lot.front_segment_index,
     };
+    const segmentIndex = utmSegmentIndexFromWgs84RingEdge(block, edgeIndex);
     for (const role of [
       "frente",
       "fundo",
@@ -2571,12 +2573,12 @@ export default function GISMap({
         blocksForConfront,
         role,
       );
-      if (idxs.includes(edgeIndex)) {
+      if (idxs.includes(segmentIndex)) {
         side = role;
         break;
       }
     }
-    openConfrontationEditor(lot, side, [edgeIndex]);
+    openConfrontationEditor(lot, side, [segmentIndex]);
   };
 
   const handleConfirmConfrontant = async (

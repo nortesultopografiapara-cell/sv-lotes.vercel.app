@@ -419,6 +419,42 @@ export function wgs84RingEdgeForMergedSegmentIndex(
   return typeof oi === 'number' && oi >= 0 ? oi : mergedIdx;
 }
 
+/**
+ * segment_index UTM oficial a partir de aresta WGS84 (clique no mapa).
+ * Inverso de matchMergedSegmentIndexToWgs84RingEdge → originalIndex.
+ */
+export function utmSegmentIndexFromWgs84RingEdge(
+  block: Record<string, unknown>,
+  ringEdgeIndex: number,
+  allPolysUtm: number[][][] = [],
+  maxMidpointDistM = 2,
+): number {
+  if (ringEdgeIndex < 0) return -1;
+
+  const official = getOfficialConfrontationRing(block);
+  if (!official.ok) return ringEdgeIndex;
+
+  const coords = utmRingToClosedCoords(official.ring);
+  if (coords.length < 4) return ringEdgeIndex;
+
+  const merged = mergeCurvedSegments(
+    extractUtmSegmentsLocal(coords, allPolysUtm),
+    20,
+  );
+  if (!merged.length) return ringEdgeIndex;
+
+  const mergedIdx = matchMergedSegmentIndexToWgs84RingEdge(
+    block,
+    merged,
+    ringEdgeIndex,
+    maxMidpointDistM,
+  );
+  if (mergedIdx < 0) return ringEdgeIndex;
+
+  const oi = merged[mergedIdx]?.originalIndex;
+  return typeof oi === 'number' && oi >= 0 ? oi : mergedIdx;
+}
+
 function resolveFromWgs84FrontEdge(
   block: Record<string, unknown>,
   streetGuides: StreetGuideConfrontInput[],

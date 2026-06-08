@@ -10,6 +10,7 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
+  officialSegmentIndexesForSide,
 } from '../lib/assistedConfrontation';
 import {
   getSegmentConfrontantRecord,
@@ -17,6 +18,7 @@ import {
 import { buildSideConfrontantsWithSources } from '../lib/lotSegmentConfrontation';
 import {
   matchMergedSegmentIndexToWgs84RingEdge,
+  utmSegmentIndexFromWgs84RingEdge,
   wgs84RingEdgeForMergedSegmentIndex,
 } from '../lib/resolveFrontStreetGuide';
 
@@ -210,9 +212,38 @@ function testSegmentEdgeWgs84UtmAlignment() {
   console.log('OK testSegmentEdgeWgs84UtmAlignment');
 }
 
+/** P2-2 / R-01: clique WGS84 → segment_index UTM para confrontação no mapa. */
+function testWgs84EdgeToUtmSegmentIndexForConfrontPick() {
+  const b = blockWithGeometry('e1', '01', 50000, 7500000);
+  const wgsEdge = 0;
+  const utmIdx = utmSegmentIndexFromWgs84RingEdge(b, wgsEdge);
+  assert(utmIdx === 0, `WGS84 ${wgsEdge} → UTM ${utmIdx}, esperado 0`);
+
+  const frenteIdxs = officialSegmentIndexesForSide(b, [b], 'frente');
+  assert(frenteIdxs.includes(utmIdx), `frente deve incluir ${utmIdx}`);
+
+  const dirIdxs = officialSegmentIndexesForSide(b, [b], 'ladoDireito');
+  const esqIdxs = officialSegmentIndexesForSide(b, [b], 'ladoEsquerdo');
+  assert(!dirIdxs.includes(wgsEdge) || dirIdxs.includes(utmIdx), 'dir usa UTM');
+  assert(dirIdxs.includes(1), 'lado direito UTM 1');
+  assert(esqIdxs.includes(3), 'lado esquerdo UTM 3');
+
+  const wgsDir = wgs84RingEdgeForMergedSegmentIndex(
+    b,
+    buildSideConfrontantsWithSources(b, 'e1', [], [b], []).segments,
+    1,
+  );
+  const utmFromDir = utmSegmentIndexFromWgs84RingEdge(b, wgsDir);
+  assert(utmFromDir === 1, `aresta dir WGS84 ${wgsDir} → UTM ${utmFromDir}`);
+  assert(dirIdxs.includes(utmFromDir), 'pick lateral mapeia ao lado direito');
+
+  console.log('OK testWgs84EdgeToUtmSegmentIndexForConfrontPick');
+}
+
 testPendingLabel();
 testManualOverridesAuto();
 testAuditPendingFundo();
 testManualNotClearedByRebuild();
 testSegmentEdgeWgs84UtmAlignment();
+testWgs84EdgeToUtmSegmentIndexForConfrontPick();
 console.log('mandatory-assisted-confrontation-tests: all passed');
