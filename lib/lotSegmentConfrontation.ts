@@ -3,6 +3,9 @@
  */
 
 import {
+  concatDistinctSideConfrontants,
+  dominantConfrontantSource,
+  isPendingConfrontantLabel,
   normalizeConfrontantLabel,
   PENDING_CONFRONTANT_LABEL,
   type ConfrontantSource,
@@ -185,7 +188,7 @@ function extractUtmSegments(
   return segments;
 }
 
-function buildAllPolysUtm(
+export function buildAllPolysUtm(
   blocks: Record<string, unknown>[],
   project?: Record<string, unknown> | null,
 ): number[][][] {
@@ -371,8 +374,9 @@ function trySequenceConfrontant(
   return labelFromBlock(neighbor);
 }
 
-function bestConfrontantForSide(
-  segmentIndexes: number[],
+/** Confrontante de um único segmento UTM fundido (mergedIdx). */
+export function resolveConfrontantForMergedSegment(
+  mergedIdx: number,
   segments: Segment[],
   candidateBlocks: Record<string, unknown>[],
   targetBlock: Record<string, unknown>,
@@ -380,56 +384,61 @@ function bestConfrontantForSide(
   allPolysUtm: number[][][],
   project?: Record<string, unknown> | null,
   side?: 'ladoEsquerdo' | 'ladoDireito',
-  streetGuides: Record<string, unknown>[] = [],
+  streetGuides: StreetGuideConfrontInput[] = [],
 ): SideConfrontantResult {
-  const fromSegment = segmentConfrontantForSide(
-    targetBlock,
-    segmentIndexes,
-    segments,
-  );
-  if (fromSegment) return fromSegment;
+  const target = segments[mergedIdx];
+  if (!target) {
+    return {
+      label: PENDING_CONFRONTANT_LABEL,
+      source: 'undefined',
+      pending: true,
+    };
+  }
+
+  const oi =
+    typeof target.originalIndex === 'number' ? target.originalIndex : mergedIdx;
+  const rec = getSegmentConfrontantRecord(targetBlock, oi);
+  if (rec?.confrontant && !isPendingConfrontantLabel(rec.confrontant)) {
+    return {
+      label: rec.confrontant,
+      source: rec.confrontant_source || 'manual',
+      pending: false,
+    };
+  }
+
+  if (streetGuides.length > 0) {
+    const fromStreet = confrontantFromStreetGuidesForUtmSegment(
+      target,
+      targetBlock,
+      streetGuides,
+    );
+    if (fromStreet?.label) {
+      return {
+        label: normalizeConfrontantLabel(fromStreet.label),
+        source: 'street_guide',
+        pending: false,
+      };
+    }
+  }
 
   let bestLabel = '—';
   let bestScore = -Infinity;
 
-  if (streetGuides.length > 0) {
-    for (const idx of segmentIndexes) {
-      const target = segments[idx];
-      if (!target) continue;
-      const fromStreet = confrontantFromStreetGuidesForUtmSegment(
-        target,
-        targetBlock,
-        streetGuides as StreetGuideConfrontInput[],
-      );
-      if (fromStreet?.label) {
-        return {
-          label: normalizeConfrontantLabel(fromStreet.label),
-          source: 'street_guide',
-          pending: false,
-        };
-      }
-    }
-  }
-
   const tryPass = (maxPerp: number) => {
-    for (const idx of segmentIndexes) {
-      const target = segments[idx];
-      if (!target) continue;
-      for (const block of candidateBlocks) {
-        const id = String(block.id || '');
-        if (!id || id === targetBlockId) continue;
-        if (!sameQuadra(block, targetBlock)) continue;
-        const s = scoreSegmentAgainstBlock(
-          target,
-          block,
-          allPolysUtm,
-          project,
-          maxPerp,
-        );
-        if (s == null || s <= bestScore) continue;
-        bestScore = s;
-        bestLabel = labelFromBlock(block);
-      }
+    for (const block of candidateBlocks) {
+      const id = String(block.id || '');
+      if (!id || id === targetBlockId) continue;
+      if (!sameQuadra(block, targetBlock)) continue;
+      const s = scoreSegmentAgainstBlock(
+        target,
+        block,
+        allPolysUtm,
+        project,
+        maxPerp,
+      );
+      if (s == null || s <= bestScore) continue;
+      bestScore = s;
+      bestLabel = labelFromBlock(block);
     }
   };
 
@@ -440,7 +449,7 @@ function bestConfrontantForSide(
     const seq = trySequenceConfrontant(
       targetBlock,
       side,
-      segmentIndexes,
+      [mergedIdx],
       segments,
       candidateBlocks,
       allPolysUtm,
@@ -456,11 +465,7 @@ function bestConfrontantForSide(
   }
 
   if (bestLabel !== '—' && /^lote\s/i.test(bestLabel)) {
-    return {
-      label: bestLabel,
-      source: 'neighbor',
-      pending: false,
-    };
+    return { label: bestLabel, source: 'neighbor', pending: false };
   }
 
   if (bestLabel !== '—') {
@@ -475,6 +480,61 @@ function bestConfrontantForSide(
     label: PENDING_CONFRONTANT_LABEL,
     source: 'undefined',
     pending: true,
+  };
+}
+
+/** Agrega confrontantes distintos de todos os segmentos de um lado. */
+export function confrontantsForSide(
+  segmentIndexes: number[],
+  segments: Segment[],
+  candidateBlocks: Record<string, unknown>[],
+  targetBlock: Record<string, unknown>,
+  targetBlockId: string,
+  allPolysUtm: number[][][],
+  project?: Record<string, unknown> | null,
+  side?: 'ladoEsquerdo' | 'ladoDireito',
+  streetGuides: StreetGuideConfrontInput[] = [],
+): SideConfrontantResult {
+  if (!segmentIndexes.length) {
+    return {
+      label: PENDING_CONFRONTANT_LABEL,
+      source: 'undefined',
+      pending: true,
+    };
+  }
+
+  const labels: string[] = [];
+  const sources: ConfrontantSource[] = [];
+
+  for (const idx of segmentIndexes) {
+    const r = resolveConfrontantForMergedSegment(
+      idx,
+      segments,
+      candidateBlocks,
+      targetBlock,
+      targetBlockId,
+      allPolysUtm,
+      project,
+      side,
+      streetGuides,
+    );
+    if (r.pending || isPendingConfrontantLabel(r.label)) continue;
+    labels.push(r.label);
+    sources.push(r.source);
+  }
+
+  if (!labels.length) {
+    return {
+      label: PENDING_CONFRONTANT_LABEL,
+      source: 'undefined',
+      pending: true,
+    };
+  }
+
+  return {
+    label: concatDistinctSideConfrontants(labels),
+    source: dominantConfrontantSource(sources),
+    pending: false,
   };
 }
 
@@ -651,7 +711,7 @@ export function buildSideConfrontantsWithSources(
     segments,
     guides,
   );
-  const fundoR = bestConfrontantForSide(
+  const fundoR = confrontantsForSide(
     sides.fundo,
     segments,
     blocks,
@@ -662,7 +722,7 @@ export function buildSideConfrontantsWithSources(
     undefined,
     guides,
   );
-  const dirR = bestConfrontantForSide(
+  const dirR = confrontantsForSide(
     sides.ladoDireito,
     segments,
     blocks,
@@ -673,7 +733,7 @@ export function buildSideConfrontantsWithSources(
     'ladoDireito',
     guides,
   );
-  const esqR = bestConfrontantForSide(
+  const esqR = confrontantsForSide(
     sides.ladoEsquerdo,
     segments,
     blocks,

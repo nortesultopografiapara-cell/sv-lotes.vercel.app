@@ -14,11 +14,17 @@ import {
 } from '@/lib/segmentConfrontantPersist';
 import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
 import {
+  buildAllPolysUtm,
   buildSideConfrontantsWithSources,
+  resolveConfrontantForMergedSegment,
   resolveSideSegmentIndexes,
   type SideRole,
 } from '@/lib/lotSegmentConfrontation';
-import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
+import { isPendingConfrontantLabel } from '@/lib/confrontantTypes';
+import {
+  asStreetGuideList,
+  type StreetGuideConfrontInput,
+} from '@/lib/streetGuideConfrontation';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 import { wgs84RingEdgeForMergedSegmentIndex } from '@/lib/resolveFrontStreetGuide';
 
@@ -150,6 +156,9 @@ export function buildLotConfrontationAudit(
     };
   }
 
+  const allPolysUtm = buildAllPolysUtm(allBlocks, project);
+  const guides = asStreetGuideList(streetGuides);
+
   const segmentEdges: SegmentEdgeAudit[] = [];
   const n = built.segments.length;
   for (let mergedIdx = 0; mergedIdx < n; mergedIdx++) {
@@ -158,20 +167,36 @@ export function buildLotConfrontationAudit(
       typeof seg?.originalIndex === 'number' ? seg.originalIndex : mergedIdx;
     const manual = getSegmentConfrontantRecord(blockResolved, oi);
     const role = sideRoleForSegmentIndex(mergedIdx, built.sides);
-    const sideAudit = role ? sideEntries[role] : null;
+    const lateralSide =
+      role === 'ladoDireito' || role === 'ladoEsquerdo' ? role : undefined;
+    const perSegment = resolveConfrontantForMergedSegment(
+      mergedIdx,
+      built.segments,
+      allBlocks,
+      blockResolved,
+      blockId,
+      allPolysUtm,
+      project,
+      lateralSide,
+      guides,
+    );
 
     let status: SegmentEdgeAudit['status'] = 'resolved';
-    let source: ConfrontantSource = sideAudit?.source ?? 'auto';
-    let confrontant = manual?.confrontant ?? sideAudit?.label ?? null;
+    let source: ConfrontantSource = perSegment.source;
+    let confrontant =
+      manual?.confrontant ??
+      (perSegment.pending || isPendingConfrontantLabel(perSegment.label)
+        ? null
+        : perSegment.label);
 
     if (manual) {
       status = 'manual';
       source = 'manual';
-    } else if (sideAudit?.pending) {
+    } else if (perSegment.pending) {
       status = 'pending';
       source = 'undefined';
       confrontant = null;
-    } else if (sideAudit?.source === 'undefined') {
+    } else if (perSegment.source === 'undefined') {
       status = 'conflict';
     }
 

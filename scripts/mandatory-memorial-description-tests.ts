@@ -4,7 +4,10 @@
  */
 
 import { formatAzimuthDms } from '../lib/azimuthFormat';
-import { PENDING_CONFRONTANT_LABEL } from '../lib/confrontantTypes';
+import {
+  concatDistinctSideConfrontants,
+  PENDING_CONFRONTANT_LABEL,
+} from '../lib/confrontantTypes';
 import {
   buildMemorialSegments,
   getOfficialSegmentTableForMemorial,
@@ -30,6 +33,13 @@ import {
 } from '../lib/assistedConfrontation';
 import { buildMemorialSideSummaryFromAudit } from '../lib/memorial/memorialConfrontants';
 import { applyConfrontantToSegmentRows } from '../lib/segmentConfrontantPersist';
+import { confrontantsForSide } from '../lib/lotSegmentConfrontation';
+import { mergeCurvedSegments } from '../utils/calculateLotDimensions';
+import {
+  planarBearingDeg,
+  planarDistanceM,
+  utmRingToClosedCoords,
+} from '../lib/officialConfrontationRing';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -262,6 +272,103 @@ function testSigefGrouping() {
   console.log('OK testSigefGrouping');
 }
 
+function testConcatDistinctSideConfrontants() {
+  assert(
+    concatDistinctSideConfrontants(['Lote 03', 'Lote 05', 'Área Institucional']) ===
+      'Lote 03 / Lote 05 / Área Institucional',
+    'concatena distintos',
+  );
+  assert(
+    concatDistinctSideConfrontants(['Lote 03', 'lote 03', 'Lote 05']) ===
+      'Lote 03 / Lote 05',
+    'remove duplicados',
+  );
+  console.log('OK testConcatDistinctSideConfrontants');
+}
+
+/** QA-005: lateral com múltiplos confrontantes preserva todos no resumo. */
+function testMultiConfrontantsPerSide() {
+  const base = lotBlock('12', 4);
+  const rows1 = applyConfrontantToSegmentRows(
+    base,
+    [1],
+    'Lote 03',
+    'lot',
+    'manual',
+  );
+  const rows2 = applyConfrontantToSegmentRows(
+    { ...base, segments_json: rows1 },
+    [2],
+    'Área Institucional',
+    'institutional_area',
+    'manual',
+  );
+  const block = { ...base, segments_json: rows2 };
+
+  const ring: [number, number][] = [
+    [BASE_EAST, BASE_NORTH],
+    [BASE_EAST + 12, BASE_NORTH],
+    [BASE_EAST + 12, BASE_NORTH + 25],
+    [BASE_EAST, BASE_NORTH + 25],
+  ];
+  const coords = utmRingToClosedCoords(ring);
+  const raw: import('../utils/calculateLotDimensions').Segment[] = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    raw.push({
+      p1,
+      p2,
+      length: planarDistanceM(p1, p2),
+      azimuth: planarBearingDeg(p1, p2),
+      originalIndex: i,
+      isExternal: true,
+    });
+  }
+  const segments = mergeCurvedSegments(raw, 20);
+
+  const sideResult = confrontantsForSide(
+    [1, 2],
+    segments,
+    [block],
+    block,
+    block.id as string,
+    [coords],
+    null,
+    'ladoDireito',
+    [],
+  );
+  assert(
+    sideResult.label === 'Lote 03 / Área Institucional',
+    `lado multi: ${sideResult.label}`,
+  );
+  assert(!sideResult.pending, 'lado resolvido');
+
+  const audit = buildLotConfrontationAudit(block, block.id as string, [block], []);
+  const sheetSides = confrontantsFromAudit(audit);
+  assert(sheetSides.ladoDireito === 'Lote 03', `dir ${sheetSides.ladoDireito}`);
+  assert(
+    sheetSides.fundo === 'Área Institucional',
+    `fundo ${sheetSides.fundo}`,
+  );
+
+  const seg1 = audit.segmentEdges.find((e) => e.segmentIndex === 1);
+  const seg2 = audit.segmentEdges.find((e) => e.segmentIndex === 2);
+  assert(seg1?.confrontant === 'Lote 03', `seg1 ${seg1?.confrontant}`);
+  assert(
+    seg2?.confrontant === 'Área Institucional',
+    `seg2 ${seg2?.confrontant}`,
+  );
+
+  const memorialSegs = buildMemorialSegments(block, block.id as string, [block], []);
+  const m1 = memorialSegs.find((s) => s.segmentIndex === 1);
+  const m2 = memorialSegs.find((s) => s.segmentIndex === 2);
+  assert(m1?.confrontant === 'Lote 03', `mem seg1 ${m1?.confrontant}`);
+  assert(m2?.confrontant === 'Área Institucional', `mem seg2 ${m2?.confrontant}`);
+
+  console.log('OK testMultiConfrontantsPerSide');
+}
+
 /** QA-006: prancha PDF deve usar os mesmos confrontantes do memorial (auditoria). */
 function testLotSheetConfrontantsMatchMemorialAudit() {
   const base = lotBlock('12', 4, {
@@ -334,6 +441,8 @@ testAzimuthDms();
 testBrFormats();
 testVertexLabels();
 testSigefGrouping();
+testConcatDistinctSideConfrontants();
+testMultiConfrontantsPerSide();
 testLotSheetConfrontantsMatchMemorialAudit();
 testAuditMatchesPopupSides();
 console.log('mandatory-memorial-description-tests: all passed');

@@ -65,6 +65,44 @@ export function normalizeConfrontantLabel(
   return t;
 }
 
+/** Junta confrontantes distintos de um mesmo lado (ordem preservada). */
+export function concatDistinctSideConfrontants(
+  labels: Iterable<string>,
+  separator = ' / ',
+): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of labels) {
+    const t = String(raw ?? '').trim();
+    if (!t || isPendingConfrontantLabel(t)) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out.length > 0 ? out.join(separator) : PENDING_CONFRONTANT_LABEL;
+}
+
+const SOURCE_PRIORITY: Record<ConfrontantSource, number> = {
+  manual: 5,
+  street_guide: 4,
+  neighbor: 3,
+  project_guide: 2,
+  auto: 1,
+  undefined: 0,
+};
+
+/** Fonte dominante ao agregar vários segmentos do mesmo lado. */
+export function dominantConfrontantSource(
+  sources: ConfrontantSource[],
+): ConfrontantSource {
+  if (!sources.length) return 'undefined';
+  return sources.reduce(
+    (best, s) => (SOURCE_PRIORITY[s] > SOURCE_PRIORITY[best] ? s : best),
+    'undefined' as ConfrontantSource,
+  );
+}
+
 export function sourceDisplayLabel(source: ConfrontantSource): string {
   switch (source) {
     case 'manual':
