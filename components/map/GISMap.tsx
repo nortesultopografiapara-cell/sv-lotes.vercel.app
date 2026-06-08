@@ -931,10 +931,19 @@ function LotLabelsOverlay({
   const labelPositions = useMemo(() => {
     const mapPos = new Map<string, LatLngPair>();
     for (const item of items) {
-      mapPos.set(
-        item.id,
-        computeLotLabelPosition(item.bounds, item.lot),
-      );
+      try {
+        const pos = computeLotLabelPosition(item.bounds, item.lot);
+        if (
+          Number.isFinite(pos[0]) &&
+          Number.isFinite(pos[1])
+        ) {
+          mapPos.set(item.id, pos);
+          continue;
+        }
+      } catch {
+        // centróide por lote — não derruba o mapa
+      }
+      mapPos.set(item.id, polygonCentroid(item.bounds));
     }
     return mapPos;
   }, [items]);

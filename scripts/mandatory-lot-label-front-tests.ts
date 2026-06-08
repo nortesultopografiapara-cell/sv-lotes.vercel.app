@@ -197,6 +197,32 @@ function testUtmFrontSegmentIndexEastSide() {
 }
 
 /** Com índice salvo, não recalcula frente — label permanece na aresta indicada. */
+function testNeverThrowsAndReturnsFinitePosition() {
+  const bounds = rectBounds();
+  const cases: Array<{ name: string; lot?: Parameters<typeof computeOfficialLotLabelPosition>[1] }> = [
+    { name: 'garbage segments_json', lot: { frontSegmentIndex: 1, segments_json: { bad: true } } },
+    { name: 'NaN vertex bounds', lot: { frontSegmentIndex: 0 } },
+    { name: 'huge front index', lot: { frontSegmentIndex: 999 } },
+  ];
+  for (const c of cases) {
+    let pos: [number, number] = [0, 0];
+    try {
+      const inputBounds =
+        c.name === 'NaN vertex bounds'
+          ? ([[NaN, NaN], ...bounds] as typeof bounds)
+          : bounds;
+      pos = computeOfficialLotLabelPosition(inputBounds, c.lot);
+    } catch (e) {
+      throw new Error(`${c.name} não deve lançar: ${(e as Error).message}`);
+    }
+    assert(
+      Number.isFinite(pos[0]) && Number.isFinite(pos[1]),
+      `${c.name} deve retornar coordenadas finitas`,
+    );
+  }
+  console.log('OK testNeverThrowsAndReturnsFinitePosition');
+}
+
 function testStoredFrontIndexWithoutStreetName() {
   const bounds = rectBounds();
   const pos = computeOfficialLotLabelPosition(bounds, {
@@ -236,6 +262,7 @@ function testVisibilityIndependent() {
 testFrontIndexZero();
 testLots12_13_19_20_34_indexMapping();
 testUtmFrontSegmentIndexEastSide();
+testNeverThrowsAndReturnsFinitePosition();
 testStoredFrontIndexWithoutStreetName();
 testVisibilityIndependent();
 

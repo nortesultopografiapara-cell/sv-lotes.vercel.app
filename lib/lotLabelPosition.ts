@@ -27,6 +27,27 @@ export type LotLabelPositionInput = {
 
 const LABEL_INWARD_OFFSET_METERS = 2.5;
 
+function isFiniteCoord(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n);
+}
+
+function isValidLatLngPair(pair: LatLngPair | undefined): pair is LatLngPair {
+  return (
+    Array.isArray(pair) &&
+    pair.length >= 2 &&
+    isFiniteCoord(pair[0]) &&
+    isFiniteCoord(pair[1])
+  );
+}
+
+function sanitizeBounds(bounds: LatLngPair[]): LatLngPair[] {
+  return bounds.filter(isValidLatLngPair);
+}
+
+function isValidLabelPosition(pos: LatLngPair | null | undefined): pos is LatLngPair {
+  return isValidLatLngPair(pos ?? undefined);
+}
+
 function boundsToLngLatRing(bounds: LatLngPair[]): number[][] {
   const ring = bounds.map(([lat, lng]) => [lng, lat] as [number, number]);
   if (ring.length < 2) return ring;
@@ -39,14 +60,21 @@ function boundsToLngLatRing(bounds: LatLngPair[]): number[][] {
 }
 
 function polygonCentroid(bounds: LatLngPair[]): LatLngPair {
-  if (bounds.length === 0) return [0, 0];
+  const safe = sanitizeBounds(bounds);
+  if (safe.length === 0) return [0, 0];
   let lat = 0;
   let lng = 0;
-  for (const [la, ln] of bounds) {
+  for (const [la, ln] of safe) {
     lat += la;
     lng += ln;
   }
-  return [lat / bounds.length, lng / bounds.length];
+  return [lat / safe.length, lng / safe.length];
+}
+
+function safeLabelFallback(bounds: LatLngPair[]): LatLngPair {
+  const safe = sanitizeBounds(bounds);
+  if (safe.length === 0) return [0, 0];
+  return polygonCentroid(safe);
 }
 
 function distanceMeters(a: LatLngPair, b: LatLngPair): number {
@@ -175,7 +203,8 @@ function labelBlockFromBounds(
   lot?: LotLabelPositionInput | null,
   storedIdx?: number | null,
 ): Record<string, unknown> {
-  const ringLngLat = bounds.map(([lat, lng]) => [lng, lat]);
+  const safeBounds = sanitizeBounds(bounds);
+  const ringLngLat = safeBounds.map(([lat, lng]) => [lng, lat]);
   if (ringLngLat.length >= 3) {
     const first = ringLngLat[0];
     const last = ringLngLat[ringLngLat.length - 1];
@@ -184,7 +213,7 @@ function labelBlockFromBounds(
     }
   }
   return {
-    bounds,
+    bounds: safeBounds,
     segments_json: lot?.segments_json ?? null,
     front_segment_index: storedIdx ?? lot?.frontSegmentIndex ?? null,
     geometry: {
@@ -192,6 +221,14 @@ function labelBlockFromBounds(
       coordinates: [ringLngLat],
     },
   };
+}
+
+function hasSegmentsJson(lot?: LotLabelPositionInput | null): boolean {
+  const raw = lot?.segments_json;
+  if (raw == null) return false;
+  if (Array.isArray(raw)) return raw.length > 0;
+  if (typeof raw === 'string') return raw.trim().length > 2;
+  return typeof raw === 'object';
 }
 
 function edgeMidFromBounds(
@@ -250,16 +287,13 @@ function hasOfficialFrontStreet(lot?: LotLabelPositionInput | null): boolean {
   );
 }
 
-/**
- * Posição do label: prioridade front_segment_index normalizado → frente+rua → detectFront → centróide.
- * Com front_segment_index salvo, não recalcula frente (detectFront).
- */
-export function computeOfficialLotLabelPosition(
+function computeOfficialLotLabelPositionCore(
   bounds: LatLngPair[],
   lot?: LotLabelPositionInput | null,
 ): LatLngPair {
-  const centroid = polygonCentroid(bounds);
-  if (bounds.length < 3) return centroid;
+  const safeBounds = sanitizeBounds(bounds);
+  const centroid = polygonCentroid(safeBounds);
+  if (safeBounds.length < 3) return centroid;
 
   const storedIdx =
     lot?.frontSegmentIndex != null && Number.isFinite(Number(lot.frontSegmentIndex))
@@ -267,25 +301,31 @@ export function computeOfficialLotLabelPosition(
       : null;
 
   if (storedIdx != null && storedIdx >= 0) {
-    const block = labelBlockFromBounds(bounds, lot, storedIdx);
-    const ringIdx = resolveFrontWgs84RingIndex(block);
-    if (ringIdx >= 0) {
-      const fromRing = labelPositionFromRingEdge(bounds, block, ringIdx);
-      if (fromRing) return fromRing;
+    const block = labelBlockFromBounds(safeBounds, lot, storedIdx);
+
+    if (hasSegmentsJson(lot)) {
+      const ringIdx = resolveFrontWgs84RingIndex(block);
+      if (ringIdx >= 0) {
+        const fromRing = labelPositionFromRingEdge(safeBounds, block, ringIdx);
+        if (isValidLabelPosition(fromRing)) return fromRing;
+      }
     }
 
-    const fromRaw = labelPositionFromRingEdge(bounds, block, storedIdx);
-    if (fromRaw) return fromRaw;
+    const fromRaw = labelPositionFromRingEdge(safeBounds, block, storedIdx);
+    if (isValidLabelPosition(fromRaw)) return fromRaw;
 
-    const ring = boundsToLngLatRing(bounds);
+    const ring = boundsToLngLatRing(safeBounds);
     const segments = extractSegments(ring, []);
     const frontSeg = resolveFrontSegmentFromIndex(segments, storedIdx);
-    if (frontSeg) return labelPositionFromSegment(bounds, frontSeg);
+    if (frontSeg) {
+      const fromSeg = labelPositionFromSegment(safeBounds, frontSeg);
+      if (isValidLabelPosition(fromSeg)) return fromSeg;
+    }
 
     return centroid;
   }
 
-  const ring = boundsToLngLatRing(bounds);
+  const ring = boundsToLngLatRing(safeBounds);
   const segments = extractSegments(ring, []);
   if (segments.length === 0) return centroid;
 
@@ -302,5 +342,24 @@ export function computeOfficialLotLabelPosition(
     frontSeg = detectFront(segments);
   }
 
-  return labelPositionFromSegment(bounds, frontSeg);
+  const fromSeg = labelPositionFromSegment(safeBounds, frontSeg);
+  return isValidLabelPosition(fromSeg) ? fromSeg : centroid;
+}
+
+/**
+ * Posição do label: prioridade front_segment_index normalizado → frente+rua → detectFront → centróide.
+ * Com front_segment_index salvo, não recalcula frente (detectFront).
+ * Nunca lança — fallback seguro para centróide.
+ */
+export function computeOfficialLotLabelPosition(
+  bounds: LatLngPair[],
+  lot?: LotLabelPositionInput | null,
+): LatLngPair {
+  try {
+    const pos = computeOfficialLotLabelPositionCore(bounds, lot);
+    if (isValidLabelPosition(pos)) return pos;
+  } catch {
+    // fallback abaixo
+  }
+  return safeLabelFallback(bounds);
 }
