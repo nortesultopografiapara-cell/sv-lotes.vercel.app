@@ -2072,29 +2072,19 @@ function DrawStreetInteraction({
   active,
   points,
   setPoints,
-  onSaveLine,
 }: {
   active: boolean;
   points: L.LatLng[];
   setPoints: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
-  onSaveLine: (line: L.LatLng[]) => void;
 }) {
   const map = useMapEvents({
     click(e) {
       if (!active) return;
-      setPoints((prev) => {
-        const next = [...prev, e.latlng];
-        if (next.length === 2) {
-          onSaveLine(next);
-          return [];
-        }
-        return next;
-      });
+      setPoints((prev) => [...prev, e.latlng]);
     },
   });
 
   useEffect(() => {
-     
     if (!active) setPoints([]);
     if (active) {
       map.getContainer().style.cursor = "crosshair";
@@ -2107,6 +2097,17 @@ function DrawStreetInteraction({
 
   return (
     <>
+      {points.length >= 2 && (
+        <Polyline
+          positions={points.map((p) => [p.lat, p.lng] as [number, number])}
+          pathOptions={{
+            color: "#10b981",
+            weight: 3,
+            dashArray: "6, 8",
+            opacity: 0.9,
+          }}
+        />
+      )}
       {points.map((p, idx) => (
         <CircleMarker
           key={`dp-${idx}`}
@@ -2313,6 +2314,7 @@ export default function GISMap({
   streetGuidesVisible = true,
   drawStreetActive = false,
   onStreetLineDrawn,
+  onDrawStreetCancel,
   onEditStreetGuide,
   onDeleteStreetGuide,
   labelsMinZoom,
@@ -2338,6 +2340,8 @@ export default function GISMap({
   streetGuidesVisible?: boolean;
   drawStreetActive?: boolean;
   onStreetLineDrawn?: (latlngs: L.LatLng[]) => void;
+  /** Abandona o desenho em andamento e desativa a ferramenta. */
+  onDrawStreetCancel?: () => void;
   onEditStreetGuide?: (guide: Record<string, unknown>) => void;
   onDeleteStreetGuide?: (id: string) => void;
   /** Rótulos permanentes só quando zoom >= valor (ex.: 17 no dashboard). */
@@ -4161,20 +4165,49 @@ export default function GISMap({
           active={drawStreetActive}
           points={drawStreetPoints}
           setPoints={setDrawStreetPoints}
-          onSaveLine={(line) => {
-            if (onStreetLineDrawn) onStreetLineDrawn(line);
-          }}
         />
       </MapContainer>
 
-      {/* Floating Panel for Measurement/Drawing */}
+      {/* Painel — Linha de Rua (polilinha) */}
       {drawStreetActive && (
-        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-emerald-600/90 backdrop-blur-sm border border-emerald-500 rounded-xl md:rounded-full px-4 py-2 shadow-lg flex fade-in-up w-auto min-w-[200px] text-center">
-          <span className="text-[11px] md:text-sm font-bold text-white tracking-wider mx-auto">
+        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-emerald-600/95 backdrop-blur-sm border border-emerald-500 rounded-xl px-4 py-3 shadow-lg flex flex-col gap-2 fade-in-up w-auto min-w-[240px] max-w-[min(92vw,420px)]">
+          <span className="text-[11px] md:text-sm font-bold text-white tracking-wide text-center">
             {drawStreetPoints.length === 0
-              ? "Clique no início do logradouro"
-              : "Clique no fim do logradouro — abrirá o cadastro"}
+              ? "Clique no mapa para adicionar vértices da rua"
+              : `${drawStreetPoints.length} ponto${drawStreetPoints.length === 1 ? "" : "s"} — clique para continuar`}
           </span>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              disabled={drawStreetPoints.length < 2}
+              onClick={() => {
+                if (drawStreetPoints.length < 2) return;
+                if (onStreetLineDrawn) onStreetLineDrawn([...drawStreetPoints]);
+                setDrawStreetPoints([]);
+              }}
+              className="px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-bold bg-white text-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-50 transition-colors"
+            >
+              Finalizar Rua
+            </button>
+            <button
+              type="button"
+              disabled={drawStreetPoints.length < 1}
+              onClick={() => setDrawStreetPoints((prev) => prev.slice(0, -1))}
+              className="px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-semibold bg-emerald-800/60 text-white border border-emerald-400/50 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-800 transition-colors"
+            >
+              Desfazer último ponto
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDrawStreetPoints([]);
+                onDrawStreetCancel?.();
+              }}
+              className="px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-semibold bg-transparent text-white border border-white/40 hover:bg-white/10 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 

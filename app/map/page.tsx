@@ -2555,6 +2555,7 @@ export default function MapPage() {
             streetGuidesVisible={streetGuidesVisible}
             drawStreetActive={drawStreetActive}
             onStreetLineDrawn={handleStreetLineDrawn}
+            onDrawStreetCancel={() => setDrawStreetActive(false)}
             onEditStreetGuide={(guide) =>
               setStreetGuideModal({ mode: 'edit', guide })
             }

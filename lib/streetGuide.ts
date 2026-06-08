@@ -2,6 +2,8 @@
  * Logradouros (street_guides) — tipos, rótulos e payload de persistência.
  */
 
+import { flattenLineStringCoordinates } from '@/lib/streetGuideConfrontation';
+
 export const STREET_TYPES = [
   'Rua',
   'Avenida',
@@ -108,15 +110,60 @@ export function normalizeStreetGuideRow(
   };
 }
 
+/** Normaliza coordenadas [lng, lat] de uma polilinha (mín. 2 vértices). */
+export function normalizeStreetGuideLineCoordinates(
+  coords: number[][],
+): number[][] | null {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const valid = coords.filter(
+    (c) =>
+      Array.isArray(c) &&
+      c.length >= 2 &&
+      Number.isFinite(c[0]) &&
+      Number.isFinite(c[1]),
+  );
+  if (valid.length < 2) return null;
+  return valid;
+}
+
+/** Primeiro e último vértice (compat. ruas antigas com 2 pontos). */
+export function streetGuideLineEndpoints(coords: number[][]): {
+  start: [number, number];
+  end: [number, number];
+} | null {
+  const line = normalizeStreetGuideLineCoordinates(coords);
+  if (!line) return null;
+  return {
+    start: [line[0][0], line[0][1]],
+    end: [line[line.length - 1][0], line[line.length - 1][1]],
+  };
+}
+
+/** Lê polilinha de geometry / geometry_geojson (2 ou N vértices). */
+export function readStreetGuideLineCoordinates(
+  g: StreetGuideRecord | Record<string, unknown>,
+): number[][] | null {
+  const geo =
+    (g.geometry_geojson as StreetGuideRecord['geometry_geojson']) ||
+    (g.geometry as StreetGuideRecord['geometry']) ||
+    null;
+  if (!geo?.coordinates) return null;
+  return flattenLineStringCoordinates(geo.coordinates);
+}
+
 export function buildStreetGuideInsertPayload(params: {
   tenantId: string | null;
   projectId: string;
   form: StreetGuideFormValues;
   coordinates: number[][];
 }): Record<string, unknown> {
+  const normalized = normalizeStreetGuideLineCoordinates(params.coordinates);
+  if (!normalized) {
+    throw new Error('Geometria da linha inválida (mínimo 2 vértices).');
+  }
   const geojson = {
     type: 'LineString',
-    coordinates: params.coordinates,
+    coordinates: normalized,
   };
   const widthNum = params.form.width
     ? Number(String(params.form.width).replace(',', '.'))

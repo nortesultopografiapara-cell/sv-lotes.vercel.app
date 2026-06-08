@@ -9,10 +9,21 @@ import {
   isUnknownColumnError,
 } from '../lib/blockFrontPersist';
 import {
+  detectFrontEdgeIndexFromGuides,
+  lngLatEdgeAtRingIndex,
   resolveFrontStreetGuideForLot,
   resolveLotFrontStreetDisplay,
   resolveFrenteConfrontantLabel,
 } from '../lib/resolveFrontStreetGuide';
+import { flattenLineStringCoordinates } from '../lib/streetGuideConfrontation';
+import { scoreSegmentStreetProximity } from '../lib/lotStreetFrontDetection';
+import {
+  buildStreetGuideInsertPayload,
+  emptyStreetGuideForm,
+  normalizeStreetGuideLineCoordinates,
+  readStreetGuideLineCoordinates,
+  streetGuideLineEndpoints,
+} from '../lib/streetGuide';
 
 const BASE_EAST = 50000;
 const BASE_NORTH = 7500000;
@@ -245,6 +256,127 @@ function testFrenteLabelFromProximity() {
   console.log('OK testFrenteLabelFromProximity');
 }
 
+/** Polilinha com 4 vértices ao longo da frente sul do lote (vértices intermediários). */
+function multiPointGuideAlongSouth(
+  id: string,
+  name: string,
+  east0: number,
+  north0: number,
+  widthM: number,
+  offsetNorthM: number,
+) {
+  const relEast = east0 - BASE_EAST;
+  const relNorth = north0 - BASE_NORTH + offsetNorthM;
+  const coords = [
+    toLngLat(relEast - 2, relNorth),
+    toLngLat(relEast + widthM * 0.33, relNorth),
+    toLngLat(relEast + widthM * 0.66, relNorth),
+    toLngLat(relEast + widthM + 2, relNorth),
+  ];
+  return {
+    id,
+    name,
+    type: 'Rua',
+    active: true,
+    geometry: { type: 'LineString', coordinates: coords },
+  };
+}
+
+function testMultiPointStreetGuidePayloadAndRead() {
+  const coords = [
+    toLngLat(0, -0.25),
+    toLngLat(6, -0.25),
+    toLngLat(12, -0.25),
+    toLngLat(12, 12 - 0.25),
+  ];
+  const normalized = normalizeStreetGuideLineCoordinates(coords);
+  assert(normalized != null && normalized.length === 4, 'normaliza 4 vértices');
+  const flat = flattenLineStringCoordinates(coords);
+  assert(flat != null && flat.length === 4, 'flatten mantém 4 vértices');
+  const endpoints = streetGuideLineEndpoints(coords);
+  assert(endpoints != null, 'endpoints existem');
+  assert(
+    Math.abs(endpoints!.start[0] - coords[0][0]) < 1e-9,
+    'start = primeiro vértice',
+  );
+  assert(
+    Math.abs(endpoints!.end[0] - coords[3][0]) < 1e-9,
+    'end = último vértice',
+  );
+  const payload = buildStreetGuideInsertPayload({
+    tenantId: 't1',
+    projectId: 'p1',
+    form: emptyStreetGuideForm(),
+    coordinates: coords,
+  });
+  const saved = (payload.geometry_geojson as { coordinates: number[][] })
+    .coordinates;
+  assert(saved.length === 4, 'payload salva 4 coordenadas');
+  const readBack = readStreetGuideLineCoordinates(payload);
+  assert(readBack != null && readBack.length === 4, 'leitura retorna polilinha');
+  console.log('OK testMultiPointStreetGuidePayloadAndRead');
+}
+
+function testMultiPointStreetGuideFrontOnMiddleSegment() {
+  const east0 = BASE_EAST;
+  const north0 = BASE_NORTH;
+  const widthM = 12;
+  const block = lotBlock('41', 0, east0, north0);
+  const guides = [
+    multiPointGuideAlongSouth(
+      'g-poly',
+      'POLIGONAL CENTRAL',
+      east0,
+      north0,
+      widthM,
+      -0.25,
+    ),
+  ];
+  const detected = detectFrontEdgeIndexFromGuides(block, guides, 1.0);
+  assert(detected != null, 'detecção deve achar aresta próxima à polilinha');
+  assert(detected!.edgeIndex === 0, 'frente sul (índice 0) deve ser detectada');
+  const match = resolveFrontStreetGuideForLot(block, guides);
+  assert(match != null, 'lote deve achar guia polilinha');
+  assert(
+    /POLIGONAL/i.test(match!.streetGuideName),
+    `esperado POLIGONAL CENTRAL, obteve ${match!.streetGuideName}`,
+  );
+  const edge = lngLatEdgeAtRingIndex(block, 0);
+  assert(edge != null, 'aresta sul do lote');
+  const guideCoords = guides[0].geometry.coordinates;
+  const score = scoreSegmentStreetProximity(
+    edge!.p1,
+    edge!.p2,
+    guideCoords,
+  );
+  assert(
+    score.minDistM < 1.0,
+    `frente deve usar segmentos intermediários da polilinha (${score.minDistM}m)`,
+  );
+  assert(guideCoords.length >= 4, 'guia com 4+ vértices');
+  console.log('OK testMultiPointStreetGuideFrontOnMiddleSegment');
+}
+
+function testLegacyTwoPointGuideStillWorks() {
+  const east0 = BASE_EAST;
+  const north0 = BASE_NORTH;
+  const legacy = guideAlongEdge(
+    'g-legacy',
+    'CENTRAL 01',
+    east0,
+    north0,
+    east0 + 12,
+    north0,
+    -0.25,
+  );
+  const coords = readStreetGuideLineCoordinates(legacy);
+  assert(coords != null && coords.length === 2, 'rua antiga com 2 pontos');
+  const block = lotBlock('01', 0, east0, north0);
+  const match = resolveFrontStreetGuideForLot(block, [legacy]);
+  assert(match != null, 'compatibilidade ruas antigas');
+  console.log('OK testLegacyTwoPointGuideStillWorks');
+}
+
 testCentral01OnLot01();
 testCentral02OnLot23();
 testNoGuideReturnsNull();
@@ -252,4 +384,7 @@ testPopupPrefersSavedName();
 testConfrontationUsesSavedFrontStreet();
 testSchemaFallbackDetectsMissingColumn();
 testFrenteLabelFromProximity();
+testMultiPointStreetGuidePayloadAndRead();
+testMultiPointStreetGuideFrontOnMiddleSegment();
+testLegacyTwoPointGuideStillWorks();
 console.log('mandatory-front-street-name-tests: all passed');
