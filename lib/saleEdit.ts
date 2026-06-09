@@ -155,7 +155,7 @@ export async function loadSaleEditContext(
 
   const paymentType = String(sale.payment_type || 'À vista');
   const lotPrice = Number(sale.lot_price ?? sale.agreed_price ?? 0) || 0;
-  const discountVal = Number(sale.discount_value ?? sale.discount ?? 0) || 0;
+  const discountVal = Number(sale.discount ?? sale.discount_value ?? 0) || 0;
 
   let downPaymentDue =
     (sale.down_payment_due_date as string) ||
@@ -362,7 +362,6 @@ export async function updateSaleFromEdit(
     agreed_price: data.final_value,
     lot_price: finalPrice,
     discount: Number(data.discount_value) || 0,
-    discount_value: Number(data.discount_value) || 0,
     total_value: data.final_value,
     final_value: data.final_value,
     payment_type: data.payment_type,

@@ -8,7 +8,12 @@ import { Loader2, Download, Printer, FileDown } from 'lucide-react';
 import { Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
 
-
+function saleDiscountAmount(sale: {
+  discount?: number | null;
+  discount_value?: number | null;
+}): number {
+  return Number(sale.discount ?? sale.discount_value ?? 0) || 0;
+}
 
 export function ContractGenerator({ sale }: { sale: any }) {
    const [company, setCompany] = useState<any>(null);
@@ -122,7 +127,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                         new Paragraph({ text: "CONDIÇÕES DE PAGAMENTO", heading: HeadingLevel.HEADING_2 }),
                         new Paragraph({ text: `Valor Total: R$ ${Number(sale.lot_value || sale.agreed_price).toFixed(2)}` }),
                         new Paragraph({ text: `Forma de Pagamento: ${sale.payment_type || 'À vista'}` }),
-                        new Paragraph({ text: `Desconto: R$ ${Number(sale.discount_value || 0).toFixed(2)}` }),
+                        new Paragraph({ text: `Desconto: R$ ${saleDiscountAmount(sale).toFixed(2)}` }),
                         new Paragraph({ text: `Valor Final a Pagar: R$ ${Number(sale.final_value || sale.agreed_price).toFixed(2)}` }),
                         new Paragraph({ text: `Entrada: R$ ${Number(sale.down_payment || 0).toFixed(2)}` }),
                         new Paragraph({ text: `Quantidade de Parcelas: ${sale.installments_count || 1}` }),
@@ -252,7 +257,7 @@ export function ContractGenerator({ sale }: { sale: any }) {
                            </p>
                            <ul className="list-disc pl-8 mb-2">
                                <li><strong>Valor Base:</strong> {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.lot_value || sale.agreed_price)}</li>
-                               <li><strong>Desconto Concedido:</strong> {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.discount_value || 0)}</li>
+                               <li><strong>Desconto Concedido:</strong> {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saleDiscountAmount(sale))}</li>
                                <li><strong>Sinal / Entrada:</strong> {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.down_payment || 0)} com vencimento em {sale.down_payment_due_date ? new Date(sale.down_payment_due_date + 'T12:00:00Z').toLocaleDateString('pt-BR') : '___/___/____'}</li>
                                {sale.payment_type === 'Parcelado' && (
                                    <li><strong>Saldo Restante:</strong> a ser pago em {sale.installments_count || 1} parcela(s) mensais e sucessivas de {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sale.installment_value || 0)}, vencendo a primeira em {sale.first_installment_due_date ? new Date(sale.first_installment_due_date + 'T12:00:00Z').toLocaleDateString('pt-BR') : '___/___/____'}.</li>
