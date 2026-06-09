@@ -20,6 +20,12 @@ import {
 } from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
+import {
+  buildSaleEditFinancePayloads,
+  isPaidFinanceReceipt,
+  planFullFinanceRecalc,
+  planPartialFinanceRecalc,
+} from '@/lib/saleEditFinanceRecalc';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 
@@ -46,10 +52,7 @@ export type SaleEditLoadedContext = {
   customerBefore: Record<string, unknown>;
 };
 
-function isPaidReceipt(r: { status?: string | null; paid_at?: string | null }) {
-  const st = String(r.status || '').toLowerCase();
-  return st === 'pago' || st === 'paid' || Boolean(r.paid_at);
-}
+const isPaidReceipt = isPaidFinanceReceipt;
 
 export async function loadSaleEditContext(
   supabase: SupabaseClient,
@@ -210,108 +213,6 @@ export async function loadSaleEditContext(
   };
 }
 
-function buildFinancePayloads(
-  tenantId: string,
-  saleId: string,
-  customerId: string,
-  brokerId: string | null,
-  lot: { id: string; project_id?: string | null },
-  data: LotFormConfirmPayload,
-): Record<string, unknown>[] {
-  const financePayloads: Record<string, unknown>[] = [];
-  const pmtType = data.payment_type || 'À vista';
-  const grossDownPayment = Number(data.down_payment) || 0;
-  const reservationSignalPaid = Number(data.reservation_signal_paid) || 0;
-  let downPayment = grossDownPayment;
-  const instCount = Math.max(1, Number(data.installments_count) || 1);
-  const fValue = data.final_value;
-
-  if (reservationSignalPaid > 0 && pmtType === 'Parcelado') {
-    downPayment = Math.max(0, grossDownPayment - reservationSignalPaid);
-  }
-
-  if (pmtType === 'À vista') {
-    financePayloads.push({
-      tenant_id: tenantId,
-      company_id: tenantId,
-      sale_id: saleId,
-      customer_id: customerId,
-      broker_id: brokerId,
-      project_id: lot.project_id || null,
-      block_id: lot.id,
-      installment_number: 1,
-      amount: fValue,
-      due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
-      status: 'pendente',
-    });
-  } else if (pmtType === 'Parcelado') {
-    let currentInst = 1;
-    if (reservationSignalPaid > 0) {
-      financePayloads.push({
-        tenant_id: tenantId,
-        company_id: tenantId,
-        sale_id: saleId,
-        customer_id: customerId,
-        broker_id: brokerId,
-        project_id: lot.project_id || null,
-        block_id: lot.id,
-        installment_number: -1,
-        amount: reservationSignalPaid,
-        due_date:
-          data.signal_date ||
-          data.down_payment_due_date ||
-          new Date().toISOString().split('T')[0],
-        status: 'pago',
-        paid_at: new Date().toISOString(),
-      });
-    }
-    if (downPayment > 0 && data.down_payment_due_date) {
-      financePayloads.push({
-        tenant_id: tenantId,
-        company_id: tenantId,
-        sale_id: saleId,
-        customer_id: customerId,
-        broker_id: brokerId,
-        project_id: lot.project_id || null,
-        block_id: lot.id,
-        installment_number: 0,
-        amount: downPayment,
-        due_date: data.down_payment_due_date,
-        status: 'pendente',
-      });
-    }
-    if (data.first_installment_due_date) {
-      const totalRestante = Math.max(0, fValue - downPayment);
-      const parValue = Math.round((totalRestante / instCount) * 100) / 100;
-      let accumulated = 0;
-      let cDate = new Date(data.first_installment_due_date + 'T12:00:00Z');
-      for (let i = 0; i < instCount; i++) {
-        const isLast = i === instCount - 1;
-        const currentAmount = isLast
-          ? Number((totalRestante - accumulated).toFixed(2))
-          : parValue;
-        accumulated += currentAmount;
-        financePayloads.push({
-          tenant_id: tenantId,
-          company_id: tenantId,
-          sale_id: saleId,
-          customer_id: customerId,
-          broker_id: brokerId,
-          project_id: lot.project_id || null,
-          block_id: lot.id,
-          installment_number: currentInst++,
-          amount: currentAmount,
-          due_date: cDate.toISOString().split('T')[0],
-          status: 'pendente',
-        });
-        cDate.setMonth(cDate.getMonth() + 1);
-      }
-    }
-  }
-
-  return financePayloads;
-}
-
 export async function updateSaleFromEdit(
   supabase: SupabaseClient,
   params: {
@@ -380,15 +281,24 @@ export async function updateSaleFromEdit(
     throw new Error(`Erro ao atualizar venda: ${saleUpdErr.message}`);
   }
 
-  const { data: receipts } = await supabase
+  const { data: receipts, error: receiptsErr } = await supabase
     .from('finance_receipts')
     .select('id, status, paid_at, installment_number, amount')
     .eq('sale_id', saleId);
 
-  const paid = (receipts || []).filter(isPaidReceipt);
-  const pending = (receipts || []).filter((r) => !isPaidReceipt(r));
+  if (receiptsErr) {
+    throw new Error(`Erro ao carregar parcelas: ${receiptsErr.message}`);
+  }
 
-  const newPayloads = buildFinancePayloads(
+  const receiptRows = (receipts || []) as Array<{
+    id: string;
+    status?: string | null;
+    paid_at?: string | null;
+    installment_number: number | string;
+    amount?: number | string | null;
+  }>;
+
+  const newPayloads = buildSaleEditFinancePayloads(
     tenantId,
     saleId,
     customerId,
@@ -399,14 +309,16 @@ export async function updateSaleFromEdit(
 
   let financeChanged = false;
 
+  const paid = receiptRows.filter(isPaidReceipt);
+
   if (paid.length > 0) {
-    const paidTotal = paid.reduce((s, r) => s + Number(r.amount || 0), 0);
-    const newPendingTotal = newPayloads
-      .filter((p) => p.status === 'pendente')
-      .reduce((s, p) => s + Number(p.amount || 0), 0);
-    const expectedTotal = data.final_value;
-    const diff = Math.abs(paidTotal + newPendingTotal - expectedTotal);
-    if (diff > 0.05 && (pending.length > 0 || newPendingTotal > 0)) {
+    const plan = planPartialFinanceRecalc(
+      receiptRows,
+      newPayloads,
+      data.final_value,
+    );
+
+    if (plan.needsConfirm) {
       const ok =
         typeof window !== 'undefined' &&
         window.confirm(
@@ -419,50 +331,70 @@ export async function updateSaleFromEdit(
 
     if (
       data.payment_type === 'À vista' &&
-      paid.length === 1 &&
-      pending.length === 0
+      plan.paid.length === 1 &&
+      plan.pending.length === 0
     ) {
-      const paidRec = paid[0];
-      await supabase
+      const paidRec = plan.paid[0];
+      const { error: updErr } = await supabase
         .from('finance_receipts')
         .update({
           amount: data.final_value,
           due_date: data.down_payment_due_date || paidRec.due_date,
         })
         .eq('id', paidRec.id);
+      if (updErr) {
+        throw new Error(`Erro ao atualizar parcela paga: ${updErr.message}`);
+      }
       financeChanged = true;
     } else {
-      if (pending.length > 0) {
-        const pendingIds = pending.map((r) => r.id);
-        await supabase.from('finance_receipts').delete().in('id', pendingIds);
+      if (plan.toDeleteIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from('finance_receipts')
+          .delete()
+          .in('id', plan.toDeleteIds);
+        if (delErr) {
+          throw new Error(`Erro ao remover parcelas pendentes: ${delErr.message}`);
+        }
         financeChanged = true;
       }
-      const paidNumbers = new Set(paid.map((r) => r.installment_number));
-      const toInsert = newPayloads.filter(
-        (p) =>
-          p.status === 'pendente' &&
-          !paidNumbers.has(p.installment_number as number),
-      );
-      if (toInsert.length > 0) {
+      if (plan.toInsert.length > 0) {
         const { error: finErr } = await supabase
           .from('finance_receipts')
-          .insert(toInsert);
-        if (finErr) throw new Error(`Erro ao recriar parcelas: ${finErr.message}`);
+          .insert(plan.toInsert);
+        if (finErr) {
+          throw new Error(`Erro ao recriar parcelas: ${finErr.message}`);
+        }
         financeChanged = true;
       }
     }
     console.log('EDIT_SALE_FINANCE_PARTIAL_RECALC', {
       saleId,
-      paidKept: paid.length,
+      paidKept: plan.paid.length,
+      deleted: plan.toDeleteIds.length,
+      inserted: plan.toInsert.length,
     });
   } else {
-    await supabase.from('finance_receipts').delete().eq('sale_id', saleId);
-    if (newPayloads.length > 0) {
-      const { error: finErr } = await supabase.from('finance_receipts').insert(newPayloads);
-      if (finErr) throw new Error(`Erro ao atualizar financeiro: ${finErr.message}`);
+    const fullPlan = planFullFinanceRecalc(newPayloads);
+    const { error: delErr } = await supabase
+      .from('finance_receipts')
+      .delete()
+      .eq('sale_id', saleId);
+    if (delErr) {
+      throw new Error(`Erro ao limpar parcelas antigas: ${delErr.message}`);
+    }
+    if (fullPlan.toInsert.length > 0) {
+      const { error: finErr } = await supabase
+        .from('finance_receipts')
+        .insert(fullPlan.toInsert);
+      if (finErr) {
+        throw new Error(`Erro ao atualizar financeiro: ${finErr.message}`);
+      }
     }
     financeChanged = true;
-    console.log('EDIT_SALE_FINANCE_FULL_RECALC', { saleId });
+    console.log('EDIT_SALE_FINANCE_FULL_RECALC', {
+      saleId,
+      inserted: fullPlan.toInsert.length,
+    });
   }
 
   await supabase
