@@ -16,6 +16,25 @@ function near(a: number | null | undefined, b: number, tol = 0.06): boolean {
   return a != null && Number.isFinite(a) && Math.abs(a - b) <= tol;
 }
 
+function assertDisjointSideIndexes(m: OfficialLotMeasures) {
+  const sides = m.sides;
+  assert(sides != null, 'sides ausente');
+  const seen = new Map<number, string>();
+  for (const [name, side] of Object.entries(sides) as [
+    string,
+    { segmentIndexes: number[] },
+  ][]) {
+    for (const idx of side.segmentIndexes) {
+      const prev = seen.get(idx);
+      assert(
+        prev == null,
+        `segmento ${idx} em ${prev} e ${name}`,
+      );
+      seen.set(idx, name);
+    }
+  }
+}
+
 function block(
   segments: Record<string, unknown>[],
   extra: Record<string, unknown> = {},
@@ -67,26 +86,25 @@ function testRectangularSingleSegmentPerSide() {
   console.log('OK testRectangularSingleSegmentPerSide');
 }
 
-/** 2. Fundo quebrado — 2 segmentos no fundo (frente para rua, residual). */
+/** 2. Fundo com conector chanfre — agrupa trecho principal + conector (Lote 010-like). */
 function testBrokenBackTwoSegments() {
   const segs = [
-    lineSeg(0, 0, 0, 0, 20, 20),
-    lineSeg(1, 0, 20, 3, 23, 3),
-    lineSeg(2, 3, 23, 3, 63, 40),
-    lineSeg(3, 3, 63, 0, 63, 20),
-    lineSeg(4, 0, 63, 0, 43, 20),
-    lineSeg(5, 0, 43, 0, 0, 43),
+    lineSeg(0, 7500000, 500000, 7500000, 500030.62, 30.62),
+    lineSeg(1, 7500000, 500030.62, 7500089.28, 500030.62, 89.28),
+    lineSeg(2, 7500089.28, 500030.62, 7500089.28, 500011.14, 19.48),
+    lineSeg(3, 7500089.28, 500011.14, 7500077.13, 500000, 12.37),
+    lineSeg(4, 7500077.13, 500000, 7500012.75, 500000, 64.38),
+    lineSeg(5, 7500012.75, 500000, 7500000, 500000, 12.75),
   ];
   const m = getOfficialLotMeasurements(
     block(segs, {
       front_segment_index: 0,
       front_street_name: 'RUA FUNDO',
-      frente: 20,
+      frente: 30.62,
     }),
     'BACK2',
   );
   const backSegs = m.sides?.back.segmentIndexes ?? [];
-  assert(backSegs.length >= 2, `fundo 2+ segmentos: ${backSegs}`);
   const sumBack = backSegs.reduce((acc, idx) => {
     const row = segs.find((s) => s.segment_index === idx);
     return acc + Number(row?.distance ?? 0);
@@ -95,10 +113,12 @@ function testBrokenBackTwoSegments() {
     near(m.fundo, sumBack),
     `fundo total ${m.fundo} != soma segmentos ${sumBack}`,
   );
+  assert(near(m.fundo, 31.85), `fundo 19,48+12,37 m: ${m.fundo}`);
   assert(
-    (m.fundo ?? 0) > 20,
-    `fundo agrupado deve superar um único segmento: ${m.fundo}`,
+    backSegs.length >= 2,
+    `fundo deve agrupar 2+ segmentos: ${backSegs}`,
   );
+  assertDisjointSideIndexes(m);
   console.log('OK testBrokenBackTwoSegments');
 }
 
@@ -130,9 +150,10 @@ function testBrokenRightSideTwoSegments() {
     `dir ${m.ladoDireito} != soma ${sumRight}`,
   );
   assert(
-    (m.ladoDireito ?? 0) > 40,
-    `lateral agrupada deve superar um segmento: ${m.ladoDireito}`,
+    (m.ladoDireito ?? 0) >= 40,
+    `lateral agrupada deve incluir 2 segmentos: ${m.ladoDireito}`,
   );
+  assertDisjointSideIndexes(m);
   console.log('OK testBrokenRightSideTwoSegments');
 }
 
@@ -172,10 +193,7 @@ function testSixSegmentsGroupedTotals() {
     assert(near(total, sum), `${field} ${total} != soma ${sum}`);
     assert(near(side?.total ?? 0, sum), `sides.${key}.total inconsistente`);
   }
-  assert(
-    (m.sides?.back.segmentIndexes.length ?? 0) >= 2,
-    `fundo multi-segmento: ${m.sides?.back.segmentIndexes}`,
-  );
+  assertDisjointSideIndexes(m);
   console.log('OK testSixSegmentsGroupedTotals');
 }
 
@@ -206,6 +224,63 @@ function testChanfreExcludedFromSideTotals() {
   console.log('OK testChanfreExcludedFromSideTotals');
 }
 
+/**
+ * 7. Lote 010 / QD 02 — lateral esquerda não soma fundo (119,10 = 87,25 + 31,85).
+ * Geometria 6 segmentos: frente 30,62; fundo 19,48+12,37; dir 89,28; esq ~77,13 sem fundo.
+ */
+function testLot010DoesNotOverSumLeftSide() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500030.62, 30.62),
+    lineSeg(1, 7500000, 500030.62, 7500089.28, 500030.62, 89.28),
+    lineSeg(2, 7500089.28, 500030.62, 7500089.28, 500011.14, 19.48),
+    lineSeg(3, 7500089.28, 500011.14, 7500077.13, 500000, 12.37),
+    lineSeg(4, 7500077.13, 500000, 7500012.75, 500000, 64.38),
+    lineSeg(5, 7500012.75, 500000, 7500000, 500000, 12.75),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '010',
+      front_segment_index: 0,
+      front_street_name: 'RUA QD02',
+      frente: 30.62,
+      area: 2727.13,
+    }),
+    '010',
+  );
+
+  assert(near(m.frente, 30.62), `frente ${m.frente}`);
+  assert(near(m.fundo, 31.85), `fundo ${m.fundo}`);
+  assert(near(m.ladoDireito, 89.28), `dir ${m.ladoDireito}`);
+
+  const backIdx = new Set(m.sides?.back.segmentIndexes ?? []);
+  const leftIdx = m.sides?.left.segmentIndexes ?? [];
+  const leftSum = leftIdx.reduce((acc, idx) => {
+    const row = segs.find((s) => s.segment_index === idx);
+    return acc + Number(row?.distance ?? 0);
+  }, 0);
+
+  assert(
+    !leftIdx.some((idx) => backIdx.has(idx)),
+    `lado esq inclui segmento do fundo: left=${leftIdx} back=${[...backIdx]}`,
+  );
+  assertDisjointSideIndexes(m);
+  assert(
+    !near(m.ladoEsquerdo, 119.1),
+    `lado esq não pode ser 119,10 (fundo+lat): ${m.ladoEsquerdo}`,
+  );
+  assert(
+    (m.ladoEsquerdo ?? 0) < 100,
+    `lado esq excessivo: ${m.ladoEsquerdo}`,
+  );
+  assert(near(m.ladoEsquerdo, leftSum), `esq ${m.ladoEsquerdo} != soma ${leftSum}`);
+  assert(
+    near(m.ladoEsquerdo, 77.13, 0.15),
+    `esq esperado ~77,13 (64,38+12,75): ${m.ladoEsquerdo}`,
+  );
+
+  console.log('OK testLot010DoesNotOverSumLeftSide');
+}
+
 /** 6. Compatibilidade — campos legados frente/fundo/laterais preenchidos. */
 function testLegacyFieldsCompatibility() {
   const segs = [
@@ -234,4 +309,5 @@ testBrokenRightSideTwoSegments();
 testSixSegmentsGroupedTotals();
 testChanfreExcludedFromSideTotals();
 testLegacyFieldsCompatibility();
+testLot010DoesNotOverSumLeftSide();
 console.log('mandatory-official-measurements-grouped-sides-tests: all passed');

@@ -739,7 +739,13 @@ function collectFundoIndexesByResidual(
     });
 }
 
-/** Expande fundo com segmentos colineares consecutivos no anel. */
+/** Trecho curto (≤20 m) no anel que conecta partes do fundo — não é lateral principal. */
+const FUNDO_CONNECTOR_MAX_M = 20;
+
+/**
+ * Expansão colinear legada (anel inteiro) — somente classifySidesByTxtRingPaths.
+ * Não usar em front_anchor: soma lateral com fundo indevidamente (Lote 010).
+ */
 function expandColinearFundoOnRing(
   ordered: OfficialLotSegment[],
   seedIndexes: number[],
@@ -781,6 +787,116 @@ function expandColinearFundoOnRing(
         }
         result.add(idx);
         p = (p + step + n) % n;
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
+/**
+ * Expande apenas vizinhos imediatos no anel, colineares,
+ * sem atravessar segmentos proibidos (outros lados / frente / chanfre).
+ */
+function expandColinearAdjacentWithinBoundary(
+  ordered: OfficialLotSegment[],
+  seedIndexes: number[],
+  forbidden: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  if (!seedIndexes.length) return [];
+  const result = new Set(seedIndexes);
+  const n = ordered.length;
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const seed of [...result]) {
+      const pos = ordered.findIndex((s) => s.segment_index === seed);
+      if (pos < 0) continue;
+      const seg = byIdx.get(seed);
+      if (!seg) continue;
+      const refBearing = resolveSegmentBearing(seg, ordered[(pos + 1) % n]);
+
+      for (const step of [-1, 1] as const) {
+        const p = (pos + step + n) % n;
+        const idx = ordered[p].segment_index;
+        if (forbidden.has(idx) || result.has(idx)) continue;
+        const s = byIdx.get(idx);
+        if (!s || isOfficialCurveSegment(s)) continue;
+        if (!isValidSegmentDistance(s.distance)) continue;
+        const sNext = ordered[(p + 1) % n];
+        if (
+          !isColinearDeflection(
+            angularDifferenceDeg(
+              refBearing,
+              resolveSegmentBearing(s, sNext),
+            ),
+          )
+        ) {
+          continue;
+        }
+        result.add(idx);
+        changed = true;
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
+function stripIndexesClaimedByOthers(
+  indexes: number[],
+  claimed: Set<number>,
+): number[] {
+  return indexes.filter((idx) => !claimed.has(idx));
+}
+
+/** Reclama conector chanfre (40–50°) do caminho lateral colado ao fundo. */
+function reclaimFundoChanfreConnectorsFromPaths(
+  ordered: OfficialLotSegment[],
+  fundoIndexes: number[],
+  pathAIndexes: number[],
+  pathBIndexes: number[],
+  frontSegmentIndex: number,
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const result = new Set(fundoIndexes);
+  const pathSet = new Set([...pathAIndexes, ...pathBIndexes]);
+  const n = ordered.length;
+
+  for (const idx of [...result]) {
+    const pos = ordered.findIndex((s) => s.segment_index === idx);
+    if (pos < 0) continue;
+    for (const step of [-1, 1] as const) {
+      const p = (pos + step + n) % n;
+      const neighbor = ordered[p].segment_index;
+      if (
+        result.has(neighbor) ||
+        neighbor === frontSegmentIndex ||
+        chanfreSet.has(neighbor) ||
+        !pathSet.has(neighbor)
+      ) {
+        continue;
+      }
+      const seg = byIdx.get(neighbor);
+      if (
+        !seg ||
+        isOfficialCurveSegment(seg) ||
+        !isValidSegmentDistance(seg.distance) ||
+        seg.distance > FUNDO_CONNECTOR_MAX_M
+      ) {
+        continue;
+      }
+      const prev = ordered[(p - 1 + n) % n];
+      const next = ordered[(p + 1) % n];
+      const defl = angularDifferenceDeg(
+        resolveSegmentBearing(prev, ordered[p]),
+        resolveSegmentBearing(ordered[p], next),
+      );
+      if (isChanfreDeflection(defl)) {
+        result.add(neighbor);
       }
     }
   }
@@ -953,21 +1069,6 @@ function classifySidesByFrontAnchor(
     ladoEsquerdoIndexes = [];
   }
 
-  ladoDireitoIndexes = expandColinearFundoOnRing(
-    ordered,
-    ladoDireitoIndexes,
-    frontSegmentIndex,
-    chanfreSet,
-    byIdx,
-  );
-  ladoEsquerdoIndexes = expandColinearFundoOnRing(
-    ordered,
-    ladoEsquerdoIndexes,
-    frontSegmentIndex,
-    chanfreSet,
-    byIdx,
-  );
-
   const fundoSeed = collectFundoIndexesFromRingWalk(
     ordered,
     frontSegmentIndex,
@@ -976,12 +1077,45 @@ function classifySidesByFrontAnchor(
     chanfreSet,
     byIdx,
   );
-  const fundoIndexes = expandColinearFundoOnRing(
+  const fundoExpandForbidden = new Set<number>([
+    frontSegmentIndex,
+    ...chanfreSet,
+    ...ladoDireitoIndexes,
+    ...ladoEsquerdoIndexes,
+  ]);
+  let fundoIndexes = expandColinearAdjacentWithinBoundary(
     ordered,
     fundoSeed.length ? fundoSeed : [backSegmentIndex],
+    fundoExpandForbidden,
+    byIdx,
+  );
+  fundoIndexes = reclaimFundoChanfreConnectorsFromPaths(
+    ordered,
+    fundoIndexes,
+    pathAIndexes,
+    pathBIndexes,
     frontSegmentIndex,
     chanfreSet,
     byIdx,
+  );
+
+  const frontClaimed = new Set<number>([frontSegmentIndex]);
+  fundoIndexes = stripIndexesClaimedByOthers(fundoIndexes, frontClaimed);
+  ladoDireitoIndexes = stripIndexesClaimedByOthers(
+    ladoDireitoIndexes,
+    new Set([...frontClaimed, ...fundoIndexes]),
+  );
+  ladoEsquerdoIndexes = stripIndexesClaimedByOthers(
+    ladoEsquerdoIndexes,
+    new Set([
+      ...frontClaimed,
+      ...fundoIndexes,
+      ...ladoDireitoIndexes,
+    ]),
+  );
+  fundoIndexes = stripIndexesClaimedByOthers(
+    fundoIndexes,
+    new Set([...ladoDireitoIndexes, ...ladoEsquerdoIndexes]),
   );
 
   console.log("BACK_GROUP_SELECTED", {
