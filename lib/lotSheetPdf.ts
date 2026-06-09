@@ -10,14 +10,15 @@ import type {
   LotSheetSideConfrontants,
 } from '@/lib/lotSheetEnrichment';
 import {
-  filterSketchSidesForMapLabels,
-  findBestInteriorLabelPosition,
+  filterSketchSidesForCleanMap,
   graphicScaleBandRect,
+  LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
   planFrontStreetLabel,
-  resolveAreaFontSize,
+  resolveAreaLabelPlacement,
   resolveLabelClearOfScaleBand,
   resolvePointAvoidingRects,
+  shouldDrawStreetInSketch,
   vertexLabelStaggerIndex,
   wrapConfrontantText,
   type LabelRect,
@@ -258,7 +259,8 @@ const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 15;
 const BACK_CONFRONTANT_LABEL_OFFSET_MM = 15;
 const CONFRONTANT_MAX_WIDTH_MM = 44;
 const MIN_AREA_EDGE_CLEARANCE_MM = 7;
-const VERTEX_STAGGER_PROXIMITY_MM = 14;
+const VERTEX_STAGGER_PROXIMITY_MM = LOT_SHEET_CLEAN_SKETCH ? 18 : 14;
+const VERTEX_LABEL_MIN_GAP_MM = LOT_SHEET_CLEAN_SKETCH ? 12 : 8;
 
 /** Vértices: bissetriz externa e afastamento mínimo da divisa. */
 const VERTEX_LABEL_OFFSET_MM = 4;
@@ -965,6 +967,10 @@ function drawFrontStreetLabel(
     narrow,
   );
 
+  if (!shouldDrawStreetInSketch(name, plan, scaleBandRect, sketchBox)) {
+    return null;
+  }
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(plan.fontSize);
   const lines = doc.splitTextToSize(name, plan.maxWidth) as string[];
@@ -1042,7 +1048,15 @@ function drawFrontStreetLabel(
     scaleBandRect &&
     streetRect.y + streetRect.h > scaleBandRect.y - 2
   ) {
+    if (LOT_SHEET_CLEAN_SKETCH) return null;
     streetRect.y = scaleBandRect.y - streetRect.h - 4;
+  }
+  if (
+    LOT_SHEET_CLEAN_SKETCH &&
+    scaleBandRect &&
+    streetRect.y + streetRect.h > scaleBandRect.y - 2
+  ) {
+    return null;
   }
   placedRects.push(streetRect);
 
@@ -1105,19 +1119,20 @@ function placeVertexLabelOutsideCorner(
     verts,
     VERTEX_STAGGER_PROXIMITY_MM,
   );
-  const staggerBoost = stagger * 2.5;
+  const staggerBoost = stagger * (LOT_SHEET_CLEAN_SKETCH ? 5 : 2.5);
 
   const offsets = [
     VERTEX_LABEL_OFFSET_MM + staggerBoost,
-    5 + staggerBoost,
     6 + staggerBoost,
-    7 + staggerBoost,
     8 + staggerBoost,
+    10 + staggerBoost,
+    12 + staggerBoost,
+    14 + staggerBoost,
   ];
   const rotations =
     stagger % 2 === 0
-      ? [0, 30, -30, 55, -55, 80, -80]
-      : [15, -15, 40, -40, 65, -65, 90];
+      ? [0, 25, -25, 50, -50, 75, -75, 100]
+      : [12, -12, 35, -35, 58, -58, 82, -82];
 
   for (const off of offsets) {
     for (const rot of rotations) {
@@ -1126,7 +1141,7 @@ function placeVertexLabelOutsideCorner(
       const y = vtx[1] + by * off;
       if (!avoidVertexLabelLineCollision([x, y], verts)) continue;
       const tooClose = placedVertexLabels.some(
-        (p) => Math.hypot(p.x - x, p.y - y) < 8,
+        (p) => Math.hypot(p.x - x, p.y - y) < VERTEX_LABEL_MIN_GAP_MM,
       );
       if (tooClose) continue;
       return { x, y, angleDeg: edgeNext.angleDeg };
@@ -1291,7 +1306,8 @@ function placeSideConfrontantLabels(
   if (n < 3) return;
 
   doc.setTextColor(...BLACK);
-  const mapSides = filterSketchSidesForMapLabels(sketchSides, frontStreet);
+  const mapSides = filterSketchSidesForCleanMap(sketchSides, frontStreet);
+  if (!mapSides.length) return;
 
   for (const side of mapSides) {
     const edgeIdx = ((side.representativeEdgeIndex % n) + n) % n;
@@ -1314,8 +1330,6 @@ function placeSideConfrontantLabels(
 const LOT_BADGE_RADIUS_MM = 5.5;
 /** Profundidade do círculo em direção à rua (8–12% da profundidade do lote). */
 const FRONT_DEPTH_FRACTION = 0.12;
-const AREA_FONT_PT_NORMAL = 16;
-const AREA_FONT_PT_NARROW = 13;
 
 /** Círculo do lote voltado para a frente (próximo à rua). */
 function placeLotNumberNearFront(
@@ -1388,29 +1402,42 @@ function placeAreaLabelCenter(
     ...placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
     ...(badgePos ? [{ pos: badgePos, radius: LOT_BADGE_RADIUS_MM + 4 }] : []),
   ];
-  const freeCenter = findBestInteriorLabelPosition(verts, {
-    minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
-    avoid,
-  });
-  const centerlineDist = minDistToPolygonRing(areaPos, verts);
-  const freeDist = minDistToPolygonRing(freeCenter, verts);
-  if (
-    freeDist > centerlineDist + 1 ||
-    centerlineDist < MIN_AREA_EDGE_CLEARANCE_MM
-  ) {
-    areaPos = freeCenter;
-  }
-
-  const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
-  const areaFont = resolveAreaFontSize({
+  const placement = resolveAreaLabelPlacement(verts, areaText, {
     crossWidthMm: usefulW,
     inwardDepthMm: front.maxInwardDepthMm,
     vertexCount: verts.length,
-    areaText,
     narrow: mainAxis.narrow,
+    avoid,
+    fallbackPos: areaPos,
   });
+  areaPos = placement.pos;
+  const centerlineDist = minDistToPolygonRing(areaPos, verts);
+  if (
+    placement.edgeDist > centerlineDist + 1 ||
+    centerlineDist < MIN_AREA_EDGE_CLEARANCE_MM
+  ) {
+    areaPos = placement.pos;
+  }
+
+  const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
+  const areaFont = placement.fontSize;
   const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
   const lineStep = areaFont * 0.38;
+
+  if (placement.useBox) {
+    const boxW = Math.min(usefulW * 0.42, Math.max(22, areaText.length * 1.1));
+    const boxH = areaFont * (lines.length > 1 ? 1.9 : 1.25);
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(180, 200, 230);
+    doc.setLineWidth(0.2);
+    doc.rect(
+      areaPos[0] - boxW / 2,
+      areaPos[1] - boxH / 2,
+      boxW,
+      boxH,
+      'FD',
+    );
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(areaFont);
@@ -1689,29 +1716,37 @@ function drawConfrontationsBox(
     doc.text(text, lx, ly, { maxWidth: w - padX * 2 });
   };
 
-  label(x + padX, y + padTop, 'CONFRONTAÇÕES', true, 5.2);
-  let ly = y + padTop + 5;
+  const titleSize = LOT_SHEET_CLEAN_SKETCH ? 6 : 5.2;
+  const rowLabelSize = LOT_SHEET_CLEAN_SKETCH ? 5 : 4.3;
+  const rowValueSize = LOT_SHEET_CLEAN_SKETCH ? 4.8 : 4.3;
+  const rowGap = LOT_SHEET_CLEAN_SKETCH ? 5 : 4.2;
+  const lineStep = LOT_SHEET_CLEAN_SKETCH ? 4.2 : 3.6;
+
+  label(x + padX, y + padTop, 'CONFRONTAÇÕES', true, titleSize);
+  let ly = y + padTop + (LOT_SHEET_CLEAN_SKETCH ? 6 : 5);
   const rows: [string, string][] = [
     ['Frente', confrontants.frente || '—'],
     ['Fundo', confrontants.fundo || '—'],
     ['Lado Direito', confrontants.ladoDireito || '—'],
     ['Lado Esquerdo', confrontants.ladoEsquerdo || '—'],
   ];
-  const valueMaxW = w - padX * 2 - 20;
+  const valueMaxW = w - padX * 2 - 22;
   for (const [k, v] of rows) {
-    label(x + padX, ly, `${k}:`, false, 4.3);
-    const wrapped = wrapConfrontantText(v, 38, 2);
+    label(x + padX, ly, `${k}:`, false, rowLabelSize);
+    const wrapped = wrapConfrontantText(v, 36, 3);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(wrapped.some((ln) => ln.length > 32) ? 4 : 4.3);
+    doc.setFontSize(
+      wrapped.some((ln) => ln.length > 34) ? rowValueSize - 0.4 : rowValueSize,
+    );
     let vly = ly;
     for (const line of wrapped) {
       const split = doc.splitTextToSize(line, valueMaxW) as string[];
       for (const sl of split) {
-        doc.text(sl, x + padX + 18, vly);
-        vly += 3.6;
+        doc.text(sl, x + padX + 20, vly);
+        vly += lineStep;
       }
     }
-    ly = Math.max(ly + 4.2, vly + 0.8);
+    ly = Math.max(ly + rowGap, vly + 1);
   }
 }
 

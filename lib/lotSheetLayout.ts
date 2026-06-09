@@ -47,7 +47,20 @@ export const LOT_SHEET_VISUAL_PRIORITY = {
   confrontants: 6,
 } as const;
 
+/** ETAPA 3.2 — croqui limpo: confrontações completas só no rodapé. */
+export const LOT_SHEET_CLEAN_SKETCH = true;
+
+/** Máximo de caracteres para confrontante/logradouro no croqui. */
+export const SKETCH_LABEL_MAX_CHARS = 12;
+
 const MIN_AREA_EDGE_CLEARANCE_MM = 7;
+
+/** Confrontantes que devem aparecer apenas no quadro CONFRONTAÇÕES. */
+const SKETCH_FOOTER_ONLY_PATTERNS = [
+  'app',
+  'faixa de dominio',
+  'propriedade particular',
+];
 
 const SIDE_ROLE_MAP: [keyof OfficialLotMeasuresSides, SideRole][] = [
   ['front', 'frente'],
@@ -221,6 +234,66 @@ export function filterSketchSidesForMapLabels(
   return out;
 }
 
+/** Confrontante reservado ao rodapé (APP, faixa de domínio, propriedade particular…). */
+export function isFooterOnlyConfrontant(text: string): boolean {
+  const key = normalizeConfrontantKey(text);
+  if (!key) return false;
+  return SKETCH_FOOTER_ONLY_PATTERNS.some((pat) => key.includes(pat));
+}
+
+/** Indica se o confrontante pode ser desenhado no croqui (modo clean). */
+export function shouldDrawConfrontantInSketch(text: string): boolean {
+  if (!LOT_SHEET_CLEAN_SKETCH) return true;
+  const raw = String(text || '').trim();
+  if (!raw || raw === '—') return false;
+  if (raw.length > SKETCH_LABEL_MAX_CHARS) return false;
+  if (isFooterOnlyConfrontant(raw)) return false;
+  return true;
+}
+
+/** Lados do croqui no modo clean — confrontações completas só no rodapé. */
+export function filterSketchSidesForCleanMap(
+  sketchSides: LotSheetSketchSide[],
+  frontStreet: string,
+): LotSheetSketchSide[] {
+  if (!LOT_SHEET_CLEAN_SKETCH) {
+    return filterSketchSidesForMapLabels(sketchSides, frontStreet);
+  }
+  void sketchSides;
+  void frontStreet;
+  return [];
+}
+
+/** Logradouro principal no croqui — somente se couber com segurança. */
+export function shouldDrawStreetInSketch(
+  streetName: string,
+  plan: StreetLabelPlan | null,
+  scaleBandRect: LabelRect | null,
+  sketchBox: SketchBox,
+): boolean {
+  if (!LOT_SHEET_CLEAN_SKETCH) return true;
+  const name = String(streetName || '').trim();
+  if (!name || name === '—' || !plan) return false;
+  if (name.length > SKETCH_LABEL_MAX_CHARS) return false;
+  if (isFooterOnlyConfrontant(name)) return false;
+
+  const rect: LabelRect = {
+    x: plan.x - plan.maxWidth / 2,
+    y: plan.y - plan.fontSize * 0.45,
+    w: plan.maxWidth,
+    h: plan.fontSize * 1.4,
+    kind: 'street',
+  };
+  const cleared = resolveLabelClearOfScaleBand(
+    rect,
+    scaleBandRect,
+    sketchBox,
+    4,
+  );
+  if (scaleBandRect && rectsOverlap(cleared, scaleBandRect, 2)) return false;
+  return true;
+}
+
 function ringCentroid(verts: [number, number][]): [number, number] {
   let sx = 0;
   let sy = 0;
@@ -281,7 +354,7 @@ export function minDistToPolygonRing(
 export function vertexLabelStaggerIndex(
   vertexIndex: number,
   verts: [number, number][],
-  proximityMm = 14,
+  proximityMm = LOT_SHEET_CLEAN_SKETCH ? 18 : 14,
 ): number {
   const v = verts[vertexIndex];
   if (!v) return 0;
@@ -302,9 +375,12 @@ export type AreaFontInput = {
   narrow: boolean;
 };
 
-/** Fonte da área azul — reduz em lotes estreitos/irregulares. */
+/** Fonte da área azul — reduz em lotes estreitos/irregulares (modo clean: teto menor). */
 export function resolveAreaFontSize(input: AreaFontInput): number {
-  let size = input.narrow ? 13 : 16;
+  const maxPt = LOT_SHEET_CLEAN_SKETCH ? 14 : 18;
+  const baseNormal = LOT_SHEET_CLEAN_SKETCH ? 14 : 16;
+  const baseNarrow = LOT_SHEET_CLEAN_SKETCH ? 11 : 13;
+  let size = input.narrow ? baseNarrow : baseNormal;
   if (input.vertexCount > 4) size -= 2;
   if (input.vertexCount > 6) size -= 1;
   if (input.crossWidthMm < 38) size -= 2;
@@ -313,7 +389,65 @@ export function resolveAreaFontSize(input: AreaFontInput): number {
   const digits = input.areaText.replace(/\D/g, '').length;
   if (digits > 5) size -= 1;
   if (digits > 7) size -= 2;
-  return Math.max(8, Math.min(size, 18));
+  return Math.max(7, Math.min(size, maxPt));
+}
+
+export type AreaLabelPlacement = {
+  pos: [number, number];
+  fontSize: number;
+  useBox: boolean;
+  edgeDist: number;
+};
+
+/** Posição da área — interior seguro ou caixa central deslocada. */
+export function resolveAreaLabelPlacement(
+  verts: [number, number][],
+  areaText: string,
+  options: {
+    crossWidthMm: number;
+    inwardDepthMm: number;
+    vertexCount: number;
+    narrow: boolean;
+    avoid?: { pos: [number, number]; radius: number }[];
+    fallbackPos?: [number, number];
+  },
+): AreaLabelPlacement {
+  const fontSize = resolveAreaFontSize({
+    crossWidthMm: options.crossWidthMm,
+    inwardDepthMm: options.inwardDepthMm,
+    vertexCount: options.vertexCount,
+    areaText,
+    narrow: options.narrow,
+  });
+
+  const freeCenter = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
+    avoid: options.avoid,
+  });
+  let edgeDist = minDistToPolygonRing(freeCenter, verts);
+  let pos = freeCenter;
+  let useBox = false;
+
+  if (edgeDist < MIN_AREA_EDGE_CLEARANCE_MM) {
+    const relaxed = findBestInteriorLabelPosition(verts, {
+      minEdgeDist: 3,
+      avoid: options.avoid,
+    });
+    edgeDist = minDistToPolygonRing(relaxed, verts);
+    pos = relaxed;
+    useBox = true;
+  }
+
+  if (edgeDist < 3 && options.fallbackPos) {
+    pos = options.fallbackPos;
+    useBox = true;
+  }
+
+  if (useBox && edgeDist < 2) {
+    pos = ringCentroid(verts);
+  }
+
+  return { pos, fontSize, useBox, edgeDist };
 }
 
 /** Melhor posição interior — maximiza distância às divisas e evita colisões. */

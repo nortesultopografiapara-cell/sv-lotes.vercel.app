@@ -8,14 +8,20 @@ import {
   buildGroupedOfficialEdgeLabels,
   buildSketchLayoutFromBlock,
   clampPointToBox,
+  filterSketchSidesForCleanMap,
   filterSketchSidesForMapLabels,
   findBestInteriorLabelPosition,
   graphicScaleBandRect,
+  isFooterOnlyConfrontant,
+  LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
   normalizeConfrontantKey,
   planFrontStreetLabel,
   resolveAreaFontSize,
+  resolveAreaLabelPlacement,
   resolveLabelClearOfScaleBand,
+  shouldDrawConfrontantInSketch,
+  shouldDrawStreetInSketch,
   vertexLabelStaggerIndex,
   wrapConfrontantText,
 } from '../lib/lotSheetLayout';
@@ -222,7 +228,55 @@ function testWrapLongConfrontant() {
   console.log('OK testWrapLongConfrontant');
 }
 
-/** prancha_lote_04 — RUA INTERNA repetida não polui croqui. */
+/** ETAPA 3.2 — modo cleanSketch ativo e confrontantes longos só no rodapé. */
+function testCleanSketchModeRules() {
+  assert(LOT_SHEET_CLEAN_SKETCH === true, 'cleanSketch ativo');
+  assert(
+    isFooterOnlyConfrontant('FAIXA DE DOMÍNIO FERROVIA'),
+    'faixa ferrovia só rodapé',
+  );
+  assert(
+    isFooterOnlyConfrontant('Propriedade Particular'),
+    'propriedade particular só rodapé',
+  );
+  assert(
+    !shouldDrawConfrontantInSketch('RUA MARGINAL FERROVIA'),
+    'rua longa fora do croqui',
+  );
+  assert(
+    shouldDrawConfrontantInSketch('LOTE 09'),
+    'lote curto pode no croqui',
+  );
+
+  const sketchBox = { x: 8, y: 12, w: 190, h: 100 };
+  const scaleRect = graphicScaleBandRect(8, 95, 190);
+  const shortPlan = planFrontStreetLabel(
+    [100, 40],
+    0,
+    -1,
+    0,
+    80,
+    sketchBox,
+    scaleRect,
+    false,
+  );
+  assert(
+    shouldDrawStreetInSketch('RUA INTERNA', shortPlan, scaleRect, sketchBox),
+    'rua curta segura no croqui',
+  );
+  assert(
+    !shouldDrawStreetInSketch(
+      'RUA MARGINAL FERROVIA',
+      shortPlan,
+      scaleRect,
+      sketchBox,
+    ),
+    'rua longa oculta no croqui',
+  );
+  console.log('OK testCleanSketchModeRules');
+}
+
+/** prancha_lote_04 — croqui limpo, confrontações só no rodapé. */
 function testPranchaLote04DedupeStreetLabels() {
   const segs = [
     lineSeg(0, 7500000, 500000, 7500000, 500087.27, 87.27),
@@ -248,6 +302,11 @@ function testPranchaLote04DedupeStreetLabels() {
       normalizeConfrontantKey('RUA INTERNA'),
   );
   assert(ruaOnMap.length === 0, 'RUA INTERNA só na frente, não nas laterais');
+  const cleanSides = filterSketchSidesForCleanMap(
+    layout.sketchSides,
+    'RUA INTERNA',
+  );
+  assert(cleanSides.length === 0, 'lote 04 sem confrontantes no croqui');
   const areaFont = resolveAreaFontSize({
     crossWidthMm: 30,
     inwardDepthMm: 40,
@@ -255,7 +314,7 @@ function testPranchaLote04DedupeStreetLabels() {
     areaText: '2.500,00 m²',
     narrow: false,
   });
-  assert(areaFont <= 16, `área lote 04 fonte moderada: ${areaFont}`);
+  assert(areaFont <= 14, `área lote 04 fonte moderada: ${areaFont}`);
   console.log('OK testPranchaLote04DedupeStreetLabels');
 }
 
@@ -286,11 +345,23 @@ function testPranchaLote010AreaAndInterior() {
     areaText: '2.727,13 m²',
     narrow: false,
   });
-  assert(areaFont <= 14, `fonte área 010 reduzida: ${areaFont}`);
+  assert(areaFont <= 12, `fonte área 010 reduzida: ${areaFont}`);
   const ring = geom!.localRing;
-  const pos = findBestInteriorLabelPosition(ring, { minEdgeDist: 5 });
-  const edgeDist = minDistToPolygonRing(pos, ring);
-  assert(edgeDist >= 5, `área 010 afastada da divisa: ${edgeDist}`);
+  const placement = resolveAreaLabelPlacement(ring, '2.727,13 m²', {
+    crossWidthMm: 35,
+    inwardDepthMm: 55,
+    vertexCount: 7,
+    narrow: false,
+  });
+  assert(
+    placement.edgeDist >= 3 || placement.useBox,
+    `área 010 segura ou em caixa: dist=${placement.edgeDist} box=${placement.useBox}`,
+  );
+  const cleanSides = filterSketchSidesForCleanMap(
+    buildSketchLayoutFromBlock(b, 'lot-010').sketchSides,
+    'RUA INTERNA',
+  );
+  assert(cleanSides.length === 0, 'lote 010 sem confrontantes longos no croqui');
   const labels = buildGroupedOfficialEdgeLabels(b, 7);
   assert(
     labels.filter((l) => l.includes('96,54')).length === 1 ||
@@ -321,8 +392,18 @@ function testPranchaLote018StaggerAndScaleProtection() {
   const geom = buildOfficialSheetLocalGeometry(b);
   assert(geom != null, 'geom 018');
   const ring = geom!.localRing;
-  const stagger = vertexLabelStaggerIndex(3, ring, 14);
+  const stagger = vertexLabelStaggerIndex(3, ring, 18);
   assert(stagger >= 0, 'stagger index válido');
+  const closeVerts: [number, number][] = [
+    [0, 0],
+    [100, 0],
+    [100, 5],
+    [102, 6],
+    [0, 5],
+  ];
+  const s3 = vertexLabelStaggerIndex(2, closeVerts, 18);
+  const s4 = vertexLabelStaggerIndex(3, closeVerts, 18);
+  assert(s4 > s3, `M-03/M-04 próximos com stagger: ${s3} -> ${s4}`);
   const areaFont = resolveAreaFontSize({
     crossWidthMm: 80,
     inwardDepthMm: 120,
@@ -330,7 +411,13 @@ function testPranchaLote018StaggerAndScaleProtection() {
     areaText: '20.013,61 m²',
     narrow: false,
   });
-  assert(areaFont <= 13, `fonte área 018 reduzida: ${areaFont}`);
+  assert(areaFont <= 11, `fonte área 018 reduzida: ${areaFont}`);
+  const layout018 = buildSketchLayoutFromBlock(b, 'lot-018');
+  const clean018 = filterSketchSidesForCleanMap(
+    layout018.sketchSides,
+    'RUA MARGINAL FERROVIA',
+  );
+  assert(clean018.length === 0, 'lote 018 confrontantes só no rodapé');
   const scaleRect = graphicScaleBandRect(8, 95, 190);
   const streetRect = {
     x: 50,
@@ -597,6 +684,7 @@ async function main() {
   testStreetLabelInsideSketchBox();
   testStreetLabelAvoidsScaleBand();
   testWrapLongConfrontant();
+  testCleanSketchModeRules();
   testPranchaLote04DedupeStreetLabels();
   testPranchaLote010AreaAndInterior();
   testPranchaLote018StaggerAndScaleProtection();
