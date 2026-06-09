@@ -19,6 +19,7 @@ import {
   lotAuditContextFromBlock,
 } from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
+import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 
@@ -357,22 +358,18 @@ export async function updateSaleFromEdit(
     throw new Error(`Erro ao atualizar cliente: ${custUpdErr.message}`);
   }
 
-  const salePatch: Record<string, unknown> = {
-    customer_id: customerId,
-    agreed_price: data.final_value,
-    lot_price: finalPrice,
+  const salePatch = buildOfficialSalesUpdatePatch({
+    customerId,
+    agreedPrice: data.final_value,
+    lotPrice: finalPrice,
     discount: Number(data.discount_value) || 0,
-    total_value: data.final_value,
-    final_value: data.final_value,
-    payment_type: data.payment_type,
-    down_payment: Number(data.down_payment) || 0,
-    installments_count: Math.max(1, Number(data.installments_count) || 1),
-    installment_value: data.installment_value,
-    down_payment_due_date: data.down_payment_due_date || null,
-    first_installment_due_date: data.first_installment_due_date || null,
-    broker_id: brokerId,
+    totalValue: data.final_value,
+    paymentType: data.payment_type,
+    downPayment: Number(data.down_payment) || 0,
+    installmentsCount: Math.max(1, Number(data.installments_count) || 1),
+    brokerId,
     notes: data.notes?.trim() || null,
-  };
+  });
 
   const { error: saleUpdErr } = await supabase
     .from('sales')
