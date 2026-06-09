@@ -10,6 +10,7 @@ import {
 } from '@/lib/confrontantTypes';
 import {
   applyConfrontantToSegmentRows,
+  clearManualConfrontantFromSegmentRows,
   getSegmentConfrontantRecord,
 } from '@/lib/segmentConfrontantPersist';
 import { applyAutoFrontStreetToBlockSegments } from '@/lib/autoFrontStreetSegments';
@@ -338,6 +339,14 @@ export function applyManualConfrontantToBlock(
     confrontantType,
     'manual',
   );
+  return { ...block, segments_json: rows };
+}
+
+export function clearManualConfrontantFromBlock(
+  block: Record<string, unknown>,
+  segmentIndexes: number[],
+): Record<string, unknown> {
+  const rows = clearManualConfrontantFromSegmentRows(block, segmentIndexes);
   return { ...block, segments_json: rows };
 }
 

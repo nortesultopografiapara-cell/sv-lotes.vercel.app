@@ -87,6 +87,8 @@ function testActionPayloads() {
     { action: 'contract_regenerated', title: 'Contrato regenerado' },
     { action: 'front_corrected', title: 'Frente corrigida' },
     { action: 'confrontation_auto', title: 'Confrontação automática' },
+    { action: 'confrontation_manual', title: 'Confrontação manual alterada' },
+    { action: 'confrontation_manual', title: 'Confrontação manual removida' },
   ];
   for (const c of cases) {
     const p = buildLotAuditPayload({

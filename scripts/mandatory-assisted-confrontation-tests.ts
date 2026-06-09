@@ -10,9 +10,15 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
+  clearManualConfrontantFromBlock,
+  confrontantsFromAudit,
   officialSegmentIndexesForSide,
 } from '../lib/assistedConfrontation';
+import { applyAutoFrontStreetToBlockSegments } from '../lib/autoFrontStreetSegments';
+import { buildLotAuditPayload } from '../lib/lotAudit';
+import { resolveMemorialSegmentConfrontant } from '../lib/memorial/memorialConfrontants';
 import {
+  clearManualConfrontantFromSegmentRows,
   getSegmentConfrontantRecord,
 } from '../lib/segmentConfrontantPersist';
 import { buildSideConfrontantsWithSources } from '../lib/lotSegmentConfrontation';
@@ -373,6 +379,194 @@ function testLot5StreetOnlyOnFrontNeighborsOnSides() {
   console.log('OK testLot5StreetOnlyOnFrontNeighborsOnSides');
 }
 
+/** 1. Manual vence lote vizinho automático. */
+function testManualBeatsNeighborAuto() {
+  const w = 10;
+  const h = 24;
+  const baseEast = 50050;
+  const baseNorth = 7500025;
+  const lot5 = {
+    ...blockWithGeometry('l5', '5', baseEast, baseNorth, w, h),
+    block_name: '123',
+    front_street_name: 'RUA 02',
+  };
+  const lot6 = blockWithGeometry('l6', '6', baseEast + w, baseNorth, w, h);
+  lot5.block_name = '123';
+  lot6.block_name = '123';
+  const allBlocks = [lot5, lot6];
+  const auto = buildSideConfrontantsWithSources(lot5, 'l5', [], allBlocks, []);
+  assert(/^lote\s*6$/i.test(auto.ladoDireito.trim()), 'vizinho auto Lote 6');
+
+  const manual = applyManualConfrontantToBlock(lot5, [1], 'Lote 99', 'lot');
+  const built = buildSideConfrontantsWithSources(manual, 'l5', [], allBlocks, []);
+  assert(built.ladoDireito === 'Lote 99', `manual vence vizinho: ${built.ladoDireito}`);
+  console.log('OK testManualBeatsNeighborAuto');
+}
+
+/** 2. Manual vence rua. */
+function testManualBeatsStreet() {
+  const b = block('a', '01', 50000, 7500000);
+  const withStreet = applyAutoFrontStreetToBlockSegments(
+    b,
+    'RUA CENTRAL 01',
+    'street_guide',
+    [b],
+  );
+  const recStreet = getSegmentConfrontantRecord(withStreet, 0);
+  assert(recStreet?.confrontant_source === 'street_guide', 'frente com rua');
+
+  const manual = applyManualConfrontantToBlock(withStreet, [0], 'RUA PARALELA', 'street');
+  const built = buildSideConfrontantsWithSources(manual, 'a', [], [manual], []);
+  assert(built.frente === 'RUA PARALELA', `manual vence rua: ${built.frente}`);
+  assert(built.sources.frente === 'manual', 'source manual');
+  console.log('OK testManualBeatsStreet');
+}
+
+/** 3. Confrontação automática não apaga manual. */
+function testAutoStreetDoesNotWipeManual() {
+  const b = block('b', '02', 50010, 7500000);
+  let manual = applyManualConfrontantToBlock(b, [2], 'Área Verde', 'green_area');
+  const afterAuto = applyAutoFrontStreetToBlockSegments(
+    manual,
+    'RUA NOVA',
+    'street_guide',
+    [manual],
+  );
+  const recManual = getSegmentConfrontantRecord(afterAuto, 2);
+  assert(recManual?.confrontant === 'Área Verde', 'manual no seg 2 intacto');
+  assert(recManual?.confrontant_source === 'manual', 'source manual intacto');
+  console.log('OK testAutoStreetDoesNotWipeManual');
+}
+
+/** 4. Memorial usa confrontante manual. */
+function testMemorialUsesManual() {
+  const b = block('m', '03', 50030, 7500000);
+  const updated = applyManualConfrontantToBlock(b, [1], 'Lote 12', 'lot');
+  const c = resolveMemorialSegmentConfrontant(
+    updated,
+    1,
+    'lado_direito',
+    null,
+    [],
+    [updated],
+  );
+  assert(c.label === 'Lote 12', c.label);
+  assert(c.source === 'manual', c.source);
+  console.log('OK testMemorialUsesManual');
+}
+
+/** 5. Prancha usa confrontante manual. */
+function testPranchaUsesManual() {
+  const b = block('p', '04', 50040, 7500000);
+  const updated = applyManualConfrontantToBlock(b, [2], 'APP', 'app');
+  const audit = buildLotConfrontationAudit(updated, 'p', [updated], []);
+  const sheet = confrontantsFromAudit(audit);
+  assert(
+    sheet.fundo === 'APP' || sheet.ladoDireito === 'APP' || sheet.ladoEsquerdo === 'APP',
+    `prancha: ${sheet.fundo}/${sheet.ladoDireito}/${sheet.ladoEsquerdo}`,
+  );
+  const edge = audit.segmentEdges.find((e) => e.segmentIndex === 2);
+  assert(edge?.status === 'manual', 'auditoria status manual');
+  console.log('OK testPranchaUsesManual');
+}
+
+/** 6. Popup/auditoria exibe origem manual. */
+function testAuditShowsManualOrigin() {
+  const b = block('o', '05', 50050, 7500000);
+  const updated = applyManualConfrontantToBlock(b, [3], 'Lote 08', 'lot');
+  const audit = buildLotConfrontationAudit(updated, 'o', [updated], []);
+  const edge = audit.segmentEdges.find((e) => e.segmentIndex === 3);
+  assert(edge?.source === 'manual', 'origem manual no segmentEdge');
+  assert(edge?.status === 'manual', 'status manual');
+  assert(edge?.confrontant === 'Lote 08', edge?.confrontant ?? '');
+  console.log('OK testAuditShowsManualOrigin');
+}
+
+/** 7. Limpar manual volta para automático. */
+function testClearManualRevertsToAuto() {
+  const w = 10;
+  const h = 24;
+  const baseEast = 50060;
+  const baseNorth = 7500025;
+  const lot5 = {
+    ...blockWithGeometry('l5b', '5', baseEast, baseNorth, w, h),
+    block_name: '123',
+  };
+  const lot6 = blockWithGeometry('l6b', '6', baseEast + w, baseNorth, w, h);
+  lot5.block_name = '123';
+  lot6.block_name = '123';
+  const allBlocks = [lot5, lot6];
+  let manual = applyManualConfrontantToBlock(lot5, [1], 'Lote 99', 'lot');
+  assert(
+    buildSideConfrontantsWithSources(manual, 'l5b', [], allBlocks, []).ladoDireito ===
+      'Lote 99',
+    'manual ativo',
+  );
+  const cleared = clearManualConfrontantFromBlock(manual, [1]);
+  const rec = getSegmentConfrontantRecord(cleared, 1);
+  assert(!rec || rec.confrontant_source !== 'manual', 'manual removido');
+  const rebuilt = buildSideConfrontantsWithSources(cleared, 'l5b', [], allBlocks, []);
+  assert(/^lote\s*6$/i.test(rebuilt.ladoDireito.trim()), `voltou vizinho: ${rebuilt.ladoDireito}`);
+  console.log('OK testClearManualRevertsToAuto');
+}
+
+/** 8. Histórico registra confrontation_manual. */
+function testAuditLogConfrontationManual() {
+  const payload = buildLotAuditPayload({
+    blockId: 'lot-1',
+    action: 'confrontation_manual',
+    title: 'Confrontação manual alterada',
+    description: 'Segmento 3 alterado para Lote 07',
+    oldData: { segments: [{ segment_index: 2, confrontant: 'Lote 06' }] },
+    newData: { segment_indexes: [2], confrontant: 'Lote 07' },
+    source: 'gis_map',
+  });
+  assert(payload.action === 'confrontation_manual', 'action');
+  assert(payload.title === 'Confrontação manual alterada', 'title');
+  assert(
+    (payload.old_data as Record<string, unknown>)?.segments != null,
+    'old_data segments',
+  );
+  const cleared = buildLotAuditPayload({
+    blockId: 'lot-1',
+    action: 'confrontation_manual',
+    title: 'Confrontação manual removida',
+    source: 'gis_map',
+  });
+  assert(cleared.title === 'Confrontação manual removida', 'clear title');
+  console.log('OK testAuditLogConfrontationManual');
+}
+
+/** 9. Lado com múltiplos segmentos permite confrontantes diferentes. */
+function testMultiSegmentDifferentManual() {
+  const segments = [
+    ...utmRectSegments(50070, 7500000, 12, 25),
+    {
+      segment_index: 4,
+      north: 7500025,
+      east: 50082,
+      end_north: 7500025,
+      end_east: 50088,
+      distance: 6,
+      segment_type: 'LINE',
+    },
+  ];
+  const b = {
+    ...block('multi', '10', 50070, 7500000),
+    segments_json: segments,
+  };
+  let updated = applyManualConfrontantToBlock(b, [0], 'RUA A', 'street');
+  updated = applyManualConfrontantToBlock(updated, [4], 'Lote 15', 'lot');
+  const r0 = getSegmentConfrontantRecord(updated, 0);
+  const r4 = getSegmentConfrontantRecord(updated, 4);
+  assert(r0?.confrontant === 'RUA A', 'seg 0 RUA A');
+  assert(r4?.confrontant === 'Lote 15', 'seg 4 Lote 15');
+  const rows = clearManualConfrontantFromSegmentRows(updated, [0]);
+  const onlySeg4 = getSegmentConfrontantRecord({ ...updated, segments_json: rows }, 4);
+  assert(onlySeg4?.confrontant === 'Lote 15', 'seg 4 preservado ao limpar seg 0');
+  console.log('OK testMultiSegmentDifferentManual');
+}
+
 testPendingLabel();
 testManualOverridesAuto();
 testAuditPendingFundo();
@@ -380,4 +574,13 @@ testManualNotClearedByRebuild();
 testSegmentEdgeWgs84UtmAlignment();
 testWgs84EdgeToUtmSegmentIndexForConfrontPick();
 testLot5StreetOnlyOnFrontNeighborsOnSides();
+testManualBeatsNeighborAuto();
+testManualBeatsStreet();
+testAutoStreetDoesNotWipeManual();
+testMemorialUsesManual();
+testPranchaUsesManual();
+testAuditShowsManualOrigin();
+testClearManualRevertsToAuto();
+testAuditLogConfrontationManual();
+testMultiSegmentDifferentManual();
 console.log('mandatory-assisted-confrontation-tests: all passed');

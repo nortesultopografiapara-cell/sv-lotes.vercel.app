@@ -13,6 +13,8 @@ export type ConfrontantSource =
   | 'project_guide';
 
 export type ConfrontantPresetType =
+  | 'lot'
+  | 'street'
   | 'remnant_area'
   | 'green_area'
   | 'app'
@@ -27,13 +29,15 @@ export type ConfrontantPreset = {
 };
 
 export const CONFRONTANT_PRESETS: ConfrontantPreset[] = [
+  { type: 'lot', label: 'Lote' },
+  { type: 'street', label: 'Rua' },
   { type: 'remnant_area', label: 'Área Remanescente' },
+  { type: 'institutional_area', label: 'Área Institucional' },
   { type: 'green_area', label: 'Área Verde' },
   { type: 'app', label: 'APP' },
-  { type: 'institutional_area', label: 'Área Institucional' },
   { type: 'vicinal_road', label: 'Estrada/Vicinal' },
   { type: 'private_property', label: 'Propriedade Particular' },
-  { type: 'other', label: 'Outro' },
+  { type: 'other', label: 'Manual / Outro' },
 ];
 
 export type SegmentConfrontantRecord = {

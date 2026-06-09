@@ -98,14 +98,21 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
+  clearManualConfrontantFromBlock,
   findPropagationTargets,
   officialSegmentIndexesForSide,
   type LotConfrontationAudit,
   type PropagationScope,
 } from "@/lib/assistedConfrontation";
-import type { ConfrontantPresetType } from "@/lib/confrontantTypes";
+import {
+  sourceDisplayLabel,
+  type ConfrontantPresetType,
+} from "@/lib/confrontantTypes";
 import type { SideRole } from "@/lib/lotSegmentConfrontation";
-import { persistBlockSegmentsJson } from "@/lib/segmentConfrontantPersist";
+import {
+  getSegmentConfrontantRecord,
+  persistBlockSegmentsJson,
+} from "@/lib/segmentConfrontantPersist";
 import { InformConfrontantModal } from "@/components/map/InformConfrontantModal";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
@@ -623,7 +630,13 @@ function LotBoundaryEdgePolylines({
   onEdgePick?: (segmentIndex: number) => void;
   assistedConfrontationActive?: boolean;
   onConfrontEdgePick?: (segmentIndex: number) => void;
-  segmentEdgeByIndex?: Map<number, { status: 'resolved' | 'pending' | 'manual' | 'conflict' }>;
+  segmentEdgeByIndex?: Map<
+    number,
+    {
+      status: 'resolved' | 'pending' | 'manual' | 'conflict';
+      confrontant?: string | null;
+    }
+  >;
 }) {
   const showEdges =
     SHOW_BOUNDARY_LINES ||
@@ -650,6 +663,14 @@ function LotBoundaryEdgePolylines({
       : frontCorrectActive
         ? "#f59e0b"
         : strokeColor;
+    const tooltipText =
+      edgeMeta?.status === 'manual' && edgeMeta.confrontant
+        ? `Confrontação manual: ${edgeMeta.confrontant}`
+        : edgeMeta?.status === 'pending'
+          ? 'Confrontação pendente (A DEFINIR)'
+          : edgeMeta?.confrontant
+            ? edgeMeta.confrontant
+            : undefined;
     lines.push(
       <Polyline
         key={`${lot.id ?? lot.number}-edge-${i}`}
@@ -677,7 +698,13 @@ function LotBoundaryEdgePolylines({
                 }
               : undefined
         }
-      />,
+      >
+        {tooltipText ? (
+          <Tooltip sticky direction="top">
+            {tooltipText}
+          </Tooltip>
+        ) : null}
+      </Polyline>,
     );
   }
 
@@ -1557,6 +1584,7 @@ function LotPopupContent({
   confrontationAudit,
   assistedConfrontationMode,
   onEditConfrontationSide,
+  onEditConfrontationSegment,
   allBlocksForConfront = [],
   onGenerateMemorial,
 }: {
@@ -1581,6 +1609,11 @@ function LotPopupContent({
   confrontationAudit?: LotConfrontationAudit | null;
   assistedConfrontationMode?: boolean;
   onEditConfrontationSide?: (lot: any, side: SideRole) => void;
+  onEditConfrontationSegment?: (
+    lot: any,
+    side: SideRole,
+    segmentIndexes: number[],
+  ) => void;
   allBlocksForConfront?: Record<string, unknown>[];
   onGenerateMemorial?: (lot: any) => void;
 }) {
@@ -1745,26 +1778,84 @@ function LotPopupContent({
     }
   };
 
-  const confrontationRows = (
-    [
+  const confrontationSegmentRows = useMemo(() => {
+    if (!confrontationAudit) return [];
+    const blockForSide = {
+      ...lot,
+      block_name: lot.block,
+      segments_json: lot.segments_json,
+      front_segment_index: lot.front_segment_index,
+    };
+    const roles = [
       ["frente", "Frente"],
       ["fundo", "Fundo"],
       ["ladoDireito", "Lado Direito"],
       ["ladoEsquerdo", "Lado Esquerdo"],
-    ] as const
-  ).map(([key, label]) => {
-    const entry = confrontationAudit?.sides[key];
-    const text =
-      key === "frente" && frenteConfrontLabel
-        ? frenteConfrontLabel
-        : entry?.label ??
-          String((lot as Record<string, unknown>)[key] ?? "A DEFINIR");
-    const origin =
-      key === "frente" && frontStreetLabel
-        ? "rua"
-        : entry?.sourceLabel ?? "—";
-    return { key, label, text, origin };
-  });
+    ] as const;
+    const rows: Array<{
+      key: SideRole;
+      sideLabel: string;
+      segmentIndex: number;
+      text: string;
+      origin: string;
+    }> = [];
+    for (const [key, sideLabel] of roles) {
+      const indexes = officialSegmentIndexesForSide(
+        blockForSide,
+        allBlocksForConfront,
+        key,
+      );
+      if (!indexes.length) {
+        const entry = confrontationAudit.sides[key];
+        const text =
+          key === "frente" && frenteConfrontLabel
+            ? frenteConfrontLabel
+            : entry?.label ?? "A DEFINIR";
+        const origin =
+          key === "frente" && frontStreetLabel
+            ? "rua"
+            : entry?.sourceLabel ?? "—";
+        rows.push({
+          key,
+          sideLabel,
+          segmentIndex: -1,
+          text,
+          origin,
+        });
+        continue;
+      }
+      for (const segIdx of indexes) {
+        const edge = confrontationAudit.segmentEdges.find(
+          (e) => e.segmentIndex === segIdx,
+        );
+        const entry = confrontationAudit.sides[key];
+        const text =
+          edge?.confrontant ??
+          (key === "frente" && frenteConfrontLabel
+            ? frenteConfrontLabel
+            : entry?.label ?? "A DEFINIR");
+        const origin = edge?.source
+          ? sourceDisplayLabel(edge.source)
+          : key === "frente" && frontStreetLabel
+            ? "rua"
+            : entry?.sourceLabel ?? "—";
+        rows.push({
+          key,
+          sideLabel,
+          segmentIndex: segIdx,
+          text,
+          origin,
+        });
+      }
+    }
+    return rows;
+  }, [
+    confrontationAudit,
+    lot,
+    allBlocksForConfront,
+    frenteConfrontLabel,
+    frontStreetLabel,
+  ]);
 
   const popupTabs = [
     { id: "resumo" as const, label: "Resumo" },
@@ -1943,36 +2034,48 @@ function LotPopupContent({
 
       {popupTab === "confrontacoes" && (
         <div className="space-y-1 text-[11px]">
-          {(confrontationAudit || assistedConfrontationMode) ? (
-            confrontationRows.map(({ key, label, text, origin }) => (
-              <div
-                key={key}
-                className="flex items-center justify-between gap-1 py-0.5 border-b border-gray-50 last:border-0"
-              >
-                <span className="text-gray-500 shrink-0 w-[72px]">{label}</span>
-                <span className="flex-1 text-gray-900 font-medium text-right leading-tight min-w-0">
-                  <span className="block truncate">{text}</span>
-                  <span className="text-[9px] text-gray-400 font-normal">
-                    ({origin})
+          {confrontationAudit ? (
+            confrontationSegmentRows.map(
+              ({ key, sideLabel, segmentIndex, text, origin }) => (
+                <div
+                  key={`${key}-${segmentIndex}`}
+                  className="flex items-center justify-between gap-1 py-0.5 border-b border-gray-50 last:border-0"
+                >
+                  <span className="text-gray-500 shrink-0 w-[88px] leading-tight">
+                    {sideLabel}
+                    {segmentIndex >= 0 ? (
+                      <span className="block text-[9px] text-gray-400">
+                        Seg. {segmentIndex + 1}
+                      </span>
+                    ) : null}
                   </span>
-                </span>
-                {onEditConfrontationSide && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onEditConfrontationSide(lot, key as SideRole)
-                    }
-                    className="shrink-0 text-[9px] font-bold text-blue-600 hover:underline px-1"
-                  >
-                    Editar
-                  </button>
-                )}
-              </div>
-            ))
+                  <span className="flex-1 text-gray-900 font-medium text-right leading-tight min-w-0">
+                    <span className="block truncate">{text}</span>
+                    <span className="text-[9px] text-gray-400 font-normal">
+                      ({origin})
+                    </span>
+                  </span>
+                  {(onEditConfrontationSegment || onEditConfrontationSide) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onEditConfrontationSegment && segmentIndex >= 0) {
+                          onEditConfrontationSegment(lot, key, [segmentIndex]);
+                        } else if (onEditConfrontationSide) {
+                          onEditConfrontationSide(lot, key);
+                        }
+                      }}
+                      className="shrink-0 text-[9px] font-bold text-blue-600 hover:underline px-1"
+                    >
+                      Editar
+                    </button>
+                  )}
+                </div>
+              ),
+            )
           ) : (
             <p className="text-[10px] text-gray-500 py-2 text-center leading-snug">
-              Ative a revisão de confrontações ou execute a confrontação
-              automática para ver os lados.
+              Carregando confrontações…
             </p>
           )}
         </div>
@@ -2528,6 +2631,8 @@ export default function GISMap({
     lot: any;
     side: SideRole;
     segmentIndexes: number[];
+    currentConfrontant?: string | null;
+    currentSource?: import('@/lib/confrontantTypes').ConfrontantSource | null;
   } | null>(null);
   const [customerContractValidation, setCustomerContractValidation] =
     useState<CustomerContractValidation | null>(null);
@@ -2566,7 +2671,6 @@ export default function GISMap({
 
   const confrontationAudits = useMemo(() => {
     const map = new Map<string, LotConfrontationAudit>();
-    if (!assistedConfrontationMode && !insertConfrontantTool) return map;
     for (const lot of displayLots) {
       if (!lot?.id) continue;
       try {
@@ -2594,8 +2698,6 @@ export default function GISMap({
     displayLots,
     blocksForConfront,
     streetGuides,
-    assistedConfrontationMode,
-    insertConfrontantTool,
   ]);
 
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
@@ -2711,20 +2813,35 @@ export default function GISMap({
     side: SideRole,
     segmentIndexes?: number[],
   ) => {
+    const block = {
+      ...lot,
+      block_name: lot.block,
+      segments_json: lot.segments_json,
+      front_segment_index: lot.front_segment_index,
+    };
     const indexes =
       segmentIndexes?.length
         ? segmentIndexes
-        : officialSegmentIndexesForSide(
-            {
-              ...lot,
-              block_name: lot.block,
-              segments_json: lot.segments_json,
-              front_segment_index: lot.front_segment_index,
-            },
-            blocksForConfront,
-            side,
-          );
-    setConfrontEdit({ lot, side, segmentIndexes: indexes });
+        : officialSegmentIndexesForSide(block, blocksForConfront, side);
+    const audit = confrontationAudits.get(lot.id);
+    const primaryIdx = indexes[0];
+    const edge =
+      primaryIdx != null
+        ? audit?.segmentEdges.find((e) => e.segmentIndex === primaryIdx)
+        : undefined;
+    const rec =
+      primaryIdx != null
+        ? getSegmentConfrontantRecord(block, primaryIdx)
+        : null;
+    setConfrontEdit({
+      lot,
+      side,
+      segmentIndexes: indexes,
+      currentConfrontant:
+        edge?.confrontant ?? rec?.confrontant ?? audit?.sides[side]?.label ?? null,
+      currentSource:
+        edge?.source ?? rec?.confrontant_source ?? audit?.sides[side]?.source ?? null,
+    });
   };
 
   const handleConfrontEdgePick = (lot: any, edgeIndex: number) => {
@@ -2776,7 +2893,14 @@ export default function GISMap({
       confrontEdit.side,
       scope,
     );
+    const segmentLabel = confrontEdit.segmentIndexes
+      .map((i) => i + 1)
+      .join(", ");
     for (const t of targets) {
+      const oldRecords = t.segmentIndexes.map((idx) => ({
+        segment_index: idx,
+        confrontant: getSegmentConfrontantRecord(t.block, idx)?.confrontant ?? null,
+      }));
       const updated = applyManualConfrontantToBlock(
         t.block,
         t.segmentIndexes,
@@ -2790,21 +2914,86 @@ export default function GISMap({
           l.id === t.blockId ? { ...l, segments_json: rows } : l,
         ),
       );
-      void logLotAuditEvent(supabase, {
-        ...lotAuditContextFromBlock(confrontEdit.lot, { projectId }),
-        userId: user?.id ?? null,
-        action: "confrontation_manual",
-        title: "Confrontação manual",
-        description: `${confrontEdit.side}: ${confrontant}`,
-        newData: {
-          side: confrontEdit.side,
-          confrontant,
-          confrontantType,
-          scope,
-          blockIds: targets.map((x) => x.blockId),
-        },
-        source: "gis_map",
-      });
+      if (t.blockId === confrontEdit.lot.id) {
+        void logLotAuditEvent(supabase, {
+          ...lotAuditContextFromBlock(confrontEdit.lot, { projectId }),
+          userId: user?.id ?? null,
+          action: "confrontation_manual",
+          title: "Confrontação manual alterada",
+          description: `Segmento ${segmentLabel} alterado para ${confrontant}`,
+          oldData: {
+            side: confrontEdit.side,
+            segments: oldRecords,
+          },
+          newData: {
+            side: confrontEdit.side,
+            segment_indexes: confrontEdit.segmentIndexes,
+            confrontant,
+            confrontantType,
+            scope,
+          },
+          source: "gis_map",
+        });
+      }
+    }
+  };
+
+  const handleClearManualConfrontant = async (
+    scope: PropagationScope,
+    _targetBlockIds: string[],
+  ) => {
+    if (!confrontEdit?.lot?.id || !projectId) return;
+    const sourceBlock = {
+      ...confrontEdit.lot,
+      block_name: confrontEdit.lot.block,
+      segments_json: confrontEdit.lot.segments_json,
+      front_segment_index: confrontEdit.lot.front_segment_index,
+    };
+    const targets = findPropagationTargets(
+      blocksForConfront,
+      sourceBlock,
+      confrontEdit.lot.id,
+      confrontEdit.side,
+      scope,
+    );
+    const segmentLabel = confrontEdit.segmentIndexes
+      .map((i) => i + 1)
+      .join(", ");
+    for (const t of targets) {
+      const oldRecords = t.segmentIndexes.map((idx) => ({
+        segment_index: idx,
+        confrontant: getSegmentConfrontantRecord(t.block, idx)?.confrontant ?? null,
+      }));
+      const updated = clearManualConfrontantFromBlock(
+        t.block,
+        t.segmentIndexes,
+      );
+      const rows = updated.segments_json as Record<string, unknown>[];
+      await persistBlockSegmentsJson(supabase, t.blockId, rows);
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === t.blockId ? { ...l, segments_json: rows } : l,
+        ),
+      );
+      if (t.blockId === confrontEdit.lot.id) {
+        void logLotAuditEvent(supabase, {
+          ...lotAuditContextFromBlock(confrontEdit.lot, { projectId }),
+          userId: user?.id ?? null,
+          action: "confrontation_manual",
+          title: "Confrontação manual removida",
+          description: `Segmento ${segmentLabel}: correção manual removida`,
+          oldData: {
+            side: confrontEdit.side,
+            segments: oldRecords,
+          },
+          newData: {
+            side: confrontEdit.side,
+            segment_indexes: confrontEdit.segmentIndexes,
+            cleared: true,
+          },
+          source: "gis_map",
+        });
+      }
     }
   };
 
@@ -4293,6 +4482,9 @@ export default function GISMap({
                         onEditConfrontationSide={(l, side) =>
                           openConfrontationEditor(l, side)
                         }
+                        onEditConfrontationSegment={(l, side, segmentIndexes) =>
+                          openConfrontationEditor(l, side, segmentIndexes)
+                        }
                         allBlocksForConfront={blocksForConfront}
                         onGenerateMemorial={
                           onGenerateMemorialFromPopup
@@ -4323,7 +4515,10 @@ export default function GISMap({
                       (confrontationAudits.get(lot.id)?.segmentEdges ?? []).map(
                         (e) => [
                           e.ringEdgeIndex,
-                          { status: e.status },
+                          {
+                            status: e.status,
+                            confrontant: e.confrontant,
+                          },
                         ],
                       ),
                     )
@@ -4593,8 +4788,8 @@ export default function GISMap({
       {insertConfrontantTool && !frontCorrectLotId && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
           <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
-            Inserir confrontante: clique no lado do lote (arestas coloridas) ou use
-            Editar no popup.
+            Editar Confrontação: clique na divisa do lote (arestas coloridas) ou
+            use Editar na aba Confrontações do popup.
           </p>
         </div>
       )}
@@ -4611,8 +4806,11 @@ export default function GISMap({
           allBlocks={blocksForConfront}
           side={confrontEdit.side}
           segmentIndexes={confrontEdit.segmentIndexes}
+          currentConfrontant={confrontEdit.currentConfrontant}
+          currentSource={confrontEdit.currentSource}
           onClose={() => setConfrontEdit(null)}
           onConfirm={handleConfirmConfrontant}
+          onClear={handleClearManualConfrontant}
         />
       )}
 

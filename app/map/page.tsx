@@ -2428,7 +2428,7 @@ export default function MapPage() {
                  >
                    <PenTool className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
-                     Inserir Confrontante
+                     Editar Confrontação
                    </span>
                  </button>
 
