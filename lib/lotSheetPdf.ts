@@ -10,9 +10,15 @@ import type {
   LotSheetSideConfrontants,
 } from '@/lib/lotSheetEnrichment';
 import {
+  filterSketchSidesForMapLabels,
+  findBestInteriorLabelPosition,
   graphicScaleBandRect,
+  minDistToPolygonRing,
   planFrontStreetLabel,
+  resolveAreaFontSize,
+  resolveLabelClearOfScaleBand,
   resolvePointAvoidingRects,
+  vertexLabelStaggerIndex,
   wrapConfrontantText,
   type LabelRect,
   type LotSheetSketchSide,
@@ -248,9 +254,11 @@ const DISTANCE_INTERNAL_OFFSET_NARROW_MM = 4;
 const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = 2.5;
 
 /** Offset externo dos confrontantes (mm no croqui — afastado da divisa). */
-const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 11;
-const BACK_CONFRONTANT_LABEL_OFFSET_MM = 11;
-const CONFRONTANT_MAX_WIDTH_MM = 48;
+const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 15;
+const BACK_CONFRONTANT_LABEL_OFFSET_MM = 15;
+const CONFRONTANT_MAX_WIDTH_MM = 44;
+const MIN_AREA_EDGE_CLEARANCE_MM = 7;
+const VERTEX_STAGGER_PROXIMITY_MM = 14;
 
 /** Vértices: bissetriz externa e afastamento mínimo da divisa. */
 const VERTEX_LABEL_OFFSET_MM = 4;
@@ -269,7 +277,7 @@ function sketchOffsetMm(base: number): number {
 }
 
 function frontStreetLabelOffset(narrow: boolean): number {
-  return sketchOffsetMm((narrow ? 12 : 15) + 2);
+  return sketchOffsetMm((narrow ? 14 : 17) + 2);
 }
 
 function sideConfrontantLabelOffset(): number {
@@ -1017,15 +1025,31 @@ function drawFrontStreetLabel(
     });
   }
 
-  placedRects.push({
+  let streetRect: LabelRect = {
     x: x - textW / 2,
     y: y - textH / 2,
     w: textW,
     h: textH,
     kind: 'street',
-  });
+  };
+  streetRect = resolveLabelClearOfScaleBand(
+    streetRect,
+    scaleBandRect,
+    sketchBox,
+    4,
+  );
+  if (
+    scaleBandRect &&
+    streetRect.y + streetRect.h > scaleBandRect.y - 2
+  ) {
+    streetRect.y = scaleBandRect.y - streetRect.h - 4;
+  }
+  placedRects.push(streetRect);
 
-  return [x, y];
+  return [
+    streetRect.x + streetRect.w / 2,
+    streetRect.y + streetRect.h / 2,
+  ];
 }
 
 function getVertexExternalBisector(
@@ -1069,48 +1093,84 @@ function rotateDir(dir: [number, number], deg: number): [number, number] {
 function placeVertexLabelOutsideCorner(
   verts: [number, number][],
   vertexIndex: number,
+  placedVertexLabels: { x: number; y: number }[],
 ): { x: number; y: number; angleDeg: number } {
   const n = verts.length;
   const vi = ((vertexIndex % n) + n) % n;
   const vtx = verts[vi];
   const bisector = getVertexExternalBisector(verts, vi);
   const edgeNext = getEdgeGeometry(verts, vi);
+  const stagger = vertexLabelStaggerIndex(
+    vi,
+    verts,
+    VERTEX_STAGGER_PROXIMITY_MM,
+  );
+  const staggerBoost = stagger * 2.5;
 
-  const offsets = [VERTEX_LABEL_OFFSET_MM, 4.5, 5, 5.5, 6];
-  const rotations = [0, 25, -25, 45, -45, 70, -70];
+  const offsets = [
+    VERTEX_LABEL_OFFSET_MM + staggerBoost,
+    5 + staggerBoost,
+    6 + staggerBoost,
+    7 + staggerBoost,
+    8 + staggerBoost,
+  ];
+  const rotations =
+    stagger % 2 === 0
+      ? [0, 30, -30, 55, -55, 80, -80]
+      : [15, -15, 40, -40, 65, -65, 90];
 
   for (const off of offsets) {
     for (const rot of rotations) {
       const [bx, by] = rotateDir(bisector, rot);
       const x = vtx[0] + bx * off;
       const y = vtx[1] + by * off;
-      if (avoidVertexLabelLineCollision([x, y], verts)) {
-        return { x, y, angleDeg: edgeNext.angleDeg };
-      }
+      if (!avoidVertexLabelLineCollision([x, y], verts)) continue;
+      const tooClose = placedVertexLabels.some(
+        (p) => Math.hypot(p.x - x, p.y - y) < 8,
+      );
+      if (tooClose) continue;
+      return { x, y, angleDeg: edgeNext.angleDeg };
     }
   }
 
   const [bx, by] = bisector;
   return {
-    x: vtx[0] + bx * (VERTEX_LABEL_OFFSET_MM + 2),
-    y: vtx[1] + by * (VERTEX_LABEL_OFFSET_MM + 2),
+    x: vtx[0] + bx * (VERTEX_LABEL_OFFSET_MM + 3 + staggerBoost),
+    y: vtx[1] + by * (VERTEX_LABEL_OFFSET_MM + 3 + staggerBoost),
     angleDeg: edgeNext.angleDeg,
   };
 }
 
-function drawVertexMarkers(doc: jsPDF, points: [number, number][]) {
+function drawVertexMarkers(
+  doc: jsPDF,
+  points: [number, number][],
+  placedRects: LabelRect[],
+) {
   const verts = preparePolygonVertices(points);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(sketchFontSize(5.5) * VERTEX_FONT_EXTRA_SCALE);
   doc.setTextColor(...BLACK);
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
+  const placedVertexLabels: { x: number; y: number }[] = [];
   verts.forEach((p, i) => {
     doc.circle(p[0], p[1], 0.9, 'S');
-    const { x, y } = placeVertexLabelOutsideCorner(verts, i);
+    const { x, y } = placeVertexLabelOutsideCorner(
+      verts,
+      i,
+      placedVertexLabels,
+    );
     doc.text(`M-${String(i + 1).padStart(2, '0')}`, x, y, {
       align: 'left',
       baseline: 'middle',
+    });
+    placedVertexLabels.push({ x, y });
+    placedRects.push({
+      x: x - 1,
+      y: y - 2.5,
+      w: 14,
+      h: 5,
+      kind: 'vertex',
     });
   });
 }
@@ -1128,7 +1188,7 @@ function labelAtEdgeExternalResolved(
   const edge = getEdgeGeometry(verts, edgeIndex);
   const edgeLenMm = Math.hypot(edge.dx, edge.dy);
   const maxWidth = Math.min(CONFRONTANT_MAX_WIDTH_MM, edgeLenMm * 0.95 + 12);
-  const lines = wrapConfrontantText(text, Math.round(maxWidth / 2.2), 2);
+  const lines = wrapConfrontantText(text, Math.round(maxWidth / 2.2), 3);
 
   let fontSize = sketchFontSize(6);
   if (text.length > 28) fontSize = sketchFontSize(5.5);
@@ -1143,7 +1203,7 @@ function labelAtEdgeExternalResolved(
     Math.max(...lines.map((l) => doc.getTextWidth(l)), 10),
   );
 
-  const offsets = [offsetMm, offsetMm + 3, offsetMm + 6, offsetMm + 9];
+  const offsets = [offsetMm, offsetMm + 4, offsetMm + 8, offsetMm + 12, offsetMm + 16];
   let placed = false;
 
   for (const off of offsets) {
@@ -1156,13 +1216,17 @@ function labelAtEdgeExternalResolved(
       placedRects,
       sketchBox,
     );
-    const rect: LabelRect = {
+    let rect: LabelRect = {
       x: x - textW / 2,
       y: y - textH / 2,
       w: textW,
       h: textH,
       kind: 'confrontant',
     };
+    const scaleBand = placedRects.find((r) => r.kind === 'scale') ?? null;
+    rect = resolveLabelClearOfScaleBand(rect, scaleBand, sketchBox, 4);
+    if (scaleBand && rect.y + rect.h > scaleBand.y - 2) continue;
+
     let collision = false;
     for (const other of placedRects) {
       if (
@@ -1176,6 +1240,8 @@ function labelAtEdgeExternalResolved(
       }
     }
     if (collision) continue;
+    x = rect.x + rect.w / 2;
+    y = rect.y + rect.h / 2;
 
     doc.setTextColor(...BLACK);
     lines.forEach((line, i) => {
@@ -1216,6 +1282,7 @@ function placeSideConfrontantLabels(
   doc: jsPDF,
   points: [number, number][],
   sketchSides: LotSheetSketchSide[],
+  frontStreet: string,
   sketchBox: Box,
   placedRects: LabelRect[],
 ) {
@@ -1224,9 +1291,9 @@ function placeSideConfrontantLabels(
   if (n < 3) return;
 
   doc.setTextColor(...BLACK);
+  const mapSides = filterSketchSidesForMapLabels(sketchSides, frontStreet);
 
-  for (const side of sketchSides) {
-    if (side.role === 'frente') continue;
+  for (const side of mapSides) {
     const edgeIdx = ((side.representativeEdgeIndex % n) + n) % n;
     const offset =
       side.role === 'fundo'
@@ -1247,8 +1314,8 @@ function placeSideConfrontantLabels(
 const LOT_BADGE_RADIUS_MM = 5.5;
 /** Profundidade do círculo em direção à rua (8–12% da profundidade do lote). */
 const FRONT_DEPTH_FRACTION = 0.12;
-const AREA_FONT_PT_NORMAL = 21;
-const AREA_FONT_PT_NARROW = 18;
+const AREA_FONT_PT_NORMAL = 16;
+const AREA_FONT_PT_NARROW = 13;
 
 /** Círculo do lote voltado para a frente (próximo à rua). */
 function placeLotNumberNearFront(
@@ -1295,7 +1362,7 @@ function placeLotNumberNearFront(
   return { badgePos, radius: r };
 }
 
-/** Área na linha média entre laterais (~52% frente→fundo), separada do círculo. */
+/** Área no centro visual livre — nunca sobre divisa; fonte adaptativa. */
 function placeAreaLabelCenter(
   doc: jsPDF,
   points: [number, number][],
@@ -1304,10 +1371,10 @@ function placeAreaLabelCenter(
   frontEdgeIndex: number,
   badgePos: [number, number],
   placedZones: PlacedLabelZone[],
-): { areaPos: [number, number] } {
+): { areaPos: [number, number]; areaFont: number } {
   const verts = preparePolygonVertices(points);
   const front = getLotFrontDirection(verts, frontEdgeIndex);
-  const areaPos = placeAreaOnCenterlineRatio(
+  let areaPos = placeAreaOnCenterlineRatio(
     verts,
     front,
     frontEdgeIndex,
@@ -1317,10 +1384,33 @@ function placeAreaLabelCenter(
   );
 
   const usefulW = lotUsefulCrossWidthMm(verts, mainAxis);
+  const avoid = [
+    ...placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+    ...(badgePos ? [{ pos: badgePos, radius: LOT_BADGE_RADIUS_MM + 4 }] : []),
+  ];
+  const freeCenter = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
+    avoid,
+  });
+  const centerlineDist = minDistToPolygonRing(areaPos, verts);
+  const freeDist = minDistToPolygonRing(freeCenter, verts);
+  if (
+    freeDist > centerlineDist + 1 ||
+    centerlineDist < MIN_AREA_EDGE_CLEARANCE_MM
+  ) {
+    areaPos = freeCenter;
+  }
+
   const lines = splitAreaLabelLines(areaText, usefulW, mainAxis.narrow);
-  const areaFont = mainAxis.narrow ? AREA_FONT_PT_NARROW : AREA_FONT_PT_NORMAL;
+  const areaFont = resolveAreaFontSize({
+    crossWidthMm: usefulW,
+    inwardDepthMm: front.maxInwardDepthMm,
+    vertexCount: verts.length,
+    areaText,
+    narrow: mainAxis.narrow,
+  });
   const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
-  const lineStep = mainAxis.narrow ? 5 : 5.5;
+  const lineStep = areaFont * 0.38;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(areaFont);
@@ -1345,7 +1435,7 @@ function placeAreaLabelCenter(
 
   doc.setTextColor(...BLACK);
 
-  return { areaPos };
+  return { areaPos, areaFont };
 }
 
 function drawCompassRose(doc: jsPDF, cx: number, cy: number, r: number) {
@@ -1992,6 +2082,9 @@ export async function generateLotSheetPdf(
   const scaleBandRect = graphicScaleBandRect(contentX, scaleY, contentW);
   const placedRects: LabelRect[] = [scaleBandRect];
 
+  // Prioridade visual: perímetro → vértices → medidas → nº lote → área → confrontantes
+  drawVertexMarkers(doc, sheetPts, placedRects);
+
   const measurePositions = placeDistanceLabelsInsideLot(
     doc,
     sheetPts,
@@ -2009,20 +2102,8 @@ export async function generateLotSheetPdf(
     });
   }
 
-  drawVertexMarkers(doc, sheetPts);
-
   const frontMeasurePos =
     measurePositions.find((p) => p.edgeIndex === frontEdge) ?? null;
-
-  const streetPos = drawFrontStreetLabel(
-    doc,
-    sheetPts,
-    frontEdge,
-    input.sideConfrontants.frente,
-    mainBox,
-    scaleBandRect,
-    placedRects,
-  );
 
   const placedZones: PlacedLabelZone[] = [
     ...measurePositions.map((p) => ({
@@ -2030,9 +2111,6 @@ export async function generateLotSheetPdf(
       radius: 5,
       kind: 'distance',
     })),
-    ...(streetPos
-      ? [{ pos: streetPos, radius: 7, kind: 'street' as const }]
-      : []),
     ...(frontMeasurePos
       ? [
           {
@@ -2073,18 +2151,42 @@ export async function generateLotSheetPdf(
     lotBadge.badgePos,
     placedZones,
   );
+  const areaW = Math.max(20, input.measures.area.length * 1.4);
+  const areaH = areaLabel.areaFont * (splitAreaLabelLines(
+    input.measures.area,
+    lotUsefulCrossWidthMm(sheetVerts, mainAxis),
+    mainAxis.narrow,
+  ).length > 1 ? 1.8 : 1.1);
   placedRects.push({
-    x: areaLabel.areaPos[0] - 14,
-    y: areaLabel.areaPos[1] - 8,
-    w: 28,
-    h: 16,
+    x: areaLabel.areaPos[0] - areaW / 2,
+    y: areaLabel.areaPos[1] - areaH / 2,
+    w: areaW,
+    h: areaH,
     kind: 'area',
   });
+
+  const streetPos = drawFrontStreetLabel(
+    doc,
+    sheetPts,
+    frontEdge,
+    input.sideConfrontants.frente,
+    mainBox,
+    scaleBandRect,
+    placedRects,
+  );
+  if (streetPos) {
+    placedZones.push({
+      pos: streetPos,
+      radius: 7,
+      kind: 'street',
+    });
+  }
 
   placeSideConfrontantLabels(
     doc,
     sheetPts,
     input.sketchSides ?? [],
+    input.sideConfrontants.frente,
     mainBox,
     placedRects,
   );

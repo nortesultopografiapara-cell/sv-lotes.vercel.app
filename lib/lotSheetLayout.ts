@@ -37,6 +37,18 @@ export type LabelRect = {
 
 export type SketchBox = { x: number; y: number; w: number; h: number };
 
+/** Prioridade visual no croqui (menor = desenhar antes). */
+export const LOT_SHEET_VISUAL_PRIORITY = {
+  perimeter: 1,
+  vertices: 2,
+  measures: 3,
+  lotNumber: 4,
+  area: 5,
+  confrontants: 6,
+} as const;
+
+const MIN_AREA_EDGE_CLEARANCE_MM = 7;
+
 const SIDE_ROLE_MAP: [keyof OfficialLotMeasuresSides, SideRole][] = [
   ['front', 'frente'],
   ['back', 'fundo'],
@@ -175,6 +187,195 @@ export function buildLotSheetSketchSides(
     });
   }
   return out;
+}
+
+export function normalizeConfrontantKey(text: string): string {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+}
+
+/**
+ * Evita repetir o mesmo logradouro/confrontante em vários lados do croqui.
+ * Frente é desenhada separadamente; rodapé mantém todos os lados.
+ */
+export function filterSketchSidesForMapLabels(
+  sketchSides: LotSheetSketchSide[],
+  frontStreet: string,
+): LotSheetSketchSide[] {
+  const frontKey = normalizeConfrontantKey(frontStreet);
+  const seen = new Set<string>();
+  const out: LotSheetSketchSide[] = [];
+
+  for (const side of sketchSides) {
+    if (side.role === 'frente') continue;
+    const key = normalizeConfrontantKey(side.confrontantLabel);
+    if (!key || key === '—' || key.includes('a definir')) continue;
+    if (frontKey && key === frontKey) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(side);
+  }
+  return out;
+}
+
+function ringCentroid(verts: [number, number][]): [number, number] {
+  let sx = 0;
+  let sy = 0;
+  const n = verts.length || 1;
+  for (const [x, y] of verts) {
+    sx += x;
+    sy += y;
+  }
+  return [sx / n, sy / n];
+}
+
+export function pointInsideRing(
+  x: number,
+  y: number,
+  ring: [number, number][],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersect =
+      yi > y !== yj > y &&
+      x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function minDistToPolygonRing(
+  pos: [number, number],
+  verts: [number, number][],
+): number {
+  let min = Infinity;
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const len2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((pos[0] - p1[0]) * dx + (pos[1] - p1[1]) * dy) / len2,
+      ),
+    );
+    const px = p1[0] + t * dx;
+    const py = p1[1] + t * dy;
+    min = Math.min(min, Math.hypot(pos[0] - px, pos[1] - py));
+  }
+  return min;
+}
+
+/** Índice de afastamento alternado para vértices próximos (stagger). */
+export function vertexLabelStaggerIndex(
+  vertexIndex: number,
+  verts: [number, number][],
+  proximityMm = 14,
+): number {
+  const v = verts[vertexIndex];
+  if (!v) return 0;
+  let close = 0;
+  for (let j = 0; j < vertexIndex; j++) {
+    const o = verts[j];
+    if (!o) continue;
+    if (Math.hypot(v[0] - o[0], v[1] - o[1]) < proximityMm) close++;
+  }
+  return close;
+}
+
+export type AreaFontInput = {
+  crossWidthMm: number;
+  inwardDepthMm: number;
+  vertexCount: number;
+  areaText: string;
+  narrow: boolean;
+};
+
+/** Fonte da área azul — reduz em lotes estreitos/irregulares. */
+export function resolveAreaFontSize(input: AreaFontInput): number {
+  let size = input.narrow ? 13 : 16;
+  if (input.vertexCount > 4) size -= 2;
+  if (input.vertexCount > 6) size -= 1;
+  if (input.crossWidthMm < 38) size -= 2;
+  if (input.crossWidthMm < 28) size -= 2;
+  if (input.inwardDepthMm < 28) size -= 2;
+  const digits = input.areaText.replace(/\D/g, '').length;
+  if (digits > 5) size -= 1;
+  if (digits > 7) size -= 2;
+  return Math.max(8, Math.min(size, 18));
+}
+
+/** Melhor posição interior — maximiza distância às divisas e evita colisões. */
+export function findBestInteriorLabelPosition(
+  verts: [number, number][],
+  options?: {
+    minEdgeDist?: number;
+    avoid?: { pos: [number, number]; radius: number }[];
+  },
+): [number, number] {
+  const minEdge = options?.minEdgeDist ?? MIN_AREA_EDGE_CLEARANCE_MM;
+  if (verts.length < 3) return ringCentroid(verts);
+
+  const xs = verts.map((v) => v[0]);
+  const ys = verts.map((v) => v[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const steps = 14;
+  let best = ringCentroid(verts);
+  let bestScore = -Infinity;
+
+  for (let xi = 1; xi < steps; xi++) {
+    for (let yi = 1; yi < steps; yi++) {
+      const x = minX + (xi / steps) * (maxX - minX);
+      const y = minY + (yi / steps) * (maxY - minY);
+      if (!pointInsideRing(x, y, verts)) continue;
+      let score = minDistToPolygonRing([x, y], verts);
+      if (score < minEdge) continue;
+      for (const a of options?.avoid ?? []) {
+        const d = Math.hypot(x - a.pos[0], y - a.pos[1]);
+        if (d < a.radius) score -= (a.radius - d) * 3;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = [x, y];
+      }
+    }
+  }
+  return best;
+}
+
+export function resolveLabelClearOfScaleBand(
+  rect: LabelRect,
+  scaleBand: LabelRect | null,
+  sketchBox: SketchBox,
+  gap = 3,
+): LabelRect {
+  if (!scaleBand || !rectsOverlap(rect, scaleBand, gap)) return rect;
+  const next = { ...rect };
+  next.y = scaleBand.y - next.h - gap;
+  next.x = Math.min(
+    next.x,
+    scaleBand.x + scaleBand.w * 0.38 - next.w / 2,
+  );
+  const cx = next.x + next.w / 2;
+  const cy = next.y + next.h / 2;
+  const [cx2, cy2] = clampPointToBox(cx, cy, sketchBox, 4);
+  next.x = cx2 - next.w / 2;
+  next.y = cy2 - next.h / 2;
+  return next;
 }
 
 export function buildLotSheetConfrontantsFromAudit(
@@ -319,31 +520,29 @@ export function planFrontStreetLabel(
   scaleBandRect: LabelRect | null,
   narrow: boolean,
 ): StreetLabelPlan {
-  const fontSizes = narrow ? [12, 11, 10, 9] : [14, 13, 12, 11];
-  const baseOffset = narrow ? 24 : 30;
+  const fontSizes = narrow ? [11, 10, 9, 8] : [13, 12, 11, 10];
+  const baseOffset = narrow ? 30 : 36;
   const maxWidth = Math.min(
-    sketchBox.w * 0.42,
-    Math.max(28, edgeLenMm * 0.85),
+    sketchBox.w * 0.38,
+    Math.max(24, edgeLenMm * 0.8),
   );
 
-  for (const offset of [baseOffset, baseOffset + 6, baseOffset + 12]) {
+  for (const offset of [baseOffset, baseOffset + 8, baseOffset + 14, baseOffset + 20]) {
     for (const fontSize of fontSizes) {
       let x = edgeMid[0] + edgeExNx * offset;
       let y = edgeMid[1] + edgeExNy * offset;
-      [x, y] = clampPointToBox(x, y, sketchBox, 3);
-      const rect: LabelRect = {
+      [x, y] = clampPointToBox(x, y, sketchBox, 4);
+      let rect: LabelRect = {
         x: x - maxWidth / 2,
-        y: y - fontSize * 0.35,
+        y: y - fontSize * 0.4,
         w: maxWidth,
-        h: fontSize * 0.9,
+        h: fontSize * (1 + 0.35),
       };
-      if (scaleBandRect && rectsOverlap(rect, scaleBandRect, 2)) {
-        y = scaleBandRect.y - fontSize * 0.5 - 2;
-        [x, y] = clampPointToBox(x, y, sketchBox, 3);
-      }
+      rect = resolveLabelClearOfScaleBand(rect, scaleBandRect, sketchBox, 4);
+      if (scaleBandRect && rectsOverlap(rect, scaleBandRect, 2)) continue;
       return {
-        x,
-        y,
+        x: rect.x + rect.w / 2,
+        y: rect.y + rect.h / 2,
         fontSize,
         maxWidth,
         angleDeg: edgeAngleDeg,
@@ -372,10 +571,10 @@ export function graphicScaleBandRect(
   contentW: number,
 ): LabelRect {
   return {
-    x: contentX,
-    y: scaleY - 1,
-    w: contentW,
-    h: 12,
+    x: contentX - 1,
+    y: scaleY - 2,
+    w: contentW + 2,
+    h: 14,
     kind: 'scale',
   };
 }
