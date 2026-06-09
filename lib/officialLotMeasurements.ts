@@ -54,6 +54,18 @@ export type OfficialLotCurveInfo = {
   totalLength: number;
 };
 
+export type OfficialLotSideMeasure = {
+  total: number;
+  segmentIndexes: number[];
+};
+
+export type OfficialLotMeasuresSides = {
+  front: OfficialLotSideMeasure;
+  back: OfficialLotSideMeasure;
+  right: OfficialLotSideMeasure;
+  left: OfficialLotSideMeasure;
+};
+
 export type OfficialLotMeasures = {
   frente: number | null;
   fundo: number | null;
@@ -67,6 +79,8 @@ export type OfficialLotMeasures = {
   frontSegmentIndex: number | null;
   segmentCount: number;
   source: "txt_segments" | "columns_fallback" | "empty";
+  /** Totais agrupados por lado + índices dos segmentos TXT. */
+  sides?: OfficialLotMeasuresSides;
 };
 
 export type RingPathResult = {
@@ -649,12 +663,165 @@ function findOppositeBackSegmentIndex(
   return bestIdx;
 }
 
+/** Grupo de fundo: posição no anel mais próxima de meia-volta a partir da frente. */
+function findBackGroupIdxByRingHalf(
+  groups: SegmentDeflectionGroup[],
+  ordered: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  frontBearing: number,
+): number {
+  const n = ordered.length;
+  const ringPos = new Map(
+    ordered.map((s, i) => [s.segment_index, i]),
+  );
+  const frontPos = ringPos.get(frontSegmentIndex) ?? 0;
+  const half = n / 2;
+
+  let bestGroupIdx = 0;
+  let bestScore = Infinity;
+  let bestBearingOpp = -1;
+
+  for (let g = 0; g < groups.length; g++) {
+    if (groups[g].segmentIndexes.includes(frontSegmentIndex)) continue;
+    let ringDistSum = 0;
+    let count = 0;
+    for (const idx of groups[g].segmentIndexes) {
+      const pos = ringPos.get(idx) ?? 0;
+      const cw = (pos - frontPos + n) % n;
+      const ccw = (frontPos - pos + n) % n;
+      ringDistSum += Math.min(cw, ccw);
+      count++;
+    }
+    if (!count) continue;
+    const avgDist = ringDistSum / count;
+    const ringScore = Math.abs(avgDist - half);
+    const bearingOpp = angularDifferenceDeg(
+      frontBearing,
+      groups[g].averageBearing,
+    );
+    if (
+      ringScore < bestScore - 0.01 ||
+      (Math.abs(ringScore - bestScore) <= 0.01 && bearingOpp > bestBearingOpp)
+    ) {
+      bestScore = ringScore;
+      bestBearingOpp = bearingOpp;
+      bestGroupIdx = g;
+    }
+  }
+  return bestGroupIdx;
+}
+
+/** Segmentos LINE do fundo = perímetro menos frente, laterais e chanfres. */
+function collectFundoIndexesByResidual(
+  ordered: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  ladoDireitoIndexes: number[],
+  ladoEsquerdoIndexes: number[],
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const used = new Set<number>([
+    frontSegmentIndex,
+    ...ladoDireitoIndexes,
+    ...ladoEsquerdoIndexes,
+    ...chanfreSet,
+  ]);
+  return ordered
+    .map((s) => s.segment_index)
+    .filter((idx) => {
+      if (used.has(idx)) return false;
+      const seg = byIdx.get(idx);
+      return (
+        seg != null &&
+        !isOfficialCurveSegment(seg) &&
+        isValidSegmentDistance(seg.distance)
+      );
+    });
+}
+
+/** Expande fundo com segmentos colineares consecutivos no anel. */
+function expandColinearFundoOnRing(
+  ordered: OfficialLotSegment[],
+  seedIndexes: number[],
+  frontSegmentIndex: number,
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const result = new Set(seedIndexes);
+  const n = ordered.length;
+
+  for (const seed of [...result]) {
+    const pos = ordered.findIndex((s) => s.segment_index === seed);
+    if (pos < 0) continue;
+    const seg = byIdx.get(seed);
+    if (!seg) continue;
+    const refBearing = resolveSegmentBearing(
+      seg,
+      ordered[(pos + 1) % n],
+    );
+
+    for (const step of [-1, 1] as const) {
+      let p = (pos + step + n) % n;
+      for (let guard = 0; guard < n; guard++) {
+        if (p === pos) break;
+        const idx = ordered[p].segment_index;
+        if (idx === frontSegmentIndex || chanfreSet.has(idx)) break;
+        const s = byIdx.get(idx);
+        if (!s || isOfficialCurveSegment(s)) break;
+        const sNext = ordered[(p + 1) % n];
+        if (
+          !isColinearDeflection(
+            angularDifferenceDeg(
+              refBearing,
+              resolveSegmentBearing(s, sNext),
+            ),
+          )
+        ) {
+          break;
+        }
+        result.add(idx);
+        p = (p + step + n) % n;
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
+/** Fundo = arco do anel não percorrido pelos caminhos laterais brutos (frente → fundo). */
+function collectFundoIndexesFromRingWalk(
+  ordered: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  pathAIndexes: number[],
+  pathBIndexes: number[],
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const used = new Set<number>([
+    frontSegmentIndex,
+    ...pathAIndexes,
+    ...pathBIndexes,
+    ...chanfreSet,
+  ]);
+  return ordered
+    .map((s) => s.segment_index)
+    .filter((idx) => {
+      if (used.has(idx)) return false;
+      const seg = byIdx.get(idx);
+      return (
+        seg != null &&
+        !isOfficialCurveSegment(seg) &&
+        isValidSegmentDistance(seg.distance)
+      );
+    });
+}
+
 /** Caminho frente→fundo: só LINE vira lateral; CURVE ignorada; chanfre separado. */
 function partitionLinePathOnRing(
   pathIndexes: number[],
   chanfreSet: Set<number>,
   frontSegmentIndex: number,
-  backSegmentIndex: number,
+  fundoStop: Set<number>,
   byIdx: Map<number, OfficialLotSegment>,
 ): { lateral: number[]; chanfre: number[] } {
   const lateral: number[] = [];
@@ -663,7 +830,7 @@ function partitionLinePathOnRing(
   for (const idx of pathIndexes) {
     const seg = byIdx.get(idx);
     if (!seg || isOfficialCurveSegment(seg)) continue;
-    if (idx === frontSegmentIndex || idx === backSegmentIndex) continue;
+    if (idx === frontSegmentIndex || fundoStop.has(idx)) continue;
     if (chanfreSet.has(idx)) {
       chanfre.push(idx);
       continue;
@@ -714,11 +881,6 @@ function classifySidesByFrontAnchor(
     segments,
     frontSegmentIndex,
   );
-  console.log("BACK_SEGMENT_SELECTED", {
-    lote: lotLabel ?? block?.number ?? block?.id,
-    backSegmentIndex,
-    distanceM: byIdx.get(backSegmentIndex)?.distance,
-  });
 
   const frontCornerChanfre = detectChanfreIndexesByDeflection(
     segments,
@@ -735,6 +897,12 @@ function classifySidesByFrontAnchor(
     ...new Set([...frontCornerChanfre, ...backChanfre]),
   ];
   const chanfreSet = new Set(chanfreIndexes);
+
+  console.log("BACK_SEGMENT_ANCHOR", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    backSegmentIndex,
+    distanceM: byIdx.get(backSegmentIndex)?.distance,
+  });
   console.log("CHANFRE_SELECTED", {
     lote: lotLabel ?? block?.number ?? block?.id,
     chanfreIndexes,
@@ -763,24 +931,16 @@ function classifySidesByFrontAnchor(
     pathAIndexes,
     chanfreSet,
     frontSegmentIndex,
-    backSegmentIndex,
+    fundoStop,
     byIdx,
   );
   const splitB = partitionLinePathOnRing(
     pathBIndexes,
     chanfreSet,
     frontSegmentIndex,
-    backSegmentIndex,
+    fundoStop,
     byIdx,
   );
-
-  const backSeg = byIdx.get(backSegmentIndex);
-  const fundoIndexes =
-    backSeg &&
-    !isOfficialCurveSegment(backSeg) &&
-    isValidSegmentDistance(backSeg.distance)
-      ? [backSegmentIndex]
-      : [];
 
   let ladoDireitoIndexes = Array.isArray(splitA.lateral)
     ? [...splitA.lateral]
@@ -792,6 +952,44 @@ function classifySidesByFrontAnchor(
     ladoDireitoIndexes = [...ladoEsquerdoIndexes];
     ladoEsquerdoIndexes = [];
   }
+
+  ladoDireitoIndexes = expandColinearFundoOnRing(
+    ordered,
+    ladoDireitoIndexes,
+    frontSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+  ladoEsquerdoIndexes = expandColinearFundoOnRing(
+    ordered,
+    ladoEsquerdoIndexes,
+    frontSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+
+  const fundoSeed = collectFundoIndexesFromRingWalk(
+    ordered,
+    frontSegmentIndex,
+    pathAIndexes,
+    pathBIndexes,
+    chanfreSet,
+    byIdx,
+  );
+  const fundoIndexes = expandColinearFundoOnRing(
+    ordered,
+    fundoSeed.length ? fundoSeed : [backSegmentIndex],
+    frontSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+
+  console.log("BACK_GROUP_SELECTED", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    fundoIndexes,
+    fundoTotalM: sumLinePathDistances(fundoIndexes, byIdx),
+    distances: fundoIndexes.map((i) => byIdx.get(i)?.distance),
+  });
 
   const pathA: RingPathResult = {
     indexes: ladoDireitoIndexes,
@@ -826,6 +1024,7 @@ function classifySidesByFrontAnchor(
     pathB,
     pathFundo,
     frontIndex: frontSegmentIndex,
+    frontIndexes: [frontSegmentIndex],
   };
 
   console.log("LOT_SIDE_CLASSIFICATION_DEBUG", {
@@ -1194,7 +1393,31 @@ export type OfficialMeasurePaths = {
   pathB: RingPathResult;
   pathFundo: RingPathResult;
   frontIndex: number;
+  frontIndexes: number[];
 };
+
+function buildMeasuresSidesFromPaths(
+  paths: OfficialMeasurePaths,
+): OfficialLotMeasuresSides {
+  return {
+    front: {
+      total: paths.frente,
+      segmentIndexes: [...paths.frontIndexes],
+    },
+    back: {
+      total: paths.fundo,
+      segmentIndexes: [...paths.pathFundo.indexes],
+    },
+    right: {
+      total: paths.ladoDireito,
+      segmentIndexes: [...paths.pathA.indexes],
+    },
+    left: {
+      total: paths.ladoEsquerdo,
+      segmentIndexes: [...paths.pathB.indexes],
+    },
+  };
+}
 
 /** Lote com frente já vinculada a logradouro (Identificar Frentes). */
 export function hasStreetFrontIdentified(
@@ -1289,6 +1512,7 @@ export function classifySidesByTxtRingPaths(
       pathB: emptyPaths,
       pathFundo: emptyPaths,
       frontIndex: frontSegmentIndex,
+      frontIndexes: [frontSegmentIndex],
     };
   }
 
@@ -1322,6 +1546,7 @@ export function classifySidesByTxtRingPaths(
       pathB: emptyPaths,
       pathFundo: emptyPaths,
       frontIndex: frontSegmentIndex,
+      frontIndexes: [frontSegmentIndex],
     };
   }
 
@@ -1344,22 +1569,12 @@ export function classifySidesByTxtRingPaths(
     ? resolveSegmentBearing(frontSeg, frontNext)
     : frontGroup.averageBearing;
 
-  let backGroupIdx = 0;
-  let bestOpposite = -1;
-  for (let g = 0; g < numGroups; g++) {
-    if (g === frontGroupIdx && !lockedFront) continue;
-    if (lockedFront && groups[g].segmentIndexes.includes(frontSegmentIndex)) {
-      continue;
-    }
-    const opp = angularDifferenceDeg(
-      frontBearing,
-      groups[g].averageBearing,
-    );
-    if (opp > bestOpposite) {
-      bestOpposite = opp;
-      backGroupIdx = g;
-    }
-  }
+  const backGroupIdx = findBackGroupIdxByRingHalf(
+    groups,
+    ordered,
+    frontSegmentIndex,
+    frontBearing,
+  );
 
   const withoutChanfre = (indexes: number[]) =>
     indexes.filter((idx) => !chanfreSet.has(idx));
@@ -1437,18 +1652,32 @@ export function classifySidesByTxtRingPaths(
         : 0
       : frontGroup.totalLength;
 
-  const pathALine = filterRingPathForLineSides(
+  let pathALine = filterRingPathForLineSides(
     pathAIndexes,
     chanfreSet,
     frontSegmentIndex,
     fundoStop,
     byIdx,
   );
-  const pathBLine = filterRingPathForLineSides(
+  let pathBLine = filterRingPathForLineSides(
     pathBIndexes,
     chanfreSet,
     frontSegmentIndex,
     fundoStop,
+    byIdx,
+  );
+  pathALine = expandColinearFundoOnRing(
+    ordered,
+    pathALine,
+    frontSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+  pathBLine = expandColinearFundoOnRing(
+    ordered,
+    pathBLine,
+    frontSegmentIndex,
+    chanfreSet,
     byIdx,
   );
   const pathA: RingPathResult = {
@@ -1459,10 +1688,25 @@ export function classifySidesByTxtRingPaths(
     indexes: pathBLine,
     totalLength: sumLinePathDistances(pathBLine, byIdx),
   };
+  const fundoIndexesResidual = collectFundoIndexesByResidual(
+    ordered,
+    frontSegmentIndex,
+    pathALine,
+    pathBLine,
+    chanfreSet,
+    byIdx,
+  );
+  const fundoFinalIndexes =
+    fundoIndexesResidual.length > 0 ? fundoIndexesResidual : fundoIndexes;
   const pathFundo: RingPathResult = {
-    indexes: fundoIndexes,
-    totalLength: sumLinePathDistances(fundoIndexes, byIdx),
+    indexes: fundoFinalIndexes,
+    totalLength: sumLinePathDistances(fundoFinalIndexes, byIdx),
   };
+
+  const frontIndexes =
+    cornerLotMode || chanfreIndexes.length > 0
+      ? [frontSegmentIndex]
+      : [...frontGroup.segmentIndexes];
 
   const result = {
     frente: isValidSegmentDistance(frenteLen) ? round2(frenteLen) : 0,
@@ -1473,6 +1717,7 @@ export function classifySidesByTxtRingPaths(
     pathB,
     pathFundo,
     frontIndex: frontSegmentIndex,
+    frontIndexes,
   };
 
   console.log("OFFICIAL_GROUPED_MEASURES", {
@@ -1754,11 +1999,13 @@ function buildMeasuresFromSegments(
   );
   const curva = extractOfficialCurveInfo(segments);
 
+  const sides = buildMeasuresSidesFromPaths(paths);
+
   return {
-    frente: paths.frente > 0 ? paths.frente : null,
-    fundo: paths.fundo > 0 ? paths.fundo : null,
-    ladoDireito: paths.ladoDireito > 0 ? paths.ladoDireito : null,
-    ladoEsquerdo: paths.ladoEsquerdo > 0 ? paths.ladoEsquerdo : null,
+    frente: sides.front.total > 0 ? sides.front.total : null,
+    fundo: sides.back.total > 0 ? sides.back.total : null,
+    ladoDireito: sides.right.total > 0 ? sides.right.total : null,
+    ladoEsquerdo: sides.left.total > 0 ? sides.left.total : null,
     chanfre,
     curva,
     area,
@@ -1766,6 +2013,7 @@ function buildMeasuresFromSegments(
     frontSegmentIndex: frontIdx,
     segmentCount: segments.length,
     source: "txt_segments",
+    sides,
   };
 }
 

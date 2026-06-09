@@ -1536,11 +1536,12 @@ function getOfficialLotMeasurementsForPopup(
 ): CleanLotMeasurements {
   try {
     const official = getOfficialLotMeasurements(lot, lot.number);
+    const sides = official.sides;
     return {
-      frente: official.frente,
-      fundo: official.fundo,
-      ladoDireito: official.ladoDireito,
-      ladoEsquerdo: official.ladoEsquerdo,
+      frente: sides?.front.total ?? official.frente,
+      fundo: sides?.back.total ?? official.fundo,
+      ladoDireito: sides?.right.total ?? official.ladoDireito,
+      ladoEsquerdo: sides?.left.total ?? official.ladoEsquerdo,
       chanfre: official.chanfre,
       curva: official.curva,
       area: official.area ?? parseBlockSideLength(lot.area),
