@@ -8,6 +8,7 @@ import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
+import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
 import { MemorialGenerateModal } from '@/components/map/MemorialGenerateModal';
 import { StreetGuideFormModal } from '@/components/map/StreetGuideFormModal';
@@ -484,6 +485,7 @@ export default function MapPage() {
       ).trim();
       const result = await runAutomaticConfrontation(selectedProject.id, {
         tenantId: tenantId || undefined,
+        userId: user?.id ?? null,
         project: selectedProject as Record<string, unknown>,
         streetGuides,
       });
@@ -833,6 +835,30 @@ export default function MapPage() {
                 patch.front_street_id = null;
               }
               await persistBlockPatch(supabase, updateObj.id as string, patch);
+              void logLotAuditEvent(supabase, {
+                ...lotAuditContextFromBlock(
+                  {
+                    id: updateObj.id,
+                    project_id: selectedProject.id,
+                    tenant_id: user?.tenant_id,
+                    company_id: user?.tenant_id,
+                  },
+                  { projectId: selectedProject.id },
+                ),
+                userId: user?.id ?? null,
+                action: 'front_identified',
+                title: 'Frente identificada',
+                description: updateObj.front_street_name
+                  ? `Frente para ${String(updateObj.front_street_name)}`
+                  : 'Frente recalculada automaticamente',
+                newData: {
+                  frente: updateObj.frente,
+                  fundo: updateObj.fundo,
+                  front_segment_index: updateObj.front_segment_index,
+                  front_street_name: updateObj.front_street_name ?? null,
+                },
+                source: 'gis_map',
+              });
            });
            
            await Promise.all(updatePromises);

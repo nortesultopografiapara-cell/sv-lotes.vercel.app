@@ -15,6 +15,10 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import {
+  formatCurrencyBRL,
+  logLotAuditEvent,
+} from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
   buildCashFlowItems,
@@ -583,6 +587,27 @@ export default function FinancePage() {
         'cash_movements',
       );
       await supabase.from('cash_movements').insert(insertPayload);
+
+      if (p.block_id) {
+        void logLotAuditEvent(supabase, {
+          companyId: rlsCtx.tenantId,
+          projectId: p.project_id ?? p.sales?.project_id ?? null,
+          blockId: p.block_id,
+          lotId: p.block_id,
+          saleId: p.sale_id ?? null,
+          contractId: p.sales?.contracts?.[0]?.id ?? null,
+          userId: user?.id ?? null,
+          action: 'payment_received',
+          title: 'Pagamento registrado',
+          description: `Parcela ${p.installment_number || '1'} — ${formatCurrencyBRL(Number(p.amount) || 0)}`,
+          newData: {
+            receipt_id: p.id,
+            installment_number: p.installment_number,
+            amount: p.amount,
+          },
+          source: 'finance_flow',
+        });
+      }
       
       await loadFinance();
       window.dispatchEvent(new Event('finance_updated'));
@@ -1272,6 +1297,24 @@ export default function FinancePage() {
           .update({ status: 'pendente' })
           .eq('id', item.commissionId);
       }
+      if (item.blockId) {
+        void logLotAuditEvent(supabase, {
+          blockId: item.blockId,
+          lotId: item.blockId,
+          saleId: item.saleId ?? null,
+          contractId: item.contractId ?? null,
+          userId: user?.id ?? null,
+          action: 'payment_reversed',
+          title: 'Pagamento estornado',
+          description: item.description || 'Estorno de parcela',
+          newData: {
+            receipt_id: item.receiptId ?? null,
+            cash_movement_id: item.cashMovementId ?? null,
+          },
+          source: 'finance_flow',
+        });
+      }
+
       await loadFinance();
       alert('Movimentação estornada.');
     } catch (err: unknown) {

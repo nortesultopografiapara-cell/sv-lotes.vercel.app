@@ -13,6 +13,11 @@ import {
   type CustomerRecord,
 } from '@/lib/customerIdentity';
 import { logCustomerAudit } from '@/lib/customerAudit';
+import {
+  formatCurrencyBRL,
+  logLotAuditEvent,
+  lotAuditContextFromBlock,
+} from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
@@ -525,5 +530,73 @@ export async function updateSaleFromEdit(
 
   console.log('EDIT_SALE_SUCCESS', { saleId, financeChanged });
 
+  const lotCtx = lotAuditContextFromBlock(
+    { id: lot.id, project_id: lot.project_id },
+    {
+      companyId: tenantId,
+      saleId,
+      contractId: lot.contractId ?? null,
+    },
+  );
+
+  void logLotAuditEvent(supabase, {
+    ...lotCtx,
+    userId,
+    action: 'sale_edited',
+    title: 'Venda editada',
+    description: `Valor final ${formatCurrencyBRL(Number(data.final_value) || 0)}`,
+    oldData: { sale: saleBefore },
+    newData: { sale: saleAfter },
+    source: 'sale_flow',
+  });
+
+  if (customerAuditHasChanges(customerBefore, customerAfter)) {
+    void logLotAuditEvent(supabase, {
+      ...lotCtx,
+      userId,
+      action: 'customer_changed',
+      title: 'Dados do cliente alterados',
+      description: 'Cadastro do comprador atualizado na edição da venda',
+      oldData: { customer: customerBefore },
+      newData: { customer: customerAfter },
+      source: 'customer_flow',
+    });
+  }
+
+  if (financeChanged) {
+    void logLotAuditEvent(supabase, {
+      ...lotCtx,
+      userId,
+      action: 'finance_created',
+      title: 'Parcelas recalculadas',
+      description: 'Financeiro atualizado após edição da venda',
+      source: 'finance_flow',
+    });
+  }
+
   return { contractId: lot.contractId || null, financeChanged };
+}
+
+function customerAuditHasChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): boolean {
+  const keys = [
+    'rg',
+    'profession',
+    'civil_state',
+    'marital_status',
+    'address',
+    'neighborhood',
+    'city',
+    'state',
+    'state_uf',
+    'zip_code',
+    'cep',
+    'phone',
+    'email',
+  ];
+  return keys.some(
+    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
+  );
 }

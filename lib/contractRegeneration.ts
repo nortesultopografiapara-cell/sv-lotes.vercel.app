@@ -8,6 +8,7 @@ import {
   assertCustomerValidForContract,
   validateCustomerForContract,
 } from '@/lib/validateCustomerForContract';
+import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import {
   ensureValidContractNumber,
@@ -1014,6 +1015,22 @@ export async function regenerateSaleContract(
     oldId: contract.id,
     newId: newRow.id,
     version: newVersion,
+  });
+
+  void logLotAuditEvent(supabase, {
+    ...lotAuditContextFromBlock(block, {
+      companyId: tenantId,
+      projectId: (contract.project_id as string) ?? null,
+      saleId,
+      contractId: newRow.id as string,
+    }),
+    userId: params.regeneratedByUserId ?? null,
+    action: 'contract_regenerated',
+    title: 'Contrato regenerado',
+    description: `Contrato nº ${contractNumber} (versão ${newVersion})`,
+    oldData: { contract_id: contract.id, version: maxVersion },
+    newData: { contract_id: newRow.id, version: newVersion },
+    source: 'contract_flow',
   });
 
   return {

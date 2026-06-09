@@ -14,6 +14,7 @@ import {
   type LotAutoConfrontationRecord,
   type ProjectConfrontationSnapshot,
 } from '@/lib/projectConfrontations';
+import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 
 export type AutomaticConfrontationResult = {
   projectId: string;
@@ -27,6 +28,7 @@ export type AutomaticConfrontationResult = {
 
 export type RunAutomaticConfrontationOptions = {
   tenantId?: string;
+  userId?: string | null;
   project?: Record<string, unknown> | null;
   blocks?: Record<string, unknown>[];
   streetGuides?: Record<string, unknown>[];
@@ -181,6 +183,27 @@ export async function runAutomaticConfrontation(
           pending: audit.pendingCount,
         });
       }
+
+      void logLotAuditEvent(supabase, {
+        ...lotAuditContextFromBlock(block, {
+          companyId: options.tenantId ?? null,
+          projectId,
+        }),
+        userId: options.userId ?? null,
+        action: 'confrontation_auto',
+        title: 'Confrontação automática',
+        description: `Confrontantes calculados (frente: ${built.frente || '—'})`,
+        newData: {
+          frente: built.frente,
+          fundo: built.fundo,
+          ladoDireito: built.ladoDireito,
+          ladoEsquerdo: built.ladoEsquerdo,
+          pending: built.pending,
+          confidence: built.confidence,
+        },
+        source: 'gis_map',
+      });
+
       processed += 1;
     } catch (e: unknown) {
       skipped += 1;

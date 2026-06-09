@@ -46,6 +46,15 @@ import {
   type CustomerContractValidation,
 } from "@/lib/validateCustomerForContract";
 import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
+import {
+  formatLotAuditEvent,
+  formatCurrencyBRL,
+  getLotAuditHistory,
+  logLotAuditEvent,
+  lotAuditContextFromBlock,
+  type FormattedLotAuditEvent,
+  type LotAuditLogRow,
+} from "@/lib/lotAudit";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
@@ -1642,8 +1651,15 @@ function LotPopupContent({
   const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [popupTab, setPopupTab] = useState<
-    "resumo" | "confrontacoes" | "comercial"
+    "resumo" | "confrontacoes" | "comercial" | "historico"
   >("resumo");
+  const [auditHistory, setAuditHistory] = useState<FormattedLotAuditEvent[]>(
+    [],
+  );
+  const [auditHistoryLoading, setAuditHistoryLoading] = useState(false);
+  const [auditUserNames, setAuditUserNames] = useState<Record<string, string>>(
+    {},
+  );
 
   const quadraLabel = String(lot.block ?? lot.block_name ?? "").trim();
   const formattedPrice = currentPrice.toLocaleString("pt-BR", {
@@ -1656,6 +1672,50 @@ function LotPopupContent({
     setEditablePrice(currentPrice);
   }, [currentPrice]);
 
+  useEffect(() => {
+    if (popupTab !== "historico" || !lot?.id) return;
+    let cancelled = false;
+
+    async function loadHistory() {
+      setAuditHistoryLoading(true);
+      try {
+        const rows = await getLotAuditHistory(supabase, lot.id, 50);
+        if (cancelled) return;
+        const formatted = rows.map((row) =>
+          formatLotAuditEvent(row as LotAuditLogRow),
+        );
+        setAuditHistory(formatted);
+        const userIds = [
+          ...new Set(
+            formatted.map((e) => e.userId).filter((id): id is string => !!id),
+          ),
+        ];
+        if (userIds.length) {
+          const { data: users } = await supabase
+            .from("users")
+            .select("id, name, email")
+            .in("id", userIds);
+          const map: Record<string, string> = {};
+          for (const u of users || []) {
+            map[u.id] = u.name || u.email || u.id.slice(0, 8);
+          }
+          if (!cancelled) setAuditUserNames(map);
+        } else if (!cancelled) {
+          setAuditUserNames({});
+        }
+      } catch {
+        if (!cancelled) setAuditHistory([]);
+      } finally {
+        if (!cancelled) setAuditHistoryLoading(false);
+      }
+    }
+
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [popupTab, lot?.id]);
+
   const handleSavePrice = async () => {
     try {
       setIsSavingPrice(true);
@@ -1664,6 +1724,16 @@ function LotPopupContent({
       if (error) throw error;
       
       onAction(lot, lot.status, editablePrice);
+
+      void logLotAuditEvent(supabase, {
+        ...lotAuditContextFromBlock(lot),
+        action: "value_changed",
+        title: "Valor do lote alterado",
+        description: `${formatCurrencyBRL(currentPrice)} → ${formatCurrencyBRL(editablePrice)}`,
+        oldData: { price: currentPrice },
+        newData: { price: editablePrice },
+        source: "gis_map",
+      });
       
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -1700,6 +1770,7 @@ function LotPopupContent({
     { id: "resumo" as const, label: "Resumo" },
     { id: "confrontacoes" as const, label: "Confrontações" },
     { id: "comercial" as const, label: "Comercial" },
+    { id: "historico" as const, label: "Histórico" },
   ];
 
   return (
@@ -2073,6 +2144,61 @@ function LotPopupContent({
                 </button>
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {popupTab === "historico" && (
+        <div className="text-[11px] max-h-52 overflow-y-auto">
+          {auditHistoryLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+            </div>
+          ) : auditHistory.length === 0 ? (
+            <p className="text-[10px] text-gray-500 py-4 text-center leading-snug">
+              Sem histórico registrado para este lote.
+            </p>
+          ) : (
+            <ul className="space-y-2.5">
+              {auditHistory.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="border-b border-gray-100 pb-2 last:border-0"
+                >
+                  <div className="flex items-start justify-between gap-1">
+                    <span className="text-[9px] font-mono text-gray-500 shrink-0">
+                      {new Date(entry.createdAt).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <span
+                      className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${entry.badgeClass}`}
+                    >
+                      {entry.actionLabel}
+                    </span>
+                  </div>
+                  <p className="font-semibold text-gray-900 text-[11px] mt-0.5 leading-tight">
+                    {entry.title}
+                  </p>
+                  {entry.description && (
+                    <p className="text-[10px] text-gray-600 mt-0.5 leading-snug">
+                      {entry.description}
+                    </p>
+                  )}
+                  <p className="text-[9px] text-gray-400 mt-0.5">
+                    {entry.userId
+                      ? auditUserNames[entry.userId] ||
+                        `${entry.userId.slice(0, 8)}…`
+                      : "—"}{" "}
+                    · {entry.sourceLabel}
+                  </p>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
@@ -2551,6 +2677,21 @@ export default function GISMap({
         ),
       );
       setFrontCorrectLotId(null);
+      void logLotAuditEvent(supabase, {
+        ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
+        userId: user?.id ?? null,
+        action: "front_corrected",
+        title: "Frente corrigida",
+        description: updatedDisplay
+          ? `Frente para ${updatedDisplay}`
+          : `Segmento ${persistedFrontIdx + 1} definido como frente`,
+        newData: {
+          front_segment_index: persistedFrontIdx,
+          frente: measures.frente,
+          front_street_name: streetFields.front_street_name,
+        },
+        source: "gis_map",
+      });
       alert("Frente atualizada com sucesso.");
     } catch (err: unknown) {
       logSupabaseFrontSaveFailure('GISMap.handlePickFrontSegment', err, {
@@ -2649,6 +2790,21 @@ export default function GISMap({
           l.id === t.blockId ? { ...l, segments_json: rows } : l,
         ),
       );
+      void logLotAuditEvent(supabase, {
+        ...lotAuditContextFromBlock(confrontEdit.lot, { projectId }),
+        userId: user?.id ?? null,
+        action: "confrontation_manual",
+        title: "Confrontação manual",
+        description: `${confrontEdit.side}: ${confrontant}`,
+        newData: {
+          side: confrontEdit.side,
+          confrontant,
+          confrontantType,
+          scope,
+          blockIds: targets.map((x) => x.blockId),
+        },
+        source: "gis_map",
+      });
     }
   };
 
@@ -2787,6 +2943,19 @@ export default function GISMap({
   };
 
   const handleViewContract = (lot: any) => {
+    void logLotAuditEvent(supabase, {
+      ...lotAuditContextFromBlock(lot, {
+        contractId: lot.contractId ?? null,
+        saleId: lot.saleId ?? null,
+      }),
+      userId: user?.id ?? null,
+      action: "contract_viewed",
+      title: "Contrato visualizado",
+      description: lot.contractId
+        ? "Abertura da tela de contratos"
+        : "Contrato não vinculado ao lote",
+      source: "contract_flow",
+    });
     if (lot.contractId) {
       window.open(`/contracts?highlight=${lot.contractId}`, "_blank");
     } else {
@@ -3189,6 +3358,17 @@ export default function GISMap({
           subtitle: `Ação no mapa por ${user.name}`,
         },
       });
+
+      void logLotAuditEvent(supabase, {
+        ...lotAuditContextFromBlock(lot, { projectId: lot.project_id }),
+        userId: user.id,
+        action: "status_changed",
+        title: "Status do lote alterado",
+        description: `${lot.status || "—"} → ${newStatus}`,
+        oldData: { status: lot.status, price: lot.price },
+        newData: { status: newStatus, price: finalPrice },
+        source: "gis_map",
+      });
     } catch (e) {
       console.error("Action error:", e);
       alert("Erro ao realizar ação");
@@ -3470,6 +3650,19 @@ export default function GISMap({
               throw financeError || new Error("Falha ao criar financeiro");
             }
             financeData = fData;
+            void logLotAuditEvent(supabase, {
+              ...lotAuditContextFromBlock(lot, {
+                companyId: finalTenantId,
+                projectId: finalProjectId,
+                saleId,
+              }),
+              userId: user.id,
+              action: "finance_created",
+              title: "Parcelas criadas",
+              description: `${financeData.length} parcela(s) geradas na venda`,
+              newData: { receipts_count: financeData.length, sale_id: saleId },
+              source: "finance_flow",
+            });
           }
 
           const { data: tenantData } = await supabase
@@ -3559,6 +3752,22 @@ export default function GISMap({
               console.warn("[VENDA] contrato bloqueado — dados obrigatórios", {
                 missing: contractValidation.missingRequired,
                 customerId,
+              });
+              void logLotAuditEvent(supabase, {
+                ...lotAuditContextFromBlock(lot, {
+                  companyId: finalTenantId,
+                  projectId: finalProjectId,
+                  saleId,
+                }),
+                userId: user.id,
+                action: "note_added",
+                title: "Geração de contrato bloqueada",
+                description: `Campos pendentes: ${contractValidation.missingRequired.join(", ")}`,
+                newData: {
+                  missing: contractValidation.missingRequired,
+                  customer_id: customerId,
+                },
+                source: "contract_flow",
               });
               alert(
                 "Venda e financeiro salvos, mas o contrato não foi gerado: faltam dados obrigatórios do comprador. Complete o cadastro do cliente.",
@@ -3669,6 +3878,24 @@ export default function GISMap({
               console.log("[VENDA] CUSTOMER_ID_LINKED_TO_CONTRACT", {
                 contract_id: insertedContract.id,
               });
+
+              void logLotAuditEvent(supabase, {
+                ...lotAuditContextFromBlock(lot, {
+                  companyId: finalTenantId,
+                  projectId: finalProjectId,
+                  saleId,
+                  contractId: insertedContract.id,
+                }),
+                userId: user.id,
+                action: "contract_generated",
+                title: "Contrato gerado",
+                description: `Contrato nº ${contractNumber} gerado`,
+                newData: {
+                  contract_id: insertedContract.id,
+                  contract_number: contractNumber,
+                },
+                source: "contract_flow",
+              });
             }
           } catch (contractErr: unknown) {
             console.error("[VENDA] exceção ao criar contrato", contractErr);
@@ -3737,6 +3964,26 @@ export default function GISMap({
             sale_id: saleId,
             contract_id: newContractData?.id || null,
           });
+
+          void logLotAuditEvent(supabase, {
+            ...lotAuditContextFromBlock(lot, {
+              companyId: finalTenantId,
+              projectId: finalProjectId,
+              saleId,
+              contractId: newContractData?.id ?? null,
+            }),
+            userId: user.id,
+            action: "sold",
+            title: "Venda concluída",
+            description: `Lote vendido para ${customerData.name || "cliente"} por ${formatCurrencyBRL(saleValue)}`,
+            newData: {
+              customer_id: customerId,
+              broker_id: finalBrokerId,
+              sale_value: saleValue,
+            },
+            source: "sale_flow",
+          });
+
           try {
              await supabase.from('audit_logs').insert([{ tenant_id: finalTenantId, company_id: finalTenantId, user_id: user.id || null, action: 'TRANSACTION_SUCCESS', module: 'SALES', description: 'Venda concluída com sucesso para o lote ' + lot.id, reference_id: newSaleData?.id }]);
           } catch(e) {}
@@ -3783,6 +4030,25 @@ export default function GISMap({
 
         if (updateError) throw updateError;
         console.log("CUSTOMER_ID_LINKED_TO_BLOCK");
+
+        if (newStatus === "Reservado") {
+          void logLotAuditEvent(supabase, {
+            ...lotAuditContextFromBlock(lot, {
+              companyId: finalTenantId,
+              projectId: finalProjectId,
+            }),
+            userId: user.id,
+            action: "reserved",
+            title: "Lote reservado",
+            description: `Reservado para ${customerData.name || "cliente"}`,
+            newData: {
+              customer_id: customerId,
+              broker_id: finalBrokerId,
+              expiration_time: expirationTime,
+            },
+            source: "sale_flow",
+          });
+        }
       }      
       try {
          if (newStatus === "Reservado") {
