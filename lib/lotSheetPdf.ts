@@ -11,6 +11,7 @@ import type {
 } from '@/lib/lotSheetEnrichment';
 import {
   filterSketchSidesForCleanMap,
+  findBestInteriorLabelPosition,
   graphicScaleBandRect,
   LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
@@ -24,6 +25,14 @@ import {
   type LabelRect,
   type LotSheetSketchSide,
 } from '@/lib/lotSheetLayout';
+import {
+  buildSigefTechnicalData,
+  computeSigefPageRegions,
+  drawSigefConfrontationsPanel,
+  drawSigefTechnicalPanel,
+  LOT_SHEET_SIGEF_LAYOUT,
+  type SigefBox,
+} from '@/lib/lotSheetSigefLayout';
 import {
   loadImageAsBase64,
   loadReportHeaderLogoBase64,
@@ -252,7 +261,8 @@ const DISTANCE_OFFSET_TRY_MM = [6, 5, 4, 3];
 /** Offset interno simétrico das medidas (mm no croqui, sem redução por lado). */
 const DISTANCE_INTERNAL_OFFSET_NORMAL_MM = 6;
 const DISTANCE_INTERNAL_OFFSET_NARROW_MM = 4;
-const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = 2.5;
+const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = LOT_SHEET_SIGEF_LAYOUT ? 4 : 2.5;
+const SIGEF_VERTEX_STAGGER_BOOST = 6;
 
 /** Offset externo dos confrontantes (mm no croqui — afastado da divisa). */
 const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 15;
@@ -764,43 +774,85 @@ function pickInternalNormal(
   return { nx: edge.inNx, ny: edge.inNy };
 }
 
-/** Medida sempre dentro do lote; reduz offset se necessário, nunca inverte para fora. */
+function measureLabelCollides(
+  x: number,
+  y: number,
+  radius: number,
+  placed: PlacedLabelZone[],
+): boolean {
+  for (const z of placed) {
+    if (Math.hypot(x - z.pos[0], y - z.pos[1]) < radius + z.radius + 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Medida com offset interno ou externo — mínimo 4 mm da divisa (SIGEF). */
 function placeDistanceLabelWithSymmetricOffset(
   edge: EdgeGeometry,
   polygon: [number, number][],
   fixedOffsetMm?: number,
-): { x: number; y: number; offsetUsed: number } {
+  placedZones: PlacedLabelZone[] = [],
+): { x: number; y: number; offsetUsed: number; side: 'in' | 'out' } {
   const { nx, ny } = pickInternalNormal(edge, polygon);
-  const tries =
+  const edgeLenMm = Math.hypot(edge.dx, edge.dy);
+  const labelRadius = edgeLenMm < sketchOffsetMm(14) ? 4 : 5;
+  const internalTries =
     fixedOffsetMm != null
       ? [
           fixedOffsetMm,
           ...DISTANCE_OFFSET_TRY_MM.filter((o) => o < fixedOffsetMm),
         ]
-      : DISTANCE_OFFSET_TRY_MM;
+      : [...DISTANCE_OFFSET_TRY_MM, 7, 8];
 
-  for (const off of tries) {
-    const x = edge.mid[0] + nx * off;
-    const y = edge.mid[1] + ny * off;
-    if (!pointInsidePolygon(x, y, polygon)) continue;
-    if (perpendicularDistanceToEdge([x, y], edge) < DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM) {
-      continue;
+  const trySide = (
+    dirNx: number,
+    dirNy: number,
+    offsets: number[],
+    requireInside: boolean,
+    side: 'in' | 'out',
+  ) => {
+    for (const off of offsets) {
+      const x = edge.mid[0] + dirNx * off;
+      const y = edge.mid[1] + dirNy * off;
+      const inside = pointInsidePolygon(x, y, polygon);
+      if (requireInside && !inside) continue;
+      if (!requireInside && inside) continue;
+      if (
+        perpendicularDistanceToEdge([x, y], edge) <
+        DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM
+      ) {
+        continue;
+      }
+      if (measureLabelCollides(x, y, labelRadius, placedZones)) continue;
+      return { x, y, offsetUsed: off, side };
     }
-    return { x, y, offsetUsed: off };
-  }
+    return null;
+  };
 
-  for (const off of [2.5, 2, 1.5]) {
-    const x = edge.mid[0] + nx * off;
-    const y = edge.mid[1] + ny * off;
-    if (pointInsidePolygon(x, y, polygon)) {
-      return { x, y, offsetUsed: off };
-    }
-  }
+  const shortEdge = edgeLenMm < sketchOffsetMm(16);
+  const internalOffsets = shortEdge
+    ? [4, 5, 6, 7]
+    : internalTries;
+
+  const internal = trySide(nx, ny, internalOffsets, true, 'in');
+  if (internal) return internal;
+
+  const externalOffsets = shortEdge
+    ? [5, 6, 7, 8, 10, 12]
+    : [4, 5, 6, 7, 8, 10];
+  const external = trySide(edge.exNx, edge.exNy, externalOffsets, false, 'out');
+  if (external) return external;
+
+  const fallback = trySide(nx, ny, [3, 2.5, 2], true, 'in');
+  if (fallback) return fallback;
 
   return {
-    x: edge.mid[0] + nx * 2,
-    y: edge.mid[1] + ny * 2,
-    offsetUsed: 2,
+    x: edge.mid[0] + edge.exNx * 5,
+    y: edge.mid[1] + edge.exNy * 5,
+    offsetUsed: 5,
+    side: 'out',
   };
 }
 
@@ -836,12 +888,14 @@ function placeDistanceLabelsInsideLot(
   measures: string[],
   frontEdgeIndex: number,
   mainAxis: LotMainAxis,
+  placedZones: PlacedLabelZone[] = [],
 ): { edgeIndex: number; x: number; y: number }[] {
   const verts = preparePolygonVertices(points);
   const n = Math.min(verts.length, measures.length);
   const sides = getSideSegmentsByRole(verts, frontEdgeIndex);
   let lateralOffsetMm: number | null = null;
   const placed: { edgeIndex: number; x: number; y: number }[] = [];
+  const measureZones: PlacedLabelZone[] = [...placedZones];
 
   doc.setTextColor(...BLACK);
 
@@ -864,6 +918,7 @@ function placeDistanceLabelsInsideLot(
           edge,
           verts,
           mainAxis.internalOffsetMm,
+          measureZones,
         );
         lateralOffsetMm = first.offsetUsed;
         x = first.x;
@@ -873,6 +928,7 @@ function placeDistanceLabelsInsideLot(
           edge,
           verts,
           lateralOffsetMm,
+          measureZones,
         );
         x = pos.x;
         y = pos.y;
@@ -882,12 +938,14 @@ function placeDistanceLabelsInsideLot(
         edge,
         verts,
         mainAxis.internalOffsetMm,
+        measureZones,
       );
       x = pos.x;
       y = pos.y;
     }
 
     placed.push({ edgeIndex: i, x, y });
+    measureZones.push({ pos: [x, y], radius: 5, kind: 'distance' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(fontSize);
@@ -1119,7 +1177,13 @@ function placeVertexLabelOutsideCorner(
     verts,
     VERTEX_STAGGER_PROXIMITY_MM,
   );
-  const staggerBoost = stagger * (LOT_SHEET_CLEAN_SKETCH ? 5 : 2.5);
+  const staggerBoost =
+    stagger *
+    (LOT_SHEET_SIGEF_LAYOUT
+      ? SIGEF_VERTEX_STAGGER_BOOST
+      : LOT_SHEET_CLEAN_SKETCH
+        ? 5
+        : 2.5);
 
   const offsets = [
     VERTEX_LABEL_OFFSET_MM + staggerBoost,
@@ -1330,6 +1394,46 @@ function placeSideConfrontantLabels(
 const LOT_BADGE_RADIUS_MM = 5.5;
 /** Profundidade do círculo em direção à rua (8–12% da profundidade do lote). */
 const FRONT_DEPTH_FRACTION = 0.12;
+const SIGEF_LOT_BADGE_MIN_EDGE_MM = 6;
+
+/** Círculo do lote no centro visual livre (SIGEF). */
+function placeLotNumberInVisualCenter(
+  doc: jsPDF,
+  points: [number, number][],
+  lotNum: string,
+  placedZones: PlacedLabelZone[],
+): { badgePos: [number, number]; radius: number } {
+  const verts = preparePolygonVertices(points);
+  const avoid = placedZones.map((z) => ({
+    pos: z.pos,
+    radius: z.radius + 2,
+  }));
+  let badgePos = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: SIGEF_LOT_BADGE_MIN_EDGE_MM,
+    avoid,
+  });
+  if (minDistToPolygonEdges(badgePos, verts) < SIGEF_LOT_BADGE_MIN_EDGE_MM) {
+    badgePos = centroid(verts);
+  }
+  badgePos = resolveLabelCollisions(
+    badgePos,
+    LOT_BADGE_RADIUS_MM,
+    placedZones,
+    4,
+  );
+
+  const r = LOT_BADGE_RADIUS_MM;
+  doc.setDrawColor(...BLACK);
+  doc.setFillColor(255, 255, 255);
+  doc.setLineWidth(0.45);
+  doc.circle(badgePos[0], badgePos[1], r, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...RED);
+  doc.text(lotNum, badgePos[0], badgePos[1] + 1.1, { align: 'center' });
+  doc.setTextColor(...BLACK);
+  return { badgePos, radius: r };
+}
 
 /** Círculo do lote voltado para a frente (próximo à rua). */
 function placeLotNumberNearFront(
@@ -1424,9 +1528,21 @@ function placeAreaLabelCenter(
   const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
   const lineStep = areaFont * 0.38;
 
-  if (placement.useBox) {
-    const boxW = Math.min(usefulW * 0.42, Math.max(22, areaText.length * 1.1));
-    const boxH = areaFont * (lines.length > 1 ? 1.9 : 1.25);
+  const needsCompact =
+    placement.useBox ||
+    placement.edgeDist < MIN_AREA_EDGE_CLEARANCE_MM ||
+    minDistToPolygonEdges(areaPos, verts) < MIN_AREA_EDGE_CLEARANCE_MM;
+
+  if (LOT_SHEET_SIGEF_LAYOUT && needsCompact && badgePos) {
+    areaPos = [
+      badgePos[0],
+      badgePos[1] + LOT_BADGE_RADIUS_MM + areaFont * 0.75,
+    ];
+  }
+
+  if (placement.useBox || needsCompact) {
+    const boxW = Math.min(usefulW * 0.38, Math.max(20, areaText.length * 0.95));
+    const boxH = areaFont * (lines.length > 1 ? 1.7 : 1.15);
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(180, 200, 230);
     doc.setLineWidth(0.2);
@@ -1505,24 +1621,30 @@ function drawMetricTable(
     box.w * 0.26,
     box.w * 0.26,
   ];
-  const rowH = 4.6;
-  const headerH = 5.5;
+  const rowH = LOT_SHEET_SIGEF_LAYOUT ? 5 : 4.6;
+  const headerH = LOT_SHEET_SIGEF_LAYOUT ? 6 : 5.5;
 
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
   doc.rect(box.x, box.y, box.w, box.h);
 
+  if (LOT_SHEET_SIGEF_LAYOUT) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.text('TABELA DE COORDENADAS', box.x + 3, box.y - 1.2);
+  }
+
   let x = box.x;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
+  doc.setFontSize(LOT_SHEET_SIGEF_LAYOUT ? 6 : 6);
   headers.forEach((h, i) => {
     doc.rect(x, box.y, colWidths[i], headerH);
-    doc.text(h, x + colWidths[i] / 2, box.y + 3.5, { align: 'center' });
+    doc.text(h, x + colWidths[i] / 2, box.y + 3.8, { align: 'center' });
     x += colWidths[i];
   });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.5);
+  doc.setFontSize(LOT_SHEET_SIGEF_LAYOUT ? 5.8 : 5.5);
   const maxRows = Math.min(
     rows.length,
     Math.floor((box.h - headerH) / rowH),
@@ -2003,7 +2125,7 @@ export async function generateLotSheetPdf(
 ): Promise<jsPDF> {
   console.log('LOT_SHEET_PDF_GENERATED', {
     lot: input.lot.id,
-    layout: 'metrica_topo_a4',
+    layout: LOT_SHEET_SIGEF_LAYOUT ? 'sigef_a4' : 'metrica_topo_a4',
   });
 
   const company = input.company;
@@ -2028,6 +2150,14 @@ export async function generateLotSheetPdf(
   doc.setLineWidth(0.4);
   doc.rect(innerX, innerY, innerW, innerH);
 
+  const gap = 2;
+  const contentX = innerX + 3;
+  const contentW = innerW - 6;
+
+  const sigefRegions = LOT_SHEET_SIGEF_LAYOUT
+    ? computeSigefPageRegions(pageW, pageH, input.metricRows.length)
+    : null;
+
   const bottomSplitH = 24;
   const footerH = 40;
   const scaleBandH = 9;
@@ -2035,41 +2165,52 @@ export async function generateLotSheetPdf(
   const tableHeaderH = 5.5;
   const tableRows = Math.max(4, Math.min(input.metricRows.length, 12));
   const tableH = tableHeaderH + tableRows * tableRowH + 3;
-  const gap = 2;
-  const contentX = innerX + 3;
-  const contentW = innerW - 6;
 
-  const bottomSplitBox: Box = {
-    x: contentX,
-    y: innerY + innerH - bottomSplitH - 1,
-    w: contentW,
-    h: bottomSplitH,
-  };
+  const bottomSplitBox: Box = sigefRegions
+    ? sigefRegions.bottomSplit
+    : {
+        x: contentX,
+        y: innerY + innerH - bottomSplitH - 1,
+        w: contentW,
+        h: bottomSplitH,
+      };
 
-  const footerBox: Box = {
-    x: contentX,
-    y: bottomSplitBox.y - gap - footerH,
-    w: contentW,
-    h: footerH,
-  };
+  const footerBox: Box = sigefRegions
+    ? sigefRegions.technical
+    : {
+        x: contentX,
+        y: bottomSplitBox.y - gap - footerH,
+        w: contentW,
+        h: footerH,
+      };
 
-  const tableBox: Box = {
-    x: contentX,
-    y: footerBox.y - gap - tableH,
-    w: contentW,
-    h: tableH,
-  };
+  const tableBox: Box = sigefRegions
+    ? sigefRegions.coordinates
+    : {
+        x: contentX,
+        y: footerBox.y - gap - tableH,
+        w: contentW,
+        h: tableH,
+      };
 
-  const scaleY = tableBox.y - gap - scaleBandH;
+  const scaleY = sigefRegions
+    ? sigefRegions.sketchScaleBand.y + 2
+    : tableBox.y - gap - scaleBandH;
 
   const mainTopY = innerY + 3;
   const mainAvailableH = tableBox.y - gap - mainTopY;
-  const mainBox: Box = {
-    x: contentX,
-    y: mainTopY,
-    w: contentW,
-    h: Math.max(120, mainAvailableH),
-  };
+  const mainBox: Box = sigefRegions
+    ? sigefRegions.sketch
+    : {
+        x: contentX,
+        y: mainTopY,
+        w: contentW,
+        h: Math.max(120, mainAvailableH),
+      };
+
+  const confrontationsBox: SigefBox | null = sigefRegions
+    ? sigefRegions.confrontations
+    : null;
 
   const project = input.project;
   const lot = input.lot;
@@ -2114,11 +2255,27 @@ export async function generateLotSheetPdf(
   const sheetVerts = preparePolygonVertices(sheetPts);
   const mainAxis = getLotMainAxis(sheetVerts);
 
-  const scaleBandRect = graphicScaleBandRect(contentX, scaleY, contentW);
+  const scaleBandRect: LabelRect = sigefRegions
+    ? {
+        x: sigefRegions.sketchScaleBand.x,
+        y: sigefRegions.sketchScaleBand.y,
+        w: sigefRegions.sketchScaleBand.w,
+        h: sigefRegions.sketchScaleBand.h,
+        kind: 'scale',
+      }
+    : graphicScaleBandRect(contentX, scaleY, contentW);
   const placedRects: LabelRect[] = [scaleBandRect];
 
-  // Prioridade visual: perímetro → vértices → medidas → nº lote → área → confrontantes
+  // SIGEF: perímetro → vértices → medidas → nº lote → área (sem confrontantes no croqui)
   drawVertexMarkers(doc, sheetPts, placedRects);
+
+  const vertexZones: PlacedLabelZone[] = placedRects
+    .filter((r) => r.kind === 'vertex')
+    .map((r) => ({
+      pos: [r.x + r.w / 2, r.y + r.h / 2] as [number, number],
+      radius: 6,
+      kind: 'vertex',
+    }));
 
   const measurePositions = placeDistanceLabelsInsideLot(
     doc,
@@ -2126,6 +2283,7 @@ export async function generateLotSheetPdf(
     edgeLabels,
     frontEdge,
     mainAxis,
+    vertexZones,
   );
   for (const p of measurePositions) {
     placedRects.push({
@@ -2157,13 +2315,15 @@ export async function generateLotSheetPdf(
       : []),
   ];
 
-  const lotBadge = placeLotNumberNearFront(
-    doc,
-    sheetPts,
-    lotNum,
-    frontEdge,
-    placedZones,
-  );
+  const lotBadge = LOT_SHEET_SIGEF_LAYOUT
+    ? placeLotNumberInVisualCenter(doc, sheetPts, lotNum, placedZones)
+    : placeLotNumberNearFront(
+        doc,
+        sheetPts,
+        lotNum,
+        frontEdge,
+        placedZones,
+      );
   placedZones.push({
     pos: lotBadge.badgePos,
     radius: lotBadge.radius + 2,
@@ -2200,31 +2360,33 @@ export async function generateLotSheetPdf(
     kind: 'area',
   });
 
-  const streetPos = drawFrontStreetLabel(
-    doc,
-    sheetPts,
-    frontEdge,
-    input.sideConfrontants.frente,
-    mainBox,
-    scaleBandRect,
-    placedRects,
-  );
-  if (streetPos) {
-    placedZones.push({
-      pos: streetPos,
-      radius: 7,
-      kind: 'street',
-    });
+  let streetPos: [number, number] | null = null;
+  if (!LOT_SHEET_SIGEF_LAYOUT) {
+    streetPos = drawFrontStreetLabel(
+      doc,
+      sheetPts,
+      frontEdge,
+      input.sideConfrontants.frente,
+      mainBox,
+      scaleBandRect,
+      placedRects,
+    );
+    if (streetPos) {
+      placedZones.push({
+        pos: streetPos,
+        radius: 7,
+        kind: 'street',
+      });
+    }
+    placeSideConfrontantLabels(
+      doc,
+      sheetPts,
+      input.sketchSides ?? [],
+      input.sideConfrontants.frente,
+      mainBox,
+      placedRects,
+    );
   }
-
-  placeSideConfrontantLabels(
-    doc,
-    sheetPts,
-    input.sketchSides ?? [],
-    input.sideConfrontants.frente,
-    mainBox,
-    placedRects,
-  );
 
   console.log('LOT_SHEET_FINAL_FRONT_LAYOUT', {
     frontEdgeIndex: frontEdge,
@@ -2243,22 +2405,65 @@ export async function generateLotSheetPdf(
           )
         : null,
   });
-  drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
+  if (sigefRegions) {
+    drawCompassRose(
+      doc,
+      sigefRegions.compass.cx,
+      sigefRegions.compass.cy,
+      sigefRegions.compass.r,
+    );
+  } else {
+    drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
+  }
+
+  drawGraphicScale(
+    doc,
+    sigefRegions ? sigefRegions.sketchScaleBand.x + 2 : contentX,
+    scaleY + 4,
+    sigefRegions ? sigefRegions.sketchScaleBand.w - 4 : contentW,
+    scaleDenom,
+  );
+
+  if (confrontationsBox) {
+    drawSigefConfrontationsPanel(
+      doc,
+      confrontationsBox,
+      input.sideConfrontants,
+    );
+  }
 
   drawMetricTable(doc, tableBox, input.metricRows);
-  drawGraphicScale(doc, contentX, scaleY + 4, contentW, scaleDenom);
 
-  drawMetricTopoFooter(doc, footerBox, {
-    projectName,
-    owner: input.ownerDetails,
-    lotNum,
-    quadra,
-    area: input.measures.area,
-    scale: formatScaleLabel(input.scaleLabel),
-    date: new Date().toLocaleDateString('pt-BR'),
-    confrontants: input.sideConfrontants,
-    logoBase64,
-  });
+  if (LOT_SHEET_SIGEF_LAYOUT && sigefRegions) {
+    drawSigefTechnicalPanel(
+      doc,
+      footerBox,
+      buildSigefTechnicalData({
+        projectName,
+        quadra,
+        lotNum,
+        area: input.measures.area,
+        scale: formatScaleLabel(input.scaleLabel),
+        date: new Date().toLocaleDateString('pt-BR'),
+        lot,
+        owner: input.ownerDetails,
+        tech: techProfile,
+        logoBase64,
+      }),
+    );
+  } else {
+    drawMetricTopoFooter(doc, footerBox, {
+      projectName,
+      owner: input.ownerDetails,
+      lotNum,
+      quadra,
+      area: input.measures.area,
+      scale: formatScaleLabel(input.scaleLabel),
+      date: new Date().toLocaleDateString('pt-BR'),
+      confrontants: input.sideConfrontants,
+      logoBase64,
+    });
+  }
 
   drawBottomFooterSplit(
     doc,
