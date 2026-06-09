@@ -1758,13 +1758,31 @@ function LotPopupContent({
               m²
             </span>
           </div>
-          <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">Frente</span>
-            <span className="font-medium text-gray-900">
-              {officialMeasures.frente != null
-                ? `${officialMeasures.frente.toFixed(2)} m`
-                : "—"}
-            </span>
+          <div className="py-0.5 space-y-0.5">
+            <span className="text-gray-500 font-semibold">Medidas:</span>
+            {(
+              [
+                ["Frente", officialMeasures.frente],
+                ["Fundo", officialMeasures.fundo],
+                ["Lado Dir.", officialMeasures.ladoDireito],
+                ["Lado Esq.", officialMeasures.ladoEsquerdo],
+              ] as const
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                className="flex justify-between items-center gap-2 leading-tight"
+              >
+                <span className="text-gray-500 shrink-0">{label}:</span>
+                <span className="font-medium text-gray-900 text-right">
+                  {value != null && Number.isFinite(value)
+                    ? `${value.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} m`
+                    : "—"}
+                </span>
+              </div>
+            ))}
           </div>
           {frontStreetLabel && (
             <div className="flex justify-between items-start gap-2 py-0.5 px-1.5 -mx-0.5 rounded bg-emerald-50/80">
