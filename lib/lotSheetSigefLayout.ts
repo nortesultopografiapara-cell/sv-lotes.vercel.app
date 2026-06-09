@@ -32,6 +32,7 @@ export type SigefPageRegions = {
 const SIGEF_MARGIN = 5;
 const SKETCH_SCALE_BAND_H = 14;
 const CONFRONTATIONS_PANEL_H = 24;
+const CONFRONTATIONS_PANEL_BOTTOM_PAD_MM = 4;
 const CONFRONTATIONS_COORDS_GAP_MM = 4;
 const COORDINATES_TITLE_H = 5;
 
@@ -112,10 +113,36 @@ export function formatPerimeterDisplay(
 }
 
 /** Regiões da página A4 — croqui, confrontações, tabela, bloco técnico, RT. */
+/** Altura dinâmica do quadro CONFRONTAÇÕES (margem inferior garantida). */
+export function computeConfrontationsPanelHeight(
+  confrontants: LotSheetSideConfrontants,
+): number {
+  const padTop = 4;
+  const titleBlock = 6.5;
+  const lineStep = 4.8;
+  const bottomPad = CONFRONTATIONS_PANEL_BOTTOM_PAD_MM;
+  const values = [
+    confrontants.frente,
+    confrontants.fundo,
+    confrontants.ladoDireito,
+    confrontants.ladoEsquerdo,
+  ];
+  let contentH = 0;
+  for (const value of values) {
+    const wrapped = wrapConfrontantText(value || '—', 52, 2);
+    contentH += Math.max(1, wrapped.length) * lineStep;
+  }
+  return Math.max(
+    CONFRONTATIONS_PANEL_H,
+    padTop + titleBlock + contentH + bottomPad,
+  );
+}
+
 export function computeSigefPageRegions(
   pageW: number,
   pageH: number,
   metricRowCount: number,
+  confrontants?: LotSheetSideConfrontants,
 ): SigefPageRegions {
   const innerW = pageW - SIGEF_MARGIN * 2;
   const innerH = pageH - SIGEF_MARGIN * 2;
@@ -131,7 +158,9 @@ export function computeSigefPageRegions(
 
   const bottomSplitH = 24;
   const technicalH = 34;
-  const confrontationsH = CONFRONTATIONS_PANEL_H;
+  const confrontationsH = confrontants
+    ? computeConfrontationsPanelHeight(confrontants)
+    : CONFRONTATIONS_PANEL_H;
   const tableRowH = 5;
   const tableHeaderH = 6;
   const tableRows = Math.max(4, Math.min(metricRowCount, 12));
@@ -267,13 +296,18 @@ export function drawSigefConfrontationsPanel(
   const lineStep = 4.8;
   const labelColW = 32;
   const valueX = box.x + box.w - padX;
+  const bottomLimit = box.y + box.h - CONFRONTATIONS_PANEL_BOTTOM_PAD_MM;
 
   for (const [label, value] of rows) {
+    const wrapped = wrapConfrontantText(value, 52, 2);
+    const rowLines = Math.max(1, wrapped.length);
+    const rowH = rowLines * lineStep;
+    if (ly + rowH > bottomLimit) break;
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.2);
     doc.text(label, box.x + padX, ly);
     const labelEndX = box.x + padX + labelColW;
-    const wrapped = wrapConfrontantText(value, 52, 2);
     const display = wrapped.join(' / ');
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
@@ -282,12 +316,16 @@ export function drawSigefConfrontationsPanel(
     if (dotsEnd > labelEndX + 4) {
       drawSigefDottedLeader(doc, labelEndX, dotsEnd, ly - 0.6);
     }
-    doc.text(display, valueX, ly, { align: 'right', maxWidth: box.w - labelColW - padX * 2 });
-    ly += lineStep;
+    doc.text(display, valueX, ly, {
+      align: 'right',
+      maxWidth: box.w - labelColW - padX * 2,
+    });
+    ly += rowH;
   }
 
+  const footerY = box.y + box.h - CONFRONTATIONS_PANEL_BOTTOM_PAD_MM + 1;
   doc.setLineWidth(0.2);
-  doc.line(box.x + padX, box.y + box.h - 2, box.x + box.w - padX, box.y + box.h - 2);
+  doc.line(box.x + padX, footerY, box.x + box.w - padX, footerY);
 }
 
 export type SigefMetricTableRow = {

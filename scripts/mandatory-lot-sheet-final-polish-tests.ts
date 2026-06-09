@@ -7,6 +7,8 @@ import { buildLotConfrontationAudit, confrontantsFromAudit } from '../lib/assist
 import { buildOfficialSheetLocalGeometry } from '../lib/lotSheetCoordinates';
 import {
   buildSketchLayoutFromBlock,
+  computeLotFrontLayoutContext,
+  LOT_FRONT_BADGE_DEPTH_FRACTION,
   LOT_NUMBER_AREA_MIN_GAP_MM,
   MEASURE_LABEL_EXTERNAL_OFFSET_MM,
   MEASURE_LABEL_INTERNAL_OFFSET_MM,
@@ -21,6 +23,7 @@ import {
 import { generateLotSheetPdf } from '../lib/lotSheetPdf';
 import type { LotSheetPayload } from '../lib/lotSheetData';
 import {
+  computeConfrontationsPanelHeight,
   computeSigefPageRegions,
   polygonSheetBBox,
   resolveSigefGraphicScaleBox,
@@ -116,9 +119,9 @@ function sheetVertsFromBlock(
 }
 
 function testMeasureLabelOffsetConstants() {
-  assert(MEASURE_LABEL_INTERNAL_OFFSET_MM === 5, 'offset interno 5mm');
+  assert(MEASURE_LABEL_INTERNAL_OFFSET_MM === 6, 'offset interno 6mm');
   assert(MEASURE_LABEL_EXTERNAL_OFFSET_MM === 5, 'offset externo 5mm');
-  assert(MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM === 5, 'clearance mínimo 5mm');
+  assert(MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM === 6, 'clearance mínimo 6mm');
   console.log('OK testMeasureLabelOffsetConstants');
 }
 
@@ -134,9 +137,29 @@ function testResolveMeasureLabelPositionClearance() {
     exNy: -1,
   };
   const pos = resolveMeasureLabelPosition(edge, verts, []);
-  assert(pos.offsetUsed >= 5, `offset >= 5: ${pos.offsetUsed}`);
-  assert(pos.y >= 35, `medida afastada da divisa: y=${pos.y}`);
+  assert(pos.offsetUsed >= 6, `offset >= 6: ${pos.offsetUsed}`);
+  assert(pos.y >= 36, `medida afastada da divisa: y=${pos.y}`);
   console.log('OK testResolveMeasureLabelPositionClearance');
+}
+
+function testResolveMeasureLabelForceInternalOnly() {
+  const verts = rectVerts();
+  const edge: MeasureLabelEdgeInput = {
+    mid: [54, 50],
+    p1: verts[0],
+    p2: verts[1],
+    inNx: 0,
+    inNy: 1,
+    exNx: 0,
+    exNy: -1,
+  };
+  const pos = resolveMeasureLabelPosition(edge, verts, [], {
+    edgeLenMm: 8,
+    forceInternalOnly: true,
+  });
+  assert(pos.side === 'in', `SIGEF força interno: ${pos.side}`);
+  assert(pos.offsetUsed >= 6, `offset interno >= 6: ${pos.offsetUsed}`);
+  console.log('OK testResolveMeasureLabelForceInternalOnly');
 }
 
 function testResolveMeasureLabelShortEdgeExternalFirst() {
@@ -167,17 +190,42 @@ function testPlaceLotNumberAndAreaGap() {
     inwardDepthMm: 40,
     narrow: false,
     vertexCount: 4,
+    frontEdgeIndex: 0,
   });
   assert(
     layout.numberAreaGapMm >= LOT_NUMBER_AREA_MIN_GAP_MM - 0.5,
-    `gap número×área >= 12mm: ${layout.numberAreaGapMm}`,
+    `gap número×área >= 10mm: ${layout.numberAreaGapMm}`,
   );
   assert(
     layout.areaPos[1] > layout.badgePos[1] + layout.badgeRadius,
     'área abaixo do número',
   );
+  assert(Math.abs(layout.areaPos[0] - layout.badgePos[0]) < 8, 'área alinhada ao número');
+  assert(!layout.useCombinedBox, 'sem caixa branca combinada');
   assert(layout.areaInsidePolygon, 'área dentro do polígono');
   console.log('OK testPlaceLotNumberAndAreaGap');
+}
+
+function testPlaceLotNumberFromOfficialFront() {
+  const verts = rectVerts();
+  const front = computeLotFrontLayoutContext(verts, 0);
+  const layout = placeLotNumberAndArea(verts, '2.500,00 m²', [], {
+    crossWidthMm: 50,
+    inwardDepthMm: 40,
+    narrow: false,
+    vertexCount: 4,
+    frontEdgeIndex: 0,
+  });
+  const expectedDepth = front.maxInwardDepthMm * LOT_FRONT_BADGE_DEPTH_FRACTION;
+  const badgeDepth =
+    (layout.badgePos[0] - front.frontMid[0]) * front.inwardNx +
+    (layout.badgePos[1] - front.frontMid[1]) * front.inwardNy;
+  assert(badgeDepth >= expectedDepth * 0.5, `número avança da frente: ${badgeDepth}`);
+  assert(
+    layout.badgePos[1] > front.frontMid[1] + 2,
+    'número não fica no centroide do retângulo',
+  );
+  console.log('OK testPlaceLotNumberFromOfficialFront');
 }
 
 function testAreaDoesNotCollideWithMeasures() {
@@ -213,6 +261,7 @@ function testAreaDoesNotCollideWithMeasures() {
     inwardDepthMm: 40,
     narrow: false,
     vertexCount: 4,
+    frontEdgeIndex: 0,
   });
   assert(layout.areaInsidePolygon, 'área dentro do polígono');
   for (const z of zones) {
@@ -235,6 +284,17 @@ function testVertexLabelSpacing() {
   const s1 = resolveVertexLabelSpacing(1, verts, VERTEX_LABEL_MIN_SPACING_MM);
   assert(s1 >= 1, `stagger vértice próximo: ${s1}`);
   console.log('OK testVertexLabelSpacing');
+}
+
+function testConfrontationsPanelDynamicHeight() {
+  const h = computeConfrontationsPanelHeight({
+    frente: 'RUA INTERNA',
+    fundo: 'LOTE 05',
+    ladoDireito: 'LOTE 03',
+    ladoEsquerdo: 'ÁREA DE PRESERVAÇÃO PERMANENTE — APP MARGEM DO RIO',
+  });
+  assert(h >= 28, `altura dinâmica confrontações: ${h}`);
+  console.log('OK testConfrontationsPanelDynamicHeight');
 }
 
 function testSigefRegionsConfrontationsTableGap() {
@@ -322,6 +382,7 @@ function testConfrontationsFromAuditLot04() {
     inwardDepthMm: 30,
     narrow: false,
     vertexCount: 4,
+    frontEdgeIndex: 0,
   });
   assert(layout.areaInsidePolygon, 'lote 04 área dentro');
   assert(pointInsideRing(layout.badgePos[0], layout.badgePos[1], verts), 'número dentro');
@@ -469,8 +530,11 @@ async function testPdfLot018() {
 async function main() {
   testMeasureLabelOffsetConstants();
   testResolveMeasureLabelPositionClearance();
+  testResolveMeasureLabelForceInternalOnly();
   testResolveMeasureLabelShortEdgeExternalFirst();
   testPlaceLotNumberAndAreaGap();
+  testPlaceLotNumberFromOfficialFront();
+  testConfrontationsPanelDynamicHeight();
   testAreaDoesNotCollideWithMeasures();
   testVertexLabelSpacing();
   testSigefRegionsConfrontationsTableGap();

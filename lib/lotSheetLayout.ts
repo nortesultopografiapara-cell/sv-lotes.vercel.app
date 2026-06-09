@@ -714,12 +714,74 @@ export function graphicScaleBandRect(
 }
 
 /** ETAPA 4.1/4.2 — anti-colisão e espaçamento SIGEF (somente layout). */
-export const MEASURE_LABEL_INTERNAL_OFFSET_MM = 5;
+export const MEASURE_LABEL_INTERNAL_OFFSET_MM = 6;
 export const MEASURE_LABEL_EXTERNAL_OFFSET_MM = 5;
-export const MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM = 5;
-export const LOT_NUMBER_AREA_MIN_GAP_MM = 12;
-export const LOT_NUMBER_AREA_MAX_GAP_MM = 15;
+export const MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM = 6;
+export const LOT_NUMBER_AREA_MIN_GAP_MM = 10;
+export const LOT_NUMBER_AREA_MAX_GAP_MM = 14;
 export const VERTEX_LABEL_MIN_SPACING_MM = 15;
+/** Profundidade do número do lote a partir da frente oficial (10%). */
+export const LOT_FRONT_BADGE_DEPTH_FRACTION = 0.1;
+
+export type LotFrontLayoutContext = {
+  frontMid: [number, number];
+  inwardNx: number;
+  inwardNy: number;
+  maxInwardDepthMm: number;
+};
+
+type SheetEdgeGeometry = {
+  mid: [number, number];
+  inNx: number;
+  inNy: number;
+  exNx: number;
+  exNy: number;
+};
+
+function edgeGeometryAt(
+  verts: [number, number][],
+  index: number,
+): SheetEdgeGeometry {
+  const n = verts.length;
+  const i = ((index % n) + n) % n;
+  const p1 = verts[i];
+  const p2 = verts[(i + 1) % n];
+  const dx = p2[0] - p1[0];
+  const dy = p2[1] - p1[1];
+  const len = Math.hypot(dx, dy) || 1e-12;
+  const mid: [number, number] = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+  const exNx = dy / len;
+  const exNy = -dx / len;
+  let inNx = -exNx;
+  let inNy = -exNy;
+  const probe: [number, number] = [mid[0] + inNx * 2, mid[1] + inNy * 2];
+  if (!pointInsideRing(probe[0], probe[1], verts)) {
+    inNx = exNx;
+    inNy = exNy;
+  }
+  return { mid, inNx, inNy, exNx, exNy };
+}
+
+/** Frente oficial → ponto médio + normal interna + profundidade útil. */
+export function computeLotFrontLayoutContext(
+  verts: [number, number][],
+  frontEdgeIndex: number,
+): LotFrontLayoutContext {
+  const edge = edgeGeometryAt(verts, frontEdgeIndex);
+  let maxInwardDepthMm = 0;
+  for (const v of verts) {
+    const d =
+      (v[0] - edge.mid[0]) * edge.inNx + (v[1] - edge.mid[1]) * edge.inNy;
+    if (d > maxInwardDepthMm) maxInwardDepthMm = d;
+  }
+  if (maxInwardDepthMm < 8) maxInwardDepthMm = 8;
+  return {
+    frontMid: edge.mid,
+    inwardNx: edge.inNx,
+    inwardNy: edge.inNy,
+    maxInwardDepthMm,
+  };
+}
 
 export type MeasureLabelEdgeInput = {
   mid: [number, number];
@@ -780,6 +842,8 @@ export function resolveMeasureLabelPosition(
     labelRadius?: number;
     minEdgeClearance?: number;
     edgeLenMm?: number;
+    /** SIGEF: medidas sempre dentro do lote (sem offset externo). */
+    forceInternalOnly?: boolean;
   },
 ): {
   x: number;
@@ -792,7 +856,10 @@ export function resolveMeasureLabelPosition(
   const minClear =
     options?.minEdgeClearance ?? MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM;
   const shortEdge = (options?.edgeLenMm ?? 999) < 22;
-  const internalOffsets = [5, 6, 7, 8, 9, 10];
+  const forceInternal = options?.forceInternalOnly === true;
+  const internalOffsets = shortEdge
+    ? [6, 7, 8, 9, 10, 12, 14]
+    : [6, 7, 8, 9, 10, 11, 12, 14];
   const externalOffsets = shortEdge
     ? [8, 10, 12, 14, 16, 18]
     : [5, 6, 7, 8, 10, 12, 14];
@@ -839,15 +906,17 @@ export function resolveMeasureLabelPosition(
   ];
 
   for (const normals of normalSets) {
-    const tryOrder = shortEdge
-      ? ([
-          ['ex', externalOffsets, false] as const,
-          ['in', internalOffsets, true] as const,
-        ] as const)
-      : ([
-          ['in', internalOffsets, true] as const,
-          ['ex', externalOffsets, false] as const,
-        ] as const);
+    const tryOrder = forceInternal
+      ? ([['in', internalOffsets, true] as const] as const)
+      : shortEdge
+        ? ([
+            ['ex', externalOffsets, false] as const,
+            ['in', internalOffsets, true] as const,
+          ] as const)
+        : ([
+            ['in', internalOffsets, true] as const,
+            ['ex', externalOffsets, false] as const,
+          ] as const);
     for (const [kind, offsets, inside] of tryOrder) {
       for (const off of offsets) {
         const hit = tryCandidate(
@@ -863,11 +932,16 @@ export function resolveMeasureLabelPosition(
     }
   }
 
+  const fallbackNx = forceInternal ? edge.inNx : edge.exNx;
+  const fallbackNy = forceInternal ? edge.inNy : edge.exNy;
+  const fallbackOff = forceInternal
+    ? internalOffsets[internalOffsets.length - 1]
+    : MEASURE_LABEL_EXTERNAL_OFFSET_MM;
   return {
-    x: edge.mid[0] + edge.exNx * MEASURE_LABEL_EXTERNAL_OFFSET_MM,
-    y: edge.mid[1] + edge.exNy * MEASURE_LABEL_EXTERNAL_OFFSET_MM,
-    offsetUsed: MEASURE_LABEL_EXTERNAL_OFFSET_MM,
-    side: 'out',
+    x: edge.mid[0] + fallbackNx * fallbackOff,
+    y: edge.mid[1] + fallbackNy * fallbackOff,
+    offsetUsed: fallbackOff,
+    side: forceInternal ? 'in' : 'out',
     rotated: false,
   };
 }
@@ -894,7 +968,99 @@ function areaPositionSafe(
   return true;
 }
 
-/** Número no centro visual; área horizontal abaixo (10–15 mm) ou caixa combinada. */
+function badgePositionSafe(
+  verts: [number, number][],
+  pos: [number, number],
+  radius: number,
+  placedZones: MeasureLabelZone[],
+): boolean {
+  if (!pointInsideRing(pos[0], pos[1], verts)) return false;
+  if (minDistToPolygonRing(pos, verts) < radius + 3) return false;
+  if (measureLabelHitsZones(pos[0], pos[1], radius + 2, placedZones, 4)) {
+    return false;
+  }
+  return true;
+}
+
+function nudgeBadgeFromFront(
+  verts: [number, number][],
+  front: LotFrontLayoutContext,
+  start: [number, number],
+  badgeRadius: number,
+  placedZones: MeasureLabelZone[],
+): [number, number] {
+  const depthSteps = [0, 0.02, 0.04, 0.06, 0.08, -0.02, 0.1, 0.12];
+  const lateral = [0, -3, 3, -5, 5];
+  const baseDepth =
+    (start[0] - front.frontMid[0]) * front.inwardNx +
+    (start[1] - front.frontMid[1]) * front.inwardNy;
+
+  for (const ld of depthSteps) {
+    for (const lx of lateral) {
+      const depth = Math.max(4, Math.min(front.maxInwardDepthMm * 0.45, baseDepth + front.maxInwardDepthMm * ld));
+      const perpNx = -front.inwardNy;
+      const perpNy = front.inwardNx;
+      const candidate: [number, number] = [
+        front.frontMid[0] + front.inwardNx * depth + perpNx * lx,
+        front.frontMid[1] + front.inwardNy * depth + perpNy * lx,
+      ];
+      if (badgePositionSafe(verts, candidate, badgeRadius, placedZones)) {
+        return candidate;
+      }
+    }
+  }
+  return start;
+}
+
+function areaBelowBadgeOffset(
+  badgeRadius: number,
+  gap: number,
+  fontSize: number,
+): number {
+  return badgeRadius + gap + fontSize * 0.42;
+}
+
+function areaPosBelowBadge(
+  badgePos: [number, number],
+  badgeRadius: number,
+  gap: number,
+  fontSize: number,
+): [number, number] {
+  return [badgePos[0], badgePos[1] + areaBelowBadgeOffset(badgeRadius, gap, fontSize)];
+}
+
+function nudgeAreaBelowBadge(
+  verts: [number, number][],
+  badgePos: [number, number],
+  badgeRadius: number,
+  gap: number,
+  fontSize: number,
+  placedZones: MeasureLabelZone[],
+  front: LotFrontLayoutContext,
+): [number, number] {
+  const gaps = [gap, gap + 2, gap + 4, LOT_NUMBER_AREA_MAX_GAP_MM];
+  const lateral = [0, -2, 2, -4, 4];
+  const perpNx = -front.inwardNy;
+  const perpNy = front.inwardNx;
+
+  for (const g of gaps) {
+    for (const lx of lateral) {
+      const candidate: [number, number] = [
+        badgePos[0] + perpNx * lx,
+        badgePos[1] + areaBelowBadgeOffset(badgeRadius, g, fontSize) + perpNy * lx,
+      ];
+      if (areaPositionSafe(verts, candidate, placedZones)) {
+        return candidate;
+      }
+    }
+  }
+
+  return areaPosBelowBadge(badgePos, badgeRadius, gap, fontSize);
+}
+
+/**
+ * Número orientado pela frente oficial; área alinhada logo abaixo (sem caixa branca).
+ */
 export function placeLotNumberAndArea(
   verts: [number, number][],
   areaText: string,
@@ -906,6 +1072,7 @@ export function placeLotNumberAndArea(
     narrow: boolean;
     vertexCount: number;
     minNumberAreaGapMm?: number;
+    frontEdgeIndex: number;
   },
 ): LotNumberAreaLayout {
   const badgeRadius = options.badgeRadius ?? 5.5;
@@ -916,105 +1083,131 @@ export function placeLotNumberAndArea(
       LOT_NUMBER_AREA_MAX_GAP_MM,
     ),
   );
-  const avoid = placedZones.map((z) => ({
-    pos: z.pos,
-    radius: z.radius + 2,
-  }));
-
-  let badgePos = findBestInteriorLabelPosition(verts, {
-    minEdgeDist: 6,
-    avoid,
-  });
-  if (minDistToPolygonRing(badgePos, verts) < 6) {
-    badgePos = ringCentroid(verts);
-  }
-
+  const front = computeLotFrontLayoutContext(verts, options.frontEdgeIndex);
   const placement = resolveAreaLabelPlacement(verts, areaText, {
     crossWidthMm: options.crossWidthMm,
-    inwardDepthMm: options.inwardDepthMm,
+    inwardDepthMm: front.maxInwardDepthMm,
     vertexCount: options.vertexCount,
     narrow: options.narrow,
-    avoid: [...avoid, { pos: badgePos, radius: badgeRadius + 4 }],
-    fallbackPos: badgePos,
+    avoid: placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+    fallbackPos: front.frontMid,
   });
 
-  let areaPos: [number, number] = [
-    badgePos[0],
-    badgePos[1] + badgeRadius + minGap + placement.fontSize * 0.4,
+  const stackBelowMm = areaBelowBadgeOffset(
+    badgeRadius,
+    minGap,
+    placement.fontSize,
+  );
+  const areaBelowTowardFront = front.inwardNy < 0;
+  const minDepthFrac = areaBelowTowardFront
+    ? Math.min(
+        0.42,
+        (stackBelowMm + badgeRadius + 5) /
+          Math.max(front.maxInwardDepthMm, 1),
+      )
+    : LOT_FRONT_BADGE_DEPTH_FRACTION;
+  const maxDepthFrac = Math.min(
+    0.42,
+    Math.max(
+      LOT_FRONT_BADGE_DEPTH_FRACTION,
+      (front.maxInwardDepthMm - stackBelowMm - 8) /
+        Math.max(front.maxInwardDepthMm, 1),
+    ),
+  );
+  const depthFracs = [
+    Math.max(LOT_FRONT_BADGE_DEPTH_FRACTION, minDepthFrac),
+    LOT_FRONT_BADGE_DEPTH_FRACTION,
+    0.12,
+    0.14,
+    0.16,
+    0.18,
+    0.2,
+    0.08,
+    0.06,
+  ]
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .filter((v) => v <= maxDepthFrac + 1e-6);
+
+  let badgePos: [number, number] = [
+    front.frontMid[0] +
+      front.inwardNx * front.maxInwardDepthMm * depthFracs[0],
+    front.frontMid[1] +
+      front.inwardNy * front.maxInwardDepthMm * depthFracs[0],
   ];
-  let useCombinedBox = false;
 
-  if (!areaPositionSafe(verts, areaPos, placedZones)) {
-    const altGap = LOT_NUMBER_AREA_MAX_GAP_MM;
-    areaPos = [
-      badgePos[0],
-      badgePos[1] + badgeRadius + altGap + placement.fontSize * 0.4,
+  for (const frac of depthFracs) {
+    const candidate: [number, number] = [
+      front.frontMid[0] + front.inwardNx * front.maxInwardDepthMm * frac,
+      front.frontMid[1] + front.inwardNy * front.maxInwardDepthMm * frac,
     ];
-  }
-
-  if (!areaPositionSafe(verts, areaPos, placedZones)) {
-    const safeCenter = findBestInteriorLabelPosition(verts, {
-      minEdgeDist: 5,
-      avoid: [...avoid, { pos: badgePos, radius: badgeRadius + 3 }],
-    });
-    badgePos = safeCenter;
-    areaPos = [
-      badgePos[0],
-      badgePos[1] + badgeRadius + minGap + placement.fontSize * 0.4,
-    ];
-    useCombinedBox = true;
-  }
-
-  if (!areaPositionSafe(verts, areaPos, placedZones)) {
-    areaPos = [badgePos[0], badgePos[1] + badgeRadius + minGap + 2];
-    useCombinedBox = true;
-  }
-
-  if (!areaPositionSafe(verts, areaPos, placedZones)) {
-    const gapSteps = [
+    const areaCandidate = areaPosBelowBadge(
+      candidate,
+      badgeRadius,
       minGap,
-      LOT_NUMBER_AREA_MAX_GAP_MM,
-      minGap + 4,
-      minGap + 8,
-    ];
-    const lateral = [-10, 0, 10, -14, 14];
-    let resolved = false;
-    for (const g of gapSteps) {
-      for (const lx of lateral) {
-        const below: [number, number] = [
-          badgePos[0] + lx,
-          badgePos[1] + badgeRadius + g + placement.fontSize * 0.35,
-        ];
-        if (areaPositionSafe(verts, below, placedZones)) {
-          areaPos = below;
-          useCombinedBox = true;
-          resolved = true;
-          break;
-        }
-        const above: [number, number] = [
-          badgePos[0] + lx,
-          badgePos[1] - badgeRadius - g - placement.fontSize * 0.35,
-        ];
-        if (areaPositionSafe(verts, above, placedZones)) {
-          areaPos = above;
-          useCombinedBox = true;
-          resolved = true;
-          break;
-        }
-      }
-      if (resolved) break;
+      placement.fontSize,
+    );
+    if (
+      badgePositionSafe(verts, candidate, badgeRadius, placedZones) &&
+      areaPositionSafe(verts, areaCandidate, placedZones)
+    ) {
+      badgePos = candidate;
+      break;
     }
   }
 
-  if (!areaPositionSafe(verts, areaPos, placedZones)) {
-    areaPos = findBestInteriorLabelPosition(verts, {
-      minEdgeDist: 5,
-      avoid: [
-        ...avoid,
-        { pos: badgePos, radius: badgeRadius + 6 },
-      ],
+  badgePos = nudgeBadgeFromFront(verts, front, badgePos, badgeRadius, placedZones);
+
+  let areaPos = nudgeAreaBelowBadge(
+    verts,
+    badgePos,
+    badgeRadius,
+    minGap,
+    placement.fontSize,
+    placedZones,
+    front,
+  );
+
+  const perpNx = -front.inwardNy;
+  const perpNy = front.inwardNx;
+  const stackCandidates: Array<{ badge: [number, number]; area: [number, number] }> =
+    [];
+  const pushStack = (badge: [number, number], gap = minGap) => {
+    stackCandidates.push({
+      badge,
+      area: areaPosBelowBadge(badge, badgeRadius, gap, placement.fontSize),
     });
-    useCombinedBox = true;
+  };
+  for (const frac of depthFracs) {
+    const depth = front.maxInwardDepthMm * frac;
+    for (const lx of [0, -4, 4, -8, 8, -12, 12]) {
+      pushStack([
+        front.frontMid[0] + front.inwardNx * depth + perpNx * lx,
+        front.frontMid[1] + front.inwardNy * depth + perpNy * lx,
+      ]);
+    }
+  }
+  pushStack(badgePos);
+  for (let shift = 2; shift <= front.maxInwardDepthMm * 0.42; shift += 2) {
+    for (const lx of [0, -4, 4, -8, 8]) {
+      pushStack([
+        badgePos[0] + front.inwardNx * shift + perpNx * lx,
+        badgePos[1] + front.inwardNy * shift + perpNy * lx,
+      ]);
+    }
+  }
+  for (const g of [minGap, minGap + 2, minGap + 4, LOT_NUMBER_AREA_MAX_GAP_MM]) {
+    pushStack(badgePos, g);
+  }
+
+  for (const cand of stackCandidates) {
+    if (
+      badgePositionSafe(verts, cand.badge, badgeRadius, placedZones) &&
+      areaPositionSafe(verts, cand.area, placedZones)
+    ) {
+      badgePos = cand.badge;
+      areaPos = cand.area;
+      break;
+    }
   }
 
   const areaInsidePolygon = pointInsideRing(areaPos[0], areaPos[1], verts);
@@ -1026,7 +1219,7 @@ export function placeLotNumberAndArea(
     areaPos,
     areaFontSize: placement.fontSize,
     numberAreaGapMm,
-    useCombinedBox,
+    useCombinedBox: false,
     areaInsidePolygon,
   };
 }

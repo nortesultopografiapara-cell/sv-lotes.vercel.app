@@ -263,7 +263,7 @@ const DISTANCE_OFFSET_TRY_MM = [6, 5, 4, 3];
 /** Offset interno simétrico das medidas (mm no croqui, sem redução por lado). */
 const DISTANCE_INTERNAL_OFFSET_NORMAL_MM = 6;
 const DISTANCE_INTERNAL_OFFSET_NARROW_MM = 4;
-const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = LOT_SHEET_SIGEF_LAYOUT ? 5 : 2.5;
+const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = LOT_SHEET_SIGEF_LAYOUT ? 6 : 2.5;
 const SIGEF_VERTEX_STAGGER_BOOST = 6;
 
 /** Offset externo dos confrontantes (mm no croqui — afastado da divisa). */
@@ -833,6 +833,7 @@ function placeDistanceLabelWithSymmetricOffset(
       labelRadius,
       minEdgeClearance: DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM,
       edgeLenMm,
+      forceInternalOnly: LOT_SHEET_SIGEF_LAYOUT,
     },
   );
 
@@ -853,6 +854,7 @@ function placeDistanceLabelWithSymmetricOffset(
         labelRadius,
         minEdgeClearance: fixedOffsetMm,
         edgeLenMm,
+        forceInternalOnly: LOT_SHEET_SIGEF_LAYOUT,
       },
     );
     return retry;
@@ -2165,7 +2167,12 @@ export async function generateLotSheetPdf(
   const contentW = innerW - 6;
 
   const sigefRegions = LOT_SHEET_SIGEF_LAYOUT
-    ? computeSigefPageRegions(pageW, pageH, input.metricRows.length)
+    ? computeSigefPageRegions(
+        pageW,
+        pageH,
+        input.metricRows.length,
+        input.sideConfrontants,
+      )
     : null;
 
   const bottomSplitH = 24;
@@ -2361,6 +2368,7 @@ export async function generateLotSheetPdf(
         inwardDepthMm: front.maxInwardDepthMm,
         narrow: mainAxis.narrow,
         vertexCount: sheetVerts.length,
+        frontEdgeIndex: frontEdge,
       },
     );
     const r = numberArea.badgeRadius;
@@ -2370,26 +2378,6 @@ export async function generateLotSheetPdf(
       mainAxis.narrow,
     );
     const areaLineH = numberArea.areaFontSize * 0.42;
-    const areaBlockH = areaLines.length * areaLineH;
-    const combinedH =
-      r * 2 +
-      numberArea.numberAreaGapMm +
-      areaBlockH +
-      (numberArea.useCombinedBox ? 4 : 0);
-
-    if (numberArea.useCombinedBox) {
-      const boxW = Math.max(r * 2.4, usefulW * 0.32, 28);
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(200, 210, 225);
-      doc.setLineWidth(0.2);
-      doc.rect(
-        numberArea.badgePos[0] - boxW / 2,
-        numberArea.badgePos[1] - r - 1,
-        boxW,
-        combinedH,
-        'FD',
-      );
-    }
 
     doc.setDrawColor(...BLACK);
     doc.setFillColor(255, 255, 255);
