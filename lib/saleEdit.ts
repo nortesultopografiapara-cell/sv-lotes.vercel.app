@@ -368,8 +368,8 @@ export async function updateSaleFromEdit(
     downPayment: Number(data.down_payment) || 0,
     installmentsCount: Math.max(1, Number(data.installments_count) || 1),
     brokerId,
-    notes: data.notes?.trim() || null,
   });
+  // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).
 
   const { error: saleUpdErr } = await supabase
     .from('sales')

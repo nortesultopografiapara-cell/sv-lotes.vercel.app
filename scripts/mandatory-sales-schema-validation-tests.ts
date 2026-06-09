@@ -7,6 +7,7 @@ import {
   buildOfficialSalesUpdatePatch,
   SALES_OFFICIAL_UPDATE_FIELDS,
   SALES_ORPHAN_ONLY_FIELDS,
+  salePatchHasForbiddenFields,
   salePatchHasOrphanFields,
 } from '../lib/salesWriteSchema';
 
@@ -25,7 +26,6 @@ function testOfficialUpdatePatchFields() {
     downPayment: 50000,
     installmentsCount: 12,
     brokerId: 'broker-1',
-    notes: 'obs',
   });
 
   for (const field of SALES_OFFICIAL_UPDATE_FIELDS) {
@@ -35,6 +35,7 @@ function testOfficialUpdatePatchFields() {
     assert(!(orphan in patch), `campo órfão no patch: ${orphan}`);
   }
   assert(salePatchHasOrphanFields(patch).length === 0, 'sem órfãos');
+  assert(salePatchHasForbiddenFields(patch).length === 0, 'sem campos proibidos');
   console.log('OK testOfficialUpdatePatchFields');
 }
 
@@ -49,7 +50,6 @@ function testDiscountMappedToOfficialColumn() {
     downPayment: 0,
     installmentsCount: 1,
     brokerId: null,
-    notes: null,
   });
   assert(patch.discount === 10, 'discount oficial');
   assert(!('discount_value' in patch), 'sem discount_value');
@@ -67,13 +67,29 @@ function testDatesNotInUpdatePatch() {
     downPayment: 20,
     installmentsCount: 6,
     brokerId: null,
-    notes: null,
   });
   assert(!('down_payment_due_date' in patch), 'sem down_payment_due_date');
   assert(!('first_installment_due_date' in patch), 'sem first_installment_due_date');
   assert(!('final_value' in patch), 'sem final_value');
   assert(!('installment_value' in patch), 'sem installment_value');
   console.log('OK testDatesNotInUpdatePatch');
+}
+
+function testNotesNotInUpdatePatch() {
+  const patch = buildOfficialSalesUpdatePatch({
+    customerId: 'c',
+    agreedPrice: 100,
+    lotPrice: 100,
+    discount: 0,
+    totalValue: 100,
+    paymentType: 'Parcelado',
+    downPayment: 20,
+    installmentsCount: 6,
+    brokerId: null,
+  });
+  assert(!('notes' in patch), 'sem notes no patch');
+  assert(!SALES_OFFICIAL_UPDATE_FIELDS.includes('notes' as never), 'notes fora da lista oficial');
+  console.log('OK testNotesNotInUpdatePatch');
 }
 
 function testOrphanDetector() {
@@ -88,11 +104,20 @@ function testOrphanDetector() {
   console.log('OK testOrphanDetector');
 }
 
+function testForbiddenDetectorIncludesNotes() {
+  const bad = { discount: 1, notes: 'observação' };
+  const found = salePatchHasForbiddenFields(bad);
+  assert(found.includes('notes'), 'detecta notes');
+  console.log('OK testForbiddenDetectorIncludesNotes');
+}
+
 function main() {
   testOfficialUpdatePatchFields();
   testDiscountMappedToOfficialColumn();
   testDatesNotInUpdatePatch();
+  testNotesNotInUpdatePatch();
   testOrphanDetector();
+  testForbiddenDetectorIncludesNotes();
   console.log('mandatory-sales-schema-validation-tests: all passed');
 }
 
