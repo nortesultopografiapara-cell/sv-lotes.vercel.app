@@ -16,7 +16,10 @@ import {
   LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
   planFrontStreetLabel,
+  areaLabelCollisionRadius,
   computeLotMainAxis,
+  LOT_BADGE_FONT_SIZE_PT,
+  LOT_BADGE_RADIUS_MM,
   placeLotNumberAndArea,
   resolveAreaLabelPlacement,
   resolveLabelClearOfScaleBand,
@@ -1380,7 +1383,7 @@ function placeSideConfrontantLabels(
   }
 }
 
-const LOT_BADGE_RADIUS_MM = 5.5;
+/** Reexportado de lotSheetLayout — círculo discreto. */
 /** Profundidade do círculo em direção à rua (8–12% da profundidade do lote). */
 const FRONT_DEPTH_FRACTION = 0.12;
 const SIGEF_LOT_BADGE_MIN_EDGE_MM = 6;
@@ -1414,12 +1417,12 @@ function placeLotNumberInVisualCenter(
   const r = LOT_BADGE_RADIUS_MM;
   doc.setDrawColor(...BLACK);
   doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.45);
+  doc.setLineWidth(0.35);
   doc.circle(badgePos[0], badgePos[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(LOT_BADGE_FONT_SIZE_PT);
   doc.setTextColor(...RED);
-  doc.text(lotNum, badgePos[0], badgePos[1] + 1.1, { align: 'center' });
+  doc.text(lotNum, badgePos[0], badgePos[1] + 0.85, { align: 'center' });
   doc.setTextColor(...BLACK);
   return { badgePos, radius: r };
 }
@@ -1458,12 +1461,12 @@ function placeLotNumberNearFront(
   const r = LOT_BADGE_RADIUS_MM;
   doc.setDrawColor(...BLACK);
   doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.45);
+  doc.setLineWidth(0.35);
   doc.circle(badgePos[0], badgePos[1], r, 'FD');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(LOT_BADGE_FONT_SIZE_PT);
   doc.setTextColor(...RED);
-  doc.text(lotNum, badgePos[0], badgePos[1] + 1.1, { align: 'center' });
+  doc.text(lotNum, badgePos[0], badgePos[1] + 0.85, { align: 'center' });
   doc.setTextColor(...BLACK);
 
   return { badgePos, radius: r };
@@ -2293,13 +2296,42 @@ export async function generateLotSheetPdf(
       kind: 'vertex',
     }));
 
+  const usefulW = lotUsefulCrossWidthMm(sheetVerts, mainAxis);
+  const frontDir = getLotFrontDirection(sheetVerts, frontEdge);
+  const areaPrePlan = placeLotNumberAndArea(
+    sheetVerts,
+    input.measures.area,
+    vertexZones.map((z) => ({
+      pos: z.pos,
+      radius: z.radius,
+      kind: z.kind,
+    })),
+    {
+      crossWidthMm: usefulW,
+      inwardDepthMm: frontDir.maxInwardDepthMm,
+      narrow: mainAxis.narrow,
+      vertexCount: sheetVerts.length,
+      frontEdgeIndex: frontEdge,
+    },
+  );
+  const areaReserveZone: PlacedLabelZone = {
+    pos: areaPrePlan.areaPos,
+    radius:
+      areaLabelCollisionRadius(
+        input.measures.area,
+        areaPrePlan.areaFontSize,
+        areaPrePlan.areaAngleDeg,
+      ) + 12,
+    kind: 'area_reserve',
+  };
+
   const measurePositions = placeDistanceLabelsInsideLot(
     doc,
     sheetPts,
     edgeLabels,
     frontEdge,
     mainAxis,
-    vertexZones,
+    [...vertexZones, areaReserveZone],
   );
   for (const p of measurePositions) {
     placedRects.push({
@@ -2335,7 +2367,6 @@ export async function generateLotSheetPdf(
   let areaLabel: { areaPos: [number, number]; areaFont: number };
 
   if (LOT_SHEET_SIGEF_LAYOUT) {
-    const usefulW = lotUsefulCrossWidthMm(sheetVerts, mainAxis);
     const front = getLotFrontDirection(sheetVerts, frontEdge);
     const numberArea = placeLotNumberAndArea(
       sheetVerts,
@@ -2351,6 +2382,8 @@ export async function generateLotSheetPdf(
         narrow: mainAxis.narrow,
         vertexCount: sheetVerts.length,
         frontEdgeIndex: frontEdge,
+        preferredAreaPos: areaPrePlan.areaPos,
+        preferredAreaAngleDeg: areaPrePlan.areaAngleDeg,
       },
     );
     const r = numberArea.badgeRadius;
@@ -2390,12 +2423,12 @@ export async function generateLotSheetPdf(
 
     doc.setDrawColor(...BLACK);
     doc.setFillColor(255, 255, 255);
-    doc.setLineWidth(0.45);
+    doc.setLineWidth(0.35);
     doc.circle(numberArea.badgePos[0], numberArea.badgePos[1], r, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(numberArea.badgeFontSize);
     doc.setTextColor(...RED);
-    doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 1.1, {
+    doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 0.85, {
       align: 'center',
     });
     doc.setTextColor(...BLACK);

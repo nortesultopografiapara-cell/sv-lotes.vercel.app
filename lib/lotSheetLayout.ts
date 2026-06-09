@@ -392,8 +392,13 @@ export function resolveAreaFontSize(input: AreaFontInput): number {
   return Math.max(10, Math.min(size, maxPt));
 }
 
-/** Fonte do número do lote (sempre menor que a área). */
-export const LOT_BADGE_FONT_SIZE_PT = 10;
+/** Número do lote — discreto como na planta real. */
+export const LOT_BADGE_FONT_SIZE_PT = 8;
+export const LOT_BADGE_RADIUS_MM = 4;
+/** Folga mínima área × medida no croqui (mm). */
+export const AREA_MEASURE_MIN_CLEARANCE_MM = 12;
+/** Bônus de pontuação para área horizontal legível. */
+export const AREA_HORIZONTAL_PREFERENCE_BONUS = 28;
 
 export type LotMainAxisLayout = {
   center: [number, number];
@@ -857,10 +862,11 @@ type SheetEdgeGeometry = {
   exNy: number;
 };
 
-function edgeGeometryAt(
+/** Geometria da aresta com normal interna correta (testes e layout). */
+export function measureEdgeGeometryAt(
   verts: [number, number][],
   index: number,
-): SheetEdgeGeometry {
+): MeasureLabelEdgeInput {
   const n = verts.length;
   const i = ((index % n) + n) % n;
   const p1 = verts[i];
@@ -869,16 +875,16 @@ function edgeGeometryAt(
   const dy = p2[1] - p1[1];
   const len = Math.hypot(dx, dy) || 1e-12;
   const mid: [number, number] = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-  const exNx = dy / len;
-  const exNy = -dx / len;
-  let inNx = -exNx;
-  let inNy = -exNy;
+  const perpNx = dy / len;
+  const perpNy = -dx / len;
+  let inNx = -perpNx;
+  let inNy = -perpNy;
   const probe: [number, number] = [mid[0] + inNx * 2, mid[1] + inNy * 2];
   if (!pointInsideRing(probe[0], probe[1], verts)) {
-    inNx = exNx;
-    inNy = exNy;
+    inNx = perpNx;
+    inNy = perpNy;
   }
-  return { mid, inNx, inNy, exNx, exNy };
+  return { mid, p1, p2, inNx, inNy, exNx: -inNx, exNy: -inNy };
 }
 
 /** Frente oficial → ponto médio + normal interna + profundidade útil. */
@@ -886,7 +892,7 @@ export function computeLotFrontLayoutContext(
   verts: [number, number][],
   frontEdgeIndex: number,
 ): LotFrontLayoutContext {
-  const edge = edgeGeometryAt(verts, frontEdgeIndex);
+  const edge = measureEdgeGeometryAt(verts, frontEdgeIndex);
   let maxInwardDepthMm = 0;
   for (const v of verts) {
     const d =
@@ -935,6 +941,13 @@ function perpendicularDistanceToMeasureEdge(
   );
 }
 
+function measureZoneCollisionGap(z: MeasureLabelZone): number {
+  if (z.kind === 'area_reserve' || z.kind === 'area') {
+    return AREA_MEASURE_MIN_CLEARANCE_MM;
+  }
+  return 2;
+}
+
 function measureLabelHitsZones(
   x: number,
   y: number,
@@ -943,11 +956,60 @@ function measureLabelHitsZones(
   minGap = 2,
 ): boolean {
   for (const z of placed) {
-    if (Math.hypot(x - z.pos[0], y - z.pos[1]) < radius + z.radius + minGap) {
+    const gap =
+      z.kind === 'area_reserve' || z.kind === 'area'
+        ? AREA_MEASURE_MIN_CLEARANCE_MM
+        : minGap;
+    if (Math.hypot(x - z.pos[0], y - z.pos[1]) < radius + z.radius + gap) {
       return true;
     }
   }
   return false;
+}
+
+function minMeasureZoneClearance(
+  x: number,
+  y: number,
+  radius: number,
+  placed: MeasureLabelZone[],
+): number {
+  let min = Infinity;
+  for (const z of placed) {
+    const gap = measureZoneCollisionGap(z);
+    min = Math.min(
+      min,
+      Math.hypot(x - z.pos[0], y - z.pos[1]) - (radius + z.radius + gap),
+    );
+  }
+  return min;
+}
+
+/** Frações ao longo da aresta — prioriza extremos opostos à projeção da área. */
+function buildMeasureSlideFractions(
+  edge: MeasureLabelEdgeInput,
+  placedZones: MeasureLabelZone[],
+): number[] {
+  const base = [0.5, 0.38, 0.62, 0.28, 0.72, 0.2, 0.8, 0.15, 0.85, 0.12, 0.88, 0.1, 0.9];
+  const reserve = placedZones.find(
+    (z) => z.kind === 'area_reserve' || z.kind === 'area',
+  );
+  if (!reserve) return base;
+
+  const dx = edge.p2[0] - edge.p1[0];
+  const dy = edge.p2[1] - edge.p1[1];
+  const len2 = dx * dx + dy * dy || 1e-12;
+  const tArea = Math.max(
+    0,
+    Math.min(
+      1,
+      ((reserve.pos[0] - edge.p1[0]) * dx + (reserve.pos[1] - edge.p1[1]) * dy) /
+        len2,
+    ),
+  );
+
+  return [...new Set(base)].sort(
+    (a, b) => Math.abs(b - tArea) - Math.abs(a - tArea),
+  );
 }
 
 /**
@@ -983,6 +1045,7 @@ export function resolveMeasureLabelPosition(
     ? [8, 10, 12, 14, 16, 18]
     : [5, 6, 7, 8, 10, 12, 14];
 
+  let anchorEdge = edge;
   const tryCandidate = (
     nx: number,
     ny: number,
@@ -990,14 +1053,17 @@ export function resolveMeasureLabelPosition(
     requireInside: boolean,
     side: 'in' | 'out',
     rotated: boolean,
+    radius = labelRadius,
   ) => {
-    const x = edge.mid[0] + nx * off;
-    const y = edge.mid[1] + ny * off;
+    const x = anchorEdge.mid[0] + nx * off;
+    const y = anchorEdge.mid[1] + ny * off;
     const inside = pointInsideRing(x, y, polygon);
     if (requireInside && !inside) return null;
     if (!requireInside && inside) return null;
-    if (perpendicularDistanceToMeasureEdge([x, y], edge) < minClear) return null;
-    if (measureLabelHitsZones(x, y, labelRadius, placedZones)) return null;
+    if (perpendicularDistanceToMeasureEdge([x, y], anchorEdge) < minClear) {
+      return null;
+    }
+    if (measureLabelHitsZones(x, y, radius, placedZones)) return null;
     return { x, y, offsetUsed: off, side, rotated };
   };
 
@@ -1024,31 +1090,122 @@ export function resolveMeasureLabelPosition(
     },
   ];
 
-  for (const normals of normalSets) {
-    const tryOrder = forceInternal
-      ? ([['in', internalOffsets, true] as const] as const)
-      : shortEdge
-        ? ([
-            ['ex', externalOffsets, false] as const,
-            ['in', internalOffsets, true] as const,
-          ] as const)
-        : ([
-            ['in', internalOffsets, true] as const,
-            ['ex', externalOffsets, false] as const,
-          ] as const);
-    for (const [kind, offsets, inside] of tryOrder) {
-      for (const off of offsets) {
-        const hit = tryCandidate(
-          kind === 'in' ? normals.inNx : normals.exNx,
-          kind === 'in' ? normals.inNy : normals.exNy,
-          off,
-          inside,
-          inside ? 'in' : 'out',
-          normals.rotated,
-        );
-        if (hit) return hit;
+  const dx = edge.p2[0] - edge.p1[0];
+  const dy = edge.p2[1] - edge.p1[1];
+  const slideFracs = buildMeasureSlideFractions(edge, placedZones);
+  const radiusTries = [...new Set([labelRadius, 4, 3.5])];
+
+  let bestFallback: {
+    x: number;
+    y: number;
+    offsetUsed: number;
+    side: 'in' | 'out';
+    rotated: boolean;
+  } | null = null;
+  let bestClearance = -Infinity;
+
+  for (const radiusTry of radiusTries) {
+    for (const frac of [0.5, ...slideFracs.filter((f) => Math.abs(f - 0.5) > 0.01)]) {
+      anchorEdge = {
+        ...edge,
+        mid: [edge.p1[0] + dx * frac, edge.p1[1] + dy * frac],
+      };
+      for (const normals of normalSets) {
+        const tryOrder = forceInternal
+          ? ([['in', internalOffsets, true] as const] as const)
+          : shortEdge
+            ? ([
+                ['ex', externalOffsets, false] as const,
+                ['in', internalOffsets, true] as const,
+              ] as const)
+            : ([
+                ['in', internalOffsets, true] as const,
+                ['ex', externalOffsets, false] as const,
+              ] as const);
+        for (const [kind, offsets, inside] of tryOrder) {
+          for (const off of offsets) {
+            const hit = tryCandidate(
+              kind === 'in' ? normals.inNx : normals.exNx,
+              kind === 'in' ? normals.inNy : normals.exNy,
+              off,
+              inside,
+              inside ? 'in' : 'out',
+              normals.rotated,
+              radiusTry,
+            );
+            if (hit) return hit;
+
+            const nx = kind === 'in' ? normals.inNx : normals.exNx;
+            const ny = kind === 'in' ? normals.inNy : normals.exNy;
+            const x = anchorEdge.mid[0] + nx * off;
+            const y = anchorEdge.mid[1] + ny * off;
+            const insidePoly = pointInsideRing(x, y, polygon);
+            if (forceInternal && !insidePoly) continue;
+            if (!forceInternal && inside !== insidePoly) continue;
+            if (perpendicularDistanceToMeasureEdge([x, y], anchorEdge) < minClear) {
+              continue;
+            }
+            const clearance = minMeasureZoneClearance(
+              x,
+              y,
+              radiusTry,
+              placedZones,
+            );
+            if (clearance > bestClearance) {
+              bestClearance = clearance;
+              bestFallback = {
+                x,
+                y,
+                offsetUsed: off,
+                side: inside ? 'in' : 'out',
+                rotated: normals.rotated,
+              };
+            }
+          }
+        }
       }
     }
+  }
+  anchorEdge = edge;
+
+  if (bestFallback && bestClearance >= 0) {
+    return bestFallback;
+  }
+
+  const hasAreaObstacle = placedZones.some(
+    (z) => z.kind === 'area_reserve' || z.kind === 'area',
+  );
+  if (forceInternal && hasAreaObstacle) {
+    const areaExternalOffsets = [
+      ...new Set([
+        ...externalOffsets,
+        16, 20, 24, 28, 32, 36, 40, 45, 50, 55, 60,
+      ]),
+    ].sort((a, b) => a - b);
+    for (const radiusTry of radiusTries) {
+      for (const frac of slideFracs) {
+        anchorEdge = {
+          ...edge,
+          mid: [edge.p1[0] + dx * frac, edge.p1[1] + dy * frac],
+        };
+        for (const off of areaExternalOffsets) {
+          const hit = tryCandidate(
+            edge.exNx,
+            edge.exNy,
+            off,
+            false,
+            'out',
+            false,
+            radiusTry,
+          );
+          if (hit) return hit;
+        }
+      }
+    }
+  }
+
+  if (bestFallback && (!hasAreaObstacle || bestClearance >= 0)) {
+    return bestFallback;
   }
 
   const fallbackNx = forceInternal ? edge.inNx : edge.exNx;
@@ -1133,36 +1290,124 @@ function nudgeBadgeFromFront(
   return start;
 }
 
-function primaryAreaPositionSafe(
-  verts: [number, number][],
+export type AreaVisualLayout = {
+  pos: [number, number];
+  angleDeg: number;
+  score: number;
+  horizontal: boolean;
+  fontSize?: number;
+};
+
+export function areaLabelCollisionRadius(
+  areaText: string,
+  fontSize: number,
+  angleDeg: number,
+): number {
+  const extents = estimateRotatedTextExtents(areaText, fontSize, angleDeg);
+  return Math.hypot(extents.halfW, extents.halfH) + 2;
+}
+
+export function areaClearsAllMeasures(
   pos: [number, number],
-  textExtents: { halfW: number; halfH: number },
+  angleDeg: number,
+  areaText: string,
+  fontSize: number,
   placedZones: MeasureLabelZone[],
-  minEdge = MIN_AREA_EDGE_CLEARANCE_MM,
 ): boolean {
-  if (!pointInsideRing(pos[0], pos[1], verts)) return false;
-  const edgeDist = minDistToPolygonRing(pos, verts);
-  const need = Math.max(textExtents.halfW, textExtents.halfH) + minEdge - 2;
-  if (edgeDist < need) return false;
-  const zoneRadius = Math.hypot(textExtents.halfW, textExtents.halfH) + 2;
-  if (measureLabelHitsZones(pos[0], pos[1], zoneRadius, placedZones, 4)) {
-    return false;
+  const areaRadius = areaLabelCollisionRadius(areaText, fontSize, angleDeg);
+  for (const z of layoutObstacleZones(placedZones)) {
+    if (z.kind !== 'distance' && z.kind !== 'front_measure') continue;
+    const d = Math.hypot(pos[0] - z.pos[0], pos[1] - z.pos[1]);
+    if (d < areaRadius + z.radius + AREA_MEASURE_MIN_CLEARANCE_MM) {
+      return false;
+    }
   }
   return true;
 }
 
-function findBestPrimaryAreaPosition(
-  verts: [number, number][],
+/** Pontuação visual do posicionamento da área (maior = melhor). */
+function layoutObstacleZones(
+  placedZones: MeasureLabelZone[],
+): MeasureLabelZone[] {
+  return placedZones.filter((z) => z.kind !== 'area_reserve');
+}
+
+export function scoreAreaVisualLayout(
+  pos: [number, number],
+  angleDeg: number,
   areaText: string,
   fontSize: number,
+  verts: [number, number][],
+  placedZones: MeasureLabelZone[],
+  mainAxis: LotMainAxisLayout,
+): number {
+  if (!pointInsideRing(pos[0], pos[1], verts)) return -Infinity;
+  const obstacles = layoutObstacleZones(placedZones);
+
+  const edgeDist = minDistToPolygonRing(pos, verts);
+  if (edgeDist < MIN_AREA_EDGE_CLEARANCE_MM) return -Infinity;
+
+  const areaRadius = areaLabelCollisionRadius(areaText, fontSize, angleDeg);
+  const interiorRef = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
+    avoid: obstacles.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+  });
+
+  for (const v of verts) {
+    if (Math.hypot(pos[0] - v[0], pos[1] - v[1]) < areaRadius + 8) {
+      return -Infinity;
+    }
+  }
+
+  for (const z of obstacles) {
+    const d = Math.hypot(pos[0] - z.pos[0], pos[1] - z.pos[1]);
+    const minGap =
+      z.kind === 'distance' || z.kind === 'front_measure'
+        ? AREA_MEASURE_MIN_CLEARANCE_MM
+        : 8;
+    if (d < areaRadius + z.radius + minGap) return -Infinity;
+  }
+
+  let score = edgeDist * 2.4;
+  const interiorGap = Math.hypot(
+    pos[0] - interiorRef[0],
+    pos[1] - interiorRef[1],
+  );
+  score += Math.max(0, 32 - interiorGap * 1.1);
+
+  if (Math.abs(angleDeg) < 4) {
+    score += AREA_HORIZONTAL_PREFERENCE_BONUS;
+  } else if (Math.abs(angleDeg) < 12) {
+    score += 8;
+  } else {
+    score -= Math.abs(angleDeg) * 0.45;
+  }
+
+  for (const z of obstacles) {
+    const d = Math.hypot(pos[0] - z.pos[0], pos[1] - z.pos[1]);
+    const comfort = areaRadius + z.radius + AREA_MEASURE_MIN_CLEARANCE_MM + 8;
+    if (d < comfort) score -= (comfort - d) * 4.5;
+  }
+
+  const reserve = placedZones.find((z) => z.kind === 'area_reserve');
+  if (reserve) {
+    const d = Math.hypot(pos[0] - reserve.pos[0], pos[1] - reserve.pos[1]);
+    score -= d * 0.35;
+  }
+
+  const axisAlign = Math.abs(
+    readableAxisAngleDeg(mainAxis.axisDx, mainAxis.axisDy) - angleDeg,
+  );
+  if (axisAlign < 4 && Math.abs(angleDeg) >= 4) score += 4;
+
+  return score;
+}
+
+function buildAreaCandidatePositions(
+  verts: [number, number][],
   mainAxis: LotMainAxisLayout,
   placedZones: MeasureLabelZone[],
-): [number, number] {
-  const extents = estimateRotatedTextExtents(
-    areaText,
-    fontSize,
-    mainAxis.angleDeg,
-  );
+): [number, number][] {
   const centroid = ringCentroid(verts);
   const xs = verts.map((v) => v[0]);
   const ys = verts.map((v) => v[1]);
@@ -1174,13 +1419,14 @@ function findBestPrimaryAreaPosition(
   const perpDx = -mainAxis.axisDy;
   const perpDy = mainAxis.axisDx;
 
+  const interiorCenter = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
+    avoid: placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+  });
   const seeds: [number, number][] = [
-    centroid,
+    interiorCenter,
     mainAxis.center,
-    findBestInteriorLabelPosition(verts, {
-      minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
-      avoid: placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
-    }),
+    centroid,
   ];
 
   for (let xi = 2; xi < steps - 1; xi++) {
@@ -1192,7 +1438,7 @@ function findBestPrimaryAreaPosition(
     }
   }
 
-  for (const shift of [-8, -4, 0, 4, 8, 12, -12]) {
+  for (const shift of [-12, -8, -4, 0, 4, 8, 12, 16, -16]) {
     seeds.push([
       centroid[0] + mainAxis.axisDx * shift,
       centroid[1] + mainAxis.axisDy * shift,
@@ -1203,24 +1449,162 @@ function findBestPrimaryAreaPosition(
     ]);
   }
 
-  let best = seeds[0] ?? centroid;
-  let bestScore = -Infinity;
+  return seeds;
+}
 
-  for (const seed of seeds) {
-    if (!pointInsideRing(seed[0], seed[1], verts)) continue;
-    if (!primaryAreaPositionSafe(verts, seed, extents, placedZones)) continue;
-    const edgeScore = minDistToPolygonRing(seed, verts);
-    const centerDist = Math.hypot(
-      seed[0] - centroid[0],
-      seed[1] - centroid[1],
-    );
-    const score = edgeScore * 1.35 - centerDist * 0.08;
-    if (score > bestScore) {
-      bestScore = score;
-      best = seed;
+/** Escolhe área horizontal ou alinhada ao eixo — a opção visualmente mais limpa. */
+export function resolveBestAreaVisualLayout(
+  verts: [number, number][],
+  areaText: string,
+  fontSize: number,
+  mainAxis: LotMainAxisLayout,
+  placedZones: MeasureLabelZone[],
+): AreaVisualLayout {
+  const seeds = buildAreaCandidatePositions(verts, mainAxis, placedZones);
+  const centroid = ringCentroid(verts);
+  const angleCandidates = [0];
+  if (Math.abs(mainAxis.angleDeg) > 5) {
+    angleCandidates.push(mainAxis.angleDeg);
+  }
+
+  let best: AreaVisualLayout = {
+    pos: seeds[0] ?? centroid,
+    angleDeg: 0,
+    score: -Infinity,
+    horizontal: true,
+  };
+
+  for (const shrink of [0, 2, 4, 6, 8]) {
+    const tryFont = Math.max(LOT_BADGE_FONT_SIZE_PT + 1, fontSize - shrink);
+    for (const angleDeg of angleCandidates) {
+      for (const seed of seeds) {
+        const score = scoreAreaVisualLayout(
+          seed,
+          angleDeg,
+          areaText,
+          tryFont,
+          verts,
+          placedZones,
+          mainAxis,
+        );
+        if (score > best.score) {
+          best = {
+            pos: seed,
+            angleDeg,
+            score,
+            horizontal: Math.abs(angleDeg) < 4,
+            fontSize: tryFont,
+          };
+        }
+      }
+    }
+    if (best.score > -Infinity) break;
+  }
+
+  return best;
+}
+
+function exhaustiveAreaVisualSearch(
+  verts: [number, number][],
+  areaText: string,
+  baseFontSize: number,
+  mainAxis: LotMainAxisLayout,
+  placedZones: MeasureLabelZone[],
+): { layout: AreaVisualLayout; fontSize: number } {
+  const centroid = ringCentroid(verts);
+  const xs = verts.map((v) => v[0]);
+  const ys = verts.map((v) => v[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const angleCandidates = [0];
+  if (Math.abs(mainAxis.angleDeg) > 5) {
+    angleCandidates.push(mainAxis.angleDeg);
+  }
+
+  let best: AreaVisualLayout = {
+    pos: centroid,
+    angleDeg: 0,
+    score: -Infinity,
+    horizontal: true,
+  };
+  let bestFont = Math.max(LOT_BADGE_FONT_SIZE_PT + 1, baseFontSize);
+
+  for (let shrink = 0; shrink <= 8; shrink += 2) {
+    const fontSize = Math.max(LOT_BADGE_FONT_SIZE_PT + 1, baseFontSize - shrink);
+    for (const angleDeg of angleCandidates) {
+      for (let xi = 1; xi < 20; xi++) {
+        for (let yi = 1; yi < 20; yi++) {
+          const seed: [number, number] = [
+            minX + (xi / 20) * (maxX - minX),
+            minY + (yi / 20) * (maxY - minY),
+          ];
+          if (!pointInsideRing(seed[0], seed[1], verts)) continue;
+          if (!areaClearsAllMeasures(seed, angleDeg, areaText, fontSize, placedZones)) {
+            continue;
+          }
+          const score = scoreAreaVisualLayout(
+            seed,
+            angleDeg,
+            areaText,
+            fontSize,
+            verts,
+            placedZones,
+            mainAxis,
+          );
+          if (score > best.score) {
+            bestFont = fontSize;
+            best = {
+              pos: seed,
+              angleDeg,
+              score,
+              horizontal: Math.abs(angleDeg) < 4,
+            };
+          }
+        }
+      }
     }
   }
 
+  return { layout: best, fontSize: bestFont };
+}
+
+function nudgeAreaToClearMeasures(
+  layout: AreaVisualLayout,
+  areaText: string,
+  fontSize: number,
+  verts: [number, number][],
+  placedZones: MeasureLabelZone[],
+  mainAxis: LotMainAxisLayout,
+): AreaVisualLayout {
+  let best = layout;
+  for (let dx = -28; dx <= 28; dx += 2) {
+    for (let dy = -28; dy <= 28; dy += 2) {
+      const cand: [number, number] = [
+        layout.pos[0] + dx,
+        layout.pos[1] + dy,
+      ];
+      if (!pointInsideRing(cand[0], cand[1], verts)) continue;
+      const score = scoreAreaVisualLayout(
+        cand,
+        layout.angleDeg,
+        areaText,
+        fontSize,
+        verts,
+        placedZones,
+        mainAxis,
+      );
+      if (score > best.score) {
+        best = {
+          pos: cand,
+          angleDeg: layout.angleDeg,
+          score,
+          horizontal: layout.horizontal,
+        };
+      }
+    }
+  }
   return best;
 }
 
@@ -1278,8 +1662,7 @@ function placeBadgeNearOfficialFront(
 }
 
 /**
- * Área principal no centro livre (rotacionada no eixo longitudinal);
- * número secundário próximo à frente oficial.
+ * Área principal centralizada (horizontal preferida); número discreto na frente.
  */
 export function placeLotNumberAndArea(
   verts: [number, number][],
@@ -1293,9 +1676,12 @@ export function placeLotNumberAndArea(
     vertexCount: number;
     minNumberAreaGapMm?: number;
     frontEdgeIndex: number;
+    /** Posição da área no pré-plano (passo 1 do SIGEF). */
+    preferredAreaPos?: [number, number];
+    preferredAreaAngleDeg?: number;
   },
 ): LotNumberAreaLayout {
-  const badgeRadius = options.badgeRadius ?? 5.5;
+  const badgeRadius = options.badgeRadius ?? LOT_BADGE_RADIUS_MM;
   const front = computeLotFrontLayoutContext(verts, options.frontEdgeIndex);
   const mainAxis = computeLotMainAxis(verts);
   const areaFontSize = Math.max(
@@ -1309,58 +1695,255 @@ export function placeLotNumberAndArea(
     LOT_BADGE_FONT_SIZE_PT + 2,
   );
 
+  const reserveZone = placedZones.find((z) => z.kind === 'area_reserve');
+
+  let usedAreaFont = areaFontSize;
+  let areaLayout = resolveBestAreaVisualLayout(
+    verts,
+    areaText,
+    usedAreaFont,
+    mainAxis,
+    placedZones,
+  );
+  if (areaLayout.fontSize != null) {
+    usedAreaFont = areaLayout.fontSize;
+  }
+
+  if (options.preferredAreaPos) {
+    const prefAngle = options.preferredAreaAngleDeg ?? 0;
+    const prefFont = options.preferredAreaPos
+      ? usedAreaFont
+      : areaFontSize;
+    if (
+      pointInsideRing(
+        options.preferredAreaPos[0],
+        options.preferredAreaPos[1],
+        verts,
+      ) &&
+      areaClearsAllMeasures(
+        options.preferredAreaPos,
+        prefAngle,
+        areaText,
+        prefFont,
+        placedZones,
+      )
+    ) {
+      const prefScore = scoreAreaVisualLayout(
+        options.preferredAreaPos,
+        prefAngle,
+        areaText,
+        prefFont,
+        verts,
+        placedZones,
+        mainAxis,
+      );
+      if (prefScore > -Infinity) {
+        areaLayout = {
+          pos: options.preferredAreaPos,
+          angleDeg: prefAngle,
+          score: prefScore,
+          horizontal: Math.abs(prefAngle) < 4,
+          fontSize: prefFont,
+        };
+        usedAreaFont = prefFont;
+      }
+    }
+  }
+
+  areaLayout = nudgeAreaToClearMeasures(
+    areaLayout,
+    areaText,
+    usedAreaFont,
+    verts,
+    placedZones,
+    mainAxis,
+  );
+
+  if (reserveZone && pointInsideRing(reserveZone.pos[0], reserveZone.pos[1], verts)) {
+    const reserveScore = scoreAreaVisualLayout(
+      reserveZone.pos,
+      0,
+      areaText,
+      usedAreaFont,
+      verts,
+      placedZones,
+      mainAxis,
+    );
+    if (reserveScore > areaLayout.score) {
+      areaLayout = {
+        pos: reserveZone.pos,
+        angleDeg: 0,
+        score: reserveScore,
+        horizontal: true,
+      };
+    }
+  }
+
+  if (
+    !areaClearsAllMeasures(
+      areaLayout.pos,
+      areaLayout.angleDeg,
+      areaText,
+      usedAreaFont,
+      placedZones,
+    )
+  ) {
+    const exhaustive = exhaustiveAreaVisualSearch(
+      verts,
+      areaText,
+      areaFontSize,
+      mainAxis,
+      placedZones,
+    );
+    if (
+      exhaustive.layout.score > -Infinity &&
+      areaClearsAllMeasures(
+        exhaustive.layout.pos,
+        exhaustive.layout.angleDeg,
+        areaText,
+        exhaustive.fontSize,
+        placedZones,
+      )
+    ) {
+      areaLayout = exhaustive.layout;
+      usedAreaFont = exhaustive.fontSize;
+      areaLayout = nudgeAreaToClearMeasures(
+        areaLayout,
+        areaText,
+        usedAreaFont,
+        verts,
+        placedZones,
+        mainAxis,
+      );
+    }
+  }
+
+  if (!pointInsideRing(areaLayout.pos[0], areaLayout.pos[1], verts)) {
+    const recovered = exhaustiveAreaVisualSearch(
+      verts,
+      areaText,
+      usedAreaFont,
+      mainAxis,
+      placedZones,
+    );
+    if (pointInsideRing(recovered.layout.pos[0], recovered.layout.pos[1], verts)) {
+      areaLayout = recovered.layout;
+      usedAreaFont = recovered.fontSize;
+    } else {
+      const xs = verts.map((v) => v[0]);
+      const ys = verts.map((v) => v[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      for (let xi = 2; xi < 12; xi++) {
+        for (let yi = 2; yi < 12; yi++) {
+          const seed: [number, number] = [
+            minX + (xi / 12) * (maxX - minX),
+            minY + (yi / 12) * (maxY - minY),
+          ];
+          if (
+            pointInsideRing(seed[0], seed[1], verts) &&
+            areaClearsAllMeasures(seed, 0, areaText, usedAreaFont, placedZones)
+          ) {
+            areaLayout = {
+              pos: seed,
+              angleDeg: 0,
+              score: 1,
+              horizontal: true,
+            };
+            break;
+          }
+        }
+        if (pointInsideRing(areaLayout.pos[0], areaLayout.pos[1], verts)) break;
+      }
+    }
+  }
+
+  const areaAvoidZones: MeasureLabelZone[] = [
+    ...placedZones,
+    {
+      pos: areaLayout.pos,
+      radius: areaLabelCollisionRadius(
+        areaText,
+        usedAreaFont,
+        areaLayout.angleDeg,
+      ),
+      kind: 'area',
+    },
+  ];
+
   let badgePos = placeBadgeNearOfficialFront(
     verts,
     front,
     badgeRadius,
-    placedZones,
-  );
-
-  const areaAvoidZones: MeasureLabelZone[] = [
-    ...placedZones,
-    { pos: badgePos, radius: badgeRadius + 8, kind: 'lot_badge' },
-  ];
-
-  let areaPos = findBestPrimaryAreaPosition(
-    verts,
-    areaText,
-    areaFontSize,
-    mainAxis,
     areaAvoidZones,
   );
 
-  if (
-    !primaryAreaPositionSafe(
-      verts,
-      areaPos,
-      estimateRotatedTextExtents(areaText, areaFontSize, mainAxis.angleDeg),
-      areaAvoidZones,
-    )
-  ) {
-    const relaxed = resolveAreaLabelPlacement(verts, areaText, {
-      crossWidthMm: options.crossWidthMm || mainAxis.crossWidthMm,
-      inwardDepthMm: front.maxInwardDepthMm,
-      vertexCount: options.vertexCount,
-      narrow: options.narrow || mainAxis.narrow,
-      avoid: areaAvoidZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
-      fallbackPos: mainAxis.center,
-    });
-    areaPos = relaxed.pos;
+  const areaRadius = areaLabelCollisionRadius(
+    areaText,
+    usedAreaFont,
+    areaLayout.angleDeg,
+  );
+  const badgeGap = Math.hypot(
+    badgePos[0] - areaLayout.pos[0],
+    badgePos[1] - areaLayout.pos[1],
+  );
+  if (badgeGap < areaRadius + badgeRadius + 8) {
+    badgePos = placeBadgeNearOfficialFront(verts, front, badgeRadius, [
+      ...placedZones,
+      {
+        pos: areaLayout.pos,
+        radius: areaRadius + 10,
+        kind: 'area',
+      },
+    ]);
   }
 
-  const areaInsidePolygon = pointInsideRing(areaPos[0], areaPos[1], verts);
+  if (
+    !pointInsideRing(areaLayout.pos[0], areaLayout.pos[1], verts) &&
+    reserveZone &&
+    pointInsideRing(reserveZone.pos[0], reserveZone.pos[1], verts)
+  ) {
+    areaLayout = {
+      pos: reserveZone.pos,
+      angleDeg: 0,
+      score: areaLayout.score,
+      horizontal: true,
+    };
+  }
+
+  if (!areaClearsAllMeasures(areaLayout.pos, areaLayout.angleDeg, areaText, usedAreaFont, placedZones)) {
+    const recovered = exhaustiveAreaVisualSearch(
+      verts,
+      areaText,
+      Math.max(LOT_BADGE_FONT_SIZE_PT + 1, usedAreaFont - 2),
+      mainAxis,
+      placedZones,
+    );
+    if (recovered.layout.score > -Infinity) {
+      areaLayout = recovered.layout;
+      usedAreaFont = recovered.fontSize;
+    }
+  }
+
+  const areaInsidePolygon = pointInsideRing(
+    areaLayout.pos[0],
+    areaLayout.pos[1],
+    verts,
+  );
   const numberAreaGapMm = Math.hypot(
-    areaPos[0] - badgePos[0],
-    areaPos[1] - badgePos[1],
+    areaLayout.pos[0] - badgePos[0],
+    areaLayout.pos[1] - badgePos[1],
   );
 
   return {
     badgePos,
     badgeRadius,
     badgeFontSize: LOT_BADGE_FONT_SIZE_PT,
-    areaPos,
-    areaFontSize,
-    areaAngleDeg: mainAxis.angleDeg,
+    areaPos: areaLayout.pos,
+    areaFontSize: usedAreaFont,
+    areaAngleDeg: areaLayout.angleDeg,
     numberAreaGapMm,
     useCombinedBox: false,
     areaInsidePolygon,

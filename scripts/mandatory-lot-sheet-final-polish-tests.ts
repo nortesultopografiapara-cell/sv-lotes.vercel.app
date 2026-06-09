@@ -6,20 +6,25 @@
 import { buildLotConfrontationAudit, confrontantsFromAudit } from '../lib/assistedConfrontation';
 import { buildOfficialSheetLocalGeometry } from '../lib/lotSheetCoordinates';
 import {
+  AREA_MEASURE_MIN_CLEARANCE_MM,
+  areaLabelCollisionRadius,
   buildSketchLayoutFromBlock,
   computeLotFrontLayoutContext,
   computeLotMainAxis,
   LOT_BADGE_FONT_SIZE_PT,
+  LOT_BADGE_RADIUS_MM,
   LOT_FRONT_BADGE_DEPTH_FRACTION,
   MEASURE_LABEL_EXTERNAL_OFFSET_MM,
   MEASURE_LABEL_INTERNAL_OFFSET_MM,
   MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM,
+  measureEdgeGeometryAt,
   placeLotNumberAndArea,
   pointInsideRing,
   resolveMeasureLabelPosition,
   resolveVertexLabelSpacing,
   VERTEX_LABEL_MIN_SPACING_MM,
   type MeasureLabelEdgeInput,
+  type MeasureLabelZone,
 } from '../lib/lotSheetLayout';
 import { generateLotSheetPdf } from '../lib/lotSheetPdf';
 import type { LotSheetPayload } from '../lib/lotSheetData';
@@ -88,6 +93,68 @@ function rectVerts(): [number, number][] {
     [90, 80],
     [30, 80],
   ];
+}
+
+function dedupeClosedRingVerts(points: [number, number][]): [number, number][] {
+  if (points.length < 2) return points;
+  const eps = 0.05;
+  const verts: [number, number][] = [];
+  for (const p of points) {
+    const last = verts[verts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > eps) {
+      verts.push(p);
+    }
+  }
+  if (verts.length > 2) {
+    const first = verts[0];
+    const last = verts[verts.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) <= eps) {
+      verts.pop();
+    }
+  }
+  return verts.length >= 3 ? verts : points;
+}
+
+function buildMeasureZonesFromVerts(
+  rawVerts: [number, number][],
+  preZones: MeasureLabelZone[] = [],
+): MeasureLabelZone[] {
+  const verts = dedupeClosedRingVerts(rawVerts);
+  const zones: MeasureLabelZone[] = [...preZones];
+  for (let i = 0; i < verts.length; i++) {
+    const edge = measureEdgeGeometryAt(verts, i);
+    const len = Math.hypot(edge.p2[0] - edge.p1[0], edge.p2[1] - edge.p1[1]) || 1;
+    const pos = resolveMeasureLabelPosition(edge, verts, zones, {
+      edgeLenMm: len,
+      forceInternalOnly: true,
+    });
+    zones.push({ pos: [pos.x, pos.y], radius: 5, kind: 'distance' });
+  }
+  return zones;
+}
+
+function assertAreaClearOfMeasures(
+  layout: ReturnType<typeof placeLotNumberAndArea>,
+  areaText: string,
+  zones: MeasureLabelZone[],
+  lotLabel: string,
+) {
+  const areaRadius = areaLabelCollisionRadius(
+    areaText,
+    layout.areaFontSize,
+    layout.areaAngleDeg,
+  );
+  for (const z of zones) {
+    if (z.kind !== 'distance' && z.kind !== 'front_measure') continue;
+    const d = Math.hypot(
+      layout.areaPos[0] - z.pos[0],
+      layout.areaPos[1] - z.pos[1],
+    );
+    assert(
+      d >= areaRadius + z.radius + AREA_MEASURE_MIN_CLEARANCE_MM - 1,
+      `${lotLabel} área x medida: d=${d} kind=${z.kind}`,
+    );
+  }
 }
 
 function projectRingToSheet(
@@ -195,17 +262,18 @@ function testPrimaryAreaLayout() {
   });
   assert(layout.areaFontSize > layout.badgeFontSize, 'área maior que número');
   assert(layout.areaFontSize >= LOT_BADGE_FONT_SIZE_PT + 2, 'área fonte principal');
+  assert(layout.badgeRadius <= LOT_BADGE_RADIUS_MM + 0.5, 'círculo discreto');
   assert(
     layout.numberAreaGapMm >= layout.badgeRadius + 4,
     `área separada do número: ${layout.numberAreaGapMm}`,
   );
-  assert(Math.abs(layout.areaAngleDeg) < 25, `área horizontal em retângulo: ${layout.areaAngleDeg}`);
+  assert(Math.abs(layout.areaAngleDeg) < 12, `área horizontal em retângulo: ${layout.areaAngleDeg}`);
   assert(!layout.useCombinedBox, 'sem caixa branca combinada');
   assert(layout.areaInsidePolygon, 'área dentro do polígono');
   console.log('OK testPrimaryAreaLayout');
 }
 
-function testAreaRotatedAlongMainAxis() {
+function testAreaHorizontalPreferredWhenPossible() {
   const verts: [number, number][] = [
     [40, 55],
     [95, 35],
@@ -222,11 +290,133 @@ function testAreaRotatedAlongMainAxis() {
   });
   assert(Math.abs(mainAxis.angleDeg) > 8, `lote inclinado: ${mainAxis.angleDeg}`);
   assert(
-    Math.abs(layout.areaAngleDeg - mainAxis.angleDeg) < 2,
-    `área segue eixo: ${layout.areaAngleDeg} vs ${mainAxis.angleDeg}`,
+    Math.abs(layout.areaAngleDeg) < 10,
+    `prefere horizontal quando limpo: ${layout.areaAngleDeg}`,
   );
   assert(layout.areaFontSize > layout.badgeFontSize, 'hierarquia área > número');
-  console.log('OK testAreaRotatedAlongMainAxis');
+  console.log('OK testAreaHorizontalPreferredWhenPossible');
+}
+
+function testCroquiVisualLot11Critical() {
+  const b = block(
+    [
+      lineSeg(0, 7500000, 500000, 7500000, 500107.8, 107.8),
+      lineSeg(1, 7500000, 500107.8, 7500045, 500165, 79.12),
+      lineSeg(2, 7500045, 500165, 7500088, 500185, 50.72),
+      lineSeg(3, 7500088, 500185, 7500070, 500220, 35.8),
+      lineSeg(4, 7500070, 500220, 7500025, 500195, 44.75),
+      lineSeg(5, 7500025, 500195, 7500000, 500000, 63),
+    ],
+    {
+      number: '11',
+      block_name: '02',
+      front_segment_index: 0,
+      front_street_name: 'RUA CENTRAL',
+      area: 2936.38,
+    },
+  );
+  const verts = dedupeClosedRingVerts(sheetVertsFromBlock(b));
+  const pre = placeLotNumberAndArea(verts, '2.936,38 m²', [], {
+    crossWidthMm: 40,
+    inwardDepthMm: 35,
+    narrow: false,
+    vertexCount: 6,
+    frontEdgeIndex: 0,
+  });
+  const reserve: MeasureLabelZone = {
+    pos: pre.areaPos,
+    radius:
+      areaLabelCollisionRadius(
+        '2.936,38 m²',
+        pre.areaFontSize,
+        pre.areaAngleDeg,
+      ) + AREA_MEASURE_MIN_CLEARANCE_MM,
+    kind: 'area_reserve',
+  };
+  const zones = buildMeasureZonesFromVerts(verts, [reserve]);
+  const measureZones = zones.filter(
+    (z) => z.kind === 'distance' || z.kind === 'front_measure',
+  );
+  const layout = placeLotNumberAndArea(verts, '2.936,38 m²', measureZones, {
+    crossWidthMm: 40,
+    inwardDepthMm: 35,
+    narrow: false,
+    vertexCount: 6,
+    frontEdgeIndex: 0,
+    preferredAreaPos: pre.areaPos,
+    preferredAreaAngleDeg: pre.areaAngleDeg,
+  });
+  assert(layout.areaInsidePolygon, 'lote 11 área dentro');
+  assert(
+    Math.abs(layout.areaAngleDeg) < 10,
+    `lote 11 área horizontal: ${layout.areaAngleDeg}`,
+  );
+  assertAreaClearOfMeasures(layout, '2.936,38 m²', measureZones, 'lote 11');
+  assert(layout.badgeRadius <= LOT_BADGE_RADIUS_MM + 0.5, 'lote 11 badge discreto');
+  console.log('OK testCroquiVisualLot11Critical');
+}
+
+function testCroquiVisualLot18Critical() {
+  const b = block(
+    [
+      lineSeg(0, 7500000, 500000, 7500000, 500178.97, 178.97),
+      lineSeg(1, 7500000, 500178.97, 7500072.09, 500178.97, 72.09),
+      lineSeg(2, 7500072.09, 500178.97, 7500072.09, 500170.97, 8),
+      lineSeg(3, 7500072.09, 500170.97, 7500349.06, 500170.97, 277.08),
+      lineSeg(4, 7500349.06, 500170.97, 7500349.06, 500132.97, 38),
+      lineSeg(5, 7500349.06, 500132.97, 7500310.57, 500000, 38.49),
+      lineSeg(6, 7500310.57, 500000, 7500000, 500000, 58.68),
+    ],
+    {
+      number: '018',
+      block_name: '03',
+      front_segment_index: 0,
+      front_street_name: 'RUA MARGINAL FERROVIA',
+      area: 20013.61,
+    },
+  );
+  const verts = dedupeClosedRingVerts(sheetVertsFromBlock(b));
+  const pre = placeLotNumberAndArea(verts, '20.013,61 m²', [], {
+    crossWidthMm: 55,
+    inwardDepthMm: 80,
+    narrow: false,
+    vertexCount: 7,
+    frontEdgeIndex: 0,
+  });
+  const reserve: MeasureLabelZone = {
+    pos: pre.areaPos,
+    radius:
+      areaLabelCollisionRadius(
+        '20.013,61 m²',
+        pre.areaFontSize,
+        pre.areaAngleDeg,
+      ) + AREA_MEASURE_MIN_CLEARANCE_MM,
+    kind: 'area_reserve',
+  };
+  const zones = buildMeasureZonesFromVerts(verts, [reserve]);
+  const measureZones = zones.filter(
+    (z) => z.kind === 'distance' || z.kind === 'front_measure',
+  );
+  const layout = placeLotNumberAndArea(verts, '20.013,61 m²', measureZones, {
+    crossWidthMm: 55,
+    inwardDepthMm: 80,
+    narrow: false,
+    vertexCount: 7,
+    frontEdgeIndex: 0,
+    preferredAreaPos: pre.areaPos,
+    preferredAreaAngleDeg: pre.areaAngleDeg,
+  });
+  assert(layout.areaInsidePolygon, 'lote 18 área dentro');
+  assertAreaClearOfMeasures(layout, '20.013,61 m²', measureZones, 'lote 18');
+  assert(
+    Math.abs(layout.areaAngleDeg) < 15,
+    `lote 18 leitura limpa: angle=${layout.areaAngleDeg}`,
+  );
+  assert(
+    layout.numberAreaGapMm >= layout.badgeRadius + 6,
+    'lote 18 número afastado da área',
+  );
+  console.log('OK testCroquiVisualLot18Critical');
 }
 
 function testPlaceLotNumberFromOfficialFront() {
@@ -533,15 +723,15 @@ async function testPdfLot010() {
 async function testPdfLot018() {
   const b = block(
     [
-      lineSeg(0, 7500000, 500000, 7500000, 500050, 50),
-      lineSeg(1, 7500000, 500050, 7500100, 500050, 100),
-      lineSeg(2, 7500100, 500050, 7500100, 500000, 50),
-      lineSeg(3, 7500100, 500000, 7500000, 500000, 100),
-      lineSeg(4, 7500000, 500000, 7500000, 500030, 30),
-      lineSeg(5, 7500000, 500030, 7500030, 500030, 30),
-      lineSeg(6, 7500030, 500030, 7500030, 500000, 30),
+      lineSeg(0, 7500000, 500000, 7500000, 500178.97, 178.97),
+      lineSeg(1, 7500000, 500178.97, 7500072.09, 500178.97, 72.09),
+      lineSeg(2, 7500072.09, 500178.97, 7500072.09, 500170.97, 8),
+      lineSeg(3, 7500072.09, 500170.97, 7500349.06, 500170.97, 277.08),
+      lineSeg(4, 7500349.06, 500170.97, 7500349.06, 500132.97, 38),
+      lineSeg(5, 7500349.06, 500132.97, 7500310.57, 500000, 38.49),
+      lineSeg(6, 7500310.57, 500000, 7500000, 500000, 58.68),
     ],
-    { id: 'lot-018', number: '018', block_name: '03', front_segment_index: 0, area: 5000 },
+    { id: 'lot-018', number: '018', block_name: '03', front_segment_index: 0, area: 20013.61 },
   );
   const c = confrontantsFromAudit(buildLotConfrontationAudit(b, 'lot-018', [b], [], null));
   testSigefScaleDoesNotCollideWithLot('018', b);
@@ -556,7 +746,9 @@ async function main() {
   testResolveMeasureLabelForceInternalOnly();
   testResolveMeasureLabelShortEdgeExternalFirst();
   testPrimaryAreaLayout();
-  testAreaRotatedAlongMainAxis();
+  testAreaHorizontalPreferredWhenPossible();
+  testCroquiVisualLot11Critical();
+  testCroquiVisualLot18Critical();
   testPlaceLotNumberFromOfficialFront();
   testConfrontationsPanelDynamicHeight();
   testAreaDoesNotCollideWithMeasures();
