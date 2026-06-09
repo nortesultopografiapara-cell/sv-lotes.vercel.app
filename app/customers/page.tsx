@@ -16,6 +16,14 @@ import {
   matchesCep,
   matchesCpfCnpj,
 } from '@/lib/inputMasks';
+import {
+  DocumentFieldFeedback,
+  documentFieldInputClass,
+} from '@/components/customers/DocumentFieldFeedback';
+import { useCustomerDocumentAutofill } from '@/hooks/useCustomerDocumentAutofill';
+
+const CUSTOMER_FIELD_INPUT =
+  'w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]';
 
 export default function CustomersPage() {
   const { user, loading: authLoading } = useAuth();
@@ -28,6 +36,31 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [formData, setFormData] = useState<any>({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' });
   const [submitting, setSubmitting] = useState(false);
+
+  const {
+    cpfCnpjValidation,
+    cepValidation,
+    cepLookupMessage,
+    cnpjLookupMessage,
+    handleCpfCnpjChange,
+    handleCepChange,
+  } = useCustomerDocumentAutofill({
+    formData,
+    setFormData,
+    disabled: submitting || !isModalOpen,
+    fields: {
+      cpf_cnpj: 'cpf_cnpj',
+      name: 'name',
+      address: 'address',
+      neighborhood: 'neighborhood',
+      city: 'city',
+      state: 'state',
+      cep: 'cep',
+      zip_code: 'cep',
+      email: 'email',
+      phone: 'phone',
+    },
+  });
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteModalCustomer, setDeleteModalCustomer] = useState<any>(null);
   const [deleteModalStats, setDeleteModalStats] = useState<any>({});
@@ -441,7 +474,18 @@ export default function CustomersPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CPF / CNPJ</label>
-                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: formatCpfCnpj(e.target.value)})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
+                  <input
+                    type="text"
+                    value={formData.cpf_cnpj}
+                    onChange={(e) => handleCpfCnpjChange(e.target.value)}
+                    className={documentFieldInputClass(CUSTOMER_FIELD_INPUT, cpfCnpjValidation.tone)}
+                    placeholder="000.000.000-00"
+                  />
+                  <DocumentFieldFeedback
+                    message={cpfCnpjValidation.message}
+                    tone={cpfCnpjValidation.tone}
+                    lookupMessage={cnpjLookupMessage}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">RG</label>
@@ -494,7 +538,18 @@ export default function CustomersPage() {
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CEP</label>
-                   <input type="text" value={formData.cep} onChange={e => setFormData({...formData, cep: formatCep(e.target.value)})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="00.000-000" />
+                   <input
+                     type="text"
+                     value={formData.cep}
+                     onChange={(e) => handleCepChange(e.target.value)}
+                     className={documentFieldInputClass(CUSTOMER_FIELD_INPUT, cepValidation.tone)}
+                     placeholder="00.000-000"
+                   />
+                   <DocumentFieldFeedback
+                     message={cepValidation.message}
+                     tone={cepValidation.tone}
+                     lookupMessage={cepLookupMessage}
+                   />
                 </div>
               </div>
               {formData.id && (

@@ -14,7 +14,11 @@ import {
   validateCustomerForContract,
   type CustomerContractValidation,
 } from '@/lib/validateCustomerForContract';
-import { formatCep, formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  DocumentFieldFeedback,
+  documentFieldInputClass,
+} from '@/components/customers/DocumentFieldFeedback';
+import { useCustomerDocumentAutofill } from '@/hooks/useCustomerDocumentAutofill';
 
 export type LotFormState = CustomerFormValues & {
   payment_type: string;
@@ -282,6 +286,30 @@ export function CustomerLotFormModal({
     setFormData((prev) => ({ ...prev, ...patch }));
   };
 
+  const {
+    cpfCnpjValidation,
+    cepValidation,
+    cepLookupMessage,
+    cnpjLookupMessage,
+    handleCpfCnpjChange,
+    handleCepChange,
+  } = useCustomerDocumentAutofill({
+    formData,
+    setFormData,
+    disabled: submitting || prefillLoading,
+    fields: {
+      cpf_cnpj: 'cpf_cnpj',
+      name: 'name',
+      address: 'address',
+      neighborhood: 'neighborhood',
+      city: 'city',
+      state_uf: 'state_uf',
+      zip_code: 'zip_code',
+      email: 'email',
+      phone: 'phone',
+    },
+  });
+
   const onCustomerFormChange = (data: CustomerFormValues) => {
     setFormData((prev) => ({ ...prev, ...data }));
   };
@@ -355,9 +383,14 @@ export function CustomerLotFormModal({
                   <input
                     type="text"
                     value={formData.cpf_cnpj}
-                    onChange={(e) => setField({ cpf_cnpj: formatCpfCnpj(e.target.value) })}
+                    onChange={(e) => handleCpfCnpjChange(e.target.value)}
                     placeholder="000.000.000-00"
-                    className={GIS_INPUT}
+                    className={documentFieldInputClass(GIS_INPUT, cpfCnpjValidation.tone)}
+                  />
+                  <DocumentFieldFeedback
+                    message={cpfCnpjValidation.message}
+                    tone={cpfCnpjValidation.tone}
+                    lookupMessage={cnpjLookupMessage}
                   />
                 </div>
                 <div>
@@ -480,9 +513,14 @@ export function CustomerLotFormModal({
                   <input
                     type="text"
                     value={formData.zip_code}
-                    onChange={(e) => setField({ zip_code: formatCep(e.target.value) })}
+                    onChange={(e) => handleCepChange(e.target.value)}
                     placeholder="00.000-000"
-                    className={GIS_INPUT}
+                    className={documentFieldInputClass(GIS_INPUT, cepValidation.tone)}
+                  />
+                  <DocumentFieldFeedback
+                    message={cepValidation.message}
+                    tone={cepValidation.tone}
+                    lookupMessage={cepLookupMessage}
                   />
                 </div>
               </div>

@@ -6,6 +6,8 @@
 import {
   formatCep,
   formatCpfCnpj,
+  getCepValidationState,
+  getCpfCnpjValidationState,
   matchesCep,
   matchesCpfCnpj,
   normalizeCep,
@@ -83,6 +85,38 @@ function testMatchesCepSearch() {
   console.log('OK testMatchesCepSearch');
 }
 
+function testCpfCnpjValidationVisual() {
+  assert(
+    getCpfCnpjValidationState('1255151550').message === 'CPF incompleto',
+    'CPF incompleto 10',
+  );
+  assert(
+    getCpfCnpjValidationState('12551515500').message === 'CPF completo',
+    'CPF completo 11',
+  );
+  assert(
+    !getCpfCnpjValidationState('12551515500').shouldLookupCnpj,
+    'CPF não busca',
+  );
+  assert(
+    getCpfCnpjValidationState('1234567800019').message === 'CNPJ incompleto',
+    'CNPJ incompleto 13',
+  );
+  const cnpj = getCpfCnpjValidationState('12345678000199');
+  assert(cnpj.message === 'CNPJ completo', 'CNPJ completo 14');
+  assert(cnpj.shouldLookupCnpj, 'CNPJ habilita busca');
+  console.log('OK testCpfCnpjValidationVisual');
+}
+
+function testCepValidationVisual() {
+  assert(getCepValidationState('6851500').message === 'CEP incompleto', 'CEP 7');
+  const complete = getCepValidationState('68515000');
+  assert(complete.message === 'CEP completo', 'CEP 8');
+  assert(complete.shouldLookupCep, 'CEP habilita busca');
+  assert(formatCep('68515000') === '68.515-000', 'CEP máscara 68515000');
+  console.log('OK testCepValidationVisual');
+}
+
 function main() {
   testOnlyDigits();
   testFormatCpf();
@@ -92,6 +126,8 @@ function main() {
   testMatchesCpfCnpjSearch();
   testFormatCep();
   testMatchesCepSearch();
+  testCpfCnpjValidationVisual();
+  testCepValidationVisual();
   console.log('mandatory-input-mask-tests: all passed');
 }
 

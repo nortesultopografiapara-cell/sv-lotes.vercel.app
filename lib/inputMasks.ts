@@ -83,6 +83,117 @@ export function cpfCnpjIlikePatterns(value?: string | null): string[] {
   return Array.from(out);
 }
 
+export type DocumentValidationTone = 'none' | 'error' | 'success';
+
+export type CpfCnpjValidationState = {
+  digitCount: number;
+  message: string;
+  tone: DocumentValidationTone;
+  isCompleteCpf: boolean;
+  isCompleteCnpj: boolean;
+  shouldLookupCnpj: boolean;
+};
+
+export type CepValidationState = {
+  digitCount: number;
+  message: string;
+  tone: DocumentValidationTone;
+  isComplete: boolean;
+  shouldLookupCep: boolean;
+};
+
+export function getCpfCnpjValidationState(
+  value?: string | null,
+): CpfCnpjValidationState {
+  const digitCount = normalizeCpfCnpj(value).length;
+  if (digitCount === 0) {
+    return {
+      digitCount,
+      message: '',
+      tone: 'none',
+      isCompleteCpf: false,
+      isCompleteCnpj: false,
+      shouldLookupCnpj: false,
+    };
+  }
+  if (digitCount >= 1 && digitCount <= 10) {
+    return {
+      digitCount,
+      message: 'CPF incompleto',
+      tone: 'error',
+      isCompleteCpf: false,
+      isCompleteCnpj: false,
+      shouldLookupCnpj: false,
+    };
+  }
+  if (digitCount === 11) {
+    return {
+      digitCount,
+      message: 'CPF completo',
+      tone: 'success',
+      isCompleteCpf: true,
+      isCompleteCnpj: false,
+      shouldLookupCnpj: false,
+    };
+  }
+  if (digitCount >= 12 && digitCount <= 13) {
+    return {
+      digitCount,
+      message: 'CNPJ incompleto',
+      tone: 'error',
+      isCompleteCpf: false,
+      isCompleteCnpj: false,
+      shouldLookupCnpj: false,
+    };
+  }
+  return {
+    digitCount,
+    message: 'CNPJ completo',
+    tone: 'success',
+    isCompleteCpf: false,
+    isCompleteCnpj: true,
+    shouldLookupCnpj: true,
+  };
+}
+
+export function getCepValidationState(value?: string | null): CepValidationState {
+  const digitCount = normalizeCep(value).length;
+  if (digitCount === 0) {
+    return {
+      digitCount,
+      message: '',
+      tone: 'none',
+      isComplete: false,
+      shouldLookupCep: false,
+    };
+  }
+  if (digitCount >= 1 && digitCount <= 7) {
+    return {
+      digitCount,
+      message: 'CEP incompleto',
+      tone: 'error',
+      isComplete: false,
+      shouldLookupCep: false,
+    };
+  }
+  return {
+    digitCount,
+    message: 'CEP completo',
+    tone: 'success',
+    isComplete: true,
+    shouldLookupCep: true,
+  };
+}
+
+export function validationBorderClass(
+  tone: DocumentValidationTone,
+  base = 'border',
+): string {
+  if (tone === 'error') return `${base} border-red-500 focus:border-red-500`;
+  if (tone === 'success') return `${base} border-emerald-500 focus:border-emerald-500`;
+  return base;
+}
+
 export function cepIlikePatterns(value?: string | null): string[] {
   const digits = normalizeCep(value);
   if (!digits) return [];
