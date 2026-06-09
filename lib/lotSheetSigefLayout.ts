@@ -30,7 +30,15 @@ export type SigefPageRegions = {
 };
 
 const SIGEF_MARGIN = 5;
-const SKETCH_SCALE_BAND_H = 11;
+const SKETCH_SCALE_BAND_H = 14;
+const CONFRONTATIONS_PANEL_H = 24;
+const CONFRONTATIONS_COORDS_GAP_MM = 4;
+const COORDINATES_TITLE_H = 5;
+
+/** Largura mínima da escala gráfica SIGEF (mm). */
+export const SIGEF_SCALE_BAR_MIN_W_MM = 80;
+/** Altura da barra da escala gráfica SIGEF (mm). */
+export const SIGEF_SCALE_BAR_H_MM = 6;
 
 export function formatPerimeterDisplay(
   lot: Record<string, unknown>,
@@ -63,14 +71,21 @@ export function computeSigefPageRegions(
 
   const bottomSplitH = 24;
   const technicalH = 34;
-  const confrontationsH = 20;
+  const confrontationsH = CONFRONTATIONS_PANEL_H;
   const tableRowH = 5;
   const tableHeaderH = 6;
   const tableRows = Math.max(4, Math.min(metricRowCount, 12));
-  const coordinatesH = tableHeaderH + tableRows * tableRowH + 2;
+  const coordinatesH =
+    COORDINATES_TITLE_H + tableHeaderH + tableRows * tableRowH + 3;
 
   const stackBelowSketch =
-    confrontationsH + gap + coordinatesH + gap + technicalH + gap + bottomSplitH;
+    confrontationsH +
+    CONFRONTATIONS_COORDS_GAP_MM +
+    coordinatesH +
+    gap +
+    technicalH +
+    gap +
+    bottomSplitH;
   const sketchH = Math.max(88, innerH - 3 - stackBelowSketch - gap);
 
   const sketch: SigefBox = {
@@ -94,7 +109,7 @@ export function computeSigefPageRegions(
     w: contentW,
     h: confrontationsH,
   };
-  y += confrontationsH + gap;
+  y += confrontationsH + CONFRONTATIONS_COORDS_GAP_MM;
   const coordinates: SigefBox = {
     x: contentX,
     y,
@@ -146,7 +161,21 @@ export function sigefBoxesOverlap(
 
 const BLACK: [number, number, number] = [0, 0, 0];
 
-/** Quadro CONFRONTAÇÕES — dados de buildLotConfrontationAudit / confrontantsFromAudit. */
+function drawSigefDottedLeader(
+  doc: jsPDF,
+  x1: number,
+  x2: number,
+  y: number,
+) {
+  const dotStep = 1.8;
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.15);
+  for (let x = x1; x < x2; x += dotStep) {
+    doc.line(x, y, Math.min(x + 0.9, x2), y);
+  }
+}
+
+/** Quadro CONFRONTAÇÕES — layout SIGEF com líderes pontilhados. */
 export function drawSigefConfrontationsPanel(
   doc: jsPDF,
   box: SigefBox,
@@ -163,37 +192,84 @@ export function drawSigefConfrontationsPanel(
   doc.setTextColor(...BLACK);
   doc.text('CONFRONTAÇÕES', box.x + padX, box.y + padTop);
 
-  const colW = (box.w - padX * 2) / 2;
+  const sepY = box.y + padTop + 2.5;
+  doc.setLineWidth(0.2);
+  doc.line(box.x + padX, sepY, box.x + box.w - padX, sepY);
+
   const rows: [string, string][] = [
-    ['Frente', confrontants.frente || '—'],
-    ['Fundo', confrontants.fundo || '—'],
-    ['Lado Direito', confrontants.ladoDireito || '—'],
-    ['Lado Esquerdo', confrontants.ladoEsquerdo || '—'],
+    ['FRENTE', confrontants.frente || '—'],
+    ['FUNDO', confrontants.fundo || '—'],
+    ['LADO DIREITO', confrontants.ladoDireito || '—'],
+    ['LADO ESQUERDO', confrontants.ladoEsquerdo || '—'],
   ];
 
-  let ly = box.y + padTop + 5.5;
-  const lineStep = 4.5;
-  for (let i = 0; i < rows.length; i++) {
-    const col = i % 2;
-    const rowIdx = Math.floor(i / 2);
-    const lx = box.x + padX + col * colW;
-    const rowY = ly + rowIdx * lineStep * 2.2;
-    const [label, value] = rows[i];
+  let ly = box.y + padTop + 6.5;
+  const lineStep = 4.8;
+  const labelColW = 32;
+  const valueX = box.x + box.w - padX;
+
+  for (const [label, value] of rows) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.2);
-    doc.text(`${label}:`, lx, rowY);
+    doc.text(label, box.x + padX, ly);
+    const labelEndX = box.x + padX + labelColW;
+    const wrapped = wrapConfrontantText(value, 52, 2);
+    const display = wrapped.join(' / ');
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
-    const wrapped = wrapConfrontantText(value, 38, 2);
-    let vy = rowY;
-    for (const line of wrapped) {
-      const split = doc.splitTextToSize(line, colW - 22) as string[];
-      for (const sl of split) {
-        doc.text(sl, lx + 20, vy);
-        vy += 3.8;
-      }
+    const valueW = doc.getTextWidth(display);
+    const dotsEnd = valueX - valueW - 2;
+    if (dotsEnd > labelEndX + 4) {
+      drawSigefDottedLeader(doc, labelEndX, dotsEnd, ly - 0.6);
     }
+    doc.text(display, valueX, ly, { align: 'right', maxWidth: box.w - labelColW - padX * 2 });
+    ly += lineStep;
   }
+
+  doc.setLineWidth(0.2);
+  doc.line(box.x + padX, box.y + box.h - 2, box.x + box.w - padX, box.y + box.h - 2);
+}
+
+/** Escala gráfica SIGEF — largura mín. 80 mm, altura 6 mm, centralizada na faixa. */
+export function drawSigefGraphicScale(
+  doc: jsPDF,
+  band: SigefBox,
+  scaleDenom: number,
+) {
+  const barRealM = 50;
+  let barMm = (barRealM * 1000) / scaleDenom;
+  barMm = Math.max(SIGEF_SCALE_BAR_MIN_W_MM, Math.min(barMm, band.w * 0.88));
+  const segments = 5;
+  const segMm = barMm / segments;
+  const segM = barRealM / segments;
+  const barX = band.x + (band.w - barMm) / 2;
+  const barY = band.y + (band.h - SIGEF_SCALE_BAR_H_MM) / 2 - 1;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6);
+  doc.setTextColor(...BLACK);
+  doc.text('ESCALA GRÁFICA', band.x + band.w / 2, band.y + 2.5, {
+    align: 'center',
+  });
+
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.35);
+  for (let i = 0; i < segments; i++) {
+    if (i % 2 === 0) doc.setFillColor(255, 255, 255);
+    else doc.setFillColor(40, 40, 40);
+    doc.rect(barX + i * segMm, barY, segMm, SIGEF_SCALE_BAR_H_MM, 'FD');
+  }
+  doc.setDrawColor(...BLACK);
+  doc.rect(barX, barY, barMm, SIGEF_SCALE_BAR_H_MM, 'S');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(5);
+  for (let i = 0; i <= segments; i++) {
+    doc.text(String(Math.round(i * segM)), barX + i * segMm, barY + SIGEF_SCALE_BAR_H_MM + 3.5, {
+      align: 'center',
+    });
+  }
+  doc.text('m', barX + barMm + 3, barY + SIGEF_SCALE_BAR_H_MM / 2 + 1);
 }
 
 export type SigefTechnicalData = {

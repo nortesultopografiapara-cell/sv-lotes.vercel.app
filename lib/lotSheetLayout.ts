@@ -713,6 +713,258 @@ export function graphicScaleBandRect(
   };
 }
 
+/** ETAPA 4.1 — anti-colisão e espaçamento SIGEF (somente layout). */
+export const MEASURE_LABEL_INTERNAL_OFFSET_MM = 4;
+export const MEASURE_LABEL_EXTERNAL_OFFSET_MM = 4;
+export const LOT_NUMBER_AREA_MIN_GAP_MM = 15;
+export const VERTEX_LABEL_MIN_SPACING_MM = 15;
+
+export type MeasureLabelEdgeInput = {
+  mid: [number, number];
+  p1: [number, number];
+  p2: [number, number];
+  inNx: number;
+  inNy: number;
+  exNx: number;
+  exNy: number;
+};
+
+export type MeasureLabelZone = {
+  pos: [number, number];
+  radius: number;
+  kind?: string;
+};
+
+function perpendicularDistanceToMeasureEdge(
+  pos: [number, number],
+  edge: MeasureLabelEdgeInput,
+): number {
+  const dx = edge.p2[0] - edge.p1[0];
+  const dy = edge.p2[1] - edge.p1[1];
+  const len = Math.hypot(dx, dy) || 1e-12;
+  return (
+    Math.abs(
+      dy * pos[0] -
+        dx * pos[1] +
+        edge.p2[0] * edge.p1[1] -
+        edge.p2[1] * edge.p1[0],
+    ) / len
+  );
+}
+
+function measureLabelHitsZones(
+  x: number,
+  y: number,
+  radius: number,
+  placed: MeasureLabelZone[],
+  minGap = 2,
+): boolean {
+  for (const z of placed) {
+    if (Math.hypot(x - z.pos[0], y - z.pos[1]) < radius + z.radius + minGap) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Posição da medida: offset interno 4 mm → externo 4 mm → rotação 180° se colidir.
+ */
+export function resolveMeasureLabelPosition(
+  edge: MeasureLabelEdgeInput,
+  polygon: [number, number][],
+  placedZones: MeasureLabelZone[],
+  options?: { labelRadius?: number; minEdgeClearance?: number },
+): {
+  x: number;
+  y: number;
+  offsetUsed: number;
+  side: 'in' | 'out';
+  rotated: boolean;
+} {
+  const labelRadius = options?.labelRadius ?? 5;
+  const minClear = options?.minEdgeClearance ?? MEASURE_LABEL_INTERNAL_OFFSET_MM;
+  const internalOffsets = [4, 5, 6, 7, 8];
+  const externalOffsets = [4, 5, 6, 7, 8, 10, 12];
+
+  const tryCandidate = (
+    nx: number,
+    ny: number,
+    off: number,
+    requireInside: boolean,
+    side: 'in' | 'out',
+    rotated: boolean,
+  ) => {
+    const x = edge.mid[0] + nx * off;
+    const y = edge.mid[1] + ny * off;
+    const inside = pointInsideRing(x, y, polygon);
+    if (requireInside && !inside) return null;
+    if (!requireInside && inside) return null;
+    if (perpendicularDistanceToMeasureEdge([x, y], edge) < minClear) return null;
+    if (measureLabelHitsZones(x, y, labelRadius, placedZones)) return null;
+    return { x, y, offsetUsed: off, side, rotated };
+  };
+
+  const normalSets: Array<{
+    inNx: number;
+    inNy: number;
+    exNx: number;
+    exNy: number;
+    rotated: boolean;
+  }> = [
+    {
+      inNx: edge.inNx,
+      inNy: edge.inNy,
+      exNx: edge.exNx,
+      exNy: edge.exNy,
+      rotated: false,
+    },
+    {
+      inNx: -edge.inNx,
+      inNy: -edge.inNy,
+      exNx: -edge.exNx,
+      exNy: -edge.exNy,
+      rotated: true,
+    },
+  ];
+
+  for (const normals of normalSets) {
+    for (const off of internalOffsets) {
+      const hit = tryCandidate(
+        normals.inNx,
+        normals.inNy,
+        off,
+        true,
+        'in',
+        normals.rotated,
+      );
+      if (hit) return hit;
+    }
+    for (const off of externalOffsets) {
+      const hit = tryCandidate(
+        normals.exNx,
+        normals.exNy,
+        off,
+        false,
+        'out',
+        normals.rotated,
+      );
+      if (hit) return hit;
+    }
+  }
+
+  return {
+    x: edge.mid[0] + edge.exNx * MEASURE_LABEL_EXTERNAL_OFFSET_MM,
+    y: edge.mid[1] + edge.exNy * MEASURE_LABEL_EXTERNAL_OFFSET_MM,
+    offsetUsed: MEASURE_LABEL_EXTERNAL_OFFSET_MM,
+    side: 'out',
+    rotated: false,
+  };
+}
+
+export type LotNumberAreaLayout = {
+  badgePos: [number, number];
+  badgeRadius: number;
+  areaPos: [number, number];
+  areaFontSize: number;
+  numberAreaGapMm: number;
+};
+
+/** Número do lote no centro visual; área abaixo com gap mínimo 15 mm. */
+export function placeLotNumberAndArea(
+  verts: [number, number][],
+  areaText: string,
+  placedZones: MeasureLabelZone[],
+  options: {
+    badgeRadius?: number;
+    crossWidthMm: number;
+    inwardDepthMm: number;
+    narrow: boolean;
+    vertexCount: number;
+    minNumberAreaGapMm?: number;
+  },
+): LotNumberAreaLayout {
+  const badgeRadius = options.badgeRadius ?? 5.5;
+  const minGap = options.minNumberAreaGapMm ?? LOT_NUMBER_AREA_MIN_GAP_MM;
+  const avoid = [
+    ...placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+  ];
+
+  let badgePos = findBestInteriorLabelPosition(verts, {
+    minEdgeDist: 6,
+    avoid,
+  });
+  if (minDistToPolygonRing(badgePos, verts) < 6) {
+    badgePos = ringCentroid(verts);
+  }
+
+  const areaFallback: [number, number] = [
+    badgePos[0],
+    badgePos[1] + badgeRadius + minGap + placementFontEstimate(areaText),
+  ];
+  const placement = resolveAreaLabelPlacement(verts, areaText, {
+    crossWidthMm: options.crossWidthMm,
+    inwardDepthMm: options.inwardDepthMm,
+    vertexCount: options.vertexCount,
+    narrow: options.narrow,
+    avoid: [
+      ...avoid,
+      { pos: badgePos, radius: badgeRadius + 4 },
+    ],
+    fallbackPos: areaFallback,
+  });
+
+  let areaPos: [number, number] = [
+    badgePos[0],
+    badgePos[1] + badgeRadius + minGap + placement.fontSize * 0.45,
+  ];
+  const gapActual = areaPos[1] - badgePos[1] - badgeRadius;
+  if (gapActual < minGap) {
+    areaPos = [
+      badgePos[0],
+      badgePos[1] + badgeRadius + minGap + placement.fontSize * 0.45,
+    ];
+  }
+
+  if (
+    minDistToPolygonRing(areaPos, verts) < 3 ||
+    measureLabelHitsZones(areaPos[0], areaPos[1], 8, placedZones, 3)
+  ) {
+    areaPos = placement.pos;
+    if (areaPos[1] <= badgePos[1] + badgeRadius + minGap) {
+      areaPos = [
+        badgePos[0],
+        badgePos[1] + badgeRadius + minGap + placement.fontSize * 0.5,
+      ];
+    }
+  }
+
+  const numberAreaGapMm = areaPos[1] - badgePos[1] - badgeRadius;
+  return {
+    badgePos,
+    badgeRadius,
+    areaPos,
+    areaFontSize: placement.fontSize,
+    numberAreaGapMm,
+  };
+}
+
+function placementFontEstimate(areaText: string): number {
+  const digits = areaText.replace(/\D/g, '').length;
+  if (digits > 7) return 5;
+  if (digits > 5) return 4;
+  return 3;
+}
+
+/** Espaçamento radial de vértices próximos — mínimo 15 mm (SIGEF). */
+export function resolveVertexLabelSpacing(
+  vertexIndex: number,
+  verts: [number, number][],
+  proximityMm = VERTEX_LABEL_MIN_SPACING_MM,
+): number {
+  return vertexLabelStaggerIndex(vertexIndex, verts, proximityMm);
+}
+
 /** Monta auditoria + lados do croqui a partir do block (testes e payload). */
 export function buildSketchLayoutFromBlock(
   block: Record<string, unknown>,

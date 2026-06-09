@@ -16,11 +16,13 @@ import {
   LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
   planFrontStreetLabel,
+  placeLotNumberAndArea,
   resolveAreaLabelPlacement,
   resolveLabelClearOfScaleBand,
+  resolveMeasureLabelPosition,
   resolvePointAvoidingRects,
+  resolveVertexLabelSpacing,
   shouldDrawStreetInSketch,
-  vertexLabelStaggerIndex,
   wrapConfrontantText,
   type LabelRect,
   type LotSheetSketchSide,
@@ -29,6 +31,7 @@ import {
   buildSigefTechnicalData,
   computeSigefPageRegions,
   drawSigefConfrontationsPanel,
+  drawSigefGraphicScale,
   drawSigefTechnicalPanel,
   LOT_SHEET_SIGEF_LAYOUT,
   type SigefBox,
@@ -43,9 +46,6 @@ import {
   normalizeTechnicalResponsibleFromCompany,
   type TechnicalResponsibleProfile,
 } from '@/lib/technicalResponsible';
-
-const TECH_NOT_INFORMED_MSG =
-  'Responsável técnico não informado nas configurações da empresa.';
 
 export type GenerateLotSheetPdfInput = LotSheetPayload;
 
@@ -269,8 +269,16 @@ const SIDE_CONFRONTANT_LABEL_OFFSET_MM = 15;
 const BACK_CONFRONTANT_LABEL_OFFSET_MM = 15;
 const CONFRONTANT_MAX_WIDTH_MM = 44;
 const MIN_AREA_EDGE_CLEARANCE_MM = 7;
-const VERTEX_STAGGER_PROXIMITY_MM = LOT_SHEET_CLEAN_SKETCH ? 18 : 14;
-const VERTEX_LABEL_MIN_GAP_MM = LOT_SHEET_CLEAN_SKETCH ? 12 : 8;
+const VERTEX_STAGGER_PROXIMITY_MM = LOT_SHEET_SIGEF_LAYOUT
+  ? 15
+  : LOT_SHEET_CLEAN_SKETCH
+    ? 18
+    : 14;
+const VERTEX_LABEL_MIN_GAP_MM = LOT_SHEET_SIGEF_LAYOUT
+  ? 15
+  : LOT_SHEET_CLEAN_SKETCH
+    ? 12
+    : 8;
 
 /** Vértices: bissetriz externa e afastamento mínimo da divisa. */
 const VERTEX_LABEL_OFFSET_MM = 4;
@@ -788,72 +796,62 @@ function measureLabelCollides(
   return false;
 }
 
-/** Medida com offset interno ou externo — mínimo 4 mm da divisa (SIGEF). */
+/** Medida com offset interno/externo 4 mm e rotação 180° (SIGEF). */
 function placeDistanceLabelWithSymmetricOffset(
   edge: EdgeGeometry,
   polygon: [number, number][],
   fixedOffsetMm?: number,
   placedZones: PlacedLabelZone[] = [],
 ): { x: number; y: number; offsetUsed: number; side: 'in' | 'out' } {
-  const { nx, ny } = pickInternalNormal(edge, polygon);
   const edgeLenMm = Math.hypot(edge.dx, edge.dy);
   const labelRadius = edgeLenMm < sketchOffsetMm(14) ? 4 : 5;
-  const internalTries =
-    fixedOffsetMm != null
-      ? [
-          fixedOffsetMm,
-          ...DISTANCE_OFFSET_TRY_MM.filter((o) => o < fixedOffsetMm),
-        ]
-      : [...DISTANCE_OFFSET_TRY_MM, 7, 8];
+  const { nx, ny } = pickInternalNormal(edge, polygon);
+  const n = polygon.length;
+  const vi = edge.index;
+  const p1 = polygon[vi];
+  const p2 = polygon[(vi + 1) % n];
 
-  const trySide = (
-    dirNx: number,
-    dirNy: number,
-    offsets: number[],
-    requireInside: boolean,
-    side: 'in' | 'out',
-  ) => {
-    for (const off of offsets) {
-      const x = edge.mid[0] + dirNx * off;
-      const y = edge.mid[1] + dirNy * off;
-      const inside = pointInsidePolygon(x, y, polygon);
-      if (requireInside && !inside) continue;
-      if (!requireInside && inside) continue;
-      if (
-        perpendicularDistanceToEdge([x, y], edge) <
-        DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM
-      ) {
-        continue;
-      }
-      if (measureLabelCollides(x, y, labelRadius, placedZones)) continue;
-      return { x, y, offsetUsed: off, side };
-    }
-    return null;
-  };
+  const resolved = resolveMeasureLabelPosition(
+    {
+      mid: edge.mid,
+      p1,
+      p2,
+      inNx: nx,
+      inNy: ny,
+      exNx: edge.exNx,
+      exNy: edge.exNy,
+    },
+    polygon,
+    placedZones.map((z) => ({
+      pos: z.pos,
+      radius: z.radius,
+      kind: z.kind,
+    })),
+    {
+      labelRadius,
+      minEdgeClearance: DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM,
+    },
+  );
 
-  const shortEdge = edgeLenMm < sketchOffsetMm(16);
-  const internalOffsets = shortEdge
-    ? [4, 5, 6, 7]
-    : internalTries;
+  if (fixedOffsetMm != null && resolved.offsetUsed < fixedOffsetMm) {
+    const retry = resolveMeasureLabelPosition(
+      {
+        mid: edge.mid,
+        p1,
+        p2,
+        inNx: nx,
+        inNy: ny,
+        exNx: edge.exNx,
+        exNy: edge.exNy,
+      },
+      polygon,
+      placedZones.map((z) => ({ pos: z.pos, radius: z.radius, kind: z.kind })),
+      { labelRadius, minEdgeClearance: fixedOffsetMm },
+    );
+    return retry;
+  }
 
-  const internal = trySide(nx, ny, internalOffsets, true, 'in');
-  if (internal) return internal;
-
-  const externalOffsets = shortEdge
-    ? [5, 6, 7, 8, 10, 12]
-    : [4, 5, 6, 7, 8, 10];
-  const external = trySide(edge.exNx, edge.exNy, externalOffsets, false, 'out');
-  if (external) return external;
-
-  const fallback = trySide(nx, ny, [3, 2.5, 2], true, 'in');
-  if (fallback) return fallback;
-
-  return {
-    x: edge.mid[0] + edge.exNx * 5,
-    y: edge.mid[1] + edge.exNy * 5,
-    offsetUsed: 5,
-    side: 'out',
-  };
+  return resolved;
 }
 
 /** Rótulo no lado externo do polígono (normal oposta ao centroide). */
@@ -1172,7 +1170,7 @@ function placeVertexLabelOutsideCorner(
   const vtx = verts[vi];
   const bisector = getVertexExternalBisector(verts, vi);
   const edgeNext = getEdgeGeometry(verts, vi);
-  const stagger = vertexLabelStaggerIndex(
+  const stagger = resolveVertexLabelSpacing(
     vi,
     verts,
     VERTEX_STAGGER_PROXIMITY_MM,
@@ -1612,61 +1610,84 @@ function drawMetricTable(
   box: Box,
   rows: LotSheetMetricRow[],
 ) {
-  const headers = ['De', 'Para', 'Azimute', 'Distância', 'Coord. E(X)', 'Coord. N(Y)'];
-  const colWidths = [
-    box.w * 0.08,
-    box.w * 0.08,
-    box.w * 0.18,
-    box.w * 0.14,
-    box.w * 0.26,
-    box.w * 0.26,
-  ];
-  const rowH = LOT_SHEET_SIGEF_LAYOUT ? 5 : 4.6;
-  const headerH = LOT_SHEET_SIGEF_LAYOUT ? 6 : 5.5;
+  const sigef = LOT_SHEET_SIGEF_LAYOUT;
+  const titleH = sigef ? 5 : 0;
+  const headers = sigef
+    ? ['Vértice', 'Azimute', 'Distância', 'E(X)', 'N(Y)']
+    : ['De', 'Para', 'Azimute', 'Distância', 'Coord. E(X)', 'Coord. N(Y)'];
+  const colWidths = sigef
+    ? [
+        box.w * 0.14,
+        box.w * 0.2,
+        box.w * 0.14,
+        box.w * 0.26,
+        box.w * 0.26,
+      ]
+    : [
+        box.w * 0.08,
+        box.w * 0.08,
+        box.w * 0.18,
+        box.w * 0.14,
+        box.w * 0.26,
+        box.w * 0.26,
+      ];
+  const rowH = sigef ? 5 : 4.6;
+  const headerH = sigef ? 6 : 5.5;
+  const tableTop = box.y + titleH;
 
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.25);
   doc.rect(box.x, box.y, box.w, box.h);
 
-  if (LOT_SHEET_SIGEF_LAYOUT) {
+  if (sigef) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
-    doc.text('TABELA DE COORDENADAS', box.x + 3, box.y - 1.2);
+    doc.text('TABELA DE COORDENADAS', box.x + 3, box.y + 3.5);
+    doc.setLineWidth(0.2);
+    doc.line(box.x, box.y + titleH, box.x + box.w, box.y + titleH);
   }
 
   let x = box.x;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(LOT_SHEET_SIGEF_LAYOUT ? 6 : 6);
+  doc.setFontSize(sigef ? 6 : 6);
   headers.forEach((h, i) => {
-    doc.rect(x, box.y, colWidths[i], headerH);
-    doc.text(h, x + colWidths[i] / 2, box.y + 3.8, { align: 'center' });
+    doc.rect(x, tableTop, colWidths[i], headerH);
+    doc.text(h, x + colWidths[i] / 2, tableTop + 3.8, { align: 'center' });
     x += colWidths[i];
   });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(LOT_SHEET_SIGEF_LAYOUT ? 5.8 : 5.5);
+  doc.setFontSize(sigef ? 5.8 : 5.5);
   const maxRows = Math.min(
     rows.length,
-    Math.floor((box.h - headerH) / rowH),
+    Math.floor((box.h - titleH - headerH) / rowH),
   );
   for (let ri = 0; ri < maxRows; ri++) {
     const row = rows[ri];
-    const y = box.y + headerH + ri * rowH;
+    const y = tableTop + headerH + ri * rowH;
     x = box.x;
-    const cells = [
-      row.from,
-      row.to,
-      row.azimute,
-      row.distancia,
-      row.coordE,
-      row.coordN,
-    ];
+    const cells = sigef
+      ? [
+          `${row.from} → ${row.to}`,
+          row.azimute,
+          row.distancia,
+          row.coordE,
+          row.coordN,
+        ]
+      : [
+          row.from,
+          row.to,
+          row.azimute,
+          row.distancia,
+          row.coordE,
+          row.coordN,
+        ];
     cells.forEach((cell, ci) => {
       doc.rect(x, y, colWidths[ci], rowH);
-      const isCoordCol = ci >= 4;
+      const isCoordCol = sigef ? ci >= 3 : ci >= 4;
       const longMsg = cell.includes('não disponíveis');
       if (isCoordCol && longMsg) doc.setFontSize(4.2);
-      else doc.setFontSize(5.5);
+      else doc.setFontSize(sigef ? 5.5 : 5.5);
       doc.text(cell, x + colWidths[ci] / 2, y + 3.1, {
         align: 'center',
         maxWidth: colWidths[ci] - 1,
@@ -1941,24 +1962,20 @@ function drawTechnicalResponsiblePanel(
 
   writeLines(leftX, y + 4, 'RESPONSÁVEL TÉCNICO', innerW, 6, true);
 
-  if (!hasTechnicalResponsible(tech)) {
-    writeLines(leftX, contentTop, TECH_NOT_INFORMED_MSG, innerW, 4.8);
-    return;
-  }
+  const sigLineY = y + h - 3;
+  doc.setLineWidth(0.25);
+  doc.line(leftX, sigLineY, leftX + innerW, sigLineY);
 
   let ly = contentTop;
-  const pushField = (label: string, value: string) => {
-    if (!value) return;
-    ly = writeLines(leftX, ly, `${label}: ${value}`, leftW, 4.6);
-  };
-
-  pushField('Nome', tech.name);
-  pushField('Cargo/Função', tech.title);
-  pushField('CREA/CFT/CAU', formatTechnicalRegistryLine(tech));
-  pushField('CPF', tech.cpf);
-  pushField('Telefone', tech.phone);
-  if (tech.email) {
-    ly = writeLines(leftX, ly, `E-mail: ${tech.email}`, leftW, 4.6);
+  if (hasTechnicalResponsible(tech)) {
+    ly = writeLines(leftX, ly, tech.name, leftW, 5.2, true);
+    if (tech.title) {
+      ly = writeLines(leftX, ly, tech.title, leftW, 4.8);
+    }
+    const registry = formatTechnicalRegistryLine(tech);
+    if (registry) {
+      ly = writeLines(leftX, ly, registry, leftW, 4.6);
+    }
   }
 
   let imgY = contentTop;
@@ -1975,20 +1992,17 @@ function drawTechnicalResponsiblePanel(
     );
     imgY += (usedH > 0 ? usedH : imgBoxH) + 2;
   } else {
-    writeLines(
-      rightX,
-      imgY + 2,
-      'Assinatura não cadastrada',
-      rightW,
-      4.2,
-    );
-    imgY += 7;
+    doc.setLineWidth(0.2);
+    doc.line(rightX, imgY + imgBoxH - 1, rightX + rightW, imgY + imgBoxH - 1);
+    imgY += imgBoxH + 2;
   }
 
   if (stampBase64) {
     addPdfImageContained(doc, stampBase64, rightX, imgY, rightW, imgBoxH);
   } else {
-    writeLines(rightX, imgY + 2, 'Carimbo não cadastrado', rightW, 4.2);
+    doc.setDrawColor(...BLACK);
+    doc.setLineWidth(0.2);
+    doc.rect(rightX, imgY, rightW, imgBoxH, 'S');
   }
 }
 
@@ -2315,15 +2329,93 @@ export async function generateLotSheetPdf(
       : []),
   ];
 
-  const lotBadge = LOT_SHEET_SIGEF_LAYOUT
-    ? placeLotNumberInVisualCenter(doc, sheetPts, lotNum, placedZones)
-    : placeLotNumberNearFront(
-        doc,
-        sheetPts,
-        lotNum,
-        frontEdge,
-        placedZones,
-      );
+  let lotBadge: { badgePos: [number, number]; radius: number };
+  let areaLabel: { areaPos: [number, number]; areaFont: number };
+
+  if (LOT_SHEET_SIGEF_LAYOUT) {
+    const usefulW = lotUsefulCrossWidthMm(sheetVerts, mainAxis);
+    const front = getLotFrontDirection(sheetVerts, frontEdge);
+    const numberArea = placeLotNumberAndArea(
+      sheetVerts,
+      input.measures.area,
+      placedZones.map((z) => ({
+        pos: z.pos,
+        radius: z.radius,
+        kind: z.kind,
+      })),
+      {
+        crossWidthMm: usefulW,
+        inwardDepthMm: front.maxInwardDepthMm,
+        narrow: mainAxis.narrow,
+        vertexCount: sheetVerts.length,
+      },
+    );
+    const r = numberArea.badgeRadius;
+    doc.setDrawColor(...BLACK);
+    doc.setFillColor(255, 255, 255);
+    doc.setLineWidth(0.45);
+    doc.circle(numberArea.badgePos[0], numberArea.badgePos[1], r, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...RED);
+    doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 1.1, {
+      align: 'center',
+    });
+    doc.setTextColor(...BLACK);
+
+    const lines = splitAreaLabelLines(
+      input.measures.area,
+      usefulW,
+      mainAxis.narrow,
+    );
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(numberArea.areaFontSize);
+    doc.setTextColor(...BLUE);
+    if (lines.length === 1) {
+      doc.text(lines[0], numberArea.areaPos[0], numberArea.areaPos[1], {
+        align: 'center',
+        baseline: 'middle',
+        angle: mainAxis.angleDeg,
+      });
+    } else {
+      const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
+      const lineStep = numberArea.areaFontSize * 0.38;
+      lines.forEach((line, i) => {
+        const off = (i - (lines.length - 1) / 2) * lineStep;
+        doc.text(
+          line,
+          numberArea.areaPos[0] + Math.cos(perpRad) * off,
+          numberArea.areaPos[1] + Math.sin(perpRad) * off,
+          { align: 'center', baseline: 'middle', angle: mainAxis.angleDeg },
+        );
+      });
+    }
+    doc.setTextColor(...BLACK);
+
+    lotBadge = { badgePos: numberArea.badgePos, radius: r };
+    areaLabel = {
+      areaPos: numberArea.areaPos,
+      areaFont: numberArea.areaFontSize,
+    };
+  } else {
+    lotBadge = placeLotNumberNearFront(
+      doc,
+      sheetPts,
+      lotNum,
+      frontEdge,
+      placedZones,
+    );
+    areaLabel = placeAreaLabelCenter(
+      doc,
+      sheetPts,
+      input.measures.area,
+      mainAxis,
+      frontEdge,
+      lotBadge.badgePos,
+      placedZones,
+    );
+  }
+
   placedZones.push({
     pos: lotBadge.badgePos,
     radius: lotBadge.radius + 2,
@@ -2336,16 +2428,6 @@ export async function generateLotSheetPdf(
     h: LOT_BADGE_RADIUS_MM * 2,
     kind: 'lot_badge',
   });
-
-  const areaLabel = placeAreaLabelCenter(
-    doc,
-    sheetPts,
-    input.measures.area,
-    mainAxis,
-    frontEdge,
-    lotBadge.badgePos,
-    placedZones,
-  );
   const areaW = Math.max(20, input.measures.area.length * 1.4);
   const areaH = areaLabel.areaFont * (splitAreaLabelLines(
     input.measures.area,
@@ -2416,13 +2498,17 @@ export async function generateLotSheetPdf(
     drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
   }
 
-  drawGraphicScale(
-    doc,
-    sigefRegions ? sigefRegions.sketchScaleBand.x + 2 : contentX,
-    scaleY + 4,
-    sigefRegions ? sigefRegions.sketchScaleBand.w - 4 : contentW,
-    scaleDenom,
-  );
+  if (sigefRegions) {
+    drawSigefGraphicScale(doc, sigefRegions.sketchScaleBand, scaleDenom);
+  } else {
+    drawGraphicScale(
+      doc,
+      contentX,
+      scaleY + 4,
+      contentW,
+      scaleDenom,
+    );
+  }
 
   if (confrontationsBox) {
     drawSigefConfrontationsPanel(
