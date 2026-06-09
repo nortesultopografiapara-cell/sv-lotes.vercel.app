@@ -5,6 +5,7 @@
 
 import {
   getOfficialLotMeasurements,
+  stripManualOfficialSidesFromBlock,
   type OfficialLotMeasures,
 } from '../lib/officialLotMeasurements';
 
@@ -54,8 +55,9 @@ function lineSeg(
   endNorth: number,
   endEast: number,
   distance: number,
+  official_side?: string,
 ) {
-  return {
+  const row: Record<string, unknown> = {
     segment_index: idx,
     north,
     east,
@@ -64,6 +66,82 @@ function lineSeg(
     distance,
     segment_type: 'LINE',
   };
+  if (official_side) row.official_side = official_side;
+  return row;
+}
+
+/**
+ * Lote 010 / QD 02 — planta Civil (6 segmentos com official_side manual).
+ * Frente 30,62 | Fundo 31,85 | Esq. 87,25 | Dir. 60,74+7,26+28,54 = 96,54
+ */
+function testLot010OfficialSidesFromSixSegments() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500030.62, 30.62, 'front'),
+    lineSeg(1, 7500000, 500030.62, 7500087.25, 500030.62, 87.25, 'left'),
+    lineSeg(2, 7500087.25, 500030.62, 7500087.25, 500062.47, 31.85, 'back'),
+    lineSeg(3, 7500087.25, 500062.47, 7500026.73, 500062.47, 60.74, 'right'),
+    lineSeg(4, 7500026.73, 500062.47, 7500020.6, 500056.34, 7.26, 'right'),
+    lineSeg(5, 7500020.6, 500056.34, 7500000, 500030.62, 28.54, 'right'),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '010',
+      front_segment_index: 0,
+      front_street_name: 'RUA CENTRAL',
+      frente: 30.62,
+      area: 2727.13,
+    }),
+    '010',
+  );
+
+  assert(near(m.frente, 30.62), `frente ${m.frente}`);
+  assert(near(m.fundo, 31.85), `fundo ${m.fundo}`);
+  assert(near(m.ladoEsquerdo, 87.25), `esq ${m.ladoEsquerdo}`);
+  assert(near(m.ladoDireito, 96.54), `dir ${m.ladoDireito}`);
+  assert(!near(m.ladoEsquerdo, 99.62), `esq não pode ser 99,62: ${m.ladoEsquerdo}`);
+  assert(!near(m.fundo, 19.48), `fundo não pode ser só 19,48: ${m.fundo}`);
+
+  const backIdx = new Set(m.sides?.back.segmentIndexes ?? []);
+  for (const idx of m.sides?.left.segmentIndexes ?? []) {
+    assert(!backIdx.has(idx), `esq seg ${idx} não pode estar no fundo`);
+  }
+  for (const idx of m.sides?.right.segmentIndexes ?? []) {
+    assert(!backIdx.has(idx), `dir seg ${idx} não pode estar no fundo`);
+  }
+  assertDisjointSideIndexes(m);
+  assert((m.sides?.back.segmentIndexes.length ?? 0) >= 1, 'fundo com segmentos');
+  assert((m.sides?.right.segmentIndexes.length ?? 0) === 3, 'dir 3 segmentos');
+  console.log('OK testLot010OfficialSidesFromSixSegments');
+}
+
+/** Lote 010 — fundo quebrado 19,48+12,37 sem official_side (reclaim automático). */
+function testLot010AutoFundoBreakFromSevenSegments() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500030.62, 30.62),
+    lineSeg(1, 7500000, 500030.62, 7500060.74, 500030.62, 60.74),
+    lineSeg(2, 7500060.74, 500030.62, 7500065.87, 500035.75, 7.26),
+    lineSeg(3, 7500065.87, 500035.75, 7500087.25, 500057.13, 28.54),
+    lineSeg(4, 7500087.25, 500057.13, 7500087.25, 500037.65, 19.48),
+    lineSeg(5, 7500087.25, 500037.65, 7500087.25, 500030.62, 12.37),
+    lineSeg(6, 7500087.25, 500030.62, 7500000, 500030.62, 87.25),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '010',
+      front_segment_index: 0,
+      front_street_name: 'RUA CENTRAL',
+      frente: 30.62,
+      area: 2727.13,
+    }),
+    '010-AUTO',
+  );
+
+  assert(near(m.frente, 30.62), `frente ${m.frente}`);
+  assert(near(m.fundo, 31.85), `fundo auto ${m.fundo}`);
+  assert(near(m.ladoEsquerdo, 87.25), `esq auto ${m.ladoEsquerdo}`);
+  assert(!near(m.ladoEsquerdo, 99.62), `esq auto não 99,62: ${m.ladoEsquerdo}`);
+  assertDisjointSideIndexes(m);
+  console.log('OK testLot010AutoFundoBreakFromSevenSegments');
 }
 
 /** 1. Retângulo simples — 1 segmento por lado. */
@@ -281,6 +359,135 @@ function testLot010DoesNotOverSumLeftSide() {
   console.log('OK testLot010DoesNotOverSumLeftSide');
 }
 
+/** ETAPA 2.1.3 — official_side manual vence heurística. */
+function testManualOfficialSideOverridesHeuristic() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 50, 50),
+    lineSeg(1, 0, 50, 100, 50, 100),
+    lineSeg(2, 100, 50, 100, 0, 50),
+    lineSeg(3, 100, 0, 0, 0, 100),
+  ];
+  const auto = getOfficialLotMeasurements(
+    block(segs, { front_segment_index: 0, frente: 50 }),
+    'OVERRIDE-AUTO',
+  );
+  const autoBack = new Set(auto.sides?.back.segmentIndexes ?? []);
+  const targetIdx = [...autoBack][0];
+  assert(targetIdx != null, 'segmento de fundo automático');
+
+  const manualSegs = segs.map((s) =>
+    s.segment_index === targetIdx
+      ? { ...s, official_side: 'right' }
+      : s,
+  );
+  const manual = getOfficialLotMeasurements(
+    block(manualSegs, { front_segment_index: 0, frente: 50 }),
+    'OVERRIDE-MANUAL',
+  );
+  assert(
+    (manual.sides?.right.segmentIndexes ?? []).includes(targetIdx),
+    `seg ${targetIdx} deve estar no lado direito manual`,
+  );
+  assert(
+    !(manual.sides?.back.segmentIndexes ?? []).includes(targetIdx),
+    `seg ${targetIdx} não pode permanecer no fundo`,
+  );
+  assertDisjointSideIndexes(manual);
+  console.log('OK testManualOfficialSideOverridesHeuristic');
+}
+
+/** ETAPA 2.1.3 — limpar official_side volta ao automático. */
+function testClearOfficialSideReturnsToAutomatic() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 50, 50, 'front'),
+    lineSeg(1, 0, 50, 100, 50, 100, 'left'),
+    lineSeg(2, 100, 50, 100, 0, 50, 'back'),
+    lineSeg(3, 100, 0, 0, 0, 100, 'right'),
+  ];
+  const withManual = getOfficialLotMeasurements(
+    block(segs, { front_segment_index: 0 }),
+    'CLEAR-MANUAL',
+  );
+  const cleared = getOfficialLotMeasurements(
+    stripManualOfficialSidesFromBlock(
+      block(segs, { front_segment_index: 0 }),
+    ),
+    'CLEAR-AUTO',
+  );
+  const plain = getOfficialLotMeasurements(
+    block(
+      segs.map(({ official_side: _o, ...rest }) => rest),
+      { front_segment_index: 0 },
+    ),
+    'CLEAR-PLAIN',
+  );
+  assert(near(withManual.fundo, 50), `manual fundo ${withManual.fundo}`);
+  assert(near(cleared.fundo, plain.fundo), `cleared fundo ${cleared.fundo}`);
+  assert(near(cleared.ladoDireito, plain.ladoDireito), 'cleared dir');
+  assertDisjointSideIndexes(cleared);
+  console.log('OK testClearOfficialSideReturnsToAutomatic');
+}
+
+/**
+ * ETAPA 2.1.3 — Lote 010: só o conector 7,26 m como right → dir 96,54 m.
+ */
+function testLot010Single726SegmentManualRight() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500030.62, 30.62),
+    lineSeg(1, 7500000, 500030.62, 7500060.74, 500030.62, 60.74),
+    lineSeg(2, 7500060.74, 500030.62, 7500065.87, 500035.75, 7.26, 'right'),
+    lineSeg(3, 7500065.87, 500035.75, 7500087.25, 500057.13, 28.54),
+    lineSeg(4, 7500087.25, 500057.13, 7500087.25, 500037.65, 19.48),
+    lineSeg(5, 7500087.25, 500037.65, 7500087.25, 500030.62, 12.37),
+    lineSeg(6, 7500087.25, 500030.62, 7500000, 500030.62, 87.25),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '010',
+      front_segment_index: 0,
+      front_street_name: 'RUA CENTRAL',
+      frente: 30.62,
+      area: 2727.13,
+    }),
+    '010-726-RIGHT',
+  );
+  assert(near(m.ladoDireito, 96.54), `dir ${m.ladoDireito} esperado 96,54`);
+  assert(near(m.fundo, 31.85), `fundo ${m.fundo}`);
+  assert(near(m.ladoEsquerdo, 87.25), `esq ${m.ladoEsquerdo}`);
+  assert(
+    (m.sides?.right.segmentIndexes ?? []).includes(2),
+    'seg 7,26 m (idx 2) no lado direito',
+  );
+  assertDisjointSideIndexes(m);
+  console.log('OK testLot010Single726SegmentManualRight');
+}
+
+/** ETAPA 2.1.3 — popup/medidas sem official_side não quebra. */
+function testMeasuresWithoutOfficialSideSafe() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 25, 25),
+    lineSeg(1, 0, 25, 50, 25, 50),
+    lineSeg(2, 50, 25, 50, 0, 50),
+    lineSeg(3, 50, 0, 0, 0, 50),
+  ];
+  let threw = false;
+  let m: OfficialLotMeasures | null = null;
+  try {
+    m = getOfficialLotMeasurements(
+      block(segs, { front_segment_index: 0 }),
+      'NO-OFFICIAL',
+    );
+  } catch {
+    threw = true;
+  }
+  assert(!threw, 'getOfficialLotMeasurements não deve lançar');
+  assert(m != null, 'medidas retornadas');
+  assert(m!.frente != null, 'frente preenchida');
+  assert(m!.sides != null, 'sides presente');
+  assertDisjointSideIndexes(m!);
+  console.log('OK testMeasuresWithoutOfficialSideSafe');
+}
+
 /** 6. Compatibilidade — campos legados frente/fundo/laterais preenchidos. */
 function testLegacyFieldsCompatibility() {
   const segs = [
@@ -310,4 +517,10 @@ testSixSegmentsGroupedTotals();
 testChanfreExcludedFromSideTotals();
 testLegacyFieldsCompatibility();
 testLot010DoesNotOverSumLeftSide();
+testLot010OfficialSidesFromSixSegments();
+testLot010AutoFundoBreakFromSevenSegments();
+testManualOfficialSideOverridesHeuristic();
+testClearOfficialSideReturnsToAutomatic();
+testLot010Single726SegmentManualRight();
+testMeasuresWithoutOfficialSideSafe();
 console.log('mandatory-official-measurements-grouped-sides-tests: all passed');

@@ -16,6 +16,14 @@ import { resolveStoredFrontAsOfficialSegmentIndex } from "@/lib/resolveFrontStre
 
 export type OfficialSegmentKind = "LINE" | "CURVE";
 
+/** Lado oficial da medida (manual em segments_json — prioridade sobre heurística). */
+export type OfficialSideKind =
+  | "front"
+  | "back"
+  | "right"
+  | "left"
+  | "chanfre";
+
 export type OfficialLotSegment = {
   segment_index: number;
   distance: number;
@@ -23,6 +31,8 @@ export type OfficialLotSegment = {
   north: number;
   east: number;
   vertex_order: number;
+  /** Classificação manual do lado oficial (segments_json). */
+  official_side?: OfficialSideKind;
   segment_type?: OfficialSegmentKind;
   radius?: number | null;
   chord?: number | null;
@@ -904,6 +914,65 @@ function reclaimFundoChanfreConnectorsFromPaths(
   return [...result].sort((a, b) => a - b);
 }
 
+/**
+ * Reclama trecho curto no caminho lateral principal colado ao fundo
+ * (ex. Lote 010 seg. 12,37 na lateral de 87,25 m).
+ */
+function reclaimShortFundoBreakSegmentsFromPaths(
+  ordered: OfficialLotSegment[],
+  fundoIndexes: number[],
+  pathAIndexes: number[],
+  pathBIndexes: number[],
+  frontSegmentIndex: number,
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const result = new Set(fundoIndexes);
+  const n = ordered.length;
+  /** Só em lateral principal longa (ex. 87,25 m do Lote 010) — evita Q04/curvas. */
+  const MAIN_LATERAL_MIN_M = 80;
+
+  for (const pathIndexes of [pathAIndexes, pathBIndexes]) {
+    const lineLengths = pathIndexes
+      .map((idx) => byIdx.get(idx)?.distance ?? 0)
+      .filter((d) => isValidSegmentDistance(d));
+    const maxOnPath = lineLengths.length ? Math.max(...lineLengths) : 0;
+    if (maxOnPath < MAIN_LATERAL_MIN_M) continue;
+    if (result.size === 0) continue;
+
+    const pathSet = new Set(pathIndexes);
+    for (const idx of [...result]) {
+      const pos = ordered.findIndex((s) => s.segment_index === idx);
+      if (pos < 0) continue;
+      for (const step of [-1, 1] as const) {
+        const p = (pos + step + n) % n;
+        const neighbor = ordered[p].segment_index;
+        if (
+          result.has(neighbor) ||
+          neighbor === frontSegmentIndex ||
+          chanfreSet.has(neighbor) ||
+          !pathSet.has(neighbor)
+        ) {
+          continue;
+        }
+        const seg = byIdx.get(neighbor);
+        if (
+          !seg ||
+          isOfficialCurveSegment(seg) ||
+          !isValidSegmentDistance(seg.distance) ||
+          seg.distance > FUNDO_CONNECTOR_MAX_M ||
+          seg.distance >= maxOnPath
+        ) {
+          continue;
+        }
+        result.add(neighbor);
+      }
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
 /** Fundo = arco do anel não percorrido pelos caminhos laterais brutos (frente → fundo). */
 function collectFundoIndexesFromRingWalk(
   ordered: OfficialLotSegment[],
@@ -1090,6 +1159,15 @@ function classifySidesByFrontAnchor(
     byIdx,
   );
   fundoIndexes = reclaimFundoChanfreConnectorsFromPaths(
+    ordered,
+    fundoIndexes,
+    pathAIndexes,
+    pathBIndexes,
+    frontSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+  fundoIndexes = reclaimShortFundoBreakSegmentsFromPaths(
     ordered,
     fundoIndexes,
     pathAIndexes,
@@ -1397,6 +1475,192 @@ function readSegmentsJsonArray(block: Record<string, unknown>): unknown[] | null
   return null;
 }
 
+/** Normaliza official_side do segments_json. */
+export function normalizeOfficialSideKind(
+  raw: unknown,
+): OfficialSideKind | null {
+  const s = String(raw ?? "")
+    .toLowerCase()
+    .trim();
+  if (s === "front" || s === "frente") return "front";
+  if (s === "back" || s === "fundo") return "back";
+  if (s === "right" || s === "direito" || s === "dir") return "right";
+  if (s === "left" || s === "esquerdo" || s === "esq") return "left";
+  if (s === "chanfre") return "chanfre";
+  return null;
+}
+
+/** Mapa segment_index → lado oficial manual (segments_json). */
+export function readManualOfficialSideMap(
+  block: Record<string, unknown>,
+): Map<number, OfficialSideKind> {
+  const raw = readSegmentsJsonArray(block);
+  const map = new Map<number, OfficialSideKind>();
+  if (!raw) return map;
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (item == null || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const side = normalizeOfficialSideKind(
+      row.official_side ?? row.officialSide,
+    );
+    if (!side) continue;
+    const idx =
+      typeof row.segment_index === "number" ? row.segment_index : i;
+    map.set(idx, side);
+  }
+  return map;
+}
+
+export function hasManualOfficialSideClassification(
+  block: Record<string, unknown>,
+): boolean {
+  return readManualOfficialSideMap(block).size > 0;
+}
+
+const OFFICIAL_SIDE_PT_LABELS: Record<OfficialSideKind, string> = {
+  front: "Frente",
+  back: "Fundo",
+  right: "Lado Direito",
+  left: "Lado Esquerdo",
+  chanfre: "Chanfre",
+};
+
+/** Rótulo PT-BR do lado oficial (popup, modal, tooltip). */
+export function officialSideDisplayLabel(
+  kind: OfficialSideKind | null | undefined,
+): string | null {
+  if (!kind) return null;
+  return OFFICIAL_SIDE_PT_LABELS[kind] ?? null;
+}
+
+/** Remove official_side de todos os segmentos (volta à heurística). */
+export function stripManualOfficialSidesFromBlock(
+  block: Record<string, unknown>,
+): Record<string, unknown> {
+  const raw = readSegmentsJsonArray(block);
+  if (!raw) return block;
+  const cleaned = raw.map((item) => {
+    if (item == null || typeof item !== "object") return item;
+    const row = { ...(item as Record<string, unknown>) };
+    delete row.official_side;
+    delete row.officialSide;
+    return row;
+  });
+  return { ...block, segments_json: cleaned };
+}
+
+/** Lado automático (heurística) de um segment_index, sem overrides manuais. */
+export function getAutomaticOfficialSideForSegment(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  lotLabel?: unknown,
+): OfficialSideKind | null {
+  const stripped = stripManualOfficialSidesFromBlock(block);
+  const m = getOfficialLotMeasurements(
+    stripped,
+    lotLabel ?? block.number ?? block.id,
+  );
+  const roleMap: [keyof OfficialLotMeasuresSides, OfficialSideKind][] = [
+    ["front", "front"],
+    ["back", "back"],
+    ["right", "right"],
+    ["left", "left"],
+  ];
+  for (const [side, kind] of roleMap) {
+    if (m.sides?.[side].segmentIndexes.includes(segmentIndex)) return kind;
+  }
+  const claimed = new Set<number>();
+  for (const [, side] of roleMap) {
+    for (const idx of m.sides?.[side].segmentIndexes ?? []) claimed.add(idx);
+  }
+  if (!claimed.has(segmentIndex)) return "chanfre";
+  return null;
+}
+
+function sortSegmentIndexes(indexes: number[]): number[] {
+  return [...new Set(indexes)].sort((a, b) => a - b);
+}
+
+/** Aplica official_side manual sobre classificação automática (segmentos disjuntos). */
+export function applyManualOfficialSideOverrides(
+  auto: OfficialMeasurePaths,
+  sideMap: Map<number, OfficialSideKind>,
+  segments: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  block?: Record<string, unknown> | null,
+): OfficialMeasurePaths {
+  if (sideMap.size === 0) return auto;
+
+  const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+  const manualFront = new Set<number>();
+  const manualBack = new Set<number>();
+  const manualRight = new Set<number>();
+  const manualLeft = new Set<number>();
+  const manualChanfre = new Set<number>();
+
+  for (const [idx, side] of sideMap) {
+    if (!byIdx.has(idx)) continue;
+    if (side === "front") manualFront.add(idx);
+    else if (side === "back") manualBack.add(idx);
+    else if (side === "right") manualRight.add(idx);
+    else if (side === "left") manualLeft.add(idx);
+    else if (side === "chanfre") manualChanfre.add(idx);
+  }
+
+  if (isFrontSegmentLocked(block) && !manualFront.has(frontSegmentIndex)) {
+    manualFront.add(frontSegmentIndex);
+  }
+
+  const claimed = new Set<number>([
+    ...manualFront,
+    ...manualBack,
+    ...manualRight,
+    ...manualLeft,
+    ...manualChanfre,
+  ]);
+
+  const pull = (indexes: number[], add: Set<number>) => {
+    const base = indexes.filter((idx) => !claimed.has(idx));
+    return sortSegmentIndexes([...base, ...add]);
+  };
+
+  const frontIndexes = pull(
+    auto.frontIndexes.length ? auto.frontIndexes : [frontSegmentIndex],
+    manualFront,
+  );
+  const pathAIndexes = pull(auto.pathA.indexes, manualRight);
+  const pathBIndexes = pull(auto.pathB.indexes, manualLeft);
+  const fundoIndexes = pull(auto.pathFundo.indexes, manualBack);
+
+  const frente = sumLinePathDistances(frontIndexes, byIdx);
+  const fundo = sumLinePathDistances(fundoIndexes, byIdx);
+  const ladoDireito = sumLinePathDistances(pathAIndexes, byIdx);
+  const ladoEsquerdo = sumLinePathDistances(pathBIndexes, byIdx);
+
+  console.log("OFFICIAL_SIDE_MANUAL_OVERRIDE", {
+    lote: block?.number ?? block?.id,
+    manualCount: sideMap.size,
+    front: frontIndexes,
+    back: fundoIndexes,
+    right: pathAIndexes,
+    left: pathBIndexes,
+    chanfre: [...manualChanfre],
+  });
+
+  return {
+    frente,
+    fundo,
+    ladoDireito,
+    ladoEsquerdo,
+    pathA: { indexes: pathAIndexes, totalLength: ladoDireito },
+    pathB: { indexes: pathBIndexes, totalLength: ladoEsquerdo },
+    pathFundo: { indexes: fundoIndexes, totalLength: fundo },
+    frontIndex: frontSegmentIndex,
+    frontIndexes,
+  };
+}
+
 /** Lê segmentos oficiais do block (segments_json enriquecido ou legado). */
 export function parseOfficialSegmentsFromBlock(
   block: Record<string, unknown>,
@@ -1421,10 +1685,15 @@ export function parseOfficialSegmentsFromBlock(
     const segment_type: OfficialSegmentKind =
       kindRaw === "CURVE" ? "CURVE" : "LINE";
 
+    const official_side = normalizeOfficialSideKind(
+      s.official_side ?? s.officialSide,
+    );
+
     const row: OfficialLotSegment = {
       segment_index:
         typeof s.segment_index === "number" ? s.segment_index : i,
       distance,
+      official_side: official_side ?? undefined,
       bearing:
         s.bearing != null && Number.isFinite(Number(s.bearing))
           ? round2(Number(s.bearing))
@@ -1501,6 +1770,9 @@ export function segmentsToPersistJson(
       easting: s.east,
       vertex_order: s.vertex_order,
     };
+    if (s.official_side) {
+      base.official_side = s.official_side;
+    }
     if (s.segment_type === "CURVE") {
       base.radius = s.radius;
       base.chord = s.chord;
@@ -2090,7 +2362,17 @@ function buildMeasuresFromSegments(
   if (frontIdx == null) frontIdx = 0;
   if (frontIdx >= segments.length) frontIdx = 0;
 
-  const paths = classifySidesByTxtRingPaths(segments, frontIdx, label, block);
+  let paths = classifySidesByTxtRingPaths(segments, frontIdx, label, block);
+  const manualSideMap = readManualOfficialSideMap(block);
+  if (manualSideMap.size > 0) {
+    paths = applyManualOfficialSideOverrides(
+      paths,
+      manualSideMap,
+      segments,
+      frontIdx,
+      block,
+    );
+  }
 
   logLotSideSegments(label, "right", paths.pathA, segments);
   logLotSideSegments(label, "left", paths.pathB, segments);

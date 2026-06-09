@@ -431,6 +431,7 @@ export default function MapPage() {
   const [assistedConfrontationMode, setAssistedConfrontationMode] =
     useState(false);
   const [insertConfrontantTool, setInsertConfrontantTool] = useState(false);
+  const [defineOfficialSideTool, setDefineOfficialSideTool] = useState(false);
   const [memorialPickMode, setMemorialPickMode] = useState(false);
   const [memorialTarget, setMemorialTarget] = useState<{
     id: string;
@@ -2419,6 +2420,7 @@ export default function MapPage() {
                    onClick={() => {
                      setInsertConfrontantTool((v) => !v);
                      setAssistedConfrontationMode(true);
+                     if (!insertConfrontantTool) setDefineOfficialSideTool(false);
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      insertConfrontantTool
@@ -2429,6 +2431,26 @@ export default function MapPage() {
                    <PenTool className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
                      Editar Confrontação
+                   </span>
+                 </button>
+
+                 <button
+                   type="button"
+                   onClick={() => {
+                     setDefineOfficialSideTool((v) => !v);
+                     if (!defineOfficialSideTool) {
+                       setInsertConfrontantTool(false);
+                     }
+                   }}
+                   className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
+                     defineOfficialSideTool
+                       ? 'bg-violet-500/20 text-violet-400'
+                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-violet-400'
+                   }`}
+                 >
+                   <Ruler className="w-4 h-4 md:w-5 md:h-5" />
+                   <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">
+                     Definir Medida Oficial
                    </span>
                  </button>
 
@@ -2579,6 +2601,7 @@ export default function MapPage() {
             }}
             assistedConfrontationMode={assistedConfrontationMode}
             insertConfrontantTool={insertConfrontantTool}
+            defineOfficialSideTool={defineOfficialSideTool}
           />
         </div>
 

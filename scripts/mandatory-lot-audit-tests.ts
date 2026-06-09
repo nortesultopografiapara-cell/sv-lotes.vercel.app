@@ -89,6 +89,10 @@ function testActionPayloads() {
     { action: 'confrontation_auto', title: 'Confrontação automática' },
     { action: 'confrontation_manual', title: 'Confrontação manual alterada' },
     { action: 'confrontation_manual', title: 'Confrontação manual removida' },
+    {
+      action: 'official_measure_side_changed',
+      title: 'Lado oficial da medida alterado',
+    },
   ];
   for (const c of cases) {
     const p = buildLotAuditPayload({

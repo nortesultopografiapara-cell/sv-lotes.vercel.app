@@ -24,7 +24,8 @@ export type LotAuditAction =
   | 'payment_received'
   | 'payment_reversed'
   | 'customer_changed'
-  | 'note_added';
+  | 'note_added'
+  | 'official_measure_side_changed';
 
 export type LotAuditSource =
   | 'gis_map'
@@ -101,6 +102,7 @@ const ACTION_LABELS: Record<LotAuditAction, string> = {
   payment_reversed: 'Estorno',
   customer_changed: 'Cliente',
   note_added: 'Observação',
+  official_measure_side_changed: 'Medida oficial',
 };
 
 const SOURCE_LABELS: Record<LotAuditSource, string> = {
@@ -132,6 +134,7 @@ const ACTION_BADGE_CLASS: Record<LotAuditAction, string> = {
   payment_reversed: 'bg-rose-100 text-rose-900',
   customer_changed: 'bg-purple-100 text-purple-900',
   note_added: 'bg-gray-100 text-gray-600',
+  official_measure_side_changed: 'bg-violet-100 text-violet-900',
 };
 
 export function formatLotAuditSource(source: string): string {
