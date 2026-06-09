@@ -16,6 +16,7 @@ import {
   LOT_SHEET_CLEAN_SKETCH,
   minDistToPolygonRing,
   planFrontStreetLabel,
+  computeLotMainAxis,
   placeLotNumberAndArea,
   resolveAreaLabelPlacement,
   resolveLabelClearOfScaleBand,
@@ -217,35 +218,16 @@ type LotMainAxis = {
   internalOffsetMm: number;
 };
 
-/** Eixo longitudinal do lote (aresta mais longa no croqui). */
+/** Eixo longitudinal do lote (aresta mais longa + PCA no layout). */
 function getLotMainAxis(verts: [number, number][]): LotMainAxis {
-  const center = centroid(verts);
-  const narrow = lotSpanOnSheet(verts) < 38;
-  let bestLen = 0;
-  let axisDx = 1;
-  let axisDy = 0;
-
-  const n = verts.length;
-  for (let i = 0; i < n; i++) {
-    const p1 = verts[i];
-    const p2 = verts[(i + 1) % n];
-    const dx = p2[0] - p1[0];
-    const dy = p2[1] - p1[1];
-    const len = Math.hypot(dx, dy);
-    if (len > bestLen) {
-      bestLen = len;
-      axisDx = dx / len;
-      axisDy = dy / len;
-    }
-  }
-
+  const axis = computeLotMainAxis(verts);
   return {
-    center,
-    axisDx,
-    axisDy,
-    angleDeg: getReadableRotation(axisDx, axisDy),
-    narrow,
-    internalOffsetMm: narrow
+    center: axis.center,
+    axisDx: axis.axisDx,
+    axisDy: axis.axisDy,
+    angleDeg: axis.angleDeg,
+    narrow: axis.narrow,
+    internalOffsetMm: axis.narrow
       ? DISTANCE_INTERNAL_OFFSET_NARROW_MM
       : DISTANCE_INTERNAL_OFFSET_NORMAL_MM,
   };
@@ -2377,31 +2359,44 @@ export async function generateLotSheetPdf(
       usefulW,
       mainAxis.narrow,
     );
-    const areaLineH = numberArea.areaFontSize * 0.42;
+    const areaLineH = numberArea.areaFontSize * 0.38;
+    const perpRad = ((numberArea.areaAngleDeg + 90) * Math.PI) / 180;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(numberArea.areaFontSize);
+    doc.setTextColor(...BLUE);
+    if (areaLines.length === 1) {
+      doc.text(areaLines[0], numberArea.areaPos[0], numberArea.areaPos[1], {
+        align: 'center',
+        baseline: 'middle',
+        angle: numberArea.areaAngleDeg,
+      });
+    } else {
+      areaLines.forEach((line, i) => {
+        const off = (i - (areaLines.length - 1) / 2) * areaLineH;
+        doc.text(
+          line,
+          numberArea.areaPos[0] + Math.cos(perpRad) * off,
+          numberArea.areaPos[1] + Math.sin(perpRad) * off,
+          {
+            align: 'center',
+            baseline: 'middle',
+            angle: numberArea.areaAngleDeg,
+          },
+        );
+      });
+    }
+    doc.setTextColor(...BLACK);
 
     doc.setDrawColor(...BLACK);
     doc.setFillColor(255, 255, 255);
     doc.setLineWidth(0.45);
     doc.circle(numberArea.badgePos[0], numberArea.badgePos[1], r, 'FD');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(numberArea.badgeFontSize);
     doc.setTextColor(...RED);
     doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 1.1, {
       align: 'center',
-    });
-    doc.setTextColor(...BLACK);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(numberArea.areaFontSize);
-    doc.setTextColor(...BLUE);
-    areaLines.forEach((line, i) => {
-      const ly =
-        numberArea.areaPos[1] +
-        (i - (areaLines.length - 1) / 2) * areaLineH;
-      doc.text(line, numberArea.areaPos[0], ly, {
-        align: 'center',
-        baseline: 'middle',
-      });
     });
     doc.setTextColor(...BLACK);
 

@@ -8,8 +8,9 @@ import { buildOfficialSheetLocalGeometry } from '../lib/lotSheetCoordinates';
 import {
   buildSketchLayoutFromBlock,
   computeLotFrontLayoutContext,
+  computeLotMainAxis,
+  LOT_BADGE_FONT_SIZE_PT,
   LOT_FRONT_BADGE_DEPTH_FRACTION,
-  LOT_NUMBER_AREA_MIN_GAP_MM,
   MEASURE_LABEL_EXTERNAL_OFFSET_MM,
   MEASURE_LABEL_INTERNAL_OFFSET_MM,
   MEASURE_LABEL_MIN_EDGE_CLEARANCE_MM,
@@ -183,7 +184,7 @@ function testResolveMeasureLabelShortEdgeExternalFirst() {
   console.log('OK testResolveMeasureLabelShortEdgeExternalFirst');
 }
 
-function testPlaceLotNumberAndAreaGap() {
+function testPrimaryAreaLayout() {
   const verts = rectVerts();
   const layout = placeLotNumberAndArea(verts, '2.727,00 m²', [], {
     crossWidthMm: 50,
@@ -192,18 +193,40 @@ function testPlaceLotNumberAndAreaGap() {
     vertexCount: 4,
     frontEdgeIndex: 0,
   });
+  assert(layout.areaFontSize > layout.badgeFontSize, 'área maior que número');
+  assert(layout.areaFontSize >= LOT_BADGE_FONT_SIZE_PT + 2, 'área fonte principal');
   assert(
-    layout.numberAreaGapMm >= LOT_NUMBER_AREA_MIN_GAP_MM - 0.5,
-    `gap número×área >= 10mm: ${layout.numberAreaGapMm}`,
+    layout.numberAreaGapMm >= layout.badgeRadius + 4,
+    `área separada do número: ${layout.numberAreaGapMm}`,
   );
-  assert(
-    layout.areaPos[1] > layout.badgePos[1] + layout.badgeRadius,
-    'área abaixo do número',
-  );
-  assert(Math.abs(layout.areaPos[0] - layout.badgePos[0]) < 8, 'área alinhada ao número');
+  assert(Math.abs(layout.areaAngleDeg) < 25, `área horizontal em retângulo: ${layout.areaAngleDeg}`);
   assert(!layout.useCombinedBox, 'sem caixa branca combinada');
   assert(layout.areaInsidePolygon, 'área dentro do polígono');
-  console.log('OK testPlaceLotNumberAndAreaGap');
+  console.log('OK testPrimaryAreaLayout');
+}
+
+function testAreaRotatedAlongMainAxis() {
+  const verts: [number, number][] = [
+    [40, 55],
+    [95, 35],
+    [105, 68],
+    [50, 88],
+  ];
+  const mainAxis = computeLotMainAxis(verts);
+  const layout = placeLotNumberAndArea(verts, '3.021,49 m²', [], {
+    crossWidthMm: mainAxis.crossWidthMm,
+    inwardDepthMm: 30,
+    narrow: mainAxis.narrow,
+    vertexCount: 4,
+    frontEdgeIndex: 0,
+  });
+  assert(Math.abs(mainAxis.angleDeg) > 8, `lote inclinado: ${mainAxis.angleDeg}`);
+  assert(
+    Math.abs(layout.areaAngleDeg - mainAxis.angleDeg) < 2,
+    `área segue eixo: ${layout.areaAngleDeg} vs ${mainAxis.angleDeg}`,
+  );
+  assert(layout.areaFontSize > layout.badgeFontSize, 'hierarquia área > número');
+  console.log('OK testAreaRotatedAlongMainAxis');
 }
 
 function testPlaceLotNumberFromOfficialFront() {
@@ -532,7 +555,8 @@ async function main() {
   testResolveMeasureLabelPositionClearance();
   testResolveMeasureLabelForceInternalOnly();
   testResolveMeasureLabelShortEdgeExternalFirst();
-  testPlaceLotNumberAndAreaGap();
+  testPrimaryAreaLayout();
+  testAreaRotatedAlongMainAxis();
   testPlaceLotNumberFromOfficialFront();
   testConfrontationsPanelDynamicHeight();
   testAreaDoesNotCollideWithMeasures();

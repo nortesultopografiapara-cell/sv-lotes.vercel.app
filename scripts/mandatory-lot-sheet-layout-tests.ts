@@ -411,7 +411,7 @@ function testPranchaLote018StaggerAndScaleProtection() {
     areaText: '20.013,61 m²',
     narrow: false,
   });
-  assert(areaFont <= 11, `fonte área 018 reduzida: ${areaFont}`);
+  assert(areaFont >= 10, `fonte área 018 principal: ${areaFont}`);
   const layout018 = buildSketchLayoutFromBlock(b, 'lot-018');
   const clean018 = filterSketchSidesForCleanMap(
     layout018.sketchSides,

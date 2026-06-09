@@ -40,10 +40,10 @@ export type SketchBox = { x: number; y: number; w: number; h: number };
 /** Prioridade visual no croqui (menor = desenhar antes). */
 export const LOT_SHEET_VISUAL_PRIORITY = {
   perimeter: 1,
-  vertices: 2,
+  vertices: 4,
   measures: 3,
-  lotNumber: 4,
-  area: 5,
+  lotNumber: 2,
+  area: 1,
   confrontants: 6,
 } as const;
 
@@ -377,19 +377,138 @@ export type AreaFontInput = {
 
 /** Fonte da área azul — reduz em lotes estreitos/irregulares (modo clean: teto menor). */
 export function resolveAreaFontSize(input: AreaFontInput): number {
-  const maxPt = LOT_SHEET_CLEAN_SKETCH ? 14 : 18;
-  const baseNormal = LOT_SHEET_CLEAN_SKETCH ? 14 : 16;
-  const baseNarrow = LOT_SHEET_CLEAN_SKETCH ? 11 : 13;
+  const maxPt = LOT_SHEET_CLEAN_SKETCH ? 16 : 20;
+  const baseNormal = LOT_SHEET_CLEAN_SKETCH ? 15 : 17;
+  const baseNarrow = LOT_SHEET_CLEAN_SKETCH ? 12 : 14;
   let size = input.narrow ? baseNarrow : baseNormal;
-  if (input.vertexCount > 4) size -= 2;
+  if (input.vertexCount > 4) size -= 1;
   if (input.vertexCount > 6) size -= 1;
-  if (input.crossWidthMm < 38) size -= 2;
+  if (input.crossWidthMm < 38) size -= 1;
   if (input.crossWidthMm < 28) size -= 2;
-  if (input.inwardDepthMm < 28) size -= 2;
+  if (input.inwardDepthMm < 28) size -= 1;
   const digits = input.areaText.replace(/\D/g, '').length;
   if (digits > 5) size -= 1;
-  if (digits > 7) size -= 2;
-  return Math.max(7, Math.min(size, maxPt));
+  if (digits > 7) size -= 1;
+  return Math.max(10, Math.min(size, maxPt));
+}
+
+/** Fonte do número do lote (sempre menor que a área). */
+export const LOT_BADGE_FONT_SIZE_PT = 10;
+
+export type LotMainAxisLayout = {
+  center: [number, number];
+  axisDx: number;
+  axisDy: number;
+  angleDeg: number;
+  narrow: boolean;
+  longestEdgeMm: number;
+  crossWidthMm: number;
+};
+
+function readableAxisAngleDeg(dx: number, dy: number): number {
+  let angleDeg = (-Math.atan2(dy, dx) * 180) / Math.PI;
+  while (angleDeg > 90) angleDeg -= 180;
+  while (angleDeg <= -90) angleDeg += 180;
+  return angleDeg;
+}
+
+function lotSpanExtent(
+  verts: [number, number][],
+  axisDx: number,
+  axisDy: number,
+  origin: [number, number],
+): number {
+  let minT = Infinity;
+  let maxT = -Infinity;
+  for (const v of verts) {
+    const t = (v[0] - origin[0]) * axisDx + (v[1] - origin[1]) * axisDy;
+    minT = Math.min(minT, t);
+    maxT = Math.max(maxT, t);
+  }
+  return maxT - minT;
+}
+
+/** Eixo longitudinal — maior aresta + PCA como reforço em lotes irregulares. */
+export function computeLotMainAxis(verts: [number, number][]): LotMainAxisLayout {
+  const center = ringCentroid(verts);
+  let longestEdgeMm = 0;
+  let axisDx = 1;
+  let axisDy = 0;
+
+  const n = verts.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = verts[i];
+    const p2 = verts[(i + 1) % n];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const len = Math.hypot(dx, dy);
+    if (len > longestEdgeMm) {
+      longestEdgeMm = len;
+      axisDx = dx / (len || 1);
+      axisDy = dy / (len || 1);
+    }
+  }
+
+  let cxx = 0;
+  let cyy = 0;
+  let cxy = 0;
+  for (const v of verts) {
+    const dx = v[0] - center[0];
+    const dy = v[1] - center[1];
+    cxx += dx * dx;
+    cyy += dy * dy;
+    cxy += dx * dy;
+  }
+  const count = Math.max(1, n);
+  cxx /= count;
+  cyy /= count;
+  cxy /= count;
+  const trace = cxx + cyy;
+  const det = cxx * cyy - cxy * cxy;
+  const lambda1 = trace / 2 + Math.sqrt(Math.max(0, (trace / 2) ** 2 - det));
+  let pcaDx = cxy;
+  let pcaDy = lambda1 - cxx;
+  const pcaLen = Math.hypot(pcaDx, pcaDy);
+  if (pcaLen > 1e-6) {
+    pcaDx /= pcaLen;
+    pcaDy /= pcaLen;
+    const dot = Math.abs(axisDx * pcaDx + axisDy * pcaDy);
+    if (dot < 0.55) {
+      axisDx = pcaDx;
+      axisDy = pcaDy;
+    }
+  }
+
+  const crossDx = -axisDy;
+  const crossDy = axisDx;
+  const crossWidthMm = lotSpanExtent(verts, crossDx, crossDy, center);
+
+  return {
+    center,
+    axisDx,
+    axisDy,
+    angleDeg: readableAxisAngleDeg(axisDx, axisDy),
+    narrow: crossWidthMm < 38,
+    longestEdgeMm,
+    crossWidthMm,
+  };
+}
+
+function estimateRotatedTextExtents(
+  text: string,
+  fontSize: number,
+  angleDeg: number,
+): { halfW: number; halfH: number } {
+  const charW = fontSize * 0.48;
+  const w = Math.max(fontSize * 2, text.length * charW);
+  const h = fontSize * 1.15;
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  return {
+    halfW: cos * (w / 2) + sin * (h / 2),
+    halfH: sin * (w / 2) + cos * (h / 2),
+  };
 }
 
 export type AreaLabelPlacement = {
@@ -949,8 +1068,10 @@ export function resolveMeasureLabelPosition(
 export type LotNumberAreaLayout = {
   badgePos: [number, number];
   badgeRadius: number;
+  badgeFontSize: number;
   areaPos: [number, number];
   areaFontSize: number;
+  areaAngleDeg: number;
   numberAreaGapMm: number;
   useCombinedBox: boolean;
   areaInsidePolygon: boolean;
@@ -1012,54 +1133,153 @@ function nudgeBadgeFromFront(
   return start;
 }
 
-function areaBelowBadgeOffset(
-  badgeRadius: number,
-  gap: number,
-  fontSize: number,
-): number {
-  return badgeRadius + gap + fontSize * 0.42;
-}
-
-function areaPosBelowBadge(
-  badgePos: [number, number],
-  badgeRadius: number,
-  gap: number,
-  fontSize: number,
-): [number, number] {
-  return [badgePos[0], badgePos[1] + areaBelowBadgeOffset(badgeRadius, gap, fontSize)];
-}
-
-function nudgeAreaBelowBadge(
+function primaryAreaPositionSafe(
   verts: [number, number][],
-  badgePos: [number, number],
-  badgeRadius: number,
-  gap: number,
-  fontSize: number,
+  pos: [number, number],
+  textExtents: { halfW: number; halfH: number },
   placedZones: MeasureLabelZone[],
-  front: LotFrontLayoutContext,
+  minEdge = MIN_AREA_EDGE_CLEARANCE_MM,
+): boolean {
+  if (!pointInsideRing(pos[0], pos[1], verts)) return false;
+  const edgeDist = minDistToPolygonRing(pos, verts);
+  const need = Math.max(textExtents.halfW, textExtents.halfH) + minEdge - 2;
+  if (edgeDist < need) return false;
+  const zoneRadius = Math.hypot(textExtents.halfW, textExtents.halfH) + 2;
+  if (measureLabelHitsZones(pos[0], pos[1], zoneRadius, placedZones, 4)) {
+    return false;
+  }
+  return true;
+}
+
+function findBestPrimaryAreaPosition(
+  verts: [number, number][],
+  areaText: string,
+  fontSize: number,
+  mainAxis: LotMainAxisLayout,
+  placedZones: MeasureLabelZone[],
 ): [number, number] {
-  const gaps = [gap, gap + 2, gap + 4, LOT_NUMBER_AREA_MAX_GAP_MM];
-  const lateral = [0, -2, 2, -4, 4];
+  const extents = estimateRotatedTextExtents(
+    areaText,
+    fontSize,
+    mainAxis.angleDeg,
+  );
+  const centroid = ringCentroid(verts);
+  const xs = verts.map((v) => v[0]);
+  const ys = verts.map((v) => v[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const steps = 16;
+  const perpDx = -mainAxis.axisDy;
+  const perpDy = mainAxis.axisDx;
+
+  const seeds: [number, number][] = [
+    centroid,
+    mainAxis.center,
+    findBestInteriorLabelPosition(verts, {
+      minEdgeDist: MIN_AREA_EDGE_CLEARANCE_MM,
+      avoid: placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+    }),
+  ];
+
+  for (let xi = 2; xi < steps - 1; xi++) {
+    for (let yi = 2; yi < steps - 1; yi++) {
+      seeds.push([
+        minX + (xi / steps) * (maxX - minX),
+        minY + (yi / steps) * (maxY - minY),
+      ]);
+    }
+  }
+
+  for (const shift of [-8, -4, 0, 4, 8, 12, -12]) {
+    seeds.push([
+      centroid[0] + mainAxis.axisDx * shift,
+      centroid[1] + mainAxis.axisDy * shift,
+    ]);
+    seeds.push([
+      centroid[0] + perpDx * shift,
+      centroid[1] + perpDy * shift,
+    ]);
+  }
+
+  let best = seeds[0] ?? centroid;
+  let bestScore = -Infinity;
+
+  for (const seed of seeds) {
+    if (!pointInsideRing(seed[0], seed[1], verts)) continue;
+    if (!primaryAreaPositionSafe(verts, seed, extents, placedZones)) continue;
+    const edgeScore = minDistToPolygonRing(seed, verts);
+    const centerDist = Math.hypot(
+      seed[0] - centroid[0],
+      seed[1] - centroid[1],
+    );
+    const score = edgeScore * 1.35 - centerDist * 0.08;
+    if (score > bestScore) {
+      bestScore = score;
+      best = seed;
+    }
+  }
+
+  return best;
+}
+
+function placeBadgeNearOfficialFront(
+  verts: [number, number][],
+  front: LotFrontLayoutContext,
+  badgeRadius: number,
+  placedZones: MeasureLabelZone[],
+): [number, number] {
+  const depthFracs = [
+    LOT_FRONT_BADGE_DEPTH_FRACTION,
+    0.12,
+    0.08,
+    0.14,
+    0.16,
+    0.06,
+  ];
   const perpNx = -front.inwardNy;
   const perpNy = front.inwardNx;
 
-  for (const g of gaps) {
-    for (const lx of lateral) {
+  for (const frac of depthFracs) {
+    for (const lx of [0, -3, 3, -5, 5, -8, 8]) {
       const candidate: [number, number] = [
-        badgePos[0] + perpNx * lx,
-        badgePos[1] + areaBelowBadgeOffset(badgeRadius, g, fontSize) + perpNy * lx,
+        front.frontMid[0] +
+          front.inwardNx * front.maxInwardDepthMm * frac +
+          perpNx * lx,
+        front.frontMid[1] +
+          front.inwardNy * front.maxInwardDepthMm * frac +
+          perpNy * lx,
       ];
-      if (areaPositionSafe(verts, candidate, placedZones)) {
-        return candidate;
+      if (badgePositionSafe(verts, candidate, badgeRadius, placedZones)) {
+        return nudgeBadgeFromFront(
+          verts,
+          front,
+          candidate,
+          badgeRadius,
+          placedZones,
+        );
       }
     }
   }
 
-  return areaPosBelowBadge(badgePos, badgeRadius, gap, fontSize);
+  return nudgeBadgeFromFront(
+    verts,
+    front,
+    [
+      front.frontMid[0] +
+        front.inwardNx * front.maxInwardDepthMm * LOT_FRONT_BADGE_DEPTH_FRACTION,
+      front.frontMid[1] +
+        front.inwardNy * front.maxInwardDepthMm * LOT_FRONT_BADGE_DEPTH_FRACTION,
+    ],
+    badgeRadius,
+    placedZones,
+  );
 }
 
 /**
- * Número orientado pela frente oficial; área alinhada logo abaixo (sem caixa branca).
+ * Área principal no centro livre (rotacionada no eixo longitudinal);
+ * número secundário próximo à frente oficial.
  */
 export function placeLotNumberAndArea(
   verts: [number, number][],
@@ -1076,148 +1296,71 @@ export function placeLotNumberAndArea(
   },
 ): LotNumberAreaLayout {
   const badgeRadius = options.badgeRadius ?? 5.5;
-  const minGap = Math.max(
-    LOT_NUMBER_AREA_MIN_GAP_MM,
-    Math.min(
-      options.minNumberAreaGapMm ?? LOT_NUMBER_AREA_MIN_GAP_MM,
-      LOT_NUMBER_AREA_MAX_GAP_MM,
-    ),
-  );
   const front = computeLotFrontLayoutContext(verts, options.frontEdgeIndex);
-  const placement = resolveAreaLabelPlacement(verts, areaText, {
-    crossWidthMm: options.crossWidthMm,
-    inwardDepthMm: front.maxInwardDepthMm,
-    vertexCount: options.vertexCount,
-    narrow: options.narrow,
-    avoid: placedZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
-    fallbackPos: front.frontMid,
-  });
+  const mainAxis = computeLotMainAxis(verts);
+  const areaFontSize = Math.max(
+    resolveAreaFontSize({
+      crossWidthMm: options.crossWidthMm || mainAxis.crossWidthMm,
+      inwardDepthMm: front.maxInwardDepthMm,
+      vertexCount: options.vertexCount,
+      areaText,
+      narrow: options.narrow || mainAxis.narrow,
+    }),
+    LOT_BADGE_FONT_SIZE_PT + 2,
+  );
 
-  const stackBelowMm = areaBelowBadgeOffset(
+  let badgePos = placeBadgeNearOfficialFront(
+    verts,
+    front,
     badgeRadius,
-    minGap,
-    placement.fontSize,
+    placedZones,
   );
-  const areaBelowTowardFront = front.inwardNy < 0;
-  const minDepthFrac = areaBelowTowardFront
-    ? Math.min(
-        0.42,
-        (stackBelowMm + badgeRadius + 5) /
-          Math.max(front.maxInwardDepthMm, 1),
-      )
-    : LOT_FRONT_BADGE_DEPTH_FRACTION;
-  const maxDepthFrac = Math.min(
-    0.42,
-    Math.max(
-      LOT_FRONT_BADGE_DEPTH_FRACTION,
-      (front.maxInwardDepthMm - stackBelowMm - 8) /
-        Math.max(front.maxInwardDepthMm, 1),
-    ),
-  );
-  const depthFracs = [
-    Math.max(LOT_FRONT_BADGE_DEPTH_FRACTION, minDepthFrac),
-    LOT_FRONT_BADGE_DEPTH_FRACTION,
-    0.12,
-    0.14,
-    0.16,
-    0.18,
-    0.2,
-    0.08,
-    0.06,
-  ]
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .filter((v) => v <= maxDepthFrac + 1e-6);
 
-  let badgePos: [number, number] = [
-    front.frontMid[0] +
-      front.inwardNx * front.maxInwardDepthMm * depthFracs[0],
-    front.frontMid[1] +
-      front.inwardNy * front.maxInwardDepthMm * depthFracs[0],
+  const areaAvoidZones: MeasureLabelZone[] = [
+    ...placedZones,
+    { pos: badgePos, radius: badgeRadius + 8, kind: 'lot_badge' },
   ];
 
-  for (const frac of depthFracs) {
-    const candidate: [number, number] = [
-      front.frontMid[0] + front.inwardNx * front.maxInwardDepthMm * frac,
-      front.frontMid[1] + front.inwardNy * front.maxInwardDepthMm * frac,
-    ];
-    const areaCandidate = areaPosBelowBadge(
-      candidate,
-      badgeRadius,
-      minGap,
-      placement.fontSize,
-    );
-    if (
-      badgePositionSafe(verts, candidate, badgeRadius, placedZones) &&
-      areaPositionSafe(verts, areaCandidate, placedZones)
-    ) {
-      badgePos = candidate;
-      break;
-    }
-  }
-
-  badgePos = nudgeBadgeFromFront(verts, front, badgePos, badgeRadius, placedZones);
-
-  let areaPos = nudgeAreaBelowBadge(
+  let areaPos = findBestPrimaryAreaPosition(
     verts,
-    badgePos,
-    badgeRadius,
-    minGap,
-    placement.fontSize,
-    placedZones,
-    front,
+    areaText,
+    areaFontSize,
+    mainAxis,
+    areaAvoidZones,
   );
 
-  const perpNx = -front.inwardNy;
-  const perpNy = front.inwardNx;
-  const stackCandidates: Array<{ badge: [number, number]; area: [number, number] }> =
-    [];
-  const pushStack = (badge: [number, number], gap = minGap) => {
-    stackCandidates.push({
-      badge,
-      area: areaPosBelowBadge(badge, badgeRadius, gap, placement.fontSize),
+  if (
+    !primaryAreaPositionSafe(
+      verts,
+      areaPos,
+      estimateRotatedTextExtents(areaText, areaFontSize, mainAxis.angleDeg),
+      areaAvoidZones,
+    )
+  ) {
+    const relaxed = resolveAreaLabelPlacement(verts, areaText, {
+      crossWidthMm: options.crossWidthMm || mainAxis.crossWidthMm,
+      inwardDepthMm: front.maxInwardDepthMm,
+      vertexCount: options.vertexCount,
+      narrow: options.narrow || mainAxis.narrow,
+      avoid: areaAvoidZones.map((z) => ({ pos: z.pos, radius: z.radius + 2 })),
+      fallbackPos: mainAxis.center,
     });
-  };
-  for (const frac of depthFracs) {
-    const depth = front.maxInwardDepthMm * frac;
-    for (const lx of [0, -4, 4, -8, 8, -12, 12]) {
-      pushStack([
-        front.frontMid[0] + front.inwardNx * depth + perpNx * lx,
-        front.frontMid[1] + front.inwardNy * depth + perpNy * lx,
-      ]);
-    }
-  }
-  pushStack(badgePos);
-  for (let shift = 2; shift <= front.maxInwardDepthMm * 0.42; shift += 2) {
-    for (const lx of [0, -4, 4, -8, 8]) {
-      pushStack([
-        badgePos[0] + front.inwardNx * shift + perpNx * lx,
-        badgePos[1] + front.inwardNy * shift + perpNy * lx,
-      ]);
-    }
-  }
-  for (const g of [minGap, minGap + 2, minGap + 4, LOT_NUMBER_AREA_MAX_GAP_MM]) {
-    pushStack(badgePos, g);
-  }
-
-  for (const cand of stackCandidates) {
-    if (
-      badgePositionSafe(verts, cand.badge, badgeRadius, placedZones) &&
-      areaPositionSafe(verts, cand.area, placedZones)
-    ) {
-      badgePos = cand.badge;
-      areaPos = cand.area;
-      break;
-    }
+    areaPos = relaxed.pos;
   }
 
   const areaInsidePolygon = pointInsideRing(areaPos[0], areaPos[1], verts);
-  const numberAreaGapMm = areaPos[1] - badgePos[1] - badgeRadius;
+  const numberAreaGapMm = Math.hypot(
+    areaPos[0] - badgePos[0],
+    areaPos[1] - badgePos[1],
+  );
 
   return {
     badgePos,
     badgeRadius,
+    badgeFontSize: LOT_BADGE_FONT_SIZE_PT,
     areaPos,
-    areaFontSize: placement.fontSize,
+    areaFontSize,
+    areaAngleDeg: mainAxis.angleDeg,
     numberAreaGapMm,
     useCombinedBox: false,
     areaInsidePolygon,
