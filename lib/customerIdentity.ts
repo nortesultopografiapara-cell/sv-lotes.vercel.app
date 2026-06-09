@@ -4,6 +4,15 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logCustomerAudit } from '@/lib/customerAudit';
+import {
+  cepIlikePatterns,
+  cpfCnpjIlikePatterns,
+  formatCep,
+  formatCpfCnpj,
+  matchesCpfCnpj,
+  normalizeCep,
+  normalizeCpfCnpj,
+} from '@/lib/inputMasks';
 
 export type CustomerRecord = {
   id: string;
@@ -54,7 +63,7 @@ export type CustomerFormValues = {
 };
 
 export function normalizeDocument(value?: string | null): string {
-  return String(value || '').replace(/\D/g, '');
+  return normalizeCpfCnpj(value);
 }
 
 export function normalizePhone(value?: string | null): string {
@@ -65,7 +74,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
   return {
     selected_customer_id: customer.id,
     name: customer.name || '',
-    cpf_cnpj: customer.cpf_cnpj || customer.document || '',
+    cpf_cnpj: formatCpfCnpj(customer.cpf_cnpj || customer.document || ''),
     rg: customer.rg || '',
     rg_issuer: customer.rg_issuer || '',
     rg_issuer_state: customer.rg_issuer_state || customer.state_uf || customer.state || '',
@@ -77,7 +86,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     neighborhood: customer.neighborhood || '',
     city: customer.city || '',
     state_uf: customer.state_uf || customer.state || '',
-    zip_code: customer.zip_code || customer.cep || '',
+    zip_code: formatCep(customer.zip_code || customer.cep || ''),
   };
 }
 
@@ -140,8 +149,17 @@ export async function searchCustomers(
   ];
 
   if (digits.length >= 3) {
-    orFilters.push(`cpf_cnpj.ilike.%${digits}%`);
-    orFilters.push(`document.ilike.%${digits}%`);
+    for (const pattern of cpfCnpjIlikePatterns(raw)) {
+      orFilters.push(`cpf_cnpj.ilike.%${pattern}%`);
+      orFilters.push(`document.ilike.%${pattern}%`);
+    }
+  }
+  const cepDigits = normalizeCep(raw);
+  if (cepDigits.length >= 2) {
+    for (const pattern of cepIlikePatterns(raw)) {
+      orFilters.push(`cep.ilike.%${pattern}%`);
+      orFilters.push(`zip_code.ilike.%${pattern}%`);
+    }
   }
   if (phoneDigits.length >= 4) {
     orFilters.push(`phone.ilike.%${phoneDigits}%`);
@@ -193,13 +211,18 @@ export async function findExistingCustomers(
   };
 
   if (doc.length >= 11) {
-    let q = supabase
-      .from('customers')
-      .select('*')
-      .or(`cpf_cnpj.eq.${doc},document.eq.${doc},cpf_cnpj.ilike.%${doc}%`);
+    const patterns = cpfCnpjIlikePatterns(doc);
+    const orParts = patterns.flatMap((p) => [
+      `cpf_cnpj.ilike.%${p}%`,
+      `document.ilike.%${p}%`,
+    ]);
+    let q = supabase.from('customers').select('*').or(orParts.join(','));
     q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
     const { data } = await q;
-    addRows(data as CustomerRecord[]);
+    const filtered = (data as CustomerRecord[] | null)?.filter((row) =>
+      matchesCpfCnpj(doc, row.cpf_cnpj) || matchesCpfCnpj(doc, row.document),
+    );
+    addRows(filtered ?? null);
   }
 
   if (phone.length >= 8) {
@@ -399,7 +422,7 @@ export function customerPatchFromForm(
   form: Partial<CustomerFormValues> & { name?: string },
 ): Record<string, unknown> {
   const cpfRaw = form.cpf_cnpj?.trim() || null;
-  const cpf = cpfRaw ? normalizeDocument(cpfRaw) || cpfRaw : null;
+  const cpf = cpfRaw ? formatCpfCnpj(cpfRaw) || cpfRaw : null;
   const patch: Record<string, unknown> = {};
 
   if (!isEmptyCustomerField(form.name)) {
@@ -443,7 +466,7 @@ export function customerPatchFromForm(
     patch.state_uf = uf;
   }
   if (!isEmptyCustomerField(form.zip_code)) {
-    const zip = form.zip_code?.trim() || null;
+    const zip = form.zip_code?.trim() ? formatCep(form.zip_code.trim()) : null;
     patch.cep = zip;
     patch.zip_code = zip;
   }
@@ -457,7 +480,8 @@ export function buildCustomerPayload(
   existing?: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const cpfRaw = form.cpf_cnpj?.trim() || null;
-  const cpf = cpfRaw ? normalizeDocument(cpfRaw) || cpfRaw : null;
+  const cpf = cpfRaw ? formatCpfCnpj(cpfRaw) || cpfRaw : null;
+  const zipFormatted = form.zip_code?.trim() ? formatCep(form.zip_code.trim()) : null;
   const nameUpper = form.name?.trim().toUpperCase() || '';
   const fromForm = {
     name: nameUpper,
@@ -476,8 +500,8 @@ export function buildCustomerPayload(
     city: form.city?.trim().toUpperCase() || null,
     state: form.state_uf?.trim().toUpperCase() || null,
     state_uf: form.state_uf?.trim().toUpperCase() || null,
-    cep: form.zip_code?.trim() || null,
-    zip_code: form.zip_code?.trim() || null,
+    cep: zipFormatted,
+    zip_code: zipFormatted,
     status: 'ativo',
     company_id: ctx.tenantId,
     project_id: ctx.projectId,
@@ -591,13 +615,19 @@ export async function resolveOrCreateCustomer(
 
   let clientId: string | null = null;
   const cpfRaw = form.cpf_cnpj?.trim() || null;
-  const cpf = cpfRaw ? normalizeDocument(cpfRaw) || cpfRaw : null;
+  const cpf = cpfRaw ? formatCpfCnpj(cpfRaw) || cpfRaw : null;
   if (cpf) {
-    let clientQ = supabase.from('clients').select('id').eq('cpf_cnpj', cpf);
+    const docDigits = normalizeCpfCnpj(cpf);
+    const patterns = cpfCnpjIlikePatterns(cpf);
+    const orParts = patterns.flatMap((p) => [`cpf_cnpj.ilike.%${p}%`]);
+    let clientQ = supabase.from('clients').select('id, cpf_cnpj').or(orParts.join(','));
     if (!isSuperAdmin && effectiveTenantId) {
       clientQ = clientQ.eq('tenant_id', effectiveTenantId);
     }
-    const { data: existingClient } = await clientQ.maybeSingle();
+    const { data: clientRows } = await clientQ.limit(5);
+    const existingClient = (clientRows || []).find((row) =>
+      matchesCpfCnpj(docDigits, row.cpf_cnpj),
+    );
     if (existingClient?.id) clientId = existingClient.id;
   }
 

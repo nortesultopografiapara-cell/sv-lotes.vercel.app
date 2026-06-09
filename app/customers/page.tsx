@@ -9,6 +9,13 @@ import { mergePreservingCustomerFields } from '@/lib/customerIdentity';
 import { logCustomerAudit } from '@/lib/customerAudit';
 import { CustomerAuditHistoryModal } from '@/components/customers/CustomerAuditHistoryModal';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
+import {
+  cpfCnpjIlikePatterns,
+  formatCep,
+  formatCpfCnpj,
+  matchesCep,
+  matchesCpfCnpj,
+} from '@/lib/inputMasks';
 
 export default function CustomersPage() {
   const { user, loading: authLoading } = useAuth();
@@ -119,7 +126,10 @@ export default function CustomersPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const cpfCnpjValue = formData.cpf_cnpj?.trim() ? formData.cpf_cnpj.trim() : null;
+      const cpfCnpjValue = formData.cpf_cnpj?.trim()
+        ? formatCpfCnpj(formData.cpf_cnpj.trim())
+        : null;
+      const cepValue = formData.cep?.trim() ? formatCep(formData.cep.trim()) : null;
       const nameUpper = formData.name?.trim().toUpperCase() || '';
       const emailUpper = formData.email?.trim().toUpperCase() || '';
       const addressUpper = formData.address?.trim().toUpperCase() || '';
@@ -130,9 +140,18 @@ export default function CustomersPage() {
       let customerId = formData.id || null;
 
       if (!customerId && cpfCnpjValue) {
-          let checkQuery = supabase.from('customers').select('id').eq('document', cpfCnpjValue);
+          const patterns = cpfCnpjIlikePatterns(cpfCnpjValue);
+          const orParts = patterns.flatMap((p) => [
+            `cpf_cnpj.ilike.%${p}%`,
+            `document.ilike.%${p}%`,
+          ]);
+          let checkQuery = supabase.from('customers').select('id, cpf_cnpj, document').or(orParts.join(','));
           checkQuery = applyTenantFilter(checkQuery, rlsCtx, 'customers');
-          const { data: existingCustomer } = await checkQuery.maybeSingle();
+          const { data: existingRows } = await checkQuery.limit(5);
+          const existingCustomer = (existingRows || []).find((row) =>
+            matchesCpfCnpj(cpfCnpjValue, row.cpf_cnpj) ||
+            matchesCpfCnpj(cpfCnpjValue, row.document),
+          );
           if (existingCustomer) {
               customerId = existingCustomer.id;
           }
@@ -152,7 +171,8 @@ export default function CustomersPage() {
         neighborhood: formData.neighborhood?.trim().toUpperCase() || null,
         city: formData.city?.trim().toUpperCase() || null,
         state: formData.state?.trim().toUpperCase() || null,
-        cep: formData.cep?.trim() || null,
+        cep: cepValue,
+        zip_code: cepValue,
         status: formData.status || 'ativo',
       };
       if (!customerId && tenantId) {
@@ -198,7 +218,7 @@ export default function CustomersPage() {
     setFormData({
       id: customer.id,
       name: customer.name || '',
-      cpf_cnpj: customer.cpf_cnpj || customer.document || '',
+      cpf_cnpj: formatCpfCnpj(customer.cpf_cnpj || customer.document || ''),
       phone: customer.phone || '',
       email: customer.email || '',
       rg: customer.rg || '',
@@ -208,7 +228,7 @@ export default function CustomersPage() {
       neighborhood: customer.neighborhood || '',
       city: customer.city || '',
       state: customer.state || '',
-      cep: customer.cep || '',
+      cep: formatCep(customer.cep || customer.zip_code || ''),
       status: customer.status || 'ativo'
     });
     setIsModalOpen(true);
@@ -308,12 +328,17 @@ export default function CustomersPage() {
     }
   };
 
-  const filteredCustomers = customers.filter(c => 
-     c.name?.toLowerCase().includes(search.toLowerCase()) || 
-     c.email?.toLowerCase().includes(search.toLowerCase()) ||
-     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase()) ||
-     c.document?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredCustomers = customers.filter((c) => {
+    const q = search.toLowerCase();
+    return (
+      c.name?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q) ||
+      matchesCpfCnpj(search, c.cpf_cnpj) ||
+      matchesCpfCnpj(search, c.document) ||
+      matchesCep(search, c.cep) ||
+      matchesCep(search, c.zip_code)
+    );
+  });
 
   return (
     <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full fade-in relative">
@@ -416,7 +441,7 @@ export default function CustomersPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CPF / CNPJ</label>
-                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
+                  <input type="text" value={formData.cpf_cnpj} onChange={e => setFormData({...formData, cpf_cnpj: formatCpfCnpj(e.target.value)})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="000.000.000-00" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">RG</label>
@@ -469,7 +494,7 @@ export default function CustomersPage() {
                 </div>
                 <div>
                    <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">CEP</label>
-                   <input type="text" value={formData.cep} onChange={e => setFormData({...formData, cep: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="00000-000" />
+                   <input type="text" value={formData.cep} onChange={e => setFormData({...formData, cep: formatCep(e.target.value)})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="00.000-000" />
                 </div>
               </div>
               {formData.id && (

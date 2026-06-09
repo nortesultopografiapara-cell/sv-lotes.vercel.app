@@ -28,6 +28,7 @@ import {
 } from '@/lib/saleEditFinanceRecalc';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
+import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
 
 export function canEditCompletedSale(role?: string | null): boolean {
   return isPartnerPanelAdmin(role);
@@ -121,11 +122,16 @@ export async function loadSaleEditContext(
     String(customer.cpf_cnpj || customer.document || ''),
   );
   if (doc.length >= 11) {
-    const { data: clientRow } = await supabase
+    const patterns = cpfCnpjIlikePatterns(doc);
+    const orParts = patterns.map((p) => `cpf_cnpj.ilike.%${p}%`);
+    const { data: clientRows } = await supabase
       .from('clients')
       .select('*')
-      .eq('cpf_cnpj', doc)
-      .maybeSingle();
+      .or(orParts.join(','))
+      .limit(5);
+    const clientRow = (clientRows || []).find((row) =>
+      matchesCpfCnpj(doc, row.cpf_cnpj),
+    );
     if (clientRow) {
       customerMerged = mergeCustomerData(
         customer,

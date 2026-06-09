@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
+import { matchesCpfCnpj } from '@/lib/inputMasks';
 
 export default function CRMPage() {
   const { user, loading: authLoading } = useAuth();
@@ -40,11 +41,14 @@ export default function CRMPage() {
     }
   }, [user, authLoading]);
 
-  const filteredClients = clients.filter(c => 
-     c.full_name?.toLowerCase().includes(search.toLowerCase()) || 
-     c.email?.toLowerCase().includes(search.toLowerCase()) ||
-     c.cpf_cnpj?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredClients = clients.filter((c) => {
+    const q = search.toLowerCase();
+    return (
+      c.full_name?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q) ||
+      matchesCpfCnpj(search, c.cpf_cnpj)
+    );
+  });
 
   return (
     <div className="sv-page sv-page--scroll-y p-4 md:p-8 flex flex-col h-full">

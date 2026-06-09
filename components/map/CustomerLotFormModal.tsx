@@ -14,6 +14,7 @@ import {
   validateCustomerForContract,
   type CustomerContractValidation,
 } from '@/lib/validateCustomerForContract';
+import { formatCep, formatCpfCnpj } from '@/lib/inputMasks';
 
 export type LotFormState = CustomerFormValues & {
   payment_type: string;
@@ -354,7 +355,8 @@ export function CustomerLotFormModal({
                   <input
                     type="text"
                     value={formData.cpf_cnpj}
-                    onChange={(e) => setField({ cpf_cnpj: e.target.value })}
+                    onChange={(e) => setField({ cpf_cnpj: formatCpfCnpj(e.target.value) })}
+                    placeholder="000.000.000-00"
                     className={GIS_INPUT}
                   />
                 </div>
@@ -478,7 +480,8 @@ export function CustomerLotFormModal({
                   <input
                     type="text"
                     value={formData.zip_code}
-                    onChange={(e) => setField({ zip_code: e.target.value })}
+                    onChange={(e) => setField({ zip_code: formatCep(e.target.value) })}
+                    placeholder="00.000-000"
                     className={GIS_INPUT}
                   />
                 </div>
