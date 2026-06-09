@@ -30,8 +30,12 @@ import { formatStreetDisplay } from '@/lib/streetGuide';
 import {
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
-  officialSegmentTableToEdgeLabels,
 } from '@/lib/officialLotMeasurements';
+import {
+  buildGroupedOfficialEdgeLabels,
+  buildLotSheetSketchSides,
+  type LotSheetSketchSide,
+} from '@/lib/lotSheetLayout';
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
 import {
   buildLotConfrontationAudit,
@@ -109,6 +113,8 @@ export type LotSheetPayload = {
   memorialDraftPlain: string;
   /** Distâncias oficiais por aresta (índice = segment_index) para o croqui PDF. */
   officialEdgeLengths: string[];
+  /** Lados oficiais agrupados para posicionamento no croqui. */
+  sketchSides: LotSheetSketchSide[];
   ignoredSegmentNote: string | null;
 };
 
@@ -520,9 +526,21 @@ export async function loadLotSheetPayload(
   const metricRows: LotSheetMetricRow[] = segmentTableToMetricRows(officialTable);
   const coordinatesAvailable = officialTable.coordinatesAvailable;
 
-  const officialEdgeLengths = officialSegmentTableToEdgeLabels(
-    officialTable,
+  const confrontationAudit = buildLotConfrontationAudit(
+    blockRecord,
+    params.blockId,
+    blocksList,
+    guidesList,
+    project as Record<string, unknown>,
+  );
+  const officialEdgeLengths = buildGroupedOfficialEdgeLabels(
+    blockRecord,
     officialSegs.length,
+    project as Record<string, unknown>,
+  );
+  const sketchSides = buildLotSheetSketchSides(
+    blockRecord,
+    confrontationAudit,
   );
   const ignoredSegmentNote =
     officialTable.ignoredInvalidCount > 0
@@ -538,13 +556,6 @@ export async function loadLotSheetPayload(
     (company as Record<string, unknown>) || null,
   );
 
-  const confrontationAudit = buildLotConfrontationAudit(
-    blockRecord,
-    params.blockId,
-    blocksList,
-    guidesList,
-    project as Record<string, unknown>,
-  );
   const sideConfrontants = confrontantsFromAudit(confrontationAudit);
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
@@ -630,6 +641,7 @@ export async function loadLotSheetPayload(
     }),
     technicalResponsible: techProfile as unknown as Record<string, unknown>,
     officialEdgeLengths,
+    sketchSides,
     ignoredSegmentNote,
   };
 }
