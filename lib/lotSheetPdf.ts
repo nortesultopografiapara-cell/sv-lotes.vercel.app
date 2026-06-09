@@ -34,6 +34,8 @@ import {
   drawSigefGraphicScale,
   drawSigefTechnicalPanel,
   LOT_SHEET_SIGEF_LAYOUT,
+  polygonSheetBBox,
+  resolveSigefGraphicScaleBox,
   type SigefBox,
 } from '@/lib/lotSheetSigefLayout';
 import {
@@ -261,7 +263,7 @@ const DISTANCE_OFFSET_TRY_MM = [6, 5, 4, 3];
 /** Offset interno simétrico das medidas (mm no croqui, sem redução por lado). */
 const DISTANCE_INTERNAL_OFFSET_NORMAL_MM = 6;
 const DISTANCE_INTERNAL_OFFSET_NARROW_MM = 4;
-const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = LOT_SHEET_SIGEF_LAYOUT ? 4 : 2.5;
+const DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM = LOT_SHEET_SIGEF_LAYOUT ? 5 : 2.5;
 const SIGEF_VERTEX_STAGGER_BOOST = 6;
 
 /** Offset externo dos confrontantes (mm no croqui — afastado da divisa). */
@@ -830,6 +832,7 @@ function placeDistanceLabelWithSymmetricOffset(
     {
       labelRadius,
       minEdgeClearance: DISTANCE_MIN_CLEARANCE_FROM_EDGE_MM,
+      edgeLenMm,
     },
   );
 
@@ -846,7 +849,11 @@ function placeDistanceLabelWithSymmetricOffset(
       },
       polygon,
       placedZones.map((z) => ({ pos: z.pos, radius: z.radius, kind: z.kind })),
-      { labelRadius, minEdgeClearance: fixedOffsetMm },
+      {
+        labelRadius,
+        minEdgeClearance: fixedOffsetMm,
+        edgeLenMm,
+      },
     );
     return retry;
   }
@@ -1612,25 +1619,22 @@ function drawMetricTable(
 ) {
   const sigef = LOT_SHEET_SIGEF_LAYOUT;
   const titleH = sigef ? 5 : 0;
-  const headers = sigef
-    ? ['Vértice', 'Azimute', 'Distância', 'E(X)', 'N(Y)']
-    : ['De', 'Para', 'Azimute', 'Distância', 'Coord. E(X)', 'Coord. N(Y)'];
-  const colWidths = sigef
-    ? [
-        box.w * 0.14,
-        box.w * 0.2,
-        box.w * 0.14,
-        box.w * 0.26,
-        box.w * 0.26,
-      ]
-    : [
-        box.w * 0.08,
-        box.w * 0.08,
-        box.w * 0.18,
-        box.w * 0.14,
-        box.w * 0.26,
-        box.w * 0.26,
-      ];
+  const headers = [
+    'De',
+    'Para',
+    'Azimute',
+    'Distância',
+    sigef ? 'E(X)' : 'Coord. E(X)',
+    sigef ? 'N(Y)' : 'Coord. N(Y)',
+  ];
+  const colWidths = [
+    box.w * 0.08,
+    box.w * 0.08,
+    box.w * 0.18,
+    box.w * 0.14,
+    box.w * 0.26,
+    box.w * 0.26,
+  ];
   const rowH = sigef ? 5 : 4.6;
   const headerH = sigef ? 6 : 5.5;
   const tableTop = box.y + titleH;
@@ -1666,25 +1670,17 @@ function drawMetricTable(
     const row = rows[ri];
     const y = tableTop + headerH + ri * rowH;
     x = box.x;
-    const cells = sigef
-      ? [
-          `${row.from} → ${row.to}`,
-          row.azimute,
-          row.distancia,
-          row.coordE,
-          row.coordN,
-        ]
-      : [
-          row.from,
-          row.to,
-          row.azimute,
-          row.distancia,
-          row.coordE,
-          row.coordN,
-        ];
+    const cells = [
+      row.from,
+      row.to,
+      row.azimute,
+      row.distancia,
+      row.coordE,
+      row.coordN,
+    ];
     cells.forEach((cell, ci) => {
       doc.rect(x, y, colWidths[ci], rowH);
-      const isCoordCol = sigef ? ci >= 3 : ci >= 4;
+      const isCoordCol = ci >= 4;
       const longMsg = cell.includes('não disponíveis');
       if (isCoordCol && longMsg) doc.setFontSize(4.2);
       else doc.setFontSize(sigef ? 5.5 : 5.5);
@@ -2269,7 +2265,8 @@ export async function generateLotSheetPdf(
   const sheetVerts = preparePolygonVertices(sheetPts);
   const mainAxis = getLotMainAxis(sheetVerts);
 
-  const scaleBandRect: LabelRect = sigefRegions
+  let sigefScaleDrawBox: SigefBox | null = null;
+  let scaleBandRect: LabelRect = sigefRegions
     ? {
         x: sigefRegions.sketchScaleBand.x,
         y: sigefRegions.sketchScaleBand.y,
@@ -2278,6 +2275,22 @@ export async function generateLotSheetPdf(
         kind: 'scale',
       }
     : graphicScaleBandRect(contentX, scaleY, contentW);
+  if (sigefRegions && confrontationsBox) {
+    const lotBBox = polygonSheetBBox(sheetVerts);
+    const scalePlan = resolveSigefGraphicScaleBox(
+      sigefRegions.sketch,
+      confrontationsBox,
+      lotBBox,
+    );
+    sigefScaleDrawBox = scalePlan.box;
+    scaleBandRect = {
+      x: scalePlan.box.x - 1,
+      y: scalePlan.box.y - 3,
+      w: scalePlan.box.w + 2,
+      h: scalePlan.box.h + 6,
+      kind: 'scale',
+    };
+  }
   const placedRects: LabelRect[] = [scaleBandRect];
 
   // SIGEF: perímetro → vértices → medidas → nº lote → área (sem confrontantes no croqui)
@@ -2351,6 +2364,33 @@ export async function generateLotSheetPdf(
       },
     );
     const r = numberArea.badgeRadius;
+    const areaLines = splitAreaLabelLines(
+      input.measures.area,
+      usefulW,
+      mainAxis.narrow,
+    );
+    const areaLineH = numberArea.areaFontSize * 0.42;
+    const areaBlockH = areaLines.length * areaLineH;
+    const combinedH =
+      r * 2 +
+      numberArea.numberAreaGapMm +
+      areaBlockH +
+      (numberArea.useCombinedBox ? 4 : 0);
+
+    if (numberArea.useCombinedBox) {
+      const boxW = Math.max(r * 2.4, usefulW * 0.32, 28);
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(200, 210, 225);
+      doc.setLineWidth(0.2);
+      doc.rect(
+        numberArea.badgePos[0] - boxW / 2,
+        numberArea.badgePos[1] - r - 1,
+        boxW,
+        combinedH,
+        'FD',
+      );
+    }
+
     doc.setDrawColor(...BLACK);
     doc.setFillColor(255, 255, 255);
     doc.setLineWidth(0.45);
@@ -2363,33 +2403,18 @@ export async function generateLotSheetPdf(
     });
     doc.setTextColor(...BLACK);
 
-    const lines = splitAreaLabelLines(
-      input.measures.area,
-      usefulW,
-      mainAxis.narrow,
-    );
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(numberArea.areaFontSize);
     doc.setTextColor(...BLUE);
-    if (lines.length === 1) {
-      doc.text(lines[0], numberArea.areaPos[0], numberArea.areaPos[1], {
+    areaLines.forEach((line, i) => {
+      const ly =
+        numberArea.areaPos[1] +
+        (i - (areaLines.length - 1) / 2) * areaLineH;
+      doc.text(line, numberArea.areaPos[0], ly, {
         align: 'center',
         baseline: 'middle',
-        angle: mainAxis.angleDeg,
       });
-    } else {
-      const perpRad = ((mainAxis.angleDeg + 90) * Math.PI) / 180;
-      const lineStep = numberArea.areaFontSize * 0.38;
-      lines.forEach((line, i) => {
-        const off = (i - (lines.length - 1) / 2) * lineStep;
-        doc.text(
-          line,
-          numberArea.areaPos[0] + Math.cos(perpRad) * off,
-          numberArea.areaPos[1] + Math.sin(perpRad) * off,
-          { align: 'center', baseline: 'middle', angle: mainAxis.angleDeg },
-        );
-      });
-    }
+    });
     doc.setTextColor(...BLACK);
 
     lotBadge = { badgePos: numberArea.badgePos, radius: r };
@@ -2498,7 +2523,9 @@ export async function generateLotSheetPdf(
     drawCompassRose(doc, mainBox.x + mainBox.w - 11, mainBox.y + 11, 7);
   }
 
-  if (sigefRegions) {
+  if (sigefScaleDrawBox) {
+    drawSigefGraphicScale(doc, sigefScaleDrawBox, scaleDenom);
+  } else if (sigefRegions) {
     drawSigefGraphicScale(doc, sigefRegions.sketchScaleBand, scaleDenom);
   } else {
     drawGraphicScale(

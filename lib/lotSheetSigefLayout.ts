@@ -35,10 +35,70 @@ const CONFRONTATIONS_PANEL_H = 24;
 const CONFRONTATIONS_COORDS_GAP_MM = 4;
 const COORDINATES_TITLE_H = 5;
 
-/** Largura mínima da escala gráfica SIGEF (mm). */
-export const SIGEF_SCALE_BAR_MIN_W_MM = 80;
+/** Caixa fixa da escala no canto inferior esquerdo do croqui. */
+export const SIGEF_SCALE_LEFT_INSET_MM = 8;
+export const SIGEF_SCALE_BOTTOM_INSET_MM = 18;
+export const SIGEF_SCALE_BOX_W_MM = 75;
+export const SIGEF_SCALE_BOX_H_MM = 8;
+/** Largura mínima da barra (dentro da caixa). */
+export const SIGEF_SCALE_BAR_MIN_W_MM = 70;
 /** Altura da barra da escala gráfica SIGEF (mm). */
 export const SIGEF_SCALE_BAR_H_MM = 6;
+
+export type LotSheetBBox = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+export function polygonSheetBBox(verts: [number, number][]): LotSheetBBox {
+  const xs = verts.map((v) => v[0]);
+  const ys = verts.map((v) => v[1]);
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  };
+}
+
+export function sigefLotBBoxOverlapsScaleBox(
+  lotBBox: LotSheetBBox,
+  scaleBox: SigefBox,
+  margin = 3,
+): boolean {
+  return !(
+    lotBBox.maxX + margin <= scaleBox.x ||
+    scaleBox.x + scaleBox.w + margin <= lotBBox.minX ||
+    lotBBox.maxY + margin <= scaleBox.y ||
+    scaleBox.y + scaleBox.h + margin <= lotBBox.minY
+  );
+}
+
+/** Posição da escala: canto inferior esquerdo do croqui ou acima das confrontações. */
+export function resolveSigefGraphicScaleBox(
+  sketch: SigefBox,
+  confrontations: SigefBox,
+  lotBBox: LotSheetBBox,
+): { box: SigefBox; placement: 'sketch-bottom-left' | 'above-confrontations' } {
+  const insetBox: SigefBox = {
+    x: sketch.x + SIGEF_SCALE_LEFT_INSET_MM,
+    y: sketch.y + sketch.h - SIGEF_SCALE_BOTTOM_INSET_MM,
+    w: SIGEF_SCALE_BOX_W_MM,
+    h: SIGEF_SCALE_BOX_H_MM,
+  };
+  if (!sigefLotBBoxOverlapsScaleBox(lotBBox, insetBox)) {
+    return { box: insetBox, placement: 'sketch-bottom-left' };
+  }
+  const fallback: SigefBox = {
+    x: confrontations.x + 4,
+    y: confrontations.y - SIGEF_SCALE_BOX_H_MM - 5,
+    w: SIGEF_SCALE_BOX_W_MM,
+    h: SIGEF_SCALE_BOX_H_MM,
+  };
+  return { box: fallback, placement: 'above-confrontations' };
+}
 
 export function formatPerimeterDisplay(
   lot: Record<string, unknown>,
@@ -96,10 +156,10 @@ export function computeSigefPageRegions(
   };
 
   const sketchScaleBand: SigefBox = {
-    x: sketch.x,
-    y: sketch.y + sketch.h - SKETCH_SCALE_BAND_H,
-    w: sketch.w,
-    h: SKETCH_SCALE_BAND_H,
+    x: sketch.x + SIGEF_SCALE_LEFT_INSET_MM,
+    y: sketch.y + sketch.h - SIGEF_SCALE_BOTTOM_INSET_MM,
+    w: SIGEF_SCALE_BOX_W_MM,
+    h: SIGEF_SCALE_BOX_H_MM,
   };
 
   let y = sketch.y + sketch.h + gap;
@@ -230,7 +290,36 @@ export function drawSigefConfrontationsPanel(
   doc.line(box.x + padX, box.y + box.h - 2, box.x + box.w - padX, box.y + box.h - 2);
 }
 
-/** Escala gráfica SIGEF — largura mín. 80 mm, altura 6 mm, centralizada na faixa. */
+export type SigefMetricTableRow = {
+  from: string;
+  to: string;
+  azimute: string;
+  distancia: string;
+  coordE: string;
+  coordN: string;
+};
+
+/** Cabeçalhos da tabela SIGEF — colunas De | Para (sem seta Unicode no PDF). */
+export function sigefMetricTableHeaders(): readonly string[] {
+  return ['De', 'Para', 'Azimute', 'Distância', 'E(X)', 'N(Y)'];
+}
+
+export function sigefMetricTableCells(row: SigefMetricTableRow): string[] {
+  return [row.from, row.to, row.azimute, row.distancia, row.coordE, row.coordN];
+}
+
+/** Valida células — evita "M-01 !' M-02" (seta → corrompida no jsPDF). */
+export function sigefMetricTableTextValid(cells: string[]): boolean {
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (/→|\u2192/.test(c)) return false;
+    if (/!'|!\u2019/.test(c)) return false;
+    if (i <= 1 && /!/.test(c)) return false;
+  }
+  return true;
+}
+
+/** Escala gráfica SIGEF — canto inferior esquerdo, alinhada à esquerda. */
 export function drawSigefGraphicScale(
   doc: jsPDF,
   band: SigefBox,
@@ -238,19 +327,20 @@ export function drawSigefGraphicScale(
 ) {
   const barRealM = 50;
   let barMm = (barRealM * 1000) / scaleDenom;
-  barMm = Math.max(SIGEF_SCALE_BAR_MIN_W_MM, Math.min(barMm, band.w * 0.88));
+  barMm = Math.max(
+    SIGEF_SCALE_BAR_MIN_W_MM,
+    Math.min(barMm, band.w - 2),
+  );
   const segments = 5;
   const segMm = barMm / segments;
   const segM = barRealM / segments;
-  const barX = band.x + (band.w - barMm) / 2;
-  const barY = band.y + (band.h - SIGEF_SCALE_BAR_H_MM) / 2 - 1;
+  const barX = band.x;
+  const barY = band.y + 1;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6);
+  doc.setFontSize(5.5);
   doc.setTextColor(...BLACK);
-  doc.text('ESCALA GRÁFICA', band.x + band.w / 2, band.y + 2.5, {
-    align: 'center',
-  });
+  doc.text('ESCALA GRÁFICA', band.x, band.y - 1.2);
 
   doc.setDrawColor(...BLACK);
   doc.setLineWidth(0.35);
