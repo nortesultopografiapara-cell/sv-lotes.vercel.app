@@ -186,6 +186,94 @@ export async function searchCustomers(
   return results;
 }
 
+/** ID selecionado no formulário de venda/reserva (`selected_customer_id` ou `customer_id`). */
+export function getFormSelectedCustomerId(
+  form: Partial<CustomerFormValues> & { customer_id?: string | null },
+): string | null {
+  const raw = form.selected_customer_id ?? form.customer_id ?? null;
+  const trimmed = String(raw || '').trim();
+  return trimmed || null;
+}
+
+export type SaleCustomerResolveDecision =
+  | { action: 'use_selected'; customerId: string }
+  | { action: 'lookup_cpf'; normalizedCpf: string }
+  | {
+      action: 'reject';
+      reason: 'no_customer_no_cpf' | 'cpf_too_short';
+      message: string;
+    };
+
+/** Estratégia de resolução do cliente na venda — sem consulta ao banco. */
+export function resolveSaleCustomerDecision(
+  form: Partial<CustomerFormValues> & { customer_id?: string | null },
+): SaleCustomerResolveDecision {
+  const selectedId = getFormSelectedCustomerId(form);
+  if (selectedId) {
+    return { action: 'use_selected', customerId: selectedId };
+  }
+
+  const normalizedCpf = normalizeDocument(form.cpf_cnpj);
+  if (!normalizedCpf) {
+    return {
+      action: 'reject',
+      reason: 'no_customer_no_cpf',
+      message:
+        'Selecione um cliente na busca ou informe o CPF/CNPJ para continuar a venda.',
+    };
+  }
+
+  if (normalizedCpf.length < 11) {
+    return {
+      action: 'reject',
+      reason: 'cpf_too_short',
+      message:
+        'CPF/CNPJ incompleto. Selecione o cliente na busca ou informe o documento completo.',
+    };
+  }
+
+  return { action: 'lookup_cpf', normalizedCpf };
+}
+
+export function buildDuplicateCustomerError(
+  normalizedCpf: string,
+  customers: Array<Pick<CustomerRecord, 'id'>>,
+): string {
+  const ids = customers.map((c) => c.id).filter(Boolean);
+  const docLabel = formatCpfCnpj(normalizedCpf) || normalizedCpf;
+  return (
+    `Mais de um cliente encontrado com o CPF/CNPJ ${docLabel} ` +
+    `(${ids.length} registros: ${ids.join(', ')}). ` +
+    'Use a busca para selecionar o cliente correto.'
+  );
+}
+
+export async function findExistingCustomersByCpfCnpj(
+  supabase: SupabaseClient,
+  params: {
+    tenantId: string | null;
+    isSuperAdmin: boolean;
+    cpf_cnpj?: string | null;
+  },
+): Promise<CustomerRecord[]> {
+  const doc = normalizeDocument(params.cpf_cnpj);
+  if (doc.length < 11) return [];
+
+  const patterns = cpfCnpjIlikePatterns(doc);
+  const orParts = patterns.flatMap((p) => [
+    `cpf_cnpj.ilike.%${p}%`,
+    `document.ilike.%${p}%`,
+  ]);
+  let q = supabase.from('customers').select('*').or(orParts.join(','));
+  q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
+  const { data } = await q;
+  return ((data as CustomerRecord[] | null) ?? []).filter(
+    (row) =>
+      matchesCpfCnpj(doc, row.cpf_cnpj) || matchesCpfCnpj(doc, row.document),
+  );
+}
+
+/** @deprecated Use findExistingCustomersByCpfCnpj — mantido para compatibilidade. */
 export async function findExistingCustomers(
   supabase: SupabaseClient,
   params: {
@@ -197,56 +285,11 @@ export async function findExistingCustomers(
     name?: string | null;
   },
 ): Promise<CustomerRecord[]> {
-  const matches = new Map<string, CustomerRecord>();
-
-  const doc = normalizeDocument(params.cpf_cnpj);
-  const phone = normalizePhone(params.phone);
-  const email = String(params.email || '').trim().toLowerCase();
-  const name = String(params.name || '').trim().toUpperCase();
-
-  const addRows = (rows: CustomerRecord[] | null) => {
-    for (const row of rows || []) {
-      if (row?.id) matches.set(row.id, row);
-    }
-  };
-
-  if (doc.length >= 11) {
-    const patterns = cpfCnpjIlikePatterns(doc);
-    const orParts = patterns.flatMap((p) => [
-      `cpf_cnpj.ilike.%${p}%`,
-      `document.ilike.%${p}%`,
-    ]);
-    let q = supabase.from('customers').select('*').or(orParts.join(','));
-    q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
-    const { data } = await q;
-    const filtered = (data as CustomerRecord[] | null)?.filter((row) =>
-      matchesCpfCnpj(doc, row.cpf_cnpj) || matchesCpfCnpj(doc, row.document),
-    );
-    addRows(filtered ?? null);
-  }
-
-  if (phone.length >= 8) {
-    let q = supabase.from('customers').select('*').ilike('phone', `%${phone}%`);
-    q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
-    const { data } = await q;
-    addRows(data as CustomerRecord[]);
-  }
-
-  if (email.length >= 5) {
-    let q = supabase.from('customers').select('*').ilike('email', email);
-    q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
-    const { data } = await q;
-    addRows(data as CustomerRecord[]);
-  }
-
-  if (matches.size === 0 && name.length >= 3) {
-    let q = supabase.from('customers').select('*').ilike('name', `%${name}%`).limit(5);
-    q = applyTenantScope(q, params.tenantId, params.isSuperAdmin);
-    const { data } = await q;
-    addRows(data as CustomerRecord[]);
-  }
-
-  return Array.from(matches.values());
+  return findExistingCustomersByCpfCnpj(supabase, {
+    tenantId: params.tenantId,
+    isSuperAdmin: params.isSuperAdmin,
+    cpf_cnpj: params.cpf_cnpj,
+  });
 }
 
 export async function loadCustomerById(
@@ -529,15 +572,76 @@ export async function resolveOrCreateCustomer(
     params;
   const effectiveTenantId = tenantId || lotTenantId || null;
 
-  let customerId: string | null = form.selected_customer_id || null;
-  let reused = Boolean(customerId);
+  const decision = resolveSaleCustomerDecision(form);
+  const receivedCustomerId = getFormSelectedCustomerId(form);
+  const receivedCpf = normalizeDocument(form.cpf_cnpj);
+
+  console.log('CUSTOMER_RESOLVE_START', {
+    customer_id: receivedCustomerId,
+    cpf_cnpj: receivedCpf || null,
+    decision: decision.action,
+  });
+
+  if (decision.action === 'reject') {
+    console.warn('CUSTOMER_RESOLVE_REJECTED', {
+      reason: decision.reason,
+      customer_id: receivedCustomerId,
+      cpf_cnpj: receivedCpf || null,
+    });
+    throw new Error(decision.message);
+  }
+
+  let customerId: string | null = null;
+  let reused = false;
   let existingRecord: Record<string, unknown> | null = null;
 
-  if (customerId) {
+  if (decision.action === 'use_selected') {
+    customerId = decision.customerId;
+    reused = true;
     existingRecord = (await loadCustomerById(supabase, customerId)) as Record<
       string,
       unknown
     > | null;
+    if (!existingRecord) {
+      throw new Error(
+        `Cliente selecionado não encontrado (ID: ${customerId}). Selecione novamente na busca.`,
+      );
+    }
+    console.log('CUSTOMER_RESOLVE_SELECTED', {
+      customer_id: customerId,
+      match_count: 1,
+      customer_ids: [customerId],
+    });
+  } else {
+    const existing = await findExistingCustomersByCpfCnpj(supabase, {
+      tenantId: effectiveTenantId,
+      isSuperAdmin,
+      cpf_cnpj: decision.normalizedCpf,
+    });
+
+    console.log('CUSTOMER_RESOLVE_CPF_LOOKUP', {
+      customer_id: receivedCustomerId,
+      cpf_cnpj: decision.normalizedCpf,
+      match_count: existing.length,
+      customer_ids: existing.map((row) => row.id),
+    });
+
+    if (existing.length === 1) {
+      customerId = existing[0].id;
+      reused = true;
+      existingRecord = existing[0] as Record<string, unknown>;
+      console.log('CUSTOMER_REUSED', { customerId, source: 'cpf_cnpj' });
+      console.log('CUSTOMER_DUPLICATE_PREVENTED', { customerId });
+    } else if (existing.length > 1) {
+      const conflictFields = ['cpf_cnpj'];
+      console.warn('CUSTOMER_RESOLVE_DUPLICATE_CPF', {
+        cpf_cnpj: decision.normalizedCpf,
+        match_count: existing.length,
+        customer_ids: existing.map((row) => row.id),
+        conflict_fields: conflictFields,
+      });
+      throw new Error(buildDuplicateCustomerError(decision.normalizedCpf, existing));
+    }
   }
 
   const payload = buildCustomerPayload(
@@ -547,7 +651,9 @@ export async function resolveOrCreateCustomer(
   );
 
   if (customerId) {
-    console.log('CUSTOMER_REUSED', { customerId, source: 'selected' });
+    if (decision.action === 'use_selected') {
+      console.log('CUSTOMER_REUSED', { customerId, source: 'selected' });
+    }
     if (existingRecord) {
       await logCustomerAudit(supabase, {
         customerId,
@@ -562,40 +668,6 @@ export async function resolveOrCreateCustomer(
       .update(payload)
       .eq('id', customerId);
     if (updErr) console.warn('CUSTOMER_UPDATE_WARN', updErr.message);
-  } else {
-    const existing = await findExistingCustomers(supabase, {
-      tenantId: effectiveTenantId,
-      isSuperAdmin,
-      cpf_cnpj: form.cpf_cnpj,
-      phone: form.phone,
-      email: form.email,
-      name: form.name,
-    });
-
-    if (existing.length === 1) {
-      customerId = existing[0].id;
-      reused = true;
-      existingRecord = existing[0] as Record<string, unknown>;
-      const mergedPayload = buildCustomerPayload(
-        form,
-        { tenantId, projectId },
-        existingRecord,
-      );
-      console.log('CUSTOMER_REUSED', { customerId });
-      console.log('CUSTOMER_DUPLICATE_PREVENTED', { customerId });
-      await logCustomerAudit(supabase, {
-        customerId,
-        oldData: existingRecord,
-        newData: { ...existingRecord, ...mergedPayload },
-        changedBy,
-        source: 'sale_create',
-      });
-      await supabase.from('customers').update(mergedPayload).eq('id', customerId);
-    } else if (existing.length > 1) {
-      throw new Error(
-        'Mais de um cliente encontrado com os mesmos dados. Use a busca para selecionar o cliente correto.',
-      );
-    }
   }
 
   if (!customerId) {
