@@ -4542,6 +4542,8 @@ export default function GISMap({
         center={center}
         zoom={18}
         maxZoom={22}
+        zoomSnap={1}
+        zoomDelta={1}
         className="w-full h-full"
         zoomControl={false}
       >
