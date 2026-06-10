@@ -520,7 +520,7 @@ function OperationalDashboard({ user }: { user: any }) {
               {selectedProjectId ? (
                 <GISMap
                   projectId={selectedProjectId}
-                  activeLayer="satellite"
+                  activeLayer="google_satellite"
                   refreshKey={mapRefreshKey}
                   labelsMinZoom={17}
                 />

@@ -80,6 +80,12 @@ import {
   buildBlockMatchKey,
   parseShapefileZipFile,
 } from '@/lib/shapefileImport';
+import {
+  DEFAULT_GIS_BASE_LAYER,
+  GIS_BASE_LAYER_LABELS,
+  GIS_BASE_LAYER_ORDER,
+  type GisBaseLayerId,
+} from '@/lib/gisBaseLayers';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
 const SHOW_LEGACY_GIS_IMPORT = false;
@@ -396,7 +402,10 @@ export default function MapPage() {
   const [importingShp, setImportingShp] = useState(false);
 
   // Map Tools States
-  const [activeLayer, setActiveLayer] = useState<'streets'|'satellite'|'dark'>('satellite');
+  const [activeLayer, setActiveLayer] = useState<GisBaseLayerId>(
+    DEFAULT_GIS_BASE_LAYER,
+  );
+  const [layerMenuOpen, setLayerMenuOpen] = useState(false);
   const [gpsActive, setGpsActive] = useState(false);
   const [measureActive, setMeasureActive] = useState(false);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
@@ -2510,19 +2519,46 @@ export default function MapPage() {
              </button>
              
              {/* Map Style */}
-             <button 
-                onClick={() => {
-                   if (activeLayer === 'satellite') setActiveLayer('streets');
-                   else if (activeLayer === 'streets') setActiveLayer('dark');
-                   else setActiveLayer('satellite');
-                }} 
-                className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b] transition-colors group relative"
-             >
-                <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
-                   {activeLayer === 'satellite' ? 'Satélite' : activeLayer === 'streets' ? 'Vetor' : 'Dark Mode'}
-                </span>
-             </button>
+             <div className="relative w-full">
+               <button
+                 type="button"
+                 onClick={() => setLayerMenuOpen((open) => !open)}
+                 className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
+                   layerMenuOpen
+                     ? 'bg-[#f59e0b]/20 text-[#f59e0b]'
+                     : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'
+                 }`}
+               >
+                 <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
+                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
+                   {GIS_BASE_LAYER_LABELS[activeLayer]}
+                 </span>
+               </button>
+               {layerMenuOpen && (
+                 <div className="absolute right-full top-0 mr-2 z-[1200] min-w-[168px] rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl p-1.5 space-y-0.5">
+                   <p className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                     Camada do mapa
+                   </p>
+                   {GIS_BASE_LAYER_ORDER.map((layerId) => (
+                     <button
+                       key={layerId}
+                       type="button"
+                       onClick={() => {
+                         setActiveLayer(layerId);
+                         setLayerMenuOpen(false);
+                       }}
+                       className={`w-full text-left px-2 py-1.5 rounded text-[11px] font-semibold transition-colors ${
+                         activeLayer === layerId
+                           ? 'bg-[#f59e0b]/15 text-[#f59e0b]'
+                           : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)]'
+                       }`}
+                     >
+                       {GIS_BASE_LAYER_LABELS[layerId]}
+                     </button>
+                   ))}
+                 </div>
+               )}
+             </div>
              
              {user?.role !== 'BROKER' && (
                <>

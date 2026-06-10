@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useMemo, useState, useRef } from "react";
 import {
   MapContainer,
-  TileLayer,
   Polygon,
   Polyline,
   CircleMarker,
@@ -37,6 +36,13 @@ import {
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
+import { GisBaseLayer } from "@/components/map/GisBaseLayer";
+import {
+  DEFAULT_GIS_BASE_LAYER,
+  normalizeGisBaseLayer,
+  type GisBaseLayerId,
+  type LegacyGisBaseLayer,
+} from "@/lib/gisBaseLayers";
 import {
   mergeCustomerData,
   resolveOrCreateCustomer,
@@ -2659,7 +2665,7 @@ function MapZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
 
 export default function GISMap({
   projectId,
-  activeLayer = "satellite",
+  activeLayer = DEFAULT_GIS_BASE_LAYER,
   gpsActive = false,
   measureActive = false,
   refreshKey = 0,
@@ -2683,7 +2689,7 @@ export default function GISMap({
   defineOfficialSideTool = false,
 }: {
   projectId?: string;
-  activeLayer?: "streets" | "satellite" | "dark";
+  activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
   gpsActive?: boolean;
   measureActive?: boolean;
   refreshKey?: number;
@@ -4539,30 +4545,10 @@ export default function GISMap({
         className="w-full h-full"
         zoomControl={false}
       >
-        {activeLayer === "streets" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-        )}
-        {activeLayer === "satellite" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          />
-        )}
-        {activeLayer === "dark" && (
-          <TileLayer
-            maxNativeZoom={18}
-            maxZoom={22}
-            attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          />
-        )}
+        <GisBaseLayer
+          layerId={normalizeGisBaseLayer(activeLayer)}
+          onZoomChange={setMapZoom}
+        />
 
         <ZoomControl position="bottomright" />
         <MapZoomTracker onZoom={setMapZoom} />
