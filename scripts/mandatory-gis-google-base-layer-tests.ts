@@ -65,6 +65,16 @@ function testMapMaxZoom() {
   console.log('OK testMapMaxZoom');
 }
 
+function testGoogleMapsLoaderModuleExists() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const loaderPath = path.join(__dirname, '../lib/gisGoogleMapsLoader.ts');
+  const mutantPath = path.join(__dirname, '../lib/gisGoogleMutant.ts');
+  assert(fs.existsSync(loaderPath), 'gisGoogleMapsLoader.ts');
+  assert(fs.existsSync(mutantPath), 'gisGoogleMutant.ts');
+  console.log('OK testGoogleMapsLoaderModuleExists');
+}
+
 function testRuntimeDiagnosticsShape() {
   resetGisBaseLayerRuntimeState();
   logGisBaseLayerDiagnostics({
@@ -89,6 +99,7 @@ function main() {
   testLayerSelectorOptions();
   testLegacyLayerNormalization();
   testMapMaxZoom();
+  testGoogleMapsLoaderModuleExists();
   testRuntimeDiagnosticsShape();
   console.log('mandatory-gis-google-base-layer-tests: all passed');
 }

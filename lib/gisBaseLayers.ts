@@ -113,4 +113,10 @@ export function logGisBaseLayerDiagnostics(
   console.log(`googleLayerMounted=${state.googleLayerMounted}`);
   console.log(`esriFallbackActive=${state.esriFallbackActive}`);
   console.log('googleMutantError', state.googleMutantError ?? 'null');
+  if (state.googleMutantError?.startsWith('gm_authFailure')) {
+    console.error(
+      'GIS_GOOGLE_CONSOLE_HINT',
+      'Verifique restrições HTTP Referrer da API key para https://www.svlotes.com.br e https://svlotes.com.br',
+    );
+  }
 }

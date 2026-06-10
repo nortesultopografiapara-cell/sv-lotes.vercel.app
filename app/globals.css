@@ -134,6 +134,16 @@
   background: var(--color-surface-dim) !important;
   font-family: var(--font-sans) !important;
 }
+
+/* GIS — tiles Google Mutant devem ficar visíveis acima do fundo escuro */
+.leaflet-tile-pane img {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.leaflet-google-mutant {
+  z-index: 0 !important;
+}
 .leaflet-popup-content-wrapper {
   background: var(--color-surface) !important;
   color: var(--color-text-main) !important;

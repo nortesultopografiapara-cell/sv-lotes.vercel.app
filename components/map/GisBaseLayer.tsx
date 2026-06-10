@@ -3,10 +3,10 @@
 import { useEffect, useRef } from 'react';
 import { useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet.gridlayer.googlemutant';
+import { ensureGisGoogleMutant } from '@/lib/gisGoogleMutant';
+import { loadGisGoogleMapsApi } from '@/lib/gisGoogleMapsLoader';
 import {
   GIS_MAP_MAX_ZOOM,
-  getGoogleMapsApiKey,
   isGoogleBaseLayer,
   logGisBaseLayerDiagnostics,
   type GisBaseLayerId,
@@ -22,7 +22,9 @@ type TaggedBaseLayer = L.Layer & {
   _svLotesBaseLayerId?: GisBaseLayerId;
 };
 
-let googleMapsLoadPromise: Promise<boolean> | null = null;
+type GoogleMutantLayer = L.GridLayer & {
+  _mutant?: google.maps.Map;
+};
 
 function tagBaseLayer(layer: L.Layer, layerId: GisBaseLayerId): void {
   (layer as TaggedBaseLayer)._svLotesBaseLayerId = layerId;
@@ -39,46 +41,13 @@ function isEsriTileLayer(layer: L.Layer): boolean {
   );
 }
 
-function loadGoogleMapsApi(): Promise<boolean> {
-  if (typeof window === 'undefined') return Promise.resolve(false);
-  const apiKey = getGoogleMapsApiKey();
-  if (!apiKey) return Promise.resolve(false);
-
-  const w = window as Window & { google?: { maps?: unknown } };
-  if (w.google?.maps) return Promise.resolve(true);
-
-  if (googleMapsLoadPromise) return googleMapsLoadPromise;
-
-  googleMapsLoadPromise = new Promise((resolve) => {
-    const existing = document.getElementById('sv-lotes-google-maps-api');
-    if (existing) {
-      const started = Date.now();
-      const timer = window.setInterval(() => {
-        if (w.google?.maps) {
-          window.clearInterval(timer);
-          resolve(true);
-        } else if (Date.now() - started > 12000) {
-          window.clearInterval(timer);
-          resolve(false);
-        }
-      }, 120);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'sv-lotes-google-maps-api';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve(Boolean(w.google?.maps));
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-
-  return googleMapsLoadPromise;
+function countVisibleBaseTiles(map: L.Map): number {
+  const tilePane = map.getPane('tilePane');
+  if (!tilePane) return 0;
+  return tilePane.querySelectorAll('img').length;
 }
 
-function createGoogleMutantLayer(layerId: GisBaseLayerId): L.TileLayer | null {
+function createGoogleMutantLayer(layerId: GisBaseLayerId): L.GridLayer | null {
   if (!L.gridLayer?.googleMutant) return null;
   const type = layerId === 'google_hybrid' ? 'hybrid' : 'satellite';
   return L.gridLayer.googleMutant({
@@ -133,10 +102,15 @@ function purgeForeignBaseLayers(
   });
 }
 
-function syncMapZoomLimits(map: L.Map, layerId: GisBaseLayerId): void {
+function syncMapZoomLimits(map: L.Map): void {
   map.setMaxZoom(GIS_MAP_MAX_ZOOM);
-  if (isGoogleBaseLayer(layerId)) {
-    map.setZoom(map.getZoom());
+}
+
+function refreshGoogleLayer(map: L.Map, googleLayer: L.GridLayer): void {
+  map.invalidateSize({ animate: false });
+  googleLayer.redraw?.();
+  if (typeof (googleLayer as GoogleMutantLayer)._update === 'function') {
+    (googleLayer as GoogleMutantLayer)._update();
   }
 }
 
@@ -176,10 +150,23 @@ export function GisBaseLayer({
       const zoom = map.getZoom();
       onZoomChange?.(zoom);
       purgeForeignBaseLayers(map, runtimeRef.current.effectiveLayer);
+      if (isGoogleBaseLayer(runtimeRef.current.effectiveLayer)) {
+        const current = activeLayerRef.current;
+        if (current && 'redraw' in current) {
+          refreshGoogleLayer(map, current as L.GridLayer);
+        }
+        runtimeRef.current.googleLayerMounted = countVisibleBaseTiles(map) > 0;
+      }
       emitDiagnostics(zoom);
     },
     moveend: () => {
       purgeForeignBaseLayers(map, runtimeRef.current.effectiveLayer);
+    },
+    resize: () => {
+      const current = activeLayerRef.current;
+      if (current && isGoogleBaseLayer(runtimeRef.current.effectiveLayer)) {
+        refreshGoogleLayer(map, current as L.GridLayer);
+      }
     },
   });
 
@@ -191,6 +178,7 @@ export function GisBaseLayer({
 
   useEffect(() => {
     let cancelled = false;
+    let verifyTimer: number | null = null;
 
     const clearLayer = () => {
       if (activeLayerRef.current) {
@@ -214,7 +202,7 @@ export function GisBaseLayer({
       tagBaseLayer(next, effective);
       next.addTo(map);
       activeLayerRef.current = next;
-      syncMapZoomLimits(map, effective);
+      syncMapZoomLimits(map);
 
       runtimeRef.current.effectiveLayer = effective;
       runtimeRef.current.googleLayerMounted = options?.googleLayerMounted ?? false;
@@ -225,32 +213,51 @@ export function GisBaseLayer({
       emitDiagnostics(map.getZoom());
     };
 
-    const mountGoogleLayer = (googleLayer: L.TileLayer) => {
-      const googleLayerMountedRef = { value: false };
+    const mountGoogleLayer = (googleLayer: L.GridLayer) => {
+      const verifyTiles = (phase: string) => {
+        const count = countVisibleBaseTiles(map);
+        runtimeRef.current.googleLayerMounted = count > 0;
+        if (count === 0) {
+          runtimeRef.current.googleMutantError = `google_tiles_missing:${phase}`;
+          console.warn('GIS_GOOGLE_TILES_MISSING', {
+            activeBaseLayer: layerId,
+            phase,
+            currentZoom: map.getZoom(),
+          });
+        } else {
+          runtimeRef.current.googleMutantError = null;
+        }
+        emitDiagnostics(map.getZoom());
+      };
 
-      googleLayer.on('spawned', () => {
+      googleLayer.on('spawned', (event: L.LeafletEvent & { mapObject?: google.maps.Map }) => {
         if (cancelled) return;
-        googleLayerMountedRef.value = true;
-        runtimeRef.current.googleLayerMounted = true;
-        runtimeRef.current.googleMutantError = null;
+        const gMap = event.mapObject;
+        runtimeRef.current.esriFallbackActive = false;
         purgeForeignBaseLayers(map, layerId);
-        emitDiagnostics(map.getZoom());
-      });
+        refreshGoogleLayer(map, googleLayer);
 
-      googleLayer.on('tileerror', (event: L.TileErrorEvent) => {
-        const message = `tileerror z=${event.coords?.z ?? '?'} x=${event.coords?.x ?? '?'} y=${event.coords?.y ?? '?'}`;
-        runtimeRef.current.googleMutantError = message;
-        console.warn('GIS_GOOGLE_TILE_ERROR', {
-          activeBaseLayer: layerId,
-          message,
-        });
-        emitDiagnostics(map.getZoom());
+        if (gMap && window.google?.maps) {
+          window.google.maps.event.addListenerOnce(gMap, 'idle', () => {
+            if (cancelled) return;
+            refreshGoogleLayer(map, googleLayer);
+            verifyTiles('idle');
+          });
+        }
+
+        verifyTimer = window.setTimeout(() => {
+          if (!cancelled) verifyTiles('timeout');
+        }, 2500);
       });
 
       mountLayer(googleLayer, layerId, {
-        googleLayerMounted: googleLayerMountedRef.value,
+        googleLayerMounted: false,
         esriFallbackActive: false,
         googleMutantError: null,
+      });
+
+      window.requestAnimationFrame(() => {
+        if (!cancelled) refreshGoogleLayer(map, googleLayer);
       });
     };
 
@@ -261,11 +268,30 @@ export function GisBaseLayer({
       purgeForeignBaseLayers(map, layerId);
 
       if (isGoogleBaseLayer(layerId)) {
-        const googleReady = await loadGoogleMapsApi();
+        const [apiResult, mutantReady] = await Promise.all([
+          loadGisGoogleMapsApi(),
+          ensureGisGoogleMutant(),
+        ]);
         if (cancelled) return;
 
-        if (!googleReady) {
-          const error = 'google_maps_api_unavailable';
+        if (!apiResult.ok) {
+          const error = apiResult.error ?? 'google_maps_api_unavailable';
+          runtimeRef.current.googleMutantError = error;
+          console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
+            requested: layerId,
+            error,
+            esriFallback: true,
+          });
+          mountLayer(createEsriSatelliteLayer(), 'esri_satellite', {
+            googleLayerMounted: false,
+            esriFallbackActive: true,
+            googleMutantError: error,
+          });
+          return;
+        }
+
+        if (!mutantReady) {
+          const error = 'google_mutant_register_failed';
           runtimeRef.current.googleMutantError = error;
           console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
             requested: layerId,
@@ -282,7 +308,7 @@ export function GisBaseLayer({
 
         const googleLayer = createGoogleMutantLayer(layerId);
         if (!googleLayer) {
-          const error = 'google_mutant_plugin_unavailable';
+          const error = 'google_mutant_factory_unavailable';
           runtimeRef.current.googleMutantError = error;
           console.warn('GIS_GOOGLE_LAYER_INIT_FAILED', {
             requested: layerId,
@@ -321,6 +347,7 @@ export function GisBaseLayer({
 
     return () => {
       cancelled = true;
+      if (verifyTimer != null) window.clearTimeout(verifyTimer);
       clearLayer();
     };
   }, [layerId, map, onEffectiveLayerChange]);
