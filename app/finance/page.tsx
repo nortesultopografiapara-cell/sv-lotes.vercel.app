@@ -21,6 +21,12 @@ import {
 } from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
+  calculateEnterpriseValueSummary,
+  type EnterpriseValueSummary,
+} from '@/lib/enterpriseValueSummary';
+import { EnterpriseFinanceSummary } from '@/components/enterprise/EnterpriseFinanceSummary';
+import '@/components/enterprise/enterprise-value.css';
+import {
   buildCashFlowItems,
   calculateFinancialTotals,
   cashFlowItemsToReportRows,
@@ -140,6 +146,9 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
+  const [enterpriseBlocks, setEnterpriseBlocks] = useState<
+    { project_id?: string | null; status?: string | null; price?: number | string | null }[]
+  >([]);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -511,6 +520,48 @@ export default function FinancePage() {
     return () => clearTimeout(timer);
   }, [financeToast]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEnterpriseBlocks() {
+      if (!user || projectFilter === 'Todos os projetos') {
+        setEnterpriseBlocks([]);
+        return;
+      }
+
+      const project = financeProjects.find((p) => p.name === projectFilter);
+      if (!project?.id) {
+        setEnterpriseBlocks([]);
+        return;
+      }
+
+      try {
+        const rlsCtx = await resolveRlsContext(user);
+        let query = supabase
+          .from('blocks')
+          .select('project_id, status, price')
+          .eq('project_id', project.id);
+        query = applyTenantFilter(query, rlsCtx, 'blocks');
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!cancelled) setEnterpriseBlocks(data || []);
+      } catch (error) {
+        console.error('FINANCE_ENTERPRISE_BLOCKS_ERROR', error);
+        if (!cancelled) setEnterpriseBlocks([]);
+      }
+    }
+
+    void loadEnterpriseBlocks();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, projectFilter, financeProjects]);
+
+  const enterpriseSummary: EnterpriseValueSummary | null = useMemo(() => {
+    if (projectFilter === 'Todos os projetos') return null;
+    return calculateEnterpriseValueSummary(enterpriseBlocks);
+  }, [enterpriseBlocks, projectFilter]);
+
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
      const computedContract = p.sales?.contracts?.[0]?.contract_number || (p.sales?.id ? 'CT-' + new Date(p.created_at || new Date()).getFullYear() + '-' + p.sales.id.substring(0, 6).toUpperCase() : 'CT-S/N');
@@ -542,6 +593,23 @@ export default function FinancePage() {
 
   const totalPages = Math.ceil(filteredPayments.length / itemsPerPage) || 1;
   const currentPayments = filteredPayments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const enterpriseFinanceTotals = useMemo(() => {
+    if (!enterpriseSummary) return null;
+    let totalRecebido = 0;
+    let saldoAReceber = 0;
+    filteredPayments.forEach((p) => {
+      const valor = Number(p.amount) || 0;
+      const st = String(p.status || '').toLowerCase();
+      const isPaid = st === 'pago' || st === 'paid';
+      if (isPaid) {
+        totalRecebido += Number(p.paid_amount) || valor;
+      } else if (st !== 'cancelado' && st !== 'canceled') {
+        saldoAReceber += valor;
+      }
+    });
+    return { totalRecebido, saldoAReceber };
+  }, [enterpriseSummary, filteredPayments]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -2659,6 +2727,18 @@ export default function FinancePage() {
           </button>
         </div>
       </header>
+
+      {enterpriseSummary && enterpriseFinanceTotals ? (
+        <>
+          <p className="finance-section-title">Resumo do empreendimento</p>
+          <EnterpriseFinanceSummary
+            summary={enterpriseSummary}
+            totalRecebido={enterpriseFinanceTotals.totalRecebido}
+            saldoAReceber={enterpriseFinanceTotals.saldoAReceber}
+            projectName={projectFilter}
+          />
+        </>
+      ) : null}
 
       {/* KPIs — 3 colunas desktop, compactos */}
       <p className="finance-section-title">Resumo financeiro</p>

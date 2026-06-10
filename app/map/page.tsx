@@ -86,6 +86,8 @@ import {
   GIS_BASE_LAYER_ORDER,
   type GisBaseLayerId,
 } from '@/lib/gisBaseLayers';
+import { EnterpriseValueOverlay } from '@/components/enterprise/EnterpriseValueOverlay';
+import '@/components/enterprise/enterprise-value.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
 const SHOW_LEGACY_GIS_IMPORT = false;
@@ -2599,7 +2601,13 @@ export default function MapPage() {
         </div>
         
         {/* Map Container */}
-        <div className="flex-1 w-full h-full z-0">
+        <div className="flex-1 w-full h-full z-0 relative">
+          {selectedProject?.id ? (
+            <EnterpriseValueOverlay
+              projectId={selectedProject.id}
+              refreshKey={mapRefreshKey}
+            />
+          ) : null}
           <GISMap 
             projectId={selectedProject.id} 
             activeLayer={activeLayer} 
