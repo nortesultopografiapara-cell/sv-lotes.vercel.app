@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, DollarSign, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { useAuth } from '@/hooks/useAuth';
+import { canViewEnterpriseValues } from '@/lib/rolePermissions';
 import {
   calculateEnterpriseValueSummary,
   formatEnterpriseCurrency,
@@ -30,7 +31,15 @@ const EMPTY_SUMMARY: EnterpriseValueSummary = {
   lotCount: 0,
 };
 
-export function EnterpriseValueOverlay({
+export function EnterpriseValueOverlay(props: EnterpriseValueOverlayProps) {
+  const { user } = useAuth();
+  if (!canViewEnterpriseValues(user?.role)) {
+    return null;
+  }
+  return <EnterpriseValueOverlayInner {...props} />;
+}
+
+function EnterpriseValueOverlayInner({
   projectId,
   refreshKey = 0,
   className = '',
@@ -44,7 +53,7 @@ export function EnterpriseValueOverlay({
     let cancelled = false;
 
     async function loadSummary() {
-      if (!projectId || !user) {
+      if (!projectId || !user || !canViewEnterpriseValues(user.role)) {
         setSummary(EMPTY_SUMMARY);
         setLoading(false);
         return;

@@ -13,8 +13,13 @@ import {
   Building2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  canViewEnterpriseValues,
+  isBrokerRole,
+} from '@/lib/rolePermissions';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
@@ -71,8 +76,11 @@ export default function DashboardPage() {
 }
 
 function OperationalDashboard({ user }: { user: any }) {
+  const router = useRouter();
   const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
+  const showEnterpriseValues = canViewEnterpriseValues(user?.role);
   const [stats, setStats] = useState({
+    globalEnterpriseTotal: 0,
     enterpriseTotal: 0,
     availableValue: 0,
     reservedValue: 0,
@@ -95,11 +103,19 @@ function OperationalDashboard({ user }: { user: any }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   useEffect(() => {
+    if (isBrokerRole(user?.role)) {
+      router.replace('/map');
+    }
+  }, [user?.role, router]);
+
+  useEffect(() => {
     const p = projects.find((x) => x.id === selectedProjectId);
     if (selectedProjectId && p?.name) {
       setGisSelectedProject({ id: p.id, name: p.name });
+    } else if (!selectedProjectId) {
+      clearGisSelectedProject();
     }
-  }, [selectedProjectId, projects, setGisSelectedProject]);
+  }, [selectedProjectId, projects, setGisSelectedProject, clearGisSelectedProject]);
 
   useEffect(() => {
     return () => clearGisSelectedProject();
@@ -143,18 +159,16 @@ function OperationalDashboard({ user }: { user: any }) {
 
         if (projectsData) {
           setProjects(projectsData);
-          if (projectsData.length > 0 && !selectedProjectId) {
-             setSelectedProjectId(projectsData[0].id);
-          }
         }
-        
+
         if (error) throw error;
 
-        const projectLots = filterEnterpriseLotsByProject(
-          data || [],
-          selectedProjectId || null,
-        );
-        const enterprise = calculateEnterpriseValueSummary(projectLots);
+        const allLots = data || [];
+        const globalEnterprise = calculateEnterpriseValueSummary(allLots);
+        const scopedLots = selectedProjectId
+          ? filterEnterpriseLotsByProject(allLots, selectedProjectId)
+          : allLots;
+        const enterprise = calculateEnterpriseValueSummary(scopedLots);
         const selectedProjectName =
           projectsData?.find((p) => p.id === selectedProjectId)?.name || '';
 
@@ -187,7 +201,9 @@ function OperationalDashboard({ user }: { user: any }) {
             const { data: commsData } = await commQuery;
 
             const scopedReceipts = (receiptsData || []).filter((r) =>
-              receiptMatchesProject(r, selectedProjectId, selectedProjectName),
+              selectedProjectId
+                ? receiptMatchesProject(r, selectedProjectId, selectedProjectName)
+                : true,
             );
             const scopedCash = (cashData || []).filter((c) => {
               if (!selectedProjectId) return true;
@@ -252,6 +268,7 @@ function OperationalDashboard({ user }: { user: any }) {
         setActivities(logsData || []);
         
         setStats({
+          globalEnterpriseTotal: globalEnterprise.totalValue,
           enterpriseTotal: enterprise.totalValue,
           availableValue: enterprise.availableValue,
           reservedValue: enterprise.reservedValue,
@@ -396,6 +413,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="bg-[var(--bg-input)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-sm py-1 px-2 rounded-md focus:outline-none focus:border-blue-500 min-w-[160px] max-w-[220px]"
               >
+                <option value="">Todos os empreendimentos</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -406,95 +424,113 @@ function OperationalDashboard({ user }: { user: any }) {
           </div>
         </header>
 
-        <div className="dash-kpi-primary">
-          <DashboardTopKpi
-            title="Valor total do empreendimento"
-            value={stats.enterpriseTotal}
-            icon={Building2}
-            color="#3b82f6"
-            loading={loading}
-            isCurrency
-            subtitle={`${totalLotes} lotes cadastrados`}
-          />
-          <DashboardTopKpi
-            title="Valor disponível"
-            value={stats.availableValue}
-            icon={DollarSign}
-            color="#10b981"
-            loading={loading}
-            isCurrency
-            subtitle={`${stats.available} lotes disponíveis`}
-          />
-          <DashboardTopKpi
-            title="Valor reservado"
-            value={stats.reservedValue}
-            icon={Calendar}
-            color="#f59e0b"
-            loading={loading}
-            isCurrency
-            subtitle={`${stats.reserved} lotes reservados`}
-          />
-          <DashboardTopKpi
-            title="Valor vendido"
-            value={stats.soldValue}
-            icon={Tag}
-            color="#ef4444"
-            loading={loading}
-            isCurrency
-            subtitle={`${stats.sold + stats.paid} lotes vendidos/quitados`}
-          />
-        </div>
+        {showEnterpriseValues ? (
+          <>
+            <div className="dash-kpi-primary">
+              <DashboardTopKpi
+                title="Valor global"
+                value={stats.globalEnterpriseTotal}
+                icon={Building2}
+                color="#6366f1"
+                loading={loading}
+                isCurrency
+                subtitle="Todos os empreendimentos permitidos"
+              />
+              {selectedProjectId ? (
+                <DashboardTopKpi
+                  title="Valor do empreendimento"
+                  value={stats.enterpriseTotal}
+                  icon={Building2}
+                  color="#3b82f6"
+                  loading={loading}
+                  isCurrency
+                  subtitle={
+                    projects.find((p) => p.id === selectedProjectId)?.name ||
+                    `${totalLotes} lotes`
+                  }
+                />
+              ) : null}
+              <DashboardTopKpi
+                title="Valor disponível"
+                value={stats.availableValue}
+                icon={DollarSign}
+                color="#10b981"
+                loading={loading}
+                isCurrency
+                subtitle={`${stats.available} lotes disponíveis`}
+              />
+              <DashboardTopKpi
+                title="Valor reservado"
+                value={stats.reservedValue}
+                icon={Calendar}
+                color="#f59e0b"
+                loading={loading}
+                isCurrency
+                subtitle={`${stats.reserved} lotes reservados`}
+              />
+              <DashboardTopKpi
+                title="Valor vendido"
+                value={stats.soldValue}
+                icon={Tag}
+                color="#ef4444"
+                loading={loading}
+                isCurrency
+                subtitle={`${stats.sold + stats.paid} lotes vendidos/quitados`}
+              />
+            </div>
 
-        <div className="dash-kpi-secondary">
-          <DashboardMetricKpi
-            title="Lotes disponíveis"
-            value={stats.available}
-            icon={DollarSign}
-            color="#10b981"
-            loading={loading}
-            subtitle={formatEnterpriseCurrency(stats.availableValue)}
-          />
-          <DashboardMetricKpi
-            title="Lotes reservados"
-            value={stats.reserved}
-            icon={Calendar}
-            color="#f59e0b"
-            loading={loading}
-            subtitle={formatEnterpriseCurrency(stats.reservedValue)}
-          />
-          <DashboardMetricKpi
-            title="Lotes vendidos"
-            value={stats.sold + stats.paid}
-            icon={Tag}
-            color="#ef4444"
-            loading={loading}
-            subtitle={formatEnterpriseCurrency(stats.soldValue)}
-          />
-          <DashboardMetricKpi
-            title="Recebido no mês"
-            value={stats.recebimentos_mes}
-            icon={TrendingUp}
-            color="#10b981"
-            loading={loading}
-            subtitle="Mês corrente"
-          />
-          <DashboardMetricKpi
-            title="A receber"
-            value={stats.a_receber}
-            icon={FileText}
-            color="#3b82f6"
-            loading={loading}
-            subtitle="Parcelas pendentes"
-          />
-          <DashboardMetricKpi
-            title="Inadimplência"
-            value={stats.inadimplencia}
-            icon={AlertCircle}
-            color="#ef4444"
-            loading={loading}
-            subtitle="Valor em atraso"
-          />
-        </div>
+            <div className="dash-kpi-secondary">
+              <DashboardMetricKpi
+                title="Lotes disponíveis"
+                value={stats.available}
+                icon={DollarSign}
+                color="#10b981"
+                loading={loading}
+                subtitle={formatEnterpriseCurrency(stats.availableValue)}
+              />
+              <DashboardMetricKpi
+                title="Lotes reservados"
+                value={stats.reserved}
+                icon={Calendar}
+                color="#f59e0b"
+                loading={loading}
+                subtitle={formatEnterpriseCurrency(stats.reservedValue)}
+              />
+              <DashboardMetricKpi
+                title="Lotes vendidos"
+                value={stats.sold + stats.paid}
+                icon={Tag}
+                color="#ef4444"
+                loading={loading}
+                subtitle={formatEnterpriseCurrency(stats.soldValue)}
+              />
+              <DashboardMetricKpi
+                title="Recebido no mês"
+                value={stats.recebimentos_mes}
+                icon={TrendingUp}
+                color="#10b981"
+                loading={loading}
+                subtitle="Mês corrente"
+              />
+              <DashboardMetricKpi
+                title="A receber"
+                value={stats.a_receber}
+                icon={FileText}
+                color="#3b82f6"
+                loading={loading}
+                subtitle="Parcelas pendentes"
+              />
+              <DashboardMetricKpi
+                title="Inadimplência"
+                value={stats.inadimplencia}
+                icon={AlertCircle}
+                color="#ef4444"
+                loading={loading}
+                subtitle="Valor em atraso"
+              />
+            </div>
+          </>
+        ) : null}
 
         <div className="dash-bottom-grid">
           <div className="dash-compact-panel">

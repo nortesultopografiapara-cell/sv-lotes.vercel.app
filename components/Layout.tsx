@@ -42,6 +42,7 @@ import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
+import { isBrokerRole } from '@/lib/rolePermissions';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -242,7 +243,7 @@ const getMenuItems = (role: string) => {
     ];
   }
 
-  if (role === 'BROKER') {
+  if (isBrokerRole(role)) {
     return [
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
     ];
@@ -587,7 +588,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 {isSuperAdmin
                   ? 'Painel Master · SaaS'
-                  : user?.role === 'BROKER'
+                  : isBrokerRole(user?.role)
                     ? 'Corretor / Vendedor'
                     : 'Admin Empresa'}
               </p>

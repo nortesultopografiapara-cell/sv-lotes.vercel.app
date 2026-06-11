@@ -62,11 +62,15 @@ export async function middleware(request: NextRequest) {
   if (isPublicRoute) {
     if (user || isDemoMode) {
       if (isLanding) {
-        url.pathname = userData?.role === 'BROKER' ? '/map' : '/dashboard';
+        const loginRole = String(userData?.role || '').toUpperCase();
+        url.pathname =
+          loginRole === 'BROKER' || loginRole === 'CORRETOR' ? '/map' : '/dashboard';
         return NextResponse.redirect(url);
       }
       if (url.pathname === '/login') {
-        url.pathname = userData?.role === 'BROKER' ? '/map' : '/dashboard';
+        const loginRole = String(userData?.role || '').toUpperCase();
+        url.pathname =
+          loginRole === 'BROKER' || loginRole === 'CORRETOR' ? '/map' : '/dashboard';
         return NextResponse.redirect(url);
       }
     }
@@ -83,16 +87,29 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // 4. BROKER ROUTE PROTECTION
-  if (userData?.role === 'BROKER') {
-    const allowedRoutesForBroker = ['/map'];
-    const blockedRoutes = ['/dashboard', '/customers', '/finance', '/contracts', '/settings'];
-    
-    // If exact path is one of the blocked routes, redirect to /map
-    const isBlocked = blockedRoutes.some(r => url.pathname.startsWith(r));
+  // 4. BROKER / CORRETOR — somente Mapa GIS (venda e reserva)
+  const brokerRole = String(userData?.role || '').toUpperCase();
+  const isBroker = brokerRole === 'BROKER' || brokerRole === 'CORRETOR';
+  if (isBroker) {
+    const blockedRoutes = [
+      '/dashboard',
+      '/customers',
+      '/finance',
+      '/contracts',
+      '/settings',
+      '/companies',
+      '/crm',
+      '/logs',
+      '/plans',
+      '/users',
+      '/saas-finance',
+      '/offline-sync',
+      '/reports',
+    ];
+    const isBlocked = blockedRoutes.some((r) => url.pathname.startsWith(r));
     if (isBlocked) {
-       url.pathname = '/map';
-       return NextResponse.redirect(url);
+      url.pathname = '/map';
+      return NextResponse.redirect(url);
     }
   }
 

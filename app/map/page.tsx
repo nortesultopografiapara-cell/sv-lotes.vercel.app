@@ -87,6 +87,7 @@ import {
   type GisBaseLayerId,
 } from '@/lib/gisBaseLayers';
 import { EnterpriseValueOverlay } from '@/components/enterprise/EnterpriseValueOverlay';
+import { canViewEnterpriseValues } from '@/lib/rolePermissions';
 import '@/components/enterprise/enterprise-value.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
@@ -2602,7 +2603,7 @@ export default function MapPage() {
         
         {/* Map Container */}
         <div className="flex-1 w-full h-full z-0 relative">
-          {selectedProject?.id ? (
+          {canViewEnterpriseValues(user?.role) && selectedProject?.id ? (
             <EnterpriseValueOverlay
               projectId={selectedProject.id}
               refreshKey={mapRefreshKey}

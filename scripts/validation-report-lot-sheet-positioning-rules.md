@@ -1,20 +1,30 @@
 # Validação — Regras de posicionamento da prancha SIGEF
 
-Data: 2026-06-09
+Data: 2026-06-09 (atualizado)
 
 ## Escopo
 
 Correção **somente do algoritmo de layout PDF** (não altera GIS, medidas oficiais, confrontações de dados, memorial, contratos ou financeiro).
 
+## Filosofia atual (referência Civil 3D / Topograph / Métrica TOPO)
+
+| Prioridade | Elemento | Regra |
+|------------|----------|--------|
+| 1 | **Área** | Centro visual livre, fonte maior, rotacionada no eixo longitudinal |
+| 2 | **Número** | Círculo menor, próximo à frente oficial, não compete com a área |
+| 3 | Medidas | Offset interno fixo (6 mm) |
+| 4 | Vértices | Espaçamento mínimo 15 mm |
+
 ## Regras implementadas
 
 | # | Regra | Implementação |
 |---|--------|----------------|
-| 1 | Número do lote pela frente oficial (não centroide) | `computeLotFrontLayoutContext()` + `placeLotNumberAndArea()` com `frontEdgeIndex`; profundidade base `LOT_FRONT_BADGE_DEPTH_FRACTION = 0.1` |
-| 2 | Área abaixo e alinhada ao número | `areaPosBelowBadge()` — stack vertical PDF (+Y) com mesmo X |
-| 3 | Medidas sempre dentro do lote | `resolveMeasureLabelPosition({ forceInternalOnly: true })` no fluxo SIGEF; offset mínimo 6 mm |
-| 4 | Sem caixas brancas de proteção | `useCombinedBox: false` permanente; colisões resolvidas por reposicionamento |
-| 5 | Tabela de confrontações com margem inferior | `computeConfrontationsPanelHeight()` + `CONFRONTATIONS_PANEL_BOTTOM_PAD_MM = 4` |
+| 1 | Área como elemento principal | `findBestPrimaryAreaPosition()` + `computeLotMainAxis()` (maior aresta + PCA) |
+| 2 | Área rotacionada no eixo do lote | `areaAngleDeg` desenhado com `angle` no jsPDF |
+| 3 | Número secundário na frente | `placeBadgeNearOfficialFront()` com `LOT_FRONT_BADGE_DEPTH_FRACTION = 0.1` |
+| 4 | Medidas sempre dentro do lote | `resolveMeasureLabelPosition({ forceInternalOnly: true })`; offset 6 mm |
+| 5 | Sem caixas brancas de proteção | `useCombinedBox: false`; colisões por reposicionamento |
+| 6 | Confrontações com margem inferior | `computeConfrontationsPanelHeight()` + pad 4 mm |
 
 ## Arquivos alterados
 

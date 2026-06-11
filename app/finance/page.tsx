@@ -14,6 +14,10 @@ import {
 } from '@/components/finance/FinancePremiumUI';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  canViewEnterpriseValues,
+  isBrokerRole,
+} from '@/lib/rolePermissions';
 import { supabase } from '@/lib/supabase';
 import {
   formatCurrencyBRL,
@@ -507,6 +511,12 @@ export default function FinancePage() {
     };
 
   useEffect(() => {
+    if (!authLoading && isBrokerRole(user?.role)) {
+      router.replace('/map');
+    }
+  }, [authLoading, user?.role, router]);
+
+  useEffect(() => {
     if (!authLoading) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadFinance();
@@ -524,13 +534,17 @@ export default function FinancePage() {
     let cancelled = false;
 
     async function loadEnterpriseBlocks() {
-      if (!user || projectFilter === 'Todos os projetos') {
+      if (!user || !canViewEnterpriseValues(user.role)) {
         setEnterpriseBlocks([]);
         return;
       }
 
-      const project = financeProjects.find((p) => p.name === projectFilter);
-      if (!project?.id) {
+      const project =
+        projectFilter !== 'Todos os projetos'
+          ? financeProjects.find((p) => p.name === projectFilter)
+          : null;
+
+      if (projectFilter !== 'Todos os projetos' && !project?.id) {
         setEnterpriseBlocks([]);
         return;
       }
@@ -539,8 +553,10 @@ export default function FinancePage() {
         const rlsCtx = await resolveRlsContext(user);
         let query = supabase
           .from('blocks')
-          .select('project_id, status, price')
-          .eq('project_id', project.id);
+          .select('project_id, status, price');
+        if (project?.id) {
+          query = query.eq('project_id', project.id);
+        }
         query = applyTenantFilter(query, rlsCtx, 'blocks');
         const { data, error } = await query;
         if (error) throw error;
@@ -557,10 +573,12 @@ export default function FinancePage() {
     };
   }, [user, projectFilter, financeProjects]);
 
+  const showEnterpriseValues = canViewEnterpriseValues(user?.role);
+
   const enterpriseSummary: EnterpriseValueSummary | null = useMemo(() => {
-    if (projectFilter === 'Todos os projetos') return null;
+    if (!showEnterpriseValues) return null;
     return calculateEnterpriseValueSummary(enterpriseBlocks);
-  }, [enterpriseBlocks, projectFilter]);
+  }, [enterpriseBlocks, showEnterpriseValues]);
 
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
@@ -2728,14 +2746,19 @@ export default function FinancePage() {
         </div>
       </header>
 
-      {enterpriseSummary && enterpriseFinanceTotals ? (
+      {showEnterpriseValues && enterpriseSummary && enterpriseFinanceTotals ? (
         <>
-          <p className="finance-section-title">Resumo do empreendimento</p>
+          <p className="finance-section-title">
+            {projectFilter === 'Todos os projetos'
+              ? 'Resumo financeiro global'
+              : 'Resumo do empreendimento'}
+          </p>
           <EnterpriseFinanceSummary
             summary={enterpriseSummary}
             totalRecebido={enterpriseFinanceTotals.totalRecebido}
             saldoAReceber={enterpriseFinanceTotals.saldoAReceber}
             projectName={projectFilter}
+            mode={projectFilter === 'Todos os projetos' ? 'global' : 'project'}
           />
         </>
       ) : null}
