@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -88,6 +88,11 @@ import {
 } from '@/lib/gisBaseLayers';
 import { EnterpriseValueOverlay } from '@/components/enterprise/EnterpriseValueOverlay';
 import { canViewEnterpriseValues } from '@/lib/rolePermissions';
+import {
+  computeGisMapPageOverlayOpen,
+  GIS_TOOLBAR_HIDE_CLASS,
+  GIS_TOOLBAR_SHOW_CLASS,
+} from '@/lib/gisToolbarOverlay';
 import '@/components/enterprise/enterprise-value.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
@@ -466,6 +471,38 @@ export default function MapPage() {
     coordinates?: number[][];
     guide?: Record<string, unknown>;
   } | null>(null);
+
+  const [gisMapOverlayOpen, setGisMapOverlayOpen] = useState(false);
+
+  const isAnyModalOpen = useMemo(
+    () =>
+      computeGisMapPageOverlayOpen({
+        streetGuideModal: Boolean(streetGuideModal),
+        memorialTarget: Boolean(memorialTarget),
+        lotSheetTarget: Boolean(lotSheetTarget),
+        isImportModalOpen,
+        isImportTxtModalOpen,
+        isImportShpModalOpen,
+        deleteQuadraConfirm: Boolean(deleteQuadraConfirm),
+        gisMapOverlayOpen,
+      }),
+    [
+      streetGuideModal,
+      memorialTarget,
+      lotSheetTarget,
+      isImportModalOpen,
+      isImportTxtModalOpen,
+      isImportShpModalOpen,
+      deleteQuadraConfirm,
+      gisMapOverlayOpen,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+    setLayerMenuOpen(false);
+    setQuadrasPanelOpen(false);
+  }, [isAnyModalOpen]);
 
   const loadStreetGuides = useCallback(async () => {
     if (!selectedProject) return;
@@ -2344,7 +2381,13 @@ export default function MapPage() {
         </div>
 
         {/* GIS TOOLS VERTICAL BAR - RIGHT */}
-        <div className="absolute top-16 right-2 md:top-4 md:right-4 z-[400] pointer-events-auto flex flex-col gap-1.5 items-end">
+        <div
+          data-testid="gis-tools-toolbar"
+          aria-hidden={isAnyModalOpen}
+          className={`absolute top-16 right-2 md:top-4 md:right-4 z-[400] flex flex-col gap-1.5 items-end transition-all duration-200 ease-out ${
+            isAnyModalOpen ? GIS_TOOLBAR_HIDE_CLASS : GIS_TOOLBAR_SHOW_CLASS
+          }`}
+        >
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
            <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
              
@@ -2647,6 +2690,7 @@ export default function MapPage() {
             assistedConfrontationMode={assistedConfrontationMode}
             insertConfrontantTool={insertConfrontantTool}
             defineOfficialSideTool={defineOfficialSideTool}
+            onOverlayOpenChange={setGisMapOverlayOpen}
           />
         </div>
 

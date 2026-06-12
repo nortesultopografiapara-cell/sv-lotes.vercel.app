@@ -37,6 +37,9 @@ import {
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
+import {
+  computeGisMapOverlayOpen,
+} from "@/lib/gisToolbarOverlay";
 import { GisBaseLayer } from "@/components/map/GisBaseLayer";
 import {
   DEFAULT_GIS_BASE_LAYER,
@@ -2688,6 +2691,7 @@ export default function GISMap({
   assistedConfrontationMode = false,
   insertConfrontantTool = false,
   defineOfficialSideTool = false,
+  onOverlayOpenChange,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2732,6 +2736,8 @@ export default function GISMap({
   insertConfrontantTool?: boolean;
   /** Ferramenta para definir official_side por segmento (medida oficial). */
   defineOfficialSideTool?: boolean;
+  /** Notifica o container quando modais/popups do GIS estão abertos (SVL-UI-029). */
+  onOverlayOpenChange?: (open: boolean) => void;
 }) {
   const { user } = useAuth();
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
@@ -3469,6 +3475,24 @@ export default function GISMap({
     lot: any;
     price: number;
   } | null>(null);
+
+  const gisOverlayOpen = computeGisMapOverlayOpen({
+    customerForm: Boolean(customerForm),
+    customerContractValidation: Boolean(customerContractValidation),
+    clearConfirmModal: Boolean(clearConfirmModal),
+    confrontEdit: Boolean(confrontEdit),
+    officialSideEdit: Boolean(officialSideEdit),
+  });
+
+  useEffect(() => {
+    onOverlayOpenChange?.(gisOverlayOpen);
+  }, [gisOverlayOpen, onOverlayOpenChange]);
+
+  useEffect(() => {
+    return () => {
+      onOverlayOpenChange?.(false);
+    };
+  }, [onOverlayOpenChange]);
 
   // Draw street state
   const [drawStreetPoints, setDrawStreetPoints] = useState<L.LatLng[]>([]);
