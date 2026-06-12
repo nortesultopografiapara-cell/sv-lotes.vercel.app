@@ -273,7 +273,10 @@ export async function updateSaleFromEdit(
     totalValue: data.final_value,
     paymentType: data.payment_type,
     downPayment: Number(data.down_payment) || 0,
-    installmentsCount: Math.max(1, Number(data.installments_count) || 1),
+    installmentsCount:
+      data.payment_type === 'Parcelado'
+        ? Number(data.installments_count) || 1
+        : 1,
     brokerId,
   });
   // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).

@@ -4,6 +4,7 @@
  */
 
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
+import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
 
 export type FinanceReceiptRow = {
   id: string;
@@ -55,7 +56,10 @@ export function buildSaleEditFinancePayloads(
   const grossDownPayment = Number(data.down_payment) || 0;
   const reservationSignalPaid = Number(data.reservation_signal_paid) || 0;
   let downPayment = grossDownPayment;
-  const instCount = Math.max(1, Number(data.installments_count) || 1);
+  const instCount =
+    pmtType === 'Parcelado'
+      ? parseValidatedInstallmentsCount(String(data.installments_count ?? ''))
+      : 1;
   const fValue = data.final_value;
 
   if (reservationSignalPaid > 0 && pmtType === 'Parcelado') {

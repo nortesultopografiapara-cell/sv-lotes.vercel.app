@@ -36,6 +36,7 @@ import {
 } from "@/lib/contractNumber";
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
+import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { GisBaseLayer } from "@/components/map/GisBaseLayer";
 import {
   DEFAULT_GIS_BASE_LAYER,
@@ -3936,6 +3937,12 @@ export default function GISMap({
             .eq("id", finalProjectId)
             .maybeSingle();
 
+          const pmtType = customerData.payment_type || "À vista";
+          const instCount =
+            pmtType === "Parcelado"
+              ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ""))
+              : 1;
+
           const salePayload: any = {
             tenant_id: finalTenantId,
             company_id: finalTenantId,
@@ -3950,11 +3957,11 @@ export default function GISMap({
             agreed_price: customerData.final_value || finalPrice,
             lot_price: finalPrice,
             broker_id: finalBrokerId,
-            payment_type: customerData.payment_type || "À vista",
+            payment_type: pmtType,
             discount: customerData.discount_value || 0,
             total_value: customerData.final_value || finalPrice,
             down_payment: customerData.down_payment || 0,
-            installments_count: Math.max(1, customerData.installments_count || 1),
+            installments_count: instCount,
             status: "ACTIVE",
           };
 
@@ -3974,10 +3981,8 @@ export default function GISMap({
           const saleId = saleData.id;
 
           const financePayloads: any[] = [];
-          const pmtType = customerData.payment_type || "À vista";
           const grossDownPayment = Number(customerData.down_payment) || 0;
           let downPayment = grossDownPayment;
-          const instCount = Math.max(1, customerData.installments_count || 1);
           const fValue = customerData.final_value || finalPrice;
 
           if (reservationSignalPaid > 0 && pmtType === "Parcelado") {
@@ -4135,10 +4140,7 @@ export default function GISMap({
 
           const saleValue = Number(customerData.final_value || finalPrice) || 0;
           const downPaymentVal = Number(customerData.down_payment || 0) || 0;
-          const installmentsVal = Math.max(
-            1,
-            Number(customerData.installments_count || 1) || 1,
-          );
+          const installmentsVal = instCount;
           // Contrato em try/catch isolado — falha aqui NÃO reverte venda/financeiro
           try {
             console.log("[VENDA] iniciando criação do contrato", {

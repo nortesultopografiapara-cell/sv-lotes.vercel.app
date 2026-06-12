@@ -19,6 +19,8 @@ import {
   documentFieldInputClass,
 } from '@/components/customers/DocumentFieldFeedback';
 import { useCustomerDocumentAutofill } from '@/hooks/useCustomerDocumentAutofill';
+import { InstallmentsCountCombobox } from '@/components/map/InstallmentsCountCombobox';
+import { validateInstallmentsCount } from '@/lib/installmentsCount';
 
 export type LotFormState = CustomerFormValues & {
   payment_type: string;
@@ -52,7 +54,7 @@ function emptyLotFormState(): LotFormState {
     discount_value: '',
     down_payment: '',
     down_payment_due_date: '',
-    installments_count: '1',
+    installments_count: '',
     first_installment_due_date: '',
     broker_id: '',
     notes: '',
@@ -207,15 +209,25 @@ export function CustomerLotFormModal({
   const discountValue = Number(formData.discount_value) || 0;
   const paymentType = formData.payment_type || 'À vista';
   const downPaymentStr = formData.down_payment || '';
-  const installmentsCountStr = formData.installments_count || '1';
+  const installmentsCountStr = formData.installments_count ?? '';
+  const installmentsValidation =
+    paymentType === 'Parcelado'
+      ? validateInstallmentsCount(installmentsCountStr)
+      : null;
 
   const finalValue = Math.max(0, price - discountValue);
   const downPayment = Number(downPaymentStr) || 0;
-  const installmentsCount = Math.max(1, Number(installmentsCountStr) || 1);
-  const installmentValue = Math.max(0, (price - downPayment) / installmentsCount);
+  const installmentsCount =
+    installmentsValidation?.valid === true ? installmentsValidation.value : 0;
+  const installmentValue =
+    installmentsCount > 0
+      ? Math.max(0, (price - downPayment) / installmentsCount)
+      : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let confirmedInstallmentsCount = installmentsCountStr;
+    let confirmedInstallmentValue = installmentValue;
 
     if (actionName === 'Vendido' || isEditMode) {
       if (paymentType === 'À vista') {
@@ -236,10 +248,16 @@ export function CustomerLotFormModal({
           alert('A entrada não pode ser maior que o valor do lote.');
           return;
         }
-        if (installmentsCount <= 0) {
-          alert('A quantidade de parcelas deve ser maior que 0.');
+        const installmentsResult = validateInstallmentsCount(formData.installments_count);
+        if (!installmentsResult.valid) {
+          alert(installmentsResult.message);
           return;
         }
+        confirmedInstallmentsCount = String(installmentsResult.value);
+        confirmedInstallmentValue = Math.max(
+          0,
+          (price - downPayment) / installmentsResult.value,
+        );
         if (downPayment > 0 && !formData.down_payment_due_date) {
           alert('Por favor, preencha a data de vencimento da entrada.');
           return;
@@ -270,10 +288,10 @@ export function CustomerLotFormModal({
         ...formData,
         payment_type: paymentType,
         down_payment: downPaymentStr,
-        installments_count: installmentsCountStr,
+        installments_count: confirmedInstallmentsCount,
         lot_value: price,
         final_value: finalValue,
-        installment_value: installmentValue,
+        installment_value: confirmedInstallmentValue,
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
@@ -595,7 +613,13 @@ export function CustomerLotFormModal({
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Forma de Pagamento</label>
                     <select
                       value={paymentType}
-                      onChange={(e) => setField({ payment_type: e.target.value })}
+                      onChange={(e) => {
+                        setField({
+                          payment_type: e.target.value,
+                          installments_count: '',
+                          first_installment_due_date: '',
+                        });
+                      }}
                       className={GIS_INPUT}
                     >
                       <option value="À vista">À vista</option>
@@ -660,17 +684,13 @@ export function CustomerLotFormModal({
                         className={GIS_INPUT_DATE}
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Qtd de Parcelas *</label>
-                      <input
-                        type="number"
-                        min="1"
-                        required
-                        value={installmentsCountStr}
-                        onChange={(e) => setField({ installments_count: e.target.value })}
-                        className={GIS_INPUT}
-                      />
-                    </div>
+                    <InstallmentsCountCombobox
+                      value={installmentsCountStr}
+                      onChange={(nextValue) => setField({ installments_count: nextValue })}
+                      disabled={submitting || prefillLoading}
+                      inputClassName={GIS_INPUT}
+                      required
+                    />
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Vencimento 1ª Parcela *</label>
                       <input
