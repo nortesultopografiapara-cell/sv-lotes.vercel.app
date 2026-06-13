@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { supabase, getClientConfigErrorMessage } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import {
+  createProjectThroughApi,
+  updateProjectThroughApi,
+} from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
@@ -255,102 +259,6 @@ function applyTenantFilterToProjectsQuery(
   tenantId: string | null,
 ) {
   return applyTenantFilter(query, { tenantId, isSuperAdmin: isPlatformAdmin(user.role) }, 'projects');
-}
-
-/** Cria projeto via API Next.js (evita fetch direto ao Supabase com URL mock / CORS). */
-async function createProjectThroughApi(payload: {
-  name: string;
-  city: string;
-  uf: string;
-  neighborhood?: string | null;
-  address?: string | null;
-  forum_city?: string | null;
-  impersonatingTenantId?: string | null;
-}): Promise<{ project: Record<string, unknown> }> {
-  const configError = getClientConfigErrorMessage();
-  if (configError) {
-    console.error('[Criar Projeto] Supabase não configurado no cliente:', {
-      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '(vazio)',
-      hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      hint: 'Crie .env.local a partir de .env.example',
-    });
-    throw new Error(configError);
-  }
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  const apiUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/api/projects`
-      : '/api/projects';
-
-  console.log('[Criar Projeto] POST', apiUrl, {
-    name: payload.name,
-    city: payload.city,
-    uf: payload.uf,
-    hasSession: Boolean(session?.access_token),
-  });
-
-  let response: Response;
-  try {
-    response = await fetch(apiUrl, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-  } catch (networkErr: unknown) {
-    console.error('[Criar Projeto] TypeError / Failed to fetch', {
-      networkErr,
-      apiUrl,
-      supabasePublicUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '(não definida no build)',
-      causes: [
-        'Servidor Next não está rodando (npm run dev)?',
-        '.env.local ausente ou sem NEXT_PUBLIC_SUPABASE_*?',
-        'Antes o cliente usava mock.supabase.co e gerava Failed to fetch',
-      ],
-    });
-    const msg =
-      networkErr instanceof Error ? networkErr.message : 'Failed to fetch';
-    throw new Error(
-      msg.includes('fetch')
-        ? 'Falha de rede ao chamar /api/projects. Verifique se o servidor local está ativo (npm run dev) e se .env.local está configurado.'
-        : msg,
-    );
-  }
-
-  let json: {
-    error?: string;
-    code?: string;
-    hint?: string;
-    details?: unknown;
-    project?: Record<string, unknown>;
-  } = {};
-
-  try {
-    json = await response.json();
-  } catch {
-    json = { error: `Resposta inválida da API (HTTP ${response.status})` };
-  }
-
-  if (!response.ok) {
-    console.error('[Criar Projeto] Erro da API', {
-      status: response.status,
-      code: json.code,
-      error: json.error,
-      hint: json.hint,
-      details: json.details,
-    });
-    throw new Error(json.error || `Erro ao criar projeto (HTTP ${response.status})`);
-  }
-
-  console.log('[Criar Projeto] Sucesso', json.project?.id);
-  return { project: json.project || {} };
 }
 
 export default function MapPage() {
@@ -1166,6 +1074,11 @@ export default function MapPage() {
 
   const handleSaveProjectEdit = async () => {
     if (!editingProject?.id) return;
+    if (!user) {
+      setProjectFeedback({ type: 'error', message: 'Sessão não carregada. Faça login novamente.' });
+      return;
+    }
+    if (!validateProjectForm()) return;
 
     const name = newProjectName.trim();
     const city = newProjectCity.trim();
@@ -1177,69 +1090,30 @@ export default function MapPage() {
 
     setProjectFormSubmitting(true);
     try {
-      const payloads: Record<string, unknown>[] = [
-        {
-          name,
-          city,
-          state,
-          uf: state,
-          neighborhood,
-          address,
-          contract_city,
-          forum_city: contract_city,
-          location,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          name,
-          city,
-          uf: state,
-          neighborhood,
-          address,
-          forum_city: contract_city,
-          location,
-          updated_at: new Date().toISOString(),
-        },
-        { name, city, uf: state, location, updated_at: new Date().toISOString() },
-      ];
+      const impersonatingTenantId =
+        typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null;
 
-      let saved: Record<string, unknown> | null = null;
-      let lastError: { message: string } | null = null;
-
-      for (const payload of payloads) {
-        const cleaned = Object.fromEntries(
-          Object.entries(payload).filter(([, v]) => v !== undefined && v !== ''),
-        );
-        const { data, error } = await supabase
-          .from('projects')
-          .update(cleaned)
-          .eq('id', editingProject.id)
-          .select('*')
-          .single();
-
-        if (!error && data) {
-          saved = data as Record<string, unknown>;
-          break;
-        }
-        lastError = error;
-        const missingCol = error?.message?.match(/Could not find the '(\w+)' column/i)?.[1];
-        if (!missingCol) break;
-      }
-
-      if (!saved) {
-        throw new Error(lastError?.message || 'Não foi possível salvar o projeto.');
-      }
-
-      const updatedFields = {
+      const { project: saved } = await updateProjectThroughApi(editingProject.id, {
         name,
         city,
         uf: state,
-        state,
         neighborhood,
         address,
         forum_city: contract_city,
-        contract_city,
-        location,
+        impersonatingTenantId:
+          user.role === 'SUPER_ADMIN' ? impersonatingTenantId : null,
+      });
+
+      const updatedFields = {
+        name: String(saved.name ?? name),
+        city: String(saved.city ?? city),
+        uf: String(saved.uf ?? state),
+        state: String(saved.state ?? state),
+        neighborhood: (saved.neighborhood as string | null) ?? neighborhood,
+        address: (saved.address as string | null) ?? address,
+        forum_city: String(saved.forum_city ?? contract_city),
+        contract_city: String(saved.contract_city ?? contract_city),
+        location: String(saved.location ?? location),
       };
 
       setProjects((prev) =>

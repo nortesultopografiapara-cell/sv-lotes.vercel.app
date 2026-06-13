@@ -60,6 +60,7 @@ import {
   saasContractDocumentStatusLabel,
 } from '../lib/saasContractStatus';
 import { hasSaasContractReady } from '../lib/saasSubscription';
+import { canEditProject, formatProjectApiError } from '../lib/projectEditAccess';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -412,6 +413,78 @@ function testSaasContractProfessional() {
   console.log('OK testSaasContractProfessional');
 }
 
+function testProjectEditAccess() {
+  const menesesTenant = MENESES_COMPANY_ID;
+  const otherTenant = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const projectId = 'proj-meneses-1';
+
+  const menesesAdmin = {
+    id: 'admin-meneses',
+    role: 'ADMIN',
+    tenant_id: menesesTenant,
+  };
+  const otherAdmin = {
+    id: 'admin-other',
+    role: 'ADMIN',
+    tenant_id: otherTenant,
+  };
+  const superAdmin = {
+    id: 'super-1',
+    role: 'SUPER_ADMIN',
+    tenant_id: null,
+  };
+  const broker = {
+    id: 'broker-1',
+    role: 'BROKER',
+    tenant_id: menesesTenant,
+  };
+  const menesesProject = { id: projectId, tenant_id: menesesTenant };
+
+  const ownEdit = canEditProject(menesesAdmin, menesesProject);
+  assert(ownEdit.allowed, 'ADMIN Meneses edita próprio projeto');
+
+  const crossEdit = canEditProject(otherAdmin, menesesProject);
+  assert(!crossEdit.allowed, 'outro tenant não edita Meneses');
+  assert(
+    (crossEdit.reason || '').includes('outra empresa'),
+    'mensagem cross-tenant',
+  );
+
+  const superEdit = canEditProject(superAdmin, menesesProject, {
+    impersonatingTenantId: menesesTenant,
+  });
+  assert(superEdit.allowed, 'SUPER_ADMIN com impersonation edita Meneses');
+
+  const superWrongTenant = canEditProject(superAdmin, menesesProject, {
+    impersonatingTenantId: otherTenant,
+  });
+  assert(!superWrongTenant.allowed, 'SUPER_ADMIN impersonation errada bloqueada');
+
+  const brokerEdit = canEditProject(broker, menesesProject);
+  assert(!brokerEdit.allowed, 'BROKER não edita projeto');
+
+  const networkMsg = formatProjectApiError(0, {}, 'TypeError: Failed to fetch');
+  assert(
+    networkMsg.includes('conectar ao servidor'),
+    'erro de rede legível',
+  );
+  assert(
+    !networkMsg.includes('TypeError'),
+    'não expõe TypeError bruto',
+  );
+
+  const forbiddenMsg = formatProjectApiError(403, {
+    error: 'Você não pode editar projetos de outra empresa.',
+    code: 'FORBIDDEN',
+  });
+  assert(
+    forbiddenMsg.includes('outra empresa'),
+    'erro 403 legível',
+  );
+
+  console.log('OK testProjectEditAccess');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
@@ -425,6 +498,7 @@ function main() {
   testSaasPayments();
   testCompanyUserCounts();
   testSaasContractProfessional();
+  testProjectEditAccess();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 
