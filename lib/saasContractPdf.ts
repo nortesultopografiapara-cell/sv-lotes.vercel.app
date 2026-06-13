@@ -14,6 +14,34 @@ export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractCont
 
 const FOOTER_Y = 287;
 const PAGE_BOTTOM = 232;
+const DATA_LABEL_COL_W = 52;
+const DATA_LINE_H = 4.6;
+const DATA_ROW_GAP = 2;
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/** Formatação apenas para exibição na página 1 (não altera cláusulas). */
+function formatDisplayCnpj(value: string): string {
+  const d = onlyDigits(value).slice(0, 14);
+  if (d.length !== 14) return value;
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+function formatDisplayPhone(value: string): string {
+  const d = onlyDigits(value);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return value;
+}
+
+function normalizeCityState(cityState: string): string {
+  const trimmed = cityState.trim();
+  if (!trimmed || trimmed === 'Não informado/Não informado') return trimmed;
+  if (trimmed.includes('/')) return trimmed;
+  return trimmed;
+}
 
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -113,6 +141,7 @@ type PdfWriter = {
   ensureSpace: (need: number) => void;
   writeln: (text: string, opts?: { bold?: boolean; size?: number; gap?: number }) => void;
   sectionTitle: (title: string) => void;
+  dataTableHeader: () => void;
   row: (label: string, value: string) => void;
 };
 
@@ -150,17 +179,52 @@ function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
     doc.setTextColor(40, 40, 40);
   };
 
-  const row = (label: string, value: string) => {
-    ensureSpace(8);
+  const dataTableHeader = () => {
+    ensureSpace(10);
+    const valueColX = margin + DATA_LABEL_COL_W;
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(`${label}:`, margin, y);
-    doc.setFont('helvetica', 'normal');
-    y = writeWrapped(doc, value, margin + 46, y - 4.8, contentW - 46) + 4.8;
-    y += 1;
+    doc.setFontSize(8);
+    doc.setTextColor(90, 90, 90);
+    doc.text('Campo', margin, y);
+    doc.text('Valor', valueColX, y);
+    y += 4;
+    doc.setDrawColor(210);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, margin + contentW, y);
+    y += 5;
   };
 
-  return { doc, margin, contentW, y, ensureSpace, writeln, sectionTitle, row };
+  const row = (label: string, value: string) => {
+    const valueColX = margin + DATA_LABEL_COL_W;
+    const valueColW = contentW - DATA_LABEL_COL_W;
+    const safeValue = value?.trim() ? value : '—';
+
+    doc.setFontSize(9);
+    const labelLines = doc.splitTextToSize(label, DATA_LABEL_COL_W - 2);
+    const valueLines = doc.splitTextToSize(safeValue, valueColW - 1);
+    const lineCount = Math.max(labelLines.length, valueLines.length, 1);
+    const rowH = lineCount * DATA_LINE_H + DATA_ROW_GAP;
+
+    ensureSpace(rowH);
+
+    for (let i = 0; i < lineCount; i++) {
+      const lineY = y + i * DATA_LINE_H;
+      if (i < labelLines.length) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(55, 65, 80);
+        doc.text(labelLines[i], margin, lineY);
+      }
+      if (i < valueLines.length) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(40, 40, 40);
+        doc.text(valueLines[i], valueColX, lineY);
+      }
+    }
+
+    y += rowH;
+  };
+
+  return { doc, margin, contentW, y, ensureSpace, writeln, sectionTitle, dataTableHeader, row };
 }
 
 function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
@@ -283,28 +347,47 @@ export function buildSaasContractPdfWithMeta(
   const writer = createPdfWriter(doc, y);
 
   writer.sectionTitle('DADOS DA FORNECEDORA');
+  writer.dataTableHeader();
   writer.row('Razão social', ctx.provider.legalName);
   writer.row('Nome fantasia / marca', ctx.provider.tradeName);
-  writer.row('CNPJ', ctx.provider.cnpj);
+  writer.row('CNPJ', formatDisplayCnpj(ctx.provider.cnpj));
   writer.row('Cidade', ctx.provider.city);
-  writer.writeln('Serviços licenciados:', { bold: true, gap: 2 });
+  writer.ensureSpace(10);
+  writer.doc.setFont('helvetica', 'bold');
+  writer.doc.setFontSize(9);
+  writer.doc.setTextColor(55, 65, 80);
+  writer.doc.text('Serviços licenciados', writer.margin, writer.y);
+  writer.y += DATA_LINE_H;
+  writer.doc.setFont('helvetica', 'normal');
+  writer.doc.setTextColor(40, 40, 40);
   for (const service of ctx.provider.services) {
-    writer.writeln(`• ${service}`, { gap: 1 });
+    writer.ensureSpace(DATA_LINE_H + 1);
+    const bulletLines = writer.doc.splitTextToSize(
+      `• ${service}`,
+      writer.contentW - DATA_LABEL_COL_W - 1,
+    );
+    for (const line of bulletLines) {
+      writer.doc.text(line, writer.margin + DATA_LABEL_COL_W, writer.y);
+      writer.y += DATA_LINE_H;
+    }
+    writer.y += 1;
   }
   writer.y += 3;
 
   writer.sectionTitle('DADOS DA CONTRATANTE');
+  writer.dataTableHeader();
   writer.row('Empresa', ctx.contractor.name);
-  writer.row('CNPJ', ctx.contractor.cnpj);
+  writer.row('CNPJ', formatDisplayCnpj(ctx.contractor.cnpj));
   writer.row('Responsável', ctx.contractor.responsible);
-  writer.row('Telefone', ctx.contractor.phone);
+  writer.row('Telefone', formatDisplayPhone(ctx.contractor.phone));
   writer.row('E-mail', ctx.contractor.email);
   writer.row('Endereço', ctx.contractor.address);
-  writer.row('Cidade/UF', ctx.contractor.cityState);
+  writer.row('Cidade/UF', normalizeCityState(ctx.contractor.cityState));
   if (ctx.contractor.cep) writer.row('CEP', ctx.contractor.cep);
   writer.y += 3;
 
   writer.sectionTitle('DADOS DO PLANO E COBRANÇA');
+  writer.dataTableHeader();
   writer.row('Plano contratado', ctx.plan.name);
   writer.row('Projetos incluídos', `Até ${ctx.plan.maxProjects}`);
   writer.row('Corretores incluídos', `Até ${ctx.plan.maxBrokers}`);
