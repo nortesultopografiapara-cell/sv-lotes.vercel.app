@@ -27,6 +27,11 @@ import {
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
+import {
+  filterRowsByOwnerProjects,
+  loadOwnerAccessContext,
+  resolveContractProjectId,
+} from "@/lib/ownerProjectAccess";
 import jsPDF from "jspdf";
 import {
   displayContractNumber,
@@ -569,7 +574,13 @@ export default function ContractsPage() {
         }
 
         const rawRows = await loadContractsList(user, resolvedTenantId);
-        const visible = rawRows.filter(isContractVisibleInList);
+        const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const ownerScopedRows = filterRowsByOwnerProjects(
+          rawRows,
+          ownerCtx.allowedProjectIds,
+          resolveContractProjectId,
+        );
+        const visible = ownerScopedRows.filter(isContractVisibleInList);
         const rows = await enrichContractsWithRelations(visible);
 
         console.log("[CONTRATOS] contratos encontrados", {

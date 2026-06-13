@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette } from 'lucide-react';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
+import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
+import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
@@ -322,6 +324,12 @@ export default function SettingsPage() {
         </div>
         <ThemeAppearanceSection />
       </div>
+
+      {isTenantAdminRole(user?.role) && settingsCompanyId && user?.id ? (
+        <div className="mb-8">
+          <OwnerProjectAccessPanel callerUserId={user.id} tenantId={settingsCompanyId} />
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[var(--border-color)]">
         <div className="w-10 h-10 bg-[var(--color-info)]/15 rounded-lg flex items-center justify-center text-[var(--color-info)] border border-[var(--color-info)]/25">

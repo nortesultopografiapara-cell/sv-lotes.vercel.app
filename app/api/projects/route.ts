@@ -124,6 +124,13 @@ export async function POST(request: Request) {
 
   const callerRole = (callerProfile?.role || 'USER').toUpperCase();
 
+  if (callerRole === 'OWNER') {
+    return NextResponse.json(
+      { error: 'Proprietários não podem criar empreendimentos.', code: 'FORBIDDEN' },
+      { status: 403 },
+    );
+  }
+
   const { tenantId, error: tenantResolveError } = await resolveTenantForUser(
     admin,
     user.id,

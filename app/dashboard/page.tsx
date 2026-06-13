@@ -19,7 +19,14 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
   isBrokerRole,
+  isOwnerRole,
 } from '@/lib/rolePermissions';
+import {
+  filterProjectsForUser,
+  filterRowsByOwnerProjects,
+  loadOwnerAccessContext,
+  resolveReceiptProjectId,
+} from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { useGisSelectedProject } from '@/contexts/GisSelectedProjectContext';
@@ -78,7 +85,8 @@ export default function DashboardPage() {
 function OperationalDashboard({ user }: { user: any }) {
   const router = useRouter();
   const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
-  const showEnterpriseValues = canViewEnterpriseValues(user?.role);
+  const showEnterpriseValues =
+    canViewEnterpriseValues(user?.role) || isOwnerRole(user?.role);
   const [stats, setStats] = useState({
     globalEnterpriseTotal: 0,
     enterpriseTotal: 0,
@@ -107,6 +115,21 @@ function OperationalDashboard({ user }: { user: any }) {
       router.replace('/map');
     }
   }, [user?.role, router]);
+
+  useEffect(() => {
+    if (!user || !isOwnerRole(user.role)) return;
+    void (async () => {
+      const rlsCtx = await resolveRlsContext(user);
+      const tenantId =
+        rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string })?.company_id || null;
+      const ownerCtx = await loadOwnerAccessContext(supabase, user, tenantId);
+      if (!ownerCtx.permissions.can_view_dashboard) {
+        if (ownerCtx.permissions.can_view_map) router.replace('/map');
+        else if (ownerCtx.permissions.can_view_finance) router.replace('/finance');
+        else if (ownerCtx.permissions.can_view_contracts) router.replace('/contracts');
+      }
+    })();
+  }, [user, router]);
 
   useEffect(() => {
     const p = projects.find((x) => x.id === selectedProjectId);
@@ -157,20 +180,35 @@ function OperationalDashboard({ user }: { user: any }) {
         const { data, error } = await query;
         const { data: projectsData } = await projectsQuery;
 
-        if (projectsData) {
-          setProjects(projectsData);
+        const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const visibleProjects = filterProjectsForUser(
+          user,
+          projectsData || [],
+          ownerCtx.allowedProjectIds,
+        );
+
+        if (visibleProjects.length > 0) {
+          setProjects(visibleProjects);
+        } else {
+          setProjects([]);
         }
 
         if (error) throw error;
 
         const allLots = data || [];
-        const globalEnterprise = calculateEnterpriseValueSummary(allLots);
+        const ownerScopedLots = filterRowsByOwnerProjects(
+          allLots,
+          ownerCtx.allowedProjectIds,
+          (lot) => lot.project_id as string | null | undefined,
+        );
+        const tenantScopedLots = ownerCtx.isOwner ? ownerScopedLots : allLots;
+        const globalEnterprise = calculateEnterpriseValueSummary(tenantScopedLots);
         const scopedLots = selectedProjectId
-          ? filterEnterpriseLotsByProject(allLots, selectedProjectId)
-          : allLots;
+          ? filterEnterpriseLotsByProject(tenantScopedLots, selectedProjectId)
+          : tenantScopedLots;
         const enterprise = calculateEnterpriseValueSummary(scopedLots);
         const selectedProjectName =
-          projectsData?.find((p) => p.id === selectedProjectId)?.name || '';
+          visibleProjects.find((p) => p.id === selectedProjectId)?.name || '';
 
         let recebimentosMes = 0;
         let aReceber = 0;
@@ -200,12 +238,28 @@ function OperationalDashboard({ user }: { user: any }) {
             commQuery = applyTenantFilter(commQuery, rlsCtx, 'broker_commissions');
             const { data: commsData } = await commQuery;
 
-            const scopedReceipts = (receiptsData || []).filter((r) =>
+            const scopedReceipts = filterRowsByOwnerProjects(
+              receiptsData || [],
+              ownerCtx.allowedProjectIds,
+              resolveReceiptProjectId,
+            ).filter((r) =>
               selectedProjectId
                 ? receiptMatchesProject(r, selectedProjectId, selectedProjectName)
                 : true,
             );
             const scopedCash = (cashData || []).filter((c) => {
+              if (ownerCtx.allowedProjectIds) {
+                const projectId =
+                  c.project_id ||
+                  c.projects?.id ||
+                  c.sales?.project_id ||
+                  c.sales?.projects?.id ||
+                  c.contracts?.project_id ||
+                  c.contracts?.projects?.id;
+                if (!projectId || !ownerCtx.allowedProjectIds.includes(projectId)) {
+                  return false;
+                }
+              }
               if (!selectedProjectId) return true;
               const name =
                 c.projects?.name ||
@@ -215,6 +269,16 @@ function OperationalDashboard({ user }: { user: any }) {
               return name === selectedProjectName;
             });
             const scopedComms = (commsData || []).filter((c) => {
+              if (ownerCtx.allowedProjectIds) {
+                const projectId =
+                  c.project_id ||
+                  c.sales?.project_id ||
+                  c.sales?.projects?.id ||
+                  c.contracts?.project_id;
+                if (!projectId || !ownerCtx.allowedProjectIds.includes(projectId)) {
+                  return false;
+                }
+              }
               if (!selectedProjectId) return true;
               const name =
                 c.sales?.projects?.name || c.contracts?.projects?.name || '';

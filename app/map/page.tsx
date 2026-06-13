@@ -91,7 +91,11 @@ import {
   type GisBaseLayerId,
 } from '@/lib/gisBaseLayers';
 import { EnterpriseValueOverlay } from '@/components/enterprise/EnterpriseValueOverlay';
-import { canViewEnterpriseValues } from '@/lib/rolePermissions';
+import { canViewEnterpriseValues, canManageGisProject, isOwnerRole } from '@/lib/rolePermissions';
+import {
+  filterProjectsForUser,
+  loadOwnerAccessContext,
+} from '@/lib/ownerProjectAccess';
 import {
   computeGisMapPageOverlayOpen,
   GIS_TOOLBAR_HIDE_CLASS,
@@ -880,10 +884,16 @@ export default function MapPage() {
       }
 
       const projectList = data || [];
-      setProjects(projectList);
-      logSaasCompanyContext(activeTenantId, saasCompany, projectList.length);
+      const ownerCtx = await loadOwnerAccessContext(supabase, user, activeTenantId);
+      const filteredList = filterProjectsForUser(
+        user,
+        projectList,
+        ownerCtx.allowedProjectIds,
+      );
+      setProjects(filteredList);
+      logSaasCompanyContext(activeTenantId, saasCompany, filteredList.length);
       try {
-        await cacheProjectsForOffline(projectList);
+        await cacheProjectsForOffline(filteredList);
       } catch (cacheErr) {
         console.error('[CACHE] falha após listar projetos', cacheErr);
       }
@@ -961,6 +971,11 @@ export default function MapPage() {
     restoredGisProjectRef.current = true;
 
     if (!proj) {
+      if (isOwnerRole(user?.role) && projects.length > 0) {
+        restoredGisProjectRef.current = true;
+        openGisProject(projects[0]);
+        return;
+      }
       clearGisMapProjectPersistence();
       if (urlId) router.replace('/map');
       return;
@@ -976,7 +991,7 @@ export default function MapPage() {
         console.error('[CACHE] falha ao restaurar projeto', e),
       );
     }
-  }, [loading, projects, router, openGisProject]);
+  }, [loading, projects, router, openGisProject, user?.role]);
 
   const filteredProjects = projects.filter(p => 
      p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -2265,7 +2280,7 @@ export default function MapPage() {
            {/* Botão toggle da barra para mobile (opcional, ou mantemos sempre visível pois é fino) */}
            <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
              
-             {user?.role !== 'BROKER' && (
+             {canManageGisProject(user?.role) && (
                <>
                  <ProjectQuadrasPanel
                    open={quadrasPanelOpen}
@@ -2480,7 +2495,7 @@ export default function MapPage() {
                )}
              </div>
              
-             {user?.role !== 'BROKER' && (
+             {canManageGisProject(user?.role) && (
                <>
                  <hr className="w-2/3 border-[var(--border-color)]" />
                  
@@ -2520,7 +2535,7 @@ export default function MapPage() {
         
         {/* Map Container */}
         <div className="flex-1 w-full h-full z-0 relative">
-          {canViewEnterpriseValues(user?.role) && selectedProject?.id ? (
+          {(canViewEnterpriseValues(user?.role) || isOwnerRole(user?.role)) && selectedProject?.id ? (
             <EnterpriseValueOverlay
               projectId={selectedProject.id}
               refreshKey={mapRefreshKey}
@@ -2883,7 +2898,7 @@ export default function MapPage() {
             <p className="text-xs text-blue-400/90 mt-1">{planAvailabilityMsg}</p>
           )}
         </div>
-        {user?.role !== 'BROKER' && (
+        {canManageGisProject(user?.role) && (
           <button 
             onClick={openCreateProject}
             className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-primary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
@@ -3003,7 +3018,7 @@ export default function MapPage() {
                            </td>
                            <td className="p-3 pr-4 align-middle">
                              <div className="flex items-center justify-end gap-2">
-                               {user?.role !== 'BROKER' && (
+                               {canManageGisProject(user?.role) && (
                                  <>
                                    <button
                                      type="button"
@@ -3127,7 +3142,7 @@ export default function MapPage() {
                          >
                            <MapIcon className="w-4 h-4" /> Abrir Mapa
                          </button>
-                         {user?.role !== 'BROKER' && (
+                         {canManageGisProject(user?.role) && (
                            <>
                              <button
                                type="button"

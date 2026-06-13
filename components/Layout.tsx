@@ -42,7 +42,7 @@ import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
-import { isBrokerRole } from '@/lib/rolePermissions';
+import { isBrokerRole, isOwnerRole } from '@/lib/rolePermissions';
 import {
   clearImpersonationState,
   formatImpersonationDateTime,
@@ -251,6 +251,15 @@ const getMenuItems = (role: string) => {
   if (isBrokerRole(role)) {
     return [
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+    ];
+  }
+
+  if (isOwnerRole(role)) {
+    return [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+      { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
+      { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
     ];
   }
 

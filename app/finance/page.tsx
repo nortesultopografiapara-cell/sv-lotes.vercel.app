@@ -17,7 +17,14 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
   isBrokerRole,
+  isOwnerRole,
 } from '@/lib/rolePermissions';
+import {
+  filterProjectsForUser,
+  filterRowsByOwnerProjects,
+  loadOwnerAccessContext,
+  resolveReceiptProjectId,
+} from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
 import {
   formatCurrencyBRL,
@@ -311,13 +318,30 @@ export default function FinancePage() {
         }
         
         if (error) throw error;
+
+        const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const scopedReceipts = filterRowsByOwnerProjects(
+          data || [],
+          ownerCtx.allowedProjectIds,
+          resolveReceiptProjectId,
+        );
+        data = scopedReceipts;
         
         let pQuery = supabase.from('projects').select('id, name');
         pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
         const { data: projData } = await pQuery;
-        if (projData) {
-            console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', projData.length);
-            setFinanceProjects(projData);
+        const visibleProjects = filterProjectsForUser(
+          user,
+          projData || [],
+          ownerCtx.allowedProjectIds,
+        );
+        if (visibleProjects.length > 0) {
+            console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', visibleProjects.length);
+            setFinanceProjects(visibleProjects);
+            setProjectsList(visibleProjects.map((p) => p.name));
+        } else {
+            setFinanceProjects([]);
+            setProjectsList([]);
         }
         
         let localRecebido = 0;

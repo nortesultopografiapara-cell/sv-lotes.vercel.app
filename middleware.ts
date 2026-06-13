@@ -64,13 +64,21 @@ export async function middleware(request: NextRequest) {
       if (isLanding) {
         const loginRole = String(userData?.role || '').toUpperCase();
         url.pathname =
-          loginRole === 'BROKER' || loginRole === 'CORRETOR' ? '/map' : '/dashboard';
+          loginRole === 'BROKER' || loginRole === 'CORRETOR'
+            ? '/map'
+            : loginRole === 'OWNER'
+              ? '/dashboard'
+              : '/dashboard';
         return NextResponse.redirect(url);
       }
       if (url.pathname === '/login') {
         const loginRole = String(userData?.role || '').toUpperCase();
         url.pathname =
-          loginRole === 'BROKER' || loginRole === 'CORRETOR' ? '/map' : '/dashboard';
+          loginRole === 'BROKER' || loginRole === 'CORRETOR'
+            ? '/map'
+            : loginRole === 'OWNER'
+              ? '/dashboard'
+              : '/dashboard';
         return NextResponse.redirect(url);
       }
     }
@@ -113,7 +121,31 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 5. HARDENING HEADERS
+  // 5. OWNER — somente módulos liberados por empreendimento
+  const isOwner = brokerRole === 'OWNER';
+  if (isOwner) {
+    const ownerBlockedRoutes = [
+      '/customers',
+      '/dashboard/brokers',
+      '/settings',
+      '/users',
+      '/companies',
+      '/crm',
+      '/logs',
+      '/plans',
+      '/saas-finance',
+      '/offline-sync',
+      '/reports',
+      '/master',
+    ];
+    const isOwnerBlocked = ownerBlockedRoutes.some((r) => url.pathname.startsWith(r));
+    if (isOwnerBlocked) {
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // 6. HARDENING HEADERS
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
