@@ -5,6 +5,7 @@ import {
   type OwnerProjectAccessInput,
 } from '@/lib/ownerProjectAccess';
 import { isPlatformAdmin } from '@/lib/rls';
+import { USERS_CALLER_SELECT, resolveUsersTenantId } from '@/lib/ownersAdmin';
 
 export const runtime = 'nodejs';
 
@@ -28,9 +29,9 @@ async function assertCallerCanManage(
   }
   const { data, error } = await client
     .from('users')
-    .select('id, role, tenant_id, company_id')
+    .select(USERS_CALLER_SELECT)
     .eq('id', callerUserId)
-    .single();
+    .maybeSingle();
   if (error || !data) {
     return { ok: false, error: 'Usuário autenticador não encontrado.' };
   }
@@ -38,7 +39,7 @@ async function assertCallerCanManage(
   if (!isPlatformAdmin(role) && !isTenantAdminRole(role)) {
     return { ok: false, error: 'Permissão negada. Apenas administradores da empresa.' };
   }
-  const tenantId = data.tenant_id || data.company_id;
+  const tenantId = resolveUsersTenantId(data);
   if (!tenantId && !isPlatformAdmin(role)) {
     return { ok: false, error: 'Empresa não vinculada ao administrador.' };
   }
@@ -110,15 +111,15 @@ export async function PUT(
 
     const { data: targetUser, error: targetErr } = await client
       .from('users')
-      .select('id, role, tenant_id, company_id')
+      .select('id, role, tenant_id')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (targetErr || !targetUser) {
       return NextResponse.json({ error: 'Usuário alvo não encontrado.' }, { status: 404 });
     }
 
-    const targetTenant = targetUser.tenant_id || targetUser.company_id;
+    const targetTenant = resolveUsersTenantId(targetUser);
     if (targetTenant !== effectiveTenantId) {
       return NextResponse.json({ error: 'Usuário pertence a outra empresa.' }, { status: 403 });
     }

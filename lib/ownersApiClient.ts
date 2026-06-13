@@ -41,6 +41,7 @@ export async function callOwnersApi(options: OwnersApiCallOptions): Promise<Owne
 
   if (method === 'GET') {
     if (options.callerUserId) query.set('callerUserId', options.callerUserId);
+    if (options.tenantId) query.set('tenantId', options.tenantId);
     if (options.impersonatingTenantId) {
       query.set('impersonatingTenantId', options.impersonatingTenantId);
     }

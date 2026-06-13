@@ -8,6 +8,7 @@ import {
   upsertOwnerUserRecord,
   validateOwnerCreatePayload,
   OWNERS_SESSION_EXPIRED_MESSAGE,
+  OWNERS_SESSION_CONFIRM_MESSAGE,
 } from '@/lib/ownersAdmin';
 import type { OwnerProjectAccessInput } from '@/lib/ownerProjectAccess';
 import {
@@ -24,7 +25,7 @@ async function loadOwnersForTenant(admin: NonNullable<ReturnType<typeof createAd
       'id, full_name, email, phone, role, status, owner_profile_type, owner_document, created_at',
     )
     .eq('role', 'OWNER')
-    .or(`tenant_id.eq.${tenantId},company_id.eq.${tenantId}`)
+    .eq('tenant_id', tenantId)
     .order('full_name', { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -115,7 +116,10 @@ export async function POST(request: Request) {
       impersonatingTenantId: body.impersonatingTenantId,
     });
     if (!ctx.ok) {
-      return NextResponse.json({ error: ctx.error || OWNERS_SESSION_EXPIRED_MESSAGE }, { status: ctx.status || 403 });
+      return NextResponse.json(
+        { error: ctx.error || OWNERS_SESSION_CONFIRM_MESSAGE },
+        { status: ctx.status || 403 },
+      );
     }
 
     const tenantId = ctx.tenantId!;

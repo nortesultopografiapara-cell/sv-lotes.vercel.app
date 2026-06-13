@@ -12,6 +12,15 @@ import { getRequestAuthUser } from '@/lib/supabase/server';
 export const OWNERS_SESSION_EXPIRED_MESSAGE =
   'Sua sessão expirou. Faça login novamente.';
 
+export const OWNERS_SESSION_CONFIRM_MESSAGE =
+  'Não foi possível confirmar sua sessão. Saia e entre novamente.';
+
+/** Colunas reais de public.users em produção (sem company_id). */
+export const USERS_CALLER_SELECT =
+  'id, role, tenant_id, email, full_name, status';
+export const USERS_OWNER_SELECT =
+  'id, role, tenant_id, email, full_name, phone, status, owner_profile_type, owner_document';
+
 export type OwnersAdminContext = {
   ok: boolean;
   error?: string;
@@ -27,17 +36,43 @@ export type OwnersRequestAuthInput = {
   impersonatingTenantId?: string | null;
 };
 
+export function resolveUsersTenantId(
+  row?: { tenant_id?: string | null } | null,
+): string | null {
+  const tenantId = row?.tenant_id;
+  return tenantId ? String(tenantId).trim() : null;
+}
+
+export function logOwnersAuthDebug(
+  step: string,
+  details: Record<string, unknown>,
+): void {
+  console.log(`[owners-auth] ${step}`, details);
+}
+
 export async function resolveOwnersRequestCaller(
   request: Request,
   admin: SupabaseClient,
   input?: OwnersRequestAuthInput,
 ): Promise<{ ok: boolean; error?: string; status?: number; authUserId?: string }> {
-  const { user } = await getRequestAuthUser(request);
+  const hasBearer = Boolean(request.headers.get('Authorization')?.startsWith('Bearer '));
+  const { user, configError } = await getRequestAuthUser(request);
   const callerUserIdFromClient = input?.callerUserId?.trim() || null;
+  const tenantIdFromClient = input?.tenantId?.trim() || null;
+
+  logOwnersAuthDebug('request', {
+    hasBearer,
+    hasSessionUser: Boolean(user?.id),
+    callerUserIdFromClient,
+    tenantIdFromClient,
+    impersonatingTenantId: input?.impersonatingTenantId || null,
+    authConfigError: configError || null,
+  });
 
   let authUserId = user?.id || callerUserIdFromClient;
 
   if (!authUserId) {
+    logOwnersAuthDebug('reject', { reason: 'missing_auth_user_and_callerUserId' });
     return {
       ok: false,
       error: OWNERS_SESSION_EXPIRED_MESSAGE,
@@ -46,39 +81,63 @@ export async function resolveOwnersRequestCaller(
   }
 
   if (user?.id && callerUserIdFromClient && user.id !== callerUserIdFromClient) {
+    logOwnersAuthDebug('reject', {
+      reason: 'session_caller_mismatch',
+      sessionUserId: user.id,
+      callerUserIdFromClient,
+    });
     return {
       ok: false,
-      error: 'Identidade da sessão não confere com o usuário informado.',
+      error: OWNERS_SESSION_CONFIRM_MESSAGE,
       status: 403,
     };
   }
 
   const { data: caller, error } = await admin
     .from('users')
-    .select('id, role, tenant_id, company_id, status')
+    .select(USERS_CALLER_SELECT)
     .eq('id', authUserId)
     .maybeSingle();
 
   if (error) {
+    logOwnersAuthDebug('reject', {
+      reason: 'users_query_failed',
+      authUserId,
+      message: error.message,
+      code: (error as { code?: string }).code || null,
+    });
     return {
       ok: false,
-      error: 'Erro ao validar usuário autenticado.',
+      error: OWNERS_SESSION_CONFIRM_MESSAGE,
       status: 500,
     };
   }
 
   if (!caller) {
+    logOwnersAuthDebug('reject', {
+      reason: 'caller_not_found',
+      authUserId,
+      hadSessionUser: Boolean(user?.id),
+    });
     return {
       ok: false,
-      error: user
-        ? 'Perfil do usuário não encontrado na empresa. Contate o suporte.'
-        : OWNERS_SESSION_EXPIRED_MESSAGE,
+      error: user ? OWNERS_SESSION_CONFIRM_MESSAGE : OWNERS_SESSION_EXPIRED_MESSAGE,
       status: user ? 403 : 401,
     };
   }
 
   const callerRole = String(caller.role || '').toUpperCase();
+  const callerTenantId = resolveUsersTenantId(caller);
+
+  logOwnersAuthDebug('caller_loaded', {
+    authUserId: caller.id,
+    role: callerRole,
+    tenantId: callerTenantId,
+    status: caller.status || 'ACTIVE',
+  });
+
   if (isBrokerRole(callerRole) || isOwnerRole(callerRole)) {
+    logOwnersAuthDebug('reject', { reason: 'broker_or_owner', role: callerRole });
     return {
       ok: false,
       error: 'Permissão negada.',
@@ -87,6 +146,7 @@ export async function resolveOwnersRequestCaller(
   }
 
   if (!isPlatformAdmin(callerRole) && !isTenantAdminRole(callerRole)) {
+    logOwnersAuthDebug('reject', { reason: 'not_tenant_admin', role: callerRole });
     return {
       ok: false,
       error: 'Permissão negada. Apenas administradores da empresa.',
@@ -96,6 +156,24 @@ export async function resolveOwnersRequestCaller(
 
   if ((caller.status || 'ACTIVE').toUpperCase() === 'INACTIVE') {
     return { ok: false, error: 'Usuário administrador inativo.', status: 403 };
+  }
+
+  if (
+    tenantIdFromClient &&
+    callerTenantId &&
+    !isPlatformAdmin(callerRole) &&
+    tenantIdFromClient !== callerTenantId
+  ) {
+    logOwnersAuthDebug('reject', {
+      reason: 'tenant_mismatch',
+      callerTenantId,
+      tenantIdFromClient,
+    });
+    return {
+      ok: false,
+      error: 'Empresa informada não confere com o administrador logado.',
+      status: 403,
+    };
   }
 
   return { ok: true, authUserId: caller.id };
@@ -109,11 +187,23 @@ export async function resolveOwnersAdminContext(
 ): Promise<OwnersAdminContext> {
   const { data: caller, error } = await admin
     .from('users')
-    .select('id, role, tenant_id, company_id, status')
+    .select(USERS_CALLER_SELECT)
     .eq('id', authUserId)
     .maybeSingle();
 
-  if (error || !caller) {
+  if (error) {
+    logOwnersAuthDebug('admin_context_query_failed', {
+      authUserId,
+      message: error.message,
+    });
+    return {
+      ok: false,
+      error: OWNERS_SESSION_CONFIRM_MESSAGE,
+      status: 500,
+    };
+  }
+
+  if (!caller) {
     return {
       ok: false,
       error: 'Perfil do administrador não encontrado.',
@@ -142,9 +232,24 @@ export async function resolveOwnersAdminContext(
     return { ok: false, error: 'Usuário administrador inativo.', status: 403 };
   }
 
-  let tenantId = tenantIdOverride || caller.tenant_id || caller.company_id || null;
+  const callerTenantId = resolveUsersTenantId(caller);
+  let tenantId = tenantIdOverride || callerTenantId;
+
   if (impersonatingTenantId && isPlatformAdmin(callerRole)) {
     tenantId = impersonatingTenantId;
+  }
+
+  if (
+    tenantIdOverride &&
+    callerTenantId &&
+    !isPlatformAdmin(callerRole) &&
+    tenantIdOverride !== callerTenantId
+  ) {
+    return {
+      ok: false,
+      error: 'Empresa informada não confere com o administrador logado.',
+      status: 403,
+    };
   }
 
   if (!tenantId) {
@@ -192,16 +297,16 @@ export async function assertOwnerBelongsToTenant(
 ): Promise<{ ok: boolean; error?: string; status?: number; owner?: Record<string, unknown> }> {
   const { data: owner, error } = await admin
     .from('users')
-    .select('id, role, tenant_id, company_id, email, full_name, phone, status, owner_profile_type, owner_document')
+    .select(USERS_OWNER_SELECT)
     .eq('id', ownerId)
-    .single();
+    .maybeSingle();
 
   if (error || !owner) {
     return { ok: false, error: 'Sócio/proprietário não encontrado.', status: 404 };
   }
 
-  const ownerTenant = owner.tenant_id || owner.company_id;
-  if (String(ownerTenant) !== tenantId) {
+  const ownerTenant = resolveUsersTenantId(owner);
+  if (ownerTenant !== tenantId) {
     return { ok: false, error: 'Usuário pertence a outra empresa.', status: 403 };
   }
 
@@ -220,14 +325,10 @@ export async function findTenantUserByEmail(
   const normalizedEmail = email.trim().toLowerCase();
   const { data } = await admin
     .from('users')
-    .select('id, role, tenant_id, company_id, email, full_name, status')
+    .select('id, role, tenant_id, email, full_name, status')
     .ilike('email', normalizedEmail);
 
-  const match = (data || []).find((row) => {
-    const rowTenant = row.tenant_id || row.company_id;
-    return rowTenant && String(rowTenant) === tenantId;
-  });
-
+  const match = (data || []).find((row) => resolveUsersTenantId(row) === tenantId);
   return match || null;
 }
 
@@ -325,13 +426,13 @@ export async function upsertOwnerUserRecord(
 
   const { data: existing } = await admin
     .from('users')
-    .select('id, tenant_id, company_id, role')
+    .select('id, tenant_id, role')
     .eq('id', params.authUserId)
     .maybeSingle();
 
   if (existing) {
-    const existingTenant = existing.tenant_id || existing.company_id;
-    if (existingTenant && String(existingTenant) !== params.tenantId) {
+    const existingTenant = resolveUsersTenantId(existing);
+    if (existingTenant && existingTenant !== params.tenantId) {
       throw new Error('Este e-mail já está vinculado a outra empresa.');
     }
     const existingRole = String(existing.role || '').toUpperCase();

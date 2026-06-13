@@ -17,7 +17,12 @@ import {
   resolveReceiptProjectId,
   type OwnerProjectAccessRow,
 } from '../lib/ownerProjectAccess';
-import { OWNERS_SESSION_EXPIRED_MESSAGE } from '../lib/ownersAdmin';
+import {
+  OWNERS_SESSION_EXPIRED_MESSAGE,
+  OWNERS_SESSION_CONFIRM_MESSAGE,
+  resolveUsersTenantId,
+  USERS_CALLER_SELECT,
+} from '../lib/ownersAdmin';
 import { isBrokerRole, isOwnerRole, canManageGisProject, canManageOwners, isBrokerBlockedRoute } from '../lib/rolePermissions';
 import { isPlatformAdmin } from '../lib/rls';
 import {
@@ -198,6 +203,13 @@ function testOwnersSessionExpiredMessage() {
     OWNERS_SESSION_EXPIRED_MESSAGE.includes('sessão expirou'),
     'mensagem amigável de sessão expirada',
   );
+  assert(
+    OWNERS_SESSION_CONFIRM_MESSAGE.includes('confirmar sua sessão'),
+    'mensagem amigável de confirmação de sessão',
+  );
+  assert(!USERS_CALLER_SELECT.includes('company_id'), 'users select sem company_id');
+  assert(resolveUsersTenantId({ tenant_id: TENANT }) === TENANT, 'resolve tenant_id');
+  assert(resolveUsersTenantId({}) === null, 'tenant ausente');
   console.log('OK testOwnersSessionExpiredMessage');
 }
 
