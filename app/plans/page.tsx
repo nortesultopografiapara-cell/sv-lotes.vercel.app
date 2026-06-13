@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Building2, Search, CheckCircle2, ShieldCore, Crown, Star,
+  Building2, Search, CheckCircle2, Shield, Crown, Star,
   Loader2, Settings, ArrowRightLeft, Users, Map as MapIcon, X, Check, Zap, Power,
   Rocket, TrendingUp, Diamond, Edit2, CreditCard, MoreVertical, Filter, Download,
   BarChart3, UserCheck, TrendingUp as TrendingUpIcon, Users as UsersIcon
@@ -18,6 +18,12 @@ import {
   normalizeSaasPlanKey,
   saasLimitsDbPayload,
 } from '@/lib/saasPlans';
+import {
+  runMasterSubscriptionAction,
+  subscriptionDaysLate,
+  subscriptionFinanceLabel,
+} from '@/lib/masterSubscriptionActions';
+import type { CompanySubscription } from '@/lib/saasSubscription';
 import { motion, AnimatePresence } from 'motion/react';
 
 const PLANS_UI = {
@@ -118,7 +124,8 @@ export default function PlansPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [subscriptionsMap, setSubscriptionsMap] = useState<Record<string, CompanySubscription>>({});
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
     setLoadError(null);
@@ -127,10 +134,12 @@ export default function PlansPage() {
         { data: companiesData, error: compErr },
         { data: projectsData },
         { data: brokersData },
+        { data: subscriptionsData },
       ] = await Promise.all([
          supabase.from('companies').select('*').order('created_at', { ascending: false }),
          supabase.from('projects').select('tenant_id'),
          supabase.from('brokers').select('tenant_id'),
+         supabase.from('company_subscriptions').select('*'),
       ]);
 
       if (compErr) {
@@ -143,6 +152,11 @@ export default function PlansPage() {
 
       const finalCompanies = companiesData || [];
       setCompanies(finalCompanies);
+      setSubscriptionsMap(
+        Object.fromEntries(
+          ((subscriptionsData || []) as CompanySubscription[]).map((s) => [s.company_id, s]),
+        ),
+      );
 
       const activeCompaniesCount = finalCompanies.filter(
         (c) => c.status_operacional !== 'Inativo' && c.active !== false
@@ -195,6 +209,32 @@ export default function PlansPage() {
     setDataLoading(true);
     loadCompanies();
   }, [user, authLoading, router, loadCompanies]);
+
+  const handleSubscriptionAction = async (
+    company: any,
+    action: 'suspend' | 'reactivate' | 'renew',
+  ) => {
+    if (!user?.id) return;
+    const subscription = subscriptionsMap[company.id];
+    if (!subscription?.id) {
+      alert('Assinatura não encontrada para esta empresa.');
+      return;
+    }
+    setActionLoadingId(`${company.id}-${action}`);
+    try {
+      await runMasterSubscriptionAction({
+        userId: user.id,
+        subscriptionId: subscription.id,
+        companyId: company.id,
+        action,
+      });
+      await loadCompanies();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   const handleOpenPlanModal = (company: any) => {
     setCompanyToEdit(company);
@@ -316,7 +356,7 @@ export default function PlansPage() {
 
       {loadError && (
          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex items-center gap-3">
-            <ShieldCore className="w-5 h-5 shrink-0" />
+            <Shield className="w-5 h-5 shrink-0" />
             <p className="text-sm">{loadError}</p>
          </div>
       )}
@@ -428,8 +468,10 @@ export default function PlansPage() {
                    <th className="p-4 text-[12px] text-gray-400 font-medium">Plano Atual</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Loteamentos</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Corretores</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status financeiro</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Dias atraso</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Próx. vencimento</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Vencimento</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-right">Ações</th>
                 </tr>
              </thead>
@@ -443,11 +485,17 @@ export default function PlansPage() {
                    const usersCount = brokersCount[company.id] || 0;
                    const projCount = projectsCount[company.id] || 0;
                    
-                   const vDate = company.vencimento_plano
+                   const subscription = subscriptionsMap[company.id];
+                   const vDate = subscription?.next_due_date
+                      ? new Date(subscription.next_due_date).toLocaleDateString('pt-BR')
+                      : company.vencimento_plano
                       ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR')
-                      : company.due_date
-                        ? new Date(company.due_date).toLocaleDateString('pt-BR')
-                        : '—';
+                      : '—';
+                   const financeStatus = subscriptionFinanceLabel(subscription?.payment_status);
+                   const daysLate = subscriptionDaysLate(
+                     subscription?.next_due_date,
+                     subscription?.payment_status,
+                   );
                    
                    const isActive = company.status_operacional !== 'Inativo' && company.active !== false;
 
@@ -487,25 +535,55 @@ export default function PlansPage() {
                            </span>
                        </td>
                        <td className="p-4 py-3 text-center">
+                         <span className={`text-[12px] font-medium ${
+                           financeStatus === 'Inadimplente' ? 'text-red-400' : 'text-gray-300'
+                         }`}>
+                           {financeStatus}
+                         </span>
+                       </td>
+                       <td className="p-4 py-3 text-center">
+                         <span className={`text-[12px] font-medium ${daysLate > 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                           {daysLate > 0 ? `${daysLate} dias` : '—'}
+                         </span>
+                       </td>
+                       <td className="p-4 py-3 text-center">
+                          <span className="text-[12px] font-medium text-gray-300">{vDate}</span>
+                       </td>
+                       <td className="p-4 py-3 text-center">
                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold uppercase border ${
                             isActive ? 'text-green-500 border-green-500/20 bg-green-500/10' : 'text-red-500 border-red-500/20 bg-red-500/10'
                          }`}>
                            {isActive ? 'Ativo' : 'Inativo'}
                          </span>
                        </td>
-                       <td className="p-4 py-3 text-center">
-                          <span className="text-[12px] font-medium text-gray-300">{vDate}</span>
-                       </td>
                        <td className="p-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                             <button onClick={() => handleOpenPlanModal(company)} className="w-[32px] h-[32px] rounded-lg border border-blue-500/20 flex items-center justify-center hover:bg-blue-500/10 transition-colors group">
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                             <button onClick={() => handleOpenPlanModal(company)} className="w-[32px] h-[32px] rounded-lg border border-blue-500/20 flex items-center justify-center hover:bg-blue-500/10 transition-colors group" title="Alterar plano">
                                 <Edit2 className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
                              </button>
-                             <button className="w-[32px] h-[32px] rounded-lg border border-yellow-500/20 flex items-center justify-center hover:bg-yellow-500/10 transition-colors group">
-                                <CreditCard className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
+                             <button
+                               type="button"
+                               disabled={actionLoadingId === `${company.id}-suspend`}
+                               onClick={() => void handleSubscriptionAction(company, 'suspend')}
+                               className="px-2 py-1 rounded text-[10px] font-bold uppercase border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                             >
+                               Suspender
                              </button>
-                             <button className="w-[32px] h-[32px] rounded-lg border border-gray-600/30 flex items-center justify-center hover:bg-white/5 transition-colors text-gray-400">
-                                <MoreVertical className="w-4 h-4" />
+                             <button
+                               type="button"
+                               disabled={actionLoadingId === `${company.id}-reactivate`}
+                               onClick={() => void handleSubscriptionAction(company, 'reactivate')}
+                               className="px-2 py-1 rounded text-[10px] font-bold uppercase border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50"
+                             >
+                               Reativar
+                             </button>
+                             <button
+                               type="button"
+                               disabled={actionLoadingId === `${company.id}-renew`}
+                               onClick={() => void handleSubscriptionAction(company, 'renew')}
+                               className="px-2 py-1 rounded text-[10px] font-bold uppercase border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+                             >
+                               Renovar
                              </button>
                           </div>
                        </td>
@@ -514,7 +592,7 @@ export default function PlansPage() {
                 })}
                 {filteredCompanies.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-0">
+                    <td colSpan={9} className="p-0">
                       <div className="p-6">
                         <MasterEmptyState
                           title="Nenhuma assinatura real cadastrada ainda"

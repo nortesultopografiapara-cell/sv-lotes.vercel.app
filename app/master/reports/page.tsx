@@ -1,0 +1,276 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  BarChart3,
+  Building2,
+  CreditCard,
+  Download,
+  FileText,
+  Loader2,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  buildMasterReportsMetrics,
+  formatMasterCurrency,
+  masterReportsToCsv,
+  type MasterReportsMetrics,
+} from '@/lib/masterSaasReports';
+import type { CompanySubscription } from '@/lib/saasSubscription';
+
+function KpiCard({
+  title,
+  value,
+  icon: Icon,
+  accent,
+}: {
+  title: string;
+  value: string;
+  icon: typeof Building2;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-[var(--color-surface)]/60 px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+          <p className="text-2xl font-bold text-white mt-1 tabular-nums">{value}</p>
+        </div>
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function MasterReportsPage() {
+  return (
+    <MasterSuperAdminGuard>
+      <MasterReportsContent />
+    </MasterSuperAdminGuard>
+  );
+}
+
+function MasterReportsContent() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<MasterReportsMetrics | null>(null);
+
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [{ data: companies, error: compErr }, { data: subscriptions, error: subErr }] =
+        await Promise.all([
+          supabase.from('companies').select('*').order('created_at', { ascending: false }),
+          supabase.from('company_subscriptions').select('*'),
+        ]);
+
+      if (compErr) throw compErr;
+      if (subErr) console.warn('MASTER_REPORTS_SUBSCRIPTIONS_WARN', subErr.message);
+
+      setMetrics(
+        buildMasterReportsMetrics(
+          companies || [],
+          (subscriptions || []) as CompanySubscription[],
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar relatórios');
+      setMetrics(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const exportCsv = () => {
+    if (!metrics) return;
+    const blob = new Blob([`\uFEFF${masterReportsToCsv(metrics)}`], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sv-lotes-relatorio-saas-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = () => {
+    if (!metrics) return;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(16);
+    doc.text('SV LOTES — Relatório SaaS', 14, 16);
+    doc.setFontSize(10);
+    doc.text(`Emitido em: ${new Date().toLocaleString('pt-BR')}`, 14, 24);
+    doc.text(`Empresas: ${metrics.registeredCompanies}`, 14, 30);
+    doc.text(`Assinaturas ativas: ${metrics.activeSubscriptions}`, 80, 30);
+    doc.text(`Receita mensal: ${formatMasterCurrency(metrics.monthlyRevenue)}`, 150, 30);
+    doc.text(`Receita anual: ${formatMasterCurrency(metrics.annualRevenue)}`, 14, 36);
+    doc.text(
+      `Inadimplência: ${formatMasterCurrency(metrics.delinquencyAmount)} (${metrics.delinquentCompanies} empresas)`,
+      80,
+      36,
+    );
+
+    autoTable(doc, {
+      startY: 42,
+      head: [['Empresa', 'Plano', 'Status', 'Pagamento', 'Mensalidade', 'Vencimento', 'Atraso']],
+      body: metrics.rows.map((row) => [
+        row.companyName,
+        row.plan,
+        row.status,
+        row.paymentStatus,
+        formatMasterCurrency(row.monthlyPrice),
+        row.nextDueDate,
+        row.daysLate > 0 ? `${row.daysLate} dias` : '—',
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    doc.save(`sv-lotes-relatorio-saas-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const delinquencyRate = useMemo(() => {
+    if (!metrics || metrics.monthlyRevenue <= 0) return '0%';
+    const pct = (metrics.delinquencyAmount / metrics.monthlyRevenue) * 100;
+    return `${pct.toFixed(1)}%`;
+  }, [metrics]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="sv-page sv-page--scroll-y p-4 md:p-8">
+      <header className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <BarChart3 className="w-7 h-7 text-[var(--color-primary)]" />
+          <div>
+            <h1 className="text-2xl font-bold text-white">Relatórios SaaS</h1>
+            <p className="text-sm text-slate-500">Visão consolidada da operação da plataforma</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!metrics}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-sm text-slate-200 hover:bg-white/5 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportPdf}
+            disabled={!metrics}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+          >
+            <FileText className="w-4 h-4" /> Exportar PDF
+          </button>
+        </div>
+      </header>
+
+      {error ? (
+        <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      ) : null}
+
+      {metrics ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+            <KpiCard
+              title="Empresas cadastradas"
+              value={String(metrics.registeredCompanies)}
+              icon={Building2}
+              accent="bg-blue-500/15 text-blue-400"
+            />
+            <KpiCard
+              title="Assinaturas ativas"
+              value={String(metrics.activeSubscriptions)}
+              icon={CreditCard}
+              accent="bg-emerald-500/15 text-emerald-400"
+            />
+            <KpiCard
+              title="Receita mensal"
+              value={formatMasterCurrency(metrics.monthlyRevenue)}
+              icon={Wallet}
+              accent="bg-amber-500/15 text-amber-400"
+            />
+            <KpiCard
+              title="Receita anual"
+              value={formatMasterCurrency(metrics.annualRevenue)}
+              icon={TrendingUp}
+              accent="bg-violet-500/15 text-violet-400"
+            />
+            <KpiCard
+              title="Inadimplência"
+              value={formatMasterCurrency(metrics.delinquencyAmount)}
+              icon={TrendingDown}
+              accent="bg-rose-500/15 text-rose-400"
+            />
+            <KpiCard
+              title="Taxa de inadimplência"
+              value={delinquencyRate}
+              icon={BarChart3}
+              accent="bg-slate-500/15 text-slate-300"
+            />
+          </div>
+
+          <div className="rounded-xl border border-white/10 overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[var(--color-surface)]/80 text-slate-500 text-xs uppercase">
+                <tr>
+                  <th className="p-3">Empresa</th>
+                  <th className="p-3">Plano</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Pagamento</th>
+                  <th className="p-3">Mensalidade</th>
+                  <th className="p-3">Próx. vencimento</th>
+                  <th className="p-3">Atraso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.rows.map((row) => (
+                  <tr key={row.companyId} className="border-t border-white/5 hover:bg-white/[0.02]">
+                    <td className="p-3 text-white font-medium">{row.companyName}</td>
+                    <td className="p-3 text-slate-300">{row.plan}</td>
+                    <td className="p-3 text-slate-300">{row.status}</td>
+                    <td className="p-3 text-slate-300">{row.paymentStatus}</td>
+                    <td className="p-3 text-emerald-400 tabular-nums">
+                      {formatMasterCurrency(row.monthlyPrice)}
+                    </td>
+                    <td className="p-3 text-slate-400">{row.nextDueDate}</td>
+                    <td className="p-3 text-rose-400 tabular-nums">
+                      {row.daysLate > 0 ? `${row.daysLate} dias` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

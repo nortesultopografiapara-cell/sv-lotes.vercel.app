@@ -8,8 +8,7 @@ import {
   BarChart3,
   Settings,
   Ticket,
-  ScrollText,
-  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 
 export type SuperAdminNavItem = {
@@ -40,17 +39,14 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
   {
     label: 'Sistema',
     items: [
-      { name: 'Relatórios', href: '/reports', icon: BarChart3 },
+      { name: 'Relatórios', href: '/master/reports', icon: BarChart3 },
+      { name: 'Auditoria', href: '/master/audit', icon: ShieldCheck },
       { name: 'Configurações', href: '/settings/global', icon: Settings },
     ],
   },
   {
     label: 'Suporte',
-    items: [
-      { name: 'Tickets', href: '/support/tickets', icon: Ticket },
-      { name: 'Logs', href: '/logs', icon: ScrollText },
-      { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw },
-    ],
+    items: [{ name: 'Tickets', href: '/support/tickets', icon: Ticket }],
   },
 ];
 

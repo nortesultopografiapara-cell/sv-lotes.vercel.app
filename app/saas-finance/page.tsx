@@ -16,6 +16,8 @@ import { SaasContractPanel } from '@/components/saas/SaasContractPanel';
 import type { CompanyContractRow } from '@/lib/saasContractService';
 import { formatSaasContractApiError } from '@/lib/saasContractErrors';
 import { useAuth } from '@/hooks/useAuth';
+import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
+import { mapAuditLogRow } from '@/lib/masterAudit';
 import {
   resolveFirstPaymentDate,
   resolveNextDueDate,
@@ -71,6 +73,14 @@ function enrichCompany(
 }
 
 export default function SaaSFinancePage() {
+  return (
+    <MasterSuperAdminGuard>
+      <SaaSFinancePageContent />
+    </MasterSuperAdminGuard>
+  );
+}
+
+function SaaSFinancePageContent() {
   const { user, loading: authLoading } = useAuth();
   const [companies, setCompanies] = useState<EnrichedCompany[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +96,9 @@ export default function SaaSFinancePage() {
     type: 'error' | 'warning';
     message: string;
   } | null>(null);
+  const [billingHistory, setBillingHistory] = useState<
+    ReturnType<typeof mapAuditLogRow>[]
+  >([]);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -140,6 +153,22 @@ export default function SaaSFinancePage() {
       });
 
       setCompanies(rows.map((c) => enrichCompany(c, subMap.get(c.id))));
+
+      const { data: billingLogs } = await supabase
+        .from('audit_logs')
+        .select('id, action, module, description, details, created_at, tenant_id, user_id')
+        .eq('module', 'SUBSCRIPTIONS')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      const companyNameMap = Object.fromEntries(rows.map((c) => [c.id, c.name || '—']));
+      const { data: platformUsers } = await supabase.from('users').select('id, name, email');
+      const userNameMap = Object.fromEntries(
+        (platformUsers || []).map((u) => [u.id, u.name || u.email || 'Usuário']),
+      );
+      setBillingHistory(
+        (billingLogs || []).map((row) => mapAuditLogRow(row, companyNameMap, userNameMap)),
+      );
     } catch (err) {
       console.error('SAAS_FINANCE_LOAD_ERROR', err);
       setCompanies([]);
@@ -158,6 +187,7 @@ export default function SaaSFinancePage() {
     let activeClients = 0;
     let delayedAmount = 0;
     let outstandingCount = 0;
+    let receivedRevenue = 0;
 
     companies.forEach((c) => {
       const pricing = resolveCompanyPricing(c);
@@ -166,6 +196,11 @@ export default function SaaSFinancePage() {
       if (isBillableCompany(c)) {
         activeClients++;
         mrr += applied;
+      }
+
+      const paymentRaw = String(c.payment_status_raw || '').toLowerCase();
+      if (paymentRaw === 'paid' && isBillableCompany(c)) {
+        receivedRevenue += applied;
       }
 
       if (c.subscription_status === 'Inadimplente') {
@@ -177,6 +212,8 @@ export default function SaaSFinancePage() {
     return {
       mrr,
       arr: mrr * 12,
+      projectedRevenue: mrr,
+      receivedRevenue,
       activeClients,
       delayedAmount,
       outstandingCount,
@@ -199,6 +236,11 @@ export default function SaaSFinancePage() {
       return matchSearch && matchPlan && matchStatus && matchPayment;
     });
   }, [companies, search, filterPlan, filterStatus, filterPayment]);
+
+  const delinquentCompanies = useMemo(
+    () => filteredCompanies.filter((c) => c.subscription_status === 'Inadimplente'),
+    [filteredCompanies],
+  );
 
   const planDistData = useMemo(() => {
     const sums: Record<string, number> = {
@@ -459,7 +501,21 @@ export default function SaaSFinancePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6 min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 min-w-0">
+        <StatCard
+          label="Receita prevista (MRR)"
+          value={formatCurrency(stats.projectedRevenue)}
+          hint="Valor mensal esperado"
+          icon={<DollarSign className="w-6 h-6 text-green-400" />}
+          border="border-green-500/20"
+        />
+        <StatCard
+          label="Receita recebida"
+          value={formatCurrency(stats.receivedRevenue)}
+          hint="Assinaturas com status pago"
+          icon={<Wallet className="w-6 h-6 text-emerald-400" />}
+          border="border-emerald-500/20"
+        />
         <StatCard
           label="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
@@ -475,20 +531,74 @@ export default function SaaSFinancePage() {
           border="border-blue-500/20"
         />
         <StatCard
+          label="Inadimplência"
+          value={formatCurrency(stats.delayedAmount)}
+          hint={`${stats.outstandingCount} inadimplente(s)`}
+          icon={<AlertCircle className="w-6 h-6 text-rose-400" />}
+          border="border-rose-500/20"
+        />
+        <StatCard
           label="Clientes Ativos"
           value={String(stats.activeClients)}
           hint="Tenants faturáveis"
           icon={<Users className="w-6 h-6 text-purple-400" />}
           border="border-purple-500/20"
         />
-        <StatCard
-          label="Inadimplência"
-          value={formatCurrency(stats.delayedAmount)}
-          hint={`${stats.outstandingCount} inadimplente(s)`}
-          icon={<AlertCircle className="w-6 h-6 text-cyan-400" />}
-          border="border-cyan-500/20"
-        />
       </div>
+
+      {delinquentCompanies.length > 0 ? (
+        <div className="mb-8 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5">
+          <h3 className="text-sm font-bold text-white mb-3">Empresas inadimplentes</h3>
+          <div className="space-y-2">
+            {delinquentCompanies.map((c) => (
+              <div
+                key={(c as { id?: string }).id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-white/5 bg-[#11161d] px-4 py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-white">{c.name}</p>
+                  <p className="text-xs text-gray-500">{c.payment_status}</p>
+                </div>
+                <p className="text-sm font-bold text-rose-400 tabular-nums">
+                  {formatCurrency(resolveCompanyPricing(c).appliedPrice)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {billingHistory.length > 0 ? (
+        <div className="mb-8 rounded-2xl border border-white/5 bg-[#11161d] p-5">
+          <h3 className="text-sm font-bold text-white mb-3">Histórico de cobranças</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[640px]">
+              <thead className="text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="p-2">Data</th>
+                  <th className="p-2">Empresa</th>
+                  <th className="p-2">Ação</th>
+                  <th className="p-2">Detalhes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billingHistory.map((row) => (
+                  <tr key={row.id} className="border-t border-white/5">
+                    <td className="p-2 text-gray-400 whitespace-nowrap">
+                      {row.created_at
+                        ? new Date(row.created_at).toLocaleString('pt-BR')
+                        : '—'}
+                    </td>
+                    <td className="p-2 text-gray-200">{row.company_name}</td>
+                    <td className="p-2 text-gray-300">{row.action}</td>
+                    <td className="p-2 text-gray-500 truncate max-w-[280px]">{row.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <ChartCard title="Receita (MRR) - Últimos 6 meses">

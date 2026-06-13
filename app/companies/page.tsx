@@ -40,7 +40,6 @@ function CompaniesPageContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   const [companyToDelete, setCompanyToDelete] = useState<any>(null);
-  const [companyToView, setCompanyToView] = useState<any>(null);
 
   const [companies, setCompanies] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -265,7 +264,7 @@ function CompaniesPageContent() {
               user={user}
               isMaster={!!c.is_master}
               onEdit={() => handleEdit(c)}
-              onView={() => setCompanyToView(c)}
+              onView={() => router.push(`/companies/${c.id}`)}
               onDelete={() => handleDelete(c)}
               onUpdateStatus={handleUpdateStatus}
               onImpersonate={() => handleImpersonate(c)}
@@ -299,20 +298,6 @@ function CompaniesPageContent() {
           loadCompanies();
         }}
       />
-      {companyToView && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-[#151a23] border border-[#1f232b] rounded-2xl w-full max-w-lg p-6">
-            <h2 className="text-lg font-bold text-white mb-4">{companyToView.name}</h2>
-            <button
-              type="button"
-              onClick={() => setCompanyToView(null)}
-              className="text-sm text-slate-400 hover:text-white"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

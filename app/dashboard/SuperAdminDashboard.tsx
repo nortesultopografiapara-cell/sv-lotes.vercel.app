@@ -529,7 +529,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
               label="Exportar relatório"
               color="yellow"
             />
-            <QuickAction href="/logs" icon={ScrollText} label="Abrir logs" color="blue" />
+            <QuickAction href="/master/audit" icon={ScrollText} label="Auditoria" color="blue" />
             <QuickAction href="/companies" icon={Plus} label="Ver empresas" color="gray" />
           </div>
         </div>
