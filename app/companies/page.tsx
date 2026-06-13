@@ -58,7 +58,7 @@ function CompaniesPageContent() {
     try {
       const [{ data, error }, { data: usersData }, { data: projectsData }] = await Promise.all([
         supabase.from('companies').select('*'),
-        supabase.from('users').select('tenant_id, company_id, role'),
+        supabase.from('users').select('tenant_id, role'),
         supabase.from('projects').select('tenant_id, company_id'),
       ]);
 

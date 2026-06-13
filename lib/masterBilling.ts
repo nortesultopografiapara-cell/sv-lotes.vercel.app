@@ -12,6 +12,10 @@ import {
   type CompanySubscription,
 } from '@/lib/saasSubscription';
 import {
+  referenceMonthFromDate,
+  resolveOfficialPaymentStatusRaw,
+} from '@/lib/masterSaasPayments';
+import {
   calculateMrrFromCompanies,
   getCompanyMonthlyPrice,
   getStandardPlanMonthlyPrice,
@@ -31,9 +35,15 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
   return company.active !== false;
 }
 
+export type AugmentCompanyBillingOptions = {
+  paidReferenceMonths?: Map<string, Set<string>>;
+  referenceMonth?: string;
+};
+
 export function augmentCompanyBilling<T extends CompanyLike>(
   company: T,
   subscription?: CompanySubscription | null,
+  options?: AugmentCompanyBillingOptions,
 ) {
   const resolved = resolveCompanyPricing(company);
   const uiPlan =
@@ -47,8 +57,17 @@ export function augmentCompanyBilling<T extends CompanyLike>(
   const companyDates = resolveCompanySubscriptionDates(company);
   const billing = normalizeSubscriptionDates(company, subscription);
 
-  const paymentRaw = subscription?.payment_status;
-  const payment_status = subscription
+  const companyId = String((company as { id?: string }).id || '');
+  const paidMonths = options?.paidReferenceMonths ?? new Map<string, Set<string>>();
+  const referenceMonth =
+    options?.referenceMonth || referenceMonthFromDate(new Date().toISOString());
+  const paymentRaw = resolveOfficialPaymentStatusRaw(
+    subscription,
+    companyId,
+    paidMonths,
+    referenceMonth,
+  );
+  const payment_status = subscription || paidMonths.get(companyId)?.has(referenceMonth)
     ? formatSaasPaymentStatus(paymentRaw)
     : active
       ? ('Aguardando cobrança' as const)

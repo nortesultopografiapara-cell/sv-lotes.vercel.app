@@ -42,6 +42,7 @@ export function computeDaysLate(nextDueDate?: string | null): number {
 export function buildMasterReportsMetrics(
   companies: CompanyPricingSource[],
   subscriptions: CompanySubscription[] = [],
+  paidReferenceMonths: Map<string, Set<string>> = new Map(),
 ): MasterReportsMetrics {
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
   let activeSubscriptions = 0;
@@ -51,7 +52,9 @@ export function buildMasterReportsMetrics(
 
   companies.forEach((company) => {
     const subscription = subMap.get(company.id as string) ?? null;
-    const enriched = augmentCompanyBilling(company, subscription);
+    const enriched = augmentCompanyBilling(company, subscription, {
+      paidReferenceMonths,
+    });
     const monthlyPrice = getCompanyMonthlyPrice(company);
     const isActive = isBillableCompany(company);
     if (isActive && subscription?.contract_status !== 'canceled') {

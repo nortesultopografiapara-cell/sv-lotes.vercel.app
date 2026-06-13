@@ -152,7 +152,7 @@ export async function loadMasterDashboardData(
       .order('due_date', { ascending: false })
       .limit(5000),
     supabase.from('projects').select('tenant_id, company_id'),
-    supabase.from('users').select('tenant_id, company_id, role'),
+    supabase.from('users').select('tenant_id, role'),
     supabase.from('brokers').select('tenant_id, company_id'),
   ]);
 

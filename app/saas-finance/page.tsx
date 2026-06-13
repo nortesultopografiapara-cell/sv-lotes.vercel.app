@@ -59,6 +59,7 @@ import {
 } from 'recharts';
 import {
   buildReceivedRevenueByMonth,
+  buildPaidReferenceMonthsByCompany,
   formatReferenceMonthLabel,
   paymentMethodLabel,
   sumReceivedRevenue,
@@ -77,8 +78,9 @@ type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 function enrichCompany(
   raw: CompanyPricingSource,
   subscription?: CompanySubscription | null,
+  paidReferenceMonths?: Map<string, Set<string>>,
 ): EnrichedCompany {
-  return augmentCompanyBilling(raw, subscription);
+  return augmentCompanyBilling(raw, subscription, { paidReferenceMonths });
 }
 
 export default function SaaSFinancePage() {
@@ -164,14 +166,17 @@ function SaaSFinancePageContent() {
         });
       });
 
-      setCompanies(rows.map((c) => enrichCompany(c, subMap.get(c.id))));
-
       const payRes = await fetch(
         `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
       );
       const payJson = await payRes.json().catch(() => ({}));
       const payments = (payRes.ok ? payJson.payments : []) as MasterSaasPayment[];
       setSaasPayments(payments);
+      const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
+
+      setCompanies(
+        rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths)),
+      );
 
       const { data: billingLogs } = await supabase
         .from('audit_logs')

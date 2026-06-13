@@ -7,7 +7,6 @@ import {
   Wallet,
   BarChart3,
   Settings,
-  Ticket,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -44,17 +43,12 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
       { name: 'Configurações', href: '/settings/global', icon: Settings },
     ],
   },
-  {
-    label: 'Suporte',
-    items: [{ name: 'Tickets', href: '/support/tickets', icon: Ticket }],
-  },
 ];
 
 export const SUPER_ADMIN_QUICK_ACTIONS = [
   { label: 'Nova empresa', href: '/companies?new=1', description: 'Cadastrar tenant' },
   { label: 'Nova assinatura', href: '/plans', description: 'Planos e assinaturas' },
   { label: 'Acessar como empresa', href: '/companies', description: 'Personificar tenant' },
-  { label: 'Ver tickets', href: '/support/tickets', description: 'Fila de suporte' },
 ] as const;
 
 export function flattenSuperAdminNav(): SuperAdminNavItem[] {

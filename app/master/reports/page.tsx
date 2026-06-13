@@ -23,7 +23,11 @@ import {
   masterReportsToCsv,
   type MasterReportsMetrics,
 } from '@/lib/masterSaasReports';
-import { sumReceivedRevenue } from '@/lib/masterSaasPayments';
+import {
+  buildPaidReferenceMonthsByCompany,
+  sumReceivedRevenue,
+} from '@/lib/masterSaasPayments';
+import type { CompanySubscription } from '@/lib/saasSubscription';
 
 function KpiCard({
   title,
@@ -71,7 +75,7 @@ function MasterReportsContent() {
     setLoading(true);
     setError(null);
     try {
-      const [{ data: companies, error: compErr }, { data: subscriptions, error: subErr }] =
+      const [{ data: companies, error: compErr }, { data: subscriptionsData, error: subErr }] =
         await Promise.all([
           supabase.from('companies').select('*').order('created_at', { ascending: false }),
           supabase.from('company_subscriptions').select('*'),
@@ -80,22 +84,37 @@ function MasterReportsContent() {
       if (compErr) throw compErr;
       if (subErr) console.warn('MASTER_REPORTS_SUBSCRIPTIONS_WARN', subErr.message);
 
-      setMetrics(
-        buildMasterReportsMetrics(
-          companies || [],
-          (subscriptions || []) as CompanySubscription[],
-        ),
-      );
+      let subscriptions = (subscriptionsData || []) as CompanySubscription[];
 
+      if (user.id) {
+        const syncRes = await fetch('/api/saas/subscriptions/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id }),
+        });
+        if (syncRes.ok) {
+          const syncJson = await syncRes.json();
+          subscriptions = (syncJson.subscriptions || subscriptions) as CompanySubscription[];
+        }
+      }
+
+      let paidReferenceMonths = new Map<string, Set<string>>();
       if (user.id) {
         const payRes = await fetch(
           `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
         );
         const payJson = await payRes.json().catch(() => ({}));
-        setReceivedRevenue(
-          payRes.ok ? sumReceivedRevenue(payJson.payments || []) : 0,
-        );
+        if (payRes.ok) {
+          paidReferenceMonths = buildPaidReferenceMonthsByCompany(payJson.payments || []);
+          setReceivedRevenue(sumReceivedRevenue(payJson.payments || []));
+        } else {
+          setReceivedRevenue(0);
+        }
       }
+
+      setMetrics(
+        buildMasterReportsMetrics(companies || [], subscriptions, paidReferenceMonths),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar relatórios');
       setMetrics(null);

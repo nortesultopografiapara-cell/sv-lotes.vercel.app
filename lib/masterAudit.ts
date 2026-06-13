@@ -26,6 +26,11 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
   SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
   SUBSCRIPTION_UPDATED: 'Edição de assinatura',
+  LOGIN: 'Login',
+  LOGIN_SUCCESS: 'Login realizado',
+  IMPERSONATION: 'Acesso como empresa',
+  IMPERSONATION_STARTED: 'Modo empresa iniciado',
+  IMPERSONATION_ENDED: 'Modo empresa encerrado',
 };
 
 const MASTER_MODULES = new Set([
@@ -36,6 +41,8 @@ const MASTER_MODULES = new Set([
   'PLANS',
   'SUBSCRIPTIONS',
   'SALES',
+  'AUTH',
+  'IMPERSONATION',
 ]);
 
 const MASTER_ACTION_PREFIXES = [
@@ -45,6 +52,8 @@ const MASTER_ACTION_PREFIXES = [
   'SUBSCRIPTION_',
   'SAAS_',
   'RESOURCES_',
+  'IMPERSONATION_',
+  'LOGIN',
 ];
 
 export function formatMasterAuditAction(action?: string | null): string {

@@ -19,8 +19,10 @@ import {
 } from '../lib/masterCompanyUsers';
 import {
   buildReceivedRevenueByMonth,
+  buildPaidReferenceMonthsByCompany,
   formatReferenceMonthLabel,
   referenceMonthFromDate,
+  resolveOfficialPaymentStatusRaw,
   sumReceivedRevenue,
 } from '../lib/masterSaasPayments';
 import { loadMasterAuditLogs } from '../lib/masterAuditLoad';
@@ -101,6 +103,11 @@ function testAuditHelpers() {
     formatMasterAuditAction('SAAS_PAYMENT_REGISTERED') === 'Pagamento de assinatura registrado',
     'payment audit label',
   );
+  assert(formatMasterAuditAction('LOGIN') === 'Login', 'login audit label');
+  assert(
+    formatMasterAuditAction('IMPERSONATION_STARTED') === 'Modo empresa iniciado',
+    'impersonation audit label',
+  );
   const csv = masterAuditToCsv([
     {
       id: '1',
@@ -127,6 +134,7 @@ function testSuperAdminNav() {
   assert(items.some((i) => i.href === '/master/audit'), 'audit route');
   assert(!items.some((i) => i.href === '/logs'), 'logs removed');
   assert(!items.some((i) => i.href === '/offline-sync'), 'offline removed');
+  assert(!items.some((i) => i.href === '/support/tickets'), 'tickets removed');
   console.log('OK testSuperAdminNav');
 }
 
@@ -147,6 +155,28 @@ function testImpersonationStorage() {
 function testAuditLoadShape() {
   assert(typeof loadMasterAuditLogs === 'function', 'audit load export');
   console.log('OK testAuditLoadShape');
+}
+
+function testOfficialPaymentStatus() {
+  const paidMonths = buildPaidReferenceMonthsByCompany([
+    {
+      id: 'p1',
+      company_id: 'meneses',
+      amount: 549.99,
+      paid_at: '2026-05-27',
+      payment_method: 'manual',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+  ]);
+  const status = resolveOfficialPaymentStatusRaw(
+    { payment_status: 'pending' },
+    'meneses',
+    paidMonths,
+    '2026-05',
+  );
+  assert(status === 'paid', 'paid from master_saas_payments fallback');
+  console.log('OK testOfficialPaymentStatus');
 }
 
 function testSaasPayments() {
@@ -191,6 +221,7 @@ function main() {
   testDaysLate();
   testImpersonationStorage();
   testAuditLoadShape();
+  testOfficialPaymentStatus();
   testSaasPayments();
   testCompanyUserCounts();
   console.log('mandatory-master-saas-panel-tests: all passed');

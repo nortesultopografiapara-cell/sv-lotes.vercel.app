@@ -10,12 +10,11 @@ export type MasterAuditLoadResult = {
   errors: string[];
 };
 
-function resolveUserDisplayName(user: {
-  name?: string | null;
+export function resolveUserDisplayName(user: {
   full_name?: string | null;
   email?: string | null;
 }): string {
-  return user.name || user.full_name || user.email || 'Usuário';
+  return user.full_name || user.email || 'Usuário';
 }
 
 export async function loadMasterAuditLogs(
@@ -33,7 +32,7 @@ export async function loadMasterAuditLogs(
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('companies').select('id, name'),
-    supabase.from('users').select('id, name, full_name, email'),
+    supabase.from('users').select('id, full_name, email'),
   ]);
 
   if (logsRes.error) errors.push(`audit_logs: ${logsRes.error.message}`);

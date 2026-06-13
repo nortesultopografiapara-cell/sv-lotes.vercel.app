@@ -85,6 +85,46 @@ export function buildReceivedRevenueByMonth(
   }));
 }
 
+/** Meses com pagamento confirmado por empresa (master_saas_payments). */
+export function buildPaidReferenceMonthsByCompany(
+  payments: MasterSaasPayment[],
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const payment of payments) {
+    if (!isPaidMasterSaasPayment(payment)) continue;
+    const companyId = payment.company_id;
+    const ref = payment.reference_month || referenceMonthFromDate(payment.paid_at);
+    if (!companyId || !ref) continue;
+    const set = map.get(companyId) ?? new Set<string>();
+    set.add(ref);
+    map.set(companyId, set);
+  }
+  return map;
+}
+
+/**
+ * Fonte oficial: company_subscriptions.payment_status.
+ * Fallback: master_saas_payments pago no mês de referência.
+ */
+export function resolveOfficialPaymentStatusRaw(
+  subscription: { payment_status?: string | null } | null | undefined,
+  companyId: string,
+  paidMonths: Map<string, Set<string>>,
+  referenceMonth?: string,
+): string {
+  const ref = referenceMonth || referenceMonthFromDate(new Date().toISOString());
+  const subStatus = String(subscription?.payment_status || '').toLowerCase().trim();
+
+  if (subStatus === 'paid') return 'paid';
+  if (subStatus === 'overdue') return 'overdue';
+  if (subStatus === 'canceled') return 'canceled';
+
+  const companyPaid = paidMonths.get(companyId);
+  if (companyPaid?.has(ref)) return 'paid';
+
+  return subStatus || 'pending';
+}
+
 export function paymentMethodLabel(method?: string | null): string {
   const key = String(method || 'manual').toLowerCase();
   if (key === 'pix') return 'PIX';
