@@ -131,6 +131,7 @@ export type PaymentRowProps = {
   onWhatsApp: () => void;
   onCarne: () => void;
   onDelete: () => void;
+  readOnly?: boolean;
 };
 
 export const PaymentTableRow = memo(
@@ -144,6 +145,7 @@ export const PaymentTableRow = memo(
     onWhatsApp,
     onCarne,
     onDelete,
+    readOnly = false,
   }: PaymentRowProps) {
     const projects = p.projects as { name?: string } | undefined;
     const sales = p.sales as {
@@ -258,7 +260,7 @@ export const PaymentTableRow = memo(
             <FinanceParcelActionBtn title="Visualizar" onClick={onView}>
               <Eye />
             </FinanceParcelActionBtn>
-            {!isPaid && (
+            {!isPaid && !readOnly && (
               <FinanceParcelActionBtn
                 title="Registrar pagamento"
                 onClick={onMarkPaid}
@@ -281,6 +283,7 @@ export const PaymentTableRow = memo(
             >
               <FileText />
             </FinanceParcelActionBtn>
+            {!readOnly && (
             <FinanceParcelActionBtn
               title="Excluir"
               onClick={onDelete}
@@ -288,6 +291,7 @@ export const PaymentTableRow = memo(
             >
               <Trash2 />
             </FinanceParcelActionBtn>
+            )}
           </div>
         </td>
       </tr>

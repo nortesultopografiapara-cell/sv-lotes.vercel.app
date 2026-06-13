@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { isOwnerRole } from "@/lib/rolePermissions";
+import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
 import {
   getNextContractNumber,
   isValidStoredContractNumber,
@@ -1681,6 +1683,7 @@ function LotPopupContent({
   onPickOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
   onEditOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
 }) {
+  const ownerReadOnly = isOwnerRole(userRole);
   console.log("GIS_POPUP_RENDER", {
     lotId: lot?.id,
     status: lot?.status,
@@ -1987,7 +1990,7 @@ function LotPopupContent({
           <div className="py-0.5 space-y-0.5">
             <div className="flex justify-between items-center gap-2">
               <span className="text-gray-500 font-semibold">Medidas:</span>
-              {userRole !== "BROKER" &&
+              {userRole !== "BROKER" && !ownerReadOnly &&
                 onStartDefineOfficialSide &&
                 Array.isArray(lot.segments_json) &&
                 lot.segments_json.length >= 3 && (
@@ -2076,7 +2079,7 @@ function LotPopupContent({
             </div>
           )}
 
-          {userRole !== "BROKER" &&
+          {userRole !== "BROKER" && !ownerReadOnly &&
             Array.isArray(lot.segments_json) &&
             lot.segments_json.length >= 3 &&
             onStartCorrectFront && (
@@ -2207,6 +2210,11 @@ function LotPopupContent({
         <div className="space-y-2 text-[11px]">
           <div className="flex justify-between items-center gap-2">
             <span className="text-gray-500 shrink-0">Valor do lote</span>
+            {ownerReadOnly ? (
+              <span className="font-mono font-bold text-gray-900">
+                {formattedPrice}
+              </span>
+            ) : (
             <div className="flex items-center gap-1">
               <input
                 type="number"
@@ -2234,8 +2242,14 @@ function LotPopupContent({
                 )}
               </button>
             </div>
+            )}
           </div>
 
+          {ownerReadOnly ? (
+            <p className="rounded border border-blue-100 bg-blue-50 px-2 py-1.5 text-[10px] text-blue-800">
+              Modo somente leitura — venda, reserva e alterações não estão disponíveis para seu perfil.
+            </p>
+          ) : (
           <div className="flex gap-1">
             <button
               onClick={() => {
@@ -2300,8 +2314,9 @@ function LotPopupContent({
               <span className="text-[8px] leading-tight">Limpar</span>
             </button>
           </div>
+          )}
 
-          {isSold && (
+          {isSold && !ownerReadOnly && (
             <div className="grid grid-cols-2 gap-1 pt-1 border-t border-gray-100">
               {(() => {
                 console.log("SHOW_EDIT_SALE_BUTTON", {
@@ -3455,6 +3470,7 @@ export default function GISMap({
   };
 
   const openCustomerForm = (lot: any, action: string, price: number) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!isBrowserOnline() && action === "Vendido") {
       blockOfflineSale();
       return;
@@ -3756,6 +3772,9 @@ export default function GISMap({
     newPrice?: number,
   ) => {
     if (!user) return;
+    if (blockOwnerWriteOnClient(user.role)) {
+      return;
+    }
     setActionLoading(lot.id);
     const newStatus = newStatusString;
     const finalPrice = newPrice !== undefined ? newPrice : lot.price;

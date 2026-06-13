@@ -3,6 +3,9 @@ import { isPlatformAdmin } from '@/lib/rls';
 export const BROKER_ROLES = ['BROKER', 'CORRETOR'] as const;
 export const OWNER_ROLES = ['OWNER'] as const;
 
+export const OWNER_READ_ONLY_DENIED_MESSAGE =
+  'Perfil OWNER possui acesso somente leitura. Esta ação não é permitida.';
+
 export const ENTERPRISE_ADMIN_ROLES = [
   'ADMIN',
   'SUPER_ADMIN',
@@ -24,6 +27,11 @@ export function isBrokerRole(role?: string | null): boolean {
 export function isOwnerRole(role?: string | null): boolean {
   const normalized = normalizeUserRole(role);
   return (OWNER_ROLES as readonly string[]).includes(normalized);
+}
+
+/** OWNER só visualiza — nunca grava no sistema. */
+export function canOwnerPerformWrites(role?: string | null): boolean {
+  return !isOwnerRole(role);
 }
 
 /** ADMIN / SUPER_ADMIN e equivalentes de empresa — não inclui corretor nem proprietário. */

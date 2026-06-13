@@ -19,6 +19,7 @@ import {
   isBrokerRole,
   isOwnerRole,
 } from '@/lib/rolePermissions';
+import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import {
   filterProjectsForUser,
   filterRowsByOwnerProjects,
@@ -611,6 +612,7 @@ export default function FinancePage() {
   }, [user, projectFilter, financeProjects]);
 
   const showEnterpriseValues = canViewEnterpriseValues(user?.role);
+  const ownerReadOnly = isOwnerRole(user?.role);
 
   const enterpriseSummary: EnterpriseValueSummary | null = useMemo(() => {
     if (!showEnterpriseValues) return null;
@@ -691,6 +693,7 @@ export default function FinancePage() {
   };
 
   const handleMarkPaid = async (p: any) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     console.log('FINANCE MARK PAID', p);
     if (!window.confirm("Confirmar pagamento desta parcela?")) return;
     try {
@@ -753,6 +756,7 @@ export default function FinancePage() {
   };
 
   const handleDeleteReceipt = async (p: any) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     console.log('FINANCE DELETE RECEIPT', p);
     if (!window.confirm("Tem certeza que deseja excluir esta parcela? Essa ação não pode ser desfeita.")) return;
     try {
@@ -789,6 +793,7 @@ export default function FinancePage() {
   };
 
   const handleBulkDelete = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (selectedIds.size === 0) {
       alert("Selecione ao menos um recebimento para excluir.");
       return;
@@ -991,6 +996,7 @@ export default function FinancePage() {
 
   const handleRegistrarSaida = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockOwnerWriteOnClient(user?.role)) return;
     const desc = saidaForm.description?.trim();
     if (!desc) return alert('Informe a descrição / destino da saída.');
 
@@ -1402,6 +1408,7 @@ export default function FinancePage() {
   };
 
   const handleFlowReverse = async (item: CashFlowItem) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!window.confirm(CONFIRM_ESTORNAR_PAGAMENTO)) {
       return;
     }
@@ -1572,6 +1579,7 @@ export default function FinancePage() {
   };
 
   const handleFlowDeleteLancamento = async (item: CashFlowItem) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (item.tipo === 'entrada') {
       alert('Para entradas/parcelas, use Estornar em vez de excluir.');
       return;
@@ -1690,7 +1698,7 @@ export default function FinancePage() {
               <FileSignature size={16} />
             </FlowIconBtn>
           )}
-          {canEstornar && (
+          {canEstornar && !ownerReadOnly && (
             <FlowIconBtn
               title="Estornar"
               variant="reverse"
@@ -1713,7 +1721,7 @@ export default function FinancePage() {
           >
             <Eye size={16} />
           </FlowIconBtn>
-          {isManualDespesa && (
+          {isManualDespesa && !ownerReadOnly && (
             <FlowIconBtn
               title="Editar"
               variant="edit"
@@ -1731,7 +1739,7 @@ export default function FinancePage() {
           >
             <ReceiptText size={16} />
           </FlowIconBtn>
-          {canDeleteSaida ? (
+          {canDeleteSaida && !ownerReadOnly ? (
             <FlowIconBtn
               title="Excluir lançamento"
               variant="delete"
@@ -1750,15 +1758,15 @@ export default function FinancePage() {
                   <FileSignature size={16} />
                 </FlowIconBtn>
               )}
-              {canEstornar && (
-                <FlowIconBtn
-                  title="Estornar"
-                  variant="reverse"
-                  onClick={() => handleFlowReverse(item)}
-                >
-                  <RotateCcw size={16} />
-                </FlowIconBtn>
-              )}
+          {canEstornar && !ownerReadOnly && (
+            <FlowIconBtn
+              title="Estornar"
+              variant="reverse"
+              onClick={() => handleFlowReverse(item)}
+            >
+              <RotateCcw size={16} />
+            </FlowIconBtn>
+          )}
             </>
           )}
         </>,
@@ -2750,13 +2758,16 @@ export default function FinancePage() {
           </p>
         </div>
         <div className="finance-header-actions mt-4 md:mt-0 md:w-auto">
-          
+          {!ownerReadOnly ? (
+          <>
           <button onClick={handleBulkDelete} className="bg-transparent border border-[var(--danger)]/30 hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-[var(--danger)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm opacity-80 hover:opacity-100 flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <Trash2 className="w-4 h-4" />
             Limpar
           </button>
           
           <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+          </>
+          ) : null}
 
           <button onClick={handleExportResumidoPDF} className="bg-[var(--bg-card-alt)] border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4 text-[#e74c3c]" />
@@ -2776,12 +2787,16 @@ export default function FinancePage() {
 
           <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
 
+          {!ownerReadOnly ? (
           <button onClick={() => { setEditingCashMovementId(null); setSaidaForm({ ...INITIAL_SAIDA_FORM }); setShowSaidaModal(true); }} className="bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20 px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold transition-all shadow-[0_0_15px_rgba(240,68,73,0.15)] text-sm w-full md:w-auto">
             <TrendingDown className="w-4 h-4" />
             Registrar Saída
           </button>
+          ) : null}
 
+          {!ownerReadOnly ? (
           <div className="h-6 w-[1px] bg-[var(--bg-card-alt)] hidden md:block mx-1"></div>
+          ) : null}
 
           <button onClick={handleExportPDF} className="bg-transparent border border-[var(--border-color)] hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors text-sm shadow-sm flex-1 md:flex-none whitespace-nowrap min-w-[140px]">
             <FileText className="w-4 h-4" />
@@ -3010,6 +3025,7 @@ export default function FinancePage() {
                     onWhatsApp={() => handleWhatsApp(p)}
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
+                    readOnly={ownerReadOnly}
                   />
                 ))
               ) : (

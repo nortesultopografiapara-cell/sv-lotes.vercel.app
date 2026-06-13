@@ -151,6 +151,20 @@ export async function middleware(request: NextRequest) {
       url.pathname = '/dashboard';
       return NextResponse.redirect(url);
     }
+
+    const isOwnerApiWrite =
+      url.pathname.startsWith('/api/') &&
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method.toUpperCase());
+    if (isOwnerApiWrite) {
+      return NextResponse.json(
+        {
+          error:
+            'Perfil OWNER possui acesso somente leitura. Esta ação não é permitida.',
+          code: 'OWNER_READ_ONLY',
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // 6. HARDENING HEADERS

@@ -124,6 +124,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     tenant_id: callerProfile?.tenant_id || null,
   };
 
+  if (String(caller.role || '').toUpperCase() === 'OWNER') {
+    return NextResponse.json(
+      { error: 'Proprietários não podem editar empreendimentos.', code: 'OWNER_READ_ONLY' },
+      { status: 403 },
+    );
+  }
+
   const access = canEditProject(caller, existing, {
     impersonatingTenantId: body.impersonatingTenantId,
   });

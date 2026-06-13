@@ -37,6 +37,12 @@ export async function POST(
 
     const profile = await resolveCallerProfile(supabase, user.id);
     const callerRole = String(profile?.role || '').toUpperCase();
+    if (callerRole === 'OWNER') {
+      return NextResponse.json(
+        { error: 'Perfil OWNER possui acesso somente leitura.', code: 'OWNER_READ_ONLY' },
+        { status: 403 },
+      );
+    }
     const callerTenant = profile?.tenant_id || profile?.company_id || null;
 
     const { id: contractId } = await params;

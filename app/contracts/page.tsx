@@ -27,6 +27,8 @@ import {
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
+import { isOwnerRole } from "@/lib/rolePermissions";
+import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
 import {
   filterRowsByOwnerProjects,
   getOwnerAllowedProjectIdsForModule,
@@ -490,6 +492,7 @@ function enrichBlockForContract(block: Record<string, any> | null | undefined): 
 
 export default function ContractsPage() {
   const { user, loading: authLoading } = useSessionGuard();
+  const ownerReadOnly = isOwnerRole(user?.role);
   const [contracts, setContracts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -725,7 +728,7 @@ export default function ContractsPage() {
   const isSupersededContract = (c: any) =>
     normalizeContractStatus(c?.status) === "superseded";
 
-  const canShowRegenerateContract = isPartnerPanelAdmin(user?.role);
+  const canShowRegenerateContract = isPartnerPanelAdmin(user?.role) && !ownerReadOnly;
 
   useEffect(() => {
     if (selectedContract?.id) {
@@ -926,6 +929,7 @@ export default function ContractsPage() {
   };
 
   const handleAtivarContrato = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
     if (
@@ -1018,6 +1022,7 @@ export default function ContractsPage() {
   };
 
   const handleLimparTestes = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (selectedContractIds.size === 0) return;
 
     const ids = Array.from(selectedContractIds);
@@ -1041,6 +1046,7 @@ export default function ContractsPage() {
   };
 
   const executeDelete = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!passwordInput) {
       alert("Por favor, digite sua senha.");
       return;
@@ -1166,6 +1172,7 @@ export default function ContractsPage() {
   };
 
   const handleCancelar = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!selectedContract) return;
     if (
       !confirm(
@@ -1200,6 +1207,7 @@ export default function ContractsPage() {
   };
 
   const handleGerarCarne = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!selectedContract?.sale_id) return;
     try {
       const { data: receipts, error } = await supabase
@@ -1578,9 +1586,9 @@ export default function ContractsPage() {
           <button
             type="button"
             onClick={handleLimparTestes}
-            disabled={bulkDeleteCount === 0}
+            disabled={bulkDeleteCount === 0 || ownerReadOnly}
             className={`contracts-mobile-bulk-delete transition-colors ${
-              bulkDeleteCount > 0
+              bulkDeleteCount > 0 && !ownerReadOnly
                 ? "text-red-400 hover:text-red-300"
                 : "text-[var(--text-muted)] cursor-not-allowed"
             }`}
