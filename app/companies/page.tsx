@@ -14,6 +14,7 @@ import NewCompanyModal from '@/components/companies/NewCompanyModal';
 import CompanyDeleteModal from '@/components/companies/CompanyDeleteModal';
 import { CompanyCard } from '@/components/companies/CompanyCard';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
+import { writeImpersonationState } from '@/lib/impersonationStorage';
 import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import { supabase } from '@/lib/supabase';
@@ -126,8 +127,12 @@ function CompaniesPageContent() {
           .eq('id', user?.id)
           .eq('role', 'SUPER_ADMIN');
         if (error) throw error;
-        localStorage.setItem('impersonating_tenant_id', company.id);
-        localStorage.setItem('impersonating_company_name', company.name);
+        writeImpersonationState({
+          tenantId: company.id,
+          companyName: company.name,
+          masterId: user?.id || '',
+          masterName: user?.name || user?.email || 'Super Admin',
+        });
         window.location.assign('/dashboard');
       } catch (err: unknown) {
         alert('Erro: ' + (err instanceof Error ? err.message : ''));

@@ -37,11 +37,11 @@ function KpiCard({
   accent: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-[var(--color-surface)]/60 px-4 py-4">
+    <div className="rounded-xl border border-white/10 bg-[var(--color-surface)]/60 px-4 py-4 min-w-0 overflow-visible">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{title}</p>
-          <p className="text-2xl font-bold text-white mt-1 tabular-nums">{value}</p>
+          <p className="text-[clamp(16px,2.5vw,24px)] font-bold text-white mt-1 tabular-nums whitespace-nowrap">{value}</p>
         </div>
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent}`}>
           <Icon className="w-5 h-5" />

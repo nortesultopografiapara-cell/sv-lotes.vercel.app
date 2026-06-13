@@ -17,6 +17,7 @@ import {
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { writeImpersonationState } from '@/lib/impersonationStorage';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
@@ -72,7 +73,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
       ] = await Promise.all([
         supabase.from('companies').select('*').eq('id', companyId).single(),
         supabase.from('company_subscriptions').select('*').eq('company_id', companyId).maybeSingle(),
-        supabase.from('users').select('id, name, email, role, created_at').eq('tenant_id', companyId),
+        supabase.from('users').select('id, name, full_name, email, role, created_at').eq('tenant_id', companyId),
         supabase.from('projects').select('id, name, city, uf, created_at').eq('tenant_id', companyId),
         supabase
           .from('audit_logs')
@@ -80,13 +81,13 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
           .eq('tenant_id', companyId)
           .order('created_at', { ascending: false })
           .limit(100),
-        supabase.from('users').select('id, name, email'),
+        supabase.from('users').select('id, name, full_name, email'),
       ]);
 
       if (compErr || !companyRow) throw compErr || new Error('Empresa não encontrada');
 
       const userNames = Object.fromEntries(
-        (allUsers || []).map((u) => [u.id, u.name || u.email || 'Usuário']),
+        (allUsers || []).map((u) => [u.id, u.name || u.full_name || u.email || 'Usuário']),
       );
 
       setCompany(companyRow);
@@ -148,8 +149,12 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
       alert(error.message);
       return;
     }
-    localStorage.setItem('impersonating_tenant_id', company.id);
-    localStorage.setItem('impersonating_company_name', company.name);
+    writeImpersonationState({
+      tenantId: company.id,
+      companyName: company.name,
+      masterId: user.id,
+      masterName: user.name || user.email || 'Super Admin',
+    });
     window.location.assign('/dashboard');
   };
 

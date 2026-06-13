@@ -121,6 +121,7 @@ export default function PlansPage() {
      activeUsers: 0,
   });
   const [dataLoading, setDataLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,6 +129,7 @@ export default function PlansPage() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
+    setDataLoading(true);
     setLoadError(null);
     try {
       const [
@@ -205,8 +207,6 @@ export default function PlansPage() {
       return;
     }
     
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDataLoading(true);
     loadCompanies();
   }, [user, authLoading, router, loadCompanies]);
 
@@ -609,10 +609,10 @@ export default function PlansPage() {
 
       {/* STATS FOOTER */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-8 mt-2">
-          <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all">
-            <div>
+          <div className="bg-[#11161d] border border-green-500/20 rounded-xl p-5 flex items-center justify-between group hover:border-green-500/40 hover:shadow-[0_0_20px_rgba(34,197,94,0.1)] transition-all min-w-0 overflow-visible">
+            <div className="min-w-0 flex-1">
                <p className="text-[12px] text-gray-400 font-medium mb-1">Receita Mensal (MRR)</p>
-               <h4 className="text-[24px] font-bold text-white tracking-tight mb-2">
+               <h4 className="text-[clamp(16px,2.5vw,24px)] font-bold text-white tracking-tight mb-2 whitespace-nowrap tabular-nums">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.mrr)}
                </h4>
                <p className="text-[11px] text-gray-500 font-medium tracking-wide">

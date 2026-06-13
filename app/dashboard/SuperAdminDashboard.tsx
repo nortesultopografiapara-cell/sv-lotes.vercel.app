@@ -565,7 +565,7 @@ function KpiCard({
 }) {
   return (
     <div
-      className={`bg-[#151a23] border ${borderClass} p-5 rounded-2xl flex flex-col justify-between`}
+      className={`bg-[#151a23] border ${borderClass} p-5 rounded-2xl flex flex-col justify-between min-w-0 overflow-visible`}
     >
       <div className="flex justify-between items-start">
         <p className="text-[13px] text-gray-400 font-medium">{title}</p>
@@ -573,7 +573,9 @@ function KpiCard({
       </div>
       <div className="mt-2">
         <h3
-          className={`font-bold text-white tracking-tight ${isCurrency ? 'text-xl' : 'text-2xl'}`}
+          className={`font-bold text-white tracking-tight whitespace-nowrap tabular-nums ${
+            isCurrency ? 'text-[clamp(14px,2.2vw,20px)]' : 'text-2xl'
+          }`}
         >
           {value}
         </h3>

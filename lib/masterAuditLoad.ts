@@ -1,0 +1,55 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  isMasterAuditEntry,
+  mapAuditLogRow,
+  type MasterAuditRow,
+} from '@/lib/masterAudit';
+
+export type MasterAuditLoadResult = {
+  rows: MasterAuditRow[];
+  errors: string[];
+};
+
+function resolveUserDisplayName(user: {
+  name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+}): string {
+  return user.name || user.full_name || user.email || 'Usuário';
+}
+
+export async function loadMasterAuditLogs(
+  supabase: SupabaseClient,
+): Promise<MasterAuditLoadResult> {
+  const errors: string[] = [];
+
+  const auditColumns =
+    'id, action, module, description, created_at, tenant_id, user_id';
+
+  const [logsRes, companiesRes, usersRes] = await Promise.all([
+    supabase
+      .from('audit_logs')
+      .select(auditColumns)
+      .order('created_at', { ascending: false })
+      .limit(500),
+    supabase.from('companies').select('id, name'),
+    supabase.from('users').select('id, name, full_name, email'),
+  ]);
+
+  if (logsRes.error) errors.push(`audit_logs: ${logsRes.error.message}`);
+  if (companiesRes.error) errors.push(`companies: ${companiesRes.error.message}`);
+  if (usersRes.error) errors.push(`users: ${usersRes.error.message}`);
+
+  const companyNames = Object.fromEntries(
+    (companiesRes.data || []).map((c) => [c.id, c.name || '—']),
+  );
+  const userNames = Object.fromEntries(
+    (usersRes.data || []).map((u) => [u.id, resolveUserDisplayName(u)]),
+  );
+
+  const rows = (logsRes.data || [])
+    .filter(isMasterAuditEntry)
+    .map((row) => mapAuditLogRow(row, companyNames, userNames));
+
+  return { rows, errors };
+}

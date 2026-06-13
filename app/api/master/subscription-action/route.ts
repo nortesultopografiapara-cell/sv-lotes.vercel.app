@@ -87,13 +87,13 @@ export async function POST(request: Request) {
         .eq('id', companyId);
     }
 
-    await supabaseAdmin.from('audit_logs').insert({
+      await supabaseAdmin.from('audit_logs').insert({
       tenant_id: companyId,
+      company_id: companyId,
       user_id: body.userId,
       module: 'SUBSCRIPTIONS',
       action: AUDIT_ACTION[action],
       description: `Assinatura ${action} — empresa ${companyId}`,
-      details: JSON.stringify({ subscriptionId, action, patch: subPatch }),
     });
 
     return NextResponse.json({ success: true, subscription });

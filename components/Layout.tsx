@@ -43,6 +43,11 @@ import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole } from '@/lib/rolePermissions';
+import {
+  clearImpersonationState,
+  formatImpersonationDateTime,
+  readImpersonationState,
+} from '@/lib/impersonationStorage';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -267,6 +272,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<any>(null);
   const [impersonatingTenantId, setImpersonatingTenantId] = useState<string | null>(null);
   const [impersonatingCompanyName, setImpersonatingCompanyName] = useState<string | null>(null);
+  const [impersonatingMasterName, setImpersonatingMasterName] = useState<string | null>(null);
+  const [impersonatingStartedAt, setImpersonatingStartedAt] = useState<string | null>(null);
   const [activeProfileModal, setActiveProfileModal] = useState<'profile' | 'password' | 'security' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
@@ -304,10 +311,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     if (user) fetchCompany();
 
     try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setImpersonatingTenantId(typeof window !== 'undefined' ? localStorage.getItem('impersonating_tenant_id') : null);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setImpersonatingCompanyName(typeof window !== 'undefined' ? localStorage.getItem('impersonating_company_name') : null);
+      const impersonation = readImpersonationState();
+      setImpersonatingTenantId(impersonation?.tenantId ?? null);
+      setImpersonatingCompanyName(impersonation?.companyName ?? null);
+      setImpersonatingMasterName(impersonation?.masterName ?? null);
+      setImpersonatingStartedAt(impersonation?.startedAt ?? null);
     } catch(e) {}
 
 
@@ -550,27 +558,40 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       >
         
         {impersonatingTenantId && (
-          <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              <span className="font-bold uppercase tracking-wider text-sm">
-                Você está acessando como: {impersonatingCompanyName} — MODO DEUS ATIVO
-              </span>
+          <div className="bg-red-600 text-white px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start gap-3 min-w-0">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="min-w-0 text-sm leading-snug">
+                <p className="font-bold uppercase tracking-wider">Modo empresa ativo</p>
+                <p>
+                  <span className="font-semibold">Empresa atual:</span>{' '}
+                  {impersonatingCompanyName || '—'}
+                </p>
+                <p>
+                  <span className="font-semibold">Usuário Master original:</span>{' '}
+                  {impersonatingMasterName || user?.name || 'Super Admin'}
+                </p>
+                <p>
+                  <span className="font-semibold">Impersonação desde:</span>{' '}
+                  {formatImpersonationDateTime(impersonatingStartedAt)}
+                </p>
+              </div>
             </div>
             <button
                onClick={async () => {
                    try {
                        await supabase.from('users').update({ tenant_id: null }).eq('id', user?.id).eq('role', 'SUPER_ADMIN');
-                       try {
-                         localStorage.removeItem('impersonating_tenant_id');
-                         localStorage.removeItem('impersonating_company_name');
-                       } catch(e) {}
+                       clearImpersonationState();
+                       setImpersonatingTenantId(null);
+                       setImpersonatingCompanyName(null);
+                       setImpersonatingMasterName(null);
+                       setImpersonatingStartedAt(null);
                        window.location.assign('/companies');
                    } catch(e) {
                        console.error(e);
                    }
                }}
-               className="bg-white text-red-600 px-3 py-1 rounded text-xs font-bold hover:bg-red-50 transition-colors"
+               className="bg-white text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-50 transition-colors shrink-0 self-start md:self-center"
             >
                Sair do modo empresa
             </button>

@@ -131,8 +131,8 @@ export async function loadMasterDashboardData(
     brokersRes,
     projectsRes,
     contractsRes,
-    lotsRes,
     blocksRes,
+    lotsRes,
     receiptsRes,
     projectsListRes,
     usersListRes,
@@ -143,15 +143,15 @@ export async function loadMasterDashboardData(
     supabase.from('brokers').select('*', { count: 'exact', head: true }),
     supabase.from('projects').select('*', { count: 'exact', head: true }),
     supabase.from('contracts').select('*', { count: 'exact', head: true }),
-    supabase.from('lots').select('*', { count: 'exact', head: true }),
-    supabase.from('blocks').select('*', { count: 'exact', head: true }),
+    supabase.from('blocks').select('id', { count: 'exact', head: true }),
+    supabase.from('lots').select('id', { count: 'exact', head: true }),
     supabase
       .from('finance_receipts')
       .select('amount, status, paid_at, due_date, paid_amount')
       .order('due_date', { ascending: false })
       .limit(5000),
     supabase.from('projects').select('tenant_id, company_id'),
-    supabase.from('users').select('tenant_id, company_id'),
+    supabase.from('users').select('tenant_id, company_id, role'),
     supabase.from('brokers').select('tenant_id, company_id'),
   ]);
 
@@ -160,7 +160,10 @@ export async function loadMasterDashboardData(
   if (brokersRes.error) errors.push(`brokers: ${brokersRes.error.message}`);
   if (projectsRes.error) errors.push(`projects: ${projectsRes.error.message}`);
   if (contractsRes.error) errors.push(`contracts: ${contractsRes.error.message}`);
+  if (blocksRes.error) errors.push(`blocks: ${blocksRes.error.message}`);
+  if (lotsRes.error) errors.push(`lots: ${lotsRes.error.message}`);
   if (receiptsRes.error) errors.push(`finance_receipts: ${receiptsRes.error.message}`);
+  if (usersListRes.error) errors.push(`users_list: ${usersListRes.error.message}`);
 
   const companies = companiesRes.data ?? [];
 
@@ -172,12 +175,11 @@ export async function loadMasterDashboardData(
 
   const mrr = calculateMrrFromCompanies(companies);
 
-  let totalLots = lotsRes.count ?? 0;
-  if (lotsRes.error && blocksRes.count != null) {
-    totalLots = blocksRes.count;
-    errors.push(`lots: ${lotsRes.error.message} (usando contagem de blocks)`);
-  } else if (lotsRes.error) {
-    errors.push(`lots: ${lotsRes.error.message}`);
+  let totalLots = blocksRes.count ?? 0;
+  if (blocksRes.error && lotsRes.count != null) {
+    totalLots = lotsRes.count;
+  } else if (totalLots === 0 && (lotsRes.count ?? 0) > 0) {
+    totalLots = lotsRes.count ?? 0;
   }
 
   if (receiptsRes.data) {
@@ -224,6 +226,8 @@ export async function loadMasterDashboardData(
 
   const userCounts: Record<string, number> = {};
   for (const u of usersListRes.data ?? []) {
+    const role = String(u.role || '').toUpperCase();
+    if (role === 'SUPER_ADMIN') continue;
     const id = u.tenant_id || u.company_id;
     if (id) userCounts[id] = (userCounts[id] || 0) + 1;
   }

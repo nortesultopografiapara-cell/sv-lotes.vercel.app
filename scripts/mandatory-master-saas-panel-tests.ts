@@ -13,11 +13,16 @@ import {
   isMasterAuditEntry,
   masterAuditToCsv,
 } from '../lib/masterAudit';
+import { loadMasterAuditLogs } from '../lib/masterAuditLoad';
 import {
   subscriptionDaysLate,
   subscriptionFinanceLabel,
 } from '../lib/masterSubscriptionActions';
 import { flattenSuperAdminNav } from '../lib/superAdminNav';
+import {
+  formatImpersonationDateTime,
+  IMPERSONATION_KEYS,
+} from '../lib/impersonationStorage';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -123,12 +128,25 @@ function testDaysLate() {
   console.log('OK testDaysLate');
 }
 
+function testImpersonationStorage() {
+  assert(IMPERSONATION_KEYS.startedAt === 'impersonating_started_at', 'impersonation keys');
+  assert(formatImpersonationDateTime('2026-06-13T10:30:00Z').includes('2026'), 'impersonation date');
+  console.log('OK testImpersonationStorage');
+}
+
+function testAuditLoadShape() {
+  assert(typeof loadMasterAuditLogs === 'function', 'audit load export');
+  console.log('OK testAuditLoadShape');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
   testSubscriptionHelpers();
   testSuperAdminNav();
   testDaysLate();
+  testImpersonationStorage();
+  testAuditLoadShape();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 

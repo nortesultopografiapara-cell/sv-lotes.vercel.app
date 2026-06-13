@@ -3,14 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  isMasterAuditEntry,
-  mapAuditLogRow,
-  masterAuditToCsv,
-  type MasterAuditRow,
-} from '@/lib/masterAudit';
+import { masterAuditToCsv, type MasterAuditRow } from '@/lib/masterAudit';
 
 export default function MasterAuditPage() {
   return (
@@ -25,38 +19,24 @@ function MasterAuditContent() {
   const [rows, setRows] = useState<MasterAuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (!user?.id) return;
     setLoading(true);
     setError(null);
+    setWarning(null);
     try {
-      const [{ data: logs, error: logErr }, { data: companies }, { data: users }] =
-        await Promise.all([
-          supabase
-            .from('audit_logs')
-            .select('id, action, module, description, details, created_at, tenant_id, user_id')
-            .order('created_at', { ascending: false })
-            .limit(500),
-          supabase.from('companies').select('id, name'),
-          supabase.from('users').select('id, name, email'),
-        ]);
-
-      if (logErr) throw logErr;
-
-      const companyNames = Object.fromEntries(
-        (companies || []).map((c) => [c.id, c.name || '—']),
-      );
-      const userNames = Object.fromEntries(
-        (users || []).map((u) => [u.id, u.name || u.email || 'Usuário']),
-      );
-
-      const mapped = (logs || [])
-        .filter(isMasterAuditEntry)
-        .map((row) => mapAuditLogRow(row, companyNames, userNames));
-
-      setRows(mapped);
+      const res = await fetch(`/api/master/audit?userId=${encodeURIComponent(user.id)}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Erro ao carregar auditoria');
+      }
+      setRows((json.rows as MasterAuditRow[]) || []);
+      if (Array.isArray(json.warnings) && json.warnings.length > 0) {
+        setWarning(json.warnings.join(' · '));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar auditoria');
       setRows([]);
@@ -132,6 +112,12 @@ function MasterAuditContent() {
           className="w-full h-10 bg-[var(--color-surface)]/80 border border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-white"
         />
       </div>
+
+      {warning ? (
+        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {warning}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">

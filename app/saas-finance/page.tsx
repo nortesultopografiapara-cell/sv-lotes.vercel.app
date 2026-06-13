@@ -162,7 +162,7 @@ function SaaSFinancePageContent() {
         .limit(50);
 
       const companyNameMap = Object.fromEntries(rows.map((c) => [c.id, c.name || '—']));
-      const { data: platformUsers } = await supabase.from('users').select('id, name, email');
+      const { data: platformUsers } = await supabase.from('users').select('id, name, full_name, email');
       const userNameMap = Object.fromEntries(
         (platformUsers || []).map((u) => [u.id, u.name || u.email || 'Usuário']),
       );
@@ -991,14 +991,16 @@ function StatCard({
   border: string;
 }) {
   return (
-    <div className={`bg-[#11161d] border ${border} rounded-xl p-5 flex items-center gap-4`}>
+    <div className={`bg-[#11161d] border ${border} rounded-xl p-5 flex items-center gap-4 min-w-0 overflow-visible`}>
       <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
         {icon}
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1 overflow-visible">
         <p className="text-[12px] text-gray-400">{label}</p>
-        <h4 className="text-[20px] font-bold text-white truncate">{value}</h4>
-        <p className="text-[11px] text-gray-500">{hint}</p>
+        <h4 className="text-[clamp(14px,2.2vw,20px)] font-bold text-white whitespace-nowrap tabular-nums leading-tight">
+          {value}
+        </h4>
+        <p className="text-[11px] text-gray-500 mt-1">{hint}</p>
       </div>
     </div>
   );
