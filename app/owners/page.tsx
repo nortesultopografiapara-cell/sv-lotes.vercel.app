@@ -67,6 +67,10 @@ const emptyForm = (): FormState => ({
   password: '',
 });
 
+const OWNER_MODAL_SELECT_CLASS =
+  'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500 [color-scheme:dark]';
+const OWNER_MODAL_OPTION_CLASS = 'bg-slate-900 text-white';
+
 function getImpersonatingTenantId(role?: string | null): string | null {
   if (typeof window === 'undefined') return null;
   if (role !== 'SUPER_ADMIN') return null;
@@ -525,8 +529,8 @@ export default function OwnersPage() {
                     className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2"
                   />
                 </label>
-                <label className="text-sm">
-                  <span className="mb-1 block font-medium">Tipo *</span>
+                <label className="text-sm text-[var(--color-text)]">
+                  <span className="mb-1 block font-medium text-white">Tipo *</span>
                   <select
                     value={form.ownerProfileType}
                     onChange={(event) =>
@@ -535,17 +539,17 @@ export default function OwnersPage() {
                         ownerProfileType: event.target.value as OwnerProfileType,
                       }))
                     }
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2"
+                    className={OWNER_MODAL_SELECT_CLASS}
                   >
                     {OWNER_PROFILE_TYPES.map((type) => (
-                      <option key={type} value={type}>
+                      <option key={type} value={type} className={OWNER_MODAL_OPTION_CLASS}>
                         {OWNER_PROFILE_TYPE_LABELS[type]}
                       </option>
                     ))}
                   </select>
                 </label>
-                <label className="text-sm">
-                  <span className="mb-1 block font-medium">Status</span>
+                <label className="text-sm text-[var(--color-text)]">
+                  <span className="mb-1 block font-medium text-white">Status</span>
                   <select
                     value={form.status}
                     onChange={(event) =>
@@ -554,10 +558,14 @@ export default function OwnersPage() {
                         status: event.target.value as 'ACTIVE' | 'INACTIVE',
                       }))
                     }
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2"
+                    className={OWNER_MODAL_SELECT_CLASS}
                   >
-                    <option value="ACTIVE">Ativo</option>
-                    <option value="INACTIVE">Inativo</option>
+                    <option value="ACTIVE" className={OWNER_MODAL_OPTION_CLASS}>
+                      Ativo
+                    </option>
+                    <option value="INACTIVE" className={OWNER_MODAL_OPTION_CLASS}>
+                      Inativo
+                    </option>
                   </select>
                 </label>
                 {modalMode === 'create' ? (

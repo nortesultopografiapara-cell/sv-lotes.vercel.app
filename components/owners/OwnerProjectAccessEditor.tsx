@@ -68,7 +68,7 @@ export function OwnerProjectAccessEditor({ projects, entries, onChange, disabled
             key={project.id}
             className="rounded-lg border border-[var(--color-border)] p-3"
           >
-            <label className="flex items-center gap-2 font-medium">
+            <label className="flex items-center gap-2 font-medium text-white">
               <input
                 type="checkbox"
                 checked={enabled}
@@ -87,7 +87,7 @@ export function OwnerProjectAccessEditor({ projects, entries, onChange, disabled
                     ['can_view_contracts', 'Contratos'],
                   ] as const
                 ).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2">
+                  <label key={key} className="flex items-center gap-2 text-slate-200">
                     <input
                       type="checkbox"
                       checked={entry[key] !== false}
