@@ -13,7 +13,7 @@ import {
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
-const PAGE_BOTTOM = 268;
+const PAGE_BOTTOM = 232;
 
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -169,6 +169,10 @@ function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
   w.y += 2;
 
   for (const section of sections) {
+    if ([5, 9, 13, 17, 21].includes(section.number)) {
+      w.doc.addPage();
+      w.y = drawPageHeader(w.doc, w.margin, w.doc.internal.pageSize.getWidth(), true);
+    }
     w.ensureSpace(16);
     w.doc.setFont('helvetica', 'bold');
     w.doc.setFontSize(10);
@@ -180,18 +184,19 @@ function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
     w.doc.setTextColor(40, 40, 40);
 
     for (const paragraph of section.paragraphs) {
-      w.ensureSpace(14);
+      w.ensureSpace(18);
       w.y = writeWrapped(w.doc, paragraph, w.margin, w.y, w.contentW);
-      w.y += 4;
+      w.y += 6;
     }
-    w.y += 2;
+    w.y += 4;
   }
 }
 
 function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
   let w = writer;
-  w.ensureSpace(80);
-  w.y += 6;
+  w.doc.addPage();
+  w.y = drawPageHeader(w.doc, w.margin, w.doc.internal.pageSize.getWidth(), true);
+  w.y += 4;
   w.sectionTitle('PÁGINA DE ASSINATURA');
   w.writeln(
     `E, por estarem assim justas e contratadas, as partes declaram ter lido e compreendido todas as cláusulas deste instrumento, firmando-o em 2 (duas) vias de igual teor e forma, na data abaixo.`,
@@ -236,7 +241,17 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   );
 }
 
-export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
+export type SaasContractPdfBuildResult = {
+  pdf: Uint8Array;
+  pageCount: number;
+  clausesCount: number;
+  contractNumber: string;
+  companyId?: string;
+};
+
+export function buildSaasContractPdfWithMeta(
+  input: import('@/lib/saasContractContent').SaasContractPdfInput,
+): SaasContractPdfBuildResult {
   const ctx = resolveSaasContractContext(input);
   const sections = buildSaasContractSections(ctx);
 
@@ -308,5 +323,20 @@ export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
 
   drawPageFooters(doc, margin, pageW, ctx.contractNumber);
 
-  return new Uint8Array(doc.output('arraybuffer'));
+  const pageCount = doc.internal.getNumberOfPages();
+  const pdf = new Uint8Array(doc.output('arraybuffer'));
+
+  return {
+    pdf,
+    pageCount,
+    clausesCount: sections.length,
+    contractNumber: ctx.contractNumber,
+    companyId: input.company.id,
+  };
+}
+
+export function buildSaasContractPdf(
+  input: import('@/lib/saasContractContent').SaasContractPdfInput,
+): Uint8Array {
+  return buildSaasContractPdfWithMeta(input).pdf;
 }

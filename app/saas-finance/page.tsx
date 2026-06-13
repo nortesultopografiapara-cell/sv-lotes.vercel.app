@@ -66,6 +66,7 @@ import {
 } from '@/lib/masterSaasPayments';
 import { formatPaymentHistoryDetails } from '@/lib/masterSaasFinancialStatus';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
+import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
 
 const PLAN_COLORS: Record<string, string> = {
   BÁSICO: '#22c55e',
@@ -459,7 +460,7 @@ function SaaSFinancePageContent() {
           (subscription
             ? {
                 ...subscription,
-                contract_status: 'active',
+                contract_status: 'generated',
                 contract_number:
                   result.contract_number ?? subscription.contract_number ?? null,
                 contract_pdf_url:
@@ -513,8 +514,21 @@ function SaaSFinancePageContent() {
 
   const openContractTab = useCallback(
     async (companyId: string) => {
+      if (!companyId) return;
+      try {
+        setSelectedCompanyId(companyId);
+        setMainTab('contrato');
+        await loadCompanyContracts(companyId);
+      } catch (err) {
+        console.error('OPEN_CONTRACT_TAB_ERROR', err);
+      }
+    },
+    [loadCompanyContracts],
+  );
+
+  const handleSelectContractCompany = useCallback(
+    async (companyId: string) => {
       setSelectedCompanyId(companyId);
-      setMainTab('contrato');
       await loadCompanyContracts(companyId);
     },
     [loadCompanyContracts],
@@ -774,6 +788,9 @@ function SaaSFinancePageContent() {
         <div className="mb-8">
           <SaasContractPanel
             company={selectedCompany}
+            companies={companies.filter((c) => isRealSaasCompany(c))}
+            selectedCompanyId={selectedCompanyId}
+            onSelectCompany={handleSelectContractCompany}
             subscription={selectedSubscription}
             contracts={contractHistory}
             generating={
@@ -879,9 +896,14 @@ function SaaSFinancePageContent() {
                     contractValidation.warnings,
                   );
                   const contractReady = hasSaasContractReady(sub);
-                  const contractViewUrl = sub?.contract_pdf_url?.startsWith('http')
-                    ? sub.contract_pdf_url
-                    : `/api/companies/${companyId}/contract?download=1`;
+                  const contractViewUrl =
+                    companyId && user?.id
+                      ? buildSaasContractPdfUrl(companyId, user.id, 'inline')
+                      : '#';
+                  const contractDownloadUrl =
+                    companyId && user?.id
+                      ? buildSaasContractPdfUrl(companyId, user.id, 'download')
+                      : '#';
                   const contractLoadingKey = sub?.id || companyId || '';
                   const isGeneratingContract = loadingContractId === contractLoadingKey;
 
@@ -965,15 +987,16 @@ function SaaSFinancePageContent() {
                                 Ver contrato
                               </a>
                               <a
-                                href={contractViewUrl}
-                                download
+                                href={contractDownloadUrl}
                                 className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
                               >
                                 Baixar PDF
                               </a>
                               <button
                                 type="button"
-                                onClick={() => void openContractTab(companyId!)}
+                                onClick={() => {
+                                  if (companyId) void openContractTab(companyId);
+                                }}
                                 className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-400 hover:bg-white/5"
                               >
                                 Detalhes

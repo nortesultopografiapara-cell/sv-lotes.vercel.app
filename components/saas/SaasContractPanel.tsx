@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileText, Download, RefreshCw, ExternalLink, History } from 'lucide-react';
+import { FileText, Download, RefreshCw, ExternalLink, History, Building2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import {
@@ -15,12 +15,18 @@ import {
 import {
   formatDateBr,
   hasSaasContractReady,
+  isRealSaasCompany,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
 import {
   saasContractDocumentStatusLabel,
   isCurrentSaasContractVersion,
 } from '@/lib/saasContractStatus';
+import {
+  MENESES_COMPANY_ID,
+  SAAS_PROVIDER,
+} from '@/lib/saasContractContent';
+import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
 import type { CompanyContractRow } from '@/lib/saasContractService';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
@@ -29,6 +35,9 @@ type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
 type Props = {
   company: EnrichedCompany | null;
+  companies?: EnrichedCompany[];
+  selectedCompanyId?: string | null;
+  onSelectCompany?: (companyId: string) => void | Promise<void>;
   subscription?: CompanySubscription | null;
   contracts?: CompanyContractRow[];
   generating?: boolean;
@@ -39,6 +48,9 @@ type Props = {
 
 export function SaasContractPanel({
   company,
+  companies = [],
+  selectedCompanyId,
+  onSelectCompany,
   subscription: subscriptionProp,
   contracts: contractsProp,
   generating = false,
@@ -63,12 +75,16 @@ export function SaasContractPanel({
     ? validateSaasContractGeneration(company as CompanyPricingSource, sub)
     : null;
   const contractReady = hasSaasContractReady(sub);
+
   const contractViewUrl =
-    sub?.contract_pdf_url?.startsWith('http')
-      ? sub.contract_pdf_url
-      : companyId
-        ? `/api/companies/${companyId}/contract?download=1`
-        : '#';
+    companyId && user?.id
+      ? buildSaasContractPdfUrl(companyId, user.id, 'inline')
+      : '#';
+
+  const contractDownloadUrl =
+    companyId && user?.id
+      ? buildSaasContractPdfUrl(companyId, user.id, 'download')
+      : '#';
 
   const activeContract = useMemo(() => {
     return (
@@ -84,6 +100,11 @@ export function SaasContractPanel({
     }
     return '—';
   }, [activeContract]);
+
+  const selectableCompanies = useMemo(
+    () => companies.filter((c) => isRealSaasCompany(c as CompanyPricingSource)),
+    [companies],
+  );
 
   const loadContracts = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -116,8 +137,55 @@ export function SaasContractPanel({
 
   if (!company) {
     return (
-      <div className="bg-[#11161d] border border-white/5 rounded-2xl p-8 text-center text-gray-400 text-sm">
-        Selecione uma empresa na tabela de assinaturas para ver o contrato.
+      <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-white/5">
+          <h3 className="text-[16px] font-bold text-white flex items-center gap-2">
+            <FileText className="w-5 h-5 text-blue-400" />
+            Contrato SaaS
+          </h3>
+          <p className="text-[12px] text-gray-400 mt-1">
+            Selecione uma empresa para visualizar ou gerar o contrato de licença SaaS.
+          </p>
+        </div>
+        <div className="p-6 space-y-4">
+          <label className="block text-[12px] text-gray-400 uppercase tracking-wide">
+            Empresa
+          </label>
+          <select
+            value={selectedCompanyId || ''}
+            onChange={(e) => {
+              const id = e.target.value;
+              if (id && onSelectCompany) void onSelectCompany(id);
+            }}
+            className="w-full max-w-xl bg-[#0B0E14] border border-white/10 text-white px-4 py-3 rounded-lg text-[14px]"
+          >
+            <option value="">Selecione uma empresa…</option>
+            {selectableCompanies.map((c) => {
+              const id = (c as { id?: string }).id || '';
+              return (
+                <option key={id} value={id}>
+                  {c.name}
+                </option>
+              );
+            })}
+          </select>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onSelectCompany?.(MENESES_COMPANY_ID)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-200 text-[13px] hover:bg-blue-500/20"
+            >
+              <Building2 className="w-4 h-4" />
+              Abrir Meneses Imobiliária
+            </button>
+          </div>
+
+          <p className="text-[12px] text-gray-500">
+            Você também pode selecionar uma empresa na tabela de assinaturas e clicar em
+            &quot;Detalhes&quot;.
+          </p>
+        </div>
       </div>
     );
   }
@@ -184,7 +252,7 @@ export function SaasContractPanel({
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
       <div className="p-5 border-b border-white/5 flex items-center justify-between gap-4 flex-wrap">
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-[16px] font-bold text-white flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-400" />
             Contrato SaaS — {company.name}
@@ -192,9 +260,30 @@ export function SaasContractPanel({
           <p className="text-[12px] text-gray-400 mt-1">
             {SAAS_PROVIDER.legalName} · {SAAS_PROVIDER.tradeName} · {SAAS_PROVIDER.city}
           </p>
+          {selectableCompanies.length > 1 && onSelectCompany && (
+            <div className="mt-3 max-w-md">
+              <select
+                value={companyId || ''}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) void onSelectCompany(id);
+                }}
+                className="w-full bg-[#0B0E14] border border-white/10 text-white px-3 py-2 rounded-lg text-[12px]"
+              >
+                {selectableCompanies.map((c) => {
+                  const id = (c as { id?: string }).id || '';
+                  return (
+                    <option key={id} value={id}>
+                      {c.name}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {contractReady && (
+          {contractReady && user?.id && (
             <>
               <a
                 href={contractViewUrl}
@@ -205,8 +294,7 @@ export function SaasContractPanel({
                 <ExternalLink className="w-4 h-4" /> Ver contrato
               </a>
               <a
-                href={contractViewUrl}
-                download
+                href={contractDownloadUrl}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5"
               >
                 <Download className="w-4 h-4" /> Baixar PDF
@@ -326,16 +414,15 @@ export function SaasContractPanel({
                     {formatDateBr(c.generated_at?.split('T')[0])}
                   </p>
                 </div>
-                <a
-                  href={c.contract_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download
-                  className="text-blue-300 hover:underline shrink-0 flex items-center gap-1"
-                >
-                  <Download className="w-3 h-3" />
-                  Baixar
-                </a>
+                {user?.id && companyId && (
+                  <a
+                    href={buildSaasContractPdfUrl(companyId, user.id, 'download', c.id)}
+                    className="text-blue-300 hover:underline shrink-0 flex items-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    Baixar
+                  </a>
+                )}
               </div>
             ))}
           </div>

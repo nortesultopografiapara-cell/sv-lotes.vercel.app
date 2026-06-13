@@ -4,7 +4,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
-import { buildSaasContractPdf } from '@/lib/saasContractPdf';
+import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
+import { validateSaasContractPdfInput } from '@/lib/saasContractPdfValidation';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
 import {
   dueDayFromDate,
@@ -288,8 +289,9 @@ export async function generateAndStoreSaasContract(
   const generatedAt = new Date().toISOString();
 
   let pdfBytes: Uint8Array;
+  let pdfMeta: { pageCount: number; clausesCount: number; contractNumber: string };
   try {
-    pdfBytes = buildSaasContractPdf({
+    const built = buildSaasContractPdfWithMeta({
       company,
       subscription: {
         contract_number: contractNumber,
@@ -300,6 +302,41 @@ export async function generateAndStoreSaasContract(
         next_due_date: pdfDates.next_due_date,
       },
     });
+    pdfBytes = built.pdf;
+    pdfMeta = {
+      pageCount: built.pageCount,
+      clausesCount: built.clausesCount,
+      contractNumber: built.contractNumber,
+    };
+    const validation = validateSaasContractPdfInput(
+      {
+        company,
+        subscription: {
+          contract_number: contractNumber,
+          plan_type: subscription.plan_type,
+          monthly_price: subscription.monthly_price,
+          start_date: pdfDates.start_date,
+          first_payment_date: pdfDates.first_payment_date,
+          next_due_date: pdfDates.next_due_date,
+        },
+      },
+      pdfBytes,
+    );
+    console.log('SAAS_CONTRACT_PDF_VALIDATION', {
+      company_id: companyId,
+      contract_number: contractNumber,
+      page_count: pdfMeta.pageCount,
+      clauses_count: pdfMeta.clausesCount,
+      bytes: pdfBytes.byteLength,
+      validation_ok: validation.ok,
+      errors: validation.errors,
+    });
+    if (!validation.ok) {
+      throw new SaasContractStepError(
+        'pdf_generation',
+        `PDF do contrato inválido: ${validation.errors.join('; ')}`,
+      );
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao montar PDF';
     throw new SaasContractStepError('pdf_generation', message);
@@ -411,6 +448,9 @@ export async function generateAndStoreSaasContract(
     version,
     forceRegenerate,
     pdfDates,
+    company_id: companyId,
+    page_count: pdfMeta.pageCount,
+    clauses_count: pdfMeta.clausesCount,
   });
 
   return {

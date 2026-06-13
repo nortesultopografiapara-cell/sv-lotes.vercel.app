@@ -17,6 +17,8 @@ import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
 
+export const MENESES_COMPANY_ID = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
+
 export type SaasContractPdfInput = {
   company: CompanyPricingSource & {
     id?: string;
@@ -399,7 +401,7 @@ export function buildSaasContractDocumentText(input: SaasContractPdfInput): stri
 export function menesesSaasContractFixture(): SaasContractPdfInput {
   return {
     company: {
-      id: '59d38b25-61bb-4114-a8c1-8e34d9c78c2c',
+      id: MENESES_COMPANY_ID,
       name: 'MENESES IMOBILIARIA LTDA',
       cnpj: '00.000.000/0001-00',
       email: 'contato@meneses.com.br',

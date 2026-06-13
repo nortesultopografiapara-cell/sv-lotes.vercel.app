@@ -44,9 +44,17 @@ import {
 import {
   buildSaasContractDocumentText,
   menesesSaasContractFixture,
+  MENESES_COMPANY_ID,
   SAAS_PROVIDER,
 } from '../lib/saasContractContent';
-import { buildSaasContractPdf } from '../lib/saasContractPdf';
+import { buildSaasContractPdf, buildSaasContractPdfWithMeta } from '../lib/saasContractPdf';
+import {
+  SAAS_CONTRACT_MIN_PAGE_COUNT,
+  SAAS_CONTRACT_TITLE,
+  SAAS_REPORT_FORBIDDEN_TITLE,
+  validateSaasContractPdfInput,
+} from '../lib/saasContractPdfValidation';
+import { buildSaasContractPdfUrl } from '../lib/saasContractUrls';
 import {
   SAAS_CONTRACT_STATUS_AFTER_GENERATION,
   saasContractDocumentStatusLabel,
@@ -348,6 +356,30 @@ function testSaasContractProfessional() {
     fixture.subscription as import('../lib/saasSubscription').CompanySubscription,
   ).ui_plan;
   assert(text.includes(menesesUiPlan.toLowerCase()), 'plano meneses alinhado ui_plan');
+
+  const built = buildSaasContractPdfWithMeta(fixture);
+  const pdfValidation = validateSaasContractPdfInput(fixture, built.pdf);
+  assert(pdfValidation.ok, `pdf validação meneses: ${pdfValidation.errors.join('; ')}`);
+  assert(pdfValidation.hasTitle, 'pdf título contrato');
+  assert(pdfValidation.hasLgpd, 'pdf lgpd');
+  assert(pdfValidation.hasIntellectualProperty, 'pdf propriedade intelectual');
+  assert(pdfValidation.hasInadimplencia, 'pdf inadimplência');
+  assert(pdfValidation.hasForoParauapebas, 'pdf foro');
+  assert(pdfValidation.isNotSaasReport, 'pdf não é relatório saas');
+  assert(built.pageCount >= SAAS_CONTRACT_MIN_PAGE_COUNT, 'pdf páginas mínimas');
+  assert(built.clausesCount === 24, 'pdf 24 cláusulas');
+  assert(
+    text.includes(SAAS_CONTRACT_TITLE.toLowerCase()) ||
+      text.includes('contrato de licença de software'),
+    'título contrato no documento',
+  );
+  assert(!text.includes(SAAS_REPORT_FORBIDDEN_TITLE.toLowerCase()), 'não é relatório saas');
+
+  const viewUrl = buildSaasContractPdfUrl(MENESES_COMPANY_ID, 'user-1', 'inline');
+  const downloadUrl = buildSaasContractPdfUrl(MENESES_COMPANY_ID, 'user-1', 'download');
+  assert(viewUrl.includes('inline=1'), 'url ver contrato');
+  assert(downloadUrl.includes('download=1'), 'url baixar pdf');
+  assert(viewUrl.includes(MENESES_COMPANY_ID), 'url company id');
 
   const pdf = buildSaasContractPdf(fixture);
   assert(pdf.byteLength > 8000, 'pdf gerado com conteúdo');
