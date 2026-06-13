@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { canEditProject } from '@/lib/projectEditAccess';
-import { updateProjectWithFallback } from '@/lib/projects-update';
+import {
+  formatProjectUpdateDbError,
+  updateProjectWithFallback,
+} from '@/lib/projects-update';
 import {
   createAdminSupabase,
   getRequestAuthUser,
@@ -140,7 +143,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       name,
       city,
       uf,
-      state: uf,
       neighborhood: body.neighborhood?.trim() || null,
       address: body.address?.trim() || null,
       forum_city: forumCity,
@@ -157,7 +159,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       });
       return NextResponse.json(
         {
-          error: error.message || 'Falha ao atualizar projeto.',
+          error: formatProjectUpdateDbError(error.message),
           code: error.code || 'DB_UPDATE',
         },
         { status: 422 },

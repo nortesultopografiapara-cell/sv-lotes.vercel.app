@@ -61,6 +61,10 @@ import {
 } from '../lib/saasContractStatus';
 import { hasSaasContractReady } from '../lib/saasSubscription';
 import { canEditProject, formatProjectApiError } from '../lib/projectEditAccess';
+import {
+  buildProjectUpdatePayloads,
+  formatProjectUpdateDbError,
+} from '../lib/projects-update';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -485,6 +489,43 @@ function testProjectEditAccess() {
   console.log('OK testProjectEditAccess');
 }
 
+function testProjectUpdatePayloads() {
+  const payloads = buildProjectUpdatePayloads({
+    name: 'CHACARAS DOIS IRMÃOS',
+    city: 'Parauapebas',
+    uf: 'PA',
+    neighborhood: 'Centro',
+    address: 'Rua Exemplo, 100',
+    forum_city: 'Parauapebas',
+    contract_city: 'Parauapebas',
+    location: 'Parauapebas - PA',
+  });
+
+  assert(payloads.length >= 3, 'payloads com fallback');
+  for (const payload of payloads) {
+    assert(!('updated_at' in payload), 'update não envia updated_at');
+    assert(!('state' in payload), 'update não envia state');
+    assert(!('contract_city' in payload), 'update não envia contract_city');
+    assert(payload.name === 'CHACARAS DOIS IRMÃOS', 'nome preservado');
+  }
+  assert(payloads[0].forum_city === 'Parauapebas', 'forum_city como município do contrato');
+  assert(payloads[0].neighborhood === 'Centro', 'bairro no payload completo');
+
+  const columnMsg = formatProjectUpdateDbError(
+    "Could not find the 'updated_at' column of 'projects' in the schema cache",
+  );
+  assert(
+    !columnMsg.includes('updated_at'),
+    'erro de coluna não expõe detalhe técnico',
+  );
+  assert(
+    columnMsg.includes('Não foi possível salvar'),
+    'erro de coluna amigável',
+  );
+
+  console.log('OK testProjectUpdatePayloads');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
@@ -499,6 +540,7 @@ function main() {
   testCompanyUserCounts();
   testSaasContractProfessional();
   testProjectEditAccess();
+  testProjectUpdatePayloads();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 
