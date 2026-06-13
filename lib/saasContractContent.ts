@@ -16,6 +16,12 @@ import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
+import {
+  formatContractCep,
+  formatContractCity,
+  formatContractCnpj,
+  formatContractPhone,
+} from '@/lib/saasContractFormat';
 
 export const MENESES_COMPANY_ID = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
 
@@ -131,13 +137,15 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
     provider: SAAS_PROVIDER,
     contractor: {
       name: displayField(company.name),
-      cnpj: displayField(company.cnpj),
+      cnpj: formatContractCnpj(displayField(company.cnpj)),
       responsible: displayField(responsible),
-      phone: displayField(company.phone),
+      phone: formatContractPhone(displayField(company.phone)),
       email: displayField(company.email),
       address: displayField(normalized.address || company.address),
-      cityState: `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
-      cep: company.cep ? String(company.cep).trim() : undefined,
+      cityState: formatContractCity(
+        `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
+      ),
+      cep: company.cep ? formatContractCep(String(company.cep).trim()) : undefined,
     },
     plan: {
       name: billingUi.ui_plan,
@@ -403,12 +411,13 @@ export function menesesSaasContractFixture(): SaasContractPdfInput {
     company: {
       id: MENESES_COMPANY_ID,
       name: 'MENESES IMOBILIARIA LTDA',
-      cnpj: '00.000.000/0001-00',
+      cnpj: '64435850000103',
       email: 'contato@meneses.com.br',
-      phone: '(94) 99999-0000',
+      phone: '94992391277',
       address: 'Rua Exemplo, 100',
-      city: 'Parauapebas',
+      city: 'parauapebas',
       state: 'PA',
+      cep: '68515000',
       plan: 'business',
       plan_type: 'business',
       subscription_due_day: 27,

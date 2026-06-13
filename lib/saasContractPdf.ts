@@ -10,6 +10,12 @@ import {
   SAAS_PROVIDER,
   type SaasContractSection,
 } from '@/lib/saasContractContent';
+import {
+  formatContractCep,
+  formatContractCity,
+  formatContractCnpj,
+  formatContractPhone,
+} from '@/lib/saasContractFormat';
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
@@ -19,31 +25,6 @@ const CONTENT_LINE_H = 4.8;
 const DATA_LABEL_COL_W = 52;
 const DATA_LINE_H = 4.6;
 const DATA_ROW_GAP = 2;
-
-function onlyDigits(value: string): string {
-  return value.replace(/\D/g, '');
-}
-
-/** Formatação apenas para exibição na página 1 (não altera cláusulas). */
-function formatDisplayCnpj(value: string): string {
-  const d = onlyDigits(value).slice(0, 14);
-  if (d.length !== 14) return value;
-  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-}
-
-function formatDisplayPhone(value: string): string {
-  const d = onlyDigits(value);
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return value;
-}
-
-function normalizeCityState(cityState: string): string {
-  const trimmed = cityState.trim();
-  if (!trimmed || trimmed === 'Não informado/Não informado') return trimmed;
-  if (trimmed.includes('/')) return trimmed;
-  return trimmed;
-}
 
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -350,14 +331,14 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   w.doc.text(ctx.contractor.name, w.margin, w.y);
   w.doc.text(ctx.provider.legalName, w.margin + colW + 12, w.y);
   w.y += 5;
-  w.doc.text(`CNPJ ${ctx.contractor.cnpj}`, w.margin, w.y);
-  w.doc.text(`CNPJ ${ctx.provider.cnpj}`, w.margin + colW + 12, w.y);
+  w.doc.text(`CNPJ ${formatContractCnpj(ctx.contractor.cnpj)}`, w.margin, w.y);
+  w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, w.margin + colW + 12, w.y);
   w.y += 5;
   w.doc.text(ctx.contractor.responsible, w.margin, w.y);
   w.doc.text(ctx.provider.tradeName, w.margin + colW + 12, w.y);
   w.y += 8;
-  w.doc.text(`Local e data: ${ctx.contractor.cityState}, ${signDate}`, w.margin, w.y);
-  w.doc.text(`Local e data: ${ctx.provider.city}, ${signDate}`, w.margin + colW + 12, w.y);
+  w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
+  w.doc.text(`Local e data: ${formatContractCity(ctx.provider.city)}, ${signDate}`, w.margin + colW + 12, w.y);
   w.y += 10;
 
   w.doc.setFont('helvetica', 'italic');
@@ -414,20 +395,20 @@ export function buildSaasContractPdfWithMeta(
   writer.dataTableHeader();
   writer.row('Razão social', ctx.provider.legalName);
   writer.row('Nome fantasia / marca', ctx.provider.tradeName);
-  writer.row('CNPJ', formatDisplayCnpj(ctx.provider.cnpj));
-  writer.row('Cidade', ctx.provider.city);
+  writer.row('CNPJ', formatContractCnpj(ctx.provider.cnpj));
+  writer.row('Cidade', formatContractCity(ctx.provider.city));
   writer.renderLicensedServices(ctx.provider.services);
 
   writer.sectionTitle('DADOS DA CONTRATANTE');
   writer.dataTableHeader();
   writer.row('Empresa', ctx.contractor.name);
-  writer.row('CNPJ', formatDisplayCnpj(ctx.contractor.cnpj));
+  writer.row('CNPJ', formatContractCnpj(ctx.contractor.cnpj));
   writer.row('Responsável', ctx.contractor.responsible);
-  writer.row('Telefone', formatDisplayPhone(ctx.contractor.phone));
+  writer.row('Telefone', formatContractPhone(ctx.contractor.phone));
   writer.row('E-mail', ctx.contractor.email);
   writer.row('Endereço', ctx.contractor.address);
-  writer.row('Cidade/UF', normalizeCityState(ctx.contractor.cityState));
-  if (ctx.contractor.cep) writer.row('CEP', ctx.contractor.cep);
+  writer.row('Cidade/UF', formatContractCity(ctx.contractor.cityState));
+  if (ctx.contractor.cep) writer.row('CEP', formatContractCep(ctx.contractor.cep));
   writer.y += 3;
 
   writer.sectionTitle('DADOS DO PLANO E COBRANÇA');
