@@ -13,7 +13,7 @@ import {
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
-const PAGE_BOTTOM = 232;
+const PAGE_BOTTOM = 284;
 const DATA_LABEL_COL_W = 52;
 const DATA_LINE_H = 4.6;
 const DATA_ROW_GAP = 2;
@@ -143,88 +143,127 @@ type PdfWriter = {
   sectionTitle: (title: string) => void;
   dataTableHeader: () => void;
   row: (label: string, value: string) => void;
+  renderLicensedServices: (services: string[]) => void;
 };
 
 function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
   const margin = 16;
   const pageW = doc.internal.pageSize.getWidth();
   const contentW = pageW - margin * 2;
-  let y = startY;
 
-  const ensureSpace = (need: number) => {
-    if (y + need > PAGE_BOTTOM) {
-      doc.addPage();
-      y = drawPageHeader(doc, margin, pageW, true);
-    }
-  };
+  const writer: PdfWriter = {
+    doc,
+    margin,
+    contentW,
+    y: startY,
 
-  const writeln = (text: string, opts?: { bold?: boolean; size?: number; gap?: number }) => {
-    ensureSpace(12);
-    doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
-    doc.setFontSize(opts?.size ?? 9);
-    doc.setTextColor(40, 40, 40);
-    y = writeWrapped(doc, text, margin, y, contentW);
-    y += opts?.gap ?? 3;
-  };
-
-  const sectionTitle = (title: string) => {
-    ensureSpace(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text(title, margin, y);
-    y += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(40, 40, 40);
-  };
-
-  const dataTableHeader = () => {
-    ensureSpace(10);
-    const valueColX = margin + DATA_LABEL_COL_W;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(90, 90, 90);
-    doc.text('Campo', margin, y);
-    doc.text('Valor', valueColX, y);
-    y += 4;
-    doc.setDrawColor(210);
-    doc.setLineWidth(0.2);
-    doc.line(margin, y, margin + contentW, y);
-    y += 5;
-  };
-
-  const row = (label: string, value: string) => {
-    const valueColX = margin + DATA_LABEL_COL_W;
-    const valueColW = contentW - DATA_LABEL_COL_W;
-    const safeValue = value?.trim() ? value : '—';
-
-    doc.setFontSize(9);
-    const labelLines = doc.splitTextToSize(label, DATA_LABEL_COL_W - 2);
-    const valueLines = doc.splitTextToSize(safeValue, valueColW - 1);
-    const lineCount = Math.max(labelLines.length, valueLines.length, 1);
-    const rowH = lineCount * DATA_LINE_H + DATA_ROW_GAP;
-
-    ensureSpace(rowH);
-
-    for (let i = 0; i < lineCount; i++) {
-      const lineY = y + i * DATA_LINE_H;
-      if (i < labelLines.length) {
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(55, 65, 80);
-        doc.text(labelLines[i], margin, lineY);
+    ensureSpace(need: number) {
+      if (writer.y + need > PAGE_BOTTOM) {
+        doc.addPage();
+        writer.y = drawPageHeader(doc, margin, pageW, true);
       }
-      if (i < valueLines.length) {
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(40, 40, 40);
-        doc.text(valueLines[i], valueColX, lineY);
-      }
-    }
+    },
 
-    y += rowH;
+    writeln(text: string, opts?: { bold?: boolean; size?: number; gap?: number }) {
+      writer.ensureSpace(12);
+      doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
+      doc.setFontSize(opts?.size ?? 9);
+      doc.setTextColor(40, 40, 40);
+      writer.y = writeWrapped(doc, text, margin, writer.y, contentW);
+      writer.y += opts?.gap ?? 3;
+    },
+
+    sectionTitle(title: string) {
+      writer.ensureSpace(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text(title, margin, writer.y);
+      writer.y += 7;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(40, 40, 40);
+    },
+
+    dataTableHeader() {
+      writer.ensureSpace(10);
+      const valueColX = margin + DATA_LABEL_COL_W;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(90, 90, 90);
+      doc.text('Campo', margin, writer.y);
+      doc.text('Valor', valueColX, writer.y);
+      writer.y += 4;
+      doc.setDrawColor(210);
+      doc.setLineWidth(0.2);
+      doc.line(margin, writer.y, margin + contentW, writer.y);
+      writer.y += 5;
+    },
+
+    row(label: string, value: string) {
+      const valueColX = margin + DATA_LABEL_COL_W;
+      const valueColW = contentW - DATA_LABEL_COL_W;
+      const safeValue = value?.trim() ? value : '—';
+
+      doc.setFontSize(9);
+      const labelLines = doc.splitTextToSize(label, DATA_LABEL_COL_W - 2);
+      const valueLines = doc.splitTextToSize(safeValue, valueColW - 1);
+      const lineCount = Math.max(labelLines.length, valueLines.length, 1);
+      const rowH = lineCount * DATA_LINE_H + DATA_ROW_GAP;
+
+      writer.ensureSpace(rowH);
+
+      for (let i = 0; i < lineCount; i++) {
+        const lineY = writer.y + i * DATA_LINE_H;
+        if (i < labelLines.length) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(55, 65, 80);
+          doc.text(labelLines[i], margin, lineY);
+        }
+        if (i < valueLines.length) {
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(40, 40, 40);
+          doc.text(valueLines[i], valueColX, lineY);
+        }
+      }
+
+      writer.y += rowH;
+    },
+
+    renderLicensedServices(services: string[]) {
+      writer.y += 4;
+      writer.ensureSpace(10);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text('SERVIÇOS LICENCIADOS', margin, writer.y);
+      writer.y += 7;
+
+      const bulletColX = margin + DATA_LABEL_COL_W;
+      const bulletColW = contentW - DATA_LABEL_COL_W;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(40, 40, 40);
+
+      for (const service of services) {
+        const bulletLines = doc.splitTextToSize(`• ${service}`, bulletColW - 1);
+        const blockH = bulletLines.length * DATA_LINE_H + 1;
+        writer.ensureSpace(blockH);
+
+        for (const line of bulletLines) {
+          doc.text(line, bulletColX, writer.y);
+          writer.y += DATA_LINE_H;
+        }
+        writer.y += 1;
+      }
+
+      writer.y += 5;
+    },
   };
 
-  return { doc, margin, contentW, y, ensureSpace, writeln, sectionTitle, dataTableHeader, row };
+  return writer;
 }
 
 function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
@@ -352,27 +391,7 @@ export function buildSaasContractPdfWithMeta(
   writer.row('Nome fantasia / marca', ctx.provider.tradeName);
   writer.row('CNPJ', formatDisplayCnpj(ctx.provider.cnpj));
   writer.row('Cidade', ctx.provider.city);
-  writer.ensureSpace(10);
-  writer.doc.setFont('helvetica', 'bold');
-  writer.doc.setFontSize(9);
-  writer.doc.setTextColor(55, 65, 80);
-  writer.doc.text('Serviços licenciados', writer.margin, writer.y);
-  writer.y += DATA_LINE_H;
-  writer.doc.setFont('helvetica', 'normal');
-  writer.doc.setTextColor(40, 40, 40);
-  for (const service of ctx.provider.services) {
-    writer.ensureSpace(DATA_LINE_H + 1);
-    const bulletLines = writer.doc.splitTextToSize(
-      `• ${service}`,
-      writer.contentW - DATA_LABEL_COL_W - 1,
-    );
-    for (const line of bulletLines) {
-      writer.doc.text(line, writer.margin + DATA_LABEL_COL_W, writer.y);
-      writer.y += DATA_LINE_H;
-    }
-    writer.y += 1;
-  }
-  writer.y += 3;
+  writer.renderLicensedServices(ctx.provider.services);
 
   writer.sectionTitle('DADOS DA CONTRATANTE');
   writer.dataTableHeader();
