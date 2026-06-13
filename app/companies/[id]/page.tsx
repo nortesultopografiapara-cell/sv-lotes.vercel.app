@@ -17,6 +17,7 @@ import {
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdminRole } from '@/lib/masterCompanyUsers';
 import { writeImpersonationState } from '@/lib/impersonationStorage';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
@@ -73,11 +74,14 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
       ] = await Promise.all([
         supabase.from('companies').select('*').eq('id', companyId).single(),
         supabase.from('company_subscriptions').select('*').eq('company_id', companyId).maybeSingle(),
-        supabase.from('users').select('id, name, full_name, email, role, created_at').eq('tenant_id', companyId),
+        supabase
+          .from('users')
+          .select('id, name, full_name, email, role, created_at, tenant_id, company_id')
+          .or(`tenant_id.eq.${companyId},company_id.eq.${companyId}`),
         supabase.from('projects').select('id, name, city, uf, created_at').eq('tenant_id', companyId),
         supabase
           .from('audit_logs')
-          .select('id, action, module, description, details, created_at, tenant_id, user_id')
+          .select('id, action, module, description, created_at, tenant_id, user_id')
           .eq('tenant_id', companyId)
           .order('created_at', { ascending: false })
           .limit(100),
@@ -92,7 +96,7 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
 
       setCompany(companyRow);
       setSubscription((subRows as CompanySubscription | null) ?? null);
-      setTenantUsers(usersRows || []);
+      setTenantUsers((usersRows || []).filter((u) => !isSuperAdminRole(u.role)));
       setProjects(projectRows || []);
       setHistory(
         (auditRows || []).map((row) =>

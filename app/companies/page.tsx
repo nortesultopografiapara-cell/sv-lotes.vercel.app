@@ -17,6 +17,10 @@ import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { writeImpersonationState } from '@/lib/impersonationStorage';
 import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
+import {
+  buildCompanyProjectCounts,
+  buildCompanyUserCounts,
+} from '@/lib/masterCompanyUsers';
 import { supabase } from '@/lib/supabase';
 
 export default function CompaniesPage() {
@@ -52,7 +56,11 @@ function CompaniesPageContent() {
     setLoadError(null);
 
     try {
-      const { data, error } = await supabase.from('companies').select('*');
+      const [{ data, error }, { data: usersData }, { data: projectsData }] = await Promise.all([
+        supabase.from('companies').select('*'),
+        supabase.from('users').select('tenant_id, company_id, role'),
+        supabase.from('projects').select('tenant_id, company_id'),
+      ]);
 
       console.log('MASTER_COMPANIES_RENDER', data);
 
@@ -62,7 +70,16 @@ function CompaniesPageContent() {
         return;
       }
 
-      setCompanies(data ?? []);
+      const userCounts = buildCompanyUserCounts(usersData || []);
+      const projectCounts = buildCompanyProjectCounts(projectsData || []);
+
+      setCompanies(
+        (data ?? []).map((company) => ({
+          ...company,
+          user_count: userCounts[company.id] || 0,
+          project_count: projectCounts[company.id] || 0,
+        })),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
       setLoadError(message);

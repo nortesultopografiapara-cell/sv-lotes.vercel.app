@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateMrrFromCompanies, getCompanyMonthlyPrice } from '@/lib/companyPricing';
+import { buildCompanyUserCounts } from '@/lib/masterCompanyUsers';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
@@ -224,13 +225,7 @@ export async function loadMasterDashboardData(
     if (id) projectCounts[id] = (projectCounts[id] || 0) + 1;
   }
 
-  const userCounts: Record<string, number> = {};
-  for (const u of usersListRes.data ?? []) {
-    const role = String(u.role || '').toUpperCase();
-    if (role === 'SUPER_ADMIN') continue;
-    const id = u.tenant_id || u.company_id;
-    if (id) userCounts[id] = (userCounts[id] || 0) + 1;
-  }
+  const userCounts = buildCompanyUserCounts(usersListRes.data ?? []);
 
   const brokerCounts: Record<string, number> = {};
   for (const b of brokersListRes.data ?? []) {

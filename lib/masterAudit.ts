@@ -23,6 +23,9 @@ const ACTION_LABELS: Record<string, string> = {
   SUBSCRIPTION_REACTIVATED: 'Reativação de assinatura',
   SUBSCRIPTION_RENEWED: 'Renovação de assinatura',
   SAAS_PLAN_UPDATE: 'Alteração de plano',
+  SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
+  SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
+  SUBSCRIPTION_UPDATED: 'Edição de assinatura',
 };
 
 const MASTER_MODULES = new Set([

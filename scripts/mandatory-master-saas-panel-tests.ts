@@ -13,6 +13,16 @@ import {
   isMasterAuditEntry,
   masterAuditToCsv,
 } from '../lib/masterAudit';
+import {
+  buildCompanyUserCounts,
+  resolveUserCompanyId,
+} from '../lib/masterCompanyUsers';
+import {
+  buildReceivedRevenueByMonth,
+  formatReferenceMonthLabel,
+  referenceMonthFromDate,
+  sumReceivedRevenue,
+} from '../lib/masterSaasPayments';
 import { loadMasterAuditLogs } from '../lib/masterAuditLoad';
 import {
   subscriptionDaysLate,
@@ -88,8 +98,8 @@ function testAuditHelpers() {
     'audit entry',
   );
   assert(
-    formatMasterAuditAction('COMPANY_STATUS_CHANGED') === 'Alteração de status da empresa',
-    'action label',
+    formatMasterAuditAction('SAAS_PAYMENT_REGISTERED') === 'Pagamento de assinatura registrado',
+    'payment audit label',
   );
   const csv = masterAuditToCsv([
     {
@@ -139,6 +149,40 @@ function testAuditLoadShape() {
   console.log('OK testAuditLoadShape');
 }
 
+function testSaasPayments() {
+  const payments = [
+    {
+      id: 'p1',
+      company_id: 'c1',
+      amount: 549.99,
+      paid_at: '2026-05-27',
+      payment_method: 'manual',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+  ];
+  assert(sumReceivedRevenue(payments) === 549.99, 'received revenue');
+  const months = buildReceivedRevenueByMonth(payments);
+  assert(months.some((m) => m.value === 549.99), 'month revenue');
+  assert(formatReferenceMonthLabel('2026-05').includes('Maio'), 'ref month');
+  assert(referenceMonthFromDate('2026-05-27') === '2026-05', 'ref from date');
+  console.log('OK testSaasPayments');
+}
+
+function testCompanyUserCounts() {
+  const counts = buildCompanyUserCounts([
+    { tenant_id: 'c1', role: 'ADMIN' },
+    { tenant_id: 'c1', role: 'BROKER' },
+    { tenant_id: 'c2', role: 'SUPER_ADMIN' },
+    { company_id: 'c3', role: 'ADMIN' },
+  ]);
+  assert(counts.c1 === 2, 'c1 users');
+  assert(counts.c2 === undefined, 'super admin excluded');
+  assert(counts.c3 === 1, 'company_id fallback');
+  assert(resolveUserCompanyId({ tenant_id: 'abc' }) === 'abc', 'tenant id');
+  console.log('OK testCompanyUserCounts');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
@@ -147,6 +191,8 @@ function main() {
   testDaysLate();
   testImpersonationStorage();
   testAuditLoadShape();
+  testSaasPayments();
+  testCompanyUserCounts();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 

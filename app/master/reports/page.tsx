@@ -23,7 +23,7 @@ import {
   masterReportsToCsv,
   type MasterReportsMetrics,
 } from '@/lib/masterSaasReports';
-import type { CompanySubscription } from '@/lib/saasSubscription';
+import { sumReceivedRevenue } from '@/lib/masterSaasPayments';
 
 function KpiCard({
   title,
@@ -64,6 +64,7 @@ function MasterReportsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<MasterReportsMetrics | null>(null);
+  const [receivedRevenue, setReceivedRevenue] = useState(0);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -85,6 +86,16 @@ function MasterReportsContent() {
           (subscriptions || []) as CompanySubscription[],
         ),
       );
+
+      if (user.id) {
+        const payRes = await fetch(
+          `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
+        );
+        const payJson = await payRes.json().catch(() => ({}));
+        setReceivedRevenue(
+          payRes.ok ? sumReceivedRevenue(payJson.payments || []) : 0,
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar relatórios');
       setMetrics(null);
@@ -228,6 +239,12 @@ function MasterReportsContent() {
               value={formatMasterCurrency(metrics.delinquencyAmount)}
               icon={TrendingDown}
               accent="bg-rose-500/15 text-rose-400"
+            />
+            <KpiCard
+              title="Receita recebida"
+              value={formatMasterCurrency(receivedRevenue)}
+              icon={Wallet}
+              accent="bg-green-500/15 text-green-400"
             />
             <KpiCard
               title="Taxa de inadimplência"

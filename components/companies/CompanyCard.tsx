@@ -89,7 +89,7 @@ export function CompanyCard({
 
   const normalizedStatus = (company.status_operacional || (company.active ? 'Ativa' : 'Inativa')).toLowerCase();
   const isActive = ['active', 'ativa'].includes(normalizedStatus);
-  const userCount = company.users?.[0]?.count ?? 0;
+  const userCount = company.user_count ?? company.users?.[0]?.count ?? 0;
   const projectCount = company.project_count ?? 0;
   const protectedCompany =
     isMaster || company.id === user?.tenant_id || company.is_master || company.slug?.toLowerCase() === 'master';

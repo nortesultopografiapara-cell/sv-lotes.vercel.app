@@ -42,6 +42,7 @@ import {
   RefreshCw,
   FileText,
   DollarSign,
+  Plus,
 } from 'lucide-react';
 import {
   LineChart,
@@ -56,6 +57,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import {
+  buildReceivedRevenueByMonth,
+  formatReferenceMonthLabel,
+  paymentMethodLabel,
+  referenceMonthFromDate,
+  sumReceivedRevenue,
+  type MasterSaasPayment,
+} from '@/lib/masterSaasPayments';
 
 const PLAN_COLORS: Record<string, string> = {
   BÁSICO: '#22c55e',
@@ -99,6 +108,17 @@ function SaaSFinancePageContent() {
   const [billingHistory, setBillingHistory] = useState<
     ReturnType<typeof mapAuditLogRow>[]
   >([]);
+  const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    companyId: '',
+    amount: '',
+    paidAt: new Date().toISOString().split('T')[0],
+    paymentMethod: 'manual',
+    referenceMonth: referenceMonthFromDate(new Date().toISOString()),
+    notes: '',
+  });
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -154,20 +174,47 @@ function SaaSFinancePageContent() {
 
       setCompanies(rows.map((c) => enrichCompany(c, subMap.get(c.id))));
 
+      const payRes = await fetch(
+        `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
+      );
+      const payJson = await payRes.json().catch(() => ({}));
+      const payments = (payRes.ok ? payJson.payments : []) as MasterSaasPayment[];
+      setSaasPayments(payments);
+
       const { data: billingLogs } = await supabase
         .from('audit_logs')
-        .select('id, action, module, description, details, created_at, tenant_id, user_id')
+        .select('id, action, module, description, created_at, tenant_id, user_id')
         .eq('module', 'SUBSCRIPTIONS')
         .order('created_at', { ascending: false })
         .limit(50);
 
       const companyNameMap = Object.fromEntries(rows.map((c) => [c.id, c.name || '—']));
-      const { data: platformUsers } = await supabase.from('users').select('id, name, full_name, email');
+      const { data: platformUsers } = await supabase
+        .from('users')
+        .select('id, name, full_name, email');
       const userNameMap = Object.fromEntries(
-        (platformUsers || []).map((u) => [u.id, u.name || u.email || 'Usuário']),
+        (platformUsers || []).map((u) => [
+          u.id,
+          u.name || u.full_name || u.email || 'Usuário',
+        ]),
       );
+      const auditRows = (billingLogs || []).map((row) =>
+        mapAuditLogRow(row, companyNameMap, userNameMap),
+      );
+      const paymentRows = payments.map((payment) => ({
+        id: `payment-${payment.id}`,
+        created_at: payment.paid_at,
+        user_name: 'Master',
+        action: 'Pagamento registrado',
+        company_name: payment.company_name || companyNameMap[payment.company_id] || '—',
+        details: `${formatSaasCurrency(Number(payment.amount))} · ${formatReferenceMonthLabel(payment.reference_month)} · ${paymentMethodLabel(payment.payment_method)}${payment.notes ? ` · ${payment.notes}` : ''}`,
+      }));
       setBillingHistory(
-        (billingLogs || []).map((row) => mapAuditLogRow(row, companyNameMap, userNameMap)),
+        [...paymentRows, ...auditRows].sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tb - ta;
+        }),
       );
     } catch (err) {
       console.error('SAAS_FINANCE_LOAD_ERROR', err);
@@ -198,16 +245,13 @@ function SaaSFinancePageContent() {
         mrr += applied;
       }
 
-      const paymentRaw = String(c.payment_status_raw || '').toLowerCase();
-      if (paymentRaw === 'paid' && isBillableCompany(c)) {
-        receivedRevenue += applied;
-      }
-
       if (c.subscription_status === 'Inadimplente') {
         delayedAmount += applied;
         outstandingCount++;
       }
     });
+
+    receivedRevenue = sumReceivedRevenue(saasPayments);
 
     return {
       mrr,
@@ -218,7 +262,63 @@ function SaaSFinancePageContent() {
       delayedAmount,
       outstandingCount,
     };
-  }, [companies]);
+  }, [companies, saasPayments]);
+
+  const revenueByMonth = useMemo(
+    () => buildReceivedRevenueByMonth(saasPayments),
+    [saasPayments],
+  );
+
+  const openPaymentModal = useCallback((company?: EnrichedCompany) => {
+    const companyId = (company as { id?: string } | undefined)?.id || '';
+    const pricing = company ? resolveCompanyPricing(company) : null;
+    setPaymentForm({
+      companyId,
+      amount: pricing ? String(pricing.appliedPrice) : '',
+      paidAt: new Date().toISOString().split('T')[0],
+      paymentMethod: 'manual',
+      referenceMonth: referenceMonthFromDate(new Date().toISOString()),
+      notes: '',
+    });
+    setPaymentModalOpen(true);
+  }, []);
+
+  const handleRegisterPayment = useCallback(async () => {
+    if (!user?.id) return;
+    const amount = Number(paymentForm.amount);
+    if (!paymentForm.companyId || !paymentForm.paidAt || !Number.isFinite(amount) || amount <= 0) {
+      alert('Preencha empresa, valor e data de pagamento.');
+      return;
+    }
+    setPaymentSaving(true);
+    try {
+      const company = companies.find((c) => (c as { id?: string }).id === paymentForm.companyId);
+      const sub = company?.saas_subscription as CompanySubscription | null;
+      const res = await fetch('/api/master/saas-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          companyId: paymentForm.companyId,
+          subscriptionId: sub?.id ?? null,
+          amount,
+          paidAt: paymentForm.paidAt,
+          paymentMethod: paymentForm.paymentMethod,
+          referenceMonth:
+            paymentForm.referenceMonth || referenceMonthFromDate(paymentForm.paidAt),
+          notes: paymentForm.notes || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Falha ao registrar pagamento');
+      setPaymentModalOpen(false);
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao registrar pagamento');
+    } finally {
+      setPaymentSaving(false);
+    }
+  }, [user?.id, paymentForm, companies, loadData]);
 
   const filteredCompanies = useMemo(() => {
     return companies.filter((c) => {
@@ -267,7 +367,7 @@ function SaaSFinancePageContent() {
     ].filter((d) => d.value > 0);
   }, [companies]);
 
-  const mrrTrendData = stats.mrr > 0 ? [{ name: 'Atual', value: stats.mrr }] : [];
+  const mrrTrendData = revenueByMonth.map((m) => ({ name: m.label, value: m.value }));
 
   const selectedCompany = useMemo(
     () => companies.find((c) => (c as { id?: string }).id === selectedCompanyId) || null,
@@ -501,47 +601,47 @@ function SaaSFinancePageContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 min-w-0">
         <StatCard
-          label="Receita prevista (MRR)"
+          title="Receita prevista (MRR)"
           value={formatCurrency(stats.projectedRevenue)}
-          hint="Valor mensal esperado"
-          icon={<DollarSign className="w-6 h-6 text-green-400" />}
+          description="Valor mensal esperado das assinaturas ativas"
+          icon={<DollarSign className="w-5 h-5 text-green-400" />}
           border="border-green-500/20"
         />
         <StatCard
-          label="Receita recebida"
+          title="Receita recebida"
           value={formatCurrency(stats.receivedRevenue)}
-          hint="Assinaturas com status pago"
-          icon={<Wallet className="w-6 h-6 text-emerald-400" />}
+          description="Soma dos pagamentos SaaS registrados"
+          icon={<Wallet className="w-5 h-5 text-emerald-400" />}
           border="border-emerald-500/20"
         />
         <StatCard
-          label="Receita Mensal (MRR)"
+          title="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
-          hint="Soma preços aplicados (custom + plano)"
-          icon={<DollarSign className="w-6 h-6 text-green-400" />}
+          description="Soma dos preços aplicados por tenant"
+          icon={<DollarSign className="w-5 h-5 text-green-400" />}
           border="border-green-500/20"
         />
         <StatCard
-          label="Receita Anual (ARR)"
+          title="Receita Anual (ARR)"
           value={formatCurrency(stats.arr)}
-          hint="MRR × 12"
-          icon={<TrendingUp className="w-6 h-6 text-blue-400" />}
+          description="Projeção anual com base no MRR"
+          icon={<TrendingUp className="w-5 h-5 text-blue-400" />}
           border="border-blue-500/20"
         />
         <StatCard
-          label="Inadimplência"
+          title="Inadimplência"
           value={formatCurrency(stats.delayedAmount)}
-          hint={`${stats.outstandingCount} inadimplente(s)`}
-          icon={<AlertCircle className="w-6 h-6 text-rose-400" />}
+          description={`${stats.outstandingCount} empresa(s) inadimplente(s)`}
+          icon={<AlertCircle className="w-5 h-5 text-rose-400" />}
           border="border-rose-500/20"
         />
         <StatCard
-          label="Clientes Ativos"
+          title="Clientes Ativos"
           value={String(stats.activeClients)}
-          hint="Tenants faturáveis"
-          icon={<Users className="w-6 h-6 text-purple-400" />}
+          description="Tenants com assinatura faturável"
+          icon={<Users className="w-5 h-5 text-purple-400" />}
           border="border-purple-500/20"
         />
       </div>
@@ -601,18 +701,18 @@ function SaaSFinancePageContent() {
       ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <ChartCard title="Receita (MRR) - Últimos 6 meses">
-          {mrrTrendData.length > 0 ? (
+        <ChartCard title="Receita recebida — últimos 6 meses">
+          {mrrTrendData.some((m) => m.value > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={mrrTrendData}>
                 <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11 }} />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => [formatCurrency(v), 'MRR']} />
+                <Tooltip formatter={(v: number) => [formatCurrency(v), 'Recebido']} />
                 <Line type="monotone" dataKey="value" stroke="#22c55e" strokeWidth={3} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyChart message="Sem receita faturável no período" />
+            <EmptyChart message="Nenhum pagamento registrado no período" />
           )}
         </ChartCard>
 
@@ -646,18 +746,18 @@ function SaaSFinancePageContent() {
           )}
         </ChartCard>
 
-        <ChartCard title="Receita por Mês (MRR)">
-          {mrrTrendData.length > 0 ? (
+        <ChartCard title="Receita recebida por mês (barras)">
+          {mrrTrendData.some((m) => m.value > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={mrrTrendData}>
                 <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11 }} />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => [formatCurrency(v), 'MRR']} />
+                <Tooltip formatter={(v: number) => [formatCurrency(v), 'Recebido']} />
                 <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyChart message="Sem receita faturável" />
+            <EmptyChart message="Nenhum pagamento registrado" />
           )}
         </ChartCard>
       </div>
@@ -739,6 +839,13 @@ function SaaSFinancePageContent() {
               </div>
               <button
                 type="button"
+                onClick={() => openPaymentModal()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold"
+              >
+                <Plus className="w-4 h-4" /> Registrar pagamento
+              </button>
+              <button
+                type="button"
                 onClick={handleExport}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-[13px] hover:bg-white/5"
               >
@@ -773,6 +880,7 @@ function SaaSFinancePageContent() {
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Próximo vencimento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Contrato</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -919,12 +1027,21 @@ function SaaSFinancePageContent() {
                           )}
                         </div>
                       </td>
+                      <td className="p-4">
+                        <button
+                          type="button"
+                          onClick={() => openPaymentModal(c)}
+                          className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10"
+                        >
+                          Registrar pagamento
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
                 {filteredCompanies.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={9} className="p-6">
+                    <td colSpan={11} className="p-6">
                       <MasterEmptyState
                         title="Nenhuma assinatura cadastrada"
                         description="Cadastre empresas em /companies para ver faturamento SaaS."
@@ -973,35 +1090,153 @@ function SaaSFinancePageContent() {
           </button>
         </div>
       </div>
+
+      {paymentModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#11161d] p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4">Registrar pagamento SaaS</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Empresa</label>
+                <select
+                  value={paymentForm.companyId}
+                  onChange={(e) => {
+                    const companyId = e.target.value;
+                    const company = companies.find((c) => (c as { id?: string }).id === companyId);
+                    const pricing = company ? resolveCompanyPricing(company) : null;
+                    setPaymentForm((prev) => ({
+                      ...prev,
+                      companyId,
+                      amount: pricing ? String(pricing.appliedPrice) : prev.amount,
+                    }));
+                  }}
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                >
+                  <option value="">Selecione a empresa</option>
+                  {companies.map((c) => {
+                    const id = (c as { id?: string }).id || '';
+                    return (
+                      <option key={id} value={id}>
+                        {c.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Valor pago (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentForm.amount}
+                    onChange={(e) => setPaymentForm((p) => ({ ...p, amount: e.target.value }))}
+                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Data de pagamento</label>
+                  <input
+                    type="date"
+                    value={paymentForm.paidAt}
+                    onChange={(e) =>
+                      setPaymentForm((p) => ({
+                        ...p,
+                        paidAt: e.target.value,
+                        referenceMonth: referenceMonthFromDate(e.target.value),
+                      }))
+                    }
+                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Referência (mês)</label>
+                  <input
+                    type="month"
+                    value={paymentForm.referenceMonth}
+                    onChange={(e) => setPaymentForm((p) => ({ ...p, referenceMonth: e.target.value }))}
+                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Forma de pagamento</label>
+                  <select
+                    value={paymentForm.paymentMethod}
+                    onChange={(e) => setPaymentForm((p) => ({ ...p, paymentMethod: e.target.value }))}
+                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                  >
+                    <option value="manual">Manual</option>
+                    <option value="pix">PIX</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="transfer">Transferência</option>
+                    <option value="card">Cartão</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Observação (opcional)</label>
+                <textarea
+                  value={paymentForm.notes}
+                  onChange={(e) => setPaymentForm((p) => ({ ...p, notes: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white resize-none"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={paymentSaving}
+                onClick={() => void handleRegisterPayment()}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {paymentSaving ? 'Salvando…' : 'Confirmar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function StatCard({
-  label,
+  title,
   value,
-  hint,
+  description,
   icon,
   border,
 }: {
-  label: string;
+  title: string;
   value: string;
-  hint: string;
+  description: string;
   icon: ReactNode;
   border: string;
 }) {
   return (
-    <div className={`bg-[#11161d] border ${border} rounded-xl p-5 flex items-center gap-4 min-w-0 overflow-visible`}>
-      <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-        {icon}
+    <div
+      className={`bg-[#11161d] border ${border} rounded-xl p-5 min-w-0 overflow-visible flex flex-col gap-3`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[12px] text-gray-400 font-medium leading-snug">{title}</p>
+        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+          {icon}
+        </div>
       </div>
-      <div className="min-w-0 flex-1 overflow-visible">
-        <p className="text-[12px] text-gray-400">{label}</p>
-        <h4 className="text-[clamp(14px,2.2vw,20px)] font-bold text-white whitespace-nowrap tabular-nums leading-tight">
-          {value}
-        </h4>
-        <p className="text-[11px] text-gray-500 mt-1">{hint}</p>
-      </div>
+      <p className="text-[clamp(16px,2.5vw,24px)] font-bold text-white whitespace-nowrap tabular-nums leading-tight">
+        {value}
+      </p>
+      <p className="text-[11px] text-gray-500 leading-snug">{description}</p>
     </div>
   );
 }
