@@ -55,6 +55,16 @@ export function canManageGisProject(role?: string | null): boolean {
   return (ENTERPRISE_ADMIN_ROLES as readonly string[]).includes(normalized);
 }
 
+/** ADMIN da empresa ou SUPER_ADMIN (incl. impersonation) — gestão de sócios/proprietários. */
+export function canManageOwners(role?: string | null): boolean {
+  if (isBrokerRole(role) || isOwnerRole(role)) return false;
+  const normalized = normalizeUserRole(role);
+  if (isPlatformAdmin(normalized)) return true;
+  return ['ADMIN', 'COMPANY_ADMIN', 'ADMIN_EMPRESA'].includes(normalized);
+}
+
+export const OWNERS_ADMIN_ROUTE = '/owners' as const;
+
 export const BROKER_BLOCKED_ROUTE_PREFIXES = [
   '/dashboard',
   '/customers',
@@ -66,6 +76,7 @@ export const BROKER_BLOCKED_ROUTE_PREFIXES = [
   '/logs',
   '/plans',
   '/users',
+  '/owners',
   '/saas-finance',
   '/offline-sync',
   '/reports',

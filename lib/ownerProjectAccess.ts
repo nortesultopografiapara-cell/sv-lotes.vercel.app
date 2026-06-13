@@ -182,6 +182,7 @@ export function ownerBlockedRoutePrefixes(): string[] {
     '/dashboard/brokers',
     '/settings',
     '/users',
+    '/owners',
     '/companies',
     '/crm',
     '/logs',

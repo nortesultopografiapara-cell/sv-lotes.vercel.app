@@ -17,8 +17,14 @@ import {
   resolveReceiptProjectId,
   type OwnerProjectAccessRow,
 } from '../lib/ownerProjectAccess';
-import { isBrokerRole, isOwnerRole, canManageGisProject } from '../lib/rolePermissions';
+import { isBrokerRole, isOwnerRole, canManageGisProject, canManageOwners, isBrokerBlockedRoute } from '../lib/rolePermissions';
 import { isPlatformAdmin } from '../lib/rls';
+import {
+  formatOwnerProfileType,
+  isOwnerAccountActive,
+  isValidOwnerProfileType,
+  normalizeOwnerProfileType,
+} from '../lib/ownerProfiles';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -162,8 +168,28 @@ function testOwnerRoleAndPermissionsHelpers() {
   const perms = aggregateOwnerPermissions(ownerRows);
   assert(perms.can_view_map && perms.can_view_dashboard, 'permissões agregadas');
   assert(isOwnerBlockedRoute('/settings'), 'OWNER bloqueado em settings');
+  assert(isOwnerBlockedRoute('/owners'), 'OWNER bloqueado em /owners');
   assert(!isOwnerBlockedRoute('/map'), 'OWNER pode acessar mapa');
   console.log('OK testOwnerRoleAndPermissionsHelpers');
+}
+
+function testOwnersMenuAndRouteAccess() {
+  assert(canManageOwners('ADMIN'), 'ADMIN gerencia owners');
+  assert(canManageOwners('SUPER_ADMIN'), 'SUPER_ADMIN gerencia owners');
+  assert(!canManageOwners('OWNER'), 'OWNER não gerencia owners');
+  assert(!canManageOwners('BROKER'), 'BROKER não gerencia owners');
+  assert(isOwnerBlockedRoute('/owners'), 'OWNER não vê menu /owners');
+  assert(isBrokerBlockedRoute('/owners'), 'BROKER bloqueado em /owners');
+  console.log('OK testOwnersMenuAndRouteAccess');
+}
+
+function testOwnerProfileTypesAndInactive() {
+  assert(normalizeOwnerProfileType('Proprietário') === 'PROPRIETARIO', 'tipo proprietário');
+  assert(formatOwnerProfileType('SOCIO') === 'Sócio', 'label sócio');
+  assert(isValidOwnerProfileType('INVESTIDOR'), 'tipo investidor válido');
+  assert(!isOwnerAccountActive('INACTIVE'), 'conta inativa');
+  assert(isOwnerAccountActive('ACTIVE'), 'conta ativa');
+  console.log('OK testOwnerProfileTypesAndInactive');
 }
 
 function main() {
@@ -178,6 +204,8 @@ function main() {
   testOwnerMapListsOnlyAllowedProjects();
   testOwnerFinanceDoesNotMixOtherDevelopments();
   testOwnerRoleAndPermissionsHelpers();
+  testOwnersMenuAndRouteAccess();
+  testOwnerProfileTypesAndInactive();
   console.log('mandatory-owner-project-access-tests: all passed');
 }
 

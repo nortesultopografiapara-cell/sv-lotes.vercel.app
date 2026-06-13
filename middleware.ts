@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
       user = data.user;
       
       if (user) {
-        const { data: ud } = await supabase.from('users').select('role').eq('id', user.id).single();
+        const { data: ud } = await supabase.from('users').select('role, status').eq('id', user.id).single();
         userData = ud;
       }
     } catch (e) {
@@ -95,6 +95,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  if (user && userData && String(userData.status || 'ACTIVE').toUpperCase() === 'INACTIVE') {
+    url.pathname = '/login';
+    url.searchParams.set('inactive', '1');
+    return NextResponse.redirect(url);
+  }
+
   // 4. BROKER / CORRETOR — somente Mapa GIS (venda e reserva)
   const brokerRole = String(userData?.role || '').toUpperCase();
   const isBroker = brokerRole === 'BROKER' || brokerRole === 'CORRETOR';
@@ -110,6 +116,7 @@ export async function middleware(request: NextRequest) {
       '/logs',
       '/plans',
       '/users',
+      '/owners',
       '/saas-finance',
       '/offline-sync',
       '/reports',
@@ -129,6 +136,7 @@ export async function middleware(request: NextRequest) {
       '/dashboard/brokers',
       '/settings',
       '/users',
+      '/owners',
       '/companies',
       '/crm',
       '/logs',

@@ -94,12 +94,21 @@ export default function LoginPage() {
         // Need to check the role
         const { data: userData } = await supabase
           .from('users')
-          .select('role')
+          .select('role, status')
           .eq('id', data.user.id)
           .single();
-          
-        if (userData?.role === 'BROKER') {
+
+        if ((userData?.status || 'ACTIVE').toUpperCase() === 'INACTIVE') {
+          await supabase.auth.signOut();
+          setError('Usuário inativo. Contate o administrador da empresa.');
+          setLoading(false);
+          return;
+        }
+
+        if (userData?.role === 'BROKER' || userData?.role === 'CORRETOR') {
            window.location.href = '/map';
+        } else if (userData?.role === 'OWNER') {
+           window.location.href = '/dashboard';
         } else {
            window.location.href = '/dashboard';
         }
