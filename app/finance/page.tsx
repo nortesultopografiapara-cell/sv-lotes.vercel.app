@@ -21,15 +21,15 @@ import {
 } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import {
-  filterProjectsForUser,
-  filterRowsByOwnerProjects,
   fetchOwnerProjectOptionsForModule,
-  getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
   resolveCashMovementProjectId,
   resolveCommissionProjectId,
   resolveReceiptProjectId,
-  resolveFinanceProjectFilterList,
+  resolveFinanceProjectsFilterNames,
+  resolveFinanceProjectsForUser,
+  scopeFinanceRowsForUser,
+  shouldApplyOwnerFinanceScope,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
 import {
@@ -326,50 +326,43 @@ export default function FinancePage() {
         if (error) throw error;
 
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
-        const ownerFinanceProjectIds = ownerCtx.isOwner
-          ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'finance')
-          : ownerCtx.allowedProjectIds;
-        const scopedReceipts = filterRowsByOwnerProjects(
+        const isOwnerFinanceScope = shouldApplyOwnerFinanceScope(user);
+
+        data = scopeFinanceRowsForUser(
+          user,
           data || [],
-          ownerFinanceProjectIds,
+          ownerCtx.rows,
           resolveReceiptProjectId,
         );
-        data = scopedReceipts;
         
         let pQuery = supabase.from('projects').select('id, name');
         pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
         const { data: projData } = await pQuery;
 
-        let visibleProjects: Array<{ id: string; name: string }> = [];
-        if (ownerCtx.isOwner && user.id && resolvedTenantId) {
-          visibleProjects = await fetchOwnerProjectOptionsForModule(
+        let ownerProjectOptions: Array<{ id: string; name: string }> = [];
+        if (isOwnerFinanceScope && user.id && resolvedTenantId) {
+          ownerProjectOptions = await fetchOwnerProjectOptionsForModule(
             supabase,
             user.id,
             resolvedTenantId,
             'finance',
           );
-          if (visibleProjects.length === 0) {
-            visibleProjects = filterProjectsForUser(
-              user,
-              projData || [],
-              ownerFinanceProjectIds,
-            );
-          }
-        } else {
-          visibleProjects = filterProjectsForUser(
-            user,
-            projData || [],
-            ownerFinanceProjectIds,
-          );
         }
+
+        const visibleProjects = resolveFinanceProjectsForUser(
+          user,
+          projData || [],
+          ownerCtx.rows,
+          ownerProjectOptions,
+        );
 
         setFinanceProjects(visibleProjects);
         setProjectsList(
-          resolveFinanceProjectFilterList(
+          resolveFinanceProjectsFilterNames(
             user,
-            ownerCtx.rows,
             projData || [],
-            visibleProjects,
+            ownerCtx.rows,
+            ownerProjectOptions,
           ),
         );
         
@@ -481,17 +474,19 @@ export default function FinancePage() {
                fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
                const { data: fallbackData } = await fallbackQuery;
                if (fallbackData) {
-                   cashData = filterRowsByOwnerProjects(
+                   cashData = scopeFinanceRowsForUser(
+                     user,
                      fallbackData,
-                     ownerFinanceProjectIds,
+                     ownerCtx.rows,
                      resolveCashMovementProjectId,
                    );
                    setCashMovements(cashData);
                }
            } else if (cData) {
-               cashData = filterRowsByOwnerProjects(
+               cashData = scopeFinanceRowsForUser(
+                 user,
                  cData,
-                 ownerFinanceProjectIds,
+                 ownerCtx.rows,
                  resolveCashMovementProjectId,
                );
                setCashMovements(cashData);
@@ -509,17 +504,19 @@ export default function FinancePage() {
                fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
                const { data: fallbackComms } = await fallbackCommsQuery;
                if (fallbackComms) {
-                   commsData = filterRowsByOwnerProjects(
+                   commsData = scopeFinanceRowsForUser(
+                     user,
                      fallbackComms,
-                     ownerFinanceProjectIds,
+                     ownerCtx.rows,
                      resolveCommissionProjectId,
                    );
                    setBrokerCommissions(commsData);
                }
            } else if (comms) {
-               commsData = filterRowsByOwnerProjects(
+               commsData = scopeFinanceRowsForUser(
+                 user,
                  comms,
-                 ownerFinanceProjectIds,
+                 ownerCtx.rows,
                  resolveCommissionProjectId,
                );
                setBrokerCommissions(commsData);

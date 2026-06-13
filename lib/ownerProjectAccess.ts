@@ -263,6 +263,61 @@ export function filterRowsByOwnerProjects<T>(
   });
 }
 
+/** Somente role OWNER usa escopo por owner_project_access no financeiro. */
+export function shouldApplyOwnerFinanceScope(
+  user?: OwnerAccessUser | null,
+): boolean {
+  return isOwnerUser(user);
+}
+
+export function scopeFinanceRowsForUser<T>(
+  user: OwnerAccessUser | null | undefined,
+  rows: T[],
+  ownerRows: OwnerProjectAccessRow[],
+  resolveProjectId: (row: T) => string | null | undefined,
+): T[] {
+  if (!shouldApplyOwnerFinanceScope(user)) return rows;
+  const allowed = getOwnerAllowedProjectIdsForModule(ownerRows, 'finance');
+  return filterRowsByOwnerProjects(rows, allowed, resolveProjectId);
+}
+
+export function resolveFinanceProjectsForUser(
+  user: OwnerAccessUser | null | undefined,
+  tenantProjects: Array<{ id: string; name: string }>,
+  ownerRows: OwnerProjectAccessRow[],
+  ownerOptions?: OwnerProjectOption[],
+): Array<{ id: string; name: string }> {
+  if (!shouldApplyOwnerFinanceScope(user)) {
+    return [...tenantProjects].sort((a, b) =>
+      a.name.localeCompare(b.name, 'pt-BR'),
+    );
+  }
+
+  if (ownerOptions?.length) {
+    return ownerOptions;
+  }
+
+  return buildOwnerProjectOptionsFromAccessRows(
+    ownerRows,
+    tenantProjects,
+    'finance',
+  );
+}
+
+export function resolveFinanceProjectsFilterNames(
+  user: OwnerAccessUser | null | undefined,
+  tenantProjects: Array<{ id: string; name: string }>,
+  ownerRows: OwnerProjectAccessRow[],
+  ownerOptions?: OwnerProjectOption[],
+): string[] {
+  return resolveFinanceProjectsForUser(
+    user,
+    tenantProjects,
+    ownerRows,
+    ownerOptions,
+  ).map((project) => project.name);
+}
+
 export function resolveReceiptProjectId(receipt: {
   project_id?: string | null;
   sales?: { project_id?: string | null; projects?: { id?: string } | null } | null;

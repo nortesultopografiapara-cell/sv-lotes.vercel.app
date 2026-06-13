@@ -21,6 +21,10 @@ import {
   resolveContractProjectId,
   resolveOwnerFirstAllowedRoute,
   resolveReceiptProjectId,
+  resolveFinanceProjectsForUser,
+  resolveFinanceProjectsFilterNames,
+  scopeFinanceRowsForUser,
+  shouldApplyOwnerFinanceScope,
   shouldRedirectOwnerFromRoute,
   type OwnerProjectAccessRow,
 } from '../lib/ownerProjectAccess';
@@ -430,6 +434,113 @@ function testOwnerEmptyAccessRowsDoNotForceMapRedirect() {
   console.log('OK testOwnerEmptyAccessRowsDoNotForceMapRedirect');
 }
 
+function testAdminFinanceListsAllTenantProjects() {
+  assert(!shouldApplyOwnerFinanceScope(adminUser), 'ADMIN não usa escopo OWNER');
+  const projects = resolveFinanceProjectsForUser(adminUser, allProjects, ownerRows);
+  assert(projects.length === 3, 'ADMIN lista todos os empreendimentos do tenant');
+  const filterNames = resolveFinanceProjectsFilterNames(adminUser, allProjects, ownerRows);
+  assert(filterNames.length === 3, 'filtro ADMIN com todos os nomes');
+  assert(filterNames.includes('CHACREAMENTO MARTINI II'), 'filtro inclui Martini II');
+  console.log('OK testAdminFinanceListsAllTenantProjects');
+}
+
+function testAdminFinanceReceiptsNotScopedByOwnerAccess() {
+  const receipts = [
+    { project_id: MARTINI_2, amount: 100 },
+    { project_id: OTHER_PROJECT, amount: 500 },
+    { sales: { project_id: MARTINI_3 }, amount: 200 },
+  ];
+  const scoped = scopeFinanceRowsForUser(
+    adminUser,
+    receipts,
+    ownerRows,
+    resolveReceiptProjectId,
+  );
+  assert(scoped.length === 3, 'ADMIN vê todas as parcelas do tenant');
+  assert(
+    scoped.reduce((sum, row) => sum + row.amount, 0) === 800,
+    'ADMIN sem filtro owner_project_access em parcelas',
+  );
+  console.log('OK testAdminFinanceReceiptsNotScopedByOwnerAccess');
+}
+
+function testAdminFinanceCashMovementsNotScopedByOwnerAccess() {
+  const cash = [
+    { project_id: MARTINI_2, amount: 50 },
+    { project_id: OTHER_PROJECT, amount: 150 },
+  ];
+  const scoped = scopeFinanceRowsForUser(
+    adminUser,
+    cash,
+    ownerRows,
+    resolveCashMovementProjectId,
+  );
+  assert(scoped.length === 2, 'ADMIN vê todo fluxo de caixa do tenant');
+  console.log('OK testAdminFinanceCashMovementsNotScopedByOwnerAccess');
+}
+
+function testAdminFinanceCardsUseTenantData() {
+  const receipts = [
+    { project_id: MARTINI_2, amount: 100 },
+    { project_id: OTHER_PROJECT, amount: 250 },
+  ];
+  const cash = [{ project_id: OTHER_PROJECT, amount: 75 }];
+  const scopedReceipts = scopeFinanceRowsForUser(
+    adminUser,
+    receipts,
+    ownerRows,
+    resolveReceiptProjectId,
+  );
+  const scopedCash = scopeFinanceRowsForUser(
+    adminUser,
+    cash,
+    ownerRows,
+    resolveCashMovementProjectId,
+  );
+  const totalReceipts = scopedReceipts.reduce((sum, row) => sum + row.amount, 0);
+  const totalCash = scopedCash.reduce((sum, row) => sum + row.amount, 0);
+  assert(totalReceipts === 350, 'cards ADMIN somam parcelas do tenant inteiro');
+  assert(totalCash === 75, 'cards ADMIN somam caixa do tenant inteiro');
+  console.log('OK testAdminFinanceCardsUseTenantData');
+}
+
+function testOwnerFinanceStillScopedByAllowedProjects() {
+  const receipts = [
+    { project_id: MARTINI_2, amount: 100 },
+    { project_id: OTHER_PROJECT, amount: 500 },
+    { sales: { project_id: MARTINI_3 }, amount: 200 },
+  ];
+  const scoped = scopeFinanceRowsForUser(
+    ownerUser,
+    receipts,
+    ownerRows,
+    resolveReceiptProjectId,
+  );
+  assert(scoped.length === 2, 'OWNER continua escopado aos projetos permitidos');
+  assert(scoped.reduce((sum, row) => sum + row.amount, 0) === 300, 'OWNER soma só liberados');
+  const projects = resolveFinanceProjectsForUser(ownerUser, allProjects, ownerRows);
+  assert(projects.length === 2, 'OWNER lista só projetos permitidos');
+  console.log('OK testOwnerFinanceStillScopedByAllowedProjects');
+}
+
+function testOwnerFinanceDoesNotLeakDeniedProjects() {
+  const filterNames = resolveFinanceProjectsFilterNames(ownerUser, allProjects, ownerRows);
+  assert(!filterNames.includes('JOAQUIM'), 'OWNER não lista projeto negado no filtro');
+  const cash = [
+    { project_id: OTHER_PROJECT, amount: 999 },
+    { project_id: MARTINI_2, amount: 40 },
+  ];
+  const scopedCash = scopeFinanceRowsForUser(
+    ownerUser,
+    cash,
+    ownerRows,
+    resolveCashMovementProjectId,
+  );
+  assert(scopedCash.length === 1, 'OWNER não vê caixa de projeto negado');
+  assert(scopedCash[0].amount === 40, 'OWNER mantém só Martini II no caixa');
+  console.log('OK testOwnerFinanceDoesNotLeakDeniedProjects');
+}
+
 function main() {
   testOwnerSeesOnlyAllowedProjects();
   testOwnerDoesNotSeeOtherMenesesProjects();
@@ -454,6 +565,12 @@ function main() {
   testOwnerWithoutDashboardRedirectsToFirstAllowedModule();
   testOwnerNavigationRoutesStayOnAllowedModules();
   testOwnerEmptyAccessRowsDoNotForceMapRedirect();
+  testAdminFinanceListsAllTenantProjects();
+  testAdminFinanceReceiptsNotScopedByOwnerAccess();
+  testAdminFinanceCashMovementsNotScopedByOwnerAccess();
+  testAdminFinanceCardsUseTenantData();
+  testOwnerFinanceStillScopedByAllowedProjects();
+  testOwnerFinanceDoesNotLeakDeniedProjects();
   console.log('mandatory-owner-project-access-tests: all passed');
 }
 
