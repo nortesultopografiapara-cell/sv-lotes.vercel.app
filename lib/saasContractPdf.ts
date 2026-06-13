@@ -13,7 +13,9 @@ import {
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
-const PAGE_BOTTOM = 284;
+/** Área útil acima do rodapé (sem forçar contagem de páginas). */
+const PAGE_BOTTOM = 270;
+const CONTENT_LINE_H = 4.8;
 const DATA_LABEL_COL_W = 52;
 const DATA_LINE_H = 4.6;
 const DATA_ROW_GAP = 2;
@@ -144,6 +146,7 @@ type PdfWriter = {
   dataTableHeader: () => void;
   row: (label: string, value: string) => void;
   renderLicensedServices: (services: string[]) => void;
+  writeParagraph: (text: string, gap?: number) => void;
 };
 
 function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
@@ -261,49 +264,70 @@ function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
 
       writer.y += 5;
     },
+
+    writeParagraph(text: string, gap = 4) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(40, 40, 40);
+      const lines = doc.splitTextToSize(text, contentW);
+      for (const line of lines) {
+        writer.ensureSpace(CONTENT_LINE_H);
+        doc.text(line, margin, writer.y);
+        writer.y += CONTENT_LINE_H;
+      }
+      writer.y += gap;
+    },
   };
 
   return writer;
 }
 
 function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
-  let w = writer;
+  const w = writer;
   w.sectionTitle('CLÁUSULAS CONTRATUAIS');
   w.y += 2;
 
   for (const section of sections) {
-    if ([5, 9, 13, 17, 21].includes(section.number)) {
-      w.doc.addPage();
-      w.y = drawPageHeader(w.doc, w.margin, w.doc.internal.pageSize.getWidth(), true);
-    }
-    w.ensureSpace(16);
+    const title = `CLÁUSULA ${section.number} — ${section.title}`;
+    const titleLines = w.doc.splitTextToSize(title, w.contentW);
+    const titleH = titleLines.length * CONTENT_LINE_H + 6;
+    w.ensureSpace(titleH);
+
     w.doc.setFont('helvetica', 'bold');
     w.doc.setFontSize(10);
     w.doc.setTextColor(20, 30, 55);
-    w.doc.text(`CLÁUSULA ${section.number} — ${section.title}`, w.margin, w.y);
-    w.y += 6;
-    w.doc.setFont('helvetica', 'normal');
-    w.doc.setFontSize(9);
-    w.doc.setTextColor(40, 40, 40);
+    for (const line of titleLines) {
+      w.doc.text(line, w.margin, w.y);
+      w.y += CONTENT_LINE_H;
+    }
+    w.y += 2;
 
     for (const paragraph of section.paragraphs) {
-      w.ensureSpace(18);
-      w.y = writeWrapped(w.doc, paragraph, w.margin, w.y, w.contentW);
-      w.y += 6;
+      w.writeParagraph(paragraph, 4);
     }
-    w.y += 4;
+    w.y += 2;
   }
 }
 
+function estimateSignatureBlockHeight(writer: PdfWriter): number {
+  const intro =
+    'E, por estarem assim justas e contratadas, as partes declaram ter lido e compreendido todas as cláusulas deste instrumento, firmando-o em 2 (duas) vias de igual teor e forma, na data abaixo.';
+  const note =
+    'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.';
+  const introLines = writer.doc.splitTextToSize(intro, writer.contentW).length;
+  const noteLines = writer.doc.splitTextToSize(note, writer.contentW).length;
+  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 55 + 10 + noteLines * CONTENT_LINE_H + 8;
+}
+
 function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
-  let w = writer;
-  w.doc.addPage();
-  w.y = drawPageHeader(w.doc, w.margin, w.doc.internal.pageSize.getWidth(), true);
-  w.y += 4;
+  const w = writer;
+  w.y += 6;
+  w.ensureSpace(estimateSignatureBlockHeight(w));
+
   w.sectionTitle('PÁGINA DE ASSINATURA');
-  w.writeln(
+  w.writeParagraph(
     `E, por estarem assim justas e contratadas, as partes declaram ter lido e compreendido todas as cláusulas deste instrumento, firmando-o em 2 (duas) vias de igual teor e forma, na data abaixo.`,
-    { gap: 6 },
+    6,
   );
 
   const signDate = new Date().toLocaleDateString('pt-BR');
@@ -316,6 +340,7 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
 
   w.doc.setFont('helvetica', 'bold');
   w.doc.setFontSize(9);
+  w.doc.setTextColor(40, 40, 40);
   w.doc.text('CONTRATANTE', w.margin, w.y);
   w.doc.text('CONTRATADA', w.margin + colW + 12, w.y);
   w.y += 24;
@@ -338,9 +363,9 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   w.doc.setFont('helvetica', 'italic');
   w.doc.setFontSize(8);
   w.doc.setTextColor(90, 90, 90);
-  w.writeln(
+  w.writeParagraph(
     'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
-    { gap: 4 },
+    4,
   );
 }
 

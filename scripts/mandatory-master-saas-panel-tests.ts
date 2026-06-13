@@ -50,8 +50,11 @@ import {
 import { buildSaasContractPdf, buildSaasContractPdfWithMeta } from '../lib/saasContractPdf';
 import {
   SAAS_CONTRACT_MIN_PAGE_COUNT,
+  SAAS_CONTRACT_NATURAL_MAX_PAGE_COUNT,
   SAAS_CONTRACT_TITLE,
   SAAS_REPORT_FORBIDDEN_TITLE,
+  extractRoughPdfText,
+  validateSaasContractNaturalPagination,
   validateSaasContractPdfInput,
 } from '../lib/saasContractPdfValidation';
 import { buildSaasContractPdfUrl } from '../lib/saasContractUrls';
@@ -372,7 +375,18 @@ function testSaasContractProfessional() {
   assert(pdfValidation.hasForoParauapebas, 'pdf foro');
   assert(pdfValidation.isNotSaasReport, 'pdf não é relatório saas');
   assert(built.pageCount >= SAAS_CONTRACT_MIN_PAGE_COUNT, 'pdf páginas mínimas');
+  assert(built.pageCount <= SAAS_CONTRACT_NATURAL_MAX_PAGE_COUNT, 'pdf paginação natural (sem forçar)');
   assert(built.clausesCount === 24, 'pdf 24 cláusulas');
+
+  const pagination = validateSaasContractNaturalPagination(built.pdf);
+  assert(pagination.ok, `paginação natural: ${pagination.errors.join('; ')}`);
+
+  const roughPdf = extractRoughPdfText(built.pdf).toLowerCase();
+  const fornecedoraPos = roughPdf.indexOf('dados da fornecedora');
+  const servicosPos = roughPdf.indexOf('serviços licenciados');
+  const contratantePos = roughPdf.indexOf('dados da contratante');
+  assert(fornecedoraPos >= 0 && servicosPos > fornecedoraPos, 'serviços após fornecedora');
+  assert(servicosPos >= 0 && contratantePos > servicosPos, 'contratante após serviços');
   assert(
     text.includes(SAAS_CONTRACT_TITLE.toLowerCase()) ||
       text.includes('contrato de licença de software'),
@@ -414,7 +428,9 @@ function testSaasContractProfessional() {
     'generated status ready',
   );
 
-  console.log('OK testSaasContractProfessional');
+  console.log(
+    `OK testSaasContractProfessional (${built.pageCount} páginas, sparse: ${pagination.sparsePages.join(',') || 'nenhuma'})`,
+  );
 }
 
 function testProjectEditAccess() {
