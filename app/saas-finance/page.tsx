@@ -61,10 +61,10 @@ import {
   buildReceivedRevenueByMonth,
   formatReferenceMonthLabel,
   paymentMethodLabel,
-  referenceMonthFromDate,
   sumReceivedRevenue,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
+import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 
 const PLAN_COLORS: Record<string, string> = {
   BÁSICO: '#22c55e',
@@ -110,15 +110,7 @@ function SaaSFinancePageContent() {
   >([]);
   const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [paymentSaving, setPaymentSaving] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({
-    companyId: '',
-    amount: '',
-    paidAt: new Date().toISOString().split('T')[0],
-    paymentMethod: 'manual',
-    referenceMonth: referenceMonthFromDate(new Date().toISOString()),
-    notes: '',
-  });
+  const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -269,56 +261,25 @@ function SaaSFinancePageContent() {
     [saasPayments],
   );
 
+  const paymentCompanyOptions = useMemo(
+    () =>
+      companies.map((c) => {
+        const id = (c as { id?: string }).id || '';
+        const sub = c.saas_subscription as CompanySubscription | null;
+        return {
+          id,
+          name: c.name || '—',
+          defaultAmount: resolveCompanyPricing(c).appliedPrice,
+          subscriptionId: sub?.id ?? null,
+        };
+      }),
+    [companies],
+  );
+
   const openPaymentModal = useCallback((company?: EnrichedCompany) => {
-    const companyId = (company as { id?: string } | undefined)?.id || '';
-    const pricing = company ? resolveCompanyPricing(company) : null;
-    setPaymentForm({
-      companyId,
-      amount: pricing ? String(pricing.appliedPrice) : '',
-      paidAt: new Date().toISOString().split('T')[0],
-      paymentMethod: 'manual',
-      referenceMonth: referenceMonthFromDate(new Date().toISOString()),
-      notes: '',
-    });
+    setPaymentInitialCompanyId((company as { id?: string } | undefined)?.id);
     setPaymentModalOpen(true);
   }, []);
-
-  const handleRegisterPayment = useCallback(async () => {
-    if (!user?.id) return;
-    const amount = Number(paymentForm.amount);
-    if (!paymentForm.companyId || !paymentForm.paidAt || !Number.isFinite(amount) || amount <= 0) {
-      alert('Preencha empresa, valor e data de pagamento.');
-      return;
-    }
-    setPaymentSaving(true);
-    try {
-      const company = companies.find((c) => (c as { id?: string }).id === paymentForm.companyId);
-      const sub = company?.saas_subscription as CompanySubscription | null;
-      const res = await fetch('/api/master/saas-payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          companyId: paymentForm.companyId,
-          subscriptionId: sub?.id ?? null,
-          amount,
-          paidAt: paymentForm.paidAt,
-          paymentMethod: paymentForm.paymentMethod,
-          referenceMonth:
-            paymentForm.referenceMonth || referenceMonthFromDate(paymentForm.paidAt),
-          notes: paymentForm.notes || null,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha ao registrar pagamento');
-      setPaymentModalOpen(false);
-      await loadData();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao registrar pagamento');
-    } finally {
-      setPaymentSaving(false);
-    }
-  }, [user?.id, paymentForm, companies, loadData]);
 
   const filteredCompanies = useMemo(() => {
     return companies.filter((c) => {
@@ -1091,120 +1052,15 @@ function SaaSFinancePageContent() {
         </div>
       </div>
 
-      {paymentModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#11161d] p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4">Registrar pagamento SaaS</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Empresa</label>
-                <select
-                  value={paymentForm.companyId}
-                  onChange={(e) => {
-                    const companyId = e.target.value;
-                    const company = companies.find((c) => (c as { id?: string }).id === companyId);
-                    const pricing = company ? resolveCompanyPricing(company) : null;
-                    setPaymentForm((prev) => ({
-                      ...prev,
-                      companyId,
-                      amount: pricing ? String(pricing.appliedPrice) : prev.amount,
-                    }));
-                  }}
-                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                >
-                  <option value="">Selecione a empresa</option>
-                  {companies.map((c) => {
-                    const id = (c as { id?: string }).id || '';
-                    return (
-                      <option key={id} value={id}>
-                        {c.name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Valor pago (R$)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm((p) => ({ ...p, amount: e.target.value }))}
-                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Data de pagamento</label>
-                  <input
-                    type="date"
-                    value={paymentForm.paidAt}
-                    onChange={(e) =>
-                      setPaymentForm((p) => ({
-                        ...p,
-                        paidAt: e.target.value,
-                        referenceMonth: referenceMonthFromDate(e.target.value),
-                      }))
-                    }
-                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Referência (mês)</label>
-                  <input
-                    type="month"
-                    value={paymentForm.referenceMonth}
-                    onChange={(e) => setPaymentForm((p) => ({ ...p, referenceMonth: e.target.value }))}
-                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Forma de pagamento</label>
-                  <select
-                    value={paymentForm.paymentMethod}
-                    onChange={(e) => setPaymentForm((p) => ({ ...p, paymentMethod: e.target.value }))}
-                    className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                  >
-                    <option value="manual">Manual</option>
-                    <option value="pix">PIX</option>
-                    <option value="boleto">Boleto</option>
-                    <option value="transfer">Transferência</option>
-                    <option value="card">Cartão</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Observação (opcional)</label>
-                <textarea
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm((p) => ({ ...p, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white resize-none"
-                />
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPaymentModalOpen(false)}
-                className="px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-sm"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={paymentSaving}
-                onClick={() => void handleRegisterPayment()}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50"
-              >
-                {paymentSaving ? 'Salvando…' : 'Confirmar pagamento'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {user?.id ? (
+        <RegisterSaasPaymentModal
+          open={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          userId={user.id}
+          companies={paymentCompanyOptions}
+          initialCompanyId={paymentInitialCompanyId}
+          onSuccess={loadData}
+        />
       ) : null}
     </div>
   );

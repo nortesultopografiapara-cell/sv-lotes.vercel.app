@@ -1,17 +1,18 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, Search, CheckCircle2, Shield, Crown, Star,
   Loader2, Settings, ArrowRightLeft, Users, Map as MapIcon, X, Check, Zap, Power,
   Rocket, TrendingUp, Diamond, Edit2, CreditCard, MoreVertical, Filter, Download,
-  BarChart3, UserCheck, TrendingUp as TrendingUpIcon, Users as UsersIcon
+  BarChart3, UserCheck, TrendingUp as TrendingUpIcon, Users as UsersIcon, Plus
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
-import { calculateMrrFromCompanies } from '@/lib/companyPricing';
+import { calculateMrrFromCompanies, resolveCompanyPricing } from '@/lib/companyPricing';
+import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -127,6 +128,8 @@ export default function PlansPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [subscriptionsMap, setSubscriptionsMap] = useState<Record<string, CompanySubscription>>({});
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
 
   const loadCompanies = useCallback(async () => {
     setDataLoading(true);
@@ -301,6 +304,30 @@ export default function PlansPage() {
     c.email?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const paymentCompanyOptions = useMemo(
+    () =>
+      companies.map((company) => {
+        const subscription = subscriptionsMap[company.id];
+        const pricing = resolveCompanyPricing(company);
+        const defaultAmount =
+          subscription?.monthly_price != null
+            ? Number(subscription.monthly_price)
+            : pricing.appliedPrice;
+        return {
+          id: company.id,
+          name: company.name || '—',
+          defaultAmount,
+          subscriptionId: subscription?.id ?? null,
+        };
+      }),
+    [companies, subscriptionsMap],
+  );
+
+  const openPaymentModal = useCallback((company?: { id: string }) => {
+    setPaymentInitialCompanyId(company?.id);
+    setPaymentModalOpen(true);
+  }, []);
+
   if (authLoading || dataLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)] text-[var(--color-text-muted)] gap-4 bg-[#0B0E14]">
@@ -458,6 +485,13 @@ export default function PlansPage() {
             <button className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-300 text-sm hover:bg-white/5 transition-colors">
                <Download className="w-4 h-4" /> Exportar
             </button>
+            <button
+              type="button"
+              onClick={() => openPaymentModal()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Registrar pagamento
+            </button>
         </div>
 
         <div className="sv-table-scroll">
@@ -584,6 +618,13 @@ export default function PlansPage() {
                                className="px-2 py-1 rounded text-[10px] font-bold uppercase border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
                              >
                                Renovar
+                             </button>
+                             <button
+                               type="button"
+                               onClick={() => openPaymentModal(company)}
+                               className="px-2 py-1 rounded text-[10px] font-bold uppercase border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                             >
+                               Registrar pagamento
                              </button>
                           </div>
                        </td>
@@ -774,6 +815,17 @@ export default function PlansPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {user?.id ? (
+        <RegisterSaasPaymentModal
+          open={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          userId={user.id}
+          companies={paymentCompanyOptions}
+          initialCompanyId={paymentInitialCompanyId}
+          onSuccess={loadCompanies}
+        />
+      ) : null}
     </div>
   );
 }
