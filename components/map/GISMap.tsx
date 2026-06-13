@@ -2130,6 +2130,7 @@ function LotPopupContent({
             )}
 
           {userRole !== "BROKER" &&
+            !ownerReadOnly &&
             onGenerateMemorial &&
             Array.isArray(lot.segments_json) &&
             lot.segments_json.length >= 2 && (
@@ -2168,7 +2169,7 @@ function LotPopupContent({
                     </span>
                   </span>
                   <div className="shrink-0 flex flex-col items-end gap-0.5">
-                    {onEditOfficialSideSegment && segmentIndex >= 0 && (
+                    {!ownerReadOnly && onEditOfficialSideSegment && segmentIndex >= 0 && (
                       <button
                         type="button"
                         onClick={() =>
@@ -2179,7 +2180,8 @@ function LotPopupContent({
                         Medida
                       </button>
                     )}
-                    {(onEditConfrontationSegment || onEditConfrontationSide) && (
+                    {!ownerReadOnly &&
+                      (onEditConfrontationSegment || onEditConfrontationSide) && (
                       <button
                         type="button"
                         onClick={() => {
@@ -2755,6 +2757,7 @@ export default function GISMap({
   onOverlayOpenChange?: (open: boolean) => void;
 }) {
   const { user } = useAuth();
+  const ownerMapWriteBlocked = isOwnerRole(user?.role);
   const [center] = useState<[number, number]>([-1.4553, -48.4892]);
   const [lots, setLots] = useState<any[]>([]);
   const [blocksData, setBlocksData] = useState<any[]>([]);
@@ -2850,6 +2853,7 @@ export default function GISMap({
   ]);
 
   const handlePickFrontSegment = async (lot: any, segmentIndex: number) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id) return;
     setFrontCorrectSaving(true);
     try {
@@ -2962,6 +2966,7 @@ export default function GISMap({
     side: SideRole,
     segmentIndexes?: number[],
   ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     const block = {
       ...lot,
       block_name: lot.block,
@@ -2994,6 +2999,7 @@ export default function GISMap({
   };
 
   const handleConfrontEdgePick = (lot: any, edgeIndex: number) => {
+    if (ownerMapWriteBlocked) return;
     if (!assistedConfrontationMode && !insertConfrontantTool) return;
     let side: SideRole = "fundo";
     const block = {
@@ -3028,6 +3034,7 @@ export default function GISMap({
     scope: PropagationScope,
     _targetBlockIds: string[],
   ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!confrontEdit?.lot?.id || !projectId) return;
     const sourceBlock = {
       ...confrontEdit.lot,
@@ -3088,11 +3095,13 @@ export default function GISMap({
   };
 
   const openOfficialSideEditor = (lot: any, segmentIndex: number) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!lot?.id || segmentIndex < 0) return;
     setOfficialSideEdit({ lot, segmentIndex });
   };
 
   const handleOfficialSideEdgePick = (lot: any, edgeIndex: number) => {
+    if (ownerMapWriteBlocked) return;
     if (
       !defineOfficialSideTool &&
       defineOfficialSidePickLotId !== lot?.id
@@ -3128,6 +3137,7 @@ export default function GISMap({
   };
 
   const handleSaveOfficialSide = async (side: OfficialSideKind) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!officialSideEdit?.lot?.id || !projectId) return;
     const lot = officialSideEdit.lot;
     const segmentIndex = officialSideEdit.segmentIndex;
@@ -3166,6 +3176,7 @@ export default function GISMap({
   };
 
   const handleClearOfficialSide = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!officialSideEdit?.lot?.id || !projectId) return;
     const lot = officialSideEdit.lot;
     const segmentIndex = officialSideEdit.segmentIndex;
@@ -3208,6 +3219,7 @@ export default function GISMap({
     scope: PropagationScope,
     _targetBlockIds: string[],
   ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
     if (!confrontEdit?.lot?.id || !projectId) return;
     const sourceBlock = {
       ...confrontEdit.lot,
@@ -4739,44 +4751,71 @@ export default function GISMap({
                         }
                         onViewFinance={handleViewFinance}
                         actionLoading={editSaleLoading || actionLoading}
-                        frontCorrectActive={frontCorrectLotId === lot.id}
-                        onStartCorrectFront={(l) => setFrontCorrectLotId(l.id)}
-                        onCancelCorrectFront={() => setFrontCorrectLotId(null)}
-                        onPickFrontSegment={handlePickFrontSegment}
+                        frontCorrectActive={!ownerMapWriteBlocked && frontCorrectLotId === lot.id}
+                        onStartCorrectFront={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l) => setFrontCorrectLotId(l.id)
+                        }
+                        onCancelCorrectFront={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : () => setFrontCorrectLotId(null)
+                        }
+                        onPickFrontSegment={
+                          ownerMapWriteBlocked ? undefined : handlePickFrontSegment
+                        }
                         frontCorrectSaving={frontCorrectSaving}
                         confrontationAudit={
                           confrontationAudits.get(lot.id) ?? null
                         }
                         assistedConfrontationMode={
-                          assistedConfrontationMode || insertConfrontantTool
+                          !ownerMapWriteBlocked &&
+                          (assistedConfrontationMode || insertConfrontantTool)
                         }
-                        onEditConfrontationSide={(l, side) =>
-                          openConfrontationEditor(l, side)
+                        onEditConfrontationSide={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l, side) => openConfrontationEditor(l, side)
                         }
-                        onEditConfrontationSegment={(l, side, segmentIndexes) =>
-                          openConfrontationEditor(l, side, segmentIndexes)
+                        onEditConfrontationSegment={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l, side, segmentIndexes) =>
+                                openConfrontationEditor(l, side, segmentIndexes)
                         }
                         allBlocksForConfront={blocksForConfront}
                         onGenerateMemorial={
-                          onGenerateMemorialFromPopup
-                            ? (l) => onGenerateMemorialFromPopup(l)
-                            : undefined
+                          ownerMapWriteBlocked || !onGenerateMemorialFromPopup
+                            ? undefined
+                            : (l) => onGenerateMemorialFromPopup(l)
                         }
                         defineOfficialSideActive={
-                          defineOfficialSideTool ||
-                          defineOfficialSidePickLotId === lot.id
+                          !ownerMapWriteBlocked &&
+                          (defineOfficialSideTool ||
+                            defineOfficialSidePickLotId === lot.id)
                         }
-                        onStartDefineOfficialSide={(l) =>
-                          setDefineOfficialSidePickLotId(l.id)
+                        onStartDefineOfficialSide={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l) => setDefineOfficialSidePickLotId(l.id)
                         }
-                        onCancelDefineOfficialSide={() =>
-                          setDefineOfficialSidePickLotId(null)
+                        onCancelDefineOfficialSide={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : () => setDefineOfficialSidePickLotId(null)
                         }
-                        onPickOfficialSideSegment={(l, segmentIndex) =>
-                          openOfficialSideEditor(l, segmentIndex)
+                        onPickOfficialSideSegment={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l, segmentIndex) =>
+                                openOfficialSideEditor(l, segmentIndex)
                         }
-                        onEditOfficialSideSegment={(l, segmentIndex) =>
-                          openOfficialSideEditor(l, segmentIndex)
+                        onEditOfficialSideSegment={
+                          ownerMapWriteBlocked
+                            ? undefined
+                            : (l, segmentIndex) =>
+                                openOfficialSideEditor(l, segmentIndex)
                         }
                       />
                     </Popup>
@@ -5111,7 +5150,7 @@ export default function GISMap({
         </div>
       )}
 
-      {insertConfrontantTool && !frontCorrectLotId && !defineOfficialSideTool && (
+      {!ownerMapWriteBlocked && insertConfrontantTool && !frontCorrectLotId && !defineOfficialSideTool && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
           <p className="text-xs font-semibold text-sky-100 bg-[#11141a]/95 border border-sky-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
             Editar Confrontação: clique na divisa do lote (arestas coloridas) ou
@@ -5120,7 +5159,7 @@ export default function GISMap({
         </div>
       )}
 
-      {defineOfficialSideTool && !frontCorrectLotId && (
+      {!ownerMapWriteBlocked && defineOfficialSideTool && !frontCorrectLotId && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-lg w-full">
           <p className="text-xs font-semibold text-violet-100 bg-[#11141a]/95 border border-violet-500/50 rounded-lg px-3 py-2 shadow-lg text-center">
             Definir Medida Oficial: clique no segmento do lote (arestas roxas)
@@ -5129,7 +5168,7 @@ export default function GISMap({
         </div>
       )}
 
-      {officialSideEdit && projectId && (
+      {!ownerMapWriteBlocked && officialSideEdit && projectId && (
         <DefineOfficialSideModal
           blockId={officialSideEdit.lot.id}
           block={{
@@ -5144,7 +5183,7 @@ export default function GISMap({
         />
       )}
 
-      {confrontEdit && projectId && (
+      {!ownerMapWriteBlocked && confrontEdit && projectId && (
         <InformConfrontantModal
           projectId={projectId}
           blockId={confrontEdit.lot.id}

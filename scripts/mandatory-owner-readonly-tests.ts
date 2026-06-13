@@ -13,13 +13,18 @@ import {
 import {
   blockOwnerWriteOnClient,
   guardOwnerWriteRole,
+  isOwnerBlockedMapWriteRoute,
   isWriteHttpMethod,
+  ownerMapPopupWriteActionsEnabled,
+  ownerMapWriteBlocked,
 } from '../lib/ownerWriteGuard';
 import {
+  buildOwnerProjectOptionsFromAccessRows,
   filterProjectsForUser,
   filterRowsByOwnerProjects,
   getOwnerAllowedProjectIds,
   resolveCashMovementProjectId,
+  resolveFinanceProjectFilterList,
 } from '../lib/ownerProjectAccess';
 
 function assert(cond: boolean, msg: string) {
@@ -127,6 +132,78 @@ function testOwnerStillViewsOnlyAllowedProjects() {
   console.log('OK testOwnerStillViewsOnlyAllowedProjects');
 }
 
+function testOwnerMapCannotEditConfrontation() {
+  assert(ownerMapWriteBlocked('OWNER'), 'OWNER bloqueado no mapa');
+  assert(!ownerMapPopupWriteActionsEnabled('OWNER'), 'popup sem editar confrontação');
+  assert(ownerMapPopupWriteActionsEnabled('ADMIN'), 'ADMIN mantém popup técnico');
+  console.log('OK testOwnerMapCannotEditConfrontation');
+}
+
+function testOwnerMapCannotSaveConfrontation() {
+  assert(!guardOwnerWriteRole('OWNER'), 'salvar confrontação bloqueado');
+  assert(blockOwnerWriteOnClient('OWNER'), 'client bloqueia salvar confrontação');
+  console.log('OK testOwnerMapCannotSaveConfrontation');
+}
+
+function testOwnerMapCannotGenerateMemorialPdf() {
+  assert(ownerMapWriteBlocked('OWNER'), 'OWNER não gera memorial');
+  assert(!ownerMapPopupWriteActionsEnabled('OWNER'), 'popup sem memorial');
+  assert(canManageGisProject('OWNER') === false, 'OWNER sem ferramentas GIS');
+  console.log('OK testOwnerMapCannotGenerateMemorialPdf');
+}
+
+function testOwnerFinanceProjectFilterListsAllowedProjects() {
+  const allProjects = [
+    { id: MARTINI_2, name: 'CHACARAS MARTINI II' },
+    { id: MARTINI_3, name: 'CHACARAS E LOTES MARTINE III' },
+    { id: OTHER_PROJECT, name: 'JOAQUIM' },
+  ];
+  const options = buildOwnerProjectOptionsFromAccessRows(ownerRows, allProjects, 'finance');
+  const filterList = resolveFinanceProjectFilterList(ownerUser, ownerRows, allProjects, options);
+  assert(filterList.length === 2, 'filtro lista projetos permitidos');
+  assert(
+    filterList.includes('CHACARAS MARTINI II'),
+    'filtro inclui Martini II',
+  );
+  assert(
+    filterList.includes('CHACARAS E LOTES MARTINE III'),
+    'filtro inclui Martine III',
+  );
+  console.log('OK testOwnerFinanceProjectFilterListsAllowedProjects');
+}
+
+function testOwnerFinanceProjectFilterDoesNotListDeniedProjects() {
+  const allProjects = [
+    { id: MARTINI_2, name: 'CHACARAS MARTINI II' },
+    { id: MARTINI_3, name: 'CHACARAS E LOTES MARTINE III' },
+    { id: OTHER_PROJECT, name: 'JOAQUIM' },
+  ];
+  const options = buildOwnerProjectOptionsFromAccessRows(ownerRows, allProjects, 'finance');
+  const filterList = resolveFinanceProjectFilterList(ownerUser, ownerRows, allProjects, options);
+  assert(!filterList.includes('JOAQUIM'), 'filtro não lista projeto negado');
+  const visible = filterProjectsForUser(ownerUser, allProjects, getOwnerAllowedProjectIds(ownerRows));
+  assert(!visible.some((p) => p.id === OTHER_PROJECT), 'OWNER não vê Joaquim');
+  console.log('OK testOwnerFinanceProjectFilterDoesNotListDeniedProjects');
+}
+
+function testOwnerBackendBlocksMapWriteRoutes() {
+  assert(
+    isOwnerBlockedMapWriteRoute('/api/projects/abc', 'PATCH'),
+    'PATCH projeto bloqueado',
+  );
+  assert(
+    isOwnerBlockedMapWriteRoute('/api/contracts/abc/regenerate', 'POST'),
+    'regenerar contrato bloqueado',
+  );
+  assert(
+    !isOwnerBlockedMapWriteRoute('/api/projects/abc', 'GET'),
+    'GET projeto permitido',
+  );
+  assert(isWriteHttpMethod('DELETE'), 'DELETE é escrita');
+  assert(!guardOwnerWriteRole('OWNER'), 'guard backend OWNER');
+  console.log('OK testOwnerBackendBlocksMapWriteRoutes');
+}
+
 function main() {
   testOwnerCannotPerformWrites();
   testOwnerCannotSellOrReserveLot();
@@ -136,6 +213,12 @@ function main() {
   testOwnerApiWriteMethodsDetected();
   testOwnerReadOnlyMessage();
   testOwnerStillViewsOnlyAllowedProjects();
+  testOwnerMapCannotEditConfrontation();
+  testOwnerMapCannotSaveConfrontation();
+  testOwnerMapCannotGenerateMemorialPdf();
+  testOwnerFinanceProjectFilterListsAllowedProjects();
+  testOwnerFinanceProjectFilterDoesNotListDeniedProjects();
+  testOwnerBackendBlocksMapWriteRoutes();
   console.log('mandatory-owner-readonly-tests: all passed');
 }
 

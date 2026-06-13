@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isOwnerRole, OWNER_READ_ONLY_DENIED_MESSAGE } from '@/lib/rolePermissions';
+import {
+  canManageGisProject,
+  isOwnerRole,
+  OWNER_READ_ONLY_DENIED_MESSAGE,
+} from '@/lib/rolePermissions';
 
 export { OWNER_READ_ONLY_DENIED_MESSAGE };
 
@@ -28,6 +32,26 @@ export function blockOwnerWriteOnClient(role?: string | null): boolean {
     window.alert(OWNER_READ_ONLY_DENIED_MESSAGE);
   }
   return true;
+}
+
+/** OWNER não pode usar ferramentas de escrita no mapa GIS (confrontação, memorial, etc.). */
+export function ownerMapWriteBlocked(role?: string | null): boolean {
+  return isOwnerRole(role);
+}
+
+export function ownerMapPopupWriteActionsEnabled(role?: string | null): boolean {
+  return !ownerMapWriteBlocked(role) && canManageGisProject(role);
+}
+
+const OWNER_MAP_WRITE_ROUTE_PREFIXES = [
+  '/api/projects',
+  '/api/regenerate',
+  '/api/contracts',
+] as const;
+
+export function isOwnerBlockedMapWriteRoute(pathname: string, method: string): boolean {
+  if (!isWriteHttpMethod(method)) return false;
+  return OWNER_MAP_WRITE_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
 export async function rejectOwnerWriteByUserId(

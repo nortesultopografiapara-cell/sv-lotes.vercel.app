@@ -23,11 +23,13 @@ import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import {
   filterProjectsForUser,
   filterRowsByOwnerProjects,
+  fetchOwnerProjectOptionsForModule,
   getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
   resolveCashMovementProjectId,
   resolveCommissionProjectId,
   resolveReceiptProjectId,
+  resolveFinanceProjectFilterList,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
 import {
@@ -337,19 +339,39 @@ export default function FinancePage() {
         let pQuery = supabase.from('projects').select('id, name');
         pQuery = applyTenantFilter(pQuery, rlsCtx, 'projects');
         const { data: projData } = await pQuery;
-        const visibleProjects = filterProjectsForUser(
-          user,
-          projData || [],
-          ownerFinanceProjectIds,
-        );
-        if (visibleProjects.length > 0) {
-            console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', visibleProjects.length);
-            setFinanceProjects(visibleProjects);
-            setProjectsList(visibleProjects.map((p) => p.name));
+
+        let visibleProjects: Array<{ id: string; name: string }> = [];
+        if (ownerCtx.isOwner && user.id && resolvedTenantId) {
+          visibleProjects = await fetchOwnerProjectOptionsForModule(
+            supabase,
+            user.id,
+            resolvedTenantId,
+            'finance',
+          );
+          if (visibleProjects.length === 0) {
+            visibleProjects = filterProjectsForUser(
+              user,
+              projData || [],
+              ownerFinanceProjectIds,
+            );
+          }
         } else {
-            setFinanceProjects([]);
-            setProjectsList([]);
+          visibleProjects = filterProjectsForUser(
+            user,
+            projData || [],
+            ownerFinanceProjectIds,
+          );
         }
+
+        setFinanceProjects(visibleProjects);
+        setProjectsList(
+          resolveFinanceProjectFilterList(
+            user,
+            ownerCtx.rows,
+            projData || [],
+            visibleProjects,
+          ),
+        );
         
         let localRecebido = 0;
         let localAReceber = 0;

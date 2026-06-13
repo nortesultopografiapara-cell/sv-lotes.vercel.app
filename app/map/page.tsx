@@ -270,6 +270,7 @@ export default function MapPage() {
   const router = useRouter();
   const restoredGisProjectRef = useRef(false);
   const { user, loading: authLoading } = useAuth();
+  const ownerReadOnly = isOwnerRole(user?.role);
   const {
     saas,
     company: saasCompany,
@@ -2562,21 +2563,30 @@ export default function MapPage() {
               setStreetGuideModal({ mode: 'edit', guide })
             }
             onDeleteStreetGuide={handleDeleteStreetGuide}
-            lotSheetPickMode={lotSheetPickMode}
-            onLotSheetLotPick={(lot) => {
+            lotSheetPickMode={ownerReadOnly ? false : lotSheetPickMode}
+            onLotSheetLotPick={
+              ownerReadOnly
+                ? undefined
+                : (lot) => {
               if (!lotSheetPickMode) return;
               console.log('LOT_SHEET_MAP_LOT_CLICK', { id: lot.id, number: lot.number });
               setLotSheetTarget(lot);
               setLotSheetPickMode(false);
               console.log('LOT_SHEET_MODAL_OPEN_WITH_LOT', { id: lot.id, number: lot.number });
             }}
-            memorialPickMode={memorialPickMode}
-            onMemorialLotPick={(lot) => {
+            memorialPickMode={ownerReadOnly ? false : memorialPickMode}
+            onMemorialLotPick={
+              ownerReadOnly
+                ? undefined
+                : (lot) => {
               if (!memorialPickMode) return;
               setMemorialTarget(lot);
               setMemorialPickMode(false);
             }}
-            onGenerateMemorialFromPopup={(lot) => {
+            onGenerateMemorialFromPopup={
+              ownerReadOnly
+                ? undefined
+                : (lot) => {
               setMemorialTarget(lot);
               setMemorialPickMode(false);
             }}
@@ -2604,7 +2614,7 @@ export default function MapPage() {
           />
         )}
 
-        {memorialPickMode && !memorialTarget && (
+        {!ownerReadOnly && memorialPickMode && !memorialTarget && (
           <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">
             <p className="text-xs font-semibold text-amber-100 bg-[var(--bg-card)]/95 border border-amber-500/40 rounded-lg px-3 py-2 shadow-lg text-center">
               Selecione um lote no mapa para gerar o memorial descritivo
@@ -2612,7 +2622,7 @@ export default function MapPage() {
           </div>
         )}
 
-        {memorialTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
+        {!ownerReadOnly && memorialTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
           <MemorialGenerateModal
             projectId={selectedProject.id}
             tenantId={String(saasTenantId || user?.tenant_id || selectedProject.tenant_id)}
@@ -2630,7 +2640,7 @@ export default function MapPage() {
           />
         )}
 
-        {lotSheetTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
+        {!ownerReadOnly && lotSheetTarget && (saasTenantId || user?.tenant_id || selectedProject.tenant_id) && (
           <LotSheetPrintModal
             projectId={selectedProject.id}
             tenantId={String(saasTenantId || user?.tenant_id || selectedProject.tenant_id)}

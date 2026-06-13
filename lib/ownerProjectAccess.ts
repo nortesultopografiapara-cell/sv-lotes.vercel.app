@@ -32,6 +32,11 @@ export type OwnerAccessUser = {
 
 export type OwnerModuleKey = 'dashboard' | 'map' | 'finance' | 'contracts';
 
+export type OwnerProjectOption = {
+  id: string;
+  name: string;
+};
+
 export function isOwnerUser(user?: OwnerAccessUser | null): boolean {
   return normalizeUserRole(user?.role) === OWNER_ROLE;
 }
@@ -99,6 +104,99 @@ export function filterProjectsForUser<T extends { id: string }>(
   if (!allowedProjectIds?.length) return [];
   const allowed = new Set(allowedProjectIds);
   return projects.filter((project) => allowed.has(project.id));
+}
+
+function ownerModuleFlag(module: OwnerModuleKey): keyof OwnerProjectAccessRow {
+  switch (module) {
+    case 'dashboard':
+      return 'can_view_dashboard';
+    case 'map':
+      return 'can_view_map';
+    case 'finance':
+      return 'can_view_finance';
+    default:
+      return 'can_view_contracts';
+  }
+}
+
+export function buildOwnerProjectOptionsFromAccessRows(
+  rows: OwnerProjectAccessRow[],
+  allProjects: Array<{ id: string; name: string }>,
+  module: OwnerModuleKey,
+): OwnerProjectOption[] {
+  const allowedIds = getOwnerAllowedProjectIdsForModule(rows, module);
+  const projectById = new Map(allProjects.map((project) => [project.id, project]));
+  const options: OwnerProjectOption[] = [];
+
+  for (const id of allowedIds) {
+    const project = projectById.get(id);
+    if (project) {
+      options.push({ id: project.id, name: project.name });
+    }
+  }
+
+  return options.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
+export async function fetchOwnerProjectOptionsForModule(
+  client: SupabaseLike,
+  userId: string,
+  tenantId: string,
+  module: OwnerModuleKey,
+): Promise<OwnerProjectOption[]> {
+  const flag = ownerModuleFlag(module);
+  let query = client
+    .from('owner_project_access')
+    .select(`project_id, ${flag}, projects(id, name)`)
+    .eq('user_id', userId)
+    .eq('tenant_id', tenantId)
+    .eq(flag, true);
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn('OWNER_PROJECT_OPTIONS_FETCH_ERROR', error.message);
+    return [];
+  }
+
+  const options: OwnerProjectOption[] = [];
+  for (const row of (data || []) as Array<{
+    project_id?: string;
+    projects?: { id?: string; name?: string } | null;
+  }>) {
+    const joined = row.projects;
+    if (joined?.id && joined?.name) {
+      options.push({ id: joined.id, name: joined.name });
+      continue;
+    }
+    if (row.project_id) {
+      options.push({
+        id: String(row.project_id),
+        name: String(row.project_id),
+      });
+    }
+  }
+
+  return options.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+}
+
+export function resolveFinanceProjectFilterList(
+  user: OwnerAccessUser | null | undefined,
+  ownerRows: OwnerProjectAccessRow[],
+  allProjects: Array<{ id: string; name: string }>,
+  explicitOptions?: OwnerProjectOption[],
+): string[] {
+  if (!isOwnerUser(user)) {
+    return allProjects
+      .map((project) => project.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }
+
+  const options =
+    explicitOptions?.length
+      ? explicitOptions
+      : buildOwnerProjectOptionsFromAccessRows(ownerRows, allProjects, 'finance');
+
+  return options.map((project) => project.name);
 }
 
 export function aggregateOwnerPermissions(rows: OwnerProjectAccessRow[]) {
