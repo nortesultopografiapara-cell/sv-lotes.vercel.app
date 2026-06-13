@@ -12,6 +12,11 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { calculateMrrFromCompanies, resolveCompanyPricing } from '@/lib/companyPricing';
+import { augmentCompanyBilling } from '@/lib/masterBilling';
+import {
+  buildPaidReferenceMonthsByCompany,
+  type MasterSaasPayment,
+} from '@/lib/masterSaasPayments';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { supabase } from '@/lib/supabase';
 import {
@@ -21,8 +26,6 @@ import {
 } from '@/lib/saasPlans';
 import {
   runMasterSubscriptionAction,
-  subscriptionDaysLate,
-  subscriptionFinanceLabel,
 } from '@/lib/masterSubscriptionActions';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { motion, AnimatePresence } from 'motion/react';
@@ -130,6 +133,7 @@ export default function PlansPage() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
+  const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
 
   const loadCompanies = useCallback(async () => {
     setDataLoading(true);
@@ -193,6 +197,16 @@ export default function PlansPage() {
          activeCompanies: activeCompaniesCount,
          activeUsers: usersCountVal,
       });
+
+      if (user?.id) {
+        const payRes = await fetch(
+          `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
+        );
+        const payJson = await payRes.json().catch(() => ({}));
+        setSaasPayments((payRes.ok ? payJson.payments : []) as MasterSaasPayment[]);
+      } else {
+        setSaasPayments([]);
+      }
     } catch (error) {
       console.error('PLANS_LOAD_ERROR', error);
       setLoadError('Falha ao carregar dados do Supabase.');
@@ -201,7 +215,7 @@ export default function PlansPage() {
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -321,6 +335,11 @@ export default function PlansPage() {
         };
       }),
     [companies, subscriptionsMap],
+  );
+
+  const paidReferenceMonths = useMemo(
+    () => buildPaidReferenceMonthsByCompany(saasPayments),
+    [saasPayments],
   );
 
   const openPaymentModal = useCallback((company?: { id: string }) => {
@@ -502,7 +521,7 @@ export default function PlansPage() {
                    <th className="p-4 text-[12px] text-gray-400 font-medium">Plano Atual</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Loteamentos</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Corretores</th>
-                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status financeiro</th>
+                   <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Situação financeira</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Dias atraso</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Próx. vencimento</th>
                    <th className="p-4 text-[12px] text-gray-400 font-medium text-center">Status</th>
@@ -520,16 +539,17 @@ export default function PlansPage() {
                    const projCount = projectsCount[company.id] || 0;
                    
                    const subscription = subscriptionsMap[company.id];
+                   const enriched = augmentCompanyBilling(company, subscription, {
+                     paidReferenceMonths,
+                     payments: saasPayments,
+                   });
                    const vDate = subscription?.next_due_date
                       ? new Date(subscription.next_due_date).toLocaleDateString('pt-BR')
                       : company.vencimento_plano
                       ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR')
                       : '—';
-                   const financeStatus = subscriptionFinanceLabel(subscription?.payment_status);
-                   const daysLate = subscriptionDaysLate(
-                     subscription?.next_due_date,
-                     subscription?.payment_status,
-                   );
+                   const financeStatus = enriched.financial_situation;
+                   const daysLate = enriched.days_late;
                    
                    const isActive = company.status_operacional !== 'Inativo' && company.active !== false;
 
@@ -570,7 +590,7 @@ export default function PlansPage() {
                        </td>
                        <td className="p-4 py-3 text-center">
                          <span className={`text-[12px] font-medium ${
-                           financeStatus === 'Inadimplente' ? 'text-red-400' : 'text-gray-300'
+                           financeStatus === 'VENCIDO' ? 'text-red-400' : financeStatus === 'VENCE EM BREVE' ? 'text-amber-400' : financeStatus === 'EM DIA' ? 'text-emerald-400' : 'text-gray-300'
                          }`}>
                            {financeStatus}
                          </span>

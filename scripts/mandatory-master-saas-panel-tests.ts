@@ -25,6 +25,12 @@ import {
   resolveOfficialPaymentStatusRaw,
   sumReceivedRevenue,
 } from '../lib/masterSaasPayments';
+import {
+  formatPaymentHistoryDetails,
+  formatPaymentRecordStatus,
+  resolveSaasFinancialSituation,
+} from '../lib/masterSaasFinancialStatus';
+import { augmentCompanyBilling } from '../lib/masterBilling';
 import { loadMasterAuditLogs } from '../lib/masterAuditLoad';
 import {
   subscriptionDaysLate,
@@ -132,6 +138,8 @@ function testSuperAdminNav() {
   const items = flattenSuperAdminNav();
   assert(items.some((i) => i.href === '/master/reports'), 'reports route');
   assert(items.some((i) => i.href === '/master/audit'), 'audit route');
+  assert(items.some((i) => i.href === '/master/settings'), 'settings route');
+  assert(!items.some((i) => i.href === '/settings/global'), 'old settings removed');
   assert(!items.some((i) => i.href === '/logs'), 'logs removed');
   assert(!items.some((i) => i.href === '/offline-sync'), 'offline removed');
   assert(!items.some((i) => i.href === '/support/tickets'), 'tickets removed');
@@ -155,6 +163,101 @@ function testImpersonationStorage() {
 function testAuditLoadShape() {
   assert(typeof loadMasterAuditLogs === 'function', 'audit load export');
   console.log('OK testAuditLoadShape');
+}
+
+function testMenesesFinancialSituation() {
+  const menesesId = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
+  const payments = [
+    {
+      id: 'p-meneses',
+      company_id: menesesId,
+      amount: 549.99,
+      paid_at: '2026-05-27',
+      payment_method: 'manual',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+  ];
+  const paidMonths = buildPaidReferenceMonthsByCompany(payments);
+  const situation = resolveSaasFinancialSituation({
+    company: { id: menesesId, active: true, status_operacional: 'Ativa' },
+    subscription: {
+      id: 'sub1',
+      company_id: menesesId,
+      plan_type: 'business',
+      monthly_price: 549.99,
+      custom_price_enabled: false,
+      billing_cycle: 'monthly',
+      start_date: '2026-01-01',
+      payment_status: 'paid',
+      contract_status: 'active',
+      next_due_date: '2026-06-27',
+    },
+    paidReferenceMonths: paidMonths,
+    payments,
+    today: new Date('2026-06-13T12:00:00'),
+  });
+  assert(situation.situation === 'EM DIA', 'meneses em dia');
+  assert(situation.situation !== 'Pago', 'not general pago status');
+  assert(situation.lastPaymentReference === '2026-05', 'may reference');
+  assert(formatPaymentRecordStatus('paid') === 'Pago', 'payment record pago');
+  assert(
+    formatPaymentHistoryDetails(payments[0]).includes('Status do pagamento: Pago'),
+    'history shows payment pago',
+  );
+
+  const reports = buildMasterReportsMetrics(
+    [
+      {
+        id: menesesId,
+        name: 'MENESES IMOBILIARIA LTDA',
+        plan: 'business',
+        active: true,
+        status_operacional: 'Ativa',
+      },
+    ],
+    [
+      {
+        id: 'sub1',
+        company_id: menesesId,
+        plan_type: 'business',
+        monthly_price: 549.99,
+        custom_price_enabled: false,
+        billing_cycle: 'monthly',
+        start_date: '2026-01-01',
+        payment_status: 'paid',
+        contract_status: 'active',
+        next_due_date: '2026-06-27',
+      },
+    ],
+    paidMonths,
+    payments,
+  );
+  assert(reports.rows[0].financialSituation === 'EM DIA', 'reports em dia');
+  const finance = augmentCompanyBilling(
+    {
+      id: menesesId,
+      name: 'MENESES IMOBILIARIA LTDA',
+      plan: 'business',
+      active: true,
+      status_operacional: 'Ativa',
+    },
+    {
+      id: 'sub1',
+      company_id: menesesId,
+      plan_type: 'business',
+      monthly_price: 549.99,
+      custom_price_enabled: false,
+      billing_cycle: 'monthly',
+      start_date: '2026-01-01',
+      payment_status: 'paid',
+      contract_status: 'active',
+      next_due_date: '2026-06-27',
+    },
+    { paidReferenceMonths: paidMonths, payments },
+  );
+  assert(finance.financial_situation === 'EM DIA', 'finance em dia');
+  console.log('OK testMenesesFinancialSituation');
 }
 
 function testOfficialPaymentStatus() {
@@ -221,6 +324,7 @@ function main() {
   testDaysLate();
   testImpersonationStorage();
   testAuditLoadShape();
+  testMenesesFinancialSituation();
   testOfficialPaymentStatus();
   testSaasPayments();
   testCompanyUserCounts();

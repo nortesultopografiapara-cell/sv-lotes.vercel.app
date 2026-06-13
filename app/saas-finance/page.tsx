@@ -19,7 +19,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { mapAuditLogRow } from '@/lib/masterAudit';
 import {
-  resolveFirstPaymentDate,
   resolveNextDueDate,
 } from '@/lib/companySubscriptionDates';
 import {
@@ -65,6 +64,7 @@ import {
   sumReceivedRevenue,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
+import { formatPaymentHistoryDetails } from '@/lib/masterSaasFinancialStatus';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 
 const PLAN_COLORS: Record<string, string> = {
@@ -79,8 +79,24 @@ function enrichCompany(
   raw: CompanyPricingSource,
   subscription?: CompanySubscription | null,
   paidReferenceMonths?: Map<string, Set<string>>,
+  payments?: MasterSaasPayment[],
 ): EnrichedCompany {
-  return augmentCompanyBilling(raw, subscription, { paidReferenceMonths });
+  return augmentCompanyBilling(raw, subscription, { paidReferenceMonths, payments });
+}
+
+function financialSituationClass(situation?: string): string {
+  switch (situation) {
+    case 'EM DIA':
+      return 'text-emerald-400';
+    case 'VENCE EM BREVE':
+      return 'text-amber-400';
+    case 'VENCIDO':
+      return 'text-red-400';
+    case 'SUSPENSO':
+      return 'text-orange-400';
+    default:
+      return 'text-gray-400';
+  }
 }
 
 export default function SaaSFinancePage() {
@@ -175,7 +191,7 @@ function SaaSFinancePageContent() {
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
       setCompanies(
-        rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths)),
+        rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths, payments)),
       );
 
       const { data: billingLogs } = await supabase
@@ -204,7 +220,7 @@ function SaaSFinancePageContent() {
         user_name: 'Master',
         action: 'Pagamento registrado',
         company_name: payment.company_name || companyNameMap[payment.company_id] || '—',
-        details: `${formatSaasCurrency(Number(payment.amount))} · ${formatReferenceMonthLabel(payment.reference_month)} · ${paymentMethodLabel(payment.payment_method)}${payment.notes ? ` · ${payment.notes}` : ''}`,
+        details: formatPaymentHistoryDetails(payment),
       }));
       setBillingHistory(
         [...paymentRows, ...auditRows].sort((a, b) => {
@@ -242,7 +258,7 @@ function SaaSFinancePageContent() {
         mrr += applied;
       }
 
-      if (c.subscription_status === 'Inadimplente') {
+      if (c.financial_situation === 'VENCIDO') {
         delayedAmount += applied;
         outstandingCount++;
       }
@@ -297,14 +313,15 @@ function SaaSFinancePageContent() {
         c.subscription_status.toLowerCase() === filterStatus.toLowerCase();
       const matchPayment =
         filterPayment === 'all' ||
-        c.payment_status.toLowerCase() === filterPayment.toLowerCase();
+        String(c.financial_situation || c.payment_status).toLowerCase() ===
+          filterPayment.toLowerCase();
 
       return matchSearch && matchPlan && matchStatus && matchPayment;
     });
   }, [companies, search, filterPlan, filterStatus, filterPayment]);
 
   const delinquentCompanies = useMemo(
-    () => filteredCompanies.filter((c) => c.subscription_status === 'Inadimplente'),
+    () => filteredCompanies.filter((c) => c.financial_situation === 'VENCIDO'),
     [filteredCompanies],
   );
 
@@ -623,7 +640,7 @@ function SaaSFinancePageContent() {
               >
                 <div>
                   <p className="text-sm font-medium text-white">{c.name}</p>
-                  <p className="text-xs text-gray-500">{c.payment_status}</p>
+                  <p className="text-xs text-gray-500">{c.financial_situation}</p>
                 </div>
                 <p className="text-sm font-bold text-rose-400 tabular-nums">
                   {formatCurrency(resolveCompanyPricing(c).appliedPrice)}
@@ -833,18 +850,18 @@ function SaaSFinancePageContent() {
           )}
 
           <div className="sv-table-scroll">
-            <table className="w-full text-left min-w-[880px]">
+            <table className="w-full text-left min-w-[1100px]">
               <thead>
                 <tr className="border-b border-white/5">
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Empresa</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Plano</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Status</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Valor (R$)</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Ciclo</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Data de início</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Primeira cobrança</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Status empresa</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Situação financeira</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Último pagamento</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Referência paga</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Próximo vencimento</th>
-                  <th className="p-4 text-[12px] text-gray-400 font-medium">Pagamento</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Mensalidade</th>
+                  <th className="p-4 text-[12px] text-gray-400 font-medium">Atraso</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Contrato</th>
                   <th className="p-4 text-[12px] text-gray-400 font-medium">Ações</th>
                 </tr>
@@ -855,8 +872,6 @@ function SaaSFinancePageContent() {
                   const planColor = PLAN_COLORS[c.ui_plan] || PLAN_COLORS['BÁSICO'];
                   const companyId = (c as { id?: string }).id;
                   const sub = c.saas_subscription as CompanySubscription | null;
-                  const startDate = c.subscription_start_date || sub?.start_date;
-                  const firstPaymentDate = c.first_payment_date || resolveFirstPaymentDate(c, sub);
                   const nextDueDate = c.next_payment_date || resolveNextDueDate(c, sub);
                   const contractValidation = validateSaasContractGeneration(c, sub);
                   const canGenerateContract = contractValidation.ok;
@@ -901,7 +916,23 @@ function SaaSFinancePageContent() {
                           {c.ui_plan}
                         </span>
                       </td>
-                      <td className="p-4 text-[12px]">{c.subscription_status}</td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {c.company_operational_status || c.subscription_status}
+                      </td>
+                      <td className="p-4 text-[12px]">
+                        <span className={financialSituationClass(c.financial_situation)}>
+                          {c.financial_situation}
+                        </span>
+                      </td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatDateBr(c.last_payment_date)}
+                      </td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {c.last_payment_reference_label || '—'}
+                      </td>
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatDateBr(nextDueDate)}
+                      </td>
                       <td className="p-4">
                         {pricing.hasCustomPrice ? (
                           <div>
@@ -918,28 +949,8 @@ function SaaSFinancePageContent() {
                           </span>
                         )}
                       </td>
-                      <td className="p-4 text-[13px] text-gray-400">Mensal</td>
-                      <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(startDate)}
-                      </td>
-                      <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(firstPaymentDate)}
-                      </td>
-                      <td className="p-4 text-[12px] text-gray-300">
-                        {formatDateBr(nextDueDate)}
-                      </td>
-                      <td className="p-4 text-[12px]">
-                        <span
-                          className={
-                            c.payment_status === 'Vencido'
-                              ? 'text-red-400'
-                              : c.payment_status === 'Pago'
-                                ? 'text-emerald-400'
-                                : 'text-gray-300'
-                          }
-                        >
-                          {c.payment_status}
-                        </span>
+                      <td className="p-4 text-[12px] text-rose-400">
+                        {c.days_late > 0 ? `${c.days_late} dias` : '—'}
                       </td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1.5">
@@ -1034,12 +1045,13 @@ function SaaSFinancePageContent() {
               <option value="ativa">Ativa</option>
               <option value="inadimplente">Inadimplente</option>
             </FilterSelect>
-            <FilterSelect label="Pagamento" value={filterPayment} onChange={setFilterPayment}>
-              <option value="all">Todos</option>
-              <option value="aguardando cobrança">Aguardando cobrança</option>
-              <option value="pago">Pago</option>
+            <FilterSelect label="Situação financeira" value={filterPayment} onChange={setFilterPayment}>
+              <option value="all">Todas</option>
+              <option value="em dia">Em dia</option>
+              <option value="vence em breve">Vence em breve</option>
               <option value="vencido">Vencido</option>
-              <option value="cancelado">Cancelado</option>
+              <option value="inativo">Inativo</option>
+              <option value="suspenso">Suspenso</option>
             </FilterSelect>
           </div>
           <button

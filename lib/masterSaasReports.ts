@@ -6,6 +6,8 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
+import { formatDateBr } from '@/lib/saasSubscription';
+import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
 export type MasterReportsMetrics = {
@@ -22,10 +24,12 @@ export type MasterReportRow = {
   companyId: string;
   companyName: string;
   plan: string;
-  status: string;
-  paymentStatus: string;
-  monthlyPrice: number;
+  companyStatus: string;
+  financialSituation: string;
+  lastPaymentDate: string;
+  lastPaymentReference: string;
   nextDueDate: string;
+  monthlyPrice: number;
   daysLate: number;
 };
 
@@ -43,6 +47,7 @@ export function buildMasterReportsMetrics(
   companies: CompanyPricingSource[],
   subscriptions: CompanySubscription[] = [],
   paidReferenceMonths: Map<string, Set<string>> = new Map(),
+  payments: MasterSaasPayment[] = [],
 ): MasterReportsMetrics {
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
   let activeSubscriptions = 0;
@@ -54,6 +59,7 @@ export function buildMasterReportsMetrics(
     const subscription = subMap.get(company.id as string) ?? null;
     const enriched = augmentCompanyBilling(company, subscription, {
       paidReferenceMonths,
+      payments,
     });
     const monthlyPrice = getCompanyMonthlyPrice(company);
     const isActive = isBillableCompany(company);
@@ -61,10 +67,7 @@ export function buildMasterReportsMetrics(
       activeSubscriptions++;
     }
 
-    const isDelinquent =
-      enriched.subscription_status === 'Inadimplente' ||
-      subscription?.payment_status === 'overdue' ||
-      (company.status_operacional || '').toLowerCase() === 'inadimplente';
+    const isDelinquent = enriched.financial_situation === 'VENCIDO';
 
     if (isDelinquent && isActive) {
       delinquencyAmount += monthlyPrice;
@@ -75,11 +78,17 @@ export function buildMasterReportsMetrics(
       companyId: String(company.id || ''),
       companyName: String(company.name || company.fantasy_name || '—'),
       plan: enriched.ui_plan,
-      status: enriched.subscription_status,
-      paymentStatus: enriched.payment_status,
+      companyStatus: enriched.company_operational_status,
+      financialSituation: enriched.financial_situation,
+      lastPaymentDate: enriched.last_payment_date
+        ? formatDateBr(enriched.last_payment_date)
+        : '—',
+      lastPaymentReference: enriched.last_payment_reference_label || '—',
+      nextDueDate: enriched.next_payment_date
+        ? formatDateBr(enriched.next_payment_date)
+        : '—',
       monthlyPrice,
-      nextDueDate: enriched.next_payment_date || '—',
-      daysLate: computeDaysLate(enriched.next_payment_date),
+      daysLate: enriched.days_late,
     });
   });
 
@@ -100,22 +109,26 @@ export function masterReportsToCsv(metrics: MasterReportsMetrics): string {
   const header = [
     'Empresa',
     'Plano',
-    'Status',
-    'Pagamento',
+    'Status da empresa',
+    'Situação financeira',
+    'Último pagamento',
+    'Referência paga',
+    'Próximo vencimento',
     'Mensalidade',
-    'Proximo vencimento',
-    'Dias atraso',
+    'Atraso',
   ].join(';');
 
   const lines = metrics.rows.map((row) =>
     [
       row.companyName,
       row.plan,
-      row.status,
-      row.paymentStatus,
-      row.monthlyPrice.toFixed(2).replace('.', ','),
+      row.companyStatus,
+      row.financialSituation,
+      row.lastPaymentDate,
+      row.lastPaymentReference,
       row.nextDueDate,
-      String(row.daysLate),
+      row.monthlyPrice.toFixed(2).replace('.', ','),
+      row.daysLate > 0 ? `${row.daysLate} dias` : '—',
     ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(';'),

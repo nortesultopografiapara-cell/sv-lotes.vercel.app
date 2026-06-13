@@ -40,7 +40,7 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
     items: [
       { name: 'Relatórios', href: '/master/reports', icon: BarChart3 },
       { name: 'Auditoria', href: '/master/audit', icon: ShieldCheck },
-      { name: 'Configurações', href: '/settings/global', icon: Settings },
+      { name: 'Configurações', href: '/master/settings', icon: Settings },
     ],
   },
 ];

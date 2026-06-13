@@ -467,13 +467,16 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                         </span>
                       </td>
                       <td className="p-4">
-                        <span
-                          className={`text-[11px] font-bold ${
-                            c.status === 'Ativa' ? 'text-green-500' : 'text-red-400'
-                          }`}
-                        >
-                          {c.status}
-                        </span>
+                        <div>
+                          <span
+                            className={`text-[11px] font-bold block ${
+                              c.status === 'Ativa' ? 'text-green-500' : 'text-red-400'
+                            }`}
+                          >
+                            {c.status}
+                          </span>
+                          <span className="text-[10px] text-gray-500">{c.financialSituation}</span>
+                        </div>
                       </td>
                       <td className="p-4 text-center text-gray-300 text-[12px]">
                         {c.projectsUsed} / {c.projectsLimit}

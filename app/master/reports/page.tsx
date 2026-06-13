@@ -26,6 +26,7 @@ import {
 import {
   buildPaidReferenceMonthsByCompany,
   sumReceivedRevenue,
+  type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
@@ -99,21 +100,28 @@ function MasterReportsContent() {
       }
 
       let paidReferenceMonths = new Map<string, Set<string>>();
+      let payments: MasterSaasPayment[] = [];
       if (user.id) {
         const payRes = await fetch(
           `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
         );
         const payJson = await payRes.json().catch(() => ({}));
         if (payRes.ok) {
-          paidReferenceMonths = buildPaidReferenceMonthsByCompany(payJson.payments || []);
-          setReceivedRevenue(sumReceivedRevenue(payJson.payments || []));
+          payments = (payJson.payments || []) as MasterSaasPayment[];
+          paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
+          setReceivedRevenue(sumReceivedRevenue(payments));
         } else {
           setReceivedRevenue(0);
         }
       }
 
       setMetrics(
-        buildMasterReportsMetrics(companies || [], subscriptions, paidReferenceMonths),
+        buildMasterReportsMetrics(
+          companies || [],
+          subscriptions,
+          paidReferenceMonths,
+          payments,
+        ),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar relatórios');
@@ -159,14 +167,26 @@ function MasterReportsContent() {
 
     autoTable(doc, {
       startY: 42,
-      head: [['Empresa', 'Plano', 'Status', 'Pagamento', 'Mensalidade', 'Vencimento', 'Atraso']],
+      head: [[
+        'Empresa',
+        'Plano',
+        'Status empresa',
+        'Situação financeira',
+        'Último pagamento',
+        'Referência',
+        'Vencimento',
+        'Mensalidade',
+        'Atraso',
+      ]],
       body: metrics.rows.map((row) => [
         row.companyName,
         row.plan,
-        row.status,
-        row.paymentStatus,
-        formatMasterCurrency(row.monthlyPrice),
+        row.companyStatus,
+        row.financialSituation,
+        row.lastPaymentDate,
+        row.lastPaymentReference,
         row.nextDueDate,
+        formatMasterCurrency(row.monthlyPrice),
         row.daysLate > 0 ? `${row.daysLate} dias` : '—',
       ]),
       styles: { fontSize: 8 },
@@ -279,10 +299,12 @@ function MasterReportsContent() {
                 <tr>
                   <th className="p-3">Empresa</th>
                   <th className="p-3">Plano</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Pagamento</th>
-                  <th className="p-3">Mensalidade</th>
+                  <th className="p-3">Status empresa</th>
+                  <th className="p-3">Situação financeira</th>
+                  <th className="p-3">Último pagamento</th>
+                  <th className="p-3">Referência paga</th>
                   <th className="p-3">Próx. vencimento</th>
+                  <th className="p-3">Mensalidade</th>
                   <th className="p-3">Atraso</th>
                 </tr>
               </thead>
@@ -291,12 +313,14 @@ function MasterReportsContent() {
                   <tr key={row.companyId} className="border-t border-white/5 hover:bg-white/[0.02]">
                     <td className="p-3 text-white font-medium">{row.companyName}</td>
                     <td className="p-3 text-slate-300">{row.plan}</td>
-                    <td className="p-3 text-slate-300">{row.status}</td>
-                    <td className="p-3 text-slate-300">{row.paymentStatus}</td>
+                    <td className="p-3 text-slate-300">{row.companyStatus}</td>
+                    <td className="p-3 text-slate-300">{row.financialSituation}</td>
+                    <td className="p-3 text-slate-400">{row.lastPaymentDate}</td>
+                    <td className="p-3 text-slate-400">{row.lastPaymentReference}</td>
+                    <td className="p-3 text-slate-400">{row.nextDueDate}</td>
                     <td className="p-3 text-emerald-400 tabular-nums">
                       {formatMasterCurrency(row.monthlyPrice)}
                     </td>
-                    <td className="p-3 text-slate-400">{row.nextDueDate}</td>
                     <td className="p-3 text-rose-400 tabular-nums">
                       {row.daysLate > 0 ? `${row.daysLate} dias` : '—'}
                     </td>

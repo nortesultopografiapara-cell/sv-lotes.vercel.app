@@ -7,14 +7,9 @@ import {
   normalizeSubscriptionDates,
   resolveCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
-import {
-  formatSaasPaymentStatus,
-  type CompanySubscription,
-} from '@/lib/saasSubscription';
-import {
-  referenceMonthFromDate,
-  resolveOfficialPaymentStatusRaw,
-} from '@/lib/masterSaasPayments';
+import type { CompanySubscription } from '@/lib/saasSubscription';
+import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
+import { resolveSaasFinancialSituation } from '@/lib/masterSaasFinancialStatus';
 import {
   calculateMrrFromCompanies,
   getCompanyMonthlyPrice,
@@ -38,6 +33,7 @@ export function isActiveSubscriptionCompany(company: CompanyLike): boolean {
 export type AugmentCompanyBillingOptions = {
   paidReferenceMonths?: Map<string, Set<string>>;
   referenceMonth?: string;
+  payments?: MasterSaasPayment[];
 };
 
 export function augmentCompanyBilling<T extends CompanyLike>(
@@ -56,32 +52,27 @@ export function augmentCompanyBilling<T extends CompanyLike>(
   const active = isActiveSubscriptionCompany(company);
   const companyDates = resolveCompanySubscriptionDates(company);
   const billing = normalizeSubscriptionDates(company, subscription);
-
   const companyId = String((company as { id?: string }).id || '');
   const paidMonths = options?.paidReferenceMonths ?? new Map<string, Set<string>>();
-  const referenceMonth =
-    options?.referenceMonth || referenceMonthFromDate(new Date().toISOString());
-  const paymentRaw = resolveOfficialPaymentStatusRaw(
-    subscription,
-    companyId,
-    paidMonths,
-    referenceMonth,
-  );
-  const payment_status = subscription || paidMonths.get(companyId)?.has(referenceMonth)
-    ? formatSaasPaymentStatus(paymentRaw)
-    : active
-      ? ('Aguardando cobrança' as const)
-      : ('Inativo' as const);
 
-  const opStatus = (company.status_operacional || '').toLowerCase();
+  const financial = resolveSaasFinancialSituation({
+    company: { ...company, id: companyId },
+    subscription,
+    nextDueDate: subscription?.next_due_date ?? billing.next_due_date,
+    paidReferenceMonths: paidMonths,
+    payments: options?.payments,
+  });
+
   const subscription_status =
-    paymentRaw === 'overdue' || opStatus === 'inadimplente'
+    financial.situation === 'VENCIDO' || (company.status_operacional || '').toLowerCase() === 'inadimplente'
       ? ('Inadimplente' as const)
-      : subscription?.contract_status === 'canceled'
-        ? ('Cancelada' as const)
-        : active
-          ? ('Ativa' as const)
-          : ('Inativa' as const);
+      : subscription?.contract_status === 'canceled' || financial.situation === 'INATIVO'
+        ? ('Inativa' as const)
+        : financial.situation === 'SUSPENSO'
+          ? ('Suspensa' as const)
+          : active
+            ? ('Ativa' as const)
+            : ('Inativa' as const);
 
   return {
     ...company,
@@ -92,18 +83,24 @@ export function augmentCompanyBilling<T extends CompanyLike>(
     custom_price_enabled: resolved.customEnabled,
     has_custom_price: resolved.hasCustomPrice,
     saas_subscription: subscription ?? null,
-    payment_status,
-    payment_status_raw: paymentRaw || null,
+    financial_situation: financial.situation,
+    /** @deprecated Use financial_situation — não representa pagamento individual */
+    payment_status: financial.situation,
+    company_operational_status: financial.companyOperationalStatus,
+    last_payment_date: financial.lastPaymentDate,
+    last_payment_reference: financial.lastPaymentReference,
+    last_payment_reference_label: financial.lastPaymentReferenceLabel,
+    days_late: financial.daysLate,
     subscription_status,
     subscription_start_date: billing.start_date,
     first_payment_date: billing.first_payment_date,
     subscription_due_day: companyDates.subscription_due_day,
-    next_payment_date: billing.next_due_date,
-    next_billing: billing.next_due_date,
-    next_charge: billing.next_due_date,
+    next_payment_date: subscription?.next_due_date ?? billing.next_due_date,
+    next_billing: subscription?.next_due_date ?? billing.next_due_date,
+    next_charge: subscription?.next_due_date ?? billing.next_due_date,
     contract_number: subscription?.contract_number || null,
     contract_pdf_url: subscription?.contract_pdf_url || null,
     contract_status: subscription?.contract_status || null,
-    last_billing: null as string | null,
+    last_billing: financial.lastPaymentDate,
   };
 }

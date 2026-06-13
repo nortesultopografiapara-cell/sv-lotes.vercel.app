@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateMrrFromCompanies, getCompanyMonthlyPrice } from '@/lib/companyPricing';
+import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { buildCompanyUserCounts } from '@/lib/masterCompanyUsers';
+import { buildPaidReferenceMonthsByCompany } from '@/lib/masterSaasPayments';
+import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
+import type { CompanySubscription } from '@/lib/saasSubscription';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
@@ -25,6 +29,7 @@ export type MasterRecentCompany = {
   brokersUsed: number;
   brokersLimit: number;
   mrr: number;
+  financialSituation: string;
 };
 
 export type MasterDashboardData = {
@@ -138,6 +143,8 @@ export async function loadMasterDashboardData(
     projectsListRes,
     usersListRes,
     brokersListRes,
+    subscriptionsRes,
+    paymentsRes,
   ] = await Promise.all([
     supabase.from('companies').select('*'),
     supabase.from('users').select('*', { count: 'exact', head: true }),
@@ -154,6 +161,12 @@ export async function loadMasterDashboardData(
     supabase.from('projects').select('tenant_id, company_id'),
     supabase.from('users').select('tenant_id, role'),
     supabase.from('brokers').select('tenant_id, company_id'),
+    supabase.from('company_subscriptions').select('*'),
+    supabase
+      .from('master_saas_payments')
+      .select('company_id, reference_month, paid_at, amount, status, payment_method')
+      .order('paid_at', { ascending: false })
+      .limit(500),
   ]);
 
   if (companiesRes.error) errors.push(`companies: ${companiesRes.error.message}`);
@@ -165,8 +178,14 @@ export async function loadMasterDashboardData(
   if (lotsRes.error) errors.push(`lots: ${lotsRes.error.message}`);
   if (receiptsRes.error) errors.push(`finance_receipts: ${receiptsRes.error.message}`);
   if (usersListRes.error) errors.push(`users_list: ${usersListRes.error.message}`);
+  if (subscriptionsRes.error) errors.push(`subscriptions: ${subscriptionsRes.error.message}`);
+  if (paymentsRes.error) errors.push(`master_saas_payments: ${paymentsRes.error.message}`);
 
   const companies = companiesRes.data ?? [];
+  const subscriptions = (subscriptionsRes.data ?? []) as CompanySubscription[];
+  const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
+  const payments = (paymentsRes.data ?? []) as MasterSaasPayment[];
+  const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
   const activeCompanies = companies.filter((c) => c.active === true).length;
   const suspendedCompanies = companies.filter(
@@ -245,9 +264,13 @@ export async function loadMasterDashboardData(
     });
   }
 
-  const inadimplentes = companies.filter(
-    (c) => (c.status_operacional || '').trim() === 'Inadimplente',
-  );
+  const inadimplentes = companies.filter((c) => {
+    const enriched = augmentCompanyBilling(c, subMap.get(c.id) ?? null, {
+      paidReferenceMonths,
+      payments,
+    });
+    return enriched.financial_situation === 'VENCIDO';
+  });
   if (inadimplentes.length > 0) {
     alerts.push({
       id: 'inadimplente',
@@ -295,12 +318,17 @@ export async function loadMasterDashboardData(
 
   const recentCompanies: MasterRecentCompany[] = sorted.slice(0, 5).map((c) => {
     const saas = getCompanySaasPlan(c);
+    const enriched = augmentCompanyBilling(c, subMap.get(c.id) ?? null, {
+      paidReferenceMonths,
+      payments,
+    });
     return {
       id: c.id,
       name: c.name || 'Sem nome',
       slug: c.slug ?? null,
       planLabel: mapPlanToMasterTier(c),
-      status: c.status_operacional || (c.active === false ? 'Inativa' : 'Ativa'),
+      status: enriched.company_operational_status,
+      financialSituation: enriched.financial_situation,
       projectsUsed: projectCounts[c.id] || 0,
       projectsLimit: saas.maxProjects,
       usersUsed: userCounts[c.id] || 0,
