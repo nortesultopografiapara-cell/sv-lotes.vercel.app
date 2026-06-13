@@ -18,6 +18,7 @@ import {
   generateSaasContractNumber,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
+import { SAAS_CONTRACT_CURRENT_VERSION_STATUSES, SAAS_CONTRACT_STATUS_AFTER_GENERATION } from '@/lib/saasContractStatus';
 
 function isTestCompany(company: {
   is_test_company?: boolean | null;
@@ -261,7 +262,7 @@ export async function generateAndStoreSaasContract(
     .from('company_contracts')
     .select('id, version, contract_number')
     .eq('company_id', companyId)
-    .eq('status', 'active')
+    .in('status', SAAS_CONTRACT_CURRENT_VERSION_STATUSES)
     .order('version', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -328,7 +329,7 @@ export async function generateAndStoreSaasContract(
       .from('company_contracts')
       .update({ status: 'superseded' })
       .eq('company_id', company.id)
-      .eq('status', 'active');
+      .in('status', SAAS_CONTRACT_CURRENT_VERSION_STATUSES);
 
     if (supersedeErr) {
       console.warn('[SAAS_CONTRACT] supersede active', supersedeErr.message);
@@ -343,7 +344,7 @@ export async function generateAndStoreSaasContract(
       contract_url: contractPdfUrl,
       contract_number: contractNumber,
       version,
-      status: 'active',
+      status: SAAS_CONTRACT_STATUS_AFTER_GENERATION,
       generated_at: generatedAt,
       regenerated_from: forceRegenerate ? previousActiveId : null,
       regenerated_at: forceRegenerate ? generatedAt : null,
@@ -379,7 +380,7 @@ export async function generateAndStoreSaasContract(
     .update({
       contract_number: contractNumber,
       contract_pdf_url: contractPdfUrl,
-      contract_status: 'active',
+      contract_status: SAAS_CONTRACT_STATUS_AFTER_GENERATION,
       updated_at: generatedAt,
     })
     .eq('id', subscription.id)

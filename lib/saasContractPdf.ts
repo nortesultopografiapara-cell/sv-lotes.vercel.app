@@ -3,82 +3,22 @@
  */
 
 import { jsPDF } from 'jspdf';
-import {
-  formatSaasCurrency,
-  getStandardPlanMonthlyPrice,
-  resolveCompanyPricing,
-  type CompanyPricingSource,
-} from '@/lib/companyPricing';
-import {
-  dueDayFromDate,
-  subscriptionDatesForContractPdf,
-} from '@/lib/companySubscriptionDates';
-import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
-import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
-import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
+import {
+  buildSaasContractSections,
+  resolveSaasContractContext,
+  SAAS_PROVIDER,
+  type SaasContractSection,
+} from '@/lib/saasContractContent';
+export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
-export const SAAS_PROVIDER = {
-  legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
-  tradeName: 'NORTE & SUL TOPOGRAFIA',
-  cnpj: '12.631.238/0001-02',
-  city: 'Parauapebas/PA',
-  product: 'SV LOTES — Plataforma SaaS de Gestão Imobiliária',
-  services: [
-    'Plataforma SaaS SV LOTES',
-    'Gestão imobiliária',
-    'CRM loteadora',
-    'Dashboard financeiro',
-    'GIS / mapas',
-    'Contratos automáticos',
-  ],
-};
-
-const CLAUSES = [
-  '1. LICENCIAMENTO SAAS — A CONTRATADA concede ao CONTRATANTE licença de uso não exclusiva, mensal e intransferível da plataforma SV LOTES, nos limites do plano contratado.',
-  '2. USO MENSAL DA PLATAFORMA — O acesso é concedido mediante pagamento recorrente. O CONTRATANTE utilizará o sistema conforme políticas de uso aceitável e legislação vigente.',
-  '3. ACESSO MULTIUSUÁRIO — O plano inclui usuários conforme limites comerciais (corretores e projetos). Credenciais são pessoais e intransferíveis.',
-  '4. COBRANÇA RECORRENTE — O valor mensal negociado será cobrado na data de vencimento indicada neste instrumento, com reajuste conforme política comercial da CONTRATADA.',
-  '5. SUSPENSÃO POR INADIMPLÊNCIA — O atraso superior a 10 (dez) dias úteis autoriza a suspensão do acesso até a regularização dos débitos.',
-  '6. BACKUP E SEGURANÇA — A CONTRATADA adota medidas técnicas razoáveis de disponibilidade, backup e proteção. O CONTRATANTE é responsável pelos dados inseridos.',
-  '7. LGPD — As partes comprometem-se a tratar dados pessoais conforme a Lei nº 13.709/2018, na qualidade de controlador/operador conforme o caso.',
-  '8. FORO — Fica eleito o foro da comarca de Parauapebas/PA para dirimir controvérsias oriundas deste contrato.',
-];
-
-export type SaasContractPdfInput = {
-  company: CompanyPricingSource & {
-    name?: string | null;
-    cnpj?: string | null;
-    email?: string | null;
-    phone?: string | null;
-    address?: string | null;
-    city?: string | null;
-    state?: string | null;
-    cep?: string | null;
-    subscription_due_day?: number | string | null;
-    responsible_name?: string | null;
-    legal_representative?: string | null;
-  };
-  subscription: Pick<
-    CompanySubscription,
-    | 'contract_number'
-    | 'plan_type'
-    | 'monthly_price'
-    | 'start_date'
-    | 'first_payment_date'
-    | 'next_due_date'
-  >;
-};
-
-function displayField(value: string | null | undefined, fallback = 'Não informado'): string {
-  const v = String(value ?? '').trim();
-  return v.length > 0 ? v : fallback;
-}
+const FOOTER_Y = 287;
+const PAGE_BOTTOM = 268;
 
 function writeWrapped(doc: jsPDF, text: string, x: number, y: number, maxWidth: number): number {
   const lines = doc.splitTextToSize(text, maxWidth);
   doc.text(lines, x, y);
-  return y + lines.length * 5.2;
+  return y + lines.length * 4.8;
 }
 
 function drawLogoBadge(
@@ -102,195 +42,271 @@ function drawLogoBadge(
   doc.text(subtitle, x + 4, y + 14);
 }
 
-function ensureSpace(doc: jsPDF, y: number, need: number): number {
-  const pageH = doc.internal.pageSize.getHeight();
-  if (y + need > pageH - 20) {
-    doc.addPage();
-    return 22;
-  }
-  return y;
-}
-
-export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
-  const { company: rawCompany, subscription } = input;
-  const normalized = normalizeCompanyContractData(rawCompany);
-  const company = {
-    ...rawCompany,
-    address: normalized.address || rawCompany.address,
-    city: normalized.city || rawCompany.city,
-    state: normalized.state || rawCompany.state,
-    email: normalized.email || rawCompany.email,
-    phone: normalized.phone || rawCompany.phone,
-  };
-  const pricing = resolveCompanyPricing(company);
-  const saas = getCompanySaasPlan(company);
-  const standardPrice = getStandardPlanMonthlyPrice(company);
-  const applied = Number(subscription.monthly_price) || pricing.appliedPrice;
-  const billing = subscriptionDatesForContractPdf(subscription);
-  const dueDay = dueDayFromDate(billing.start_date);
-  const responsible =
-    company.legal_representative || company.responsible_name || 'Representante legal';
-
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const margin = 16;
-  const contentW = pageW - margin * 2;
-  let y = 14;
-
+function drawPageHeader(doc: jsPDF, margin: number, pageW: number, compact: boolean) {
+  const headerH = compact ? 14 : 36;
   doc.setFillColor(8, 15, 30);
-  doc.rect(0, 0, pageW, 38, 'F');
+  doc.rect(0, 0, pageW, headerH, 'F');
+
+  if (compact) {
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(`${SAAS_PROVIDER.tradeName} · Contrato SaaS`, margin, 9);
+    return 20;
+  }
+
   const platformLogo = loadSvLotesLogoDataUrl();
   if (platformLogo) {
-    doc.addImage(platformLogo, 'PNG', margin, 5, 30, 30);
+    doc.addImage(platformLogo, 'PNG', margin, 4, 26, 26);
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(SAAS_PROVIDER.tradeName, margin + 36, 14);
+    doc.text(SAAS_PROVIDER.tradeName, margin + 32, 12);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.text(SAAS_PROVIDER.legalName, margin + 36, 20);
+    doc.text(SAAS_PROVIDER.legalName, margin + 32, 18);
+    doc.text(`CNPJ ${SAAS_PROVIDER.cnpj} · ${SAAS_PROVIDER.city}`, margin + 32, 24);
   } else {
-    drawLogoBadge(doc, margin, 8, 42, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
-    drawLogoBadge(doc, margin + 48, 8, 52, 18, 'NORTE & SUL', 'Topografia', [16, 120, 100]);
+    drawLogoBadge(doc, margin, 6, 44, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
+    drawLogoBadge(
+      doc,
+      margin + 50,
+      6,
+      58,
+      18,
+      'SV TOPOGRAFIA',
+      '& Projetos',
+      [16, 120, 100],
+    );
   }
 
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.text('CONTRATO DE LICENÇA DE SOFTWARE (SaaS)', pageW / 2, 32, { align: 'center' });
+  return 42;
+}
 
-  doc.setTextColor(30, 30, 30);
-  y = 46;
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Nº ${subscription.contract_number || '—'}`, margin, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW - margin, y, { align: 'right' });
-  y += 10;
+function drawPageFooters(doc: jsPDF, margin: number, pageW: number, contractNumber: string) {
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(220);
+    doc.line(margin, FOOTER_Y - 4, pageW - margin, FOOTER_Y - 4);
+    doc.setFontSize(7);
+    doc.setTextColor(120);
+    doc.setFont('helvetica', 'normal');
+    doc.text(
+      `${SAAS_PROVIDER.product} · ${SAAS_PROVIDER.legalName} · Contrato ${contractNumber}`,
+      margin,
+      FOOTER_Y,
+    );
+    doc.text(`Página ${i} de ${pageCount}`, pageW - margin, FOOTER_Y, { align: 'right' });
+  }
+}
 
-  y = writeWrapped(
-    doc,
-    `Pelo presente instrumento particular, as partes abaixo qualificadas celebram contrato de licenciamento SaaS da plataforma SV LOTES, nos termos a seguir.`,
-    margin,
-    y,
-    contentW,
-  );
-  y += 8;
+type PdfWriter = {
+  doc: jsPDF;
+  margin: number;
+  contentW: number;
+  y: number;
+  ensureSpace: (need: number) => void;
+  writeln: (text: string, opts?: { bold?: boolean; size?: number; gap?: number }) => void;
+  sectionTitle: (title: string) => void;
+  row: (label: string, value: string) => void;
+};
 
-  const section = (title: string) => {
-    y = ensureSpace(doc, y, 12);
+function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
+  const margin = 16;
+  const pageW = doc.internal.pageSize.getWidth();
+  const contentW = pageW - margin * 2;
+  let y = startY;
+
+  const ensureSpace = (need: number) => {
+    if (y + need > PAGE_BOTTOM) {
+      doc.addPage();
+      y = drawPageHeader(doc, margin, pageW, true);
+    }
+  };
+
+  const writeln = (text: string, opts?: { bold?: boolean; size?: number; gap?: number }) => {
+    ensureSpace(12);
+    doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
+    doc.setFontSize(opts?.size ?? 9);
+    doc.setTextColor(40, 40, 40);
+    y = writeWrapped(doc, text, margin, y, contentW);
+    y += opts?.gap ?? 3;
+  };
+
+  const sectionTitle = (title: string) => {
+    ensureSpace(14);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
     doc.text(title, margin, y);
-    y += 6;
+    y += 7;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(40, 40, 40);
   };
 
   const row = (label: string, value: string) => {
-    y = ensureSpace(doc, y, 8);
+    ensureSpace(8);
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
     doc.text(`${label}:`, margin, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(value, margin + 48, y);
-    y += 5.5;
+    y = writeWrapped(doc, value, margin + 46, y - 4.8, contentW - 46) + 4.8;
+    y += 1;
   };
 
-  section('DADOS DA FORNECEDORA');
-  row('Razão social', SAAS_PROVIDER.legalName);
-  row('Nome fantasia', SAAS_PROVIDER.tradeName);
-  row('CNPJ', SAAS_PROVIDER.cnpj);
-  row('Cidade', SAAS_PROVIDER.city);
-  y += 2;
-  doc.setFont('helvetica', 'bold');
-  doc.text('Serviços:', margin, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  for (const s of SAAS_PROVIDER.services) {
-    y = ensureSpace(doc, y, 6);
-    doc.text(`• ${s}`, margin + 4, y);
-    y += 5;
-  }
-  y += 4;
+  return { doc, margin, contentW, y, ensureSpace, writeln, sectionTitle, row };
+}
 
-  section('DADOS DA CONTRATANTE');
-  row('Empresa', displayField(company.name));
-  row('CNPJ', displayField(company.cnpj));
-  row('Responsável', displayField(responsible));
-  row('Telefone', displayField(company.phone));
-  row('E-mail', displayField(company.email));
-  row('Endereço', displayField(normalized.address || company.address));
-  row(
-    'Cidade/UF',
-    `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
+function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
+  let w = writer;
+  w.sectionTitle('CLÁUSULAS CONTRATUAIS');
+  w.y += 2;
+
+  for (const section of sections) {
+    w.ensureSpace(16);
+    w.doc.setFont('helvetica', 'bold');
+    w.doc.setFontSize(10);
+    w.doc.setTextColor(20, 30, 55);
+    w.doc.text(`CLÁUSULA ${section.number} — ${section.title}`, w.margin, w.y);
+    w.y += 6;
+    w.doc.setFont('helvetica', 'normal');
+    w.doc.setFontSize(9);
+    w.doc.setTextColor(40, 40, 40);
+
+    for (const paragraph of section.paragraphs) {
+      w.ensureSpace(14);
+      w.y = writeWrapped(w.doc, paragraph, w.margin, w.y, w.contentW);
+      w.y += 4;
+    }
+    w.y += 2;
+  }
+}
+
+function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
+  let w = writer;
+  w.ensureSpace(80);
+  w.y += 6;
+  w.sectionTitle('PÁGINA DE ASSINATURA');
+  w.writeln(
+    `E, por estarem assim justas e contratadas, as partes declaram ter lido e compreendido todas as cláusulas deste instrumento, firmando-o em 2 (duas) vias de igual teor e forma, na data abaixo.`,
+    { gap: 6 },
   );
-  if (company.cep) row('CEP', company.cep);
-  y += 4;
 
-  section('DADOS DO PLANO E COBRANÇA');
-  row('Plano contratado', saas.displayName.toUpperCase());
-  row('Valor mensal', formatSaasCurrency(applied));
-  row('Valor padrão', formatSaasCurrency(standardPrice));
-  if (pricing.hasCustomPrice && standardPrice > applied) {
-    row('Desconto aplicado', formatSaasCurrency(standardPrice - applied));
-  }
-  row('Dia de vencimento', `Dia ${dueDay} de cada mês`);
-  row('Data de início', formatDateBr(billing.start_date));
-  row('Primeira cobrança', formatDateBr(billing.first_payment_date));
-  row('Próximo vencimento', formatDateBr(billing.next_due_date));
-  row('Ciclo', 'Mensal');
-  y += 4;
-
-  section('CLÁUSULAS CONTRATUAIS');
-  for (const clause of CLAUSES) {
-    y = ensureSpace(doc, y, 20);
-    y = writeWrapped(doc, clause, margin, y, contentW);
-    y += 3;
-  }
-
-  y = ensureSpace(doc, y, 50);
-  y += 8;
   const signDate = new Date().toLocaleDateString('pt-BR');
-  doc.setFont('helvetica', 'bold');
+  const colW = (w.contentW - 12) / 2;
+
+  w.ensureSpace(55);
+  w.doc.setDrawColor(160);
+  w.doc.line(w.margin, w.y + 20, w.margin + colW, w.y + 20);
+  w.doc.line(w.margin + colW + 12, w.y + 20, w.margin + w.contentW, w.y + 20);
+
+  w.doc.setFont('helvetica', 'bold');
+  w.doc.setFontSize(9);
+  w.doc.text('CONTRATANTE', w.margin, w.y);
+  w.doc.text('CONTRATADA', w.margin + colW + 12, w.y);
+  w.y += 24;
+
+  w.doc.setFont('helvetica', 'normal');
+  w.doc.setFontSize(8.5);
+  w.doc.text(ctx.contractor.name, w.margin, w.y);
+  w.doc.text(ctx.provider.legalName, w.margin + colW + 12, w.y);
+  w.y += 5;
+  w.doc.text(`CNPJ ${ctx.contractor.cnpj}`, w.margin, w.y);
+  w.doc.text(`CNPJ ${ctx.provider.cnpj}`, w.margin + colW + 12, w.y);
+  w.y += 5;
+  w.doc.text(ctx.contractor.responsible, w.margin, w.y);
+  w.doc.text(ctx.provider.tradeName, w.margin + colW + 12, w.y);
+  w.y += 8;
+  w.doc.text(`Local e data: ${ctx.contractor.cityState}, ${signDate}`, w.margin, w.y);
+  w.doc.text(`Local e data: ${ctx.provider.city}, ${signDate}`, w.margin + colW + 12, w.y);
+  w.y += 10;
+
+  w.doc.setFont('helvetica', 'italic');
+  w.doc.setFontSize(8);
+  w.doc.setTextColor(90, 90, 90);
+  w.writeln(
+    'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
+    { gap: 4 },
+  );
+}
+
+export function buildSaasContractPdf(input: SaasContractPdfInput): Uint8Array {
+  const ctx = resolveSaasContractContext(input);
+  const sections = buildSaasContractSections(ctx);
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 16;
+  const contentW = pageW - margin * 2;
+
+  let y = drawPageHeader(doc, margin, pageW, false);
+
+  doc.setTextColor(30, 30, 30);
   doc.setFontSize(10);
-  doc.text('ASSINATURA DIGITAL', margin, y);
-  y += 8;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-
-  const colW = (contentW - 10) / 2;
-  doc.setDrawColor(180);
-  doc.line(margin, y + 18, margin + colW, y + 18);
-  doc.line(margin + colW + 10, y + 18, margin + contentW, y + 18);
   doc.setFont('helvetica', 'bold');
-  doc.text('ASSINATURA DA CONTRATANTE', margin, y);
-  doc.text('ASSINATURA DA FORNECEDORA', margin + colW + 10, y);
-  y += 22;
+  doc.text(`Contrato nº ${ctx.contractNumber}`, margin, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(company.name || '', margin, y);
-  doc.text(SAAS_PROVIDER.legalName, margin + colW + 10, y);
-  y += 5;
-  doc.text(`CNPJ ${company.cnpj || ''}`, margin, y);
-  doc.text(`CNPJ ${SAAS_PROVIDER.cnpj}`, margin + colW + 10, y);
-  y += 8;
-  doc.text(`Data: ${signDate}`, margin, y);
-  doc.text(`Data: ${signDate}`, margin + colW + 10, y);
+  doc.setFontSize(9);
+  doc.text(`Emitido em ${ctx.emissionDate}`, pageW - margin, y, { align: 'right' });
+  y += 9;
 
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setTextColor(120);
-    doc.text(
-      `${SAAS_PROVIDER.product} · ${SAAS_PROVIDER.tradeName} · Página ${i}/${pageCount}`,
-      pageW / 2,
-      290,
-      { align: 'center' },
-    );
+  y = writeWrapped(
+    doc,
+    'Pelo presente instrumento particular, as partes abaixo qualificadas celebram contrato de licenciamento SaaS da plataforma SV LOTES, regido pelas cláusulas numeradas a seguir e pela legislação aplicável.',
+    margin,
+    y,
+    contentW,
+  );
+  y += 8;
+
+  const writer = createPdfWriter(doc, y);
+
+  writer.sectionTitle('DADOS DA FORNECEDORA');
+  writer.row('Razão social', ctx.provider.legalName);
+  writer.row('Nome fantasia / marca', ctx.provider.tradeName);
+  writer.row('CNPJ', ctx.provider.cnpj);
+  writer.row('Cidade', ctx.provider.city);
+  writer.writeln('Serviços licenciados:', { bold: true, gap: 2 });
+  for (const service of ctx.provider.services) {
+    writer.writeln(`• ${service}`, { gap: 1 });
   }
+  writer.y += 3;
+
+  writer.sectionTitle('DADOS DA CONTRATANTE');
+  writer.row('Empresa', ctx.contractor.name);
+  writer.row('CNPJ', ctx.contractor.cnpj);
+  writer.row('Responsável', ctx.contractor.responsible);
+  writer.row('Telefone', ctx.contractor.phone);
+  writer.row('E-mail', ctx.contractor.email);
+  writer.row('Endereço', ctx.contractor.address);
+  writer.row('Cidade/UF', ctx.contractor.cityState);
+  if (ctx.contractor.cep) writer.row('CEP', ctx.contractor.cep);
+  writer.y += 3;
+
+  writer.sectionTitle('DADOS DO PLANO E COBRANÇA');
+  writer.row('Plano contratado', ctx.plan.name);
+  writer.row('Projetos incluídos', `Até ${ctx.plan.maxProjects}`);
+  writer.row('Corretores incluídos', `Até ${ctx.plan.maxBrokers}`);
+  writer.row('Valor mensal', ctx.plan.monthlyPrice);
+  writer.row('Valor padrão do plano', ctx.plan.standardPrice);
+  if (ctx.plan.discount) writer.row('Desconto aplicado', ctx.plan.discount);
+  writer.row('Dia de vencimento', `Dia ${ctx.plan.dueDay} de cada mês`);
+  writer.row('Data de início', ctx.plan.startDate);
+  writer.row('Primeira cobrança', ctx.plan.firstPaymentDate);
+  writer.row('Próximo vencimento', ctx.plan.nextDueDate);
+  writer.row('Ciclo', ctx.plan.cycle);
+  writer.y += 3;
+
+  renderSections(writer, sections);
+  renderSignaturePage(writer, ctx);
+
+  drawPageFooters(doc, margin, pageW, ctx.contractNumber);
 
   return new Uint8Array(doc.output('arraybuffer'));
 }

@@ -17,6 +17,10 @@ import {
   hasSaasContractReady,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
+import {
+  saasContractDocumentStatusLabel,
+  isCurrentSaasContractVersion,
+} from '@/lib/saasContractStatus';
 import type { CompanyContractRow } from '@/lib/saasContractService';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
@@ -68,7 +72,7 @@ export function SaasContractPanel({
 
   const activeContract = useMemo(() => {
     return (
-      contracts.find((c) => c.status === 'active') ??
+      contracts.find((c) => isCurrentSaasContractVersion(c.status)) ??
       contracts[0] ??
       null
     );
@@ -167,26 +171,15 @@ export function SaasContractPanel({
     void runGenerateContract(true);
   };
 
-  const saasVersionStatusLabel = (status?: string | null) => {
-    const st = String(status ?? '').toLowerCase();
-    if (st === 'active' || st === 'ativo') return 'Ativo';
-    if (st === 'superseded') return 'Substituído';
-    if (st === 'pending' || st === 'pendente') return 'Pendente';
-    return status || '—';
-  };
+  const saasVersionStatusLabel = (status?: string | null) =>
+    saasContractDocumentStatusLabel(status);
 
   const contractStatusLabel =
-    sub?.contract_status === 'active'
-      ? 'Ativo'
-      : sub?.contract_status === 'pending'
-        ? 'Pendente (aguardando PDF)'
-        : sub?.contract_status === 'suspended'
-          ? 'Suspenso'
-          : sub?.contract_status === 'canceled'
-            ? 'Cancelado'
-            : contractReady
-              ? 'Ativo'
-              : '—';
+    sub?.contract_status
+      ? saasContractDocumentStatusLabel(sub.contract_status)
+      : contractReady
+        ? 'Gerado'
+        : '—';
 
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
@@ -197,7 +190,7 @@ export function SaasContractPanel({
             Contrato SaaS — {company.name}
           </h3>
           <p className="text-[12px] text-gray-400 mt-1">
-            S.V TOPOGRAFIA E PROJETO LTDA · NORTE &amp; SUL TOPOGRAFIA · Parauapebas/PA
+            {SAAS_PROVIDER.legalName} · {SAAS_PROVIDER.tradeName} · {SAAS_PROVIDER.city}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -209,7 +202,7 @@ export function SaasContractPanel({
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5"
               >
-                <ExternalLink className="w-4 h-4" /> Ver PDF
+                <ExternalLink className="w-4 h-4" /> Ver contrato
               </a>
               <a
                 href={contractViewUrl}
@@ -227,7 +220,7 @@ export function SaasContractPanel({
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
-            {contractReady ? 'Regenerar contrato' : 'Gerar contrato agora'}
+            {contractReady ? 'Regenerar contrato SaaS' : 'Gerar contrato SaaS'}
           </button>
         </div>
       </div>
@@ -262,7 +255,7 @@ export function SaasContractPanel({
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-[13px] hover:bg-amber-500 disabled:opacity-50"
           >
             <FileText className="w-4 h-4" />
-            Gerar contrato agora
+            Gerar contrato SaaS
           </button>
         </div>
       )}
@@ -322,7 +315,7 @@ export function SaasContractPanel({
                   <span className="text-gray-500 ml-2">Versão {c.version ?? 1}</span>
                   <span
                     className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
-                      c.status === 'active'
+                      isCurrentSaasContractVersion(c.status)
                         ? 'bg-emerald-500/20 text-emerald-300'
                         : 'bg-gray-500/20 text-gray-400'
                     }`}

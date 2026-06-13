@@ -41,6 +41,17 @@ import {
   formatImpersonationDateTime,
   IMPERSONATION_KEYS,
 } from '../lib/impersonationStorage';
+import {
+  buildSaasContractDocumentText,
+  menesesSaasContractFixture,
+  SAAS_PROVIDER,
+} from '../lib/saasContractContent';
+import { buildSaasContractPdf } from '../lib/saasContractPdf';
+import {
+  SAAS_CONTRACT_STATUS_AFTER_GENERATION,
+  saasContractDocumentStatusLabel,
+} from '../lib/saasContractStatus';
+import { hasSaasContractReady } from '../lib/saasSubscription';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -316,6 +327,59 @@ function testCompanyUserCounts() {
   console.log('OK testCompanyUserCounts');
 }
 
+function testSaasContractProfessional() {
+  const fixture = menesesSaasContractFixture();
+  const text = buildSaasContractDocumentText(fixture).toLowerCase();
+
+  assert(text.includes('propriedade intelectual'), 'cláusula propriedade intelectual');
+  assert(text.includes('lgpd'), 'cláusula lgpd');
+  assert(text.includes('inadimpl'), 'cláusula inadimplência');
+  assert(text.includes('suporte técnico'), 'cláusula suporte técnico');
+  assert(text.includes('desenvolvimento personalizado'), 'cláusula desenvolvimento sob demanda');
+  assert(text.includes('exportação de dados'), 'cláusula exportação de dados');
+  assert(text.includes('parauapebas/pa'), 'foro parauapebas');
+  assert(text.includes('licenciado como serviço saas'), 'licença saas não venda');
+  assert(text.includes(SAAS_PROVIDER.legalName.toLowerCase()), 'fornecedora');
+  assert(text.includes('meneses imobiliaria ltda'), 'contratante meneses');
+  assert(text.includes('549,99') || text.includes('549.99'), 'valor meneses');
+  assert(text.includes('27/05/2026') || text.includes('2026-05-27'), 'datas meneses');
+  const menesesUiPlan = augmentCompanyBilling(
+    fixture.company,
+    fixture.subscription as import('../lib/saasSubscription').CompanySubscription,
+  ).ui_plan;
+  assert(text.includes(menesesUiPlan.toLowerCase()), 'plano meneses alinhado ui_plan');
+
+  const pdf = buildSaasContractPdf(fixture);
+  assert(pdf.byteLength > 8000, 'pdf gerado com conteúdo');
+  assert(pdf[0] === 0x25 && pdf[1] === 0x50, 'pdf magic bytes');
+
+  assert(
+    SAAS_CONTRACT_STATUS_AFTER_GENERATION === 'generated',
+    'status após geração',
+  );
+  assert(
+    saasContractDocumentStatusLabel('generated') === 'Gerado',
+    'label status gerado',
+  );
+  assert(
+    hasSaasContractReady({
+      id: 's',
+      company_id: fixture.company.id!,
+      plan_type: 'business',
+      monthly_price: 549.99,
+      custom_price_enabled: false,
+      billing_cycle: 'monthly',
+      start_date: '2026-05-27',
+      payment_status: 'paid',
+      contract_status: 'generated',
+      contract_pdf_url: 'https://example.com/c.pdf',
+    }),
+    'generated status ready',
+  );
+
+  console.log('OK testSaasContractProfessional');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
@@ -328,6 +392,7 @@ function main() {
   testOfficialPaymentStatus();
   testSaasPayments();
   testCompanyUserCounts();
+  testSaasContractProfessional();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 
