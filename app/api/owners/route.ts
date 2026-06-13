@@ -101,33 +101,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
   }
 
+  let requestBody: Record<string, unknown> = {};
+
   try {
-    const body = await request.json();
-    const validationError = validateOwnerCreatePayload(body);
+    requestBody = await request.json();
+    logOwnersCreate('REQUEST', {
+      email: String(requestBody.email || '').trim().toLowerCase(),
+      fullName: String(requestBody.fullName || requestBody.name || '').trim(),
+      tenantIdFromBody: requestBody.tenantId || null,
+      callerUserId: requestBody.callerUserId || null,
+      impersonatingTenantId: requestBody.impersonatingTenantId || null,
+      entriesCount: Array.isArray(requestBody.entries) ? requestBody.entries.length : 0,
+    });
+
+    const validationError = validateOwnerCreatePayload(requestBody);
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
+      return NextResponse.json(
+        { error: validationError, errorStep: 'validate_payload' },
+        { status: 400 },
+      );
     }
 
     const ctx = await resolveOwnersAdminContextFromRequest(request, admin, {
-      callerUserId: body.callerUserId,
-      tenantId: body.tenantId,
-      impersonatingTenantId: body.impersonatingTenantId,
+      callerUserId: requestBody.callerUserId as string | undefined,
+      tenantId: requestBody.tenantId as string | undefined,
+      impersonatingTenantId: requestBody.impersonatingTenantId as string | undefined,
     });
     if (!ctx.ok) {
       return NextResponse.json(
-        { error: ctx.error || OWNERS_SESSION_CONFIRM_MESSAGE },
+        {
+          error: ctx.error || OWNERS_SESSION_CONFIRM_MESSAGE,
+          errorStep: 'auth_context',
+          debug: { status: ctx.status || 403 },
+        },
         { status: ctx.status || 403 },
       );
     }
 
     const tenantId = ctx.tenantId!;
-    const fullName = String(body.fullName || body.name || '').trim();
-    const email = String(body.email || '').trim().toLowerCase();
-    const phone = body.phone ? String(body.phone).trim() : null;
-    const ownerDocument = body.ownerDocument ? String(body.ownerDocument).trim() : null;
-    const ownerProfileType = String(body.ownerProfileType || body.owner_profile_type || '').trim();
-    const status = body.status || 'ACTIVE';
-    const entries = (body.entries || []) as OwnerProjectAccessInput[];
+    const fullName = String(requestBody.fullName || requestBody.name || '').trim();
+    const email = String(requestBody.email || '').trim().toLowerCase();
+    const phone = requestBody.phone ? String(requestBody.phone).trim() : null;
+    const ownerDocument = requestBody.ownerDocument
+      ? String(requestBody.ownerDocument).trim()
+      : null;
+    const ownerProfileType = String(
+      requestBody.ownerProfileType || requestBody.owner_profile_type || '',
+    ).trim();
+    const status = requestBody.status || 'ACTIVE';
+    const entries = (requestBody.entries || []) as OwnerProjectAccessInput[];
 
     logOwnersCreate('api_post_validated', {
       tenantId,
@@ -145,14 +167,14 @@ export async function POST(request: Request) {
       ownerDocument,
       ownerProfileType,
       status,
-      password: body.password ? String(body.password).trim() : null,
+      password: requestBody.password ? String(requestBody.password).trim() : null,
       entries,
     });
 
     const owners = await loadOwnersForTenant(admin, tenantId);
     const saved = owners.find((owner) => owner.id === created.authUserId);
 
-    logOwnersCreate('api_post_complete', {
+    logOwnersCreate('RESPONSE', {
       tenantId,
       email,
       authUserId: created.authUserId,
@@ -169,10 +191,46 @@ export async function POST(request: Request) {
       temporaryPassword: created.temporaryPassword,
     });
   } catch (err) {
-    logOwnersCreateError('api_post_failed', err, {});
     const message = err instanceof Error ? err.message : 'Erro ao cadastrar sócio/proprietário';
+    const stack = err instanceof Error ? err.stack : undefined;
+    const errorCode =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: string }).code || '')
+        : undefined;
+    const errorStep =
+      message.includes('empreendimentos não pertencem')
+        ? 'owner_project_access'
+        : message.includes('outro perfil') || message.includes('outra empresa')
+          ? 'email_or_profile_conflict'
+          : message.includes('autenticação') || message.includes('registrado')
+            ? 'auth_user'
+            : message.includes('perfil na empresa') || message.includes('perfil de sistema')
+              ? 'users_upsert'
+              : 'unknown';
+
+    logOwnersCreateError('api_post_failed', err, {
+      errorStep,
+      errorCode: errorCode || null,
+      email: String(requestBody.email || '').trim().toLowerCase() || null,
+      tenantIdFromBody: requestBody.tenantId || null,
+    });
+
     const status =
       message.includes('outro perfil') || message.includes('outra empresa') ? 409 : 500;
-    return NextResponse.json({ error: message }, { status });
+
+    return NextResponse.json(
+      {
+        error: message,
+        errorStep,
+        errorCode: errorCode || null,
+        httpStatus: status,
+        debug: {
+          stack,
+          requestEmail: String(requestBody.email || '').trim().toLowerCase() || null,
+          requestTenantId: requestBody.tenantId || null,
+        },
+      },
+      { status },
+    );
   }
 }

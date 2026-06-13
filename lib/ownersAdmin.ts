@@ -75,6 +75,32 @@ const DEFAULT_AUTH_HOOK_ROLES = new Set([
   'MANAGER',
 ]);
 
+export function isOwnerAuthHookResidue(
+  row: {
+    id?: string;
+    role?: string | null;
+    email?: string | null;
+    owner_profile_type?: string | null;
+  },
+  params: { authUserId: string; email: string },
+): boolean {
+  if (String(row.id || '') !== params.authUserId) {
+    return false;
+  }
+
+  const role = String(row.role || '').toUpperCase();
+  if (role === 'OWNER' || role === 'BROKER' || row.owner_profile_type) {
+    return false;
+  }
+
+  if (!DEFAULT_AUTH_HOOK_ROLES.has(role)) {
+    return false;
+  }
+
+  const rowEmail = String(row.email || '').trim().toLowerCase();
+  return rowEmail === params.email.trim().toLowerCase();
+}
+
 export type TenantOwnerEmailState =
   | { kind: 'none' }
   | { kind: 'complete_owner'; user: Record<string, unknown> }
@@ -138,6 +164,14 @@ export async function resolveTenantOwnerEmailState(
     const role = String(tenantMatch.role || '').toUpperCase();
     if (role === 'OWNER') {
       return { kind: 'complete_owner', user: tenantMatch };
+    }
+    if (
+      isOwnerAuthHookResidue(tenantMatch, {
+        authUserId: String(tenantMatch.id),
+        email: normalizedEmail,
+      })
+    ) {
+      return { kind: 'recoverable_orphan', user: tenantMatch };
     }
     if (isConflictingTenantProfile(tenantMatch, tenantId)) {
       return { kind: 'conflicting_profile', user: tenantMatch };
@@ -620,7 +654,7 @@ export async function upsertOwnerUserRecord(
 
   const { data: existing } = await admin
     .from('users')
-    .select('id, tenant_id, role, owner_profile_type')
+    .select('id, tenant_id, role, owner_profile_type, email')
     .eq('id', params.authUserId)
     .maybeSingle();
 
@@ -631,8 +665,26 @@ export async function upsertOwnerUserRecord(
     }
     const existingRole = String(existing.role || '').toUpperCase();
     const canRecoverOrphan = isRecoverableOwnerOrphan(existing, params.tenantId);
-    if (existingRole && existingRole !== 'OWNER' && !canRecoverOrphan) {
+    const authHookResidue = isOwnerAuthHookResidue(existing, params);
+    if (existingRole && existingRole !== 'OWNER' && !canRecoverOrphan && !authHookResidue) {
+      logOwnersCreate('users_upsert_profile_conflict', {
+        authUserId: params.authUserId,
+        existingRole,
+        existingTenant,
+        existingEmail: existing.email || null,
+        targetEmail: params.email,
+        canRecoverOrphan,
+        authHookResidue,
+      });
       throw new Error('Este e-mail já pertence a outro perfil na empresa.');
+    }
+
+    if (authHookResidue) {
+      logOwnersCreate('users_upsert_upgrade_auth_hook_residue', {
+        authUserId: params.authUserId,
+        previousRole: existingRole || null,
+        email: params.email,
+      });
     }
 
     const { error } = await admin.from('users').update(payload).eq('id', params.authUserId);
@@ -794,7 +846,7 @@ export async function createOwnerAccount(
   const email = input.email.trim().toLowerCase();
   const rollback: OwnerCreateRollbackState = { tenantId };
 
-  logOwnersCreate('start', {
+  logOwnersCreate('REQUEST', {
     tenantId,
     email,
     fullName: input.fullName,
@@ -802,12 +854,14 @@ export async function createOwnerAccount(
   });
 
   const emailState = await resolveTenantOwnerEmailState(admin, tenantId, email);
-  logOwnersCreate('email_state', {
+  logOwnersCreate('EMAIL_CHECK', {
     email,
     tenantId,
     kind: emailState.kind,
     userId:
       emailState.kind === 'none' ? null : String((emailState.user as { id?: string }).id || ''),
+    matchedRole:
+      emailState.kind === 'none' ? null : (emailState.user as { role?: string }).role || null,
   });
 
   if (emailState.kind === 'conflicting_profile') {
@@ -850,6 +904,11 @@ export async function createOwnerAccount(
       forcePasswordChange = !authResult.isExisting;
       rollback.authUserId = authUserId;
       rollback.createdAuthUser = !authResult.isExisting;
+      logOwnersCreate('AUTH_USER_CREATED', {
+        authUserId,
+        isExisting: authResult.isExisting,
+        email,
+      });
     }
 
     await upsertOwnerUserRecord(admin, {
@@ -865,6 +924,7 @@ export async function createOwnerAccount(
     });
     rollback.authUserId = authUserId;
     rollback.wroteUsersRow = true;
+    logOwnersCreate('USERS_RECORD_CREATED', { authUserId, tenantId, email });
 
     await saveOwnerProjectAccessEntries(admin, {
       userId: authUserId,
@@ -872,8 +932,13 @@ export async function createOwnerAccount(
       entries: input.entries,
     });
     rollback.wroteProjectAccess = true;
+    logOwnersCreate('ACCESS_CREATED', {
+      authUserId,
+      tenantId,
+      entriesCount: input.entries.length,
+    });
 
-    logOwnersCreate('success', {
+    logOwnersCreate('RESPONSE', {
       authUserId,
       tenantId,
       email,

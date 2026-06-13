@@ -30,7 +30,7 @@ import {
   type ProjectOption,
 } from '@/components/owners/OwnerProjectAccessEditor';
 import { canManageOwners } from '@/lib/rolePermissions';
-import { callOwnersApi } from '@/lib/ownersApiClient';
+import { callOwnersApi, OwnersApiError } from '@/lib/ownersApiClient';
 import { supabase } from '@/lib/supabase';
 
 type OwnerRecord = {
@@ -96,6 +96,7 @@ export default function OwnersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [apiDebugError, setApiDebugError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -120,6 +121,7 @@ export default function OwnersPage() {
     if (!user || !canManageOwners(user.role)) return;
     setLoading(true);
     setError('');
+    setApiDebugError('');
     try {
       const impersonatingTenantId = getImpersonatingTenantId(user.role);
       const tenantId = user.tenant_id || user.company_id;
@@ -168,6 +170,7 @@ export default function OwnersPage() {
     setTempPasswordInfo(null);
     setMessage('');
     setError('');
+    setApiDebugError('');
     setModalOpen(true);
   };
 
@@ -189,6 +192,7 @@ export default function OwnersPage() {
     setTempPasswordInfo(null);
     setMessage('');
     setError('');
+    setApiDebugError('');
     setModalOpen(true);
   };
 
@@ -209,6 +213,7 @@ export default function OwnersPage() {
     setTempPasswordInfo(null);
     setMessage('');
     setError('');
+    setApiDebugError('');
     setModalOpen(true);
 
     try {
@@ -239,12 +244,14 @@ export default function OwnersPage() {
     setSelectedOwner(null);
     setEntries([]);
     setTempPasswordInfo(null);
+    setApiDebugError('');
   };
 
   const saveOwner = async () => {
     if (!user) return;
     setSaving(true);
     setError('');
+    setApiDebugError('');
     setMessage('');
     setTempPasswordInfo(null);
 
@@ -321,7 +328,33 @@ export default function OwnersPage() {
         closeModal();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao salvar');
+      if (err instanceof OwnersApiError) {
+        setError(err.message);
+        setApiDebugError(
+          JSON.stringify(
+            {
+              status: err.status,
+              message: err.message,
+              ...err.payload,
+            },
+            null,
+            2,
+          ),
+        );
+      } else {
+        const message = err instanceof Error ? err.message : 'Erro ao salvar';
+        setError(message);
+        setApiDebugError(
+          JSON.stringify(
+            {
+              message,
+              raw: err instanceof Error ? { name: err.name, stack: err.stack } : String(err),
+            },
+            null,
+            2,
+          ),
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -624,6 +657,11 @@ export default function OwnersPage() {
               </p>
             ) : null}
             {error ? <p className="mb-3 text-sm text-red-400">{error}</p> : null}
+            {apiDebugError ? (
+              <pre className="mb-3 max-h-48 overflow-auto rounded-lg border border-red-500/30 bg-black/40 p-3 text-xs text-red-200 whitespace-pre-wrap break-all">
+                {apiDebugError}
+              </pre>
+            ) : null}
 
             <div className="flex justify-end gap-3">
               <button

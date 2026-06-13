@@ -1,14 +1,30 @@
 import { supabase } from '@/lib/supabase';
 
-type OwnersApiJson = {
+export type OwnersApiJson = {
   success?: boolean;
   error?: string;
+  errorStep?: string;
+  errorCode?: string;
+  httpStatus?: number;
+  debug?: Record<string, unknown>;
   owners?: unknown[];
   owner?: unknown;
   temporaryPassword?: string | null;
   isExisting?: boolean;
   tenantId?: string;
 };
+
+export class OwnersApiError extends Error {
+  status: number;
+  payload: OwnersApiJson;
+
+  constructor(message: string, status: number, payload: OwnersApiJson = {}) {
+    super(message);
+    this.name = 'OwnersApiError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
 
 export type OwnersApiCallOptions = {
   method?: 'GET' | 'POST' | 'PATCH';
@@ -75,7 +91,14 @@ export async function callOwnersApi(options: OwnersApiCallOptions): Promise<Owne
   }
 
   if (!response.ok) {
-    throw new Error(json.error || `Falha na API de sócios/proprietários (HTTP ${response.status})`);
+    throw new OwnersApiError(
+      json.error || `Falha na API de sócios/proprietários (HTTP ${response.status})`,
+      response.status,
+      {
+        ...json,
+        httpStatus: response.status,
+      },
+    );
   }
 
   return json;

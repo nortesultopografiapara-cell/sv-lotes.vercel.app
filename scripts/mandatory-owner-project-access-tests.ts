@@ -24,6 +24,7 @@ import {
   USERS_CALLER_SELECT,
   isRecoverableOwnerOrphan,
   isConflictingTenantProfile,
+  isOwnerAuthHookResidue,
 } from '../lib/ownersAdmin';
 import { isBrokerRole, isOwnerRole, canManageGisProject, canManageOwners, isBrokerBlockedRoute } from '../lib/rolePermissions';
 import { isPlatformAdmin } from '../lib/rls';
@@ -227,6 +228,13 @@ function testOwnerOrphanEmailValidation() {
   };
   const broker = { id: 'broker-2', role: 'BROKER', tenant_id: tenant, email: 'b@gmail.com' };
   const admin = { id: 'admin-2', role: 'ADMIN', tenant_id: tenant, email: 'a@gmail.com' };
+  const authHookResidue = {
+    id: 'auth-hook-1',
+    role: 'CORRETOR',
+    tenant_id: tenant,
+    email: 'junior@gmail.com',
+    owner_profile_type: null,
+  };
 
   assert(isRecoverableOwnerOrphan(orphanHook, tenant), 'hook auth órfão recuperável');
   assert(isRecoverableOwnerOrphan(orphanOwner, tenant), 'OWNER incompleto recuperável');
@@ -234,6 +242,17 @@ function testOwnerOrphanEmailValidation() {
   assert(isConflictingTenantProfile(broker, tenant), 'BROKER no tenant conflita');
   assert(isConflictingTenantProfile(admin, tenant), 'ADMIN no tenant conflita');
   assert(!isConflictingTenantProfile(orphanHook, tenant), 'hook sem tenant não conflita');
+  assert(
+    isOwnerAuthHookResidue(authHookResidue, {
+      authUserId: 'auth-hook-1',
+      email: 'junior@gmail.com',
+    }),
+    'resíduo do auth hook com tenant deve ser promovível a OWNER',
+  );
+  assert(
+    !isOwnerAuthHookResidue(broker, { authUserId: 'broker-2', email: 'b@gmail.com' }),
+    'BROKER real não é resíduo de hook',
+  );
   console.log('OK testOwnerOrphanEmailValidation');
 }
 
