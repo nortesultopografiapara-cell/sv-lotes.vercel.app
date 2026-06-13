@@ -50,6 +50,171 @@ export function logOwnersAuthDebug(
   console.log(`[owners-auth] ${step}`, details);
 }
 
+export function logOwnersCreate(
+  step: string,
+  details: Record<string, unknown>,
+): void {
+  console.log(`[owners-create] ${step}`, details);
+}
+
+export function logOwnersCreateError(
+  step: string,
+  err: unknown,
+  details: Record<string, unknown> = {},
+): void {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  console.error(`[owners-create] ERROR ${step}`, { ...details, message, stack });
+}
+
+const DEFAULT_AUTH_HOOK_ROLES = new Set([
+  '',
+  'CORRETOR',
+  'BROKER',
+  'USER',
+  'MANAGER',
+]);
+
+export type TenantOwnerEmailState =
+  | { kind: 'none' }
+  | { kind: 'complete_owner'; user: Record<string, unknown> }
+  | { kind: 'conflicting_profile'; user: Record<string, unknown> }
+  | { kind: 'recoverable_orphan'; user: Record<string, unknown> };
+
+export function isRecoverableOwnerOrphan(
+  row: Record<string, unknown>,
+  tenantId: string,
+): boolean {
+  const existingTenant = resolveUsersTenantId(row);
+  const role = String(row.role || '').toUpperCase();
+
+  if (existingTenant && existingTenant !== tenantId) {
+    return false;
+  }
+
+  if (existingTenant === tenantId && role && role !== 'OWNER') {
+    return false;
+  }
+
+  if (role === 'OWNER') {
+    return true;
+  }
+
+  if (row.owner_profile_type) {
+    return true;
+  }
+
+  return DEFAULT_AUTH_HOOK_ROLES.has(role);
+}
+
+export function isConflictingTenantProfile(
+  row: Record<string, unknown>,
+  tenantId: string,
+): boolean {
+  const existingTenant = resolveUsersTenantId(row);
+  const role = String(row.role || '').toUpperCase();
+  return existingTenant === tenantId && Boolean(role) && role !== 'OWNER';
+}
+
+export async function resolveTenantOwnerEmailState(
+  admin: SupabaseClient,
+  tenantId: string,
+  email: string,
+): Promise<TenantOwnerEmailState> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await admin
+    .from('users')
+    .select('id, role, tenant_id, email, full_name, status, owner_profile_type')
+    .ilike('email', normalizedEmail);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = data || [];
+  const tenantMatch = rows.find((row) => resolveUsersTenantId(row) === tenantId);
+
+  if (tenantMatch) {
+    const role = String(tenantMatch.role || '').toUpperCase();
+    if (role === 'OWNER') {
+      return { kind: 'complete_owner', user: tenantMatch };
+    }
+    if (isConflictingTenantProfile(tenantMatch, tenantId)) {
+      return { kind: 'conflicting_profile', user: tenantMatch };
+    }
+    return { kind: 'recoverable_orphan', user: tenantMatch };
+  }
+
+  const orphan = rows.find((row) => isRecoverableOwnerOrphan(row, tenantId));
+  if (orphan) {
+    return { kind: 'recoverable_orphan', user: orphan };
+  }
+
+  return { kind: 'none' };
+}
+
+export type OwnerCreateRollbackState = {
+  authUserId?: string;
+  createdAuthUser?: boolean;
+  wroteUsersRow?: boolean;
+  wroteProjectAccess?: boolean;
+  tenantId?: string;
+};
+
+export async function rollbackOwnerCreation(
+  admin: SupabaseClient,
+  state: OwnerCreateRollbackState,
+  reason: string,
+): Promise<void> {
+  const authUserId = state.authUserId;
+  const tenantId = state.tenantId;
+
+  logOwnersCreate('rollback_start', {
+    reason,
+    authUserId: authUserId || null,
+    tenantId: tenantId || null,
+    createdAuthUser: Boolean(state.createdAuthUser),
+    wroteUsersRow: Boolean(state.wroteUsersRow),
+    wroteProjectAccess: Boolean(state.wroteProjectAccess),
+  });
+
+  if (!authUserId) {
+    logOwnersCreate('rollback_skip', { reason: 'missing_auth_user_id' });
+    return;
+  }
+
+  if (state.wroteProjectAccess && tenantId) {
+    const { error } = await admin
+      .from('owner_project_access')
+      .delete()
+      .eq('user_id', authUserId)
+      .eq('tenant_id', tenantId);
+    logOwnersCreate('rollback_owner_project_access', {
+      authUserId,
+      tenantId,
+      error: error?.message || null,
+    });
+  }
+
+  if (state.wroteUsersRow) {
+    const { error } = await admin.from('users').delete().eq('id', authUserId);
+    logOwnersCreate('rollback_users', {
+      authUserId,
+      error: error?.message || null,
+    });
+  }
+
+  if (state.createdAuthUser) {
+    const { error } = await admin.auth.admin.deleteUser(authUserId);
+    logOwnersCreate('rollback_auth', {
+      authUserId,
+      error: error?.message || null,
+    });
+  }
+
+  logOwnersCreate('rollback_complete', { authUserId, reason });
+}
+
 export async function resolveOwnersRequestCaller(
   request: Request,
   admin: SupabaseClient,
@@ -322,14 +487,11 @@ export async function findTenantUserByEmail(
   tenantId: string,
   email: string,
 ): Promise<Record<string, unknown> | null> {
-  const normalizedEmail = email.trim().toLowerCase();
-  const { data } = await admin
-    .from('users')
-    .select('id, role, tenant_id, email, full_name, status')
-    .ilike('email', normalizedEmail);
-
-  const match = (data || []).find((row) => resolveUsersTenantId(row) === tenantId);
-  return match || null;
+  const state = await resolveTenantOwnerEmailState(admin, tenantId, email);
+  if (state.kind === 'complete_owner' || state.kind === 'recoverable_orphan') {
+    return state.user;
+  }
+  return null;
 }
 
 export function generateTempPassword(length = 10): string {
@@ -346,6 +508,12 @@ export async function createOrLinkAuthUser(
   params: { email: string; password: string; fullName: string; tenantId: string },
 ): Promise<{ authUserId: string; isExisting: boolean; temporaryPassword: string | null }> {
   const email = params.email.trim().toLowerCase();
+  logOwnersCreate('auth_create_start', {
+    email,
+    tenantId: params.tenantId,
+    fullName: params.fullName,
+  });
+
   const { data: authUser, error: authError } = await admin.auth.admin.createUser({
     email,
     password: params.password,
@@ -358,6 +526,11 @@ export async function createOrLinkAuthUser(
   });
 
   if (!authError && authUser?.user?.id) {
+    logOwnersCreate('auth_create_success', {
+      email,
+      authUserId: authUser.user.id,
+      isExisting: false,
+    });
     return {
       authUserId: authUser.user.id,
       isExisting: false,
@@ -369,6 +542,9 @@ export async function createOrLinkAuthUser(
     !authError?.message.includes('already been registered') &&
     (authError as { status?: number } | null)?.status !== 422
   ) {
+    logOwnersCreateError('auth_create_failed', authError || new Error('unknown auth error'), {
+      email,
+    });
     throw new Error(authError?.message || 'Erro ao criar conta de autenticação.');
   }
 
@@ -387,8 +563,19 @@ export async function createOrLinkAuthUser(
   }
 
   if (!authUserId) {
+    logOwnersCreateError(
+      'auth_link_failed',
+      new Error('E-mail já registrado, mas não foi possível localizar o usuário.'),
+      { email },
+    );
     throw new Error('E-mail já registrado, mas não foi possível localizar o usuário.');
   }
+
+  logOwnersCreate('auth_link_success', {
+    email,
+    authUserId,
+    isExisting: true,
+  });
 
   return { authUserId, isExisting: true, temporaryPassword: null };
 }
@@ -424,9 +611,16 @@ export async function upsertOwnerUserRecord(
     force_password_change: params.forcePasswordChange ?? false,
   };
 
+  logOwnersCreate('users_upsert_start', {
+    authUserId: params.authUserId,
+    tenantId: params.tenantId,
+    email: payload.email,
+    role: payload.role,
+  });
+
   const { data: existing } = await admin
     .from('users')
-    .select('id, tenant_id, role')
+    .select('id, tenant_id, role, owner_profile_type')
     .eq('id', params.authUserId)
     .maybeSingle();
 
@@ -436,12 +630,20 @@ export async function upsertOwnerUserRecord(
       throw new Error('Este e-mail já está vinculado a outra empresa.');
     }
     const existingRole = String(existing.role || '').toUpperCase();
-    if (existingRole && existingRole !== 'OWNER') {
+    const canRecoverOrphan = isRecoverableOwnerOrphan(existing, params.tenantId);
+    if (existingRole && existingRole !== 'OWNER' && !canRecoverOrphan) {
       throw new Error('Este e-mail já pertence a outro perfil na empresa.');
     }
 
     const { error } = await admin.from('users').update(payload).eq('id', params.authUserId);
-    if (error) throw new Error(error.message);
+    if (error) {
+      logOwnersCreateError('users_upsert_update_failed', error, {
+        authUserId: params.authUserId,
+        code: (error as { code?: string }).code || null,
+      });
+      throw new Error(error.message);
+    }
+    logOwnersCreate('users_upsert_update_success', { authUserId: params.authUserId });
     return;
   }
 
@@ -449,13 +651,27 @@ export async function upsertOwnerUserRecord(
     id: params.authUserId,
     ...payload,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    logOwnersCreateError('users_upsert_insert_failed', error, {
+      authUserId: params.authUserId,
+      code: (error as { code?: string }).code || null,
+    });
+    throw new Error(error.message);
+  }
+  logOwnersCreate('users_upsert_insert_success', { authUserId: params.authUserId });
 }
 
 export async function saveOwnerProjectAccessEntries(
   admin: SupabaseClient,
   params: { userId: string; tenantId: string; entries: OwnerProjectAccessInput[] },
 ): Promise<void> {
+  logOwnersCreate('owner_project_access_start', {
+    userId: params.userId,
+    tenantId: params.tenantId,
+    entriesCount: params.entries.length,
+    projectIds: params.entries.map((entry) => entry.project_id),
+  });
+
   const projectIds = params.entries.map((entry) => entry.project_id).filter(Boolean);
 
   if (projectIds.length > 0) {
@@ -464,7 +680,12 @@ export async function saveOwnerProjectAccessEntries(
       .select('id, tenant_id, company_id')
       .in('id', projectIds);
 
-    if (projectsErr) throw new Error(projectsErr.message);
+    if (projectsErr) {
+      logOwnersCreateError('owner_project_access_projects_query_failed', projectsErr, {
+        projectIds,
+      });
+      throw new Error(projectsErr.message);
+    }
 
     const invalid = (projects || []).some((project) => {
       const projectTenant = project.tenant_id || project.company_id;
@@ -472,6 +693,15 @@ export async function saveOwnerProjectAccessEntries(
     });
 
     if (invalid || (projects || []).length !== projectIds.length) {
+      logOwnersCreate('owner_project_access_projects_invalid', {
+        tenantId: params.tenantId,
+        projectIds,
+        resolvedProjects: (projects || []).map((project) => ({
+          id: project.id,
+          tenant_id: project.tenant_id,
+          company_id: project.company_id,
+        })),
+      });
       throw new Error('Um ou mais empreendimentos não pertencem à empresa.');
     }
   }
@@ -482,9 +712,21 @@ export async function saveOwnerProjectAccessEntries(
     .eq('user_id', params.userId)
     .eq('tenant_id', params.tenantId);
 
-  if (deleteErr) throw new Error(deleteErr.message);
+  if (deleteErr) {
+    logOwnersCreateError('owner_project_access_delete_failed', deleteErr, {
+      userId: params.userId,
+      tenantId: params.tenantId,
+    });
+    throw new Error(deleteErr.message);
+  }
 
-  if (!params.entries.length) return;
+  if (!params.entries.length) {
+    logOwnersCreate('owner_project_access_cleared', {
+      userId: params.userId,
+      tenantId: params.tenantId,
+    });
+    return;
+  }
 
   const payload = params.entries.map((entry) => ({
     tenant_id: params.tenantId,
@@ -497,7 +739,20 @@ export async function saveOwnerProjectAccessEntries(
   }));
 
   const { error: insertErr } = await admin.from('owner_project_access').insert(payload);
-  if (insertErr) throw new Error(insertErr.message);
+  if (insertErr) {
+    logOwnersCreateError('owner_project_access_insert_failed', insertErr, {
+      userId: params.userId,
+      tenantId: params.tenantId,
+      code: (insertErr as { code?: string }).code || null,
+    });
+    throw new Error(insertErr.message);
+  }
+
+  logOwnersCreate('owner_project_access_success', {
+    userId: params.userId,
+    tenantId: params.tenantId,
+    entriesCount: payload.length,
+  });
 }
 
 export function validateOwnerCreatePayload(body: Record<string, unknown>) {
@@ -510,4 +765,145 @@ export function validateOwnerCreatePayload(body: Record<string, unknown>) {
   if (!isValidOwnerProfileType(ownerProfileType)) return 'Tipo de sócio/proprietário inválido.';
 
   return null;
+}
+
+export type CreateOwnerAccountInput = {
+  tenantId: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  ownerDocument?: string | null;
+  ownerProfileType: string;
+  status?: string | null;
+  password?: string | null;
+  entries: OwnerProjectAccessInput[];
+};
+
+export type CreateOwnerAccountResult = {
+  authUserId: string;
+  isExisting: boolean;
+  temporaryPassword: string | null;
+  recoveredOrphan: boolean;
+};
+
+export async function createOwnerAccount(
+  admin: SupabaseClient,
+  input: CreateOwnerAccountInput,
+): Promise<CreateOwnerAccountResult> {
+  const tenantId = input.tenantId;
+  const email = input.email.trim().toLowerCase();
+  const rollback: OwnerCreateRollbackState = { tenantId };
+
+  logOwnersCreate('start', {
+    tenantId,
+    email,
+    fullName: input.fullName,
+    entriesCount: input.entries.length,
+  });
+
+  const emailState = await resolveTenantOwnerEmailState(admin, tenantId, email);
+  logOwnersCreate('email_state', {
+    email,
+    tenantId,
+    kind: emailState.kind,
+    userId:
+      emailState.kind === 'none' ? null : String((emailState.user as { id?: string }).id || ''),
+  });
+
+  if (emailState.kind === 'conflicting_profile') {
+    throw new Error('Este e-mail já pertence a outro perfil nesta empresa.');
+  }
+
+  let authUserId = '';
+  let isExisting = false;
+  let temporaryPassword: string | null = null;
+  let recoveredOrphan = false;
+  let forcePasswordChange = false;
+  const isUpdateExistingOwner = emailState.kind === 'complete_owner';
+
+  try {
+    if (emailState.kind === 'complete_owner' || emailState.kind === 'recoverable_orphan') {
+      authUserId = String(emailState.user.id);
+      isExisting = true;
+      recoveredOrphan = emailState.kind === 'recoverable_orphan';
+      forcePasswordChange = false;
+      rollback.authUserId = authUserId;
+      if (recoveredOrphan) {
+        rollback.createdAuthUser = true;
+      }
+      logOwnersCreate('reuse_existing_profile', {
+        authUserId,
+        recoveredOrphan,
+        previousRole: emailState.user.role || null,
+      });
+    } else {
+      const password = String(input.password || '').trim() || generateTempPassword(10);
+      const authResult = await createOrLinkAuthUser(admin, {
+        email,
+        password,
+        fullName: input.fullName,
+        tenantId,
+      });
+      authUserId = authResult.authUserId;
+      isExisting = authResult.isExisting;
+      temporaryPassword = authResult.temporaryPassword;
+      forcePasswordChange = !authResult.isExisting;
+      rollback.authUserId = authUserId;
+      rollback.createdAuthUser = !authResult.isExisting;
+    }
+
+    await upsertOwnerUserRecord(admin, {
+      authUserId,
+      tenantId,
+      fullName: input.fullName,
+      email,
+      phone: input.phone,
+      ownerProfileType: input.ownerProfileType,
+      ownerDocument: input.ownerDocument,
+      status: input.status,
+      forcePasswordChange,
+    });
+    rollback.authUserId = authUserId;
+    rollback.wroteUsersRow = true;
+
+    await saveOwnerProjectAccessEntries(admin, {
+      userId: authUserId,
+      tenantId,
+      entries: input.entries,
+    });
+    rollback.wroteProjectAccess = true;
+
+    logOwnersCreate('success', {
+      authUserId,
+      tenantId,
+      email,
+      isExisting,
+      recoveredOrphan,
+      hasTemporaryPassword: Boolean(temporaryPassword),
+    });
+
+    return {
+      authUserId,
+      isExisting,
+      temporaryPassword,
+      recoveredOrphan,
+    };
+  } catch (err) {
+    logOwnersCreateError('failed', err, {
+      tenantId,
+      email,
+      authUserId: rollback.authUserId || authUserId || null,
+      rollback,
+      isUpdateExistingOwner,
+    });
+    if (!isUpdateExistingOwner) {
+      await rollbackOwnerCreation(admin, rollback, err instanceof Error ? err.message : 'unknown');
+    } else {
+      logOwnersCreate('rollback_skipped_existing_owner', {
+        authUserId: rollback.authUserId || authUserId || null,
+        tenantId,
+      });
+    }
+    throw err;
+  }
 }

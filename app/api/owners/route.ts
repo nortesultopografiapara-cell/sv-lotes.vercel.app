@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
 import {
-  createOrLinkAuthUser,
-  findTenantUserByEmail,
-  generateTempPassword,
+  createOwnerAccount,
   resolveOwnersAdminContextFromRequest,
-  saveOwnerProjectAccessEntries,
-  upsertOwnerUserRecord,
   validateOwnerCreatePayload,
   OWNERS_SESSION_EXPIRED_MESSAGE,
   OWNERS_SESSION_CONFIRM_MESSAGE,
+  logOwnersCreate,
+  logOwnersCreateError,
 } from '@/lib/ownersAdmin';
 import type { OwnerProjectAccessInput } from '@/lib/ownerProjectAccess';
 import {
@@ -131,79 +129,50 @@ export async function POST(request: Request) {
     const status = body.status || 'ACTIVE';
     const entries = (body.entries || []) as OwnerProjectAccessInput[];
 
-    const existingTenantUser = await findTenantUserByEmail(admin, tenantId, email);
-    if (existingTenantUser) {
-      const existingRole = String(existingTenantUser.role || '').toUpperCase();
-      if (existingRole !== 'OWNER') {
-        return NextResponse.json(
-          { error: 'Este e-mail já pertence a outro perfil nesta empresa.' },
-          { status: 409 },
-        );
-      }
-
-      await upsertOwnerUserRecord(admin, {
-        authUserId: String(existingTenantUser.id),
-        tenantId,
-        fullName,
-        email,
-        phone,
-        ownerProfileType,
-        ownerDocument,
-        status,
-      });
-      await saveOwnerProjectAccessEntries(admin, {
-        userId: String(existingTenantUser.id),
-        tenantId,
-        entries,
-      });
-
-      const owners = await loadOwnersForTenant(admin, tenantId);
-      const saved = owners.find((owner) => owner.id === existingTenantUser.id);
-      return NextResponse.json({
-        success: true,
-        isExisting: true,
-        owner: saved,
-        temporaryPassword: null,
-      });
-    }
-
-    const password = String(body.password || '').trim() || generateTempPassword(10);
-    const { authUserId, isExisting, temporaryPassword } = await createOrLinkAuthUser(admin, {
-      email,
-      password,
-      fullName,
+    logOwnersCreate('api_post_validated', {
       tenantId,
+      email,
+      fullName,
+      entriesCount: entries.length,
+      callerId: ctx.callerId,
     });
 
-    await upsertOwnerUserRecord(admin, {
-      authUserId,
+    const created = await createOwnerAccount(admin, {
       tenantId,
       fullName,
       email,
       phone,
-      ownerProfileType,
       ownerDocument,
+      ownerProfileType,
       status,
-      forcePasswordChange: !isExisting,
-    });
-
-    await saveOwnerProjectAccessEntries(admin, {
-      userId: authUserId,
-      tenantId,
+      password: body.password ? String(body.password).trim() : null,
       entries,
     });
 
     const owners = await loadOwnersForTenant(admin, tenantId);
-    const saved = owners.find((owner) => owner.id === authUserId);
+    const saved = owners.find((owner) => owner.id === created.authUserId);
+
+    logOwnersCreate('api_post_complete', {
+      tenantId,
+      email,
+      authUserId: created.authUserId,
+      listed: Boolean(saved),
+      isExisting: created.isExisting,
+      recoveredOrphan: created.recoveredOrphan,
+    });
 
     return NextResponse.json({
       success: true,
-      isExisting,
+      isExisting: created.isExisting,
+      recoveredOrphan: created.recoveredOrphan,
       owner: saved,
-      temporaryPassword,
+      temporaryPassword: created.temporaryPassword,
     });
   } catch (err) {
+    logOwnersCreateError('api_post_failed', err, {});
     const message = err instanceof Error ? err.message : 'Erro ao cadastrar sócio/proprietário';
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status =
+      message.includes('outro perfil') || message.includes('outra empresa') ? 409 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
