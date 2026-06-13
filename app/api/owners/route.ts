@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server';
 import {
-  assertOwnerBelongsToTenant,
   createOrLinkAuthUser,
   findTenantUserByEmail,
   generateTempPassword,
-  resolveOwnersAdminContext,
+  resolveOwnersAdminContextFromRequest,
   saveOwnerProjectAccessEntries,
   upsertOwnerUserRecord,
   validateOwnerCreatePayload,
+  OWNERS_SESSION_EXPIRED_MESSAGE,
 } from '@/lib/ownersAdmin';
 import type { OwnerProjectAccessInput } from '@/lib/ownerProjectAccess';
 import {
   createAdminSupabase,
-  getRequestAuthUser,
   logSupabaseConfigDebug,
 } from '@/lib/supabase/server';
 
@@ -63,6 +62,15 @@ async function loadOwnersForTenant(admin: NonNullable<ReturnType<typeof createAd
   });
 }
 
+function readAuthInputFromUrl(request: Request) {
+  const url = new URL(request.url);
+  return {
+    callerUserId: url.searchParams.get('callerUserId'),
+    tenantId: url.searchParams.get('tenantId'),
+    impersonatingTenantId: url.searchParams.get('impersonatingTenantId'),
+  };
+}
+
 export async function GET(request: Request) {
   logSupabaseConfigDebug('API GET /api/owners');
 
@@ -71,15 +79,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
   }
 
-  const { user } = await getRequestAuthUser(request);
-  if (!user) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
-  }
-
-  const url = new URL(request.url);
-  const impersonatingTenantId = url.searchParams.get('impersonatingTenantId');
-
-  const ctx = await resolveOwnersAdminContext(admin, user.id, impersonatingTenantId);
+  const authInput = readAuthInputFromUrl(request);
+  const ctx = await resolveOwnersAdminContextFromRequest(request, admin, authInput);
   if (!ctx.ok) {
     return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
   }
@@ -101,11 +102,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
   }
 
-  const { user } = await getRequestAuthUser(request);
-  if (!user) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
-  }
-
   try {
     const body = await request.json();
     const validationError = validateOwnerCreatePayload(body);
@@ -113,9 +109,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const ctx = await resolveOwnersAdminContext(admin, user.id, body.impersonatingTenantId);
+    const ctx = await resolveOwnersAdminContextFromRequest(request, admin, {
+      callerUserId: body.callerUserId,
+      tenantId: body.tenantId,
+      impersonatingTenantId: body.impersonatingTenantId,
+    });
     if (!ctx.ok) {
-      return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
+      return NextResponse.json({ error: ctx.error || OWNERS_SESSION_EXPIRED_MESSAGE }, { status: ctx.status || 403 });
     }
 
     const tenantId = ctx.tenantId!;

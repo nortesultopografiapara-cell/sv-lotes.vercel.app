@@ -17,6 +17,7 @@ import {
   resolveReceiptProjectId,
   type OwnerProjectAccessRow,
 } from '../lib/ownerProjectAccess';
+import { OWNERS_SESSION_EXPIRED_MESSAGE } from '../lib/ownersAdmin';
 import { isBrokerRole, isOwnerRole, canManageGisProject, canManageOwners, isBrokerBlockedRoute } from '../lib/rolePermissions';
 import { isPlatformAdmin } from '../lib/rls';
 import {
@@ -192,6 +193,14 @@ function testOwnerProfileTypesAndInactive() {
   console.log('OK testOwnerProfileTypesAndInactive');
 }
 
+function testOwnersSessionExpiredMessage() {
+  assert(
+    OWNERS_SESSION_EXPIRED_MESSAGE.includes('sessão expirou'),
+    'mensagem amigável de sessão expirada',
+  );
+  console.log('OK testOwnersSessionExpiredMessage');
+}
+
 function main() {
   testOwnerSeesOnlyAllowedProjects();
   testOwnerDoesNotSeeOtherMenesesProjects();
@@ -206,6 +215,7 @@ function main() {
   testOwnerRoleAndPermissionsHelpers();
   testOwnersMenuAndRouteAccess();
   testOwnerProfileTypesAndInactive();
+  testOwnersSessionExpiredMessage();
   console.log('mandatory-owner-project-access-tests: all passed');
 }
 

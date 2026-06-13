@@ -4,8 +4,13 @@ import {
   normalizeOwnerProfileType,
   normalizeOwnerStatus,
 } from '@/lib/ownerProfiles';
+import { isBrokerRole, isOwnerRole } from '@/lib/rolePermissions';
 import { isTenantAdminRole, type OwnerProjectAccessInput } from '@/lib/ownerProjectAccess';
 import { isPlatformAdmin } from '@/lib/rls';
+import { getRequestAuthUser } from '@/lib/supabase/server';
+
+export const OWNERS_SESSION_EXPIRED_MESSAGE =
+  'Sua sessão expirou. Faça login novamente.';
 
 export type OwnersAdminContext = {
   ok: boolean;
@@ -16,22 +21,71 @@ export type OwnersAdminContext = {
   tenantId?: string;
 };
 
-export async function resolveOwnersAdminContext(
+export type OwnersRequestAuthInput = {
+  callerUserId?: string | null;
+  tenantId?: string | null;
+  impersonatingTenantId?: string | null;
+};
+
+export async function resolveOwnersRequestCaller(
+  request: Request,
   admin: SupabaseClient,
-  authUserId: string,
-  impersonatingTenantId?: string | null,
-): Promise<OwnersAdminContext> {
+  input?: OwnersRequestAuthInput,
+): Promise<{ ok: boolean; error?: string; status?: number; authUserId?: string }> {
+  const { user } = await getRequestAuthUser(request);
+  const callerUserIdFromClient = input?.callerUserId?.trim() || null;
+
+  let authUserId = user?.id || callerUserIdFromClient;
+
+  if (!authUserId) {
+    return {
+      ok: false,
+      error: OWNERS_SESSION_EXPIRED_MESSAGE,
+      status: 401,
+    };
+  }
+
+  if (user?.id && callerUserIdFromClient && user.id !== callerUserIdFromClient) {
+    return {
+      ok: false,
+      error: 'Identidade da sessão não confere com o usuário informado.',
+      status: 403,
+    };
+  }
+
   const { data: caller, error } = await admin
     .from('users')
     .select('id, role, tenant_id, company_id, status')
     .eq('id', authUserId)
-    .single();
+    .maybeSingle();
 
-  if (error || !caller) {
-    return { ok: false, error: 'Usuário autenticador não encontrado.', status: 403 };
+  if (error) {
+    return {
+      ok: false,
+      error: 'Erro ao validar usuário autenticado.',
+      status: 500,
+    };
+  }
+
+  if (!caller) {
+    return {
+      ok: false,
+      error: user
+        ? 'Perfil do usuário não encontrado na empresa. Contate o suporte.'
+        : OWNERS_SESSION_EXPIRED_MESSAGE,
+      status: user ? 403 : 401,
+    };
   }
 
   const callerRole = String(caller.role || '').toUpperCase();
+  if (isBrokerRole(callerRole) || isOwnerRole(callerRole)) {
+    return {
+      ok: false,
+      error: 'Permissão negada.',
+      status: 403,
+    };
+  }
+
   if (!isPlatformAdmin(callerRole) && !isTenantAdminRole(callerRole)) {
     return {
       ok: false,
@@ -44,7 +98,51 @@ export async function resolveOwnersAdminContext(
     return { ok: false, error: 'Usuário administrador inativo.', status: 403 };
   }
 
-  let tenantId = caller.tenant_id || caller.company_id || null;
+  return { ok: true, authUserId: caller.id };
+}
+
+export async function resolveOwnersAdminContext(
+  admin: SupabaseClient,
+  authUserId: string,
+  impersonatingTenantId?: string | null,
+  tenantIdOverride?: string | null,
+): Promise<OwnersAdminContext> {
+  const { data: caller, error } = await admin
+    .from('users')
+    .select('id, role, tenant_id, company_id, status')
+    .eq('id', authUserId)
+    .maybeSingle();
+
+  if (error || !caller) {
+    return {
+      ok: false,
+      error: 'Perfil do administrador não encontrado.',
+      status: 403,
+    };
+  }
+
+  const callerRole = String(caller.role || '').toUpperCase();
+  if (isBrokerRole(callerRole) || isOwnerRole(callerRole)) {
+    return {
+      ok: false,
+      error: 'Permissão negada.',
+      status: 403,
+    };
+  }
+
+  if (!isPlatformAdmin(callerRole) && !isTenantAdminRole(callerRole)) {
+    return {
+      ok: false,
+      error: 'Permissão negada. Apenas administradores da empresa.',
+      status: 403,
+    };
+  }
+
+  if ((caller.status || 'ACTIVE').toUpperCase() === 'INACTIVE') {
+    return { ok: false, error: 'Usuário administrador inativo.', status: 403 };
+  }
+
+  let tenantId = tenantIdOverride || caller.tenant_id || caller.company_id || null;
   if (impersonatingTenantId && isPlatformAdmin(callerRole)) {
     tenantId = impersonatingTenantId;
   }
@@ -63,6 +161,28 @@ export async function resolveOwnersAdminContext(
     callerRole,
     tenantId: String(tenantId),
   };
+}
+
+export async function resolveOwnersAdminContextFromRequest(
+  request: Request,
+  admin: SupabaseClient,
+  input?: OwnersRequestAuthInput,
+): Promise<OwnersAdminContext> {
+  const auth = await resolveOwnersRequestCaller(request, admin, input);
+  if (!auth.ok || !auth.authUserId) {
+    return {
+      ok: false,
+      error: auth.error,
+      status: auth.status,
+    };
+  }
+
+  return resolveOwnersAdminContext(
+    admin,
+    auth.authUserId,
+    input?.impersonatingTenantId,
+    input?.tenantId,
+  );
 }
 
 export async function assertOwnerBelongsToTenant(

@@ -16,7 +16,6 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import {
   OWNER_PROFILE_TYPES,
@@ -31,6 +30,8 @@ import {
   type ProjectOption,
 } from '@/components/owners/OwnerProjectAccessEditor';
 import { canManageOwners } from '@/lib/rolePermissions';
+import { callOwnersApi } from '@/lib/ownersApiClient';
+import { supabase } from '@/lib/supabase';
 
 type OwnerRecord = {
   id: string;
@@ -77,6 +78,17 @@ function getImpersonatingTenantId(role?: string | null): string | null {
   return localStorage.getItem('impersonating_tenant_id');
 }
 
+async function getOwnersApiAuthHeaders(): Promise<Record<string, string>> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
+  return headers;
+}
+
 export default function OwnersPage() {
   const { user, loading: authLoading } = useAuth();
   const [owners, setOwners] = useState<OwnerRecord[]>([]);
@@ -110,15 +122,13 @@ export default function OwnersPage() {
     setError('');
     try {
       const impersonatingTenantId = getImpersonatingTenantId(user.role);
-      const query = impersonatingTenantId
-        ? `?impersonatingTenantId=${encodeURIComponent(impersonatingTenantId)}`
-        : '';
-      const res = await fetch(`/api/owners${query}`);
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || 'Falha ao carregar sócios/proprietários');
-      }
-      setOwners(json.owners || []);
+      const tenantId = user.tenant_id || user.company_id;
+      const json = await callOwnersApi({
+        callerUserId: user.id,
+        tenantId,
+        impersonatingTenantId,
+      });
+      setOwners((json.owners || []) as OwnerRecord[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
       setOwners([]);
@@ -202,8 +212,10 @@ export default function OwnersPage() {
     setModalOpen(true);
 
     try {
+      const headers = await getOwnersApiAuthHeaders();
       const res = await fetch(
         `/api/users/${owner.id}/owner-project-access?callerUserId=${encodeURIComponent(user?.id || '')}`,
+        { headers, credentials: 'same-origin' },
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Falha ao carregar acessos');
@@ -241,9 +253,11 @@ export default function OwnersPage() {
       const tenantId = user.tenant_id || user.company_id;
 
       if (modalMode === 'access' && selectedOwner) {
+        const headers = await getOwnersApiAuthHeaders();
         const res = await fetch(`/api/users/${selectedOwner.id}/owner-project-access`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
+          credentials: 'same-origin',
           body: JSON.stringify({
             callerUserId: user.id,
             tenantId: impersonatingTenantId || tenantId,
@@ -270,13 +284,13 @@ export default function OwnersPage() {
       };
 
       if (modalMode === 'create') {
-        const res = await fetch('/api/owners', {
+        const json = await callOwnersApi({
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          callerUserId: user.id,
+          tenantId,
+          impersonatingTenantId,
+          body: payload,
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Falha ao cadastrar');
         if (json.temporaryPassword) {
           setTempPasswordInfo(`Senha provisória: ${json.temporaryPassword}`);
         }
@@ -291,13 +305,14 @@ export default function OwnersPage() {
         }
         return;
       } else if (selectedOwner) {
-        const res = await fetch(`/api/owners/${selectedOwner.id}`, {
+        await callOwnersApi({
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          path: selectedOwner.id,
+          callerUserId: user.id,
+          tenantId,
+          impersonatingTenantId,
+          body: payload,
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Falha ao atualizar');
         setMessage('Cadastro atualizado com sucesso.');
       }
 
@@ -319,16 +334,16 @@ export default function OwnersPage() {
     if (!window.confirm(`Deseja ${actionLabel} ${owner.full_name || owner.email}?`)) return;
 
     try {
-      const res = await fetch(`/api/owners/${owner.id}`, {
+      const impersonatingTenantId = getImpersonatingTenantId(user.role);
+      const tenantId = user.tenant_id || user.company_id;
+      await callOwnersApi({
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: nextStatus,
-          impersonatingTenantId: getImpersonatingTenantId(user.role),
-        }),
+        path: owner.id,
+        callerUserId: user.id,
+        tenantId,
+        impersonatingTenantId,
+        body: { status: nextStatus },
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Falha ao alterar status');
       await loadOwners();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao alterar status');

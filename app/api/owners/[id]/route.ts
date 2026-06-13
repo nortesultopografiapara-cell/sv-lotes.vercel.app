@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
 import {
   assertOwnerBelongsToTenant,
-  resolveOwnersAdminContext,
+  resolveOwnersAdminContextFromRequest,
   saveOwnerProjectAccessEntries,
-  upsertOwnerUserRecord,
+  OWNERS_SESSION_EXPIRED_MESSAGE,
 } from '@/lib/ownersAdmin';
 import { isValidOwnerProfileType } from '@/lib/ownerProfiles';
 import type { OwnerProjectAccessInput } from '@/lib/ownerProjectAccess';
 import {
   createAdminSupabase,
-  getRequestAuthUser,
   logSupabaseConfigDebug,
 } from '@/lib/supabase/server';
 
@@ -26,18 +25,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'Service role não configurada.' }, { status: 500 });
   }
 
-  const { user } = await getRequestAuthUser(request);
-  if (!user) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
-  }
-
   const { id: ownerId } = await params;
 
   try {
     const body = await request.json();
-    const ctx = await resolveOwnersAdminContext(admin, user.id, body.impersonatingTenantId);
+    const ctx = await resolveOwnersAdminContextFromRequest(request, admin, {
+      callerUserId: body.callerUserId,
+      tenantId: body.tenantId,
+      impersonatingTenantId: body.impersonatingTenantId,
+    });
     if (!ctx.ok) {
-      return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
+      return NextResponse.json({ error: ctx.error || OWNERS_SESSION_EXPIRED_MESSAGE }, { status: ctx.status || 403 });
     }
 
     const tenantId = ctx.tenantId!;
