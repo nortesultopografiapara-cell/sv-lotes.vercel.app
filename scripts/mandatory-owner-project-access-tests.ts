@@ -6,10 +6,12 @@
 import {
   aggregateOwnerPermissions,
   canOwnerAccessProject,
+  canOwnerAccessRoute,
   filterProjectsForUser,
   filterRowsByOwnerProjects,
   getOwnerAllowedProjectIds,
   getOwnerAllowedProjectIdsForModule,
+  getOwnerMenuItemsFromPermissions,
   isOwnerBlockedRoute,
   isOwnerUser,
   isTenantAdminRole,
@@ -17,7 +19,9 @@ import {
   resolveCashMovementProjectId,
   resolveCommissionProjectId,
   resolveContractProjectId,
+  resolveOwnerFirstAllowedRoute,
   resolveReceiptProjectId,
+  shouldRedirectOwnerFromRoute,
   type OwnerProjectAccessRow,
 } from '../lib/ownerProjectAccess';
 import {
@@ -382,6 +386,50 @@ function testOwnerTodosProjetosMeansAllowedOnly() {
   console.log('OK testOwnerTodosProjetosMeansAllowedOnly');
 }
 
+function testOwnerWithDashboardStaysOnDashboardRoute() {
+  const perms = aggregateOwnerPermissions(ownerRows);
+  assert(perms.can_view_dashboard, 'OWNER com dashboard liberado');
+  assert(
+    shouldRedirectOwnerFromRoute('/dashboard', ownerRows, perms) === null,
+    'permanece em /dashboard',
+  );
+  assert(canOwnerAccessRoute('/dashboard', perms), 'rota dashboard permitida');
+  console.log('OK testOwnerWithDashboardStaysOnDashboardRoute');
+}
+
+function testOwnerWithoutDashboardRedirectsToFirstAllowedModule() {
+  const rows = ownerRows.map((row) => ({ ...row, can_view_dashboard: false }));
+  const perms = aggregateOwnerPermissions(rows);
+  assert(!perms.can_view_dashboard, 'sem dashboard');
+  assert(perms.can_view_map, 'ainda tem mapa');
+  assert(
+    shouldRedirectOwnerFromRoute('/dashboard', rows, perms) === '/map',
+    'redireciona para /map',
+  );
+  assert(resolveOwnerFirstAllowedRoute(perms) === '/map', 'primeiro módulo é mapa');
+  console.log('OK testOwnerWithoutDashboardRedirectsToFirstAllowedModule');
+}
+
+function testOwnerNavigationRoutesStayOnAllowedModules() {
+  const perms = aggregateOwnerPermissions(ownerRows);
+  assert(shouldRedirectOwnerFromRoute('/map', ownerRows, perms) === null, 'mapa ok');
+  assert(shouldRedirectOwnerFromRoute('/finance', ownerRows, perms) === null, 'financeiro ok');
+  assert(shouldRedirectOwnerFromRoute('/contracts', ownerRows, perms) === null, 'contratos ok');
+  const menu = getOwnerMenuItemsFromPermissions(perms, ownerRows);
+  assert(menu.length === 4, 'menu com 4 módulos');
+  assert(menu.some((item) => item.href === '/dashboard'), 'menu inclui dashboard');
+  console.log('OK testOwnerNavigationRoutesStayOnAllowedModules');
+}
+
+function testOwnerEmptyAccessRowsDoNotForceMapRedirect() {
+  const perms = aggregateOwnerPermissions([]);
+  assert(
+    shouldRedirectOwnerFromRoute('/dashboard', [], perms) === null,
+    'rows vazias não forçam redirect para mapa',
+  );
+  console.log('OK testOwnerEmptyAccessRowsDoNotForceMapRedirect');
+}
+
 function main() {
   testOwnerSeesOnlyAllowedProjects();
   testOwnerDoesNotSeeOtherMenesesProjects();
@@ -402,6 +450,10 @@ function main() {
   testOwnerFinanceCommissionsScoped();
   testOwnerModuleSpecificProjectIds();
   testOwnerTodosProjetosMeansAllowedOnly();
+  testOwnerWithDashboardStaysOnDashboardRoute();
+  testOwnerWithoutDashboardRedirectsToFirstAllowedModule();
+  testOwnerNavigationRoutesStayOnAllowedModules();
+  testOwnerEmptyAccessRowsDoNotForceMapRedirect();
   console.log('mandatory-owner-project-access-tests: all passed');
 }
 

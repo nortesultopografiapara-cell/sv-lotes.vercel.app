@@ -45,6 +45,12 @@ import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole } from '@/lib/rolePermissions';
 import {
+  getOwnerMenuItemsFromPermissions,
+  loadOwnerAccessContext,
+  shouldRedirectOwnerFromRoute,
+  type OwnerProjectAccessRow,
+} from '@/lib/ownerProjectAccess';
+import {
   clearImpersonationState,
   formatImpersonationDateTime,
   readImpersonationState,
@@ -264,8 +270,6 @@ const getMenuItems = (role: string) => {
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
     ];
   }
-
-  // DEFAULT FALLBACK
   return [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
     { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
@@ -274,6 +278,33 @@ const getMenuItems = (role: string) => {
     { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
   ];
 };
+
+const OWNER_MENU_ICONS: Record<
+  string,
+  { icon: typeof LayoutDashboard; color: string }
+> = {
+  '/dashboard': { icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
+  '/map': { icon: MapIcon, color: 'text-[var(--color-success)]' },
+  '/finance': { icon: Wallet, color: 'text-[var(--color-warning)]' },
+  '/contracts': { icon: FileText, color: 'text-[var(--color-info)]' },
+};
+
+function buildOwnerMenuItems(
+  rows: OwnerProjectAccessRow[],
+  permissions: {
+    can_view_dashboard: boolean;
+    can_view_map: boolean;
+    can_view_finance: boolean;
+    can_view_contracts: boolean;
+  },
+) {
+  return getOwnerMenuItemsFromPermissions(permissions, rows).map((item) => ({
+    name: item.name,
+    href: item.href,
+    icon: OWNER_MENU_ICONS[item.href]?.icon ?? LayoutDashboard,
+    color: OWNER_MENU_ICONS[item.href]?.color ?? 'text-[var(--color-primary)]',
+  }));
+}
 
 export function Sidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -287,6 +318,15 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   const [impersonatingStartedAt, setImpersonatingStartedAt] = useState<string | null>(null);
   const [activeProfileModal, setActiveProfileModal] = useState<'profile' | 'password' | 'security' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [ownerAccess, setOwnerAccess] = useState<{
+    rows: OwnerProjectAccessRow[];
+    permissions: {
+      can_view_dashboard: boolean;
+      can_view_map: boolean;
+      can_view_finance: boolean;
+      can_view_contracts: boolean;
+    };
+  } | null>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
@@ -355,6 +395,42 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [user, impersonatingTenantId]);
+
+  useEffect(() => {
+    if (!user || !isOwnerRole(user.role)) {
+      setOwnerAccess(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const tenantId = await resolveActiveTenantId(user);
+      const ownerCtx = await loadOwnerAccessContext(supabase, user, tenantId);
+      if (!cancelled) {
+        setOwnerAccess({
+          rows: ownerCtx.rows,
+          permissions: ownerCtx.permissions,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !isOwnerRole(user.role) || !ownerAccess) return;
+
+    const redirectTo = shouldRedirectOwnerFromRoute(
+      pathname,
+      ownerAccess.rows,
+      ownerAccess.permissions,
+    );
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [user, ownerAccess, pathname, router]);
   
   // Guard checks are moved to useSessionGuard and Middleware
   
@@ -413,7 +489,11 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const menuItems = getMenuItems(user?.role || '');
+  const menuItems = isOwnerRole(user?.role || '')
+    ? ownerAccess
+      ? buildOwnerMenuItems(ownerAccess.rows, ownerAccess.permissions)
+      : getMenuItems('OWNER')
+    : getMenuItems(user?.role || '');
 
   return (
     <GisSelectedProjectProvider>

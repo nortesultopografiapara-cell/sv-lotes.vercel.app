@@ -355,11 +355,61 @@ export function canOwnerAccessRoute(
   pathname: string,
   permissions: ReturnType<typeof aggregateOwnerPermissions>,
 ): boolean {
+  if (isOwnerBlockedRoute(pathname)) return false;
   if (pathname.startsWith('/dashboard')) return permissions.can_view_dashboard;
   if (pathname.startsWith('/map')) return permissions.can_view_map;
   if (pathname.startsWith('/finance')) return permissions.can_view_finance;
   if (pathname.startsWith('/contracts')) return permissions.can_view_contracts;
   return false;
+}
+
+export function resolveOwnerFirstAllowedRoute(
+  permissions: ReturnType<typeof aggregateOwnerPermissions>,
+): string {
+  if (permissions.can_view_dashboard) return '/dashboard';
+  if (permissions.can_view_map) return '/map';
+  if (permissions.can_view_finance) return '/finance';
+  if (permissions.can_view_contracts) return '/contracts';
+  return '/login';
+}
+
+/** Só redireciona OWNER quando as permissões foram carregadas (rows > 0). */
+export function shouldRedirectOwnerFromRoute(
+  pathname: string,
+  rows: OwnerProjectAccessRow[],
+  permissions: ReturnType<typeof aggregateOwnerPermissions>,
+): string | null {
+  if (rows.length === 0) return null;
+
+  if (isOwnerBlockedRoute(pathname)) {
+    return resolveOwnerFirstAllowedRoute(permissions);
+  }
+
+  if (!canOwnerAccessRoute(pathname, permissions)) {
+    return resolveOwnerFirstAllowedRoute(permissions);
+  }
+
+  return null;
+}
+
+export function getOwnerMenuItemsFromPermissions(
+  permissions: ReturnType<typeof aggregateOwnerPermissions>,
+  rows: OwnerProjectAccessRow[],
+): Array<{ name: string; href: string }> {
+  const items: Array<{ name: string; href: string }> = [];
+  if (rows.length === 0 || permissions.can_view_dashboard) {
+    items.push({ name: 'Dashboard', href: '/dashboard' });
+  }
+  if (rows.length === 0 || permissions.can_view_map) {
+    items.push({ name: 'Mapa GIS', href: '/map' });
+  }
+  if (rows.length === 0 || permissions.can_view_finance) {
+    items.push({ name: 'Financeiro', href: '/finance' });
+  }
+  if (rows.length === 0 || permissions.can_view_contracts) {
+    items.push({ name: 'Contratos', href: '/contracts' });
+  }
+  return items;
 }
 
 type SupabaseLike = {
@@ -417,7 +467,7 @@ export async function loadOwnerAccessContext(
   }
 
   const resolvedTenant = tenantId || resolveOwnerTenantId(user);
-  if (!user.id || !resolvedTenant) {
+  if (!user.id) {
     return {
       isOwner: true,
       rows: [],
@@ -431,7 +481,14 @@ export async function loadOwnerAccessContext(
     };
   }
 
-  const rows = await fetchOwnerProjectAccessRows(client, user.id, resolvedTenant);
+  let rows: OwnerProjectAccessRow[] = [];
+  if (resolvedTenant) {
+    rows = await fetchOwnerProjectAccessRows(client, user.id, resolvedTenant);
+  }
+  if (rows.length === 0) {
+    rows = await fetchOwnerProjectAccessRows(client, user.id, null);
+  }
+
   return {
     isOwner: true,
     rows,

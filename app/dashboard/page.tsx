@@ -120,21 +120,6 @@ function OperationalDashboard({ user }: { user: any }) {
   }, [user?.role, router]);
 
   useEffect(() => {
-    if (!user || !isOwnerRole(user.role)) return;
-    void (async () => {
-      const rlsCtx = await resolveRlsContext(user);
-      const tenantId =
-        rlsCtx.tenantId || user.tenant_id || (user as { company_id?: string })?.company_id || null;
-      const ownerCtx = await loadOwnerAccessContext(supabase, user, tenantId);
-      if (!ownerCtx.permissions.can_view_dashboard) {
-        if (ownerCtx.permissions.can_view_map) router.replace('/map');
-        else if (ownerCtx.permissions.can_view_finance) router.replace('/finance');
-        else if (ownerCtx.permissions.can_view_contracts) router.replace('/contracts');
-      }
-    })();
-  }, [user, router]);
-
-  useEffect(() => {
     const p = projects.find((x) => x.id === selectedProjectId);
     if (selectedProjectId && p?.name) {
       setGisSelectedProject({ id: p.id, name: p.name });
