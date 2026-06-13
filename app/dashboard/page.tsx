@@ -24,7 +24,10 @@ import {
 import {
   filterProjectsForUser,
   filterRowsByOwnerProjects,
+  getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
+  resolveCashMovementProjectId,
+  resolveCommissionProjectId,
   resolveReceiptProjectId,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
@@ -181,10 +184,13 @@ function OperationalDashboard({ user }: { user: any }) {
         const { data: projectsData } = await projectsQuery;
 
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const ownerDashboardProjectIds = ownerCtx.isOwner
+          ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'dashboard')
+          : ownerCtx.allowedProjectIds;
         const visibleProjects = filterProjectsForUser(
           user,
           projectsData || [],
-          ownerCtx.allowedProjectIds,
+          ownerDashboardProjectIds,
         );
 
         if (visibleProjects.length > 0) {
@@ -198,7 +204,7 @@ function OperationalDashboard({ user }: { user: any }) {
         const allLots = data || [];
         const ownerScopedLots = filterRowsByOwnerProjects(
           allLots,
-          ownerCtx.allowedProjectIds,
+          ownerDashboardProjectIds,
           (lot) => lot.project_id as string | null | undefined,
         );
         const tenantScopedLots = ownerCtx.isOwner ? ownerScopedLots : allLots;
@@ -240,26 +246,18 @@ function OperationalDashboard({ user }: { user: any }) {
 
             const scopedReceipts = filterRowsByOwnerProjects(
               receiptsData || [],
-              ownerCtx.allowedProjectIds,
+              ownerDashboardProjectIds,
               resolveReceiptProjectId,
             ).filter((r) =>
               selectedProjectId
                 ? receiptMatchesProject(r, selectedProjectId, selectedProjectName)
                 : true,
             );
-            const scopedCash = (cashData || []).filter((c) => {
-              if (ownerCtx.allowedProjectIds) {
-                const projectId =
-                  c.project_id ||
-                  c.projects?.id ||
-                  c.sales?.project_id ||
-                  c.sales?.projects?.id ||
-                  c.contracts?.project_id ||
-                  c.contracts?.projects?.id;
-                if (!projectId || !ownerCtx.allowedProjectIds.includes(projectId)) {
-                  return false;
-                }
-              }
+            const scopedCash = filterRowsByOwnerProjects(
+              cashData || [],
+              ownerDashboardProjectIds,
+              resolveCashMovementProjectId,
+            ).filter((c) => {
               if (!selectedProjectId) return true;
               const name =
                 c.projects?.name ||
@@ -268,17 +266,11 @@ function OperationalDashboard({ user }: { user: any }) {
                 '';
               return name === selectedProjectName;
             });
-            const scopedComms = (commsData || []).filter((c) => {
-              if (ownerCtx.allowedProjectIds) {
-                const projectId =
-                  c.project_id ||
-                  c.sales?.project_id ||
-                  c.sales?.projects?.id ||
-                  c.contracts?.project_id;
-                if (!projectId || !ownerCtx.allowedProjectIds.includes(projectId)) {
-                  return false;
-                }
-              }
+            const scopedComms = filterRowsByOwnerProjects(
+              commsData || [],
+              ownerDashboardProjectIds,
+              resolveCommissionProjectId,
+            ).filter((c) => {
               if (!selectedProjectId) return true;
               const name =
                 c.sales?.projects?.name || c.contracts?.projects?.name || '';

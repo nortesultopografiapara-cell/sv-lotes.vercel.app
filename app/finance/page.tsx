@@ -22,7 +22,10 @@ import {
 import {
   filterProjectsForUser,
   filterRowsByOwnerProjects,
+  getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
+  resolveCashMovementProjectId,
+  resolveCommissionProjectId,
   resolveReceiptProjectId,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
@@ -320,9 +323,12 @@ export default function FinancePage() {
         if (error) throw error;
 
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const ownerFinanceProjectIds = ownerCtx.isOwner
+          ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'finance')
+          : ownerCtx.allowedProjectIds;
         const scopedReceipts = filterRowsByOwnerProjects(
           data || [],
-          ownerCtx.allowedProjectIds,
+          ownerFinanceProjectIds,
           resolveReceiptProjectId,
         );
         data = scopedReceipts;
@@ -333,7 +339,7 @@ export default function FinancePage() {
         const visibleProjects = filterProjectsForUser(
           user,
           projData || [],
-          ownerCtx.allowedProjectIds,
+          ownerFinanceProjectIds,
         );
         if (visibleProjects.length > 0) {
             console.log('FINANCE_PROJECTS_LOADED_FOR_EXPENSE', visibleProjects.length);
@@ -354,7 +360,6 @@ export default function FinancePage() {
         let qtyDueToday = 0;
         let qtyNext7Days = 0;
         let qtyPending = 0;
-        let pList = new Set<string>();
         let contractSet = new Set<string>();
         let paidContracts = new Set<string>();
 
@@ -373,10 +378,6 @@ export default function FinancePage() {
              const dueDate = new Date(dueStr + 'T12:00:00Z');
              
              if (p.sale_id) contractSet.add(p.sale_id);
-             
-             // Extract project name for filters
-             const projName = p.projects?.name || p.sales?.projects?.name || p.blocks?.projects?.name || 'Projeto Desconhecido';
-             if (projName !== 'Projeto Desconhecido') pList.add(projName);
              
              localTotal += amt;
              
@@ -413,7 +414,6 @@ export default function FinancePage() {
           });
           
           setPayments(data);
-          setProjectsList(projData ? projData.map((p: any) => p.name) : Array.from(pList));
         }
         
         let qtyNoPaymentContracts = 0;
@@ -458,12 +458,20 @@ export default function FinancePage() {
                fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'cash_movements');
                const { data: fallbackData } = await fallbackQuery;
                if (fallbackData) {
-                   cashData = fallbackData;
-                   setCashMovements(fallbackData);
+                   cashData = filterRowsByOwnerProjects(
+                     fallbackData,
+                     ownerFinanceProjectIds,
+                     resolveCashMovementProjectId,
+                   );
+                   setCashMovements(cashData);
                }
            } else if (cData) {
-               cashData = cData;
-               setCashMovements(cData);
+               cashData = filterRowsByOwnerProjects(
+                 cData,
+                 ownerFinanceProjectIds,
+                 resolveCashMovementProjectId,
+               );
+               setCashMovements(cashData);
            }
         } catch(eee) { console.error('Cash movements error', eee); }
 
@@ -478,15 +486,20 @@ export default function FinancePage() {
                fallbackCommsQuery = applyTenantFilter(fallbackCommsQuery, rlsCtx, 'broker_commissions');
                const { data: fallbackComms } = await fallbackCommsQuery;
                if (fallbackComms) {
-                   commsData = fallbackComms;
-                   setBrokerCommissions(fallbackComms);
+                   commsData = filterRowsByOwnerProjects(
+                     fallbackComms,
+                     ownerFinanceProjectIds,
+                     resolveCommissionProjectId,
+                   );
+                   setBrokerCommissions(commsData);
                }
            } else if (comms) {
-               // Only store paid ones for totals, but we could keep all. Wait, if we keep all, we can filter in calculateFinancialTotals!
-               // Actually calculateFinancialTotals filters by status now. So let's store all.
-               // Wait, the fallback filtered by status. If we store all, it's safer for PDF.
-               commsData = comms;
-               setBrokerCommissions(comms);
+               commsData = filterRowsByOwnerProjects(
+                 comms,
+                 ownerFinanceProjectIds,
+                 resolveCommissionProjectId,
+               );
+               setBrokerCommissions(commsData);
            }
         } catch(e){}
 
@@ -603,6 +616,17 @@ export default function FinancePage() {
     if (!showEnterpriseValues) return null;
     return calculateEnterpriseValueSummary(enterpriseBlocks);
   }, [enterpriseBlocks, showEnterpriseValues]);
+
+  const filteredCashFlowItems = useMemo(() => {
+    return cashFlowItems.filter((item) => {
+      const matchProject =
+        projectFilter !== 'Todos os projetos' ? item.projectName === projectFilter : true;
+      const dateStr = (item.movement_date || '').split('T')[0];
+      const matchStartDate = startDate ? dateStr >= startDate : true;
+      const matchEndDate = endDate ? dateStr <= endDate : true;
+      return matchProject && matchStartDate && matchEndDate;
+    });
+  }, [cashFlowItems, projectFilter, startDate, endDate]);
 
   // Client-side filtering
   const filteredPayments = payments.filter(p => {
@@ -3067,7 +3091,7 @@ export default function FinancePage() {
                Fluxo de caixa
             </h3>
          </div>
-         {cashFlowItems.length === 0 ? (
+         {filteredCashFlowItems.length === 0 ? (
             <div className="p-10 text-center text-[var(--text-muted)] text-sm">
                Nenhuma movimentação de caixa registrada ainda.
             </div>
@@ -3087,7 +3111,7 @@ export default function FinancePage() {
                   </tr>
                </thead>
                <tbody>
-                  {cashFlowItems.map((item) => (
+                  {filteredCashFlowItems.map((item) => (
                       <tr key={item.id} className="group">
                          <td className="text-[var(--text-secondary)] font-medium">
                             {formatFlowDate(item.movement_date)}

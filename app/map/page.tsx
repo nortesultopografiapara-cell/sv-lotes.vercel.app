@@ -94,6 +94,7 @@ import { EnterpriseValueOverlay } from '@/components/enterprise/EnterpriseValueO
 import { canViewEnterpriseValues, canManageGisProject, isOwnerRole } from '@/lib/rolePermissions';
 import {
   filterProjectsForUser,
+  getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
 } from '@/lib/ownerProjectAccess';
 import {
@@ -885,10 +886,13 @@ export default function MapPage() {
 
       const projectList = data || [];
       const ownerCtx = await loadOwnerAccessContext(supabase, user, activeTenantId);
+      const ownerMapProjectIds = ownerCtx.isOwner
+        ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'map')
+        : ownerCtx.allowedProjectIds;
       const filteredList = filterProjectsForUser(
         user,
         projectList,
-        ownerCtx.allowedProjectIds,
+        ownerMapProjectIds,
       );
       setProjects(filteredList);
       logSaasCompanyContext(activeTenantId, saasCompany, filteredList.length);

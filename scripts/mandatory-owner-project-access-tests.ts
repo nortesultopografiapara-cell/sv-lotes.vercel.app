@@ -9,10 +9,13 @@ import {
   filterProjectsForUser,
   filterRowsByOwnerProjects,
   getOwnerAllowedProjectIds,
+  getOwnerAllowedProjectIdsForModule,
   isOwnerBlockedRoute,
   isOwnerUser,
   isTenantAdminRole,
   ownerCanAccessModule,
+  resolveCashMovementProjectId,
+  resolveCommissionProjectId,
   resolveContractProjectId,
   resolveReceiptProjectId,
   type OwnerProjectAccessRow,
@@ -256,6 +259,129 @@ function testOwnerOrphanEmailValidation() {
   console.log('OK testOwnerOrphanEmailValidation');
 }
 
+function testOwnerFinanceCashFlowScoped() {
+  const allowed = getOwnerAllowedProjectIds(ownerRows);
+  const cashMovements = [
+    {
+      id: 'cm-1',
+      description: 'JOAQUIM / ENTRADA CHACARA 23',
+      project_id: OTHER_PROJECT,
+      projects: { id: OTHER_PROJECT, name: 'JOAQUIM' },
+    },
+    {
+      id: 'cm-2',
+      description: 'INSTALAÇÃO DE INTERNET NO ESCRITORIO',
+      project_id: null,
+      projects: null,
+    },
+    {
+      id: 'cm-3',
+      description: 'Recebimento Martini II',
+      project_id: MARTINI_2,
+      projects: { id: MARTINI_2, name: 'CHACARAS MARTINI II' },
+    },
+    {
+      id: 'cm-4',
+      description: 'Repasse via contrato Martine III',
+      contracts: { project_id: MARTINI_3, projects: { id: MARTINI_3, name: 'MARTINE III' } },
+    },
+  ];
+
+  const scoped = filterRowsByOwnerProjects(
+    cashMovements,
+    allowed,
+    resolveCashMovementProjectId,
+  );
+
+  assert(scoped.length === 2, 'OWNER vê apenas 2 lançamentos de caixa permitidos');
+  assert(
+    !scoped.some((row) => row.description.includes('JOAQUIM')),
+    'sem lançamento Joaquim',
+  );
+  assert(
+    !scoped.some((row) => row.description.includes('INTERNET')),
+    'sem despesa sem projeto autorizado',
+  );
+  assert(
+    resolveCashMovementProjectId(cashMovements[3]) === MARTINI_3,
+    'resolve projeto via contrato',
+  );
+  console.log('OK testOwnerFinanceCashFlowScoped');
+}
+
+function testOwnerFinanceCommissionsScoped() {
+  const allowed = getOwnerAllowedProjectIds(ownerRows);
+  const commissions = [
+    {
+      id: 'bc-1',
+      sales: { project_id: OTHER_PROJECT, projects: { id: OTHER_PROJECT } },
+    },
+    {
+      id: 'bc-2',
+      contracts: { project_id: MARTINI_2, projects: { id: MARTINI_2 } },
+    },
+  ];
+  const scoped = filterRowsByOwnerProjects(
+    commissions,
+    allowed,
+    resolveCommissionProjectId,
+  );
+  assert(scoped.length === 1, 'comissões apenas do projeto permitido');
+  assert(resolveCommissionProjectId(commissions[1]) === MARTINI_2, 'resolve comissão');
+  console.log('OK testOwnerFinanceCommissionsScoped');
+}
+
+function testOwnerModuleSpecificProjectIds() {
+  const rows: OwnerProjectAccessRow[] = [
+    {
+      ...ownerRows[0],
+      can_view_finance: true,
+      can_view_map: true,
+      can_view_dashboard: false,
+      can_view_contracts: true,
+    },
+    {
+      ...ownerRows[1],
+      can_view_finance: false,
+      can_view_map: true,
+      can_view_dashboard: true,
+      can_view_contracts: false,
+    },
+  ];
+
+  assert(
+    getOwnerAllowedProjectIdsForModule(rows, 'finance').join(',') === MARTINI_2,
+    'finance só Martini II',
+  );
+  assert(
+    getOwnerAllowedProjectIdsForModule(rows, 'map').length === 2,
+    'mapa com ambos quando liberado',
+  );
+  assert(
+    getOwnerAllowedProjectIdsForModule(rows, 'dashboard').join(',') === MARTINI_3,
+    'dashboard só Martine III',
+  );
+  assert(
+    getOwnerAllowedProjectIdsForModule(rows, 'contracts').join(',') === MARTINI_2,
+    'contratos só Martini II',
+  );
+  console.log('OK testOwnerModuleSpecificProjectIds');
+}
+
+function testOwnerTodosProjetosMeansAllowedOnly() {
+  const allowed = getOwnerAllowedProjectIds(ownerRows);
+  const allTenantProjects = [
+    { id: MARTINI_2, name: 'CHACARAS MARTINI II' },
+    { id: MARTINI_3, name: 'CHACARAS E LOTES MARTINE III' },
+    { id: OTHER_PROJECT, name: 'JOAQUIM' },
+    { id: 'castanheira-1', name: 'CASTANHEIRA' },
+  ];
+  const ownerVisible = allTenantProjects.filter((p) => allowed.includes(p.id));
+  assert(ownerVisible.length === 2, 'OWNER vê 2 projetos no filtro');
+  assert(!ownerVisible.some((p) => p.name === 'JOAQUIM'), 'sem Joaquim no seletor');
+  console.log('OK testOwnerTodosProjetosMeansAllowedOnly');
+}
+
 function main() {
   testOwnerSeesOnlyAllowedProjects();
   testOwnerDoesNotSeeOtherMenesesProjects();
@@ -272,6 +398,10 @@ function main() {
   testOwnerProfileTypesAndInactive();
   testOwnersSessionExpiredMessage();
   testOwnerOrphanEmailValidation();
+  testOwnerFinanceCashFlowScoped();
+  testOwnerFinanceCommissionsScoped();
+  testOwnerModuleSpecificProjectIds();
+  testOwnerTodosProjetosMeansAllowedOnly();
   console.log('mandatory-owner-project-access-tests: all passed');
 }
 

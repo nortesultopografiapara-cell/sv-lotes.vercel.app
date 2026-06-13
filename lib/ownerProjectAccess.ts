@@ -54,6 +54,29 @@ export function getOwnerAllowedProjectIds(
   return [...new Set(rows.map((row) => String(row.project_id).trim()).filter(Boolean))];
 }
 
+export function getOwnerAllowedProjectIdsForModule(
+  rows: OwnerProjectAccessRow[],
+  module: OwnerModuleKey,
+): string[] {
+  const flag =
+    module === 'dashboard'
+      ? 'can_view_dashboard'
+      : module === 'map'
+        ? 'can_view_map'
+        : module === 'finance'
+          ? 'can_view_finance'
+          : 'can_view_contracts';
+
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row[flag])
+        .map((row) => String(row.project_id).trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function canOwnerAccessProject(
   user: OwnerAccessUser | null | undefined,
   projectId: string | null | undefined,
@@ -172,6 +195,38 @@ export function resolveContractProjectId(contract: {
     contract.sales?.projects?.id ||
     contract.blocks?.project_id ||
     contract.blocks?.projects?.id ||
+    null
+  );
+}
+
+export function resolveCashMovementProjectId(movement: {
+  project_id?: string | null;
+  projects?: { id?: string } | null;
+  sales?: { project_id?: string | null; projects?: { id?: string } | null } | null;
+  contracts?: { project_id?: string | null; projects?: { id?: string } | null } | null;
+}): string | null {
+  return (
+    movement.project_id ||
+    movement.projects?.id ||
+    movement.sales?.project_id ||
+    movement.sales?.projects?.id ||
+    movement.contracts?.project_id ||
+    movement.contracts?.projects?.id ||
+    null
+  );
+}
+
+export function resolveCommissionProjectId(commission: {
+  project_id?: string | null;
+  sales?: { project_id?: string | null; projects?: { id?: string } | null } | null;
+  contracts?: { project_id?: string | null; projects?: { id?: string } | null } | null;
+}): string | null {
+  return (
+    commission.project_id ||
+    commission.sales?.project_id ||
+    commission.sales?.projects?.id ||
+    commission.contracts?.project_id ||
+    commission.contracts?.projects?.id ||
     null
   );
 }

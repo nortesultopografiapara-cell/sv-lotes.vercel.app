@@ -29,6 +29,7 @@ import { RegenerateContractModal } from "@/components/contracts/RegenerateContra
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   filterRowsByOwnerProjects,
+  getOwnerAllowedProjectIdsForModule,
   loadOwnerAccessContext,
   resolveContractProjectId,
 } from "@/lib/ownerProjectAccess";
@@ -575,9 +576,12 @@ export default function ContractsPage() {
 
         const rawRows = await loadContractsList(user, resolvedTenantId);
         const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
+        const ownerContractProjectIds = ownerCtx.isOwner
+          ? getOwnerAllowedProjectIdsForModule(ownerCtx.rows, 'contracts')
+          : ownerCtx.allowedProjectIds;
         const ownerScopedRows = filterRowsByOwnerProjects(
           rawRows,
-          ownerCtx.allowedProjectIds,
+          ownerContractProjectIds,
           resolveContractProjectId,
         );
         const visible = ownerScopedRows.filter(isContractVisibleInList);
