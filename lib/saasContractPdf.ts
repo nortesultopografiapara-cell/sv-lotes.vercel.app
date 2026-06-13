@@ -8,10 +8,12 @@ import {
   buildSaasContractSections,
   resolveSaasContractContext,
   SAAS_PROVIDER,
+  saasProviderCityState,
   type SaasContractSection,
 } from '@/lib/saasContractContent';
 import {
   formatContractCep,
+  formatContractCepRegional,
   formatContractCity,
   formatContractCnpj,
   formatContractPhone,
@@ -76,7 +78,7 @@ function drawPageHeader(doc: jsPDF, margin: number, pageW: number, compact: bool
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.text(SAAS_PROVIDER.legalName, margin + 32, 18);
-    doc.text(`CNPJ ${SAAS_PROVIDER.cnpj} · ${SAAS_PROVIDER.city}`, margin + 32, 24);
+    doc.text(`CNPJ ${SAAS_PROVIDER.cnpj} · ${saasProviderCityState()}`, margin + 32, 24);
   } else {
     drawLogoBadge(doc, margin, 6, 44, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
     drawLogoBadge(
@@ -297,7 +299,7 @@ function estimateSignatureBlockHeight(writer: PdfWriter): number {
     'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.';
   const introLines = writer.doc.splitTextToSize(intro, writer.contentW).length;
   const noteLines = writer.doc.splitTextToSize(note, writer.contentW).length;
-  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 55 + 10 + noteLines * CONTENT_LINE_H + 8;
+  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 75 + 10 + noteLines * CONTENT_LINE_H + 8;
 }
 
 function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
@@ -314,31 +316,41 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   const signDate = new Date().toLocaleDateString('pt-BR');
   const colW = (w.contentW - 12) / 2;
 
-  w.ensureSpace(55);
+  w.ensureSpace(75);
   w.doc.setDrawColor(160);
   w.doc.line(w.margin, w.y + 20, w.margin + colW, w.y + 20);
   w.doc.line(w.margin + colW + 12, w.y + 20, w.margin + w.contentW, w.y + 20);
+
+  const providerColX = w.margin + colW + 12;
 
   w.doc.setFont('helvetica', 'bold');
   w.doc.setFontSize(9);
   w.doc.setTextColor(40, 40, 40);
   w.doc.text('CONTRATANTE', w.margin, w.y);
-  w.doc.text('CONTRATADA', w.margin + colW + 12, w.y);
+  w.doc.text('CONTRATADA', providerColX, w.y);
   w.y += 24;
 
   w.doc.setFont('helvetica', 'normal');
   w.doc.setFontSize(8.5);
   w.doc.text(ctx.contractor.name, w.margin, w.y);
-  w.doc.text(ctx.provider.legalName, w.margin + colW + 12, w.y);
+  w.doc.text(ctx.provider.legalName, providerColX, w.y);
   w.y += 5;
   w.doc.text(`CNPJ ${formatContractCnpj(ctx.contractor.cnpj)}`, w.margin, w.y);
-  w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, w.margin + colW + 12, w.y);
+  w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, providerColX, w.y);
   w.y += 5;
   w.doc.text(ctx.contractor.responsible, w.margin, w.y);
-  w.doc.text(ctx.provider.tradeName, w.margin + colW + 12, w.y);
+  w.doc.text(ctx.provider.tradeName, providerColX, w.y);
+  w.y += 5;
+  w.doc.text(ctx.provider.address, providerColX, w.y);
+  w.y += 5;
+  w.doc.text(ctx.provider.neighborhood, providerColX, w.y);
+  w.y += 5;
+  w.doc.text(`CEP ${formatContractCepRegional(ctx.provider.cep)}`, providerColX, w.y);
+  w.y += 5;
+  w.doc.text(saasProviderCityState(ctx.provider), providerColX, w.y);
   w.y += 8;
   w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
-  w.doc.text(`Local e data: ${formatContractCity(ctx.provider.city)}, ${signDate}`, w.margin + colW + 12, w.y);
+  w.doc.text(`Local e data: ${saasProviderCityState(ctx.provider)}, ${signDate}`, providerColX, w.y);
   w.y += 10;
 
   w.doc.setFont('helvetica', 'italic');
@@ -396,7 +408,10 @@ export function buildSaasContractPdfWithMeta(
   writer.row('Razão social', ctx.provider.legalName);
   writer.row('Nome fantasia / marca', ctx.provider.tradeName);
   writer.row('CNPJ', formatContractCnpj(ctx.provider.cnpj));
-  writer.row('Cidade', formatContractCity(ctx.provider.city));
+  writer.row('Endereço', ctx.provider.address);
+  writer.row('Bairro', ctx.provider.neighborhood);
+  writer.row('CEP', formatContractCepRegional(ctx.provider.cep));
+  writer.row('Cidade/UF', saasProviderCityState(ctx.provider));
   writer.renderLicensedServices(ctx.provider.services);
 
   writer.sectionTitle('DADOS DA CONTRATANTE');

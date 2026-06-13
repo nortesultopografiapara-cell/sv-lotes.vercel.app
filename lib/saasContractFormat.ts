@@ -42,6 +42,15 @@ export function formatContractCep(value?: string | null): string {
   return digits.replace(/^(\d{5})(\d{3})$/, '$1-$2');
 }
 
+/** CEP regional (fornecedora): XXXXXXXX → XX.XXX-XXX */
+export function formatContractCepRegional(value?: string | null): string {
+  const raw = String(value ?? '').trim();
+  if (isDisplayPlaceholder(raw)) return raw;
+  const digits = onlyDigits(raw).slice(0, 8);
+  if (digits.length !== 8) return raw;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}-${digits.slice(5)}`;
+}
+
 function titleCaseWord(word: string): string {
   const trimmed = word.trim();
   if (!trimmed) return trimmed;

@@ -18,6 +18,7 @@ import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
 import {
   formatContractCep,
+  formatContractCepRegional,
   formatContractCity,
   formatContractCnpj,
   formatContractPhone,
@@ -57,7 +58,10 @@ export const SAAS_PROVIDER = {
   legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
   tradeName: 'SV LOTES / SV Topografia & Projetos',
   cnpj: '12.631.238/0001-02',
-  city: 'Parauapebas/PA',
+  address: 'Rua 02, S/N, Quadra 123, Lote 05',
+  neighborhood: 'Nova Carajás',
+  cep: '68515000',
+  city: 'Parauapebas',
   state: 'PA',
   product: 'SV LOTES — Plataforma SaaS de Gestão Imobiliária',
   services: [
@@ -69,6 +73,18 @@ export const SAAS_PROVIDER = {
     'Contratos automáticos e relatórios',
   ],
 };
+
+export function saasProviderCityState(
+  provider: Pick<typeof SAAS_PROVIDER, 'city' | 'state'> = SAAS_PROVIDER,
+): string {
+  return formatContractCity(`${provider.city}/${provider.state}`);
+}
+
+export function saasProviderHeadquartersQualification(
+  provider: typeof SAAS_PROVIDER = SAAS_PROVIDER,
+): string {
+  return `com sede na ${provider.address}, Bairro ${provider.neighborhood}, CEP ${formatContractCepRegional(provider.cep)}, Município de ${provider.city}, Estado do Pará`;
+}
 
 export type SaasContractSection = {
   number: number;
@@ -180,7 +196,7 @@ export function buildSaasContractSections(ctx: SaasContractContext): SaasContrac
       number: 1,
       title: 'QUALIFICAÇÃO DAS PARTES',
       paragraphs: [
-        `CONTRATADA: ${p.legalName}, nome fantasia ${p.tradeName}, inscrita no CNPJ sob nº ${p.cnpj}, com sede em ${p.city}, doravante denominada simplesmente CONTRATADA ou FORNECEDORA.`,
+        `CONTRATADA: ${p.legalName}, nome fantasia ${p.tradeName}, inscrita no CNPJ sob nº ${p.cnpj}, ${saasProviderHeadquartersQualification(p)}, doravante denominada simplesmente CONTRATADA ou FORNECEDORA.`,
         `CONTRATANTE: ${c.name}, inscrita no CNPJ sob nº ${c.cnpj}, representada por ${c.responsible}, com endereço em ${c.address}, ${c.cityState}${c.cep ? `, CEP ${c.cep}` : ''}, telefone ${c.phone}, e-mail ${c.email}, doravante denominada simplesmente CONTRATANTE.`,
         'As partes acima qualificadas celebram o presente Contrato de Licença de Uso de Software na modalidade SaaS (Software as a Service), regido pelas cláusulas e condições a seguir.',
       ],

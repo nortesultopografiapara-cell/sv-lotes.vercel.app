@@ -356,6 +356,12 @@ function testSaasContractProfessional() {
   assert(text.includes('parauapebas/pa'), 'foro parauapebas');
   assert(text.includes('licenciado como serviço saas'), 'licença saas não venda');
   assert(text.includes(SAAS_PROVIDER.legalName.toLowerCase()), 'fornecedora');
+  assert(text.includes('rua 02, s/n, quadra 123, lote 05'), 'endereço fornecedora cláusula 1');
+  assert(text.includes('nova carajás'), 'bairro fornecedora cláusula 1');
+  assert(text.includes('68.515-000'), 'cep fornecedora cláusula 1');
+  assert(text.includes('município de parauapebas'), 'município fornecedora cláusula 1');
+  assert(text.includes('estado do pará'), 'estado fornecedora cláusula 1');
+  assert(!text.includes('com sede em parauapebas/pa'), 'qualificação antiga removida');
   assert(text.includes('meneses imobiliaria ltda'), 'contratante meneses');
   assert(text.includes('549,99') || text.includes('549.99'), 'valor meneses');
   assert(text.includes('27/05/2026') || text.includes('2026-05-27'), 'datas meneses');
@@ -382,11 +388,14 @@ function testSaasContractProfessional() {
   assert(pagination.ok, `paginação natural: ${pagination.errors.join('; ')}`);
 
   const roughPdf = extractRoughPdfText(built.pdf).toLowerCase();
+  const rawPdfLatin = Buffer.from(built.pdf).toString('latin1');
   const fornecedoraPos = roughPdf.indexOf('dados da fornecedora');
   const servicosPos = roughPdf.indexOf('serviços licenciados');
   const contratantePos = roughPdf.indexOf('dados da contratante');
   assert(fornecedoraPos >= 0 && servicosPos > fornecedoraPos, 'serviços após fornecedora');
   assert(servicosPos >= 0 && contratantePos > servicosPos, 'contratante após serviços');
+  assert(roughPdf.includes('nova carajás') || roughPdf.includes('Nova Caraj'), 'bairro fornecedora no pdf');
+  assert(roughPdf.includes('68.515-000') || rawPdfLatin.includes('68.515-000'), 'cep fornecedora no pdf');
 
   assert(text.includes('64.435.850/0001-03'), 'cnpj mascarado no contrato');
   assert(!text.includes('64435850000103'), 'cnpj sem máscara ausente');
@@ -396,7 +405,6 @@ function testSaasContractProfessional() {
   assert(text.includes('parauapebas/pa'), 'cidade formatada no contrato');
   assert(roughPdf.includes('64.435.850/0001-03'), 'cnpj mascarado no pdf');
   assert(roughPdf.includes('68515-000'), 'cep mascarado no pdf');
-  const rawPdfLatin = Buffer.from(built.pdf).toString('latin1');
   assert(rawPdfLatin.includes('99239-1277'), 'telefone mascarado no pdf');
   assert(!rawPdfLatin.includes('94992391277'), 'pdf sem telefone cru');
   assert(!rawPdfLatin.includes('64435850000103'), 'pdf sem cnpj cru');
