@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import {
+  assertApiTenantScope,
+  resolveApiTenantId,
+} from '@/lib/apiTenantContext';
+import {
   canManageSaleBrokerCommission,
   resolveManageBrokerCommissionRole,
 } from '@/lib/brokerCommissionAccess';
@@ -13,11 +17,18 @@ import {
   getRequestAuthUser,
   resolveCallerProfile,
 } from '@/lib/supabase/server';
-import { isPlatformAdmin } from '@/lib/rls';
 
 export const runtime = 'nodejs';
 
-async function authorizeBrokerCommissionManage(request: Request) {
+type AuthorizeOptions = {
+  saleId: string;
+  bodyTenantId?: string | null;
+};
+
+async function authorizeBrokerCommissionManage(
+  request: Request,
+  options: AuthorizeOptions,
+) {
   const { user, configError } = await getRequestAuthUser(request);
   if (configError || !user) {
     return {
@@ -58,21 +69,18 @@ async function authorizeBrokerCommissionManage(request: Request) {
     };
   }
 
-  let bodyTenant: string | null = null;
-  try {
-    const body = await request.clone().json();
-    bodyTenant = body?.tenantId || body?.activeTenantId || null;
-  } catch {
-    /* GET sem body */
-  }
+  const queryTenantId = new URL(request.url).searchParams.get('activeTenantId');
 
-  const tenantId =
-    (isPlatformAdmin(callerRole) && bodyTenant) ||
-    profile?.tenant_id ||
-    profile?.company_id ||
-    null;
+  const tenantId = await resolveApiTenantId({
+    admin,
+    authUser: user,
+    profile,
+    bodyTenantId: options.bodyTenantId,
+    queryTenantId,
+    saleId: options.saleId,
+  });
 
-  if (!tenantId && !isPlatformAdmin(callerRole)) {
+  if (!tenantId) {
     return {
       error: NextResponse.json(
         { error: 'Empresa não identificada para o usuário' },
@@ -81,7 +89,24 @@ async function authorizeBrokerCommissionManage(request: Request) {
     };
   }
 
-  return { user, admin, profile, tenantId: tenantId as string, callerRole };
+  try {
+    assertApiTenantScope({
+      tenantId,
+      callerRole,
+      callerTenantId: profile?.tenant_id || profile?.company_id || null,
+      metadataTenantId: (user.user_metadata?.tenant_id as string | undefined) || null,
+    });
+  } catch (scopeErr) {
+    const message =
+      scopeErr instanceof Error
+        ? scopeErr.message
+        : 'Operação fora do escopo da empresa';
+    return {
+      error: NextResponse.json({ error: message, code: 'TENANT_SCOPE_MISMATCH' }, { status: 403 }),
+    };
+  }
+
+  return { user, admin, profile, tenantId, callerRole };
 }
 
 export async function GET(
@@ -89,14 +114,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authorizeBrokerCommissionManage(request);
+    const { id: saleId } = await params;
+    const auth = await authorizeBrokerCommissionManage(request, { saleId });
     if ('error' in auth && auth.error) return auth.error;
 
-    const { id: saleId } = await params;
     const state = await getSaleBrokerCommissionState(
       auth.admin!,
       saleId,
-      auth.tenantId,
+      auth.tenantId!,
     );
 
     return NextResponse.json({ success: true, ...state });
@@ -117,15 +142,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await authorizeBrokerCommissionManage(request);
-    if ('error' in auth && auth.error) return auth.error;
-
     const { id: saleId } = await params;
     const body = await request.json();
 
+    const auth = await authorizeBrokerCommissionManage(request, {
+      saleId,
+      bodyTenantId: body?.tenantId || body?.activeTenantId || null,
+    });
+    if ('error' in auth && auth.error) return auth.error;
+
     const result = await executeManageSaleBrokerCommission(auth.admin!, {
       saleId,
-      tenantId: auth.tenantId,
+      tenantId: auth.tenantId!,
       userId: auth.user!.id,
       input: body,
     });

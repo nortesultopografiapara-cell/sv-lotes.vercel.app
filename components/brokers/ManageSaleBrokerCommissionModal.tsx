@@ -18,6 +18,7 @@ type ManageSaleBrokerCommissionModalProps = {
   saleValue: number;
   currentBrokerName?: string;
   initialPendingTotal?: number;
+  activeTenantId?: string | null;
   canManage: boolean;
   brokers: BrokerOption[];
   onSuccess: () => void;
@@ -34,6 +35,7 @@ export function ManageSaleBrokerCommissionModal({
   saleValue,
   currentBrokerName,
   initialPendingTotal = 0,
+  activeTenantId = null,
   canManage,
   brokers,
   onSuccess,
@@ -56,6 +58,10 @@ export function ManageSaleBrokerCommissionModal({
     setTargetBrokerId('');
   }, [open, initialPendingTotal, saleId]);
 
+  const tenantQuery = activeTenantId
+    ? `?activeTenantId=${encodeURIComponent(activeTenantId)}`
+    : '';
+
   useEffect(() => {
     if (!open || !saleId || !canManage) return;
 
@@ -64,7 +70,7 @@ export function ManageSaleBrokerCommissionModal({
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`/api/sales/${saleId}/broker-commission`);
+        const res = await fetch(`/api/sales/${saleId}/broker-commission${tenantQuery}`);
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || 'Falha ao carregar comissão');
@@ -85,7 +91,7 @@ export function ManageSaleBrokerCommissionModal({
     return () => {
       cancelled = true;
     };
-  }, [open, saleId, canManage]);
+  }, [open, saleId, canManage, tenantQuery]);
 
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -112,6 +118,10 @@ export function ManageSaleBrokerCommissionModal({
       payload = { action: 'update_commission', commission_percent: commissionPercent };
     } else if (mode === 'fixed') {
       payload = { action: 'update_commission', fixed_amount: fixedAmount };
+    }
+
+    if (activeTenantId) {
+      payload.activeTenantId = activeTenantId;
     }
 
     try {

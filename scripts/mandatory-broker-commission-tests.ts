@@ -13,7 +13,9 @@ import {
   readBrokerCommissionPercent,
   resolveBrokerCommissionAmount,
 } from '../lib/brokerCommission';
+import { assertApiTenantScope } from '../lib/apiTenantContext';
 import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
+import { resolveUserCompanyId } from '../lib/masterCompanyUsers';
 import {
   assertCanCancelCommissionRows,
   buildCanceledCommissionPatch,
@@ -152,6 +154,39 @@ function testNoPhantomBackfillInflatesDashboard() {
   console.log('OK testNoPhantomBackfillInflatesDashboard');
 }
 
+function testApiTenantContextResolvesCompanyLink() {
+  const menesesTenant = '75fcaae6-8975-4e06-9100-8c8aa1537854';
+  assert(
+    resolveUserCompanyId({ tenant_id: null, company_id: menesesTenant }) === menesesTenant,
+    'company_id legado resolve tenant',
+  );
+  assert(
+    resolveUserCompanyId({ tenant_id: menesesTenant, company_id: null }) === menesesTenant,
+    'tenant_id primário resolve tenant',
+  );
+
+  let blocked = false;
+  try {
+    assertApiTenantScope({
+      tenantId: menesesTenant,
+      callerRole: 'ADMIN',
+      callerTenantId: 'outra-empresa',
+      metadataTenantId: null,
+    });
+  } catch {
+    blocked = true;
+  }
+  assert(blocked, 'bloqueia tenant divergente');
+
+  assertApiTenantScope({
+    tenantId: menesesTenant,
+    callerRole: 'MANAGER',
+    callerTenantId: null,
+    metadataTenantId: menesesTenant,
+  });
+  console.log('OK testApiTenantContextResolvesCompanyLink');
+}
+
 function main() {
   testAdminCanManageBrokerCommission();
   testBrokerCannotManageBrokerCommission();
@@ -164,6 +199,7 @@ function main() {
   testPaidCommissionCannotBeCancelledWithoutAdjustment();
   testBrokerCommissionCanBeZero();
   testNoPhantomBackfillInflatesDashboard();
+  testApiTenantContextResolvesCompanyLink();
   console.log('\nTodos os testes obrigatórios de gerenciar corretor/comissão passaram.');
 }
 

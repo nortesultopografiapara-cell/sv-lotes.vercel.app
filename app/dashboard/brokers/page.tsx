@@ -36,17 +36,31 @@ export default function CorretoresPage() {
   const [companyPlan, setCompanyPlan] = useState<string>('');
   const [tenantData, setTenantData] = useState<any>(null);
 
+  const [manageSaleModal, setManageSaleModal] = useState<{
+    saleId: string;
+    lotLabel: string;
+    contractLabel: string;
+    saleValue: number;
+    brokerName: string;
+    pendingTotal: number;
+  } | null>(null);
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null);
+
   useEffect(() => {
-    async function loadTenant() {
-      if (user?.tenant_id) {
-         const { data } = await supabase.from('companies').select('*').eq('id', user.tenant_id).maybeSingle();
-         setTenantData(data);
+    async function resolveTenant() {
+      if (!user) {
+        setActiveTenantId(null);
+        return;
+      }
+      const tenantId = await resolveActiveTenantId(user);
+      setActiveTenantId(tenantId);
+      if (tenantId) {
+        const { data } = await supabase.from('companies').select('*').eq('id', tenantId).maybeSingle();
+        setTenantData(data);
       }
     }
-    loadTenant();
+    resolveTenant();
   }, [user]);
-
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
@@ -70,15 +84,6 @@ export default function CorretoresPage() {
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
-
-  const [manageSaleModal, setManageSaleModal] = useState<{
-    saleId: string;
-    lotLabel: string;
-    contractLabel: string;
-    saleValue: number;
-    brokerName: string;
-    pendingTotal: number;
-  } | null>(null);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -1658,6 +1663,7 @@ export default function CorretoresPage() {
         currentBrokerName={manageSaleModal?.brokerName}
         initialPendingTotal={manageSaleModal?.pendingTotal ?? 0}
         canManage={canManageBrokerCommission}
+        activeTenantId={activeTenantId}
         brokers={corretores.map((b) => ({
           id: b.id,
           name: b.name,
