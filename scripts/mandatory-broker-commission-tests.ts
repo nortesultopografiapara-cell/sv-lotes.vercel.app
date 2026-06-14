@@ -5,6 +5,7 @@
 
 import {
   brokerDashboardPendingTotal,
+  buildBrokerCommissionAmountField,
   calculateCommissionAmount,
   getSalePendingCommissionTotal,
   isCanceledBrokerCommission,
@@ -13,6 +14,11 @@ import {
   readBrokerCommissionPercent,
   resolveBrokerCommissionAmount,
 } from '../lib/brokerCommission';
+import {
+  BROKER_COMMISSION_AMOUNT_COLUMN,
+  BROKER_COMMISSION_API_SELECT,
+  BROKER_COMMISSION_PRODUCTION_SCHEMA,
+} from '../lib/brokerCommissionSchema';
 import { assertApiTenantScope } from '../lib/apiTenantContext';
 import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
 import { resolveUserCompanyId } from '../lib/masterCompanyUsers';
@@ -48,14 +54,28 @@ function testOwnerCannotManageBrokerCommission() {
   console.log('OK testOwnerCannotManageBrokerCommission');
 }
 
+function testBrokerCommissionUsesAmountColumnOnly() {
+  const write = buildBrokerCommissionAmountField(3750);
+  assert(write.amount === 3750, 'grava amount');
+  assert(!('commission_value' in write), 'não grava commission_value');
+  assert(BROKER_COMMISSION_AMOUNT_COLUMN === 'amount', 'coluna canônica');
+  assert(!BROKER_COMMISSION_API_SELECT.includes('commission_value'), 'select sem commission_value');
+  const amountCol = BROKER_COMMISSION_PRODUCTION_SCHEMA.find((c) => c.column === 'amount');
+  assert(!!amountCol, 'schema documenta amount');
+  assert(
+    !BROKER_COMMISSION_PRODUCTION_SCHEMA.some((c) => c.column === 'commission_value'),
+    'schema não exige commission_value em produção',
+  );
+  console.log('OK testBrokerCommissionUsesAmountColumnOnly');
+}
+
 function testBrokerCommissionDashboardMatchesModal() {
   const rows = [
     {
       sale_id: 'sale-1',
       broker_id: 'broker-1',
       status: 'PENDENTE',
-      amount: null,
-      commission_value: 3750,
+      amount: 3750,
     },
   ];
 
@@ -63,13 +83,13 @@ function testBrokerCommissionDashboardMatchesModal() {
   const dashboardSaleTotal = getSalePendingCommissionTotal(rows, 'sale-1', 'broker-1');
   const modalTotal = getSalePendingCommissionTotal(rows, 'sale-1');
 
-  assert(dashboardBrokerTotal === 3750, 'painel corretor usa commission_value');
+  assert(dashboardBrokerTotal === 3750, 'painel corretor usa amount');
   assert(dashboardSaleTotal === 3750, 'venda no painel');
   assert(modalTotal === 3750, 'modal usa mesma origem');
   assert(dashboardSaleTotal === modalTotal, 'painel e modal iguais');
 
   const canceledRows = [
-    { sale_id: 'sale-1', broker_id: 'broker-1', status: 'cancelado', commission_value: 0 },
+    { sale_id: 'sale-1', broker_id: 'broker-1', status: 'cancelado', amount: 0 },
   ];
   assert(getSalePendingCommissionTotal(canceledRows, 'sale-1') === 0, 'cancelada zera painel/modal');
   console.log('OK testBrokerCommissionDashboardMatchesModal');
@@ -82,7 +102,7 @@ function testTransferSaleToAnotherBroker() {
   });
   assert(plan.brokerId === 'cassio-vs10', 'destino CASSIO VS10');
   assert(plan.pendingInsert?.amount === 3750, 'comissão recalculada 5% de 75k');
-  assert(plan.pendingInsert?.commission_value === 3750, 'commission_value gravado');
+  assert(!('commission_value' in (plan.pendingInsert || {})), 'insert sem commission_value');
   console.log('OK testTransferSaleToAnotherBroker');
 }
 
@@ -108,22 +128,22 @@ function testTransferUpdatesRanking() {
 function testTransferDoesNotCreateCashMovement() {
   const canceled = buildCanceledCommissionPatch();
   assert(canceled.amount === 0, 'cancelamento sem valor');
-  assert(canceled.commission_value === 0, 'sem commission_value');
+  assert(!('commission_value' in canceled), 'patch sem commission_value');
   assert(!isPendingBrokerCommission(canceled.status), 'não permanece pendente');
-  assertCanCancelCommissionRows([{ status: 'pendente', commission_value: 3750 }]);
+  assertCanCancelCommissionRows([{ status: 'pendente', amount: 3750 }]);
   console.log('OK testTransferDoesNotCreateCashMovement');
 }
 
 function testLegacyCommissionValueResolution() {
   assert(resolveBrokerCommissionAmount({ amount: 100 }) === 100, 'amount prioritário');
-  assert(resolveBrokerCommissionAmount({ commission_value: 3750 }) === 3750, 'fallback commission_value');
+  assert(resolveBrokerCommissionAmount({ commission_value: 3750 }) === 3750, 'fallback legado leitura');
   console.log('OK testLegacyCommissionValueResolution');
 }
 
 function testPaidCommissionCannotBeCancelledWithoutAdjustment() {
   let blocked = false;
   try {
-    assertCanCancelCommissionRows([{ status: 'pago', commission_value: 3750 }]);
+    assertCanCancelCommissionRows([{ status: 'pago', amount: 3750 }]);
   } catch (err) {
     blocked = err instanceof SaleBrokerCommissionError && err.code === 'COMMISSION_ALREADY_PAID';
   }
@@ -142,11 +162,11 @@ function testBrokerCommissionCanBeZero() {
 }
 
 function testNoPhantomBackfillInflatesDashboard() {
-  const dbRows: Array<{ sale_id: string; status: string; commission_value?: number }> = [];
+  const dbRows: Array<{ sale_id: string; status: string; amount?: number }> = [];
   const phantom = 3750;
   const withPhantom = brokerDashboardPendingTotal([
     ...dbRows,
-    { sale_id: 'sale-1', status: 'pendente', commission_value: phantom },
+    { sale_id: 'sale-1', status: 'pendente', amount: phantom },
   ]);
   const withoutPhantom = brokerDashboardPendingTotal(dbRows);
   assert(withPhantom === 3750, 'com registro real');
@@ -191,6 +211,7 @@ function main() {
   testAdminCanManageBrokerCommission();
   testBrokerCannotManageBrokerCommission();
   testOwnerCannotManageBrokerCommission();
+  testBrokerCommissionUsesAmountColumnOnly();
   testBrokerCommissionDashboardMatchesModal();
   testTransferSaleToAnotherBroker();
   testTransferUpdatesRanking();

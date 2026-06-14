@@ -12,17 +12,16 @@ import {
 import {
   getSalePendingCommissionTotal,
   isPendingBrokerCommission,
-  resolveBrokerCommissionAmount,
+  buildBrokerCommissionAmountField,
   resolveSaleValueForCommission,
-  withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
+import { BROKER_COMMISSION_API_SELECT } from '@/lib/brokerCommissionSchema';
 
 type CommissionRow = {
   id: string;
   sale_id?: string | null;
   broker_id?: string | null;
   amount?: number | string | null;
-  commission_value?: number | string | null;
   status?: string | null;
   paid_at?: string | null;
 };
@@ -59,7 +58,7 @@ async function loadSaleCommissions(
 ): Promise<CommissionRow[]> {
   const { data, error } = await admin
     .from('broker_commissions')
-    .select('id, sale_id, broker_id, amount, commission_value, commission_percent, status, paid_at')
+    .select(BROKER_COMMISSION_API_SELECT)
     .eq('sale_id', saleId);
 
   if (error) {
@@ -320,7 +319,7 @@ export async function executeManageSaleBrokerCommission(
         const { error } = await admin
           .from('broker_commissions')
           .update({
-            ...withBrokerCommissionMonetaryFields(patch.amount),
+            ...buildBrokerCommissionAmountField(patch.amount),
             commission_percent: patch.commission_percent,
             status: patch.status,
             paid_at: null,
@@ -344,7 +343,7 @@ export async function executeManageSaleBrokerCommission(
       if (insertPayload) {
         Object.assign(
           insertPayload,
-          withBrokerCommissionMonetaryFields(patch.amount),
+          buildBrokerCommissionAmountField(patch.amount),
           { commission_percent: patch.commission_percent },
         );
         const { data: inserted, error: insErr } = await admin

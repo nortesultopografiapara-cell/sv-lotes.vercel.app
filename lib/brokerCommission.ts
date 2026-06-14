@@ -110,28 +110,37 @@ export type BrokerCommissionRow = {
   sale_id?: string | null;
   broker_id?: string | null;
   amount?: number | string | null;
+  amount_sale?: number | string | null;
+  /** Legado em alguns ambientes de dev — não existe em produção SV LOTES. */
   commission_value?: number | string | null;
   commission_percent?: number | string | null;
   status?: string | null;
   paid_at?: string | null;
 };
 
-/** Valor monetário da comissão — compatível com `amount` e `commission_value`. */
+/** Valor monetário da comissão — produção usa `amount`. */
 export function resolveBrokerCommissionAmount(
   row?: BrokerCommissionRow | null,
 ): number {
   if (!row) return 0;
-  const raw = row.amount ?? row.commission_value ?? 0;
+  const raw =
+    row.amount ??
+    row.amount_sale ??
+    row.commission_value ??
+    0;
   const num = Number(raw);
   return Number.isFinite(num) ? num : 0;
 }
 
-export function withBrokerCommissionMonetaryFields(amount: number) {
+/** Payload de gravação — apenas colunas existentes em produção. */
+export function buildBrokerCommissionAmountField(amount: number) {
   const value = Math.max(0, Number(amount) || 0);
-  return {
-    amount: value,
-    commission_value: value,
-  };
+  return { amount: value };
+}
+
+/** @deprecated use buildBrokerCommissionAmountField */
+export function withBrokerCommissionMonetaryFields(amount: number) {
+  return buildBrokerCommissionAmountField(amount);
 }
 
 export function sumPendingBrokerCommissions(
