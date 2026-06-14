@@ -1,11 +1,22 @@
 'use client';
 
-import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2 } from 'lucide-react';
+import { Users, Search, Plus, MoreHorizontal, CheckCircle2, User, Mail, Phone, Lock, TrendingUp, DollarSign, Wallet, Users2, Medal, Clock, Eye, Edit, Trash2, Key, Loader2, UserCog } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
+import {
+  BROKER_COMMISSION_DEFAULT_PERCENT,
+  brokerDashboardPendingTotal,
+  calculateCommissionAmount,
+  defaultBrokerCommissionPercentForCreate,
+  readBrokerCommissionPercent,
+  resolveSaleValueForCommission,
+  shouldAutoCreatePendingCommission,
+} from '@/lib/brokerCommission';
+import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
+import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import {
   fetchCompanySaasByTenantId,
   getCompanySaasPlan,
@@ -57,6 +68,14 @@ export default function CorretoresPage() {
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<string | null>(null);
+
+  const [manageSaleModal, setManageSaleModal] = useState<{
+    saleId: string;
+    lotLabel: string;
+    contractLabel: string;
+    saleValue: number;
+    brokerName: string;
+  } | null>(null);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -136,9 +155,10 @@ export default function CorretoresPage() {
                   const broker = safeBrokers.find(fb => fb.id === sale.broker_id);
                   if (broker) {
                        try {
-                           const percent = Number(broker.commission_percent) || 5;
-                           const saleValue = sale.total_amount ?? sale.amount ?? sale.sale_value ?? sale.valor ?? sale.price ?? sale.total ?? sale.value ?? sale.total_value ?? 0;
-                           const val = (Number(saleValue) || 0) * (percent / 100);
+                           const percent = readBrokerCommissionPercent(broker.commission_percent);
+                           if (!shouldAutoCreatePendingCommission(percent)) continue;
+                           const saleValue = resolveSaleValueForCommission(sale);
+                           const val = calculateCommissionAmount(saleValue, percent);
                            
                            const newComm = {
                                company_id: resolvedTenantId,
@@ -214,9 +234,8 @@ export default function CorretoresPage() {
            });
         });
 
-        const pendenteStatuses = ['pendente', 'pending', 'PENDENTE', 'PENDING'];
         const pagoStatuses = ['pago', 'paga', 'paid', 'aprovado', 'aprovada', 'PAGO', 'PAID', 'APROVADO'];
-        const comissao_pendente = bComms.filter(cc => pendenteStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        const comissao_pendente = brokerDashboardPendingTotal(bComms);
         const comissao_paga = bComms.filter(cc => pagoStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
         
         let isActive = true;
@@ -234,7 +253,7 @@ export default function CorretoresPage() {
           tenant_id: b.tenant_id || b.company_id,
           name: b.name || b.full_name || 'Sem nome',
           role: b.role || 'BROKER',
-          commission_percent: b.commission_percent || 5,
+          commission_percent: readBrokerCommissionPercent(b.commission_percent),
           active: isActive,
           vendas_mes_qtd: vendas_qtd,
           vendas_mes_valor: vendas_valor,
@@ -516,7 +535,7 @@ export default function CorretoresPage() {
         cpf: broker.cpf || '',
         creci: broker.creci || '',
         role: broker.role || 'BROKER',
-        commission_percent: broker.commission_percent || 5,
+        commission_percent: readBrokerCommissionPercent(broker.commission_percent),
         password: '',
         confirmPassword: ''
      });
@@ -558,7 +577,7 @@ export default function CorretoresPage() {
                 phone: formData.phone,
                 creci: formData.creci,
                 cpf: formData.cpf,
-                commission_percent: formData.commission_percent,
+                commission_percent: readBrokerCommissionPercent(formData.commission_percent),
                 role: formData.role
             }).eq('id', selectedBroker.id);
             if (upErr) throw upErr;
@@ -659,7 +678,7 @@ export default function CorretoresPage() {
          email: formData.email,
          role: 'BROKER',
          level: 'broker',
-         commission_percent: formData.commission_percent,
+         commission_percent: defaultBrokerCommissionPercentForCreate(formData.commission_percent),
          name: formData.fullName,
          full_name: formData.fullName,
          active: true,
@@ -824,10 +843,10 @@ export default function CorretoresPage() {
            
            for (const sale of brokerSales) {
                if (!exSalesIds.includes(sale.id)) {
-                   const percent = Number(c.commission_percent) || 5;
-                   const saleValue = sale.total_amount ?? sale.amount ?? sale.sale_value ?? sale.valor ?? sale.price ?? sale.total ?? sale.value ?? sale.total_value ?? 0;
-                   const valor_venda = Number(saleValue) || 0;
-                   const val = valor_venda * (percent / 100);
+                   const percent = readBrokerCommissionPercent(c.commission_percent);
+                   if (!shouldAutoCreatePendingCommission(percent)) continue;
+                   const saleValue = resolveSaleValueForCommission(sale);
+                   const val = calculateCommissionAmount(saleValue, percent);
                    
                    const newComm = {
                        company_id: resolvedTenantId,
@@ -927,7 +946,8 @@ export default function CorretoresPage() {
   ];
 
   const topCorretores = [...corretores].filter(c => c.vendas_mes_valor > 0).sort((a,b) => b.vendas_mes_valor - a.vendas_mes_valor).slice(0, 3);
-  const medalColors = ['#f59e0b', '#94a3b8', '#b45309']; // Ouro, Prata, Bronze
+  const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
+  const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
 
   return (
     <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col h-full bg-[var(--bg-main)] text-[var(--text-primary)]">
@@ -1493,7 +1513,13 @@ export default function CorretoresPage() {
                                step="0.1"
                                disabled={modalMode === 'view'}
                                value={formData.commission_percent}
-                               onChange={(e) => setFormData({ ...formData, commission_percent: parseFloat(e.target.value) })}
+                               onChange={(e) => {
+                                 const raw = e.target.value;
+                                 setFormData({
+                                   ...formData,
+                                   commission_percent: raw === '' ? 0 : Number(raw),
+                                 });
+                               }}
                                className="w-full bg-[var(--bg-main)] border border-[var(--border-color)] rounded-lg py-2.5 pl-4 pr-10 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50 transition-colors"
                              />
                              <span className="absolute right-4 top-2.5 text-[var(--text-muted)] text-sm">%</span>
@@ -1541,6 +1567,54 @@ export default function CorretoresPage() {
                       </>
                    )}
 
+                   {modalMode === 'view' && selectedBroker?.exportLots?.length > 0 && (
+                     <div className="space-y-3 border-t border-[var(--border-color)] pt-5">
+                       <h3 className="text-sm font-bold text-[var(--text-primary)]">Vendas vinculadas</h3>
+                       <div className="max-h-48 overflow-y-auto border border-[var(--border-color)] rounded-lg">
+                         <table className="w-full text-xs">
+                           <thead className="bg-[var(--bg-main)] sticky top-0">
+                             <tr>
+                               <th className="p-2 text-left text-[var(--text-muted)]">Lote</th>
+                               <th className="p-2 text-left text-[var(--text-muted)]">Contrato</th>
+                               <th className="p-2 text-right text-[var(--text-muted)]">Valor</th>
+                               {canManageBrokerCommission && (
+                                 <th className="p-2 text-right text-[var(--text-muted)]">Ação</th>
+                               )}
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {selectedBroker.exportLots.map((lot: any, idx: number) => (
+                               <tr key={`${lot.venda_id}-${idx}`} className="border-t border-[var(--border-color)]">
+                                 <td className="p-2">{lot.loteStr || '—'}</td>
+                                 <td className="p-2">{lot.contrato || '—'}</td>
+                                 <td className="p-2 text-right">{formatCurrency(Number(lot.valor_venda) || 0)}</td>
+                                 {canManageBrokerCommission && (
+                                   <td className="p-2 text-right">
+                                     <button
+                                       type="button"
+                                       onClick={() => setManageSaleModal({
+                                         saleId: lot.venda_id,
+                                         lotLabel: lot.loteStr || '',
+                                         contractLabel: String(lot.contrato || ''),
+                                         saleValue: Number(lot.valor_venda) || 0,
+                                         brokerName: selectedBroker.name || '',
+                                       })}
+                                       className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+                                       title="Gerenciar corretor/comissão"
+                                     >
+                                       <UserCog className="w-3 h-3" />
+                                       Gerenciar
+                                     </button>
+                                   </td>
+                                 )}
+                               </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
+                   )}
+
                    <div className="pt-4 flex justify-end gap-3">
                        <button 
                          type="button"
@@ -1570,6 +1644,23 @@ export default function CorretoresPage() {
           </div>
         </div>
       )}
+
+      <ManageSaleBrokerCommissionModal
+        open={!!manageSaleModal}
+        onClose={() => setManageSaleModal(null)}
+        saleId={manageSaleModal?.saleId || ''}
+        lotLabel={manageSaleModal?.lotLabel || ''}
+        contractLabel={manageSaleModal?.contractLabel || ''}
+        saleValue={manageSaleModal?.saleValue || 0}
+        currentBrokerName={manageSaleModal?.brokerName}
+        brokers={corretores.map((b) => ({
+          id: b.id,
+          name: b.name,
+          commission_percent: b.commission_percent,
+        }))}
+        userRole={user?.role}
+        onSuccess={() => loadBrokers()}
+      />
     </div>
   );
 }
