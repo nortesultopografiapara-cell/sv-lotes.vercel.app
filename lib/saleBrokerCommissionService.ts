@@ -10,9 +10,11 @@ import {
   type ManageSaleBrokerCommissionInput,
 } from '@/lib/saleBrokerCommissionManage';
 import {
-  isPaidBrokerCommission,
+  getSalePendingCommissionTotal,
   isPendingBrokerCommission,
+  resolveBrokerCommissionAmount,
   resolveSaleValueForCommission,
+  withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
 
 type CommissionRow = {
@@ -20,6 +22,7 @@ type CommissionRow = {
   sale_id?: string | null;
   broker_id?: string | null;
   amount?: number | string | null;
+  commission_value?: number | string | null;
   status?: string | null;
   paid_at?: string | null;
 };
@@ -56,7 +59,7 @@ async function loadSaleCommissions(
 ): Promise<CommissionRow[]> {
   const { data, error } = await admin
     .from('broker_commissions')
-    .select('id, sale_id, broker_id, amount, commission_percent, status, paid_at')
+    .select('id, sale_id, broker_id, amount, commission_value, commission_percent, status, paid_at')
     .eq('sale_id', saleId);
 
   if (error) {
@@ -153,7 +156,7 @@ export async function getSaleBrokerCommissionState(
   }
 
   const pending = commissions.filter((c) => isPendingBrokerCommission(c.status));
-  const pendingTotal = pending.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  const pendingTotal = getSalePendingCommissionTotal(commissions, saleId);
 
   return {
     sale: {
@@ -317,7 +320,7 @@ export async function executeManageSaleBrokerCommission(
         const { error } = await admin
           .from('broker_commissions')
           .update({
-            amount: patch.amount,
+            ...withBrokerCommissionMonetaryFields(patch.amount),
             commission_percent: patch.commission_percent,
             status: patch.status,
             paid_at: null,
@@ -339,8 +342,11 @@ export async function executeManageSaleBrokerCommission(
         commissionPercent: patch.commission_percent,
       });
       if (insertPayload) {
-        insertPayload.amount = patch.amount;
-        insertPayload.commission_percent = patch.commission_percent;
+        Object.assign(
+          insertPayload,
+          withBrokerCommissionMonetaryFields(patch.amount),
+          { commission_percent: patch.commission_percent },
+        );
         const { data: inserted, error: insErr } = await admin
           .from('broker_commissions')
           .insert([insertPayload])

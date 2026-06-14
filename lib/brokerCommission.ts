@@ -110,21 +110,54 @@ export type BrokerCommissionRow = {
   sale_id?: string | null;
   broker_id?: string | null;
   amount?: number | string | null;
+  commission_value?: number | string | null;
   commission_percent?: number | string | null;
   status?: string | null;
   paid_at?: string | null;
 };
+
+/** Valor monetário da comissão — compatível com `amount` e `commission_value`. */
+export function resolveBrokerCommissionAmount(
+  row?: BrokerCommissionRow | null,
+): number {
+  if (!row) return 0;
+  const raw = row.amount ?? row.commission_value ?? 0;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
+}
+
+export function withBrokerCommissionMonetaryFields(amount: number) {
+  const value = Math.max(0, Number(amount) || 0);
+  return {
+    amount: value,
+    commission_value: value,
+  };
+}
 
 export function sumPendingBrokerCommissions(
   rows: BrokerCommissionRow[],
 ): number {
   return rows
     .filter((row) => isPendingBrokerCommission(row.status))
-    .reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    .reduce((sum, row) => sum + resolveBrokerCommissionAmount(row), 0);
 }
 
 export function brokerDashboardPendingTotal(
   commissions: BrokerCommissionRow[],
 ): number {
   return sumPendingBrokerCommissions(commissions);
+}
+
+export function getSalePendingCommissionTotal(
+  commissions: BrokerCommissionRow[],
+  saleId: string,
+  brokerId?: string | null,
+): number {
+  return sumPendingBrokerCommissions(
+    commissions.filter((row) => {
+      if (row.sale_id !== saleId) return false;
+      if (brokerId && row.broker_id && row.broker_id !== brokerId) return false;
+      return true;
+    }),
+  );
 }

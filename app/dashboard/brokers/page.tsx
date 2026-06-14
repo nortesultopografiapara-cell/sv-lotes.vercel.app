@@ -11,9 +11,11 @@ import {
   brokerDashboardPendingTotal,
   calculateCommissionAmount,
   defaultBrokerCommissionPercentForCreate,
+  getSalePendingCommissionTotal,
   readBrokerCommissionPercent,
   resolveSaleValueForCommission,
   shouldAutoCreatePendingCommission,
+  withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
@@ -75,6 +77,7 @@ export default function CorretoresPage() {
     contractLabel: string;
     saleValue: number;
     brokerName: string;
+    pendingTotal: number;
   } | null>(null);
 
   const loadBrokers = useCallback(async () => {
@@ -165,7 +168,7 @@ export default function CorretoresPage() {
                                tenant_id: resolvedTenantId,
                                broker_id: broker.id,
                                sale_id: sale.id,
-                               amount: val,
+                               ...withBrokerCommissionMonetaryFields(val),
                                commission_percent: percent,
                                status: 'pendente'
                            };
@@ -173,8 +176,6 @@ export default function CorretoresPage() {
                            const { data: insComm, error: insErr } = await supabase.from('broker_commissions').insert([newComm]).select().single();
                            if (!insErr && insComm) {
                                commData.push(insComm);
-                           } else {
-                               commData.push({ ...newComm, id: 'temp-'+Date.now(), created_at: new Date().toISOString() });
                            }
                        } catch(e) {}
                   }
@@ -225,7 +226,8 @@ export default function CorretoresPage() {
                   contrato: contractNo,
                   venda_id: v.id,
                   valor_venda: safeSaleValue,
-                  data_venda: v.sale_date || v.created_at
+                  data_venda: v.sale_date || v.created_at,
+                  comissao_pendente: getSalePendingCommissionTotal(bComms, v.id, b.id),
               });
               
               if (lotStr && new Date(v.sale_date || v.created_at) >= startOfMonth) {
@@ -853,7 +855,7 @@ export default function CorretoresPage() {
                        tenant_id: resolvedTenantId,
                        broker_id: c.id,
                        sale_id: sale.id,
-                       amount: val,
+                       ...withBrokerCommissionMonetaryFields(val),
                        commission_percent: percent,
                        status: 'pendente'
                    };
@@ -1598,6 +1600,7 @@ export default function CorretoresPage() {
                                          contractLabel: String(lot.contrato || ''),
                                          saleValue: Number(lot.valor_venda) || 0,
                                          brokerName: selectedBroker.name || '',
+                                         pendingTotal: Number(lot.comissao_pendente) || 0,
                                        })}
                                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
                                        title="Gerenciar corretor/comissão"
@@ -1653,12 +1656,13 @@ export default function CorretoresPage() {
         contractLabel={manageSaleModal?.contractLabel || ''}
         saleValue={manageSaleModal?.saleValue || 0}
         currentBrokerName={manageSaleModal?.brokerName}
+        initialPendingTotal={manageSaleModal?.pendingTotal ?? 0}
+        canManage={canManageBrokerCommission}
         brokers={corretores.map((b) => ({
           id: b.id,
           name: b.name,
           commission_percent: b.commission_percent,
         }))}
-        userRole={user?.role}
         onSuccess={() => loadBrokers()}
       />
     </div>

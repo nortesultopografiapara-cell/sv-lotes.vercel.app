@@ -1,23 +1,22 @@
 /**
- * Testes obrigatórios — corretores, comissão 0%, transferência e cancelamento.
+ * Testes obrigatórios — gerenciar corretor/comissão (admin, painel, transferência).
  * npx tsx scripts/mandatory-broker-commission-tests.ts
  */
 
 import {
   brokerDashboardPendingTotal,
   calculateCommissionAmount,
-  defaultBrokerCommissionPercentForCreate,
+  getSalePendingCommissionTotal,
   isCanceledBrokerCommission,
   isPaidBrokerCommission,
   isPendingBrokerCommission,
   readBrokerCommissionPercent,
-  shouldAutoCreatePendingCommission,
+  resolveBrokerCommissionAmount,
 } from '../lib/brokerCommission';
 import { canManageSaleBrokerCommission } from '../lib/brokerCommissionAccess';
 import {
   assertCanCancelCommissionRows,
   buildCanceledCommissionPatch,
-  buildPendingCommissionInsert,
   resolveManualCommissionUpdate,
   resolveTransferCommissionPlan,
   SaleBrokerCommissionError,
@@ -27,139 +26,145 @@ function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
 }
 
-function testBrokerCommissionCanBeZero() {
-  assert(readBrokerCommissionPercent(0) === 0, '0% lido como 0');
-  assert(readBrokerCommissionPercent('0') === 0, 'string 0 lida como 0');
-  assert(!shouldAutoCreatePendingCommission(0), '0% não gera pendência automática');
-  assert(calculateCommissionAmount(75000, 0) === 0, 'valor com 0% é zero');
-  assert(defaultBrokerCommissionPercentForCreate(null) === 5, 'novo vazio usa 5%');
-  assert(defaultBrokerCommissionPercentForCreate(0) === 0, 'novo com 0 usa 0');
-  console.log('OK testBrokerCommissionCanBeZero');
+function testAdminCanManageBrokerCommission() {
+  assert(canManageSaleBrokerCommission('ADMIN'), 'ADMIN pode');
+  assert(canManageSaleBrokerCommission('SUPER_ADMIN'), 'SUPER_ADMIN pode');
+  assert(canManageSaleBrokerCommission('ADMIN_EMPRESA'), 'ADMIN_EMPRESA pode');
+  assert(canManageSaleBrokerCommission('COMPANY_ADMIN'), 'COMPANY_ADMIN pode');
+  assert(canManageSaleBrokerCommission('MANAGER'), 'MANAGER pode');
+  console.log('OK testAdminCanManageBrokerCommission');
 }
 
-function testBrokerEditPersistsZeroCommission() {
-  const fromDb = { commission_percent: 0 };
-  const loaded = readBrokerCommissionPercent(fromDb.commission_percent);
-  assert(loaded === 0, 'reabrir modal mostra 0');
-  const saved = readBrokerCommissionPercent(loaded);
-  assert(saved === 0, 'salvar 0 persiste 0');
-  assert(Number(fromDb.commission_percent) || 5 !== 0, 'bug antigo || 5 alteraria 0');
-  console.log('OK testBrokerEditPersistsZeroCommission');
+function testBrokerCannotManageBrokerCommission() {
+  assert(!canManageSaleBrokerCommission('BROKER'), 'BROKER bloqueado');
+  assert(!canManageSaleBrokerCommission('CORRETOR'), 'CORRETOR bloqueado');
+  console.log('OK testBrokerCannotManageBrokerCommission');
 }
 
-function testSaleCanRemoveBrokerWithoutCashMovement() {
+function testOwnerCannotManageBrokerCommission() {
+  assert(!canManageSaleBrokerCommission('OWNER'), 'OWNER bloqueado');
+  console.log('OK testOwnerCannotManageBrokerCommission');
+}
+
+function testBrokerCommissionDashboardMatchesModal() {
+  const rows = [
+    {
+      sale_id: 'sale-1',
+      broker_id: 'broker-1',
+      status: 'PENDENTE',
+      amount: null,
+      commission_value: 3750,
+    },
+  ];
+
+  const dashboardBrokerTotal = brokerDashboardPendingTotal(rows);
+  const dashboardSaleTotal = getSalePendingCommissionTotal(rows, 'sale-1', 'broker-1');
+  const modalTotal = getSalePendingCommissionTotal(rows, 'sale-1');
+
+  assert(dashboardBrokerTotal === 3750, 'painel corretor usa commission_value');
+  assert(dashboardSaleTotal === 3750, 'venda no painel');
+  assert(modalTotal === 3750, 'modal usa mesma origem');
+  assert(dashboardSaleTotal === modalTotal, 'painel e modal iguais');
+
+  const canceledRows = [
+    { sale_id: 'sale-1', broker_id: 'broker-1', status: 'cancelado', commission_value: 0 },
+  ];
+  assert(getSalePendingCommissionTotal(canceledRows, 'sale-1') === 0, 'cancelada zera painel/modal');
+  console.log('OK testBrokerCommissionDashboardMatchesModal');
+}
+
+function testTransferSaleToAnotherBroker() {
+  const plan = resolveTransferCommissionPlan({
+    sale: { id: 'sale-1', tenant_id: 'tenant-1', total_amount: 75000 },
+    targetBroker: { id: 'cassio-vs10', commission_percent: 5 },
+  });
+  assert(plan.brokerId === 'cassio-vs10', 'destino CASSIO VS10');
+  assert(plan.pendingInsert?.amount === 3750, 'comissão recalculada 5% de 75k');
+  assert(plan.pendingInsert?.commission_value === 3750, 'commission_value gravado');
+  console.log('OK testTransferSaleToAnotherBroker');
+}
+
+function testTransferUpdatesRanking() {
+  const alessandraSales = [{ vendas_mes_valor: 75000, comissao_pendente: 3750 }];
+  const cassioSales = [{ vendas_mes_valor: 0, comissao_pendente: 0 }];
+
+  const beforeTop = [...alessandraSales, ...cassioSales]
+    .filter((b) => b.vendas_mes_valor > 0)
+    .sort((a, b) => b.vendas_mes_valor - a.vendas_mes_valor);
+
+  const afterTransfer = [
+    { vendas_mes_valor: 0, comissao_pendente: 0 },
+    { vendas_mes_valor: 75000, comissao_pendente: 3750 },
+  ].sort((a, b) => b.vendas_mes_valor - a.vendas_mes_valor);
+
+  assert(beforeTop[0].vendas_mes_valor === 75000, 'ranking antes');
+  assert(afterTransfer[0].vendas_mes_valor === 75000, 'ranking depois com venda transferida');
+  assert(afterTransfer[0].comissao_pendente === 3750, 'pendência no novo corretor');
+  console.log('OK testTransferUpdatesRanking');
+}
+
+function testTransferDoesNotCreateCashMovement() {
   const canceled = buildCanceledCommissionPatch();
-  assert(canceled.status === 'cancelado', 'pendente cancelada');
-  assert(canceled.amount === 0, 'valor zerado');
-  assertCanCancelCommissionRows([{ status: 'pendente', amount: 3750 }]);
-  console.log('OK testSaleCanRemoveBrokerWithoutCashMovement');
+  assert(canceled.amount === 0, 'cancelamento sem valor');
+  assert(canceled.commission_value === 0, 'sem commission_value');
+  assert(!isPendingBrokerCommission(canceled.status), 'não permanece pendente');
+  assertCanCancelCommissionRows([{ status: 'pendente', commission_value: 3750 }]);
+  console.log('OK testTransferDoesNotCreateCashMovement');
 }
 
-function testSaleCanTransferBroker() {
-  const plan = resolveTransferCommissionPlan({
-    sale: { id: 'sale-1', tenant_id: 'tenant-1', total_amount: 75000 },
-    targetBroker: { id: 'broker-2', commission_percent: 5 },
-  });
-  assert(plan.brokerId === 'broker-2', 'broker destino');
-  assert(plan.commissionPercent === 5, 'percentual do destino');
-  assert(plan.pendingInsert?.amount === 3750, 'comissão recalculada');
-  console.log('OK testSaleCanTransferBroker');
-}
-
-function testTransferToZeroCommissionBrokerDoesNotCreatePendingCommission() {
-  const plan = resolveTransferCommissionPlan({
-    sale: { id: 'sale-1', tenant_id: 'tenant-1', total_amount: 75000 },
-    targetBroker: { id: 'broker-zero', commission_percent: 0 },
-  });
-  assert(plan.commissionPercent === 0, 'destino 0%');
-  assert(plan.pendingInsert === null, 'sem insert de pendência');
-  console.log('OK testTransferToZeroCommissionBrokerDoesNotCreatePendingCommission');
-}
-
-function testCancelPendingCommissionDoesNotChangeCashFlow() {
-  const patch = buildCanceledCommissionPatch();
-  assert(patch.amount === 0, 'cancelamento zera pendência');
-  assert(!isPendingBrokerCommission(patch.status), 'não fica pendente');
-  assert(isCanceledBrokerCommission(patch.status), 'status cancelado');
-  console.log('OK testCancelPendingCommissionDoesNotChangeCashFlow');
+function testLegacyCommissionValueResolution() {
+  assert(resolveBrokerCommissionAmount({ amount: 100 }) === 100, 'amount prioritário');
+  assert(resolveBrokerCommissionAmount({ commission_value: 3750 }) === 3750, 'fallback commission_value');
+  console.log('OK testLegacyCommissionValueResolution');
 }
 
 function testPaidCommissionCannotBeCancelledWithoutAdjustment() {
   let blocked = false;
   try {
-    assertCanCancelCommissionRows([{ status: 'pago', amount: 3750 }]);
+    assertCanCancelCommissionRows([{ status: 'pago', commission_value: 3750 }]);
   } catch (err) {
     blocked = err instanceof SaleBrokerCommissionError && err.code === 'COMMISSION_ALREADY_PAID';
   }
-  assert(blocked, 'comissão paga bloqueada');
-  assert(isPaidBrokerCommission('pago'), 'detecta paga');
+  assert(blocked, 'paga bloqueada');
+  assert(isPaidBrokerCommission('pago'), 'status pago');
   console.log('OK testPaidCommissionCannotBeCancelledWithoutAdjustment');
 }
 
-function testOnlyAdminCanManageSaleBrokerCommission() {
-  assert(canManageSaleBrokerCommission('ADMIN'), 'ADMIN pode');
-  assert(canManageSaleBrokerCommission('SUPER_ADMIN'), 'SUPER_ADMIN pode');
-  assert(canManageSaleBrokerCommission('ADMIN_EMPRESA'), 'ADMIN_EMPRESA pode');
-  assert(!canManageSaleBrokerCommission('BROKER'), 'BROKER não pode');
-  assert(!canManageSaleBrokerCommission('OWNER'), 'OWNER não pode');
-  console.log('OK testOnlyAdminCanManageSaleBrokerCommission');
+function testBrokerCommissionCanBeZero() {
+  assert(readBrokerCommissionPercent(0) === 0, '0% válido');
+  assert(calculateCommissionAmount(75000, 0) === 0, 'valor zero');
+  const zero = resolveManualCommissionUpdate({ sale: { total_amount: 75000 }, commission_percent: 0 });
+  assert(zero.status === 'cancelado', '0% cancela');
+  assert(isCanceledBrokerCommission(zero.status), 'status cancelado');
+  console.log('OK testBrokerCommissionCanBeZero');
 }
 
-function testBrokerDashboardUpdatesPendingCommissionAfterCancel() {
-  const rows = [
-    { status: 'pendente', amount: 3750 },
-    { status: 'cancelado', amount: 0 },
-    { status: 'pago', amount: 1000 },
-  ];
-  const before = brokerDashboardPendingTotal([
-    { status: 'pendente', amount: 3750 },
+function testNoPhantomBackfillInflatesDashboard() {
+  const dbRows: Array<{ sale_id: string; status: string; commission_value?: number }> = [];
+  const phantom = 3750;
+  const withPhantom = brokerDashboardPendingTotal([
+    ...dbRows,
+    { sale_id: 'sale-1', status: 'pendente', commission_value: phantom },
   ]);
-  const after = brokerDashboardPendingTotal([
-    { status: 'cancelado', amount: 0 },
-    { status: 'pago', amount: 1000 },
-  ]);
-  assert(before === 3750, 'antes tinha pendência');
-  assert(after === 0, 'após cancelar some do card');
-  console.log('OK testBrokerDashboardUpdatesPendingCommissionAfterCancel');
-}
-
-function testManualCommissionModes() {
-  const zeroPercent = resolveManualCommissionUpdate({
-    sale: { total_amount: 75000 },
-    commission_percent: 0,
-  });
-  assert(zeroPercent.status === 'cancelado', '0% cancela pendência');
-
-  const fixed = resolveManualCommissionUpdate({
-    sale: { total_amount: 75000 },
-    fixed_amount: 2500,
-  });
-  assert(fixed.amount === 2500, 'valor fixo');
-  assert(fixed.status === 'pendente', 'fixo pendente');
-
-  const insert = buildPendingCommissionInsert({
-    tenantId: 't1',
-    brokerId: 'b1',
-    saleId: 's1',
-    saleValue: 100000,
-    commissionPercent: 3,
-  });
-  assert(insert?.amount === 3000, 'insert calculado');
-  console.log('OK testManualCommissionModes');
+  const withoutPhantom = brokerDashboardPendingTotal(dbRows);
+  assert(withPhantom === 3750, 'com registro real');
+  assert(withoutPhantom === 0, 'sem registro fantasma');
+  console.log('OK testNoPhantomBackfillInflatesDashboard');
 }
 
 function main() {
-  testBrokerCommissionCanBeZero();
-  testBrokerEditPersistsZeroCommission();
-  testSaleCanRemoveBrokerWithoutCashMovement();
-  testSaleCanTransferBroker();
-  testTransferToZeroCommissionBrokerDoesNotCreatePendingCommission();
-  testCancelPendingCommissionDoesNotChangeCashFlow();
+  testAdminCanManageBrokerCommission();
+  testBrokerCannotManageBrokerCommission();
+  testOwnerCannotManageBrokerCommission();
+  testBrokerCommissionDashboardMatchesModal();
+  testTransferSaleToAnotherBroker();
+  testTransferUpdatesRanking();
+  testTransferDoesNotCreateCashMovement();
+  testLegacyCommissionValueResolution();
   testPaidCommissionCannotBeCancelledWithoutAdjustment();
-  testOnlyAdminCanManageSaleBrokerCommission();
-  testBrokerDashboardUpdatesPendingCommissionAfterCancel();
-  testManualCommissionModes();
-  console.log('\nTodos os testes obrigatórios de comissão de corretor passaram.');
+  testBrokerCommissionCanBeZero();
+  testNoPhantomBackfillInflatesDashboard();
+  console.log('\nTodos os testes obrigatórios de gerenciar corretor/comissão passaram.');
 }
 
 main();

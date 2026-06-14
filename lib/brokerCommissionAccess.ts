@@ -1,23 +1,22 @@
-import { isPlatformAdmin } from '@/lib/rls';
+import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import {
   isBrokerRole,
   isOwnerRole,
   normalizeUserRole,
 } from '@/lib/rolePermissions';
 
-const SALE_BROKER_COMMISSION_ADMIN_ROLES = [
-  'ADMIN',
-  'COMPANY_ADMIN',
-  'ADMIN_EMPRESA',
-  'MASTER-ADMIN',
-  'MASTER_ADMIN',
-] as const;
+/** Resolve papel efetivo (users.role, auth metadata ou fallback explícito). */
+export function resolveManageBrokerCommissionRole(
+  ...roles: Array<string | null | undefined>
+): string {
+  for (const role of roles) {
+    const normalized = normalizeUserRole(role);
+    if (normalized) return normalized;
+  }
+  return '';
+}
 
 export function canManageSaleBrokerCommission(role?: string | null): boolean {
   if (isBrokerRole(role) || isOwnerRole(role)) return false;
-  const normalized = normalizeUserRole(role);
-  if (isPlatformAdmin(normalized)) return true;
-  return (SALE_BROKER_COMMISSION_ADMIN_ROLES as readonly string[]).includes(
-    normalized,
-  );
+  return isPartnerPanelAdmin(role);
 }

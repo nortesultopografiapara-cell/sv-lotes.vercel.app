@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, UserCog, X } from 'lucide-react';
-import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 
 type BrokerOption = {
   id: string;
@@ -18,8 +17,9 @@ type ManageSaleBrokerCommissionModalProps = {
   contractLabel: string;
   saleValue: number;
   currentBrokerName?: string;
+  initialPendingTotal?: number;
+  canManage: boolean;
   brokers: BrokerOption[];
-  userRole?: string | null;
   onSuccess: () => void;
 };
 
@@ -33,21 +33,28 @@ export function ManageSaleBrokerCommissionModal({
   contractLabel,
   saleValue,
   currentBrokerName,
+  initialPendingTotal = 0,
+  canManage,
   brokers,
-  userRole,
   onSuccess,
 }: ManageSaleBrokerCommissionModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingTotal, setPendingTotal] = useState(initialPendingTotal);
   const [brokerId, setBrokerId] = useState<string | null>(null);
   const [mode, setMode] = useState<CommissionMode>('transfer');
   const [targetBrokerId, setTargetBrokerId] = useState('');
   const [commissionPercent, setCommissionPercent] = useState(0);
   const [fixedAmount, setFixedAmount] = useState(0);
 
-  const canManage = canManageSaleBrokerCommission(userRole);
+  useEffect(() => {
+    if (!open) return;
+    setPendingTotal(initialPendingTotal);
+    setError('');
+    setMode('transfer');
+    setTargetBrokerId('');
+  }, [open, initialPendingTotal, saleId]);
 
   useEffect(() => {
     if (!open || !saleId || !canManage) return;
@@ -59,7 +66,9 @@ export function ManageSaleBrokerCommissionModal({
       try {
         const res = await fetch(`/api/sales/${saleId}/broker-commission`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Falha ao carregar comissão');
+        if (!res.ok) {
+          throw new Error(data.error || 'Falha ao carregar comissão');
+        }
         if (cancelled) return;
         setPendingTotal(Number(data.pending_total) || 0);
         setBrokerId(data.sale?.broker_id ?? null);
@@ -124,21 +133,6 @@ export function ManageSaleBrokerCommissionModal({
 
   if (!open) return null;
 
-  if (!canManage) {
-    return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-6 max-w-md w-full">
-          <p className="text-sm text-[var(--text-secondary)]">
-            Apenas administradores podem gerenciar corretor/comissão da venda.
-          </p>
-          <button onClick={onClose} className="mt-4 px-4 py-2 text-sm rounded-lg bg-[var(--bg-card-alt)]">
-            Fechar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
@@ -161,11 +155,17 @@ export function ManageSaleBrokerCommissionModal({
             <p><span className="font-semibold text-[var(--text-primary)]">Comissão pendente:</span> {formatCurrency(pendingTotal)}</p>
           </div>
 
+          {!canManage && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-500 text-sm">
+              Apenas administradores podem gerenciar corretor/comissão da venda.
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
             </div>
-          ) : (
+          ) : canManage ? (
             <>
               {error && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-500 text-sm">
@@ -248,7 +248,7 @@ export function ManageSaleBrokerCommissionModal({
                 </p>
               )}
             </>
-          )}
+          ) : null}
         </div>
 
         <div className="p-5 border-t border-[var(--border-color)] flex justify-end gap-3">
@@ -258,14 +258,16 @@ export function ManageSaleBrokerCommissionModal({
           >
             Cancelar
           </button>
-          <button
-            onClick={submitAction}
-            disabled={loading || submitting}
-            className="px-6 py-2 text-sm font-bold rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white disabled:opacity-50 flex items-center gap-2"
-          >
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            Confirmar
-          </button>
+          {canManage && (
+            <button
+              onClick={submitAction}
+              disabled={loading || submitting}
+              className="px-6 py-2 text-sm font-bold rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white disabled:opacity-50 flex items-center gap-2"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Confirmar
+            </button>
+          )}
         </div>
       </div>
     </div>

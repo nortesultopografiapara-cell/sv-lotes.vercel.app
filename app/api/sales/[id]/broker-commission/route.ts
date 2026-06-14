@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
+import {
+  canManageSaleBrokerCommission,
+  resolveManageBrokerCommissionRole,
+} from '@/lib/brokerCommissionAccess';
 import {
   executeManageSaleBrokerCommission,
   getSaleBrokerCommissionState,
@@ -36,7 +39,11 @@ async function authorizeBrokerCommissionManage(request: Request) {
   }
 
   const profile = await resolveCallerProfile(admin, user.id);
-  const callerRole = String(profile?.role || '').toUpperCase();
+  const callerRole = resolveManageBrokerCommissionRole(
+    profile?.role,
+    (user as { user_metadata?: { role?: string } }).user_metadata?.role,
+    (user as { app_metadata?: { role?: string } }).app_metadata?.role,
+  );
 
   if (!canManageSaleBrokerCommission(callerRole)) {
     return {

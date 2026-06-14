@@ -5,6 +5,7 @@ import {
   readBrokerCommissionPercent,
   resolveSaleValueForCommission,
   shouldAutoCreatePendingCommission,
+  withBrokerCommissionMonetaryFields,
   type BrokerCommissionRow,
 } from '@/lib/brokerCommission';
 
@@ -51,7 +52,7 @@ export function assertCanCancelCommissionRows(
 export function buildCanceledCommissionPatch() {
   return {
     status: 'cancelado',
-    amount: 0,
+    ...withBrokerCommissionMonetaryFields(0),
     commission_percent: 0,
     paid_at: null,
   };
@@ -82,7 +83,7 @@ export function buildPendingCommissionInsert(params: {
     sale_id: params.saleId,
     contract_id: params.contractId ?? null,
     customer_id: params.customerId ?? null,
-    amount,
+    ...withBrokerCommissionMonetaryFields(amount),
     commission_percent: params.commissionPercent,
     status: 'pendente',
   };
