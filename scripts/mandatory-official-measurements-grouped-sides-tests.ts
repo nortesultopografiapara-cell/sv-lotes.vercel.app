@@ -164,6 +164,39 @@ function testRectangularSingleSegmentPerSide() {
   console.log('OK testRectangularSingleSegmentPerSide');
 }
 
+/** QD 01 LT 15 — fundo colinear 7,46+17,13=24,59 (seg. 3+4 no TXT). */
+function testQd01Lt15ColinearBackGroup() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 24.37, 24.37),
+    lineSeg(1, 0, 24.37, 35, 24.37, 35),
+    lineSeg(3, 35, 24.37, 35, 17.91, 7.46),
+    lineSeg(4, 35, 17.91, 35, 0.78, 17.13),
+    lineSeg(5, 35, 0.78, 0, 0, 35.01),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '15',
+      front_segment_index: 0,
+      front_street_name: 'RUA PRINCIPAL',
+      frente: 24.37,
+      area: 850,
+    }),
+    'QD01-LT15',
+  );
+
+  assert(near(m.frente, 24.37), `frente ${m.frente}`);
+  assert(near(m.fundo, 24.59), `fundo 7,46+17,13 m: ${m.fundo}`);
+  assert(near(m.ladoDireito, 35), `dir ${m.ladoDireito}`);
+  assert(near(m.ladoEsquerdo, 35.01), `esq ${m.ladoEsquerdo}`);
+  const backSegs = m.sides?.back.segmentIndexes ?? [];
+  assert(
+    backSegs.length >= 2,
+    `fundo deve agrupar 2+ segmentos colineares: ${backSegs}`,
+  );
+  assertDisjointSideIndexes(m);
+  console.log('OK testQd01Lt15ColinearBackGroup');
+}
+
 /** 2. Fundo com conector chanfre — agrupa trecho principal + conector (Lote 010-like). */
 function testBrokenBackTwoSegments() {
   const segs = [
@@ -511,6 +544,7 @@ function testLegacyFieldsCompatibility() {
 }
 
 testRectangularSingleSegmentPerSide();
+testQd01Lt15ColinearBackGroup();
 testBrokenBackTwoSegments();
 testBrokenRightSideTwoSegments();
 testSixSegmentsGroupedTotals();

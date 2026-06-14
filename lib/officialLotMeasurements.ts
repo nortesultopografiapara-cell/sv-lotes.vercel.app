@@ -1001,6 +1001,122 @@ function collectFundoIndexesFromRingWalk(
     });
 }
 
+function filterDeflectionGroupLineIndexes(
+  segmentIndexes: number[],
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  return segmentIndexes.filter((idx) => {
+    const seg = byIdx.get(idx);
+    return (
+      seg != null &&
+      !isOfficialCurveSegment(seg) &&
+      !chanfreSet.has(idx) &&
+      isValidSegmentDistance(seg.distance)
+    );
+  });
+}
+
+function pullIndexesFromList(indexes: number[], exclude: Set<number>): number[] {
+  return indexes.filter((idx) => !exclude.has(idx));
+}
+
+function mergeSortedUniqueIndexes(...lists: number[][]): number[] {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const list of lists) {
+    for (const idx of list) {
+      if (!seen.has(idx)) {
+        seen.add(idx);
+        out.push(idx);
+      }
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/** Move índices de um grupo colinear para o lado alvo (fundo / lateral). */
+function reclaimGroupIndexesFromSidePaths(
+  groupIndexes: number[],
+  targets: {
+    fundo: number[];
+    ladoDireito: number[];
+    ladoEsquerdo: number[];
+  },
+  assignTo: "fundo" | "right" | "left",
+): {
+  fundo: number[];
+  ladoDireito: number[];
+  ladoEsquerdo: number[];
+} {
+  const pull = new Set(groupIndexes);
+  const fundo =
+    assignTo === "fundo"
+      ? mergeSortedUniqueIndexes(targets.fundo, groupIndexes)
+      : pullIndexesFromList(targets.fundo, pull);
+  const ladoDireito =
+    assignTo === "right"
+      ? mergeSortedUniqueIndexes(targets.ladoDireito, groupIndexes)
+      : pullIndexesFromList(targets.ladoDireito, pull);
+  const ladoEsquerdo =
+    assignTo === "left"
+      ? mergeSortedUniqueIndexes(targets.ladoEsquerdo, groupIndexes)
+      : pullIndexesFromList(targets.ladoEsquerdo, pull);
+  return { fundo, ladoDireito, ladoEsquerdo };
+}
+
+/** Resolve índices de parada/reclaim do fundo (âncora colinear + meia-volta no anel). */
+function resolveBackGroupLineIndexes(
+  groups: SegmentDeflectionGroup[],
+  ordered: OfficialLotSegment[],
+  frontSegmentIndex: number,
+  frontBearing: number,
+  backSegmentIndex: number,
+  chanfreSet: Set<number>,
+  byIdx: Map<number, OfficialLotSegment>,
+): number[] {
+  const expandForbidden = new Set<number>([
+    frontSegmentIndex,
+    ...chanfreSet,
+  ]);
+  const anchorExpanded = expandColinearAdjacentWithinBoundary(
+    ordered,
+    [backSegmentIndex],
+    expandForbidden,
+    byIdx,
+  );
+  if (!groups.length) {
+    return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
+  }
+
+  const halfGroupIdx = findBackGroupIdxByRingHalf(
+    groups,
+    ordered,
+    frontSegmentIndex,
+    frontBearing,
+  );
+  const halfGroupLines = filterDeflectionGroupLineIndexes(
+    groups[halfGroupIdx]?.segmentIndexes ?? [],
+    chanfreSet,
+    byIdx,
+  );
+  if (!halfGroupLines.length) {
+    return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
+  }
+
+  const anchorSet = new Set(anchorExpanded);
+  const overlap = halfGroupLines.filter((idx) => anchorSet.has(idx));
+  const anchorInHalf = halfGroupLines.includes(backSegmentIndex);
+
+  if (anchorInHalf) {
+    return mergeSortedUniqueIndexes(anchorExpanded, halfGroupLines);
+  }
+  if (overlap.length > 0) {
+    return anchorExpanded.length > 0 ? anchorExpanded : halfGroupLines;
+  }
+  return halfGroupLines;
+}
+
 /** Caminho frente→fundo: só LINE vira lateral; CURVE ignorada; chanfre separado. */
 function partitionLinePathOnRing(
   pathIndexes: number[],
@@ -1049,10 +1165,11 @@ function classifySidesByFrontAnchor(
   const emptyPaths: RingPathResult = { indexes: [], totalLength: 0 };
 
   const frontSeg = byIdx.get(frontSegmentIndex);
-  const frenteLen =
+  let frenteLen =
     frontSeg && isValidSegmentDistance(frontSeg.distance)
       ? round2(frontSeg.distance)
       : 0;
+  let frontIndexes: number[] = [frontSegmentIndex];
 
   console.log("FRONT_ANCHOR_SEGMENT", {
     lote: lotLabel ?? block?.number ?? block?.id,
@@ -1094,7 +1211,37 @@ function classifySidesByFrontAnchor(
     distances: chanfreIndexes.map((i) => byIdx.get(i)?.distance),
   });
 
-  const fundoStop = new Set([backSegmentIndex]);
+  const frontRingPos = ordered.findIndex(
+    (s) => s.segment_index === frontSegmentIndex,
+  );
+  const frontNextSeg = ordered[(frontRingPos + 1) % ordered.length];
+  const frontBearing = frontSeg
+    ? resolveSegmentBearing(frontSeg, frontNextSeg)
+    : 0;
+
+  const groups = groupSegmentsByDeflection(segments, lotLabel);
+  const backGroupLineIndexes = resolveBackGroupLineIndexes(
+    groups,
+    ordered,
+    frontSegmentIndex,
+    frontBearing,
+    backSegmentIndex,
+    chanfreSet,
+    byIdx,
+  );
+  const backStopIndexes =
+    backGroupLineIndexes.length > 0
+      ? backGroupLineIndexes
+      : [backSegmentIndex];
+
+  console.log("BACK_DEFLECTION_GROUP", {
+    lote: lotLabel ?? block?.number ?? block?.id,
+    backSegmentIndex,
+    backGroupLineIndexes,
+    backGroupTotalM: sumLinePathDistances(backGroupLineIndexes, byIdx),
+  });
+
+  const fundoStop = new Set(backStopIndexes);
   const excludeWalk = new Set<number>([frontSegmentIndex]);
 
   const pathAIndexes = collectRingArcFromFront(
@@ -1177,7 +1324,40 @@ function classifySidesByFrontAnchor(
     byIdx,
   );
 
-  const frontClaimed = new Set<number>([frontSegmentIndex]);
+  if (backGroupLineIndexes.length > 0) {
+    const reclaimedBack = reclaimGroupIndexesFromSidePaths(
+      backGroupLineIndexes,
+      {
+        fundo: fundoIndexes,
+        ladoDireito: ladoDireitoIndexes,
+        ladoEsquerdo: ladoEsquerdoIndexes,
+      },
+      "fundo",
+    );
+    fundoIndexes = reclaimedBack.fundo;
+    ladoDireitoIndexes = reclaimedBack.ladoDireito;
+    ladoEsquerdoIndexes = reclaimedBack.ladoEsquerdo;
+  }
+
+  const frontExpandForbidden = new Set<number>([
+    ...chanfreSet,
+    ...backGroupLineIndexes,
+    ...fundoIndexes,
+    ...ladoDireitoIndexes,
+    ...ladoEsquerdoIndexes,
+  ]);
+  const frontColinear = expandColinearAdjacentWithinBoundary(
+    ordered,
+    [frontSegmentIndex],
+    frontExpandForbidden,
+    byIdx,
+  );
+  if (frontColinear.length > 0) {
+    frontIndexes = frontColinear;
+    frenteLen = round2(sumLinePathDistances(frontColinear, byIdx));
+  }
+
+  const frontClaimed = new Set<number>(frontIndexes);
   fundoIndexes = stripIndexesClaimedByOthers(fundoIndexes, frontClaimed);
   ladoDireitoIndexes = stripIndexesClaimedByOthers(
     ladoDireitoIndexes,
@@ -1236,7 +1416,7 @@ function classifySidesByFrontAnchor(
     pathB,
     pathFundo,
     frontIndex: frontSegmentIndex,
-    frontIndexes: [frontSegmentIndex],
+    frontIndexes,
   };
 
   console.log("LOT_SIDE_CLASSIFICATION_DEBUG", {
