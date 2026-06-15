@@ -25,6 +25,7 @@ import {
   memorialPdfTextContent,
 } from '../lib/memorial/memorialPdf';
 import { buildOfficialLotDocumentBundle } from '../lib/officialLotDocumentData';
+import { getOfficialLotSegmentTable } from '../lib/officialLotMeasurements';
 import {
   buildOfficialLotConfrontationSegmentRows,
   applyManualConfrontantToBlock,
@@ -117,7 +118,7 @@ function testFourVertices() {
   const block = lotBlock('01', 4);
   const segs = buildMemorialSegments(block, block.id as string, [block], []);
   assert(segs.length === 4, `4 seg, got ${segs.length}`);
-  assert(segs[0]!.fromVertex === 'V-01', segs[0]!.fromVertex);
+  assert(segs[0]!.fromVertex === 'M-01', segs[0]!.fromVertex);
   console.log('OK testFourVertices');
 }
 
@@ -137,15 +138,16 @@ function testManyVertices() {
   console.log('OK testManyVertices');
 }
 
-function testClosesAtV01() {
+function testClosesAtM01() {
   const block = lotBlock('01', 4);
   const segs = buildMemorialSegments(block, block.id as string, [block], []);
   const text = buildMemorialDescriptionText(segs);
-  assert(/V-01/.test(text), 'menciona V-01');
+  assert(/M-01/.test(text), 'menciona M-01');
+  assert(!/V-01/.test(text), 'nao usa V-01');
   assert(/ponto inicial/.test(text), 'fecha no início');
   const paras = buildMemorialDescriptionParagraphs(segs);
-  assert(paras[paras.length - 2]!.includes('V-01'), 'último trecho fecha');
-  console.log('OK testClosesAtV01');
+  assert(paras[paras.length - 2]!.includes('M-01'), 'último trecho fecha');
+  console.log('OK testClosesAtM01');
 }
 
 function testManualConfrontant() {
@@ -213,8 +215,8 @@ function testBrFormats() {
 }
 
 function testVertexLabels() {
-  assert(memorialVertexLabel(0) === 'V-01', 'v01');
-  assert(memorialVertexLabel(99) === 'V-100', 'v100');
+  assert(memorialVertexLabel(0) === 'M-01', 'm01');
+  assert(memorialVertexLabel(99) === 'M-100', 'm100');
   console.log('OK testVertexLabels');
 }
 
@@ -222,8 +224,8 @@ function testSigefGrouping() {
   const segs = [
     {
       segmentIndex: 0,
-      fromVertex: 'V-01',
-      toVertex: 'V-02',
+      fromVertex: 'M-01',
+      toVertex: 'M-02',
       coordNStart: '1',
       coordEStart: '2',
       coordNEnd: '3',
@@ -242,8 +244,8 @@ function testSigefGrouping() {
     },
     {
       segmentIndex: 1,
-      fromVertex: 'V-02',
-      toVertex: 'V-03',
+      fromVertex: 'M-02',
+      toVertex: 'M-03',
       coordNStart: '3',
       coordEStart: '4',
       coordNEnd: '5',
@@ -262,8 +264,8 @@ function testSigefGrouping() {
     },
     {
       segmentIndex: 2,
-      fromVertex: 'V-03',
-      toVertex: 'V-04',
+      fromVertex: 'M-03',
+      toVertex: 'M-04',
       coordNStart: '5',
       coordEStart: '6',
       coordNEnd: '7',
@@ -714,6 +716,65 @@ function testMartineMemorialDescriptionNoADefinir() {
   console.log('OK testMartineMemorialDescriptionNoADefinir');
 }
 
+/** Memorial e prancha — mesma nomenclatura de vértices M-01…M-07 (sem V-). */
+function testMartineVertexLabelsMatchPrancha() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+    utm_zone: '22S',
+  };
+  const sheetTable = getOfficialLotSegmentTable(lot, project);
+  const memorialSegs = buildMemorialSegments(
+    lot,
+    'martine-lt01',
+    all,
+    [],
+    project,
+  );
+  const payload = buildMemorialPayloadFromRecords({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+    streetGuides: [],
+    company: { name: 'MENESES', fantasy_name: 'MENESES' },
+  });
+  const text = payload.descriptionText;
+
+  for (const row of sheetTable.validRows) {
+    const mem = memorialSegs.find((s) => s.segmentIndex === row.segment_index);
+    assert(mem != null, `seg ${row.segment_index} ausente no memorial`);
+    assert(
+      mem!.fromVertex === row.de,
+      `de seg ${row.segment_index}: ${mem!.fromVertex} !== ${row.de}`,
+    );
+    assert(
+      mem!.toVertex === row.para,
+      `para seg ${row.segment_index}: ${mem!.toVertex} !== ${row.para}`,
+    );
+  }
+
+  for (const label of ['M-01', 'M-02', 'M-07']) {
+    assert(text.includes(label), `memorial contém ${label}`);
+  }
+  for (const label of ['V-01', 'V-02', 'V-07']) {
+    assert(!text.includes(label), `memorial não deve conter ${label}`);
+  }
+
+  const sheetVertices = sheetTable.validRows.flatMap((r) => [r.de, r.para]);
+  const memorialVertices = memorialSegs.flatMap((s) => [
+    s.fromVertex,
+    s.toVertex,
+  ]);
+  assert(
+    sheetVertices.join('|') === memorialVertices.join('|'),
+    `sequência prancha/memorial diverge: ${sheetVertices.join(',')} vs ${memorialVertices.join(',')}`,
+  );
+  console.log('OK testMartineVertexLabelsMatchPrancha');
+}
+
 /** PDF do memorial — conteúdo e branding da empresa logada. */
 async function testMemorialPdfContentAndCompanyBranding() {
   const { lot, all } = buildMartineLot01Qd02();
@@ -766,7 +827,7 @@ async function testMemorialPdfContentAndCompanyBranding() {
 
 testFourVertices();
 testManyVertices();
-testClosesAtV01();
+testClosesAtM01();
 testManualConfrontant();
 testStreetName();
 testPendingWarning();
@@ -784,6 +845,7 @@ testMartineMemorialConfrontantsMatchSheet();
 testMartineOfficialPopupSegmentRows();
 testMartineMemorialNoPendingAlert();
 testMartineMemorialDescriptionNoADefinir();
+testMartineVertexLabelsMatchPrancha();
 void testMemorialPdfContentAndCompanyBranding().then(() => {
   console.log('mandatory-memorial-description-tests: all passed');
 });

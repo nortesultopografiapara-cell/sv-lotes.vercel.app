@@ -29,5 +29,5 @@ export function formatMemorialAreaM2(value: number): string {
 }
 
 export function memorialVertexLabel(vertexOrder: number): string {
-  return `V-${String(vertexOrder + 1).padStart(2, '0')}`;
+  return `M-${String(vertexOrder + 1).padStart(2, '0')}`;
 }
