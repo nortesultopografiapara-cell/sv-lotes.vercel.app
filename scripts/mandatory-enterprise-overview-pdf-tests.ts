@@ -8,15 +8,23 @@ import {
   buildEnterpriseOverviewLayout,
   calculateBestPrintRotation,
   computeEnterpriseStatistics,
+  computeGeographicBounds,
   DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+  ENTERPRISE_LOT_FILL_OPACITY,
   fitEnterpriseForPrint,
   type EnterpriseBbox,
 } from '../lib/enterpriseOverviewLayout';
 import {
+  buildClosedPolygonPath,
   buildEnterpriseOverviewPayload,
   enterpriseOverviewPdfTextContent,
+  ENTERPRISE_LOT_FILL_OPACITY as PDF_FILL_OPACITY,
   generateEnterpriseOverviewPdf,
+  isPerimeterOnlyPolygonPath,
 } from '../lib/enterpriseOverviewPdf';
+import { isSatelliteBackgroundAvailable } from '../lib/enterpriseOverviewSatellite';
+import fs from 'fs';
+import path from 'path';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -175,6 +183,7 @@ async function testPdfGeneratesForMartine() {
   assert(text.includes('MARTINE'), 'empreendimento');
   assert(text.includes('MENESES'), 'empresa');
   assert(text.includes('LEGENDA') || text.includes('DISPON'), 'legenda');
+  assert(text.includes('25%') || text.includes('25'), 'legenda transparencia');
   assert(text.includes('ESCALA') || text.includes('50'), 'escala');
   assert(text.includes('N'), 'norte');
   assert(text.includes('TOTAL') || text.includes('LOTES'), 'total lotes');
@@ -235,6 +244,72 @@ function testCompanyBrandingInPayload() {
   console.log('OK testCompanyBrandingInPayload');
 }
 
+function testNoTriangulationInPolygonPath() {
+  const pts: [number, number][] = [
+    [0, 0],
+    [40, 0],
+    [40, 50],
+    [0, 50],
+  ];
+  const path = buildClosedPolygonPath(pts);
+  assert(isPerimeterOnlyPolygonPath(path, pts.length), 'path somente perimetro');
+  assert(path.filter((c) => c[0] === 'L').length === 3, '3 arestas');
+  assert(path[path.length - 1][0] === 'Z', 'fecha poligono');
+  console.log('OK testNoTriangulationInPolygonPath');
+}
+
+function testLotFillUsesTransparency() {
+  assert(ENTERPRISE_LOT_FILL_OPACITY === 0.25, 'layout opacity');
+  assert(PDF_FILL_OPACITY === 0.25, 'pdf opacity');
+  console.log('OK testLotFillUsesTransparency');
+}
+
+function testGeographicBoundsForSatellite() {
+  const layout = buildEnterpriseOverviewLayout({
+    blocks: buildMartineIiiBlocks(),
+    project: MARTINE_PROJECT,
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+  });
+  assert(layout.geographicBounds != null, 'bounds');
+  const b = layout.geographicBounds!;
+  assert(b.east > b.west, 'lng');
+  assert(b.north > b.south, 'lat');
+  const recomputed = computeGeographicBounds(
+    layout.originE,
+    layout.originN,
+    layout.rotatedBbox,
+    MARTINE_PROJECT,
+  );
+  assert(recomputed != null, 'recompute');
+  console.log('OK testGeographicBoundsForSatellite');
+}
+
+function testSatelliteAvailabilityInNode() {
+  assert(!isSatelliteBackgroundAvailable(), 'node sem browser');
+  console.log('OK testSatelliteAvailabilityInNode');
+}
+
+async function testWriteValidationPdf() {
+  const payload = buildEnterpriseOverviewPayload({
+    blocks: buildMartineIiiBlocks(),
+    project: MARTINE_PROJECT,
+    company: MARTINE_COMPANY,
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+    generatedAt: '15/06/2026',
+  });
+  const doc = await generateEnterpriseOverviewPdf({
+    ...payload,
+    logoBase64: null,
+    satelliteBase64: null,
+  });
+  const outDir = path.join(process.cwd(), 'tmp');
+  fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, 'enterprise-overview-martine-iii-clean.pdf');
+  fs.writeFileSync(outPath, Buffer.from(doc.output('arraybuffer')));
+  assert(fs.existsSync(outPath), 'pdf validacao');
+  console.log('OK testWriteValidationPdf', outPath);
+}
+
 async function main() {
   testFitEnterpriseIncludesAllLots();
   testAutoRotationVerticalLayout();
@@ -243,8 +318,13 @@ async function main() {
   testLotLabelsShortNumbers();
   testGraphicScaleExists();
   testCompanyBrandingInPayload();
+  testNoTriangulationInPolygonPath();
+  testLotFillUsesTransparency();
+  testGeographicBoundsForSatellite();
+  testSatelliteAvailabilityInNode();
   await testPdfGeneratesForMartine();
   await testPdfOpensWithValidHeader();
+  await testWriteValidationPdf();
   console.log('mandatory-enterprise-overview-pdf-tests: all passed');
 }
 

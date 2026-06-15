@@ -5,6 +5,7 @@
 import proj4 from 'proj4';
 import { resolveRealCoordinateRing } from '@/lib/lotSheetCoordinates';
 import { readStreetGuideLineCoordinates } from '@/lib/streetGuide';
+import type { GeographicBounds } from '@/lib/enterpriseOverviewSatellite';
 
 export type EnterprisePrintFormat = 'a4_landscape' | 'a3_landscape' | 'a3_portrait';
 
@@ -16,7 +17,11 @@ export type EnterpriseOverviewOptions = {
   showNorth: boolean;
   showStreets: boolean;
   showLotNumbers: boolean;
+  /** Fundo Esri World Imagery (browser). Google Static não é usado por licenciamento. */
+  showSatelliteBackground: boolean;
 };
+
+export const ENTERPRISE_LOT_FILL_OPACITY = 0.25;
 
 export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   format: 'a3_landscape',
@@ -26,6 +31,7 @@ export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   showNorth: true,
   showStreets: true,
   showLotNumbers: true,
+  showSatelliteBackground: false,
 };
 
 export type EnterpriseStatistics = {
@@ -87,15 +93,18 @@ export type EnterpriseOverviewLayout = {
   pageSizeMm: { width: number; height: number };
   mapBoxMm: { x: number; y: number; w: number; h: number };
   sidePanelMm: { x: number; y: number; w: number; h: number };
+  originE: number;
+  originN: number;
+  geographicBounds: GeographicBounds | null;
 };
 
 const STATUS_COLORS: Record<
   string,
   { fill: [number, number, number]; stroke: [number, number, number] }
 > = {
-  Disponível: { fill: [34, 197, 94], stroke: [22, 163, 74] },
-  Reservado: { fill: [234, 179, 8], stroke: [202, 138, 4] },
-  Vendido: { fill: [239, 68, 68], stroke: [220, 38, 38] },
+  Disponível: { fill: [34, 197, 94], stroke: [40, 40, 40] },
+  Reservado: { fill: [234, 179, 8], stroke: [40, 40, 40] },
+  Vendido: { fill: [239, 68, 68], stroke: [40, 40, 40] },
 };
 
 const PAGE_SIZES_MM: Record<
@@ -474,6 +483,48 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
   return { originE, originN, lots, streets, quadraLabels, bbox };
 }
 
+/** Bbox UTM local → limites WGS84 para fundo de satélite. */
+export function computeGeographicBounds(
+  originE: number,
+  originN: number,
+  bbox: EnterpriseBbox,
+  project: Record<string, unknown>,
+): GeographicBounds | null {
+  const zoneInfo = parseUtmZone(project);
+  if (!zoneInfo) return null;
+  try {
+    const def = `+proj=utm +zone=${zoneInfo.zone} +${zoneInfo.south ? 'south' : 'north'} +datum=WGS84 +units=m +no_defs`;
+    const corners: [number, number][] = [
+      [bbox.minX + originE, bbox.minY + originN],
+      [bbox.maxX + originE, bbox.minY + originN],
+      [bbox.maxX + originE, bbox.maxY + originN],
+      [bbox.minX + originE, bbox.maxY + originN],
+    ];
+    let west = Infinity;
+    let east = -Infinity;
+    let south = Infinity;
+    let north = -Infinity;
+    for (const [e, n] of corners) {
+      const [lng, lat] = proj4(def, 'EPSG:4326', [e, n]) as [number, number];
+      west = Math.min(west, lng);
+      east = Math.max(east, lng);
+      south = Math.min(south, lat);
+      north = Math.max(north, lat);
+    }
+    if (!Number.isFinite(west)) return null;
+    const padLng = (east - west) * 0.02;
+    const padLat = (north - south) * 0.02;
+    return {
+      west: west - padLng,
+      south: south - padLat,
+      east: east + padLng,
+      north: north + padLat,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function buildEnterpriseOverviewLayout(
   input: FitEnterpriseInput,
   emittedAt = new Date().toLocaleDateString('pt-BR'),
@@ -541,6 +592,13 @@ export function buildEnterpriseOverviewLayout(
     emittedAt,
   );
 
+  const geographicBounds = computeGeographicBounds(
+    fit.originE,
+    fit.originN,
+    rotatedBbox,
+    input.project,
+  );
+
   return {
     lots,
     streets,
@@ -554,6 +612,9 @@ export function buildEnterpriseOverviewLayout(
     pageSizeMm,
     mapBoxMm,
     sidePanelMm,
+    originE: fit.originE,
+    originN: fit.originN,
+    geographicBounds,
   };
 }
 

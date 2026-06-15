@@ -5,12 +5,19 @@
 import { jsPDF } from 'jspdf';
 import {
   buildEnterpriseOverviewLayout,
+  ENTERPRISE_LOT_FILL_OPACITY,
   type EnterpriseOverviewLayout,
   type EnterpriseOverviewOptions,
   type FitEnterpriseInput,
   projectEnterprisePointToPdf,
 } from '@/lib/enterpriseOverviewLayout';
+import {
+  fetchSatelliteBackgroundBase64,
+  satellitePixelSizeForMapBoxMm,
+} from '@/lib/enterpriseOverviewSatellite';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
+
+export { ENTERPRISE_LOT_FILL_OPACITY };
 
 export type EnterpriseCompanyInfo = {
   name: string;
@@ -28,6 +35,7 @@ export type EnterpriseOverviewPdfPayload = {
   layout: EnterpriseOverviewLayout;
   options: EnterpriseOverviewOptions;
   logoBase64?: string | null;
+  satelliteBase64?: string | null;
   generatedAt: string;
 };
 
@@ -81,36 +89,110 @@ export function buildEnterpriseOverviewPayload(
   };
 }
 
-function fillPolygon(
+/** Caminho fechado do polígono — apenas perímetro (M → L… → Z), sem triangulação. */
+export function buildClosedPolygonPath(
+  points: [number, number][],
+): (string | number)[][] {
+  if (points.length < 3) return [];
+  const path: (string | number)[][] = [['M', points[0][0], points[0][1]]];
+  for (let i = 1; i < points.length; i++) {
+    path.push(['L', points[i][0], points[i][1]]);
+  }
+  path.push(['Z']);
+  return path;
+}
+
+/** Valida que o path não contém diagonais internas (somente arestas do perímetro). */
+export function isPerimeterOnlyPolygonPath(
+  path: (string | number)[][],
+  vertexCount: number,
+): boolean {
+  if (vertexCount < 3) return false;
+  const moves = path.filter((c) => c[0] === 'M').length;
+  const lines = path.filter((c) => c[0] === 'L').length;
+  const closes = path.filter((c) => c[0] === 'Z').length;
+  return moves === 1 && lines === vertexCount - 1 && closes === 1;
+}
+
+function applyFillOpacity(doc: jsPDF, opacity: number) {
+  doc.setGState(new doc.GState({ opacity }));
+}
+
+function resetOpacity(doc: jsPDF) {
+  doc.setGState(new doc.GState({ opacity: 1 }));
+}
+
+/** Polígono único: preenchimento translúcido + contorno opaco — sem malha triangular. */
+function drawLotPolygonClean(
   doc: jsPDF,
   points: [number, number][],
   fill: [number, number, number],
   stroke: [number, number, number],
-  lw = 0.2,
+  lw = 0.28,
 ) {
   if (points.length < 3) return;
-  let sx = 0;
-  let sy = 0;
-  for (const [x, y] of points) {
-    sx += x;
-    sy += y;
-  }
-  const c: [number, number] = [sx / points.length, sy / points.length];
+  const path = buildClosedPolygonPath(points);
+
+  applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
   doc.setFillColor(...fill);
+  doc.path(path, 'F');
+
+  resetOpacity(doc);
   doc.setDrawColor(...stroke);
   doc.setLineWidth(lw);
-  for (let i = 0; i < points.length; i++) {
-    const j = (i + 1) % points.length;
-    doc.triangle(
-      c[0],
-      c[1],
-      points[i][0],
-      points[i][1],
-      points[j][0],
-      points[j][1],
-      'FD',
-    );
+  doc.path(path, 'S');
+}
+
+function drawTextWithHalo(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  opts: {
+    fontSize: number;
+    align?: 'left' | 'center' | 'right';
+    bold?: boolean;
+  },
+) {
+  const align = opts.align ?? 'center';
+  doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+  doc.setFontSize(opts.fontSize);
+  const halo = 0.18;
+  doc.setTextColor(255, 255, 255);
+  for (const [dx, dy] of [
+    [-halo, 0],
+    [halo, 0],
+    [0, -halo],
+    [0, halo],
+    [-halo, -halo],
+    [halo, -halo],
+    [-halo, halo],
+    [halo, halo],
+  ]) {
+    doc.text(text, x + dx, y + dy, { align });
   }
+  doc.setTextColor(...BLACK);
+  doc.text(text, x, y, { align });
+}
+
+function drawLabelPlate(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  opts: { fontSize: number; maxWidth?: number },
+) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(opts.fontSize);
+  const tw = doc.getTextWidth(text);
+  const pw = Math.min(opts.maxWidth ?? tw + 4, tw + 4);
+  const ph = opts.fontSize * 0.45 + 2;
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.15);
+  doc.roundedRect(x - pw / 2, y - ph / 2 - 0.5, pw, ph, 0.8, 0.8, 'FD');
+  doc.setTextColor(30, 30, 30);
+  doc.text(text, x, y, { align: 'center', maxWidth: pw - 1 });
 }
 
 function drawPolyline(
@@ -257,7 +339,12 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
 
   if (options.showLegend) {
     doc.text('LEGENDA', panel.x + 3, y);
-    y += 5;
+    y += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5);
+    doc.setTextColor(...GRAY);
+    doc.text('Preenchimento 25% opaco', panel.x + 3, y);
+    y += 4.5;
     const legendRows: [string, [number, number, number], number][] = [
       ['Disponível', [34, 197, 94], stats.disponivel],
       ['Reservado', [234, 179, 8], stats.reservado],
@@ -266,9 +353,12 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     for (const [label, rgb, qty] of legendRows) {
+      applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
       doc.setFillColor(...rgb);
       doc.rect(panel.x + 3, y - 2.5, 4, 4, 'F');
-      doc.setDrawColor(...BLACK);
+      resetOpacity(doc);
+      doc.setDrawColor(40, 40, 40);
+      doc.setLineWidth(0.2);
       doc.rect(panel.x + 3, y - 2.5, 4, 4, 'S');
       doc.setTextColor(...BLACK);
       doc.text(`${label}: ${qty}`, panel.x + 9, y);
@@ -306,7 +396,11 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   }
 }
 
-function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
+function drawMapArea(
+  doc: jsPDF,
+  payload: EnterpriseOverviewPdfPayload,
+  satelliteBase64: string | null,
+) {
   const { layout, options } = payload;
   const box = layout.mapBoxMm;
 
@@ -314,41 +408,55 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   doc.setLineWidth(0.35);
   doc.rect(box.x, box.y, box.w, box.h);
 
+  if (options.showSatelliteBackground && satelliteBase64) {
+    try {
+      doc.addImage(satelliteBase64, 'PNG', box.x, box.y, box.w, box.h);
+    } catch {
+      doc.setFillColor(255, 255, 255);
+      doc.rect(box.x, box.y, box.w, box.h, 'F');
+    }
+  } else {
+    doc.setFillColor(255, 255, 255);
+    doc.rect(box.x, box.y, box.w, box.h, 'F');
+  }
+
   for (const lot of layout.lots) {
     const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
-    fillPolygon(doc, pts, lot.fillRgb, lot.strokeRgb, 0.2);
+    drawLotPolygonClean(doc, pts, lot.fillRgb, lot.strokeRgb, 0.28);
   }
 
   if (options.showStreets) {
     for (const street of layout.streets) {
       const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
-      drawPolyline(doc, pts, [60, 60, 60], 0.45, [2, 1.5]);
+      drawPolyline(doc, pts, [40, 40, 40], 0.5, [2, 1.5]);
       if (pts.length >= 2) {
         const mid = pts[Math.floor(pts.length / 2)];
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(5);
-        doc.setTextColor(40, 40, 40);
         const label = street.displayName.replace(/^Rua\/Eixo\s*/i, '').trim();
-        doc.text(label, mid[0], mid[1] - 1.5, { align: 'center', maxWidth: 28 });
+        drawLabelPlate(doc, label, mid[0], mid[1] - 1.5, {
+          fontSize: 5,
+          maxWidth: 30,
+        });
       }
     }
   }
 
   for (const q of layout.quadraLabels) {
     const [x, y] = projectEnterprisePointToPdf(q.position, layout);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(30, 30, 30);
-    doc.text(`QD ${q.quadra}`, x, y, { align: 'center' });
+    drawTextWithHalo(doc, `QD ${q.quadra}`, x, y, {
+      fontSize: 7.5,
+      bold: true,
+      align: 'center',
+    });
   }
 
   if (options.showLotNumbers) {
     for (const lot of layout.lots) {
       const [x, y] = projectEnterprisePointToPdf(lot.centroid, layout);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(5.5);
-      doc.setTextColor(...BLACK);
-      doc.text(lot.number, x, y, { align: 'center' });
+      drawTextWithHalo(doc, lot.number, x, y, {
+        fontSize: 5.5,
+        bold: true,
+        align: 'center',
+      });
     }
   }
 
@@ -359,6 +467,10 @@ function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   if (options.showGraphicScale) {
     drawGraphicScaleBar(doc, box.x + 6, box.y + box.h - 6, layout);
   }
+
+  doc.setDrawColor(...BLACK);
+  doc.setLineWidth(0.35);
+  doc.rect(box.x, box.y, box.w, box.h, 'S');
 }
 
 export async function generateEnterpriseOverviewPdf(
@@ -391,11 +503,28 @@ export async function generateEnterpriseOverviewPdf(
     }
   }
 
+  let satelliteBase64: string | null = payload.satelliteBase64 ?? null;
+  if (
+    payload.options.showSatelliteBackground &&
+    !satelliteBase64 &&
+    layout.geographicBounds
+  ) {
+    const px = satellitePixelSizeForMapBoxMm(
+      layout.mapBoxMm.w,
+      layout.mapBoxMm.h,
+    );
+    satelliteBase64 = await fetchSatelliteBackgroundBase64(
+      layout.geographicBounds,
+      px.width,
+      px.height,
+    );
+  }
+
   drawHeader(doc, payload, logoBase64);
   if (payload.options.showLegend) {
     drawSidePanel(doc, payload);
   }
-  drawMapArea(doc, payload);
+  drawMapArea(doc, payload, satelliteBase64);
 
   return doc;
 }
