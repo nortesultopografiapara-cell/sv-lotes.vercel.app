@@ -5,6 +5,7 @@
 import { jsPDF } from 'jspdf';
 import {
   buildEnterpriseOverviewLayout,
+  computeEnterpriseMapContentRectMm,
   ENTERPRISE_LOT_FILL_OPACITY,
   ENTERPRISE_LOT_STROKE_RGB,
   ENTERPRISE_LOT_STROKE_WIDTH_MM,
@@ -12,6 +13,7 @@ import {
   type EnterpriseOverviewOptions,
   type FitEnterpriseInput,
   projectEnterprisePointToPdf,
+  projectGeographicPointToPdf,
 } from '@/lib/enterpriseOverviewLayout';
 import {
   fetchSatelliteBackgroundBase64,
@@ -24,7 +26,10 @@ import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBrand
 
 export {
   ENTERPRISE_LOT_FILL_OPACITY,
+  ENTERPRISE_LOT_STROKE_RGB,
   ENTERPRISE_LOT_STROKE_WIDTH_MM,
+  computeEnterpriseMapContentRectMm,
+  projectGeographicPointToPdf,
 };
 
 export const ENTERPRISE_SATELLITE_UNAVAILABLE_MSG =
@@ -204,11 +209,46 @@ function addRasterImageToDoc(
   y: number,
   w: number,
   h: number,
+  rotationDeg = 0,
 ) {
   const fmt = imageFormatFromDataUrl(dataUrl);
   const raw = stripDataUrlBase64(dataUrl);
   if (!fmt || !raw) throw new Error('invalid_satellite_data_url');
-  doc.addImage(raw, fmt, x, y, w, h);
+  if (rotationDeg) {
+    doc.addImage(raw, fmt, x, y, w, h, undefined, undefined, rotationDeg);
+  } else {
+    doc.addImage(raw, fmt, x, y, w, h);
+  }
+}
+
+/** Satélite alinhado ao mesmo enquadramento/escala/rotação dos lotes. */
+export function drawAlignedSatelliteBackground(
+  doc: jsPDF,
+  dataUrl: string,
+  layout: EnterpriseOverviewLayout,
+) {
+  const content = computeEnterpriseMapContentRectMm(layout);
+  if (layout.rotationDeg === 0) {
+    addRasterImageToDoc(
+      doc,
+      dataUrl,
+      content.x,
+      content.y,
+      content.w,
+      content.h,
+    );
+    return;
+  }
+  // Imagem norte-cima: troca dimensões e gira 90° no centro do conteúdo.
+  addRasterImageToDoc(
+    doc,
+    dataUrl,
+    content.cx - content.h / 2,
+    content.cy - content.w / 2,
+    content.h,
+    content.w,
+    layout.rotationDeg,
+  );
 }
 
 function drawTextWithHalo(
@@ -411,7 +451,7 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
     doc.setTextColor(...GRAY);
-    doc.text('Preenchimento translúcido', panel.x + 3, y);
+    doc.text('Preenchimento 50%', panel.x + 3, y);
     y += 4.5;
     const legendRows: [string, [number, number, number], number][] = [
       ['Disponível', [34, 197, 94], stats.disponivel],
@@ -477,17 +517,10 @@ function drawMapArea(
   doc.setFillColor(255, 255, 255);
   doc.rect(box.x, box.y, box.w, box.h, 'F');
 
-  // 2. Imagem de satélite
+  // 2. Imagem de satélite (mesmo enquadramento dos lotes)
   if (options.showSatelliteBackground && satellite.ok && satellite.base64) {
     try {
-      addRasterImageToDoc(
-        doc,
-        satellite.base64,
-        box.x,
-        box.y,
-        box.w,
-        box.h,
-      );
+      drawAlignedSatelliteBackground(doc, satellite.base64, layout);
     } catch (err) {
       console.error('ENTERPRISE_SATELLITE_ADD_IMAGE_FAILED', err);
       doc.setFillColor(255, 255, 255);
@@ -625,10 +658,8 @@ export async function generateEnterpriseOverviewPdf(
     !satellite.ok &&
     layout.geographicBounds
   ) {
-    const px = satellitePixelSizeForMapBoxMm(
-      layout.mapBoxMm.w,
-      layout.mapBoxMm.h,
-    );
+    const content = computeEnterpriseMapContentRectMm(layout);
+    const px = satellitePixelSizeForMapBoxMm(content.w, content.h);
     satellite = await fetchSatelliteBackgroundBase64(
       layout.geographicBounds,
       px.width,

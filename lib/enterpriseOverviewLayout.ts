@@ -21,12 +21,13 @@ export type EnterpriseOverviewOptions = {
   showSatelliteBackground: boolean;
 };
 
-export const ENTERPRISE_LOT_FILL_OPACITY = 0.12;
+export const ENTERPRISE_LOT_FILL_OPACITY = 0.5;
 
 /** Espessura das divisas dos lotes (mm) — 100% opacas, desenhadas após o preenchimento. */
-export const ENTERPRISE_LOT_STROKE_WIDTH_MM = 0.5;
+export const ENTERPRISE_LOT_STROKE_WIDTH_MM = 0.7;
 
-export const ENTERPRISE_LOT_STROKE_RGB: [number, number, number] = [0, 0, 0];
+/** Ciano forte — divisas dos lotes por cima de satélite e preenchimento. */
+export const ENTERPRISE_LOT_STROKE_RGB: [number, number, number] = [0, 229, 255];
 
 export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   format: 'a3_landscape',
@@ -100,6 +101,8 @@ export type EnterpriseOverviewLayout = {
   sidePanelMm: { x: number; y: number; w: number; h: number };
   originE: number;
   originN: number;
+  /** Centro da rotação em coordenadas locais (pré-rotação). */
+  rotationCenter: [number, number];
   geographicBounds: GeographicBounds | null;
 };
 
@@ -251,7 +254,7 @@ function bboxWithMargin(bbox: EnterpriseBbox, ratio = FIT_MARGIN_RATIO): Enterpr
   };
 }
 
-function rotatePointAround(
+export function rotatePointAround(
   point: [number, number],
   center: [number, number],
   deg: 0 | 90,
@@ -262,6 +265,18 @@ function rotatePointAround(
   const rx = x - cx;
   const ry = y - cy;
   return [ry + cx, -rx + cy];
+}
+
+/** Inverte rotação de impressão (90° → coordenadas locais originais). */
+export function unrotatePointAround(
+  point: [number, number],
+  center: [number, number],
+  deg: 0 | 90,
+): [number, number] {
+  if (deg === 0) return point;
+  const [xp, yp] = point;
+  const [cx, cy] = center;
+  return [cx + cy - yp, xp - cx + cy];
 }
 
 function rotateRing(
@@ -488,6 +503,75 @@ export function fitEnterpriseForPrint(input: FitEnterpriseInput): FitEnterpriseR
   return { originE, originN, lots, streets, quadraLabels, bbox };
 }
 
+/** Lat/lng → coordenadas locais pós-rotação (mesmo pipeline dos lotes). */
+export function latLngToLocalRotated(
+  lat: number,
+  lng: number,
+  originE: number,
+  originN: number,
+  rotationCenter: [number, number],
+  rotationDeg: 0 | 90,
+  project: Record<string, unknown>,
+): [number, number] | null {
+  const zoneInfo = parseUtmZone(project);
+  if (!zoneInfo) return null;
+  try {
+    const def = `+proj=utm +zone=${zoneInfo.zone} +${zoneInfo.south ? 'south' : 'north'} +datum=WGS84 +units=m +no_defs`;
+    const [e, n] = proj4('EPSG:4326', def, [lng, lat]) as [number, number];
+    const local: [number, number] = [e - originE, n - originN];
+    return rotatePointAround(local, rotationCenter, rotationDeg);
+  } catch {
+    return null;
+  }
+}
+
+/** Coordenadas locais pós-rotação → lat/lng. */
+export function localRotatedToLatLng(
+  point: [number, number],
+  originE: number,
+  originN: number,
+  rotationCenter: [number, number],
+  rotationDeg: 0 | 90,
+  project: Record<string, unknown>,
+): [number, number] | null {
+  const zoneInfo = parseUtmZone(project);
+  if (!zoneInfo) return null;
+  try {
+    const def = `+proj=utm +zone=${zoneInfo.zone} +${zoneInfo.south ? 'south' : 'north'} +datum=WGS84 +units=m +no_defs`;
+    const local = unrotatePointAround(point, rotationCenter, rotationDeg);
+    const [lng, lat] = proj4(def, 'EPSG:4326', [
+      local[0] + originE,
+      local[1] + originN,
+    ]) as [number, number];
+    return [lat, lng];
+  } catch {
+    return null;
+  }
+}
+
+/** Bbox rotacionado → envelope WGS84 (inverte rotação antes da projeção UTM). */
+export function computeGeographicBoundsFromRotatedBbox(
+  originE: number,
+  originN: number,
+  rotatedBbox: EnterpriseBbox,
+  rotationCenter: [number, number],
+  rotationDeg: 0 | 90,
+  project: Record<string, unknown>,
+): GeographicBounds | null {
+  const corners: [number, number][] = [
+    [rotatedBbox.minX, rotatedBbox.minY],
+    [rotatedBbox.maxX, rotatedBbox.minY],
+    [rotatedBbox.maxX, rotatedBbox.maxY],
+    [rotatedBbox.minX, rotatedBbox.maxY],
+  ];
+  const unrotated = corners.map((p) =>
+    unrotatePointAround(p, rotationCenter, rotationDeg),
+  );
+  const bb = bboxFromPoints(unrotated);
+  if (!bb) return null;
+  return computeGeographicBounds(originE, originN, bb, project);
+}
+
 /** Bbox UTM local → limites WGS84 para fundo de satélite. */
 export function computeGeographicBounds(
   originE: number,
@@ -648,14 +732,15 @@ export function buildEnterpriseOverviewLayout(
     emittedAt,
   );
 
-  const utmBounds = computeGeographicBounds(
-    fit.originE,
-    fit.originN,
-    rotatedBbox,
-    input.project,
-  );
-  const geometryBounds = computeGeographicBoundsFromBlocks(input.blocks);
-  const geographicBounds = geometryBounds ?? utmBounds;
+  const geographicBounds =
+    computeGeographicBoundsFromRotatedBbox(
+      fit.originE,
+      fit.originN,
+      rotatedBbox,
+      center,
+      rotationDeg,
+      input.project,
+    ) ?? computeGeographicBoundsFromBlocks(input.blocks);
 
   return {
     lots,
@@ -672,6 +757,7 @@ export function buildEnterpriseOverviewLayout(
     sidePanelMm,
     originE: fit.originE,
     originN: fit.originN,
+    rotationCenter: center,
     geographicBounds,
   };
 }
@@ -687,6 +773,40 @@ export function projectEnterprisePointToPdf(
   const pdfX = mapBoxMm.x + mapBoxMm.w / 2 + (point[0] - rcx) * mapScaleMmPerM;
   const pdfY = mapBoxMm.y + mapBoxMm.h / 2 - (point[1] - rcy) * mapScaleMmPerM;
   return [pdfX, pdfY];
+}
+
+/** Lat/lng → PDF usando o mesmo pipeline dos lotes (UTM → rotação → escala). */
+export function projectGeographicPointToPdf(
+  lat: number,
+  lng: number,
+  layout: EnterpriseOverviewLayout,
+  project: Record<string, unknown>,
+): [number, number] | null {
+  const local = latLngToLocalRotated(
+    lat,
+    lng,
+    layout.originE,
+    layout.originN,
+    layout.rotationCenter,
+    layout.rotationDeg,
+    project,
+  );
+  if (!local) return null;
+  return projectEnterprisePointToPdf(local, layout);
+}
+
+/** Retângulo PDF ocupado pelo conteúdo do mapa (mesmo enquadramento dos lotes). */
+export function computeEnterpriseMapContentRectMm(
+  layout: EnterpriseOverviewLayout,
+): { x: number; y: number; w: number; h: number; cx: number; cy: number } {
+  const rcx = (layout.rotatedBbox.minX + layout.rotatedBbox.maxX) / 2;
+  const rcy = (layout.rotatedBbox.minY + layout.rotatedBbox.maxY) / 2;
+  const w =
+    (layout.rotatedBbox.maxX - layout.rotatedBbox.minX) * layout.mapScaleMmPerM;
+  const h =
+    (layout.rotatedBbox.maxY - layout.rotatedBbox.minY) * layout.mapScaleMmPerM;
+  const [cx, cy] = projectEnterprisePointToPdf([rcx, rcy], layout);
+  return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy };
 }
 
 export function allEnterpriseLotsFitLayout(

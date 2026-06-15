@@ -9,26 +9,35 @@ import {
   allEnterpriseLotsFitLayout,
   buildEnterpriseOverviewLayout,
   calculateBestPrintRotation,
+  computeEnterpriseMapContentRectMm,
   computeEnterpriseStatistics,
-  computeGeographicBounds,
+  computeGeographicBoundsFromRotatedBbox,
   DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
   ENTERPRISE_LOT_FILL_OPACITY,
+  ENTERPRISE_LOT_STROKE_RGB,
   ENTERPRISE_LOT_STROKE_WIDTH_MM,
   fitEnterpriseForPrint,
+  latLngToLocalRotated,
+  localRotatedToLatLng,
+  projectEnterprisePointToPdf,
+  projectGeographicPointToPdf,
   type EnterpriseBbox,
 } from '../lib/enterpriseOverviewLayout';
 import {
   blendFillColorForWhiteBackground,
   buildClosedPolygonPath,
   buildEnterpriseOverviewPayload,
+  computeEnterpriseMapContentRectMm as pdfContentRect,
   drawLotFillOnly,
   drawLotStrokeOnly,
   ENTERPRISE_MAP_DRAW_ORDER,
   ENTERPRISE_SATELLITE_UNAVAILABLE_MSG,
   enterpriseOverviewPdfTextContent,
   ENTERPRISE_LOT_FILL_OPACITY as PDF_FILL_OPACITY,
+  ENTERPRISE_LOT_STROKE_RGB as PDF_STROKE_RGB,
   generateEnterpriseOverviewPdf,
   isPerimeterOnlyPolygonPath,
+  projectGeographicPointToPdf as pdfProjectGeo,
 } from '../lib/enterpriseOverviewPdf';
 import {
   fetchSatelliteBackgroundBase64,
@@ -184,18 +193,27 @@ function testNoTriangulationInPolygonPath() {
 }
 
 function testLotFillOpacityAndStrokeWidth() {
-  assert(
-    ENTERPRISE_LOT_FILL_OPACITY === 0.12 || ENTERPRISE_LOT_FILL_OPACITY === 0.15,
-    `opacity ${ENTERPRISE_LOT_FILL_OPACITY}`,
-  );
+  assert(ENTERPRISE_LOT_FILL_OPACITY === 0.5, `opacity ${ENTERPRISE_LOT_FILL_OPACITY}`);
   assert(PDF_FILL_OPACITY === ENTERPRISE_LOT_FILL_OPACITY, 'pdf opacity sync');
   assert(
-    ENTERPRISE_LOT_STROKE_WIDTH_MM >= 0.45 && ENTERPRISE_LOT_STROKE_WIDTH_MM <= 0.6,
+    ENTERPRISE_LOT_STROKE_WIDTH_MM >= 0.6 && ENTERPRISE_LOT_STROKE_WIDTH_MM <= 0.8,
     `stroke ${ENTERPRISE_LOT_STROKE_WIDTH_MM}`,
   );
+  assert(
+    ENTERPRISE_LOT_STROKE_RGB[0] === 0 &&
+      ENTERPRISE_LOT_STROKE_RGB[1] === 229 &&
+      ENTERPRISE_LOT_STROKE_RGB[2] === 255,
+    `stroke rgb ${ENTERPRISE_LOT_STROKE_RGB.join(',')}`,
+  );
+  assert(
+    PDF_STROKE_RGB[0] === ENTERPRISE_LOT_STROKE_RGB[0] &&
+      PDF_STROKE_RGB[1] === ENTERPRISE_LOT_STROKE_RGB[1] &&
+      PDF_STROKE_RGB[2] === ENTERPRISE_LOT_STROKE_RGB[2],
+    'pdf stroke rgb sync',
+  );
   const blended = blendFillColorForWhiteBackground([34, 197, 94]);
-  assert(blended[1] > blended[0], 'verde pastel');
-  assert(blended.every((c) => c > 200), 'fill claro em fundo branco');
+  assert(blended[1] > blended[0], 'verde mesclado');
+  assert(blended[1] > 180, 'fill visivel em fundo branco');
   console.log('OK testLotFillOpacityAndStrokeWidth');
 }
 
@@ -225,16 +243,90 @@ function testDrawOrderDefinition() {
   console.log('OK testDrawOrderDefinition');
 }
 
-function testGeographicBoundsForSatellite() {
+function testSatelliteUsesSameTransformAsLots() {
   const layout = buildEnterpriseOverviewLayout({
     blocks: buildMartineIiiBlocks(),
     project: MARTINE_PROJECT,
     options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
   });
-  assert(layout.geographicBounds != null, 'bounds');
+  const content = computeEnterpriseMapContentRectMm(layout);
+  const pdfContent = pdfContentRect(layout);
+  assert(content.w === pdfContent.w && content.h === pdfContent.h, 'content rect sync');
+  assert(content.x === pdfContent.x && content.y === pdfContent.y, 'content origin sync');
+
+  const rcx = (layout.rotatedBbox.minX + layout.rotatedBbox.maxX) / 2;
+  const rcy = (layout.rotatedBbox.minY + layout.rotatedBbox.maxY) / 2;
+  const [lotCx, lotCy] = projectEnterprisePointToPdf([rcx, rcy], layout);
+  assert(
+    Math.abs(lotCx - content.cx) < 0.01 && Math.abs(lotCy - content.cy) < 0.01,
+    'satelite e lotes compartilham centro',
+  );
+
   const b = layout.geographicBounds!;
-  assert(b.east > b.west && b.north > b.south, 'bounds validos');
-  console.log('OK testGeographicBoundsForSatellite');
+  const centerLat = (b.south + b.north) / 2;
+  const centerLng = (b.west + b.east) / 2;
+  const geoCenter = projectGeographicPointToPdf(
+    centerLat,
+    centerLng,
+    layout,
+    MARTINE_PROJECT,
+  );
+  assert(geoCenter != null, 'projecao geografica');
+  assert(pdfProjectGeo(centerLat, centerLng, layout, MARTINE_PROJECT) != null, 'pdf geo export');
+  assert(
+    Math.abs(geoCenter![0] - content.cx) < 1.5 &&
+      Math.abs(geoCenter![1] - content.cy) < 1.5,
+    'centro geografico alinha ao centro dos lotes',
+  );
+
+  const corner: [number, number] = [
+    layout.rotatedBbox.minX,
+    layout.rotatedBbox.minY,
+  ];
+  const latLng = localRotatedToLatLng(
+    corner,
+    layout.originE,
+    layout.originN,
+    layout.rotationCenter,
+    layout.rotationDeg,
+    MARTINE_PROJECT,
+  );
+  assert(latLng != null, 'local para lat/lng');
+  const back = latLngToLocalRotated(
+    latLng![0],
+    latLng![1],
+    layout.originE,
+    layout.originN,
+    layout.rotationCenter,
+    layout.rotationDeg,
+    MARTINE_PROJECT,
+  );
+  assert(back != null, 'lat/lng para local rotacionado');
+  assert(
+    Math.abs(back![0] - corner[0]) < 0.05 && Math.abs(back![1] - corner[1]) < 0.05,
+    'round-trip geografico',
+  );
+  console.log('OK testSatelliteUsesSameTransformAsLots');
+}
+
+function testGeographicBoundsFromRotatedBbox() {
+  const layout = buildEnterpriseOverviewLayout({
+    blocks: buildMartineIiiBlocks(),
+    project: MARTINE_PROJECT,
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+  });
+  const bounds = computeGeographicBoundsFromRotatedBbox(
+    layout.originE,
+    layout.originN,
+    layout.rotatedBbox,
+    layout.rotationCenter,
+    layout.rotationDeg,
+    MARTINE_PROJECT,
+  );
+  assert(bounds != null, 'bounds rotacionados');
+  assert(bounds!.east > bounds!.west && bounds!.north > bounds!.south, 'bounds validos');
+  assert(layout.rotationDeg === 90, 'martine usa rotacao 90');
+  console.log('OK testGeographicBoundsFromRotatedBbox');
 }
 
 async function testEsriSatelliteFetch() {
@@ -289,7 +381,7 @@ async function testPdfGeneratesForMartine() {
   const text = enterpriseOverviewPdfTextContent(doc).toUpperCase();
   assert(text.includes('MAPA GERAL'), 'titulo');
   assert(text.includes('MARTINE'), 'empreendimento');
-  assert(text.includes('TRANSL') || text.includes('LEGENDA'), 'legenda');
+  assert(text.includes('PREENCHIMENTO 50%') || text.includes('50%'), 'legenda 50%');
   assert(text.includes('ESCALA') || text.includes('50'), 'escala');
   assert(text.includes('N'), 'norte');
   console.log('OK testPdfGeneratesForMartine');
@@ -316,10 +408,11 @@ async function testWriteValidationPdfs() {
   fs.writeFileSync(noSatPath, Buffer.from(noSatDoc.output('arraybuffer')));
 
   const layout = basePayload.layout;
+  const content = computeEnterpriseMapContentRectMm(layout);
   const satResult = await fetchSatelliteBackgroundBase64(
     layout.geographicBounds!,
-    1200,
-    900,
+    Math.round(content.w * (150 / 25.4)),
+    Math.round(content.h * (150 / 25.4)),
   );
   const withSatDoc = await generateEnterpriseOverviewPdf({
     ...basePayload,
@@ -361,7 +454,8 @@ async function main() {
   testLotFillOpacityAndStrokeWidth();
   testFillStrokeSeparatePasses();
   testDrawOrderDefinition();
-  testGeographicBoundsForSatellite();
+  testGeographicBoundsFromRotatedBbox();
+  testSatelliteUsesSameTransformAsLots();
   await testEsriSatelliteFetch();
   await testSatelliteFailureNoticeInPdf();
   await testPdfGeneratesForMartine();
