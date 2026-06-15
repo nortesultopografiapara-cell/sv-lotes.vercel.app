@@ -26,9 +26,14 @@ import {
 } from '../lib/memorial/memorialPdf';
 import { buildOfficialLotDocumentBundle } from '../lib/officialLotDocumentData';
 import {
+  buildOfficialLotConfrontationSegmentRows,
   applyManualConfrontantToBlock,
   officialSegmentIndexesForSide,
 } from '../lib/assistedConfrontation';
+import {
+  memorialHasPendingConfrontations,
+  officialPopupConfrontationsPending,
+} from '../lib/memorial/memorialConfrontants';
 import {
   formatMemorialAreaM2,
   formatMemorialCoord,
@@ -180,10 +185,10 @@ function testStreetName() {
 
 function testPendingWarning() {
   const block = lotBlock('77', 4);
-  const segs = buildMemorialSegments(block, block.id as string, [block], []);
+  const audit = buildLotConfrontationAudit(block, block.id as string, [block], []);
   assert(
-    memorialHasPendingConfrontations(segs, null),
-    'sem guia → pendente',
+    memorialHasPendingConfrontations(block, audit, [block]),
+    'sem confrontante oficial → pendente',
   );
   assert(MEMORIAL_PENDING_CONFIRM_MESSAGE.includes('pendentes'), 'msg aviso');
   console.log('OK testPendingWarning');
@@ -524,7 +529,7 @@ function buildMartineLot01Qd02() {
   const esqIdx = officialSegmentIndexesForSide(lot, all, 'ladoEsquerdo');
 
   let updated = applyManualConfrontantToBlock(lot, frenteIdx, 'RUA 01', 'street');
-  updated = applyManualConfrontantToBlock(updated, fundoIdx, 'RUA 02', 'street');
+  updated = applyManualConfrontantToBlock(updated, fundoIdx, 'Lote 43', 'lot');
   updated = applyManualConfrontantToBlock(updated, dirIdx, 'RUA 02', 'street');
   updated = applyManualConfrontantToBlock(
     updated,
@@ -567,7 +572,7 @@ function testMartineMemorialConfrontantsMatchSheet() {
   });
   const expected = {
     frente: 'RUA 01',
-    fundo: 'RUA 02',
+    fundo: 'Lote 43',
     ladoDireito: 'RUA 02',
     ladoEsquerdo: 'Lote 02 e 43',
   };
@@ -593,7 +598,7 @@ function testMartineMemorialConfrontantsMatchSheet() {
     },
   });
   assert(payload.sides.frente === 'RUA 01', payload.sides.frente);
-  assert(payload.sides.fundo === 'RUA 02', payload.sides.fundo);
+  assert(payload.sides.fundo === 'Lote 43', payload.sides.fundo);
   assert(payload.sides.ladoDireito === 'RUA 02', payload.sides.ladoDireito);
   assert(
     payload.sides.ladoEsquerdo === 'Lote 02 e 43',
@@ -608,6 +613,64 @@ function testMartineMemorialConfrontantsMatchSheet() {
     payload.identification.municipality,
   );
   console.log('OK testMartineMemorialConfrontantsMatchSheet');
+}
+
+/** Popup GIS — linhas oficiais por segmento (Martine III QD 02 LT 01). */
+function testMartineOfficialPopupSegmentRows() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const audit = buildLotConfrontationAudit(lot, 'martine-lt01', all, []);
+  const rows = buildOfficialLotConfrontationSegmentRows(lot, audit, all);
+  const bySeg = new Map(
+    rows
+      .filter((r) => r.segmentIndex >= 0)
+      .map((r) => [r.segmentIndex, r]),
+  );
+
+  assert(bySeg.get(3)?.text === 'RUA 01', `seg4 frente ${bySeg.get(3)?.text}`);
+  assert(bySeg.get(6)?.text === 'Lote 43', `seg7 fundo ${bySeg.get(6)?.text}`);
+  assert(bySeg.get(0)?.text === 'RUA 02', `seg1 dir ${bySeg.get(0)?.text}`);
+  assert(bySeg.get(2)?.text === 'RUA 02', `seg3 dir ${bySeg.get(2)?.text}`);
+  assert(
+    bySeg.get(4)?.text === 'Lote 02 e 43',
+    `seg5 esq ${bySeg.get(4)?.text}`,
+  );
+
+  const dirRows = rows.filter(
+    (r) => r.key === 'ladoDireito' && r.segmentIndex >= 0,
+  );
+  assert(dirRows.length === 2, `dir rows ${dirRows.length}`);
+  assert(
+    dirRows.every((r) => r.text === 'RUA 02'),
+    'lado direito repetido válido',
+  );
+  console.log('OK testMartineOfficialPopupSegmentRows');
+}
+
+/** Memorial não deve alertar pendência quando popup GIS está completo. */
+function testMartineMemorialNoPendingAlert() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+    utm_zone: '22S',
+  };
+  const audit = buildLotConfrontationAudit(lot, 'martine-lt01', all, []);
+  assert(
+    !officialPopupConfrontationsPending(lot, audit, all, { project }),
+    'popup oficial sem pendência',
+  );
+  const payload = buildMemorialPayloadFromRecords({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+    streetGuides: [],
+    company: { name: 'MENESES', fantasy_name: 'MENESES' },
+  });
+  assert(!payload.hasPendingConfrontations, 'memorial sem pendência');
+  assert(payload.pendingWarning == null, 'sem aviso pendente');
+  console.log('OK testMartineMemorialNoPendingAlert');
 }
 
 /** PDF do memorial — conteúdo e branding da empresa logada. */
@@ -645,6 +708,10 @@ async function testMemorialPdfContentAndCompanyBranding() {
   assert(/UTM/i.test(text), 'utm');
   assert(!/U\s+T\s+M/.test(text), 'utm quebrado');
   assert(/Responsável técnico/i.test(text), 'rt');
+  assert(/RUA 01/i.test(text), 'rua 01');
+  assert(/RUA 02/i.test(text), 'rua 02');
+  assert(/Lote 43/i.test(text), 'lote 43');
+  assert(/Lote 02 e 43/i.test(text), 'lote 02 e 43');
   assert(/MENESES/i.test(text), 'empresa logada');
   assert(!/SV Topografia/i.test(text), 'sem SV Topografia fixa');
   assert(!/Norte.*Sul Topografia/i.test(text), 'sem Norte Sul fixa');
@@ -671,6 +738,8 @@ testLotSheetConfrontantsMatchMemorialAudit();
 testAuditMatchesPopupSides();
 testOfficialSegmentIndexesForSideResolved();
 testMartineMemorialConfrontantsMatchSheet();
+testMartineOfficialPopupSegmentRows();
+testMartineMemorialNoPendingAlert();
 void testMemorialPdfContentAndCompanyBranding().then(() => {
   console.log('mandatory-memorial-description-tests: all passed');
 });

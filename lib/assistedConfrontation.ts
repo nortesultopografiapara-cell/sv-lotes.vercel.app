@@ -31,6 +31,12 @@ import {
 } from '@/lib/streetGuideConfrontation';
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 import { wgs84RingEdgeForMergedSegmentIndex } from '@/lib/resolveFrontStreetGuide';
+import {
+  parseOfficialSegmentsFromBlock,
+  readManualOfficialSideMap,
+  resolveFrontSegmentIndex,
+  type OfficialSideKind,
+} from '@/lib/officialLotMeasurements';
 
 export type SideAuditEntry = {
   label: string;
@@ -154,17 +160,21 @@ export function buildOfficialLotConfrontationSegmentRows(
     }
     for (const segIdx of indexes) {
       const edge = audit.segmentEdges.find((e) => e.segmentIndex === segIdx);
+      const manual = getSegmentConfrontantRecord(block, segIdx);
       const entry = audit.sides[key];
       const text =
+        manual?.confrontant ??
         edge?.confrontant ??
         (key === 'frente' && frenteConfrontLabel
           ? frenteConfrontLabel
           : entry?.label ?? 'A DEFINIR');
-      const origin = edge?.source
-        ? sourceDisplayLabel(edge.source)
-        : key === 'frente' && frontStreetLabel
-          ? 'rua'
-          : entry?.sourceLabel ?? '—';
+      const origin = manual
+        ? sourceDisplayLabel('manual')
+        : edge?.source
+          ? sourceDisplayLabel(edge.source)
+          : key === 'frente' && frontStreetLabel
+            ? 'rua'
+            : entry?.sourceLabel ?? '—';
       rows.push({
         key,
         sideLabel,
@@ -426,14 +436,126 @@ export function buildLotConfrontationAudit(
   };
 }
 
-/** Índices oficiais (segment_index) dos segmentos de um lado. */
-export function officialSegmentIndexesForSide(
+const OFFICIAL_KIND_BY_ROLE: Record<SideRole, OfficialSideKind> = {
+  frente: 'front',
+  fundo: 'back',
+  ladoDireito: 'right',
+  ladoEsquerdo: 'left',
+};
+
+const LATERAL_CONNECTOR_MAX_M = 20;
+
+function manualOfficialIndexesForSide(
+  manualMap: Map<number, OfficialSideKind>,
+  side: SideRole,
+): number[] {
+  const kind = OFFICIAL_KIND_BY_ROLE[side];
+  return [...manualMap.entries()]
+    .filter(([, mappedKind]) => mappedKind === kind)
+    .map(([idx]) => idx)
+    .sort((a, b) => a - b);
+}
+
+function excludeIndexesClaimedByOtherSides(
+  indexes: number[],
+  manualMap: Map<number, OfficialSideKind>,
+  side: SideRole,
+): number[] {
+  const myKind = OFFICIAL_KIND_BY_ROLE[side];
+  return indexes.filter(
+    (idx) => manualMap.get(idx) == null || manualMap.get(idx) === myKind,
+  );
+}
+
+/** Trecho curto intermediário no path lateral (conector entre dois segmentos do mesmo lado). */
+function filterIntermediateLateralConnectors(
   block: Record<string, unknown>,
-  allBlocks: Record<string, unknown>[],
+  indexes: number[],
+): number[] {
+  if (indexes.length <= 2) return indexes;
+  const segments = parseOfficialSegmentsFromBlock(block);
+  const byIdx = new Map(segments.map((s) => [s.segment_index, s]));
+  return indexes.filter((idx, pos) => {
+    if (pos === 0 || pos === indexes.length - 1) return true;
+    const dist = byIdx.get(idx)?.distance;
+    return !(dist != null && dist > 0 && dist <= LATERAL_CONNECTOR_MAX_M);
+  });
+}
+
+/**
+ * Laterais por percurso no anel TXT (frente → fundo manual), igual ao popup GIS.
+ */
+function lateralIndexesFromRingWalk(
+  block: Record<string, unknown>,
+  side: SideRole,
+  manualMap: Map<number, OfficialSideKind>,
+): number[] {
+  const segments = parseOfficialSegmentsFromBlock(block);
+  if (segments.length < 4) return [];
+
+  const ring = segments.map((s) => s.segment_index);
+  const frontIndexes = manualOfficialIndexesForSide(manualMap, 'frente');
+  let frontIdx = frontIndexes[0];
+  if (frontIdx == null) {
+    const resolved = resolveFrontSegmentIndex(block, segments);
+    frontIdx = resolved ?? ring[0];
+  }
+
+  const backStop = new Set(manualOfficialIndexesForSide(manualMap, 'fundo'));
+  const frontPos = ring.indexOf(frontIdx);
+  if (frontPos < 0 || !backStop.size) return [];
+
+  const n = ring.length;
+  const walk = (step: 1 | -1): number[] => {
+    const out: number[] = [];
+    let pos = (frontPos + step + n) % n;
+    for (let guard = 0; guard < n; guard++) {
+      const idx = ring[pos];
+      if (backStop.has(idx)) break;
+      const kind = manualMap.get(idx);
+      if (kind && kind !== OFFICIAL_KIND_BY_ROLE[side]) break;
+      out.push(idx);
+      pos = (pos + step + n) % n;
+    }
+    return out;
+  };
+
+  const clockwise = walk(1);
+  const counterClockwise = walk(-1);
+
+  let indexes =
+    side === 'ladoDireito' ? counterClockwise : side === 'ladoEsquerdo' ? clockwise : [];
+
+  if (side === 'ladoDireito') {
+    indexes = filterIntermediateLateralConnectors(block, indexes);
+  } else if (side === 'ladoEsquerdo' && indexes.length > 1 && backStop.size) {
+    const backIdx = [...backStop][0];
+    const backPos = ring.indexOf(backIdx);
+    const last = indexes[indexes.length - 1];
+    const lastPos = ring.indexOf(last);
+    if (backPos >= 0 && lastPos >= 0) {
+      const dist =
+        stepDistance(ring, lastPos, backPos) === 1 ||
+        stepDistance(ring, lastPos, backPos) === n - 1;
+      if (dist) indexes = indexes.slice(0, -1);
+    }
+  }
+
+  return [...new Set(indexes)].sort((a, b) => a - b);
+}
+
+function stepDistance(ring: number[], fromPos: number, toPos: number): number {
+  const n = ring.length;
+  return (toPos - fromPos + n) % n;
+}
+
+function officialSegmentIndexesFromUtmRing(
+  block: Record<string, unknown>,
   side: SideRole,
   project?: Record<string, unknown> | null,
   streetGuides: StreetGuideConfrontInput[] = [],
 ): number[] {
+  const manualMap = readManualOfficialSideMap(block);
   const official = getOfficialConfrontationRing(block, project);
   if (!official.ok) return [];
   const { segments, sides } = resolveSideSegmentIndexes(
@@ -442,15 +564,53 @@ export function officialSegmentIndexesForSide(
     [],
     streetGuides,
   );
+  const myKind = OFFICIAL_KIND_BY_ROLE[side];
+  const excluded = new Set<number>();
+  for (const [idx, kind] of manualMap) {
+    if (kind !== myKind) excluded.add(idx);
+  }
   const out: number[] = [];
   for (const mergedIdx of ensureSideIndexArray(sides[side])) {
     const seg = segments[mergedIdx];
     if (!seg) continue;
-    out.push(
-      typeof seg.originalIndex === 'number' ? seg.originalIndex : mergedIdx,
-    );
+    const originalIndex =
+      typeof seg.originalIndex === 'number' ? seg.originalIndex : mergedIdx;
+    if (excluded.has(originalIndex)) continue;
+    out.push(originalIndex);
   }
   return [...new Set(out)];
+}
+
+/** Índices oficiais (segment_index) dos segmentos de um lado. */
+export function officialSegmentIndexesForSide(
+  block: Record<string, unknown>,
+  allBlocks: Record<string, unknown>[],
+  side: SideRole,
+  project?: Record<string, unknown> | null,
+  streetGuides: StreetGuideConfrontInput[] = [],
+): number[] {
+  void allBlocks;
+  const segments = parseOfficialSegmentsFromBlock(block);
+  const manualMap = readManualOfficialSideMap(block);
+
+  const manualIndexes = manualOfficialIndexesForSide(manualMap, side);
+  if (manualIndexes.length) return manualIndexes;
+
+  if (
+    manualMap.size > 0 &&
+    segments.length >= 3 &&
+    (side === 'ladoDireito' || side === 'ladoEsquerdo')
+  ) {
+    const fromPaths = lateralIndexesFromRingWalk(block, side, manualMap);
+    if (fromPaths.length) return fromPaths;
+  }
+
+  return officialSegmentIndexesFromUtmRing(
+    block,
+    side,
+    project,
+    streetGuides,
+  );
 }
 
 export function findPropagationTargets(

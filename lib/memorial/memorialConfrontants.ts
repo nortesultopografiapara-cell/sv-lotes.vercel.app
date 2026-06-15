@@ -4,9 +4,11 @@
 
 import {
   buildLotConfrontationAudit,
+  buildOfficialLotConfrontationSegmentRows,
   buildOfficialLotConfrontations,
   officialSegmentIndexesForSide,
   type LotConfrontationAudit,
+  type OfficialLotConfrontationSegmentRow,
 } from '@/lib/assistedConfrontation';
 import {
   isPendingConfrontantLabel,
@@ -28,6 +30,72 @@ export type SegmentConfrontantResolved = {
   label: string;
   source: ConfrontantSource;
 };
+
+export type OfficialPopupConfrontationContext = {
+  project?: Record<string, unknown> | null;
+  streetGuides?: StreetGuideConfrontInput[];
+  frenteConfrontLabel?: string | null;
+  frontStreetLabel?: string | null;
+};
+
+/** Linhas da aba Confrontações do popup GIS — mesma função do GISMap. */
+export function buildOfficialPopupConfrontationSegmentRows(
+  block: Record<string, unknown>,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: OfficialPopupConfrontationContext,
+): OfficialLotConfrontationSegmentRow[] {
+  return buildOfficialLotConfrontationSegmentRows(block, audit, allBlocks, {
+    project: options?.project,
+    streetGuides: options?.streetGuides,
+    frenteConfrontLabel: options?.frenteConfrontLabel,
+    frontStreetLabel: options?.frontStreetLabel,
+  });
+}
+
+/** Mapa segment_index → confrontante exibido no popup GIS. */
+export function buildOfficialPopupConfrontantBySegment(
+  block: Record<string, unknown>,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: OfficialPopupConfrontationContext,
+): Map<number, string> {
+  const rows = buildOfficialPopupConfrontationSegmentRows(
+    block,
+    audit,
+    allBlocks,
+    options,
+  );
+  const map = new Map<number, string>();
+  for (const row of rows) {
+    if (row.segmentIndex < 0) continue;
+    const text = String(row.text ?? '').trim();
+    if (text) map.set(row.segmentIndex, text);
+  }
+  return map;
+}
+
+/**
+ * Pendência baseada somente nas linhas oficiais do popup GIS.
+ * Não usa audit.hasPending nem heurística legada de lados agregados.
+ */
+export function officialPopupConfrontationsPending(
+  block: Record<string, unknown>,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: OfficialPopupConfrontationContext,
+): boolean {
+  if (!audit || !allBlocks.length) return true;
+  const rows = buildOfficialPopupConfrontationSegmentRows(
+    block,
+    audit,
+    allBlocks,
+    options,
+  );
+  const segmentRows = rows.filter((r) => r.segmentIndex >= 0);
+  const target = segmentRows.length > 0 ? segmentRows : rows;
+  return target.some((r) => isPendingConfrontantLabel(r.text));
+}
 
 function isUsableStreetName(raw: string): boolean {
   const t = raw.trim();
@@ -212,11 +280,16 @@ export function buildLotConfrontationAuditForMemorial(
 }
 
 export function memorialHasPendingConfrontations(
-  segments: { confrontant: string }[],
+  block: Record<string, unknown>,
   audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  project?: Record<string, unknown> | null,
+  streetGuides: StreetGuideConfrontInput[] = [],
 ): boolean {
-  if (audit?.hasPending) return true;
-  return segments.some((s) => isPendingConfrontantLabel(s.confrontant));
+  return officialPopupConfrontationsPending(block, audit, allBlocks, {
+    project,
+    streetGuides,
+  });
 }
 
 /** Rótulos dos quatro lados para quadro resumo (popup). */

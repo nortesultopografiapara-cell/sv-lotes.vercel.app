@@ -108,15 +108,13 @@ export function buildMemorialPayloadFromRecords(params: {
     streetGuides: guidesList,
   });
 
-  const audit = buildLotConfrontationAuditForMemorial(
+  const hasPending = memorialHasPendingConfrontations(
     blockRecord,
-    params.blockId,
+    bundle.audit,
     blocksList,
-    guidesList as Record<string, unknown>[],
     projectRecord,
+    guidesList,
   );
-
-  const hasPending = memorialHasPendingConfrontations(segments, audit);
 
   return {
     block: blockRecord,
