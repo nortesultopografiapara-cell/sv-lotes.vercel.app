@@ -34,7 +34,6 @@ import {
   drawLotStrokeOnly,
   enterpriseOverviewPdfRawStream,
   ENTERPRISE_MAP_DRAW_ORDER,
-  ENTERPRISE_SATELLITE_UNAVAILABLE_MSG,
   enterpriseOverviewPdfTextContent,
   ENTERPRISE_LOT_FILL_OPACITY as PDF_FILL_OPACITY,
   ENTERPRISE_LOT_STROKE_RGB as PDF_STROKE_RGB,
@@ -45,10 +44,6 @@ import {
   projectGeographicPointToPdf as pdfProjectGeo,
   ringToLineDeltas,
 } from '../lib/enterpriseOverviewPdf';
-import {
-  fetchSatelliteBackgroundBase64,
-  isSatelliteBackgroundAvailable,
-} from '../lib/enterpriseOverviewSatellite';
 import { jsPDF } from 'jspdf';
 
 function assert(cond: boolean, msg: string) {
@@ -270,7 +265,6 @@ async function testMapLotsDrawnEqualTotal() {
   const doc = await generateEnterpriseOverviewPdf({
     ...payload,
     logoBase64: null,
-    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: false },
   });
   const stats = getLastEnterpriseLotDrawStats();
   assert(stats != null, 'stats desenho');
@@ -308,7 +302,6 @@ async function testLegendAloneDoesNotSatisfyMapFill() {
   const mapDoc = await generateEnterpriseOverviewPdf({
     ...payload,
     logoBase64: null,
-    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: false },
   });
   const opsMap = countPdfPaintOperators(enterpriseOverviewPdfRawStream(mapDoc));
   const stats = getLastEnterpriseLotDrawStats();
@@ -423,41 +416,29 @@ function testGeographicBoundsFromRotatedBbox() {
   console.log('OK testGeographicBoundsFromRotatedBbox');
 }
 
-async function testEsriSatelliteFetch() {
-  assert(isSatelliteBackgroundAvailable(), 'fetch disponivel');
-  const result = await fetchSatelliteBackgroundBase64(
-    { west: -49.92, south: -6.12, east: -49.88, north: -6.04 },
-    640,
-    480,
+async function testNoSatelliteInEnterpriseOverview() {
+  assert(
+    !('showSatelliteBackground' in DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS),
+    'opcao satelite removida',
   );
-  assert(result.ok, `satellite fetch ${result.error}`);
-  assert(result.base64?.startsWith('data:image/png'), 'data url png');
-  console.log('OK testEsriSatelliteFetch');
-}
 
-async function testSatelliteFailureNoticeInPdf() {
   const payload = buildEnterpriseOverviewPayload({
     blocks: buildMartineIiiBlocks(),
     project: MARTINE_PROJECT,
     company: MARTINE_COMPANY,
-    options: {
-      ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
-      showSatelliteBackground: true,
-    },
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
   });
   const doc = await generateEnterpriseOverviewPdf({
     ...payload,
-    layout: { ...payload.layout, geographicBounds: null },
     logoBase64: null,
-    satelliteBase64: null,
   });
-  const text = enterpriseOverviewPdfTextContent(doc);
-  assert(
-    text.includes('satélite indisponível') ||
-      text.includes('satelite indisponivel'),
-    'aviso satelite',
-  );
-  console.log('OK testSatelliteFailureNoticeInPdf');
+  const text = enterpriseOverviewPdfTextContent(doc).toLowerCase();
+  assert(!text.includes('satélite indisponível'), 'sem aviso satelite');
+  assert(!text.includes('satelite indisponivel'), 'sem aviso satelite ascii');
+
+  const stream = enterpriseOverviewPdfRawStream(doc);
+  assert(!stream.includes('/Subtype /Image'), 'pdf sem imagem raster de fundo');
+  console.log('OK testNoSatelliteInEnterpriseOverview');
 }
 
 async function testPdfGeneratesForMartine() {
@@ -493,38 +474,15 @@ async function testWriteValidationPdfs() {
     generatedAt: '15/06/2026',
   });
 
-  const noSatDoc = await generateEnterpriseOverviewPdf({
+  const pdfDoc = await generateEnterpriseOverviewPdf({
     ...basePayload,
-    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: false },
     logoBase64: null,
   });
-  const noSatPath = path.join(outDir, 'enterprise-overview-martine-iii-no-satellite.pdf');
-  fs.writeFileSync(noSatPath, Buffer.from(noSatDoc.output('arraybuffer')));
+  const pdfPath = path.join(outDir, 'enterprise-overview-martine-iii-white-background.pdf');
+  fs.writeFileSync(pdfPath, Buffer.from(pdfDoc.output('arraybuffer')));
 
-  const layout = basePayload.layout;
-  const content = computeEnterpriseMapContentRectMm(layout);
-  const satResult = await fetchSatelliteBackgroundBase64(
-    layout.geographicBounds!,
-    Math.round(content.w * (150 / 25.4)),
-    Math.round(content.h * (150 / 25.4)),
-  );
-  const withSatDoc = await generateEnterpriseOverviewPdf({
-    ...basePayload,
-    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: true },
-    logoBase64: null,
-    satelliteBase64: satResult.ok ? satResult.base64 : null,
-  });
-  const withSatPath = path.join(outDir, 'enterprise-overview-martine-iii-with-satellite.pdf');
-  fs.writeFileSync(withSatPath, Buffer.from(withSatDoc.output('arraybuffer')));
-
-  assert(fs.existsSync(noSatPath), 'pdf sem satelite');
-  assert(fs.existsSync(withSatPath), 'pdf com satelite');
-  if (!satResult.ok) {
-    console.warn('WARN satellite validation fetch failed:', satResult.error);
-  } else {
-    console.log('satellite validation ok', satResult.base64?.length);
-  }
-  console.log('OK testWriteValidationPdfs', noSatPath, withSatPath);
+  assert(fs.existsSync(pdfPath), 'pdf fundo branco');
+  console.log('OK testWriteValidationPdfs', pdfPath);
 }
 
 function testLotLabelsShortNumbers() {
@@ -551,8 +509,7 @@ async function main() {
   testDrawOrderDefinition();
   testGeographicBoundsFromRotatedBbox();
   testSatelliteUsesSameTransformAsLots();
-  await testEsriSatelliteFetch();
-  await testSatelliteFailureNoticeInPdf();
+  await testNoSatelliteInEnterpriseOverview();
   await testPdfGeneratesForMartine();
   await testMapLotsDrawnEqualTotal();
   await testLegendAloneDoesNotSatisfyMapFill();

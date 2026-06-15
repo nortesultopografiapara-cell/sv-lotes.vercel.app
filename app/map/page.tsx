@@ -10,7 +10,7 @@ import {
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText, MapPinned } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Layers, GitBranch, ScrollText, MapPinned, FileUp, LocateFixed, FileText, Route } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
@@ -2546,7 +2546,7 @@ export default function MapPage() {
                    <button
                      type="button"
                      onClick={() => setIsImportModalOpen(true)}
-                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent text-sky-400/75 hover:bg-sky-500/15 hover:text-sky-400 transition-colors group relative"
                    >
                      <Upload className="w-4 h-4 md:w-5 md:h-5" />
                      <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Importar Quadras (KML)</span>
@@ -2556,17 +2556,17 @@ export default function MapPage() {
                  <button
                     type="button"
                     onClick={() => setIsImportTxtModalOpen(true)}
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent text-sky-300/80 hover:bg-sky-400/15 hover:text-sky-300 transition-colors group relative"
                  >
-                    <FolderOpen className="w-4 h-4 md:w-5 md:h-5" />
-                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Importar TXT Civil 3D</span>
+                    <FileUp className="w-4 h-4 md:w-5 md:h-5" />
+                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Importar TXT</span>
                  </button>
 
                  {SHOW_LEGACY_GIS_IMPORT && (
                    <button
                      type="button"
                      onClick={() => setIsImportShpModalOpen(true)}
-                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
+                     className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent text-sky-300/80 hover:bg-sky-400/15 hover:text-sky-300 transition-colors group relative"
                    >
                      <Layers className="w-4 h-4 md:w-5 md:h-5" />
                      <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[11rem] text-right leading-tight">Shapefile (.zip)</span>
@@ -2577,12 +2577,12 @@ export default function MapPage() {
                    type="button"
                    onClick={() => void handleRunAutomaticConfrontation()}
                    disabled={confrontationRunning}
-                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#22c55e] transition-colors group relative disabled:opacity-40"
+                   className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent text-violet-400/75 hover:bg-violet-500/15 hover:text-violet-400 transition-colors group relative disabled:opacity-40"
                  >
                    {confrontationRunning ? (
                      <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" />
                    ) : (
-                     <GitCompare className="w-4 h-4 md:w-5 md:h-5" />
+                     <GitBranch className="w-4 h-4 md:w-5 md:h-5" />
                    )}
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Confrontação Automática</span>
                  </button>
@@ -2595,8 +2595,8 @@ export default function MapPage() {
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      assistedConfrontationMode
-                       ? 'bg-amber-500/20 text-amber-400'
-                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-amber-400'
+                       ? 'bg-slate-400/20 text-slate-300'
+                       : 'bg-transparent text-slate-400/75 hover:bg-slate-400/15 hover:text-slate-300'
                    }`}
                  >
                    <Eye className="w-4 h-4 md:w-5 md:h-5" />
@@ -2614,8 +2614,8 @@ export default function MapPage() {
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      insertConfrontantTool
-                       ? 'bg-sky-500/20 text-sky-400'
-                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-sky-400'
+                       ? 'bg-emerald-500/20 text-emerald-400'
+                       : 'bg-transparent text-emerald-400/75 hover:bg-emerald-500/15 hover:text-emerald-400'
                    }`}
                  >
                    <PenTool className="w-4 h-4 md:w-5 md:h-5" />
@@ -2634,8 +2634,8 @@ export default function MapPage() {
                    }}
                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                      defineOfficialSideTool
-                       ? 'bg-violet-500/20 text-violet-400'
-                       : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-violet-400'
+                       ? 'bg-yellow-400/20 text-yellow-300'
+                       : 'bg-transparent text-yellow-400/75 hover:bg-yellow-400/15 hover:text-yellow-300'
                    }`}
                  >
                    <Ruler className="w-4 h-4 md:w-5 md:h-5" />
@@ -2667,19 +2667,19 @@ export default function MapPage() {
              {/* GPS */}
              <button 
                 onClick={() => setGpsActive(!gpsActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#10b981]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${gpsActive ? 'bg-cyan-500/20 text-cyan-400' : 'bg-transparent text-cyan-400/75 hover:bg-cyan-500/15 hover:text-cyan-400'}`}
              >
-                <Navigation className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">GPS</span>
+                <LocateFixed className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Centralizar GPS</span>
              </button>
              
              {/* Medição */}
              <button 
                 onClick={() => setMeasureActive(!measureActive)} 
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-[#4999e9]/20 text-[#4999e9]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#4999e9]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-yellow-400/20 text-yellow-300' : 'bg-transparent text-yellow-400/75 hover:bg-yellow-400/15 hover:text-yellow-300'}`}
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medir Distância</span>
              </button>
 
              {/* Prancha Geral */}
@@ -2689,7 +2689,7 @@ export default function MapPage() {
                   setEnterpriseOverviewOptions(DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS);
                   setIsEnterpriseOverviewModalOpen(true);
                 }}
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${isEnterpriseOverviewModalOpen ? 'bg-emerald-500/20 text-emerald-400' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-emerald-400'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${isEnterpriseOverviewModalOpen ? 'bg-orange-600/20 text-orange-400' : 'bg-transparent text-orange-500/80 hover:bg-orange-600/15 hover:text-orange-400'}`}
              >
                 <MapPinned className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha Geral</span>
@@ -2706,10 +2706,10 @@ export default function MapPage() {
                   setDrawStreetActive(false);
                   console.log('LOT_SHEET_PICK_MODE_ENABLED');
                 }}
-                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetPickMode || lotSheetTarget ? 'bg-[#a855f7]/20 text-[#c084fc]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#c084fc]'}`}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${lotSheetPickMode || lotSheetTarget ? 'bg-orange-500/20 text-orange-400' : 'bg-transparent text-orange-400/75 hover:bg-orange-500/15 hover:text-orange-400'}`}
              >
-                <Printer className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha do Lote</span>
+                <FileText className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Gerar Prancha do Lote</span>
              </button>
              
              {/* Map Style */}
@@ -2719,13 +2719,13 @@ export default function MapPage() {
                  onClick={() => setLayerMenuOpen((open) => !open)}
                  className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
                    layerMenuOpen
-                     ? 'bg-[#f59e0b]/20 text-[#f59e0b]'
-                     : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'
+                     ? 'bg-emerald-500/20 text-emerald-400'
+                     : 'bg-transparent text-emerald-400/75 hover:bg-emerald-500/15 hover:text-emerald-400'
                  }`}
                >
                  <MapIcon className="w-4 h-4 md:w-5 md:h-5" />
                  <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">
-                   {GIS_BASE_LAYER_LABELS[activeLayer]}
+                   Camadas do Mapa
                  </span>
                </button>
                {layerMenuOpen && (
@@ -2761,16 +2761,16 @@ export default function MapPage() {
                  {/* Linha de Rua */}
                  <button 
                     onClick={() => setDrawStreetActive(!drawStreetActive)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-[#10b981]/20 text-[#10b981]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#10b981]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${drawStreetActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-transparent text-emerald-400/75 hover:bg-emerald-500/15 hover:text-emerald-400'}`}
                  >
-                    <PenTool className="w-4 h-4 md:w-5 md:h-5" />
+                    <Route className="w-4 h-4 md:w-5 md:h-5" />
                     <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Linha de Rua</span>
                  </button>
                  
                  {/* Identificar Frentes */}
                  <button 
                     onClick={handleIdentifyFronts} 
-                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent hover:bg-[#4999e9]/20 text-[var(--text-secondary)] hover:text-[#4999e9] transition-colors group relative"
+                    className="w-full aspect-square flex items-center justify-center rounded-md bg-transparent text-blue-400/75 hover:bg-blue-500/15 hover:text-blue-400 transition-colors group relative"
                  >
                     <Scan className="w-4 h-4 md:w-5 md:h-5" />
                     <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Identificar Frentes</span>
@@ -2779,7 +2779,7 @@ export default function MapPage() {
                  {/* Visibility Toggle */}
                  <button 
                     onClick={() => setStreetGuidesVisible(!streetGuidesVisible)} 
-                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[#f59e0b]' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[#f59e0b]'}`}
+                    className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${streetGuidesVisible ? 'bg-amber-500/15 text-amber-400' : 'bg-transparent text-amber-400/70 hover:bg-amber-500/15 hover:text-amber-400'}`}
                  >
                     {streetGuidesVisible ? <Eye className="w-4 h-4 md:w-5 md:h-5" /> : <EyeOff className="w-4 h-4 md:w-5 md:h-5" />}
                     <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">

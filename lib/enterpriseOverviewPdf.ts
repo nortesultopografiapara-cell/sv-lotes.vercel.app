@@ -5,7 +5,6 @@
 import { jsPDF } from 'jspdf';
 import {
   buildEnterpriseOverviewLayout,
-  computeEnterpriseMapContentRectMm,
   ENTERPRISE_LOT_FILL_OPACITY,
   ENTERPRISE_LOT_STROKE_RGB,
   ENTERPRISE_LOT_STROKE_WIDTH_MM,
@@ -14,14 +13,8 @@ import {
   type FitEnterpriseInput,
   projectEnterprisePointToPdf,
   projectGeographicPointToPdf,
+  computeEnterpriseMapContentRectMm,
 } from '@/lib/enterpriseOverviewLayout';
-import {
-  fetchSatelliteBackgroundBase64,
-  imageFormatFromDataUrl,
-  satellitePixelSizeForMapBoxMm,
-  stripDataUrlBase64,
-  type SatelliteFetchResult,
-} from '@/lib/enterpriseOverviewSatellite';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
 
 export {
@@ -32,14 +25,9 @@ export {
   projectGeographicPointToPdf,
 };
 
-export const ENTERPRISE_SATELLITE_UNAVAILABLE_MSG =
-  'Imagem de satélite indisponível no momento da geração.';
-
 /** Ordem de desenho do mapa (para testes). */
 export const ENTERPRISE_MAP_DRAW_ORDER = [
   'background_white',
-  'satellite_image',
-  'satellite_unavailable_notice',
   'lot_fills',
   'streets',
   'lot_strokes',
@@ -67,7 +55,6 @@ export type EnterpriseOverviewPdfPayload = {
   layout: EnterpriseOverviewLayout;
   options: EnterpriseOverviewOptions;
   logoBase64?: string | null;
-  satelliteBase64?: string | null;
   generatedAt: string;
 };
 
@@ -336,55 +323,6 @@ export function countPdfPaintOperators(stream: string): {
   return { fills, strokes, cyanStrokeRgb, strokeWidth07 };
 }
 
-function addRasterImageToDoc(
-  doc: jsPDF,
-  dataUrl: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  rotationDeg = 0,
-) {
-  const fmt = imageFormatFromDataUrl(dataUrl);
-  const raw = stripDataUrlBase64(dataUrl);
-  if (!fmt || !raw) throw new Error('invalid_satellite_data_url');
-  if (rotationDeg) {
-    doc.addImage(raw, fmt, x, y, w, h, undefined, undefined, rotationDeg);
-  } else {
-    doc.addImage(raw, fmt, x, y, w, h);
-  }
-}
-
-/** Satélite alinhado ao mesmo enquadramento/escala/rotação dos lotes. */
-export function drawAlignedSatelliteBackground(
-  doc: jsPDF,
-  dataUrl: string,
-  layout: EnterpriseOverviewLayout,
-) {
-  const content = computeEnterpriseMapContentRectMm(layout);
-  if (layout.rotationDeg === 0) {
-    addRasterImageToDoc(
-      doc,
-      dataUrl,
-      content.x,
-      content.y,
-      content.w,
-      content.h,
-    );
-    return;
-  }
-  // Imagem norte-cima: troca dimensões e gira 90° no centro do conteúdo.
-  addRasterImageToDoc(
-    doc,
-    dataUrl,
-    content.cx - content.h / 2,
-    content.cy - content.w / 2,
-    content.h,
-    content.w,
-    layout.rotationDeg,
-  );
-}
-
 function drawTextWithHalo(
   doc: jsPDF,
   text: string,
@@ -636,11 +574,7 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   }
 }
 
-function drawMapArea(
-  doc: jsPDF,
-  payload: EnterpriseOverviewPdfPayload,
-  satellite: SatelliteFetchResult,
-) {
+function drawMapArea(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
   const { layout, options } = payload;
   const box = layout.mapBoxMm;
 
@@ -648,22 +582,7 @@ function drawMapArea(
   doc.setFillColor(255, 255, 255);
   doc.rect(box.x, box.y, box.w, box.h, 'F');
 
-  // 2. Imagem de satélite (mesmo enquadramento dos lotes)
-  if (options.showSatelliteBackground && satellite.ok && satellite.base64) {
-    try {
-      drawAlignedSatelliteBackground(doc, satellite.base64, layout);
-    } catch (err) {
-      console.error('ENTERPRISE_SATELLITE_ADD_IMAGE_FAILED', err);
-      doc.setFillColor(255, 255, 255);
-      doc.rect(box.x, box.y, box.w, box.h, 'F');
-      drawSatelliteUnavailableNotice(doc, box);
-    }
-  } else if (options.showSatelliteBackground && !satellite.ok) {
-    // 3. Aviso de satélite indisponível
-    drawSatelliteUnavailableNotice(doc, box);
-  }
-
-  // 4. Preenchimento 50% dos lotes
+  // 2. Preenchimento 50% dos lotes
   drawEnterpriseLotsOnMap(doc, layout, 'fills');
 
   // 5. Ruas
@@ -730,18 +649,6 @@ function drawMapArea(
   doc.rect(box.x, box.y, box.w, box.h, 'S');
 }
 
-function drawSatelliteUnavailableNotice(
-  doc: jsPDF,
-  box: { x: number; y: number; w: number; h: number },
-) {
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(5);
-  doc.setTextColor(120, 120, 120);
-  doc.text(ENTERPRISE_SATELLITE_UNAVAILABLE_MSG, box.x + 3, box.y + box.h - 2, {
-    maxWidth: box.w - 6,
-  });
-}
-
 export async function generateEnterpriseOverviewPdf(
   payload: EnterpriseOverviewPdfPayload,
 ): Promise<jsPDF> {
@@ -772,38 +679,12 @@ export async function generateEnterpriseOverviewPdf(
     }
   }
 
-  let satellite: SatelliteFetchResult = {
-    ok: Boolean(payload.satelliteBase64),
-    base64: payload.satelliteBase64 ?? null,
-    error: payload.satelliteBase64 ? null : null,
-  };
-
-  if (
-    payload.options.showSatelliteBackground &&
-    !satellite.ok &&
-    layout.geographicBounds
-  ) {
-    const content = computeEnterpriseMapContentRectMm(layout);
-    const px = satellitePixelSizeForMapBoxMm(content.w, content.h);
-    satellite = await fetchSatelliteBackgroundBase64(
-      layout.geographicBounds,
-      px.width,
-      px.height,
-    );
-    if (!satellite.ok) {
-      console.warn('ENTERPRISE_SATELLITE_UNAVAILABLE', {
-        error: satellite.error,
-        bounds: layout.geographicBounds,
-      });
-    }
-  }
-
   drawHeader(doc, payload, logoBase64);
   if (payload.options.showLegend) {
     drawSidePanel(doc, payload);
   }
   lastEnterpriseLotDrawStats = null;
-  drawMapArea(doc, payload, satellite);
+  drawMapArea(doc, payload);
 
   return doc;
 }

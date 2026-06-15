@@ -41,8 +41,8 @@ export function ProjectQuadrasPanel({
         onClick={onToggleOpen}
         className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${
           open
-            ? 'bg-[color-mix(in_srgb,var(--info)_20%,transparent)] text-[var(--info)]'
-            : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[var(--info)]'
+            ? 'bg-blue-500/20 text-blue-400'
+            : 'bg-transparent text-blue-400/75 hover:bg-blue-500/15 hover:text-blue-400'
         }`}
         title="Quadras do Projeto"
       >

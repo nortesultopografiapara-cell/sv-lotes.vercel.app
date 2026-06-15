@@ -6,8 +6,6 @@ import {
   type EnterpriseOverviewOptions,
   type EnterprisePrintFormat,
 } from '@/lib/enterpriseOverviewLayout';
-import { isSatelliteBackgroundAvailable } from '@/lib/enterpriseOverviewSatellite';
-
 export type EnterpriseOverviewModalProps = {
   open: boolean;
   projectName: string;
@@ -41,8 +39,6 @@ export function EnterpriseOverviewModal({
   ) => {
     onOptionsChange({ ...options, [key]: value });
   };
-
-  const satelliteAvailable = isSatelliteBackgroundAvailable();
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 pointer-events-auto">
@@ -125,36 +121,8 @@ export function EnterpriseOverviewModal({
                   {label}
                 </label>
               ))}
-              <label
-                className={`flex items-center gap-2 text-sm ${
-                  satelliteAvailable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
-                }`}
-                title={
-                  satelliteAvailable
-            ? 'Imagem Esri World Imagery sob os lotes transparentes'
-            : 'Requer conexão com a internet no navegador'
-                }
-              >
-                <input
-                  type="checkbox"
-                  checked={options.showSatelliteBackground}
-                  disabled={!satelliteAvailable}
-                  onChange={(e) =>
-                    setOpt('showSatelliteBackground', e.target.checked)
-                  }
-                  className="accent-emerald-500 rounded"
-                />
-                Usar imagem de satélite como fundo
-              </label>
             </div>
           </fieldset>
-
-          {!satelliteAvailable ? (
-            <p className="text-[10px] text-amber-400/90">
-              Fundo de satélite: ativo no navegador (Esri). Google Maps não é embutido
-              em PDF por licenciamento.
-            </p>
-          ) : null}
 
           <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
             O mapa será enquadrado automaticamente em todos os lotes do empreendimento,

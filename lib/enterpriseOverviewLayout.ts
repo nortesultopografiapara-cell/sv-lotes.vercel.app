@@ -5,9 +5,14 @@
 import proj4 from 'proj4';
 import { resolveRealCoordinateRing, latLngRingFromBlockForConversion } from '@/lib/lotSheetCoordinates';
 import { readStreetGuideLineCoordinates } from '@/lib/streetGuide';
-import type { GeographicBounds } from '@/lib/enterpriseOverviewSatellite';
-
 export type EnterprisePrintFormat = 'a4_landscape' | 'a3_landscape' | 'a3_portrait';
+
+export type GeographicBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
 
 export type EnterpriseOverviewOptions = {
   format: EnterprisePrintFormat;
@@ -17,8 +22,6 @@ export type EnterpriseOverviewOptions = {
   showNorth: boolean;
   showStreets: boolean;
   showLotNumbers: boolean;
-  /** Fundo Esri World Imagery (browser). Google Static não é usado por licenciamento. */
-  showSatelliteBackground: boolean;
 };
 
 export const ENTERPRISE_LOT_FILL_OPACITY = 0.5;
@@ -37,7 +40,6 @@ export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   showNorth: true,
   showStreets: true,
   showLotNumbers: true,
-  showSatelliteBackground: false,
 };
 
 export type EnterpriseStatistics = {
