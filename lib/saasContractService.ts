@@ -45,6 +45,7 @@ export type CompanyContractRow = {
   company_id: string;
   subscription_id: string | null;
   contract_url: string;
+  pdf_signed_url?: string | null;
   contract_number: string;
   version: number;
   generated_at: string;
@@ -274,6 +275,10 @@ export async function generateAndStoreSaasContract(
       id: previousActiveId,
       version: activeContract?.version,
     });
+    const { cancelOpenSignaturesForContract } = await import(
+      '@/lib/saasContractSignatureService'
+    );
+    await cancelOpenSignaturesForContract(supabaseAdmin, previousActiveId);
   }
 
   const contractNumber =

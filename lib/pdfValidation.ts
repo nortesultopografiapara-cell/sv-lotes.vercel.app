@@ -10,7 +10,8 @@ export function getAppBaseUrl(): string {
   }
   return (
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    "https://sv-lotes-vercel-app.vercel.app"
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    "https://www.svlotes.com.br"
   ).replace(/\/$/, "");
 }
 

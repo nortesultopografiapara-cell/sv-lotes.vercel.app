@@ -18,6 +18,10 @@ import {
   formatContractCnpj,
   formatContractPhone,
 } from '@/lib/saasContractFormat';
+import {
+  appendSignatureCertificateToPdf,
+  type SignatureCertificateData,
+} from '@/lib/saasContractSignaturePdf';
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
@@ -358,8 +362,13 @@ export type SaasContractPdfBuildResult = {
   companyId?: string;
 };
 
+export type SaasContractPdfBuildOptions = {
+  certificate?: SignatureCertificateData;
+};
+
 export function buildSaasContractPdfWithMeta(
   input: import('@/lib/saasContractContent').SaasContractPdfInput,
+  options?: SaasContractPdfBuildOptions,
 ): SaasContractPdfBuildResult {
   const ctx = resolveSaasContractContext(input);
   const sections = buildSaasContractSections(ctx);
@@ -431,6 +440,10 @@ export function buildSaasContractPdfWithMeta(
 
   renderSections(writer, sections);
   renderSignaturePage(writer, ctx);
+
+  if (options?.certificate) {
+    appendSignatureCertificateToPdf(doc, options.certificate, margin, pageW);
+  }
 
   drawPageFooters(doc, margin, pageW, ctx.contractNumber);
 

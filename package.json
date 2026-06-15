@@ -18,6 +18,7 @@
     "test:contract-pdf-blank": "tsx scripts/mandatory-contract-pdf-blank-page-tests.ts",
     "test:contract-identity": "tsx scripts/mandatory-contract-identity-tests.ts",
     "test:contract-validation": "tsx scripts/mandatory-contract-validation-tests.ts",
+    "test:contract-signature": "tsx scripts/mandatory-contract-signature-tests.ts",
     "test:customer-preservation": "tsx scripts/mandatory-customer-data-preservation-tests.ts",
     "test:lot-audit": "tsx scripts/mandatory-lot-audit-tests.ts",
     "test:assisted-confrontation": "tsx scripts/mandatory-assisted-confrontation-tests.ts",

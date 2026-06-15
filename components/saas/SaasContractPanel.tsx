@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileText, Download, RefreshCw, ExternalLink, History, Building2 } from 'lucide-react';
+import { FileText, Download, RefreshCw, ExternalLink, History, Building2, Send, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import {
@@ -21,6 +21,8 @@ import {
 import {
   saasContractDocumentStatusLabel,
   isCurrentSaasContractVersion,
+  signatureStatusEmoji,
+  signatureStatusLabel,
 } from '@/lib/saasContractStatus';
 import {
   MENESES_COMPANY_ID,
@@ -28,8 +30,13 @@ import {
 } from '@/lib/saasContractContent';
 import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
 import type { CompanyContractRow } from '@/lib/saasContractService';
+import type {
+  CompanyContractSignatureRow,
+  SignatureHistoryEvent,
+} from '@/lib/saasContractSignatureService';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
+import { formatCpfCnpj } from '@/lib/inputMasks';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
@@ -62,6 +69,11 @@ export function SaasContractPanel({
   const [error, setError] = useState<string | null>(null);
   const [localContracts, setLocalContracts] = useState<CompanyContractRow[]>([]);
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [sendingSignature, setSendingSignature] = useState(false);
+  const [signatureInfo, setSignatureInfo] = useState<{
+    latest: CompanyContractSignatureRow | null;
+    history: SignatureHistoryEvent[];
+  }>({ latest: null, history: [] });
 
   const companyId = (company as { id?: string } | null)?.id;
   const sub =
@@ -123,6 +135,26 @@ export function SaasContractPanel({
     }
   }, [companyId, user?.id, onContractsReload]);
 
+  const loadSignatureInfo = useCallback(async () => {
+    if (!companyId || !user?.id) return;
+    try {
+      const params = new URLSearchParams({ userId: user.id });
+      if (activeContract?.id) params.set('contractId', activeContract.id);
+      const res = await fetch(
+        `/api/companies/${companyId}/contract/signatures?${params.toString()}`,
+      );
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setSignatureInfo({
+          latest: json.latest || null,
+          history: json.history || [],
+        });
+      }
+    } catch {
+      setSignatureInfo({ latest: null, history: [] });
+    }
+  }, [companyId, user?.id, activeContract?.id]);
+
   useEffect(() => {
     if (contractsProp) {
       setLocalContracts(contractsProp);
@@ -134,6 +166,54 @@ export function SaasContractPanel({
   useEffect(() => {
     if (hasSaasContractReady(sub)) setError(null);
   }, [sub?.contract_pdf_url, sub?.contract_status]);
+
+  useEffect(() => {
+    void loadSignatureInfo();
+  }, [loadSignatureInfo]);
+
+  const canSendForSignature =
+    contractReady &&
+    activeContract &&
+    !['signed', 'active'].includes(String(activeContract.status || '').toLowerCase());
+
+  const handleSendForSignature = async () => {
+    if (!companyId || !user?.id || sendingSignature) return;
+    setSendingSignature(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/contract/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao enviar para assinatura.');
+      }
+      await loadSignatureInfo();
+      await loadContracts();
+      onRefresh();
+      if (json.signUrl) {
+        try {
+          await navigator.clipboard.writeText(json.signUrl);
+          alert(`Link de assinatura gerado e copiado:\n${json.signUrl}`);
+        } catch {
+          alert(`Link de assinatura gerado:\n${json.signUrl}`);
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Falha ao enviar para assinatura.';
+      setError(msg);
+    } finally {
+      setSendingSignature(false);
+    }
+  };
+
+  const signatureStatusCard = signatureInfo.latest
+    ? `${signatureStatusEmoji(signatureInfo.latest.signature_status)} ${signatureStatusLabel(signatureInfo.latest.signature_status)}`
+    : String(activeContract?.status || '').toLowerCase() === 'signed'
+      ? '🟢 Assinado'
+      : '—';
 
   if (!company) {
     return (
@@ -299,7 +379,28 @@ export function SaasContractPanel({
               >
                 <Download className="w-4 h-4" /> Baixar PDF
               </a>
+              {activeContract?.pdf_signed_url && (
+                <a
+                  href={activeContract.pdf_signed_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-emerald-500/30 text-emerald-300 text-[13px] hover:bg-emerald-500/10"
+                >
+                  <ShieldCheck className="w-4 h-4" /> PDF assinado
+                </a>
+              )}
             </>
+          )}
+          {canSendForSignature && (
+            <button
+              type="button"
+              disabled={sendingSignature || busy}
+              onClick={() => void handleSendForSignature()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-[13px] hover:bg-blue-500 disabled:opacity-50"
+            >
+              <Send className={`w-4 h-4 ${sendingSignature ? 'animate-pulse' : ''}`} />
+              Enviar para Assinatura
+            </button>
           )}
           <button
             type="button"
@@ -374,6 +475,7 @@ export function SaasContractPanel({
           )}
         />
         <Info label="Status do contrato" value={contractStatusLabel} />
+        <Info label="Status da assinatura" value={signatureStatusCard} />
         <Info
           label="Versão ativa"
           value={activeContract ? `Versão ${activeContract.version ?? 1}` : '—'}
@@ -382,6 +484,50 @@ export function SaasContractPanel({
         <Info label="Data de geração" value={generatedAtLabel} />
         <Info label="Pagamento" value={company.payment_status} />
         <Info label="PDF" value={contractReady ? 'Disponível' : 'Não gerado'} />
+      </div>
+
+      <div className="px-5 pb-5">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+          <ShieldCheck className="w-4 h-4 text-blue-400" />
+          Histórico de Assinatura
+        </h4>
+        {signatureInfo.history.length === 0 ? (
+          <p className="text-xs text-gray-500">Nenhum evento de assinatura registrado.</p>
+        ) : (
+          <div className="space-y-2 max-h-[180px] overflow-y-auto">
+            {signatureInfo.history.map((evt, idx) => (
+              <div
+                key={`${evt.at}-${idx}`}
+                className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#0B0E14] border border-white/5 text-[12px]"
+              >
+                <div>
+                  <p className="text-white font-medium">{evt.event}</p>
+                  <p className="text-gray-500 mt-0.5">
+                    {new Date(evt.at).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                <div className="text-right text-gray-400 shrink-0">
+                  <p>{evt.user}</p>
+                  {evt.ip ? <p className="text-[10px] text-gray-500">IP {evt.ip}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {signatureInfo.latest?.signature_url &&
+          ['PENDING', 'VIEWED'].includes(signatureInfo.latest.signature_status) && (
+            <p className="text-[11px] text-gray-500 mt-3 break-all">
+              Link: {signatureInfo.latest.signature_url}
+            </p>
+          )}
+        {signatureInfo.latest?.signer_name && signatureInfo.latest.signature_status === 'SIGNED' && (
+          <p className="text-[11px] text-emerald-300 mt-3">
+            Assinado por {signatureInfo.latest.signer_name}
+            {signatureInfo.latest.signer_document
+              ? ` · CPF ${formatCpfCnpj(signatureInfo.latest.signer_document)}`
+              : ''}
+          </p>
+        )}
       </div>
 
       <div className="px-5 pb-5">

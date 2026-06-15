@@ -80,6 +80,7 @@ import {
 import { formatPaymentHistoryDetails } from '@/lib/masterSaasFinancialStatus';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
+import type { PendingSignatureAlert } from '@/lib/saasContractSignatureService';
 
 const PLAN_COLORS: Record<string, string> = {
   BÁSICO: '#22c55e',
@@ -149,6 +150,7 @@ function SaaSFinancePageContent() {
   const [filterInvoiceCompany, setFilterInvoiceCompany] = useState('all');
   const [filterInvoiceMonth, setFilterInvoiceMonth] = useState('');
   const [filterInvoiceStatus, setFilterInvoiceStatus] = useState('all');
+  const [signatureAlerts, setSignatureAlerts] = useState<PendingSignatureAlert[]>([]);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -216,6 +218,12 @@ function SaaSFinancePageContent() {
       const invJson = await invRes.json().catch(() => ({}));
       const invoices = (invRes.ok ? invJson.invoices : []) as MasterSaasInvoice[];
       setSaasInvoices(invoices);
+
+      const sigRes = await fetch(
+        `/api/master/contract-signature-alerts?userId=${encodeURIComponent(user.id)}`,
+      );
+      const sigJson = await sigRes.json().catch(() => ({}));
+      setSignatureAlerts(sigRes.ok ? sigJson.alerts || [] : []);
 
       setCompanies(
         rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths, payments)),
@@ -786,8 +794,19 @@ function SaaSFinancePageContent() {
 
       {(billingAlerts.dueInSevenDays.length > 0 ||
         billingAlerts.overdue.length > 0 ||
-        billingAlerts.suspendedCompanies.length > 0) && (
-        <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-4">
+        billingAlerts.suspendedCompanies.length > 0 ||
+        signatureAlerts.length > 0) && (
+        <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+          <AlertPanel
+            title="Contratos aguardando assinatura"
+            items={signatureAlerts.map((a) => ({
+              key: a.signatureId,
+              label: a.companyName,
+              detail: `${a.contractNumber} · ${a.daysPending} dia(s) pendente(s)`,
+            }))}
+            empty="Nenhum contrato aguardando assinatura."
+            tone="blue"
+          />
           <AlertPanel
             title="Cobranças vencendo em 7 dias"
             items={billingAlerts.dueInSevenDays.map((inv) => ({
@@ -1426,14 +1445,16 @@ function AlertPanel({
   title: string;
   items: { key: string; label: string; detail: string }[];
   empty: string;
-  tone?: 'amber' | 'rose' | 'orange';
+  tone?: 'amber' | 'rose' | 'orange' | 'blue';
 }) {
   const border =
     tone === 'rose'
       ? 'border-rose-500/20'
       : tone === 'orange'
         ? 'border-orange-500/20'
-        : 'border-amber-500/20';
+        : tone === 'blue'
+          ? 'border-blue-500/20'
+          : 'border-amber-500/20';
   return (
     <div className={`rounded-2xl border ${border} bg-[#11161d] p-4`}>
       <h3 className="text-sm font-bold text-white mb-3">{title}</h3>
