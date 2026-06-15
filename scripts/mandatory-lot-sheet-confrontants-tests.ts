@@ -10,6 +10,7 @@ import {
   buildOfficialLotConfrontations,
   officialSegmentIndexesForSide,
 } from '../lib/assistedConfrontation';
+import { buildOfficialLotDocumentBundle } from '../lib/officialLotDocumentData';
 import { buildSketchLayoutFromBlock } from '../lib/lotSheetLayout';
 import { buildSideConfrontantsWithSources } from '../lib/lotSegmentConfrontation';
 
@@ -278,7 +279,7 @@ function testMartineLot01Qd02() {
   const segs = [
     lineSeg(0, 7500000, 500000, 7500000, 500100.05, 100.05),
     lineSeg(1, 7500000, 500100.05, 7500014.86, 500100.05, 14.86),
-    lineSeg(2, 7500014.86, 500100.05, 7500021.64, 500106.83, 9.58),
+    lineSeg(2, 7500014.86, 500100.05, 7500021.64, 500106.83, 6.78),
     lineSeg(3, 7500021.64, 500106.83, 7500021.64, 500000, 106.83, 'front'),
     lineSeg(4, 7500021.64, 500000, 7500197.84, 500000, 176.2),
     lineSeg(5, 7500197.84, 500000, 7500197.84, 500069.08, 69.08),
@@ -336,6 +337,122 @@ function testMartineLot01Qd02() {
   console.log('OK testMartineLot01Qd02');
 }
 
+/** Prancha — quadro e croqui usam segmentRows oficiais (Martine QD 02 LT 01). */
+function testMartinePranchaUsesOfficialSegmentRows() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500100.05, 100.05),
+    lineSeg(1, 7500000, 500100.05, 7500014.86, 500100.05, 14.86),
+    lineSeg(2, 7500014.86, 500100.05, 7500021.64, 500106.83, 6.78),
+    lineSeg(3, 7500021.64, 500106.83, 7500021.64, 500000, 106.83, 'front'),
+    lineSeg(4, 7500021.64, 500000, 7500197.84, 500000, 176.2),
+    lineSeg(5, 7500197.84, 500000, 7500197.84, 500069.08, 69.08),
+    lineSeg(6, 7500197.84, 500069.08, 7500000, 500069.08, 197.84, 'back'),
+  ];
+  const lot = block(segs, {
+    id: 'martine-lt01',
+    number: '1',
+    block_name: '02',
+    front_segment_index: 3,
+    front_street_name: 'RUA 01',
+    area: 6056.14,
+  });
+  const lot43 = neighborLot('lt43', '43', 500069.08, 7500197.84, 30, 80);
+  const lot02 = neighborLot('lt02', '2', 500000, 7500021.64, 80, 30);
+  const all = [lot, lot43, lot02];
+
+  const frenteIdx = officialSegmentIndexesForSide(lot, all, 'frente');
+  const fundoIdx = officialSegmentIndexesForSide(lot, all, 'fundo');
+  const dirIdx = officialSegmentIndexesForSide(lot, all, 'ladoDireito');
+  const esqIdx = officialSegmentIndexesForSide(lot, all, 'ladoEsquerdo');
+
+  let updated = applyManualConfrontantToBlock(lot, frenteIdx, 'RUA 01', 'street');
+  updated = applyManualConfrontantToBlock(updated, fundoIdx, 'Lote 43', 'lot');
+  updated = applyManualConfrontantToBlock(updated, dirIdx, 'RUA 02', 'street');
+  updated = applyManualConfrontantToBlock(
+    updated,
+    esqIdx,
+    'Lote 02 e 43',
+    'lot',
+  );
+
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+  };
+  const layout = buildSketchLayoutFromBlock(
+    updated,
+    'martine-lt01',
+    all,
+    [],
+    project,
+  );
+  const bundle = buildOfficialLotDocumentBundle({
+    block: updated,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+  });
+
+  assert(
+    layout.confrontants.fundo === 'Lote 43',
+    `prancha fundo ${layout.confrontants.fundo}`,
+  );
+  assert(
+    !/FUNDO.*RUA\s*02/i.test(
+      `FUNDO ${layout.confrontants.fundo}`.toUpperCase(),
+    ) && layout.confrontants.fundo !== 'RUA 02',
+    'prancha fundo nao pode ser RUA 02',
+  );
+  assert(
+    bundle.confrontations.fundo === 'Lote 43',
+    `bundle fundo ${bundle.confrontations.fundo}`,
+  );
+  assert(
+    layout.confrontants.fundo === bundle.confrontations.fundo,
+    'layout=bundle fundo',
+  );
+
+  const fundoSide = layout.sketchSides.find((s) => s.role === 'fundo');
+  assert(
+    fundoSide?.confrontantLabel === 'Lote 43',
+    `sketch fundo ${fundoSide?.confrontantLabel}`,
+  );
+
+  const seg6 = bundle.segmentRows.find((r) => r.segmentIndex === 6);
+  assert(seg6?.text === 'Lote 43', `seg7 row ${seg6?.text}`);
+
+  const popupRows = buildOfficialLotConfrontationSegmentRows(
+    updated,
+    bundle.audit,
+    all,
+  );
+  for (const role of [
+    'frente',
+    'fundo',
+    'ladoDireito',
+    'ladoEsquerdo',
+  ] as const) {
+    assert(
+      layout.confrontants[role] === bundle.confrontations[role],
+      `popup×prancha ${role}`,
+    );
+    const popupTexts = popupRows
+      .filter((r) => r.key === role)
+      .map((r) => r.text);
+    if (popupTexts.length) {
+      assert(
+        layout.confrontants[role].includes(
+          popupTexts[0].split(' / ')[0] ?? popupTexts[0],
+        ) || popupTexts.every((t) => layout.confrontants[role].includes(t)),
+        `rows×prancha ${role}`,
+      );
+    }
+  }
+
+  console.log('OK testMartinePranchaUsesOfficialSegmentRows');
+}
+
 /** Sempre exibe os quatro lados, mesmo vazios. */
 function testAllSidesAlwaysPresent() {
   const segs = [
@@ -369,6 +486,7 @@ function main() {
   testDuplicateSameSide();
   testTwoDifferentOnSameSide();
   testMartineLot01Qd02();
+  testMartinePranchaUsesOfficialSegmentRows();
   testAllSidesAlwaysPresent();
   console.log('mandatory-lot-sheet-confrontants-tests: all passed');
 }

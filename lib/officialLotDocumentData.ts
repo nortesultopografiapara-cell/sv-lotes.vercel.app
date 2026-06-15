@@ -4,8 +4,10 @@
 
 import {
   buildLotConfrontationAudit,
+  buildOfficialLotConfrontationSegmentRows,
   buildOfficialLotConfrontations,
   type LotConfrontationAudit,
+  type OfficialLotConfrontationSegmentRow,
   type OfficialLotConfrontations,
 } from '@/lib/assistedConfrontation';
 import {
@@ -27,6 +29,7 @@ export type OfficialLotDocumentBundle = {
   audit: LotConfrontationAudit;
   measures: OfficialLotMeasures;
   confrontations: OfficialLotConfrontations;
+  segmentRows: OfficialLotConfrontationSegmentRow[];
   chanfreLabel: string;
 };
 
@@ -56,11 +59,21 @@ export function buildOfficialLotDocumentBundle(
     streetGuides: guides,
     chanfre: chanfreLabel !== '—' ? chanfreLabel : null,
   });
+  const segmentRows = buildOfficialLotConfrontationSegmentRows(
+    input.block,
+    audit,
+    input.allBlocks,
+    {
+      project: input.project,
+      streetGuides: guides,
+    },
+  );
 
   return {
     audit,
     measures,
     confrontations,
+    segmentRows,
     chanfreLabel,
   };
 }

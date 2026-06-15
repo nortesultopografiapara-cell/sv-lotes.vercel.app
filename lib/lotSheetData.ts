@@ -37,10 +37,7 @@ import {
   type LotSheetSketchSide,
 } from '@/lib/lotSheetLayout';
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
-import {
-  buildLotConfrontationAudit,
-  buildOfficialLotConfrontations,
-} from '@/lib/assistedConfrontation';
+import { buildOfficialLotDocumentBundle } from '@/lib/officialLotDocumentData';
 import { buildMemorialDraftPlainText } from '@/lib/memorialDraft';
 import {
   formatMemorialTechnicalBlock,
@@ -526,13 +523,14 @@ export async function loadLotSheetPayload(
   const metricRows: LotSheetMetricRow[] = segmentTableToMetricRows(officialTable);
   const coordinatesAvailable = officialTable.coordinatesAvailable;
 
-  const confrontationAudit = buildLotConfrontationAudit(
-    blockRecord,
-    params.blockId,
-    blocksList,
-    guidesList,
-    project as Record<string, unknown>,
-  );
+  const officialBundle = buildOfficialLotDocumentBundle({
+    block: blockRecord,
+    blockId: params.blockId,
+    project: project as Record<string, unknown>,
+    allBlocks: blocksList,
+    streetGuides: guidesList,
+  });
+  const confrontationAudit = officialBundle.audit;
   const officialEdgeLengths = buildGroupedOfficialEdgeLabels(
     blockRecord,
     officialSegs.length,
@@ -556,17 +554,7 @@ export async function loadLotSheetPayload(
     (company as Record<string, unknown>) || null,
   );
 
-  const officialConfrontations = buildOfficialLotConfrontations(
-    confrontationAudit,
-    {
-      block: blockRecord,
-      allBlocks: blocksList,
-      project: project as Record<string, unknown>,
-      streetGuides: guidesList,
-      chanfre: chanfreStr !== '—' ? chanfreStr : null,
-    },
-  );
-  const sideConfrontants = officialConfrontations;
+  const sideConfrontants = officialBundle.confrontations;
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
     block as Record<string, unknown>,

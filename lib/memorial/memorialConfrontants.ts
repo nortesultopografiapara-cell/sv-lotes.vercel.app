@@ -70,9 +70,83 @@ export function buildOfficialPopupConfrontantBySegment(
   for (const row of rows) {
     if (row.segmentIndex < 0) continue;
     const text = String(row.text ?? '').trim();
-    if (text) map.set(row.segmentIndex, text);
+    if (text && !isPendingConfrontantLabel(text)) {
+      map.set(row.segmentIndex, text);
+    }
   }
   return map;
+}
+
+/** Conectores/chanfre entre segmentos oficiais — herda confrontante vizinho do popup. */
+function inheritOfficialConfrontantFromRingNeighbors(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  officialMap: Map<number, string>,
+): string | null {
+  const segments = parseOfficialSegmentsFromBlock(
+    block,
+    block.number ?? block.id,
+  );
+  const ring = segments.map((s) => s.segment_index);
+  const pos = ring.indexOf(segmentIndex);
+  if (pos < 0) return null;
+  const n = ring.length;
+  for (let dist = 1; dist < n; dist++) {
+    for (const step of [-dist, dist] as const) {
+      const idx = ring[(pos + step + n) % n];
+      const label = officialMap.get(idx);
+      if (label && !isPendingConfrontantLabel(label)) return label;
+    }
+  }
+  return null;
+}
+
+/**
+ * Confrontante perimétrico — somente segmentRows oficiais do popup (+ herança em conectores).
+ */
+export function resolveOfficialMemorialSegmentConfrontant(
+  block: Record<string, unknown>,
+  segmentIndex: number,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: OfficialPopupConfrontationContext,
+): SegmentConfrontantResolved {
+  const officialMap = buildOfficialPopupConfrontantBySegment(
+    block,
+    audit,
+    allBlocks,
+    options,
+  );
+  const direct = officialMap.get(segmentIndex);
+  if (direct) {
+    const manual = getSegmentConfrontantRecord(block, segmentIndex);
+    return {
+      label: direct,
+      source: manual?.confrontant_source || 'manual',
+    };
+  }
+
+  const manual = getSegmentConfrontantRecord(block, segmentIndex);
+  if (manual?.confrontant && !isPendingConfrontantLabel(manual.confrontant)) {
+    return {
+      label: manual.confrontant,
+      source: manual.confrontant_source || 'manual',
+    };
+  }
+
+  const inherited = inheritOfficialConfrontantFromRingNeighbors(
+    block,
+    segmentIndex,
+    officialMap,
+  );
+  if (inherited) {
+    return { label: inherited, source: 'neighbor' };
+  }
+
+  return {
+    label: PENDING_CONFRONTANT_LABEL,
+    source: 'undefined',
+  };
 }
 
 /**

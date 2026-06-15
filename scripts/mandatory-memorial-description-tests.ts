@@ -673,6 +673,47 @@ function testMartineMemorialNoPendingAlert() {
   console.log('OK testMartineMemorialNoPendingAlert');
 }
 
+/** Descrição perimétrica — sem A DEFINIR quando popup GIS está completo. */
+function testMartineMemorialDescriptionNoADefinir() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+    utm_zone: '22S',
+  };
+  const payload = buildMemorialPayloadFromRecords({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+    streetGuides: [],
+    company: { name: 'MENESES', fantasy_name: 'MENESES' },
+  });
+
+  assert(
+    !/A\s*DEFINIR/i.test(payload.descriptionText),
+    `descricao com pendencia: ${payload.descriptionText}`,
+  );
+  for (const seg of payload.segments) {
+    assert(
+      !/A\s*DEFINIR/i.test(seg.confrontant),
+      `seg ${seg.segmentIndex + 1} ${seg.confrontant}`,
+    );
+  }
+  assert(!payload.hasPendingConfrontations, 'hasPending');
+  assert(payload.pendingWarning == null, 'pendingWarning');
+  assert(
+    !payload.observations.some((o) => /pendente/i.test(o)),
+    'obs pendente',
+  );
+  assert(/RUA 01/i.test(payload.descriptionText), 'rua 01 desc');
+  assert(/RUA 02/i.test(payload.descriptionText), 'rua 02 desc');
+  assert(/Lote 43/i.test(payload.descriptionText), 'lote 43 desc');
+  assert(/Lote 02 e 43/i.test(payload.descriptionText), 'lote 02 e 43 desc');
+  console.log('OK testMartineMemorialDescriptionNoADefinir');
+}
+
 /** PDF do memorial — conteúdo e branding da empresa logada. */
 async function testMemorialPdfContentAndCompanyBranding() {
   const { lot, all } = buildMartineLot01Qd02();
@@ -712,6 +753,8 @@ async function testMemorialPdfContentAndCompanyBranding() {
   assert(/RUA 02/i.test(text), 'rua 02');
   assert(/Lote 43/i.test(text), 'lote 43');
   assert(/Lote 02 e 43/i.test(text), 'lote 02 e 43');
+  assert(!/A\s*DEFINIR/i.test(text), 'pdf sem a definir');
+  assert(!/confronta(ç|c)(ã|a)o pendente/i.test(text), 'pdf sem aviso pendente');
   assert(/MENESES/i.test(text), 'empresa logada');
   assert(!/SV Topografia/i.test(text), 'sem SV Topografia fixa');
   assert(!/Norte.*Sul Topografia/i.test(text), 'sem Norte Sul fixa');
@@ -740,6 +783,7 @@ testOfficialSegmentIndexesForSideResolved();
 testMartineMemorialConfrontantsMatchSheet();
 testMartineOfficialPopupSegmentRows();
 testMartineMemorialNoPendingAlert();
+testMartineMemorialDescriptionNoADefinir();
 void testMemorialPdfContentAndCompanyBranding().then(() => {
   console.log('mandatory-memorial-description-tests: all passed');
 });

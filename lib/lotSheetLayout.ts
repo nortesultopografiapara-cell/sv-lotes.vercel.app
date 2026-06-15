@@ -9,7 +9,6 @@ import {
   officialSegmentIndexesForSide,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
-import { concatDistinctSideConfrontants } from '@/lib/confrontantTypes';
 import {
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
@@ -18,7 +17,6 @@ import {
   type OfficialLotMeasuresSides,
 } from '@/lib/officialLotMeasurements';
 import type { SideRole } from '@/lib/lotSegmentConfrontation';
-import { getSegmentConfrontantRecord } from '@/lib/segmentConfrontantPersist';
 
 export type LotSheetSketchSide = {
   role: SideRole;
@@ -145,33 +143,16 @@ export function buildGroupedOfficialEdgeLabels(
   return labels;
 }
 
-/** Confrontante do lado — mesma prioridade do popup GIS (segmentEdges por índice oficial). */
+/** Confrontante do lado — mesma fonte do popup GIS (segmentRows oficiais). */
 export function formatSideConfrontantForSheet(
   block: Record<string, unknown>,
   audit: LotConfrontationAudit | null,
   role: SideRole,
-  segmentIndexes: number[],
+  _segmentIndexes: number[],
   allBlocks: Record<string, unknown>[] = [block],
   project?: Record<string, unknown> | null,
 ): string {
   if (!audit) return '—';
-  const indexes =
-    segmentIndexes.length > 0
-      ? segmentIndexes
-      : officialSegmentIndexesForSide(block, allBlocks, role, project);
-  const labels: string[] = [];
-  for (const idx of indexes) {
-    const edge = audit.segmentEdges.find((e) => e.segmentIndex === idx);
-    if (edge?.confrontant) {
-      labels.push(edge.confrontant);
-      continue;
-    }
-    const rec = getSegmentConfrontantRecord(block, idx);
-    if (rec?.confrontant) labels.push(rec.confrontant);
-  }
-  if (labels.length) {
-    return concatDistinctSideConfrontants(labels);
-  }
   const official = buildOfficialLotConfrontations(audit, {
     block,
     allBlocks,
@@ -187,28 +168,30 @@ export function buildLotSheetSketchSides(
   project?: Record<string, unknown> | null,
 ): LotSheetSketchSide[] {
   const measures = getOfficialLotMeasurements(block, block.number);
-  const sides = measures.sides;
+  const official = buildOfficialLotConfrontations(audit, {
+    block,
+    allBlocks,
+    project,
+  });
   const distances = segmentDistanceMap(block);
   const out: LotSheetSketchSide[] = [];
 
   for (const [sideKey, role] of SIDE_ROLE_MAP) {
-    const side = sides?.[sideKey];
-    const indexes = side?.segmentIndexes ?? [];
+    const indexes = officialSegmentIndexesForSide(
+      block,
+      allBlocks,
+      role,
+      project,
+    );
     if (!indexes.length) continue;
+    const side = measures.sides?.[sideKey];
     const rep = pickRepresentativeSegmentIndex(indexes, distances);
     out.push({
       role,
       segmentIndexes: indexes,
       representativeEdgeIndex: rep,
       measureLabel: formatMeasureM(side?.total ?? null),
-      confrontantLabel: formatSideConfrontantForSheet(
-        block,
-        audit,
-        role,
-        indexes,
-        allBlocks,
-        project,
-      ),
+      confrontantLabel: official[role] || '—',
     });
   }
   return out;
