@@ -29,6 +29,19 @@ import {
   type CompanyContractSignatureRow,
 } from '../lib/saasContractSignatureService';
 import { buildSignUrl } from '../lib/saasContractUrls';
+import {
+  buildSignatureShareEmailSubject,
+  buildSignatureShareMailtoUrl,
+  buildSignatureShareMessage,
+  buildSignatureShareWhatsAppUrl,
+  canShareViaEmail,
+  canShareViaWhatsApp,
+  isContractSignatureSendBlocked,
+  mergeSignatureTimeline,
+  normalizeWhatsAppPhone,
+  qrCodePayloadForSignatureUrl,
+  resolveSignatureUrlFromSendResponse,
+} from '../lib/saasContractSignatureShare';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -187,8 +200,92 @@ function testHistory() {
   const history = buildSignatureHistory(signature);
   assert(history.length >= 3, 'histórico com envio, visualização e assinatura');
   assert(history[0].event === 'Link enviado', 'primeiro evento');
-  assert(history.some((h) => h.event === 'Contrato assinado'), 'evento assinatura');
+  assert(history.some((h) => h.event === 'Assinado'), 'evento assinatura');
   console.log('OK testHistory');
+}
+
+function testSendReturnsSignatureUrl() {
+  const json = {
+    success: true,
+    signUrl: 'https://www.svlotes.com.br/sign/abc123',
+    signature: {
+      signature_url: 'https://www.svlotes.com.br/sign/abc123',
+      signature_status: 'PENDING',
+      expires_at: '2026-07-15T00:00:00Z',
+    },
+  };
+  const url = resolveSignatureUrlFromSendResponse(json);
+  assert(url === json.signUrl, 'envio retorna signatureUrl');
+  console.log('OK testSendReturnsSignatureUrl');
+}
+
+function testWhatsAppUrl() {
+  const phone = normalizeWhatsAppPhone('(94) 99239-1277');
+  assert(phone === '5594992391277', 'normaliza DDI 55');
+  const msg = buildSignatureShareMessage({
+    signerName: 'Carlos',
+    companyName: 'MENESES IMOBILIARIA LTDA',
+    contractNumber: '00001/2026',
+    signatureUrl: 'https://www.svlotes.com.br/sign/tok',
+    expiresAt: '2026-07-15T00:00:00Z',
+  });
+  const url = buildSignatureShareWhatsAppUrl('(94) 99239-1277', msg);
+  assert(url?.startsWith('https://wa.me/5594992391277?text='), 'whatsapp url');
+  assert(!canShareViaWhatsApp(''), 'whatsapp desabilita sem telefone');
+  assert(!buildSignatureShareWhatsAppUrl('', msg), 'sem telefone sem url');
+  console.log('OK testWhatsAppUrl');
+}
+
+function testMailtoUrl() {
+  const subject = buildSignatureShareEmailSubject('MENESES IMOBILIARIA LTDA');
+  assert(subject.includes('MENESES'), 'assunto com empresa');
+  const body = buildSignatureShareMessage({
+    signerName: 'Carlos',
+    companyName: 'MENESES IMOBILIARIA LTDA',
+    contractNumber: '00001/2026',
+    signatureUrl: 'https://www.svlotes.com.br/sign/tok',
+    expiresAt: '2026-07-15T00:00:00Z',
+  });
+  const mailto = buildSignatureShareMailtoUrl('contato@meneses.com.br', subject, body);
+  assert(mailto?.startsWith('mailto:contato%40meneses.com.br'), 'mailto gerado');
+  assert(!canShareViaEmail(''), 'email desabilita sem endereço');
+  assert(!buildSignatureShareMailtoUrl('', subject, body), 'sem email sem mailto');
+  console.log('OK testMailtoUrl');
+}
+
+function testQrCodePayload() {
+  const link = 'https://www.svlotes.com.br/sign/abc123';
+  assert(qrCodePayloadForSignatureUrl(link) === link, 'QR usa link correto');
+  console.log('OK testQrCodePayload');
+}
+
+function testShareTimelineMerge() {
+  const merged = mergeSignatureTimeline(
+    [
+      {
+        at: '2026-06-15T18:35:00Z',
+        event: 'Link enviado',
+        user: 'Sistema',
+        ip: null,
+      },
+    ],
+    [
+      {
+        at: '2026-06-15T18:36:00Z',
+        event: 'Link copiado',
+        details: 'Área de transferência',
+      },
+    ],
+  );
+  assert(merged.length === 2, 'timeline mescla eventos');
+  assert(merged[1].event === 'Link copiado', 'evento local na timeline');
+  console.log('OK testShareTimelineMerge');
+}
+
+function testSignedBlocksSend() {
+  assert(isContractSignatureSendBlocked('SIGNED'), 'assinado bloqueia envio');
+  assert(!isContractSignatureSendBlocked('PENDING'), 'pendente permite reenvio');
+  console.log('OK testSignedBlocksSend');
 }
 
 function testReSignBlockedLogic() {
@@ -246,6 +343,12 @@ async function main() {
   testSignatureHash();
   testCertificateAndFinalPdf();
   testHistory();
+  testSendReturnsSignatureUrl();
+  testWhatsAppUrl();
+  testMailtoUrl();
+  testQrCodePayload();
+  testShareTimelineMerge();
+  testSignedBlocksSend();
   testReSignBlockedLogic();
   testLegacyContractCompatibility();
   testSignUrl();

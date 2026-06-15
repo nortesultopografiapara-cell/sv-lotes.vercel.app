@@ -1,7 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileText, Download, RefreshCw, ExternalLink, History, Building2, Send, ShieldCheck } from 'lucide-react';
+import {
+  FileText,
+  Download,
+  RefreshCw,
+  ExternalLink,
+  History,
+  Building2,
+  Send,
+  ShieldCheck,
+  Share2,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
 import {
@@ -34,8 +44,17 @@ import type {
   CompanyContractSignatureRow,
   SignatureHistoryEvent,
 } from '@/lib/saasContractSignatureService';
+import {
+  canResendOrShareSignature,
+  formatSignatureTimelineDateTime,
+  isContractSignatureSendBlocked,
+  mergeSignatureTimeline,
+  resolveSignatureUrlFromSendResponse,
+  type LocalSignatureTimelineEvent,
+} from '@/lib/saasContractSignatureShare';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
+import { ContractSignatureShareModal } from '@/components/saas/ContractSignatureShareModal';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
@@ -74,6 +93,8 @@ export function SaasContractPanel({
     latest: CompanyContractSignatureRow | null;
     history: SignatureHistoryEvent[];
   }>({ latest: null, history: [] });
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
 
   const companyId = (company as { id?: string } | null)?.id;
   const sub =
@@ -169,14 +190,70 @@ export function SaasContractPanel({
 
   useEffect(() => {
     void loadSignatureInfo();
-  }, [loadSignatureInfo]);
+    setLocalTimeline([]);
+  }, [loadSignatureInfo, companyId]);
+
+  const contractNumber =
+    sub?.contract_number || activeContract?.contract_number || '—';
+
+  const signerContact = useMemo(() => {
+    if (!company) {
+      return { name: 'Responsável', phone: null as string | null, email: null as string | null };
+    }
+    const c = company as CompanyPricingSource & {
+      legal_representative?: string | null;
+      responsible_name?: string | null;
+      telefone?: string | null;
+    };
+    return {
+      name:
+        c.legal_representative ||
+        c.responsible_name ||
+        company.name ||
+        'Responsável',
+      phone: c.phone || c.telefone || null,
+      email: c.email || null,
+    };
+  }, [company]);
+
+  const signatureBlocked = isContractSignatureSendBlocked(
+    signatureInfo.latest?.signature_status,
+  );
+
+  const canSharePendingLink = canResendOrShareSignature(
+    signatureInfo.latest?.signature_status,
+  );
+
+  const hasActivePendingSignature = canResendOrShareSignature(
+    signatureInfo.latest?.signature_status,
+  );
 
   const canSendForSignature =
     contractReady &&
     activeContract &&
-    !['signed', 'active'].includes(String(activeContract.status || '').toLowerCase());
+    !['signed', 'active'].includes(String(activeContract.status || '').toLowerCase()) &&
+    !signatureBlocked &&
+    !hasActivePendingSignature;
 
-  const handleSendForSignature = async () => {
+  const openShareModal = useCallback(
+    (signature: CompanyContractSignatureRow, signUrl: string) => {
+      setSignatureInfo((prev) => ({
+        ...prev,
+        latest: { ...signature, signature_url: signUrl || signature.signature_url },
+      }));
+      setShareModalOpen(true);
+    },
+    [],
+  );
+
+  const appendLocalTimeline = useCallback((event: string, details: string) => {
+    setLocalTimeline((prev) => [
+      ...prev,
+      { at: new Date().toISOString(), event, details },
+    ]);
+  }, []);
+
+  const handleSendForSignature = async (resend = false) => {
     if (!companyId || !user?.id || sendingSignature) return;
     setSendingSignature(true);
     setError(null);
@@ -190,15 +267,18 @@ export function SaasContractPanel({
       if (!res.ok) {
         throw new Error(json.error || 'Falha ao enviar para assinatura.');
       }
+
+      const signUrl = resolveSignatureUrlFromSendResponse(json);
+      const signature = (json.signature || null) as CompanyContractSignatureRow | null;
+
       await loadSignatureInfo();
       await loadContracts();
       onRefresh();
-      if (json.signUrl) {
-        try {
-          await navigator.clipboard.writeText(json.signUrl);
-          alert(`Link de assinatura gerado e copiado:\n${json.signUrl}`);
-        } catch {
-          alert(`Link de assinatura gerado:\n${json.signUrl}`);
+
+      if (signUrl && signature) {
+        openShareModal(signature, signUrl);
+        if (resend) {
+          appendLocalTimeline('Link reenviado', signUrl);
         }
       }
     } catch (e: unknown) {
@@ -208,6 +288,17 @@ export function SaasContractPanel({
       setSendingSignature(false);
     }
   };
+
+  const handleOpenShareFromPending = () => {
+    const latest = signatureInfo.latest;
+    if (!latest?.signature_url) return;
+    setShareModalOpen(true);
+  };
+
+  const mergedTimeline = useMemo(
+    () => mergeSignatureTimeline(signatureInfo.history, localTimeline),
+    [signatureInfo.history, localTimeline],
+  );
 
   const signatureStatusCard = signatureInfo.latest
     ? `${signatureStatusEmoji(signatureInfo.latest.signature_status)} ${signatureStatusLabel(signatureInfo.latest.signature_status)}`
@@ -384,18 +475,37 @@ export function SaasContractPanel({
                   href={activeContract.pdf_signed_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-emerald-500/30 text-emerald-300 text-[13px] hover:bg-emerald-500/10"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500"
                 >
-                  <ShieldCheck className="w-4 h-4" /> PDF assinado
+                  <ShieldCheck className="w-4 h-4" /> Baixar PDF Assinado
                 </a>
               )}
+            </>
+          )}
+          {canSharePendingLink && signatureInfo.latest?.signature_url && (
+            <>
+              <button
+                type="button"
+                onClick={handleOpenShareFromPending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-blue-500/30 text-blue-200 text-[13px] hover:bg-blue-500/10"
+              >
+                <Share2 className="w-4 h-4" /> Compartilhar link
+              </button>
+              <button
+                type="button"
+                disabled={sendingSignature || busy}
+                onClick={() => void handleSendForSignature(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-gray-200 text-[13px] hover:bg-white/5 disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" /> Reenviar link
+              </button>
             </>
           )}
           {canSendForSignature && (
             <button
               type="button"
               disabled={sendingSignature || busy}
-              onClick={() => void handleSendForSignature()}
+              onClick={() => void handleSendForSignature(false)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-[13px] hover:bg-blue-500 disabled:opacity-50"
             >
               <Send className={`w-4 h-4 ${sendingSignature ? 'animate-pulse' : ''}`} />
@@ -491,36 +601,37 @@ export function SaasContractPanel({
           <ShieldCheck className="w-4 h-4 text-blue-400" />
           Histórico de Assinatura
         </h4>
-        {signatureInfo.history.length === 0 ? (
+        {mergedTimeline.length === 0 ? (
           <p className="text-xs text-gray-500">Nenhum evento de assinatura registrado.</p>
         ) : (
-          <div className="space-y-2 max-h-[180px] overflow-y-auto">
-            {signatureInfo.history.map((evt, idx) => (
-              <div
-                key={`${evt.at}-${idx}`}
-                className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#0B0E14] border border-white/5 text-[12px]"
-              >
-                <div>
-                  <p className="text-white font-medium">{evt.event}</p>
-                  <p className="text-gray-500 mt-0.5">
-                    {new Date(evt.at).toLocaleString('pt-BR')}
-                  </p>
-                </div>
-                <div className="text-right text-gray-400 shrink-0">
-                  <p>{evt.user}</p>
-                  {evt.ip ? <p className="text-[10px] text-gray-500">IP {evt.ip}</p> : null}
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="text-gray-500 border-b border-white/5">
+                  <th className="py-2 pr-3 font-medium">Data/Hora</th>
+                  <th className="py-2 pr-3 font-medium">Evento</th>
+                  <th className="py-2 font-medium">Detalhes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedTimeline.map((evt, idx) => (
+                  <tr
+                    key={`${evt.at}-${evt.event}-${idx}`}
+                    className="border-b border-white/5 last:border-0"
+                  >
+                    <td className="py-2.5 pr-3 text-gray-400 whitespace-nowrap">
+                      {formatSignatureTimelineDateTime(evt.at)}
+                    </td>
+                    <td className="py-2.5 pr-3 text-white font-medium">{evt.event}</td>
+                    <td className="py-2.5 text-gray-400 break-all">{evt.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        {signatureInfo.latest?.signature_url &&
-          ['PENDING', 'VIEWED'].includes(signatureInfo.latest.signature_status) && (
-            <p className="text-[11px] text-gray-500 mt-3 break-all">
-              Link: {signatureInfo.latest.signature_url}
-            </p>
-          )}
-        {signatureInfo.latest?.signer_name && signatureInfo.latest.signature_status === 'SIGNED' && (
+        {signatureInfo.latest?.signer_name &&
+          signatureInfo.latest.signature_status === 'SIGNED' && (
           <p className="text-[11px] text-emerald-300 mt-3">
             Assinado por {signatureInfo.latest.signer_name}
             {signatureInfo.latest.signer_document
@@ -581,6 +692,25 @@ export function SaasContractPanel({
         onCancel={() => setShowRegenerateModal(false)}
         onConfirm={confirmRegenerate}
       />
+
+      {signatureInfo.latest?.signature_url && (
+        <ContractSignatureShareModal
+          isOpen={shareModalOpen}
+          onClose={() => setShareModalOpen(false)}
+          companyName={company.name || '—'}
+          signerName={signerContact.name}
+          signerPhone={signerContact.phone}
+          signerEmail={signerContact.email}
+          contractNumber={contractNumber}
+          signatureUrl={signatureInfo.latest.signature_url}
+          expiresAt={signatureInfo.latest.expires_at}
+          status={signatureInfo.latest.signature_status}
+          onLinkCopied={() => appendLocalTimeline('Link copiado', 'Área de transferência')}
+          onLinkOpened={() =>
+            appendLocalTimeline('Aberto pelo administrador', signatureInfo.latest?.signature_url || '—')
+          }
+        />
+      )}
     </div>
   );
 }

@@ -55,6 +55,7 @@ export type SignatureHistoryEvent = {
   event: string;
   user: string;
   ip: string | null;
+  details?: string | null;
 };
 
 export type PendingSignatureAlert = {
@@ -231,36 +232,42 @@ export function buildSignatureHistory(
   if (signature.viewed_at) {
     events.push({
       at: signature.viewed_at,
-      event: 'Contrato visualizado',
+      event: 'Visualizado pelo cliente',
       user: signature.signer_name || 'Signatário',
       ip: signature.ip_address,
+      details: signature.signer_name || null,
     });
   }
 
   if (signature.signed_at) {
     events.push({
       at: signature.signed_at,
-      event: 'Contrato assinado',
+      event: 'Assinado',
       user: signature.signer_name || 'Signatário',
       ip: signature.ip_address,
+      details: signature.signer_document
+        ? `CPF ${signature.signer_document}`
+        : signature.signer_name,
     });
   }
 
   if (signature.signature_status === 'EXPIRED') {
     events.push({
       at: signature.expires_at,
-      event: 'Link expirado',
+      event: 'Expirado',
       user: 'Sistema',
       ip: null,
+      details: 'Link de assinatura expirado',
     });
   }
 
   if (signature.signature_status === 'CANCELLED') {
     events.push({
       at: signature.updated_at,
-      event: 'Assinatura cancelada',
+      event: 'Cancelado',
       user: 'Sistema',
       ip: null,
+      details: 'Solicitação de assinatura cancelada',
     });
   }
 

@@ -104,7 +104,8 @@ export function signatureStatusEmoji(status?: string | null): string {
   const key = String(status || 'PENDING').toUpperCase();
   if (key === 'SIGNED') return '🟢';
   if (key === 'VIEWED') return '🔵';
-  if (key === 'EXPIRED' || key === 'CANCELLED') return '🔴';
+  if (key === 'EXPIRED') return '🔴';
+  if (key === 'CANCELLED') return '⚫';
   return '🟡';
 }
 
