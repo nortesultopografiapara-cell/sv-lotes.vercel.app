@@ -3,6 +3,7 @@
  */
 
 import { isPendingConfrontantLabel } from '@/lib/confrontantTypes';
+import { formatMemorialMunicipality } from '@/lib/memorial/memorialBranding';
 import type {
   MemorialIdentification,
   MemorialSegmentRow,
@@ -10,7 +11,7 @@ import type {
 } from '@/lib/memorial/memorialTypes';
 
 export const MEMORIAL_GEODESIC_FOOTNOTE =
-  'Todas as coordenadas aqui descritas estão georreferenciadas ao Sistema Geodésico Brasileiro, datum SIRGAS2000, representadas no Sistema UTM, fuso correspondente ao projeto. Todos os azimutes, distâncias, área e perímetro foram calculados no plano de projeção UTM.';
+  'Todas as coordenadas aqui descritas estão georreferenciadas ao Sistema Geodésico Brasileiro, datum SIRGAS2000, representadas no Sistema UTM, no fuso correspondente ao projeto. Todos os azimutes, distâncias, área e perímetro foram calculados no plano de projeção UTM.';
 
 function confrontantForText(label: string): string {
   return label.trim().toUpperCase();
@@ -129,10 +130,10 @@ export function buildMemorialIdentificationFields(
 ): MemorialIdentification {
   const quadra = String(block.block_name ?? block.block ?? block.quadra ?? '—');
   const lote = String(block.number ?? block.lot ?? '—');
-  const city = String(project.city ?? project.municipio ?? '').trim();
-  const state = String(project.state ?? project.uf ?? '').trim();
-  const mun =
-    city && state ? `${city}/${state}` : city || state || 'Não informado';
+  const mun = formatMemorialMunicipality(
+    project.city ?? project.municipio,
+    project.state ?? project.uf,
+  );
 
   return {
     owner: String(block.owner_name ?? block.customer_name ?? 'Não informado'),

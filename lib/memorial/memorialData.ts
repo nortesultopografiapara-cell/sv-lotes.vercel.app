@@ -3,7 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getOfficialLotMeasurements } from '@/lib/officialLotMeasurements';
+import { buildOfficialLotDocumentBundle } from '@/lib/officialLotDocumentData';
 import { normalizeStreetGuideRow } from '@/lib/streetGuide';
 import {
   buildLotConfrontationAuditForMemorial,
@@ -21,6 +21,7 @@ import {
   formatMemorialAreaM2,
   formatMemorialDistanceM,
 } from '@/lib/memorial/memorialFormat';
+import { sanitizeMemorialDisplayText } from '@/lib/memorial/memorialBranding';
 import type { MemorialCompanyInfo, MemorialPayload } from '@/lib/memorial/memorialTypes';
 import {
   normalizeTechnicalResponsibleFromCompany,
@@ -38,6 +39,9 @@ function companyFromRow(row: Record<string, unknown> | null): MemorialCompanyInf
       address: 'Não informado',
       city: 'Não informado',
       state: 'Não informado',
+      slogan: 'Não informado',
+      website: 'Não informado',
+      instagram: 'Não informado',
       logoUrl: '',
       signatureUrl: '',
     };
@@ -57,10 +61,103 @@ function companyFromRow(row: Record<string, unknown> | null): MemorialCompanyInf
     address: parts.length ? parts.join(' — ') : 'Não informado',
     city: displayOrNotInformed(row.city),
     state: displayOrNotInformed(row.state),
+    slogan: displayOrNotInformed(
+      row.slogan ?? row.tagline ?? row.company_slogan,
+    ),
+    website: displayOrNotInformed(row.website ?? row.site ?? row.site_url),
+    instagram: displayOrNotInformed(row.instagram ?? row.instagram_url),
     logoUrl: String(row.logo_url || '').trim(),
     signatureUrl: String(
       row.technical_signature_url || row.signature_url || '',
     ).trim(),
+  };
+}
+
+export function buildMemorialPayloadFromRecords(params: {
+  block: Record<string, unknown>;
+  blockId: string;
+  project: Record<string, unknown>;
+  allBlocks: Record<string, unknown>[];
+  streetGuides: StreetGuideConfrontInput[];
+  company: Record<string, unknown> | null;
+}): MemorialPayload {
+  const blockRecord = params.block;
+  const projectRecord = params.project;
+  const blocksList = params.allBlocks;
+  const guidesList = params.streetGuides;
+
+  const segments = buildMemorialSegments(
+    blockRecord,
+    params.blockId,
+    blocksList,
+    guidesList,
+    projectRecord,
+  );
+
+  if (segments.length < 2) {
+    throw new Error(
+      'Memorial requer ao menos 2 segmentos oficiais em segments_json.',
+    );
+  }
+
+  const bundle = buildOfficialLotDocumentBundle({
+    block: blockRecord,
+    blockId: params.blockId,
+    project: projectRecord,
+    allBlocks: blocksList,
+    streetGuides: guidesList,
+  });
+
+  const audit = buildLotConfrontationAuditForMemorial(
+    blockRecord,
+    params.blockId,
+    blocksList,
+    guidesList as Record<string, unknown>[],
+    projectRecord,
+  );
+
+  const hasPending = memorialHasPendingConfrontations(segments, audit);
+
+  return {
+    block: blockRecord,
+    project: projectRecord,
+    company: companyFromRow(params.company),
+    technical: normalizeTechnicalResponsibleFromCompany(params.company),
+    identification: buildMemorialIdentificationFields(
+      blockRecord,
+      projectRecord,
+      {
+        area: bundle.measures.area,
+        perimeter: bundle.measures.perimeter,
+        frente: bundle.measures.frente,
+        fundo: bundle.measures.fundo,
+        ladoDireito: bundle.measures.ladoDireito,
+        ladoEsquerdo: bundle.measures.ladoEsquerdo,
+      },
+      formatMemorialAreaM2,
+      formatMemorialDistanceM,
+    ),
+    sides: {
+      frente: bundle.confrontations.frente,
+      fundo: bundle.confrontations.fundo,
+      ladoDireito: bundle.confrontations.ladoDireito,
+      ladoEsquerdo: bundle.confrontations.ladoEsquerdo,
+      chanfre: bundle.confrontations.chanfre ?? bundle.chanfreLabel,
+    },
+    segments,
+    descriptionText: buildMemorialDescriptionText(segments),
+    observations: buildMemorialObservations(segments, hasPending),
+    hasPendingConfrontations: hasPending,
+    pendingWarning: hasPending
+      ? 'Este lote possui confrontações pendentes (A DEFINIR).'
+      : null,
+    generatedAt: new Date().toISOString(),
+    projectName: sanitizeMemorialDisplayText(
+      projectRecord.name ?? projectRecord.title,
+    ),
+    utmZone: sanitizeMemorialDisplayText(
+      projectRecord.utm_zone ?? projectRecord.fuso_utm ?? '22S',
+    ),
   };
 }
 
@@ -106,74 +203,16 @@ export async function loadMemorialPayload(
     .eq('id', params.tenantId)
     .maybeSingle();
 
-  const blockRecord = block as Record<string, unknown>;
-  const projectRecord = project as Record<string, unknown>;
-  const blocksList = (allBlocks || []) as Record<string, unknown>[];
   const guidesList = ((guides || []) as Record<string, unknown>[]).map(
     normalizeStreetGuideRow,
   ) as StreetGuideConfrontInput[];
 
-  const segments = buildMemorialSegments(
-    blockRecord,
-    params.blockId,
-    blocksList,
-    guidesList,
-    projectRecord,
-  );
-
-  if (segments.length < 2) {
-    throw new Error(
-      'Memorial requer ao menos 2 segmentos oficiais em segments_json.',
-    );
-  }
-
-  const audit = buildLotConfrontationAuditForMemorial(
-    blockRecord,
-    params.blockId,
-    blocksList,
-    guidesList as Record<string, unknown>[],
-    projectRecord,
-  );
-
-  const hasPending = memorialHasPendingConfrontations(segments, audit);
-  const measures = getOfficialLotMeasurements(
-    blockRecord,
-    blockRecord.number,
-  );
-  const chanfreStr =
-    measures.chanfre?.total != null
-      ? formatMemorialDistanceM(measures.chanfre.total)
-      : '—';
-
-  return {
-    block: blockRecord,
-    project: projectRecord,
-    company: companyFromRow((company as Record<string, unknown>) || null),
-    technical: normalizeTechnicalResponsibleFromCompany(
-      (company as Record<string, unknown>) || null,
-    ),
-    identification: buildMemorialIdentificationFields(
-      blockRecord,
-      projectRecord,
-      {
-        area: measures.area,
-        perimeter: measures.perimeter,
-        frente: measures.frente,
-        fundo: measures.fundo,
-        ladoDireito: measures.ladoDireito,
-        ladoEsquerdo: measures.ladoEsquerdo,
-      },
-      formatMemorialAreaM2,
-      formatMemorialDistanceM,
-    ),
-    sides: buildMemorialSideSummaryFromAudit(audit, chanfreStr),
-    segments,
-    descriptionText: buildMemorialDescriptionText(segments),
-    observations: buildMemorialObservations(segments, hasPending),
-    hasPendingConfrontations: hasPending,
-    pendingWarning: hasPending
-      ? 'Este lote possui confrontações pendentes (A DEFINIR).'
-      : null,
-    generatedAt: new Date().toISOString(),
-  };
+  return buildMemorialPayloadFromRecords({
+    block: block as Record<string, unknown>,
+    blockId: params.blockId,
+    project: project as Record<string, unknown>,
+    allBlocks: (allBlocks || []) as Record<string, unknown>[],
+    streetGuides: guidesList,
+    company: (company as Record<string, unknown>) || null,
+  });
 }

@@ -15,7 +15,20 @@ import {
 import {
   memorialHasPendingConfrontations,
   resolveMemorialSegmentConfrontant,
+  buildMemorialSideSummaryFromAudit,
 } from '../lib/memorial/memorialConfrontants';
+import {
+  buildMemorialPayloadFromRecords,
+} from '../lib/memorial/memorialData';
+import {
+  generateMemorialPdf,
+  memorialPdfTextContent,
+} from '../lib/memorial/memorialPdf';
+import { buildOfficialLotDocumentBundle } from '../lib/officialLotDocumentData';
+import {
+  applyManualConfrontantToBlock,
+  officialSegmentIndexesForSide,
+} from '../lib/assistedConfrontation';
 import {
   formatMemorialAreaM2,
   formatMemorialCoord,
@@ -31,7 +44,6 @@ import {
   buildLotConfrontationAudit,
   confrontantsFromAudit,
 } from '../lib/assistedConfrontation';
-import { buildMemorialSideSummaryFromAudit } from '../lib/memorial/memorialConfrontants';
 import { applyConfrontantToSegmentRows } from '../lib/segmentConfrontantPersist';
 import { confrontantsForSide } from '../lib/lotSegmentConfrontation';
 import { mergeCurvedSegments } from '../utils/calculateLotDimensions';
@@ -387,8 +399,17 @@ function testLotSheetConfrontantsMatchMemorialAudit() {
     ),
   };
   const audit = buildLotConfrontationAudit(lot, lot.id as string, [lot], []);
-  const sheetSides = confrontantsFromAudit(audit);
-  const memorialSummary = buildMemorialSideSummaryFromAudit(audit, '—');
+  const sheetSides = confrontantsFromAudit(audit, {
+    block: lot,
+    allBlocks: [lot],
+  });
+  const memorialSummary = buildMemorialSideSummaryFromAudit(
+    audit,
+    '—',
+    lot,
+    [lot],
+    {},
+  );
   for (const key of [
     'frente',
     'fundo',
@@ -430,6 +451,209 @@ function testAuditMatchesPopupSides() {
   console.log('OK testAuditMatchesPopupSides');
 }
 
+function martineLineSeg(
+  idx: number,
+  north: number,
+  east: number,
+  endNorth: number,
+  endEast: number,
+  distance: number,
+  official_side?: string,
+) {
+  const row: Record<string, unknown> = {
+    segment_index: idx,
+    north,
+    east,
+    end_north: endNorth,
+    end_east: endEast,
+    distance,
+    segment_type: 'LINE',
+  };
+  if (official_side) row.official_side = official_side;
+  return row;
+}
+
+function martineNeighbor(
+  id: string,
+  num: string,
+  east: number,
+  north: number,
+  w: number,
+  h: number,
+): Record<string, unknown> {
+  return {
+    id,
+    number: num,
+    block_name: '02',
+    segments_json: [
+      martineLineSeg(0, north, east, north, east + w, w),
+      martineLineSeg(1, north, east + w, north + h, east + w, h),
+      martineLineSeg(2, north + h, east + w, north + h, east, w),
+      martineLineSeg(3, north + h, east, north, east, h),
+    ],
+  };
+}
+
+function buildMartineLot01Qd02() {
+  const segs = [
+    martineLineSeg(0, 7500000, 500000, 7500000, 500100.05, 100.05),
+    martineLineSeg(1, 7500000, 500100.05, 7500014.86, 500100.05, 14.86),
+    martineLineSeg(2, 7500014.86, 500100.05, 7500021.64, 500106.83, 6.78),
+    martineLineSeg(3, 7500021.64, 500106.83, 7500021.64, 500000, 106.83, 'front'),
+    martineLineSeg(4, 7500021.64, 500000, 7500197.84, 500000, 176.2),
+    martineLineSeg(5, 7500197.84, 500000, 7500197.84, 500069.08, 69.08),
+    martineLineSeg(6, 7500197.84, 500069.08, 7500000, 500069.08, 197.84, 'back'),
+  ];
+  const lot: Record<string, unknown> = {
+    id: 'martine-lt01',
+    number: '1',
+    block_name: '02',
+    front_segment_index: 3,
+    front_street_name: 'RUA 01',
+    area: 6056.14,
+    perimeter: 674.44,
+    segments_json: segs,
+  };
+  const lot43 = martineNeighbor('lt43', '43', 500069.08, 7500197.84, 30, 80);
+  const lot02 = martineNeighbor('lt02', '2', 500000, 7500021.64, 80, 30);
+  const all = [lot, lot43, lot02];
+
+  const frenteIdx = officialSegmentIndexesForSide(lot, all, 'frente');
+  const fundoIdx = officialSegmentIndexesForSide(lot, all, 'fundo');
+  const dirIdx = officialSegmentIndexesForSide(lot, all, 'ladoDireito');
+  const esqIdx = officialSegmentIndexesForSide(lot, all, 'ladoEsquerdo');
+
+  let updated = applyManualConfrontantToBlock(lot, frenteIdx, 'RUA 01', 'street');
+  updated = applyManualConfrontantToBlock(updated, fundoIdx, 'RUA 02', 'street');
+  updated = applyManualConfrontantToBlock(updated, dirIdx, 'RUA 02', 'street');
+  updated = applyManualConfrontantToBlock(
+    updated,
+    esqIdx,
+    'Lote 02 e 43',
+    'lot',
+  );
+  return { lot: updated, all };
+}
+
+/** Sem ReferenceError de officialSegmentIndexesForSide no resumo oficial. */
+function testOfficialSegmentIndexesForSideResolved() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const audit = buildLotConfrontationAudit(lot, 'martine-lt01', all, []);
+  const summary = buildMemorialSideSummaryFromAudit(
+    audit,
+    '6,78 m',
+    lot,
+    all,
+    { name: 'CHACARAS E LOTES MARTINE III', city: 'Parauapebas', uf: 'PA' },
+  );
+  assert(summary.frente === 'RUA 01', `frente ${summary.frente}`);
+  console.log('OK testOfficialSegmentIndexesForSideResolved');
+}
+
+/** Memorial LT 01 QD 02 MARTINE III — confrontações alinhadas à prancha. */
+function testMartineMemorialConfrontantsMatchSheet() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+    utm_zone: '22S',
+  };
+  const bundle = buildOfficialLotDocumentBundle({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+  });
+  const expected = {
+    frente: 'RUA 01',
+    fundo: 'RUA 02',
+    ladoDireito: 'RUA 02',
+    ladoEsquerdo: 'Lote 02 e 43',
+  };
+  for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
+    assert(
+      bundle.confrontations[key] === expected[key],
+      `${key}: ${bundle.confrontations[key]} !== ${expected[key]}`,
+    );
+  }
+  const payload = buildMemorialPayloadFromRecords({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+    streetGuides: [],
+    company: {
+      name: 'MENESES IMOBILIARIA',
+      fantasy_name: 'MENESES',
+      phone: '(94) 99999-0000',
+      email: 'contato@meneses.com',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+  });
+  assert(payload.sides.frente === 'RUA 01', payload.sides.frente);
+  assert(payload.sides.fundo === 'RUA 02', payload.sides.fundo);
+  assert(payload.sides.ladoDireito === 'RUA 02', payload.sides.ladoDireito);
+  assert(
+    payload.sides.ladoEsquerdo === 'Lote 02 e 43',
+    payload.sides.ladoEsquerdo,
+  );
+  assert(
+    /6,78/.test(payload.sides.chanfre),
+    `chanfre ${payload.sides.chanfre}`,
+  );
+  assert(
+    payload.identification.municipality === 'Parauapebas/PA',
+    payload.identification.municipality,
+  );
+  console.log('OK testMartineMemorialConfrontantsMatchSheet');
+}
+
+/** PDF do memorial — conteúdo e branding da empresa logada. */
+async function testMemorialPdfContentAndCompanyBranding() {
+  const { lot, all } = buildMartineLot01Qd02();
+  const payload = buildMemorialPayloadFromRecords({
+    block: lot,
+    blockId: 'martine-lt01',
+    project: {
+      name: 'CHACARAS E LOTES MARTINE III',
+      city: 'Parauapebas',
+      uf: 'PA',
+      utm_zone: '22S',
+    },
+    allBlocks: all,
+    streetGuides: [],
+    company: {
+      name: 'MENESES IMOBILIARIA LTDA',
+      fantasy_name: 'MENESES',
+      phone: '(94) 3356-1234',
+      email: 'vendas@meneses.com.br',
+      website: 'www.meneses.com.br',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+  });
+  payload.generatedAt = '2026-06-08T12:00:00.000Z';
+
+  const doc = await generateMemorialPdf(payload);
+  const text = memorialPdfTextContent(doc);
+  assert(/MEMORIAL DESCRITIVO/i.test(text), 'titulo');
+  assert(/DESCRIÇÃO/i.test(text), 'secao descricao');
+  assert(/Inicia-se a descrição deste perímetro/i.test(text), 'inicio narrativa');
+  assert(/SIRGAS2000/i.test(text), 'datum');
+  assert(/UTM/i.test(text), 'utm');
+  assert(!/U\s+T\s+M/.test(text), 'utm quebrado');
+  assert(/Responsável técnico/i.test(text), 'rt');
+  assert(/MENESES/i.test(text), 'empresa logada');
+  assert(!/SV Topografia/i.test(text), 'sem SV Topografia fixa');
+  assert(!/Norte.*Sul Topografia/i.test(text), 'sem Norte Sul fixa');
+  assert(/planta anexa é parte integrante/i.test(text), 'observacao planta');
+  assert(!/domingo/i.test(text), 'sem dia da semana na data');
+  assert(/Parauapebas\/PA/i.test(text), 'municipio');
+  console.log('OK testMemorialPdfContentAndCompanyBranding');
+}
+
 testFourVertices();
 testManyVertices();
 testClosesAtV01();
@@ -445,4 +669,8 @@ testConcatDistinctSideConfrontants();
 testMultiConfrontantsPerSide();
 testLotSheetConfrontantsMatchMemorialAudit();
 testAuditMatchesPopupSides();
-console.log('mandatory-memorial-description-tests: all passed');
+testOfficialSegmentIndexesForSideResolved();
+testMartineMemorialConfrontantsMatchSheet();
+void testMemorialPdfContentAndCompanyBranding().then(() => {
+  console.log('mandatory-memorial-description-tests: all passed');
+});

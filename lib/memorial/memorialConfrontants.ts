@@ -5,6 +5,7 @@
 import {
   buildLotConfrontationAudit,
   buildOfficialLotConfrontations,
+  officialSegmentIndexesForSide,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
 import {

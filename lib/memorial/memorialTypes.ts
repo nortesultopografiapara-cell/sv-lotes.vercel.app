@@ -14,6 +14,9 @@ export type MemorialCompanyInfo = {
   address: string;
   city: string;
   state: string;
+  slogan: string;
+  website: string;
+  instagram: string;
   logoUrl: string;
   signatureUrl: string;
 };
@@ -72,6 +75,8 @@ export type MemorialPayload = {
   hasPendingConfrontations: boolean;
   pendingWarning: string | null;
   generatedAt: string;
+  projectName: string;
+  utmZone: string;
 };
 
 export type MemorialGenerateOptions = {
