@@ -6,6 +6,8 @@ import { jsPDF } from 'jspdf';
 import {
   buildEnterpriseOverviewLayout,
   ENTERPRISE_LOT_FILL_OPACITY,
+  ENTERPRISE_LOT_STROKE_RGB,
+  ENTERPRISE_LOT_STROKE_WIDTH_MM,
   type EnterpriseOverviewLayout,
   type EnterpriseOverviewOptions,
   type FitEnterpriseInput,
@@ -13,11 +15,36 @@ import {
 } from '@/lib/enterpriseOverviewLayout';
 import {
   fetchSatelliteBackgroundBase64,
+  imageFormatFromDataUrl,
   satellitePixelSizeForMapBoxMm,
+  stripDataUrlBase64,
+  type SatelliteFetchResult,
 } from '@/lib/enterpriseOverviewSatellite';
 import { loadImageAsBase64, loadReportHeaderLogoBase64 } from '@/lib/reportBranding';
 
-export { ENTERPRISE_LOT_FILL_OPACITY };
+export {
+  ENTERPRISE_LOT_FILL_OPACITY,
+  ENTERPRISE_LOT_STROKE_WIDTH_MM,
+};
+
+export const ENTERPRISE_SATELLITE_UNAVAILABLE_MSG =
+  'Imagem de satélite indisponível no momento da geração.';
+
+/** Ordem de desenho do mapa (para testes). */
+export const ENTERPRISE_MAP_DRAW_ORDER = [
+  'background_white',
+  'satellite_image',
+  'satellite_unavailable_notice',
+  'lot_fills',
+  'streets',
+  'lot_strokes',
+  'lot_numbers',
+  'quadra_labels',
+  'street_labels',
+  'north',
+  'graphic_scale',
+  'map_frame',
+] as const;
 
 export type EnterpriseCompanyInfo = {
   name: string;
@@ -122,25 +149,66 @@ function resetOpacity(doc: jsPDF) {
   doc.setGState(new doc.GState({ opacity: 1 }));
 }
 
-/** Polígono único: preenchimento translúcido + contorno opaco — sem malha triangular. */
-function drawLotPolygonClean(
+/** Cor de preenchimento visível em fundo branco (simula translucidez sem GState). */
+export function blendFillColorForWhiteBackground(
+  rgb: [number, number, number],
+  opacity = ENTERPRISE_LOT_FILL_OPACITY,
+): [number, number, number] {
+  return [
+    Math.round(rgb[0] * opacity + 255 * (1 - opacity)),
+    Math.round(rgb[1] * opacity + 255 * (1 - opacity)),
+    Math.round(rgb[2] * opacity + 255 * (1 - opacity)),
+  ];
+}
+
+/** Apenas preenchimento — sem contorno. */
+export function drawLotFillOnly(
   doc: jsPDF,
   points: [number, number][],
   fill: [number, number, number],
-  stroke: [number, number, number],
-  lw = 0.28,
+  opts: { onSatellite: boolean },
 ) {
   if (points.length < 3) return;
   const path = buildClosedPolygonPath(points);
+  if (opts.onSatellite) {
+    applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
+    doc.setFillColor(...fill);
+    doc.path(path, 'F');
+    resetOpacity(doc);
+  } else {
+    doc.setFillColor(...blendFillColorForWhiteBackground(fill));
+    doc.path(path, 'F');
+  }
+}
 
-  applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
-  doc.setFillColor(...fill);
-  doc.path(path, 'F');
-
+/** Contorno 100% opaco — sempre após preenchimentos. */
+export function drawLotStrokeOnly(
+  doc: jsPDF,
+  points: [number, number][],
+  lw = ENTERPRISE_LOT_STROKE_WIDTH_MM,
+) {
+  if (points.length < 3) return;
+  const path = buildClosedPolygonPath(points);
   resetOpacity(doc);
-  doc.setDrawColor(...stroke);
+  doc.setDrawColor(...ENTERPRISE_LOT_STROKE_RGB);
   doc.setLineWidth(lw);
+  doc.setLineCap('round');
+  doc.setLineJoin('round');
   doc.path(path, 'S');
+}
+
+function addRasterImageToDoc(
+  doc: jsPDF,
+  dataUrl: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const fmt = imageFormatFromDataUrl(dataUrl);
+  const raw = stripDataUrlBase64(dataUrl);
+  if (!fmt || !raw) throw new Error('invalid_satellite_data_url');
+  doc.addImage(raw, fmt, x, y, w, h);
 }
 
 function drawTextWithHalo(
@@ -343,7 +411,7 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
     doc.setTextColor(...GRAY);
-    doc.text('Preenchimento 25% opaco', panel.x + 3, y);
+    doc.text('Preenchimento translúcido', panel.x + 3, y);
     y += 4.5;
     const legendRows: [string, [number, number, number], number][] = [
       ['Disponível', [34, 197, 94], stats.disponivel],
@@ -353,12 +421,10 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     for (const [label, rgb, qty] of legendRows) {
-      applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
-      doc.setFillColor(...rgb);
+      doc.setFillColor(...blendFillColorForWhiteBackground(rgb));
       doc.rect(panel.x + 3, y - 2.5, 4, 4, 'F');
-      resetOpacity(doc);
-      doc.setDrawColor(40, 40, 40);
-      doc.setLineWidth(0.2);
+      doc.setDrawColor(...ENTERPRISE_LOT_STROKE_RGB);
+      doc.setLineWidth(0.35);
       doc.rect(panel.x + 3, y - 2.5, 4, 4, 'S');
       doc.setTextColor(...BLACK);
       doc.text(`${label}: ${qty}`, panel.x + 9, y);
@@ -399,56 +465,62 @@ function drawSidePanel(doc: jsPDF, payload: EnterpriseOverviewPdfPayload) {
 function drawMapArea(
   doc: jsPDF,
   payload: EnterpriseOverviewPdfPayload,
-  satelliteBase64: string | null,
+  satellite: SatelliteFetchResult,
 ) {
   const { layout, options } = payload;
   const box = layout.mapBoxMm;
+  const onSatellite = Boolean(
+    options.showSatelliteBackground && satellite.ok && satellite.base64,
+  );
 
-  doc.setDrawColor(...BLACK);
-  doc.setLineWidth(0.35);
-  doc.rect(box.x, box.y, box.w, box.h);
+  // 1. Fundo branco
+  doc.setFillColor(255, 255, 255);
+  doc.rect(box.x, box.y, box.w, box.h, 'F');
 
-  if (options.showSatelliteBackground && satelliteBase64) {
+  // 2. Imagem de satélite
+  if (options.showSatelliteBackground && satellite.ok && satellite.base64) {
     try {
-      doc.addImage(satelliteBase64, 'PNG', box.x, box.y, box.w, box.h);
-    } catch {
+      addRasterImageToDoc(
+        doc,
+        satellite.base64,
+        box.x,
+        box.y,
+        box.w,
+        box.h,
+      );
+    } catch (err) {
+      console.error('ENTERPRISE_SATELLITE_ADD_IMAGE_FAILED', err);
       doc.setFillColor(255, 255, 255);
       doc.rect(box.x, box.y, box.w, box.h, 'F');
+      drawSatelliteUnavailableNotice(doc, box);
     }
-  } else {
-    doc.setFillColor(255, 255, 255);
-    doc.rect(box.x, box.y, box.w, box.h, 'F');
+  } else if (options.showSatelliteBackground && !satellite.ok) {
+    // 3. Aviso de satélite indisponível
+    drawSatelliteUnavailableNotice(doc, box);
   }
 
+  // 4. Preenchimento translúcido dos lotes
   for (const lot of layout.lots) {
     const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
-    drawLotPolygonClean(doc, pts, lot.fillRgb, lot.strokeRgb, 0.28);
+    drawLotFillOnly(doc, pts, lot.fillRgb, { onSatellite });
   }
 
+  // 5. Ruas
   if (options.showStreets) {
     for (const street of layout.streets) {
       const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
-      drawPolyline(doc, pts, [40, 40, 40], 0.5, [2, 1.5]);
-      if (pts.length >= 2) {
-        const mid = pts[Math.floor(pts.length / 2)];
-        const label = street.displayName.replace(/^Rua\/Eixo\s*/i, '').trim();
-        drawLabelPlate(doc, label, mid[0], mid[1] - 1.5, {
-          fontSize: 5,
-          maxWidth: 30,
-        });
-      }
+      drawPolyline(doc, pts, [210, 210, 210], 0.55, [3, 2]);
+      drawPolyline(doc, pts, [140, 140, 140], 0.22);
     }
   }
 
-  for (const q of layout.quadraLabels) {
-    const [x, y] = projectEnterprisePointToPdf(q.position, layout);
-    drawTextWithHalo(doc, `QD ${q.quadra}`, x, y, {
-      fontSize: 7.5,
-      bold: true,
-      align: 'center',
-    });
+  // 6. Contorno/divisa dos lotes (por cima de tudo)
+  for (const lot of layout.lots) {
+    const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
+    drawLotStrokeOnly(doc, pts);
   }
 
+  // 7. Números dos lotes
   if (options.showLotNumbers) {
     for (const lot of layout.lots) {
       const [x, y] = projectEnterprisePointToPdf(lot.centroid, layout);
@@ -460,6 +532,32 @@ function drawMapArea(
     }
   }
 
+  // 8. Nomes das quadras
+  for (const q of layout.quadraLabels) {
+    const [x, y] = projectEnterprisePointToPdf(q.position, layout);
+    drawTextWithHalo(doc, `QD ${q.quadra}`, x, y, {
+      fontSize: 7.5,
+      bold: true,
+      align: 'center',
+    });
+  }
+
+  // 9. Nomes das ruas
+  if (options.showStreets) {
+    for (const street of layout.streets) {
+      const pts = street.line.map((p) => projectEnterprisePointToPdf(p, layout));
+      if (pts.length >= 2) {
+        const mid = pts[Math.floor(pts.length / 2)];
+        const label = street.displayName.replace(/^Rua\/Eixo\s*/i, '').trim();
+        drawLabelPlate(doc, label, mid[0], mid[1] - 1.5, {
+          fontSize: 5,
+          maxWidth: 30,
+        });
+      }
+    }
+  }
+
+  // Norte e escala
   if (options.showNorth) {
     drawCompassNorth(doc, box.x + box.w - 12, box.y + 12, 5);
   }
@@ -468,9 +566,22 @@ function drawMapArea(
     drawGraphicScaleBar(doc, box.x + 6, box.y + box.h - 6, layout);
   }
 
+  // Moldura do mapa
   doc.setDrawColor(...BLACK);
-  doc.setLineWidth(0.35);
+  doc.setLineWidth(0.4);
   doc.rect(box.x, box.y, box.w, box.h, 'S');
+}
+
+function drawSatelliteUnavailableNotice(
+  doc: jsPDF,
+  box: { x: number; y: number; w: number; h: number },
+) {
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(ENTERPRISE_SATELLITE_UNAVAILABLE_MSG, box.x + 3, box.y + box.h - 2, {
+    maxWidth: box.w - 6,
+  });
 }
 
 export async function generateEnterpriseOverviewPdf(
@@ -503,28 +614,39 @@ export async function generateEnterpriseOverviewPdf(
     }
   }
 
-  let satelliteBase64: string | null = payload.satelliteBase64 ?? null;
+  let satellite: SatelliteFetchResult = {
+    ok: Boolean(payload.satelliteBase64),
+    base64: payload.satelliteBase64 ?? null,
+    error: payload.satelliteBase64 ? null : null,
+  };
+
   if (
     payload.options.showSatelliteBackground &&
-    !satelliteBase64 &&
+    !satellite.ok &&
     layout.geographicBounds
   ) {
     const px = satellitePixelSizeForMapBoxMm(
       layout.mapBoxMm.w,
       layout.mapBoxMm.h,
     );
-    satelliteBase64 = await fetchSatelliteBackgroundBase64(
+    satellite = await fetchSatelliteBackgroundBase64(
       layout.geographicBounds,
       px.width,
       px.height,
     );
+    if (!satellite.ok) {
+      console.warn('ENTERPRISE_SATELLITE_UNAVAILABLE', {
+        error: satellite.error,
+        bounds: layout.geographicBounds,
+      });
+    }
   }
 
   drawHeader(doc, payload, logoBase64);
   if (payload.options.showLegend) {
     drawSidePanel(doc, payload);
   }
-  drawMapArea(doc, payload, satelliteBase64);
+  drawMapArea(doc, payload, satellite);
 
   return doc;
 }

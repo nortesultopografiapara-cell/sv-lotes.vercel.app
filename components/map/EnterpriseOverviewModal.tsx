@@ -131,8 +131,8 @@ export function EnterpriseOverviewModal({
                 }`}
                 title={
                   satelliteAvailable
-                    ? 'Imagem Esri World Imagery sob os lotes transparentes'
-                    : 'Disponível apenas no navegador com conexão'
+            ? 'Imagem Esri World Imagery sob os lotes transparentes'
+            : 'Requer conexão com a internet no navegador'
                 }
               >
                 <input

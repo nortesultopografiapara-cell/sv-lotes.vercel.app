@@ -3,7 +3,7 @@
  */
 
 import proj4 from 'proj4';
-import { resolveRealCoordinateRing } from '@/lib/lotSheetCoordinates';
+import { resolveRealCoordinateRing, latLngRingFromBlockForConversion } from '@/lib/lotSheetCoordinates';
 import { readStreetGuideLineCoordinates } from '@/lib/streetGuide';
 import type { GeographicBounds } from '@/lib/enterpriseOverviewSatellite';
 
@@ -21,7 +21,12 @@ export type EnterpriseOverviewOptions = {
   showSatelliteBackground: boolean;
 };
 
-export const ENTERPRISE_LOT_FILL_OPACITY = 0.25;
+export const ENTERPRISE_LOT_FILL_OPACITY = 0.12;
+
+/** Espessura das divisas dos lotes (mm) — 100% opacas, desenhadas após o preenchimento. */
+export const ENTERPRISE_LOT_STROKE_WIDTH_MM = 0.5;
+
+export const ENTERPRISE_LOT_STROKE_RGB: [number, number, number] = [0, 0, 0];
 
 export const DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS: EnterpriseOverviewOptions = {
   format: 'a3_landscape',
@@ -514,15 +519,66 @@ export function computeGeographicBounds(
     if (!Number.isFinite(west)) return null;
     const padLng = (east - west) * 0.02;
     const padLat = (north - south) * 0.02;
-    return {
+    return expandGeographicBoundsMinimum({
       west: west - padLng,
       south: south - padLat,
       east: east + padLng,
       north: north + padLat,
-    };
+    });
   } catch {
     return null;
   }
+}
+
+/** Bounds WGS84 a partir de geometry lat/lng dos lotes (prioridade para satélite). */
+export function computeGeographicBoundsFromBlocks(
+  blocks: Record<string, unknown>[],
+): GeographicBounds | null {
+  let west = Infinity;
+  let east = -Infinity;
+  let south = Infinity;
+  let north = -Infinity;
+  let points = 0;
+
+  for (const block of blocks) {
+    const ring = latLngRingFromBlockForConversion(block);
+    for (const [lat, lng] of ring) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      west = Math.min(west, lng);
+      east = Math.max(east, lng);
+      south = Math.min(south, lat);
+      north = Math.max(north, lat);
+      points++;
+    }
+  }
+
+  if (points < 2 || !Number.isFinite(west)) return null;
+  const padLng = Math.max((east - west) * 0.04, 0.0005);
+  const padLat = Math.max((north - south) * 0.04, 0.0005);
+  return expandGeographicBoundsMinimum({
+    west: west - padLng,
+    south: south - padLat,
+    east: east + padLng,
+    north: north + padLat,
+  });
+}
+
+/** Garante extensão mínima para export Esri (empreendimentos compactos). */
+export function expandGeographicBoundsMinimum(
+  bounds: GeographicBounds,
+  minSpanLng = 0.012,
+  minSpanLat = 0.012,
+): GeographicBounds {
+  const cx = (bounds.west + bounds.east) / 2;
+  const cy = (bounds.south + bounds.north) / 2;
+  const halfW = Math.max((bounds.east - bounds.west) / 2, minSpanLng / 2);
+  const halfH = Math.max((bounds.north - bounds.south) / 2, minSpanLat / 2);
+  return {
+    west: cx - halfW,
+    east: cx + halfW,
+    south: cy - halfH,
+    north: cy + halfH,
+  };
 }
 
 export function buildEnterpriseOverviewLayout(
@@ -592,12 +648,14 @@ export function buildEnterpriseOverviewLayout(
     emittedAt,
   );
 
-  const geographicBounds = computeGeographicBounds(
+  const utmBounds = computeGeographicBounds(
     fit.originE,
     fit.originN,
     rotatedBbox,
     input.project,
   );
+  const geometryBounds = computeGeographicBoundsFromBlocks(input.blocks);
+  const geographicBounds = geometryBounds ?? utmBounds;
 
   return {
     lots,
