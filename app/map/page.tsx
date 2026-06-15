@@ -50,6 +50,7 @@ import {
   normalizeQuadraBlockName,
 } from '@/lib/projectQuadras';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
+import { UpdateIndividualLotModal } from '@/components/map/UpdateIndividualLotModal';
 import {
   clearGisMapProjectPersistence,
   GIS_MAP_PROJECT_ID_KEY,
@@ -57,6 +58,13 @@ import {
   persistGisMapProject,
   readGisMapProjectIdFromUrl,
 } from '@/lib/gisMapProjectPersistence';
+import {
+  findBlockInQuadra,
+  parseTxtLotsForIndividualUpdate,
+  txtLotMatchesRequested,
+  upsertIndividualLotFromTxt,
+  type IndividualLotUpdateMode,
+} from '@/lib/civil3dIndividualLotUpdate';
 import {
   civil3dLotToImportPayload,
   computeProjectUtmClusterCenterFromBlocks,
@@ -318,6 +326,15 @@ export default function MapPage() {
   const [importingTxt, setImportingTxt] = useState(false);
   const [importTxtUtmZone, setImportTxtUtmZone] = useState('22S');
 
+  const [isUpdateLotModalOpen, setIsUpdateLotModalOpen] = useState(false);
+  const [updateLotQuadra, setUpdateLotQuadra] = useState('');
+  const [updateLotNumber, setUpdateLotNumber] = useState('');
+  const [updateLotFile, setUpdateLotFile] = useState<File | null>(null);
+  const [updateLotUtmZone, setUpdateLotUtmZone] = useState('22S');
+  const [updateLotMode, setUpdateLotMode] =
+    useState<IndividualLotUpdateMode>('geometry_technical');
+  const [updatingIndividualLot, setUpdatingIndividualLot] = useState(false);
+
   const [isImportShpModalOpen, setIsImportShpModalOpen] = useState(false);
   const [importShpFile, setImportShpFile] = useState<File | null>(null);
   const [importShpDefaultQuadra, setImportShpDefaultQuadra] = useState('');
@@ -539,6 +556,157 @@ export default function MapPage() {
     setImportTxtQuadra(normalizeQuadraBlockName(blockName));
     setImportTxtFile(null);
     setIsImportTxtModalOpen(true);
+  };
+
+  const handleUpdateIndividualLotQuadra = (blockName: string) => {
+    setUpdateLotQuadra(normalizeQuadraBlockName(blockName));
+    setUpdateLotNumber('');
+    setUpdateLotFile(null);
+    setUpdateLotMode('geometry_technical');
+    setUpdateLotUtmZone(importTxtUtmZone || '22S');
+    setIsUpdateLotModalOpen(true);
+  };
+
+  const handleSubmitIndividualLotUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!updateLotFile || !selectedProject || !user) return;
+    if (!updateLotQuadra.trim() || !updateLotNumber.trim()) {
+      alert('Informe a quadra e o número do lote.');
+      return;
+    }
+
+    if (updateLotMode === 'full_replacement') {
+      const ok = window.confirm(
+        'Tenho certeza que desejo substituir completamente o lote e posso perder vínculos comerciais.\n\n' +
+          'Os dados de venda, contrato e financeiro no banco NÃO serão apagados automaticamente, mas frente e confrontações técnicas serão redefinidas.\n\nContinuar?',
+      );
+      if (!ok) return;
+    }
+
+    setUpdatingIndividualLot(true);
+    try {
+      let tenantId = user.tenant_id;
+      if (!tenantId) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .single();
+        if (userData?.tenant_id) tenantId = userData.tenant_id;
+      }
+      const isMasterAdmin =
+        user.email === 'severino@nortesultopografia.com.br' ||
+        user.email === 'nortesultopografiapara@gmail.com' ||
+        user.role === 'SUPER_ADMIN';
+      if (!tenantId && isMasterAdmin) tenantId = null;
+      let finalTenantId = tenantId;
+      if (finalTenantId === 'MASTER-ADMIN') finalTenantId = null;
+      if (!finalTenantId && !isMasterAdmin) {
+        alert('Erro: Empresa não identificada. Faça login novamente.');
+        return;
+      }
+
+      const text = await updateLotFile.text();
+      const zoneNum = parseInt(updateLotUtmZone.replace(/\D/g, ''));
+      const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
+      const quadraName = updateLotQuadra.toUpperCase().trim();
+      const lotRequested = updateLotNumber.trim();
+
+      const parsed = parseTxtLotsForIndividualUpdate(text, proj4String);
+      if (parsed.empty) {
+        alert('Nenhum lote válido encontrado no TXT.');
+        return;
+      }
+      if (parsed.multipleLots) {
+        alert(
+          'Este arquivo contém mais de um lote. Para atualizar lote individual, envie um TXT contendo apenas um lote.',
+        );
+        return;
+      }
+
+      const payload = parsed.lots[0]!;
+      const txtLotName = String(payload.name).trim();
+      if (!txtLotMatchesRequested(txtLotName, lotRequested)) {
+        const proceed = window.confirm(
+          `O lote informado é ${lotRequested}, mas o TXT parece conter o lote ${txtLotName}. Deseja continuar?`,
+        );
+        if (!proceed) return;
+      }
+
+      if (!payload.geometrySaved) {
+        alert(
+          'Geometria inválida no TXT. Verifique fechamento do perímetro e zona UTM.',
+        );
+        return;
+      }
+
+      let blocksQuery = supabase
+        .from('blocks')
+        .select('*')
+        .eq('project_id', selectedProject.id)
+        .eq('block_name', quadraName);
+      if (user?.role !== 'SUPER_ADMIN' && user?.tenant_id) {
+        blocksQuery = blocksQuery.or(
+          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
+        );
+      }
+      const { data: quadraBlocks, error: loadErr } = await blocksQuery;
+      if (loadErr) throw loadErr;
+
+      const allInQuadra = (quadraBlocks || []) as Record<string, unknown>[];
+      let existing = findBlockInQuadra(allInQuadra, quadraName, lotRequested);
+
+      let allowCreate = false;
+      if (!existing) {
+        const createOk = window.confirm(
+          `Lote ${lotRequested} não encontrado na ${formatQuadraLabel(quadraName)}. Deseja criar novo lote nesta quadra?`,
+        );
+        if (!createOk) return;
+        allowCreate = true;
+      }
+
+      try {
+        await clearProjectMapOfflineCache(selectedProject.id);
+      } catch (cacheErr) {
+        console.warn('[CACHE] falha ao limpar IndexedDB do mapa', cacheErr);
+      }
+
+      const result = await upsertIndividualLotFromTxt(supabase, {
+        projectId: selectedProject.id,
+        quadra: quadraName,
+        lotNumber: lotRequested,
+        tenantId: finalTenantId,
+        companyId: finalTenantId,
+        payload,
+        existingBlock: existing,
+        mode: updateLotMode,
+        allowCreate,
+      });
+
+      console.log('INDIVIDUAL_LOT_UPDATE', {
+        ...result,
+        mode: updateLotMode,
+        txtLot: txtLotName,
+      });
+
+      alert(
+        result.action === 'updated'
+          ? `Lote ${result.lotNumber} da ${formatQuadraLabel(result.quadra)} atualizado com sucesso. Dados comerciais preservados.`
+          : `Lote ${result.lotNumber} criado na ${formatQuadraLabel(result.quadra)}.`,
+      );
+
+      setIsUpdateLotModalOpen(false);
+      setUpdateLotFile(null);
+      setUpdateLotNumber('');
+      setMapRefreshKey((k) => k + 1);
+      await loadProjectQuadras();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+      console.error('INDIVIDUAL_LOT_UPDATE_ERROR', err);
+      alert(`Erro ao atualizar lote: ${msg}`);
+    } finally {
+      setUpdatingIndividualLot(false);
+    }
   };
 
   const handleConfirmDeleteQuadra = async () => {
@@ -2295,6 +2463,7 @@ export default function MapPage() {
                    actionLoading={quadraActionLoading}
                    onViewOnMap={handleViewQuadraOnMap}
                    onReimportTxt={handleReimportQuadraTxt}
+                   onUpdateIndividualLot={handleUpdateIndividualLotQuadra}
                    onRequestDelete={setDeleteQuadraConfirm}
                  />
 
@@ -2835,6 +3004,23 @@ export default function MapPage() {
               </div>
            </div>
         )}
+
+        <UpdateIndividualLotModal
+          open={isUpdateLotModalOpen}
+          quadra={updateLotQuadra}
+          lotNumber={updateLotNumber}
+          utmZone={updateLotUtmZone}
+          file={updateLotFile}
+          mode={updateLotMode}
+          loading={updatingIndividualLot}
+          onClose={() => setIsUpdateLotModalOpen(false)}
+          onQuadraChange={setUpdateLotQuadra}
+          onLotNumberChange={setUpdateLotNumber}
+          onUtmZoneChange={setUpdateLotUtmZone}
+          onFileChange={setUpdateLotFile}
+          onModeChange={setUpdateLotMode}
+          onSubmit={handleSubmitIndividualLotUpdate}
+        />
 
         {isImportShpModalOpen && (
            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">

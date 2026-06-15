@@ -5,6 +5,7 @@ import {
   FolderOpen,
   LayoutGrid,
   Loader2,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ export type ProjectQuadrasPanelProps = {
   actionLoading?: string | null;
   onViewOnMap: (blockName: string) => void;
   onReimportTxt: (blockName: string) => void;
+  onUpdateIndividualLot: (blockName: string) => void;
   onRequestDelete: (blockName: string) => void;
 };
 
@@ -29,6 +31,7 @@ export function ProjectQuadrasPanel({
   actionLoading = null,
   onViewOnMap,
   onReimportTxt,
+  onUpdateIndividualLot,
   onRequestDelete,
 }: ProjectQuadrasPanelProps) {
   return (
@@ -103,6 +106,15 @@ export function ProjectQuadrasPanel({
                       >
                         <FolderOpen className="w-3.5 h-3.5 shrink-0 text-[#4999e9]" />
                         Reimportar TXT
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onUpdateIndividualLot(blockName)}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-card-alt)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                        Atualizar lote
                       </button>
                       <button
                         type="button"
