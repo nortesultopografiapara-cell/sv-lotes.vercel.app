@@ -119,6 +119,7 @@ import {
 import {
   applyManualConfrontantToBlock,
   buildLotConfrontationAudit,
+  buildOfficialLotConfrontationSegmentRows,
   clearManualConfrontantFromBlock,
   findPropagationTargets,
   officialSegmentIndexesForSide,
@@ -1853,69 +1854,15 @@ function LotPopupContent({
       segments_json: lot.segments_json,
       front_segment_index: lot.front_segment_index,
     };
-    const roles = [
-      ["frente", "Frente"],
-      ["fundo", "Fundo"],
-      ["ladoDireito", "Lado Direito"],
-      ["ladoEsquerdo", "Lado Esquerdo"],
-    ] as const;
-    const rows: Array<{
-      key: SideRole;
-      sideLabel: string;
-      segmentIndex: number;
-      text: string;
-      origin: string;
-    }> = [];
-    for (const [key, sideLabel] of roles) {
-      const indexes = officialSegmentIndexesForSide(
-        blockForSide,
-        allBlocksForConfront,
-        key,
-      );
-      if (!indexes.length) {
-        const entry = confrontationAudit.sides[key];
-        const text =
-          key === "frente" && frenteConfrontLabel
-            ? frenteConfrontLabel
-            : entry?.label ?? "A DEFINIR";
-        const origin =
-          key === "frente" && frontStreetLabel
-            ? "rua"
-            : entry?.sourceLabel ?? "—";
-        rows.push({
-          key,
-          sideLabel,
-          segmentIndex: -1,
-          text,
-          origin,
-        });
-        continue;
-      }
-      for (const segIdx of indexes) {
-        const edge = confrontationAudit.segmentEdges.find(
-          (e) => e.segmentIndex === segIdx,
-        );
-        const entry = confrontationAudit.sides[key];
-        const text =
-          edge?.confrontant ??
-          (key === "frente" && frenteConfrontLabel
-            ? frenteConfrontLabel
-            : entry?.label ?? "A DEFINIR");
-        const origin = edge?.source
-          ? sourceDisplayLabel(edge.source)
-          : key === "frente" && frontStreetLabel
-            ? "rua"
-            : entry?.sourceLabel ?? "—";
-        rows.push({
-          key,
-          sideLabel,
-          segmentIndex: segIdx,
-          text,
-          origin,
-        });
-      }
-    }
-    return rows;
+    return buildOfficialLotConfrontationSegmentRows(
+      blockForSide,
+      confrontationAudit,
+      allBlocksForConfront,
+      {
+        frenteConfrontLabel,
+        frontStreetLabel,
+      },
+    );
   }, [
     confrontationAudit,
     lot,

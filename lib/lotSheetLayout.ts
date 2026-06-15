@@ -5,7 +5,8 @@
 
 import {
   buildLotConfrontationAudit,
-  confrontantsFromAudit,
+  buildOfficialLotConfrontations,
+  officialSegmentIndexesForSide,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
 import { concatDistinctSideConfrontants } from '@/lib/confrontantTypes';
@@ -144,37 +145,46 @@ export function buildGroupedOfficialEdgeLabels(
   return labels;
 }
 
-/** Confrontante do lado — manual por segmento tem prioridade; múltiplos com " / ". */
+/** Confrontante do lado — mesma prioridade do popup GIS (segmentEdges por índice oficial). */
 export function formatSideConfrontantForSheet(
   block: Record<string, unknown>,
   audit: LotConfrontationAudit | null,
   role: SideRole,
   segmentIndexes: number[],
+  allBlocks: Record<string, unknown>[] = [block],
+  project?: Record<string, unknown> | null,
 ): string {
   if (!audit) return '—';
-  const manualLabels: string[] = [];
-  for (const idx of segmentIndexes) {
+  const indexes =
+    segmentIndexes.length > 0
+      ? segmentIndexes
+      : officialSegmentIndexesForSide(block, allBlocks, role, project);
+  const labels: string[] = [];
+  for (const idx of indexes) {
     const edge = audit.segmentEdges.find((e) => e.segmentIndex === idx);
-    if (edge?.status === 'manual' && edge.confrontant) {
-      manualLabels.push(edge.confrontant);
+    if (edge?.confrontant) {
+      labels.push(edge.confrontant);
       continue;
     }
     const rec = getSegmentConfrontantRecord(block, idx);
-    if (rec?.confrontant_source === 'manual' && rec.confrontant) {
-      manualLabels.push(rec.confrontant);
-    }
+    if (rec?.confrontant) labels.push(rec.confrontant);
   }
-  if (manualLabels.length) {
-    return concatDistinctSideConfrontants(manualLabels);
+  if (labels.length) {
+    return concatDistinctSideConfrontants(labels);
   }
-  return (
-    audit.confrontants[role] || audit.sides[role]?.label || '—'
-  );
+  const official = buildOfficialLotConfrontations(audit, {
+    block,
+    allBlocks,
+    project,
+  });
+  return official[role] || '—';
 }
 
 export function buildLotSheetSketchSides(
   block: Record<string, unknown>,
   audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[] = [block],
+  project?: Record<string, unknown> | null,
 ): LotSheetSketchSide[] {
   const measures = getOfficialLotMeasurements(block, block.number);
   const sides = measures.sides;
@@ -196,6 +206,8 @@ export function buildLotSheetSketchSides(
         audit,
         role,
         indexes,
+        allBlocks,
+        project,
       ),
     });
   }
@@ -638,13 +650,21 @@ export function resolveLabelClearOfScaleBand(
 
 export function buildLotSheetConfrontantsFromAudit(
   audit: LotConfrontationAudit | null,
+  block: Record<string, unknown>,
+  allBlocks: Record<string, unknown>[] = [block],
+  project?: Record<string, unknown> | null,
 ): {
   frente: string;
   fundo: string;
   ladoDireito: string;
   ladoEsquerdo: string;
 } {
-  return confrontantsFromAudit(audit);
+  const { chanfre: _c, ...sides } = buildOfficialLotConfrontations(audit, {
+    block,
+    allBlocks,
+    project,
+  });
+  return sides;
 }
 
 /** Quebra confrontante longo para caixa da prancha (rodapé). */
@@ -1977,7 +1997,7 @@ export function buildSketchLayoutFromBlock(
 ): {
   edgeLabels: string[];
   sketchSides: LotSheetSketchSide[];
-  confrontants: ReturnType<typeof confrontantsFromAudit>;
+  confrontants: ReturnType<typeof buildOfficialLotConfrontations>;
   audit: LotConfrontationAudit;
 } {
   const segs = parseOfficialSegmentsFromBlock(block);
@@ -1991,8 +2011,12 @@ export function buildSketchLayoutFromBlock(
   );
   return {
     edgeLabels: buildGroupedOfficialEdgeLabels(block, count, project),
-    sketchSides: buildLotSheetSketchSides(block, audit),
-    confrontants: confrontantsFromAudit(audit),
+    sketchSides: buildLotSheetSketchSides(block, audit, allBlocks, project),
+    confrontants: buildOfficialLotConfrontations(audit, {
+      block,
+      allBlocks,
+      project,
+    }),
     audit,
   };
 }

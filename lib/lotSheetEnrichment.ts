@@ -456,6 +456,7 @@ export type LotSheetSideConfrontants = {
   fundo: string;
   ladoDireito: string;
   ladoEsquerdo: string;
+  chanfre?: string;
 };
 
 /** Confrontantes por lado do lote (vizinho por segmento; frente = logradouro). */

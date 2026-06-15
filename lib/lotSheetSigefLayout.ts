@@ -127,14 +127,18 @@ export function computeConfrontationsPanelHeight(
     confrontants.ladoDireito,
     confrontants.ladoEsquerdo,
   ];
+  if (confrontants.chanfre?.trim()) {
+    values.push(confrontants.chanfre);
+  }
   let contentH = 0;
   for (const value of values) {
     const wrapped = wrapConfrontantText(value || '—', 52, 2);
     contentH += Math.max(1, wrapped.length) * lineStep;
   }
+  const minFourSidesH = 4 * lineStep;
   return Math.max(
     CONFRONTATIONS_PANEL_H,
-    padTop + titleBlock + contentH + bottomPad,
+    padTop + titleBlock + Math.max(contentH, minFourSidesH) + bottomPad,
   );
 }
 
@@ -291,18 +295,19 @@ export function drawSigefConfrontationsPanel(
     ['LADO DIREITO', confrontants.ladoDireito || '—'],
     ['LADO ESQUERDO', confrontants.ladoEsquerdo || '—'],
   ];
+  if (confrontants.chanfre?.trim()) {
+    rows.push(['CHANFRE', confrontants.chanfre.trim()]);
+  }
 
   let ly = box.y + padTop + 6.5;
   const lineStep = 4.8;
   const labelColW = 32;
   const valueX = box.x + box.w - padX;
   const bottomLimit = box.y + box.h - CONFRONTATIONS_PANEL_BOTTOM_PAD_MM;
-
   for (const [label, value] of rows) {
     const wrapped = wrapConfrontantText(value, 52, 2);
     const rowLines = Math.max(1, wrapped.length);
     const rowH = rowLines * lineStep;
-    if (ly + rowH > bottomLimit) break;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5.2);

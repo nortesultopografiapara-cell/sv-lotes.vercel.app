@@ -1856,6 +1856,9 @@ function drawConfrontationsBox(
     ['Lado Direito', confrontants.ladoDireito || '—'],
     ['Lado Esquerdo', confrontants.ladoEsquerdo || '—'],
   ];
+  if (confrontants.chanfre?.trim()) {
+    rows.push(['Chanfre', confrontants.chanfre.trim()]);
+  }
   const valueMaxW = w - padX * 2 - 22;
   for (const [k, v] of rows) {
     label(x + padX, ly, `${k}:`, false, rowLabelSize);
@@ -2285,7 +2288,7 @@ export async function generateLotSheetPdf(
   }
   const placedRects: LabelRect[] = [scaleBandRect];
 
-  // SIGEF: perímetro → vértices → medidas → nº lote → área (sem confrontantes no croqui)
+  // Croqui: vértices + (modo clean) apenas nº do lote; senão medidas e área.
   drawVertexMarkers(doc, sheetPts, placedRects);
 
   const vertexZones: PlacedLabelZone[] = placedRects
@@ -2298,163 +2301,176 @@ export async function generateLotSheetPdf(
 
   const usefulW = lotUsefulCrossWidthMm(sheetVerts, mainAxis);
   const frontDir = getLotFrontDirection(sheetVerts, frontEdge);
-  const areaPrePlan = placeLotNumberAndArea(
-    sheetVerts,
-    input.measures.area,
-    vertexZones.map((z) => ({
-      pos: z.pos,
-      radius: z.radius,
-      kind: z.kind,
-    })),
-    {
-      crossWidthMm: usefulW,
-      inwardDepthMm: frontDir.maxInwardDepthMm,
-      narrow: mainAxis.narrow,
-      vertexCount: sheetVerts.length,
-      frontEdgeIndex: frontEdge,
-    },
-  );
-  const areaReserveZone: PlacedLabelZone = {
-    pos: areaPrePlan.areaPos,
-    radius:
-      areaLabelCollisionRadius(
-        input.measures.area,
-        areaPrePlan.areaFontSize,
-        areaPrePlan.areaAngleDeg,
-      ) + 12,
-    kind: 'area_reserve',
-  };
-
-  const measurePositions = placeDistanceLabelsInsideLot(
-    doc,
-    sheetPts,
-    edgeLabels,
-    frontEdge,
-    mainAxis,
-    [...vertexZones, areaReserveZone],
-  );
-  for (const p of measurePositions) {
-    placedRects.push({
-      x: p.x - 5,
-      y: p.y - 3,
-      w: 10,
-      h: 6,
-      kind: 'distance',
-    });
-  }
-
-  const frontMeasurePos =
-    measurePositions.find((p) => p.edgeIndex === frontEdge) ?? null;
-
-  const placedZones: PlacedLabelZone[] = [
-    ...measurePositions.map((p) => ({
-      pos: [p.x, p.y] as [number, number],
-      radius: 5,
-      kind: 'distance',
-    })),
-    ...(frontMeasurePos
-      ? [
-          {
-            pos: [frontMeasurePos.x, frontMeasurePos.y] as [number, number],
-            radius: 5,
-            kind: 'front_measure',
-          },
-        ]
-      : []),
-  ];
 
   let lotBadge: { badgePos: [number, number]; radius: number };
   let areaLabel: { areaPos: [number, number]; areaFont: number };
+  let placedZones: PlacedLabelZone[] = [...vertexZones];
+  let frontMeasurePos: { edgeIndex: number; x: number; y: number } | null = null;
 
-  if (LOT_SHEET_SIGEF_LAYOUT) {
-    const front = getLotFrontDirection(sheetVerts, frontEdge);
-    const numberArea = placeLotNumberAndArea(
+  if (LOT_SHEET_CLEAN_SKETCH) {
+    lotBadge = placeLotNumberInVisualCenter(
+      doc,
+      sheetPts,
+      lotNum,
+      vertexZones,
+    );
+    areaLabel = { areaPos: lotBadge.badgePos, areaFont: 0 };
+  } else {
+    const areaPrePlan = placeLotNumberAndArea(
       sheetVerts,
       input.measures.area,
-      placedZones.map((z) => ({
+      vertexZones.map((z) => ({
         pos: z.pos,
         radius: z.radius,
         kind: z.kind,
       })),
       {
         crossWidthMm: usefulW,
-        inwardDepthMm: front.maxInwardDepthMm,
+        inwardDepthMm: frontDir.maxInwardDepthMm,
         narrow: mainAxis.narrow,
         vertexCount: sheetVerts.length,
         frontEdgeIndex: frontEdge,
-        preferredAreaPos: areaPrePlan.areaPos,
-        preferredAreaAngleDeg: areaPrePlan.areaAngleDeg,
       },
     );
-    const r = numberArea.badgeRadius;
-    const areaLines = splitAreaLabelLines(
-      input.measures.area,
-      usefulW,
-      mainAxis.narrow,
-    );
-    const areaLineH = numberArea.areaFontSize * 0.38;
-    const perpRad = ((numberArea.areaAngleDeg + 90) * Math.PI) / 180;
+    const areaReserveZone: PlacedLabelZone = {
+      pos: areaPrePlan.areaPos,
+      radius:
+        areaLabelCollisionRadius(
+          input.measures.area,
+          areaPrePlan.areaFontSize,
+          areaPrePlan.areaAngleDeg,
+        ) + 12,
+      kind: 'area_reserve',
+    };
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(numberArea.areaFontSize);
-    doc.setTextColor(...BLUE);
-    if (areaLines.length === 1) {
-      doc.text(areaLines[0], numberArea.areaPos[0], numberArea.areaPos[1], {
-        align: 'center',
-        baseline: 'middle',
-        angle: numberArea.areaAngleDeg,
-      });
-    } else {
-      areaLines.forEach((line, i) => {
-        const off = (i - (areaLines.length - 1) / 2) * areaLineH;
-        doc.text(
-          line,
-          numberArea.areaPos[0] + Math.cos(perpRad) * off,
-          numberArea.areaPos[1] + Math.sin(perpRad) * off,
-          {
-            align: 'center',
-            baseline: 'middle',
-            angle: numberArea.areaAngleDeg,
-          },
-        );
+    const measurePositions = placeDistanceLabelsInsideLot(
+      doc,
+      sheetPts,
+      edgeLabels,
+      frontEdge,
+      mainAxis,
+      [...vertexZones, areaReserveZone],
+    );
+    for (const p of measurePositions) {
+      placedRects.push({
+        x: p.x - 5,
+        y: p.y - 3,
+        w: 10,
+        h: 6,
+        kind: 'distance',
       });
     }
-    doc.setTextColor(...BLACK);
 
-    doc.setDrawColor(...BLACK);
-    doc.setFillColor(255, 255, 255);
-    doc.setLineWidth(0.35);
-    doc.circle(numberArea.badgePos[0], numberArea.badgePos[1], r, 'FD');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(numberArea.badgeFontSize);
-    doc.setTextColor(...RED);
-    doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 0.85, {
-      align: 'center',
-    });
-    doc.setTextColor(...BLACK);
+    frontMeasurePos =
+      measurePositions.find((p) => p.edgeIndex === frontEdge) ?? null;
 
-    lotBadge = { badgePos: numberArea.badgePos, radius: r };
-    areaLabel = {
-      areaPos: numberArea.areaPos,
-      areaFont: numberArea.areaFontSize,
-    };
-  } else {
-    lotBadge = placeLotNumberNearFront(
-      doc,
-      sheetPts,
-      lotNum,
-      frontEdge,
-      placedZones,
-    );
-    areaLabel = placeAreaLabelCenter(
-      doc,
-      sheetPts,
-      input.measures.area,
-      mainAxis,
-      frontEdge,
-      lotBadge.badgePos,
-      placedZones,
-    );
+    placedZones = [
+      ...measurePositions.map((p) => ({
+        pos: [p.x, p.y] as [number, number],
+        radius: 5,
+        kind: 'distance',
+      })),
+      ...(frontMeasurePos
+        ? [
+            {
+              pos: [frontMeasurePos.x, frontMeasurePos.y] as [number, number],
+              radius: 5,
+              kind: 'front_measure',
+            },
+          ]
+        : []),
+    ];
+
+    if (LOT_SHEET_SIGEF_LAYOUT) {
+      const front = getLotFrontDirection(sheetVerts, frontEdge);
+      const numberArea = placeLotNumberAndArea(
+        sheetVerts,
+        input.measures.area,
+        placedZones.map((z) => ({
+          pos: z.pos,
+          radius: z.radius,
+          kind: z.kind,
+        })),
+        {
+          crossWidthMm: usefulW,
+          inwardDepthMm: front.maxInwardDepthMm,
+          narrow: mainAxis.narrow,
+          vertexCount: sheetVerts.length,
+          frontEdgeIndex: frontEdge,
+          preferredAreaPos: areaPrePlan.areaPos,
+          preferredAreaAngleDeg: areaPrePlan.areaAngleDeg,
+        },
+      );
+      const r = numberArea.badgeRadius;
+      const areaLines = splitAreaLabelLines(
+        input.measures.area,
+        usefulW,
+        mainAxis.narrow,
+      );
+      const areaLineH = numberArea.areaFontSize * 0.38;
+      const perpRad = ((numberArea.areaAngleDeg + 90) * Math.PI) / 180;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(numberArea.areaFontSize);
+      doc.setTextColor(...BLUE);
+      if (areaLines.length === 1) {
+        doc.text(areaLines[0], numberArea.areaPos[0], numberArea.areaPos[1], {
+          align: 'center',
+          baseline: 'middle',
+          angle: numberArea.areaAngleDeg,
+        });
+      } else {
+        areaLines.forEach((line, i) => {
+          const off = (i - (areaLines.length - 1) / 2) * areaLineH;
+          doc.text(
+            line,
+            numberArea.areaPos[0] + Math.cos(perpRad) * off,
+            numberArea.areaPos[1] + Math.sin(perpRad) * off,
+            {
+              align: 'center',
+              baseline: 'middle',
+              angle: numberArea.areaAngleDeg,
+            },
+          );
+        });
+      }
+      doc.setTextColor(...BLACK);
+
+      doc.setDrawColor(...BLACK);
+      doc.setFillColor(255, 255, 255);
+      doc.setLineWidth(0.35);
+      doc.circle(numberArea.badgePos[0], numberArea.badgePos[1], r, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(numberArea.badgeFontSize);
+      doc.setTextColor(...RED);
+      doc.text(lotNum, numberArea.badgePos[0], numberArea.badgePos[1] + 0.85, {
+        align: 'center',
+      });
+      doc.setTextColor(...BLACK);
+
+      lotBadge = { badgePos: numberArea.badgePos, radius: r };
+      areaLabel = {
+        areaPos: numberArea.areaPos,
+        areaFont: numberArea.areaFontSize,
+      };
+    } else {
+      lotBadge = placeLotNumberNearFront(
+        doc,
+        sheetPts,
+        lotNum,
+        frontEdge,
+        placedZones,
+      );
+      areaLabel = placeAreaLabelCenter(
+        doc,
+        sheetPts,
+        input.measures.area,
+        mainAxis,
+        frontEdge,
+        lotBadge.badgePos,
+        placedZones,
+      );
+    }
   }
 
   placedZones.push({
@@ -2469,19 +2485,25 @@ export async function generateLotSheetPdf(
     h: LOT_BADGE_RADIUS_MM * 2,
     kind: 'lot_badge',
   });
-  const areaW = Math.max(20, input.measures.area.length * 1.4);
-  const areaH = areaLabel.areaFont * (splitAreaLabelLines(
-    input.measures.area,
-    lotUsefulCrossWidthMm(sheetVerts, mainAxis),
-    mainAxis.narrow,
-  ).length > 1 ? 1.8 : 1.1);
-  placedRects.push({
-    x: areaLabel.areaPos[0] - areaW / 2,
-    y: areaLabel.areaPos[1] - areaH / 2,
-    w: areaW,
-    h: areaH,
-    kind: 'area',
-  });
+  if (!LOT_SHEET_CLEAN_SKETCH) {
+    const areaW = Math.max(20, input.measures.area.length * 1.4);
+    const areaH =
+      areaLabel.areaFont *
+      (splitAreaLabelLines(
+        input.measures.area,
+        lotUsefulCrossWidthMm(sheetVerts, mainAxis),
+        mainAxis.narrow,
+      ).length > 1
+        ? 1.8
+        : 1.1);
+    placedRects.push({
+      x: areaLabel.areaPos[0] - areaW / 2,
+      y: areaLabel.areaPos[1] - areaH / 2,
+      w: areaW,
+      h: areaH,
+      kind: 'area',
+    });
+  }
 
   let streetPos: [number, number] | null = null;
   if (!LOT_SHEET_SIGEF_LAYOUT) {

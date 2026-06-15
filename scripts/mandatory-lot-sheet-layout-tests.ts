@@ -276,6 +276,38 @@ function testCleanSketchModeRules() {
   console.log('OK testCleanSketchModeRules');
 }
 
+/** Croqui limpo — prancha não desenha área nem medidas nas arestas (só contorno, M-xx e nº lote). */
+async function testCleanSketchPdfBody() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500050, 50, 'front'),
+    lineSeg(1, 7500000, 500050, 7500100, 500050, 100, 'right'),
+    lineSeg(2, 7500100, 500050, 7500100, 500000, 50, 'back'),
+    lineSeg(3, 7500100, 500000, 7500000, 500000, 100, 'left'),
+  ];
+  const b = block(segs, {
+    id: 'clean-sketch',
+    number: '12',
+    block_name: '01',
+    front_segment_index: 0,
+    area: 5000,
+  });
+  const payload = await buildPdfPayload(b, {
+    frente: '50,00 m',
+    fundo: '50,00 m',
+    ladoDireito: '100,00 m',
+    ladoEsquerdo: '100,00 m',
+    chanfre: '—',
+    curva: '—',
+    raio: '—',
+    corda: '—',
+    area: '5.000,00 m²',
+  });
+  const doc = await generateLotSheetPdf(payload);
+  assert(doc.getNumberOfPages() >= 1, 'pdf clean sketch gerado');
+  assert(LOT_SHEET_CLEAN_SKETCH, 'modo clean ativo na geração');
+  console.log('OK testCleanSketchPdfBody');
+}
+
 /** prancha_lote_04 — croqui limpo, confrontações só no rodapé. */
 function testPranchaLote04DedupeStreetLabels() {
   const segs = [
@@ -685,6 +717,7 @@ async function main() {
   testStreetLabelAvoidsScaleBand();
   testWrapLongConfrontant();
   testCleanSketchModeRules();
+  await testCleanSketchPdfBody();
   testPranchaLote04DedupeStreetLabels();
   testPranchaLote010AreaAndInterior();
   testPranchaLote018StaggerAndScaleProtection();

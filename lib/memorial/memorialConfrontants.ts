@@ -4,8 +4,7 @@
 
 import {
   buildLotConfrontationAudit,
-  confrontantsFromAudit,
-  officialSegmentIndexesForSide,
+  buildOfficialLotConfrontations,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
 import {
@@ -85,9 +84,42 @@ function confrontantFromAuditSideMapping(
 export function buildMemorialSideSummaryFromAudit(
   audit: LotConfrontationAudit | null,
   chanfre: string,
+  block?: Record<string, unknown>,
+  allBlocks?: Record<string, unknown>[],
+  project?: Record<string, unknown> | null,
 ): MemorialSideSummary {
+  if (block && allBlocks?.length) {
+    const official = buildOfficialLotConfrontations(audit, {
+      block,
+      allBlocks,
+      project,
+      chanfre: chanfre?.trim() && chanfre !== '—' ? chanfre : null,
+    });
+    return {
+      frente: official.frente,
+      fundo: official.fundo,
+      ladoDireito: official.ladoDireito,
+      ladoEsquerdo: official.ladoEsquerdo,
+      chanfre: official.chanfre ?? chanfre,
+    };
+  }
+  const legacy = audit
+    ? {
+        frente: audit.confrontants.frente || audit.sides.frente.label,
+        fundo: audit.confrontants.fundo || audit.sides.fundo.label,
+        ladoDireito:
+          audit.confrontants.ladoDireito || audit.sides.ladoDireito.label,
+        ladoEsquerdo:
+          audit.confrontants.ladoEsquerdo || audit.sides.ladoEsquerdo.label,
+      }
+    : {
+        frente: '—',
+        fundo: '—',
+        ladoDireito: '—',
+        ladoEsquerdo: '—',
+      };
   return {
-    ...confrontantsFromAudit(audit),
+    ...legacy,
     chanfre,
   };
 }

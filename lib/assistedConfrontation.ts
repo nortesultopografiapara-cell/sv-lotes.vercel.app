@@ -21,7 +21,10 @@ import {
   resolveSideSegmentIndexes,
   type SideRole,
 } from '@/lib/lotSegmentConfrontation';
-import { isPendingConfrontantLabel } from '@/lib/confrontantTypes';
+import {
+  concatDistinctSideConfrontants,
+  isPendingConfrontantLabel,
+} from '@/lib/confrontantTypes';
 import {
   asStreetGuideList,
   type StreetGuideConfrontInput,
@@ -56,25 +59,210 @@ export type LotConfrontationAudit = {
   hasPending: boolean;
 };
 
-/** Confrontantes por lado — mesma regra do memorial e do mapa (auditoria assistida). */
+const EMPTY_SIDE_CONFRONTANT = '—';
+
+export type OfficialLotConfrontationsContext = {
+  block: Record<string, unknown>;
+  allBlocks: Record<string, unknown>[];
+  project?: Record<string, unknown> | null;
+  streetGuides?: StreetGuideConfrontInput[];
+  /** Rótulo de frente já resolvido no popup (rua / confrontante). */
+  frenteConfrontLabel?: string | null;
+  frontStreetLabel?: string | null;
+  chanfre?: string | null;
+};
+
+export type OfficialLotConfrontations = LotSheetSideConfrontants & {
+  chanfre?: string;
+};
+
+export type OfficialLotConfrontationSegmentRow = {
+  key: SideRole;
+  sideLabel: string;
+  segmentIndex: number;
+  text: string;
+  origin: string;
+};
+
+const OFFICIAL_SIDE_UI_LABELS: ReadonlyArray<[SideRole, string]> = [
+  ['frente', 'Frente'],
+  ['fundo', 'Fundo'],
+  ['ladoDireito', 'Lado Direito'],
+  ['ladoEsquerdo', 'Lado Esquerdo'],
+];
+
+function emptyOfficialLotConfrontations(
+  chanfre?: string | null,
+): OfficialLotConfrontations {
+  return {
+    frente: EMPTY_SIDE_CONFRONTANT,
+    fundo: EMPTY_SIDE_CONFRONTANT,
+    ladoDireito: EMPTY_SIDE_CONFRONTANT,
+    ladoEsquerdo: EMPTY_SIDE_CONFRONTANT,
+    ...(chanfre?.trim() ? { chanfre: chanfre.trim() } : {}),
+  };
+}
+
+
+/**
+ * Linhas por segmento — mesma montagem da aba Confrontações do popup GIS.
+ */
+export function buildOfficialLotConfrontationSegmentRows(
+  block: Record<string, unknown>,
+  audit: LotConfrontationAudit | null,
+  allBlocks: Record<string, unknown>[],
+  options?: {
+    project?: Record<string, unknown> | null;
+    streetGuides?: StreetGuideConfrontInput[];
+    frenteConfrontLabel?: string | null;
+    frontStreetLabel?: string | null;
+  },
+): OfficialLotConfrontationSegmentRow[] {
+  if (!audit) return [];
+  const project = options?.project ?? null;
+  const streetGuides = options?.streetGuides ?? [];
+  const frenteConfrontLabel = options?.frenteConfrontLabel ?? null;
+  const frontStreetLabel = options?.frontStreetLabel ?? null;
+  const rows: OfficialLotConfrontationSegmentRow[] = [];
+
+  for (const [key, sideLabel] of OFFICIAL_SIDE_UI_LABELS) {
+    const indexes = officialSegmentIndexesForSide(
+      block,
+      allBlocks,
+      key,
+      project,
+      streetGuides,
+    );
+    if (!indexes.length) {
+      const entry = audit.sides[key];
+      const text =
+        key === 'frente' && frenteConfrontLabel
+          ? frenteConfrontLabel
+          : entry?.label ?? 'A DEFINIR';
+      const origin =
+        key === 'frente' && frontStreetLabel
+          ? 'rua'
+          : entry?.sourceLabel ?? '—';
+      rows.push({
+        key,
+        sideLabel,
+        segmentIndex: -1,
+        text,
+        origin,
+      });
+      continue;
+    }
+    for (const segIdx of indexes) {
+      const edge = audit.segmentEdges.find((e) => e.segmentIndex === segIdx);
+      const entry = audit.sides[key];
+      const text =
+        edge?.confrontant ??
+        (key === 'frente' && frenteConfrontLabel
+          ? frenteConfrontLabel
+          : entry?.label ?? 'A DEFINIR');
+      const origin = edge?.source
+        ? sourceDisplayLabel(edge.source)
+        : key === 'frente' && frontStreetLabel
+          ? 'rua'
+          : entry?.sourceLabel ?? '—';
+      rows.push({
+        key,
+        sideLabel,
+        segmentIndex: segIdx,
+        text,
+        origin,
+      });
+    }
+  }
+  return rows;
+}
+
+function consolidateSideLabels(labels: string[]): string {
+  if (!labels.length) return EMPTY_SIDE_CONFRONTANT;
+  const joined = concatDistinctSideConfrontants(labels);
+  return joined === 'A DEFINIR' ? EMPTY_SIDE_CONFRONTANT : joined;
+}
+
+/**
+ * Confrontações oficiais por lado — fonte única para popup, prancha, memorial e contrato.
+ * Usa segmentEdges + índices oficiais por lado (sem audit.confrontants agregado).
+ */
+export function buildOfficialLotConfrontations(
+  audit: LotConfrontationAudit | null,
+  context: OfficialLotConfrontationsContext,
+): OfficialLotConfrontations {
+  const { chanfre, frenteConfrontLabel, ...ctx } = context;
+  if (!audit) return emptyOfficialLotConfrontations(chanfre);
+
+  const rows = buildOfficialLotConfrontationSegmentRows(
+    context.block,
+    audit,
+    context.allBlocks,
+    {
+      project: ctx.project,
+      streetGuides: ctx.streetGuides,
+      frenteConfrontLabel,
+      frontStreetLabel: ctx.frontStreetLabel,
+    },
+  );
+
+  const byRole: Record<SideRole, string[]> = {
+    frente: [],
+    fundo: [],
+    ladoDireito: [],
+    ladoEsquerdo: [],
+  };
+  for (const row of rows) {
+    const text = String(row.text ?? '').trim();
+    if (!text || isPendingConfrontantLabel(text)) continue;
+    byRole[row.key].push(text);
+  }
+
+  return {
+    frente: consolidateSideLabels(byRole.frente),
+    fundo: consolidateSideLabels(byRole.fundo),
+    ladoDireito: consolidateSideLabels(byRole.ladoDireito),
+    ladoEsquerdo: consolidateSideLabels(byRole.ladoEsquerdo),
+    ...(chanfre?.trim() ? { chanfre: chanfre.trim() } : {}),
+  };
+}
+
+/** Confrontantes por lado — delega para buildOfficialLotConfrontations quando há contexto. */
 export function confrontantsFromAudit(
   audit: LotConfrontationAudit | null,
+  context?: Omit<OfficialLotConfrontationsContext, 'block' | 'allBlocks'> & {
+    block?: Record<string, unknown>;
+    allBlocks?: Record<string, unknown>[];
+  },
 ): LotSheetSideConfrontants {
+  if (context?.block && context.allBlocks?.length) {
+    const { chanfre: _c, ...sides } = buildOfficialLotConfrontations(audit, {
+      block: context.block,
+      allBlocks: context.allBlocks,
+      project: context.project,
+      streetGuides: context.streetGuides,
+      frenteConfrontLabel: context.frenteConfrontLabel,
+      frontStreetLabel: context.frontStreetLabel,
+      chanfre: context.chanfre,
+    });
+    return sides;
+  }
   if (!audit) {
     return {
-      frente: '—',
-      fundo: '—',
-      ladoDireito: '—',
-      ladoEsquerdo: '—',
+      frente: EMPTY_SIDE_CONFRONTANT,
+      fundo: EMPTY_SIDE_CONFRONTANT,
+      ladoDireito: EMPTY_SIDE_CONFRONTANT,
+      ladoEsquerdo: EMPTY_SIDE_CONFRONTANT,
     };
   }
   const c = audit.confrontants;
   const s = audit.sides;
   return {
-    frente: c.frente || s.frente.label || '—',
-    fundo: c.fundo || s.fundo.label || '—',
-    ladoDireito: c.ladoDireito || s.ladoDireito.label || '—',
-    ladoEsquerdo: c.ladoEsquerdo || s.ladoEsquerdo.label || '—',
+    frente: c.frente || s.frente.label || EMPTY_SIDE_CONFRONTANT,
+    fundo: c.fundo || s.fundo.label || EMPTY_SIDE_CONFRONTANT,
+    ladoDireito: c.ladoDireito || s.ladoDireito.label || EMPTY_SIDE_CONFRONTANT,
+    ladoEsquerdo:
+      c.ladoEsquerdo || s.ladoEsquerdo.label || EMPTY_SIDE_CONFRONTANT,
   };
 }
 

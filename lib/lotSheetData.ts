@@ -39,7 +39,7 @@ import {
 import { buildOfficialSheetLocalGeometry } from '@/lib/lotSheetCoordinates';
 import {
   buildLotConfrontationAudit,
-  confrontantsFromAudit,
+  buildOfficialLotConfrontations,
 } from '@/lib/assistedConfrontation';
 import { buildMemorialDraftPlainText } from '@/lib/memorialDraft';
 import {
@@ -556,7 +556,17 @@ export async function loadLotSheetPayload(
     (company as Record<string, unknown>) || null,
   );
 
-  const sideConfrontants = confrontantsFromAudit(confrontationAudit);
+  const officialConfrontations = buildOfficialLotConfrontations(
+    confrontationAudit,
+    {
+      block: blockRecord,
+      allBlocks: blocksList,
+      project: project as Record<string, unknown>,
+      streetGuides: guidesList,
+      chanfre: chanfreStr !== '—' ? chanfreStr : null,
+    },
+  );
+  const sideConfrontants = officialConfrontations;
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
     block as Record<string, unknown>,
