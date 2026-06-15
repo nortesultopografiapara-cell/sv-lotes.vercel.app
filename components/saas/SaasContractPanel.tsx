@@ -47,11 +47,15 @@ import type {
 import {
   canResendOrShareSignature,
   formatSignatureTimelineDateTime,
-  isContractSignatureSendBlocked,
   mergeSignatureTimeline,
   resolveSignatureUrlFromSendResponse,
   type LocalSignatureTimelineEvent,
 } from '@/lib/saasContractSignatureShare';
+import {
+  canShowProviderSignButton,
+  isContractSignatureSendBlocked,
+} from '@/lib/saasContractBilateralSignature';
+import { ContractProviderSignModal } from '@/components/saas/ContractProviderSignModal';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
 import { ContractSignatureShareModal } from '@/components/saas/ContractSignatureShareModal';
@@ -94,6 +98,8 @@ export function SaasContractPanel({
     history: SignatureHistoryEvent[];
   }>({ latest: null, history: [] });
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [providerSignModalOpen, setProviderSignModalOpen] = useState(false);
+  const [signingProvider, setSigningProvider] = useState(false);
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
 
   const companyId = (company as { id?: string } | null)?.id;
@@ -231,9 +237,53 @@ export function SaasContractPanel({
   const canSendForSignature =
     contractReady &&
     activeContract &&
-    !['signed', 'active'].includes(String(activeContract.status || '').toLowerCase()) &&
+    !['signed', 'active', 'client_signed'].includes(String(activeContract.status || '').toLowerCase()) &&
     !signatureBlocked &&
     !hasActivePendingSignature;
+
+  const showProviderSignButton = canShowProviderSignButton(
+    signatureInfo.latest?.signature_status,
+  );
+
+  const handleProviderSign = async (input: {
+    providerName: string;
+    providerDocument: string;
+    providerEmail: string;
+    providerRole: string;
+  }) => {
+    if (!companyId || !user?.id || !signatureInfo.latest?.id) {
+      throw new Error('Dados insuficientes para assinar.');
+    }
+    setSigningProvider(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/companies/${companyId}/contract/sign-provider`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          signatureId: signatureInfo.latest.id,
+          providerName: input.providerName,
+          providerDocument: input.providerDocument,
+          providerEmail: input.providerEmail,
+          providerRole: input.providerRole || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao assinar pela SV.');
+      }
+      appendLocalTimeline('SV assinou', input.providerName);
+      if (json.pdfSignedUrl) {
+        appendLocalTimeline('PDF final gerado', 'Contrato bilateral disponível');
+      }
+      await loadSignatureInfo();
+      await loadContracts();
+      onRefresh();
+    } finally {
+      setSigningProvider(false);
+    }
+  };
 
   const openShareModal = useCallback(
     (signature: CompanyContractSignatureRow, signUrl: string) => {
@@ -475,10 +525,21 @@ export function SaasContractPanel({
                   href={activeContract.pdf_signed_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 ring-2 ring-emerald-400/40"
                 >
                   <ShieldCheck className="w-4 h-4" /> Baixar PDF Assinado
                 </a>
+              )}
+              {showProviderSignButton && (
+                <button
+                  type="button"
+                  disabled={signingProvider || busy}
+                  onClick={() => setProviderSignModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  <ShieldCheck className={`w-4 h-4 ${signingProvider ? 'animate-pulse' : ''}`} />
+                  Assinar pela SV
+                </button>
               )}
             </>
           )}
@@ -631,12 +692,18 @@ export function SaasContractPanel({
           </div>
         )}
         {signatureInfo.latest?.signer_name &&
-          signatureInfo.latest.signature_status === 'SIGNED' && (
+          (signatureInfo.latest.signature_status === 'SIGNED' ||
+            signatureInfo.latest.signature_status === 'CLIENT_SIGNED') && (
           <p className="text-[11px] text-emerald-300 mt-3">
-            Assinado por {signatureInfo.latest.signer_name}
+            Cliente: {signatureInfo.latest.signer_name}
             {signatureInfo.latest.signer_document
               ? ` · CPF ${formatCpfCnpj(signatureInfo.latest.signer_document)}`
               : ''}
+            {signatureInfo.latest.provider_signer_name
+              ? ` · SV: ${signatureInfo.latest.provider_signer_name}`
+              : signatureInfo.latest.signature_status === 'CLIENT_SIGNED'
+                ? ' · Aguardando assinatura da SV'
+                : ''}
           </p>
         )}
       </div>
@@ -711,6 +778,15 @@ export function SaasContractPanel({
           }
         />
       )}
+
+      <ContractProviderSignModal
+        isOpen={providerSignModalOpen}
+        onClose={() => setProviderSignModalOpen(false)}
+        companyName={company.name || '—'}
+        contractNumber={contractNumber}
+        busy={signingProvider}
+        onSign={handleProviderSign}
+      />
     </div>
   );
 }

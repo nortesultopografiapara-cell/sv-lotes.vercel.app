@@ -14,6 +14,7 @@ import {
   signatureStatusLabel,
 } from '../lib/saasContractStatus';
 import {
+  appendBilateralSignatureCertificateToPdf,
   appendSignatureCertificateToPdf,
   buildSignatureHashPayload,
   computeSignatureHashSync,
@@ -28,6 +29,14 @@ import {
   signatureExpiresAt,
   type CompanyContractSignatureRow,
 } from '../lib/saasContractSignatureService';
+import {
+  canProviderSignContract,
+  canPublicClientSign,
+  canShowProviderSignButton,
+  isContractSignatureSendBlocked,
+  isFullySignedContract,
+  isPublicClientSignBlocked,
+} from '../lib/saasContractBilateralSignature';
 import { buildSignUrl } from '../lib/saasContractUrls';
 import {
   buildSignatureShareEmailSubject,
@@ -36,7 +45,7 @@ import {
   buildSignatureShareWhatsAppUrl,
   canShareViaEmail,
   canShareViaWhatsApp,
-  isContractSignatureSendBlocked,
+  canResendOrShareSignature,
   mergeSignatureTimeline,
   normalizeWhatsAppPhone,
   qrCodePayloadForSignatureUrl,
@@ -45,6 +54,45 @@ import {
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
+}
+
+function pdfContainsText(pdf: Uint8Array, text: string): boolean {
+  const raw = Buffer.from(pdf).toString('latin1');
+  return raw.includes(text);
+}
+
+function baseSignatureFixture(
+  overrides: Partial<CompanyContractSignatureRow> = {},
+): CompanyContractSignatureRow {
+  return {
+    id: 's1',
+    contract_id: 'c1',
+    company_id: 'co1',
+    signer_name: null,
+    signer_email: null,
+    signer_document: null,
+    signer_role: null,
+    signature_status: 'PENDING',
+    signature_token: 'tok',
+    signature_url: buildSignUrl('tok'),
+    ip_address: null,
+    user_agent: null,
+    viewed_at: null,
+    signed_at: null,
+    expires_at: '2026-07-15T14:20:00.000Z',
+    signature_hash: null,
+    provider_signer_name: null,
+    provider_signer_email: null,
+    provider_signer_document: null,
+    provider_signer_role: null,
+    provider_signed_at: null,
+    provider_signature_hash: null,
+    provider_ip_address: null,
+    provider_user_agent: null,
+    created_at: '2026-06-15T14:20:00.000Z',
+    updated_at: '2026-06-15T14:20:00.000Z',
+    ...overrides,
+  };
 }
 
 function menesesCompanyFixture() {
@@ -176,32 +224,161 @@ function testCertificateAndFinalPdf() {
 }
 
 function testHistory() {
-  const signature = {
-    id: 's1',
-    contract_id: 'c1',
-    company_id: 'co1',
+  const signature = baseSignatureFixture({
     signer_name: 'Carlos',
     signer_email: 'c@test.com',
     signer_document: '12345678901',
     signer_role: 'Sócio',
     signature_status: 'SIGNED',
-    signature_token: 'tok',
-    signature_url: buildSignUrl('tok'),
     ip_address: '10.0.0.1',
     user_agent: 'test',
     viewed_at: '2026-06-15T14:22:00.000Z',
     signed_at: '2026-06-15T14:25:00.000Z',
-    expires_at: '2026-07-15T14:20:00.000Z',
     signature_hash: 'abc',
-    created_at: '2026-06-15T14:20:00.000Z',
-    updated_at: '2026-06-15T14:25:00.000Z',
-  } as CompanyContractSignatureRow;
+    provider_signer_name: 'Representante SV',
+    provider_signer_document: '98765432100',
+    provider_signed_at: '2026-06-15T15:00:00.000Z',
+    updated_at: '2026-06-15T15:00:00.000Z',
+  });
 
   const history = buildSignatureHistory(signature);
-  assert(history.length >= 3, 'histórico com envio, visualização e assinatura');
+  assert(history.length >= 5, 'histórico bilateral completo');
   assert(history[0].event === 'Link enviado', 'primeiro evento');
-  assert(history.some((h) => h.event === 'Assinado'), 'evento assinatura');
+  assert(history.some((h) => h.event === 'Cliente visualizou'), 'cliente visualizou');
+  assert(history.some((h) => h.event === 'Cliente assinou'), 'cliente assinou');
+  assert(history.some((h) => h.event === 'SV assinou'), 'SV assinou');
+  assert(history.some((h) => h.event === 'PDF final gerado'), 'PDF final gerado');
   console.log('OK testHistory');
+}
+
+function testBilateralSignatureFlow() {
+  assert(canPublicClientSign('PENDING'), 'cliente pode assinar pendente');
+  assert(canPublicClientSign('VIEWED'), 'cliente pode assinar visualizado');
+  assert(!canPublicClientSign('CLIENT_SIGNED'), 'cliente não reassina após assinar');
+  assert(!canPublicClientSign('SIGNED'), 'cliente não assina contrato final');
+
+  assert(!canProviderSignContract('PENDING'), 'SV não assina antes do cliente');
+  assert(!canProviderSignContract('VIEWED'), 'SV não assina antes do cliente');
+  assert(canProviderSignContract('CLIENT_SIGNED'), 'SV assina após cliente');
+  assert(!canProviderSignContract('SIGNED'), 'SV não reassina contrato final');
+
+  assert(!isFullySignedContract('CLIENT_SIGNED'), 'CLIENT_SIGNED não é assinado final');
+  assert(isFullySignedContract('SIGNED'), 'SIGNED é assinado final');
+
+  assert(isPublicClientSignBlocked('CLIENT_SIGNED'), 'link público bloqueado após cliente');
+  assert(isPublicClientSignBlocked('SIGNED'), 'link público bloqueado após bilateral');
+
+  assert(canShowProviderSignButton('CLIENT_SIGNED'), 'botão SV no painel Master');
+  assert(!canShowProviderSignButton('PENDING'), 'botão SV oculto antes do cliente');
+  assert(!canShowProviderSignButton('SIGNED'), 'botão SV oculto após bilateral');
+
+  console.log('OK testBilateralSignatureFlow');
+}
+
+function testBilateralFinalPdf() {
+  const company = menesesCompanyFixture();
+  const clientSignedAt = '2026-06-15T14:25:00.000Z';
+  const providerSignedAt = '2026-06-15T15:00:00.000Z';
+  const clientHash = computeSignatureHashSync('client-hash');
+  const providerHash = computeSignatureHashSync('provider-hash');
+
+  const bilateral = buildSaasContractPdfWithMeta(
+    {
+      company,
+      subscription: {
+        contract_number: '00001/2026',
+        plan_type: 'business',
+        monthly_price: 549.99,
+        start_date: '2026-05-27',
+        first_payment_date: '2026-05-27',
+        next_due_date: '2026-06-27',
+      },
+    },
+    {
+      bilateralCertificate: {
+        contractNumber: '00001/2026',
+        client: {
+          contractNumber: '00001/2026',
+          signerName: 'Carlos Daniel Araújo Meneses',
+          signerDocument: '12345678901',
+          signerEmail: 'carlos@test.com',
+          signerRole: 'Sócio',
+          ipAddress: '192.168.1.10',
+          signedDate: formatSignatureDateBr(clientSignedAt),
+          signedTime: formatSignatureTimeBr(clientSignedAt),
+          signatureHash: clientHash,
+          partyLabel: 'CONTRATANTE',
+        },
+        provider: {
+          contractNumber: '00001/2026',
+          signerName: 'Representante SV LOTES',
+          signerDocument: '98765432100',
+          signerEmail: 'admin@svlotes.com.br',
+          signerRole: 'Sócio administrador',
+          ipAddress: '10.0.0.2',
+          signedDate: formatSignatureDateBr(providerSignedAt),
+          signedTime: formatSignatureTimeBr(providerSignedAt),
+          signatureHash: providerHash,
+          partyLabel: 'CONTRATADA',
+        },
+      },
+      executedSignatures: {
+        client: {
+          name: 'Carlos Daniel Araújo Meneses',
+          document: '12345678901',
+          role: 'Sócio',
+          signedDate: formatSignatureDateBr(clientSignedAt),
+        },
+        provider: {
+          name: 'Representante SV LOTES',
+          document: '98765432100',
+          role: 'Sócio administrador',
+          signedDate: formatSignatureDateBr(providerSignedAt),
+        },
+      },
+    },
+  );
+
+  assert(pdfContainsText(bilateral.pdf, 'CONTRATANTE'), 'PDF contém bloco CONTRATANTE');
+  assert(pdfContainsText(bilateral.pdf, 'CONTRATADA'), 'PDF contém bloco CONTRATADA');
+  assert(
+    pdfContainsText(bilateral.pdf, 'CERTIFICADO DE ASSINATURA BILATERAL'),
+    'PDF contém certificado bilateral',
+  );
+  assert(
+    pdfContainsText(bilateral.pdf, 'Assinatura eletr'),
+    'PDF contém assinatura eletrônica executada',
+  );
+
+  const doc = new jsPDF();
+  appendBilateralSignatureCertificateToPdf(
+    doc,
+    {
+      contractNumber: '00001/2026',
+      client: {
+        contractNumber: '00001/2026',
+        signerName: 'Cliente',
+        signerDocument: '12345678901',
+        ipAddress: '1.1.1.1',
+        signedDate: '15/06/2026',
+        signedTime: '14:25',
+        signatureHash: clientHash,
+      },
+      provider: {
+        contractNumber: '00001/2026',
+        signerName: 'SV',
+        signerDocument: '98765432100',
+        ipAddress: '2.2.2.2',
+        signedDate: '15/06/2026',
+        signedTime: '15:00',
+        signatureHash: providerHash,
+      },
+    },
+    16,
+    210,
+  );
+  assert(doc.getNumberOfPages() >= 1, 'certificado bilateral standalone');
+  console.log('OK testBilateralFinalPdf');
 }
 
 function testSendReturnsSignatureUrl() {
@@ -284,13 +461,19 @@ function testShareTimelineMerge() {
 
 function testSignedBlocksSend() {
   assert(isContractSignatureSendBlocked('SIGNED'), 'assinado bloqueia envio');
+  assert(isContractSignatureSendBlocked('CLIENT_SIGNED'), 'cliente assinou bloqueia reenvio');
   assert(!isContractSignatureSendBlocked('PENDING'), 'pendente permite reenvio');
+  assert(!canResendOrShareSignature('CLIENT_SIGNED'), 'CLIENT_SIGNED bloqueia reenvio');
+  assert(!canResendOrShareSignature('SIGNED'), 'SIGNED bloqueia reenvio');
+  assert(canResendOrShareSignature('VIEWED'), 'VIEWED permite compartilhar');
   console.log('OK testSignedBlocksSend');
 }
 
 function testReSignBlockedLogic() {
   const signed = { signature_status: 'SIGNED' } as CompanyContractSignatureRow;
+  const clientSigned = { signature_status: 'CLIENT_SIGNED' } as CompanyContractSignatureRow;
   assert(signed.signature_status === 'SIGNED', 'status SIGNED bloqueia reassinatura');
+  assert(isPublicClientSignBlocked(clientSigned.signature_status), 'CLIENT_SIGNED bloqueia público');
   const expired = isSignatureExpired('2020-01-01T00:00:00Z');
   assert(expired, 'link expirado bloqueia assinatura');
   console.log('OK testReSignBlockedLogic');
@@ -307,7 +490,7 @@ function testLegacyContractCompatibility() {
   );
   assert(SAAS_CONTRACT_STATUS_AFTER_GENERATION === 'generated', 'geração mantém generated');
   assert(normalizeSaasContractDocumentStatus('GENERATED') === 'generated', 'normalização');
-  assert(signatureStatusLabel('PENDING') === 'Aguardando assinatura', 'label assinatura');
+  assert(signatureStatusLabel('CLIENT_SIGNED') === 'Cliente assinou — aguardando SV', 'label CLIENT_SIGNED');
   console.log('OK testLegacyContractCompatibility');
 }
 
@@ -343,6 +526,8 @@ async function main() {
   testSignatureHash();
   testCertificateAndFinalPdf();
   testHistory();
+  testBilateralSignatureFlow();
+  testBilateralFinalPdf();
   testSendReturnsSignatureUrl();
   testWhatsAppUrl();
   testMailtoUrl();

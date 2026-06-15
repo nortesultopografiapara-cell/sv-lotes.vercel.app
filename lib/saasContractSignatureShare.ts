@@ -4,6 +4,10 @@
 
 import type { SignatureHistoryEvent } from '@/lib/saasContractSignatureService';
 import type { SignatureStatus } from '@/lib/saasContractStatus';
+import {
+  canResendOrShareSignature as canResendOrShareSignatureBilateral,
+  isContractSignatureSendBlocked as isContractSignatureSendBlockedBilateral,
+} from '@/lib/saasContractBilateralSignature';
 import { onlyDigits } from '@/lib/inputMasks';
 
 export type SignatureShareMessageInput = {
@@ -118,15 +122,13 @@ export function qrCodePayloadForSignatureUrl(signatureUrl: string): string {
 export function isContractSignatureSendBlocked(
   status?: SignatureStatus | string | null,
 ): boolean {
-  const key = String(status || '').toUpperCase();
-  return key === 'SIGNED';
+  return isContractSignatureSendBlockedBilateral(status);
 }
 
 export function canResendOrShareSignature(
   status?: SignatureStatus | string | null,
 ): boolean {
-  const key = String(status || '').toUpperCase();
-  return key === 'PENDING' || key === 'VIEWED';
+  return canResendOrShareSignatureBilateral(status);
 }
 
 export function mergeSignatureTimeline(

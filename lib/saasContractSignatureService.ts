@@ -22,8 +22,13 @@ import {
   computeSignatureHash,
   formatSignatureDateBr,
   formatSignatureTimeBr,
-  type SignatureCertificateData,
+  type BilateralSignatureCertificateData,
 } from '@/lib/saasContractSignaturePdf';
+import {
+  canProviderSignContract,
+  isFullySignedContract,
+  isPublicClientSignBlocked,
+} from '@/lib/saasContractBilateralSignature';
 import { onlyDigits } from '@/lib/inputMasks';
 
 const SAAS_CONTRACT_BUCKET = 'company-assets';
@@ -46,6 +51,14 @@ export type CompanyContractSignatureRow = {
   signed_at: string | null;
   expires_at: string;
   signature_hash: string | null;
+  provider_signer_name: string | null;
+  provider_signer_email: string | null;
+  provider_signer_document: string | null;
+  provider_signer_role: string | null;
+  provider_signed_at: string | null;
+  provider_signature_hash: string | null;
+  provider_ip_address: string | null;
+  provider_user_agent: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -219,6 +232,7 @@ export async function getSignatureByToken(
 
 export function buildSignatureHistory(
   signature: CompanyContractSignatureRow,
+  contractPdfGeneratedAt?: string | null,
 ): SignatureHistoryEvent[] {
   const events: SignatureHistoryEvent[] = [];
 
@@ -232,7 +246,7 @@ export function buildSignatureHistory(
   if (signature.viewed_at) {
     events.push({
       at: signature.viewed_at,
-      event: 'Visualizado pelo cliente',
+      event: 'Cliente visualizou',
       user: signature.signer_name || 'Signatário',
       ip: signature.ip_address,
       details: signature.signer_name || null,
@@ -242,12 +256,34 @@ export function buildSignatureHistory(
   if (signature.signed_at) {
     events.push({
       at: signature.signed_at,
-      event: 'Assinado',
+      event: 'Cliente assinou',
       user: signature.signer_name || 'Signatário',
       ip: signature.ip_address,
       details: signature.signer_document
         ? `CPF ${signature.signer_document}`
         : signature.signer_name,
+    });
+  }
+
+  if (signature.provider_signed_at) {
+    events.push({
+      at: signature.provider_signed_at,
+      event: 'SV assinou',
+      user: signature.provider_signer_name || 'SV LOTES',
+      ip: signature.provider_ip_address,
+      details: signature.provider_signer_document
+        ? `CPF ${signature.provider_signer_document}`
+        : signature.provider_signer_name,
+    });
+  }
+
+  if (isFullySignedContract(signature.signature_status)) {
+    events.push({
+      at: signature.provider_signed_at || signature.updated_at,
+      event: 'PDF final gerado',
+      user: 'Sistema',
+      ip: null,
+      details: 'Contrato bilateral assinado disponível para download',
     });
   }
 
@@ -270,6 +306,8 @@ export function buildSignatureHistory(
       details: 'Solicitação de assinatura cancelada',
     });
   }
+
+  void contractPdfGeneratedAt;
 
   return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
@@ -309,10 +347,12 @@ export async function sendContractForSignature(
   }
 
   const status = String(contract.status || '').toLowerCase();
-  if (status === 'signed' || status === 'active') {
+  if (status === 'signed' || status === 'active' || status === 'client_signed') {
     throw new SaasContractStepError(
       'validation',
-      'Este contrato já foi assinado.',
+      status === 'client_signed'
+        ? 'O cliente já assinou. Aguarde a assinatura da SV ou utilize o botão "Assinar pela SV".'
+        : 'Este contrato já foi assinado.',
     );
   }
 
@@ -381,7 +421,10 @@ export async function markContractSignatureViewed(
   signature: CompanyContractSignatureRow,
   meta: { ipAddress?: string | null; userAgent?: string | null },
 ): Promise<CompanyContractSignatureRow> {
-  if (signature.signature_status === 'SIGNED') return signature;
+  if (isFullySignedContract(signature.signature_status)) return signature;
+  if (isPublicClientSignBlocked(signature.signature_status) && signature.signature_status !== 'VIEWED') {
+    return signature;
+  }
   if (signature.signature_status === 'CANCELLED') return signature;
 
   if (isSignatureExpired(signature.expires_at)) {
@@ -444,22 +487,23 @@ export async function signContractElectronically(
   input: SignContractInput,
 ): Promise<{
   signature: CompanyContractSignatureRow;
-  pdfSignedUrl: string;
+  pdfSignedUrl: null;
 }> {
   const signature = await getSignatureByToken(supabaseAdmin, token);
   if (!signature) {
     throw new SaasContractStepError('validation', 'Link de assinatura inválido.');
   }
 
-  if (signature.signature_status === 'SIGNED') {
-    throw new SaasContractStepError(
-      'validation',
-      'Este contrato já foi assinado. O link está bloqueado.',
-    );
-  }
-
-  if (signature.signature_status === 'CANCELLED') {
-    throw new SaasContractStepError('validation', 'Esta solicitação de assinatura foi cancelada.');
+  if (isPublicClientSignBlocked(signature.signature_status)) {
+    const msg =
+      signature.signature_status === 'CLIENT_SIGNED'
+        ? 'O cliente já assinou este contrato. Aguarde a assinatura da SV.'
+        : signature.signature_status === 'SIGNED'
+          ? 'Este contrato já foi assinado. O link está bloqueado.'
+          : signature.signature_status === 'CANCELLED'
+            ? 'Esta solicitação de assinatura foi cancelada.'
+            : 'O link de assinatura não está mais disponível.';
+    throw new SaasContractStepError('validation', msg);
   }
 
   if (isSignatureExpired(signature.expires_at)) {
@@ -495,19 +539,14 @@ export async function signContractElectronically(
   }
 
   const contractRow = contract as CompanyContractRow & { pdf_signed_url?: string | null };
-  if (contractRow.pdf_signed_url || String(contractRow.status).toLowerCase() === 'signed') {
+  const contractStatus = String(contractRow.status).toLowerCase();
+  if (contractRow.pdf_signed_url || contractStatus === 'signed' || contractStatus === 'client_signed') {
     throw new SaasContractStepError(
       'validation',
       'Este contrato já possui assinatura registrada.',
     );
   }
 
-  const { company, subscription } = await loadFreshSaasContractContext(
-    supabaseAdmin,
-    signature.company_id,
-  );
-
-  const pdfDates = subscriptionDatesForContractPdf(subscription);
   const signedAt = new Date().toISOString();
   const hashPayload = buildSignatureHashPayload({
     contractId: contractRow.id,
@@ -517,19 +556,189 @@ export async function signContractElectronically(
     signerEmail,
     signedAt,
     ipAddress: input.ipAddress || '',
+    party: 'CLIENT',
   });
   const signatureHash = await computeSignatureHash(hashPayload);
 
-  const certificate: SignatureCertificateData = {
+  const { data: updatedSignature, error: signErr } = await supabaseAdmin
+    .from('company_contract_signatures')
+    .update({
+      signer_name: signerName,
+      signer_email: signerEmail,
+      signer_document: signerDocument,
+      signer_role: input.signerRole || null,
+      signature_status: 'CLIENT_SIGNED',
+      signed_at: signedAt,
+      signature_hash: signatureHash,
+      ip_address: input.ipAddress || null,
+      user_agent: input.userAgent || null,
+      updated_at: signedAt,
+    })
+    .eq('id', signature.id)
+    .select('*')
+    .single();
+
+  if (signErr || !updatedSignature) {
+    throw new SaasContractStepError(
+      'db_save',
+      `Falha ao registrar assinatura: ${signErr?.message || 'sem retorno'}`,
+    );
+  }
+
+  await supabaseAdmin
+    .from('company_contracts')
+    .update({
+      status: 'client_signed',
+      updated_at: signedAt,
+    })
+    .eq('id', contractRow.id);
+
+  await supabaseAdmin
+    .from('company_subscriptions')
+    .update({
+      contract_status: 'client_signed',
+      updated_at: signedAt,
+    })
+    .eq('company_id', signature.company_id);
+
+  return {
+    signature: updatedSignature as CompanyContractSignatureRow,
+    pdfSignedUrl: null,
+  };
+}
+
+export type ProviderSignContractInput = {
+  providerName: string;
+  providerDocument: string;
+  providerEmail: string;
+  providerRole?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
+
+export async function signContractByProvider(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  signatureId: string,
+  input: ProviderSignContractInput,
+): Promise<{
+  signature: CompanyContractSignatureRow;
+  pdfSignedUrl: string;
+}> {
+  const { data: signature, error: sigErr } = await supabaseAdmin
+    .from('company_contract_signatures')
+    .select('*')
+    .eq('id', signatureId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (sigErr || !signature) {
+    throw new SaasContractStepError('validation', 'Solicitação de assinatura não encontrada.');
+  }
+
+  const signatureRow = signature as CompanyContractSignatureRow;
+
+  if (!canProviderSignContract(signatureRow.signature_status)) {
+    throw new SaasContractStepError(
+      'validation',
+      signatureRow.signature_status === 'SIGNED'
+        ? 'Este contrato já foi assinado pela SV.'
+        : 'A SV só pode assinar após a assinatura do cliente.',
+    );
+  }
+
+  if (!signatureRow.signed_at || !signatureRow.signer_name) {
+    throw new SaasContractStepError(
+      'validation',
+      'Assinatura do cliente incompleta. Aguarde o cliente assinar primeiro.',
+    );
+  }
+
+  const providerName = String(input.providerName || '').trim();
+  const providerDocument = onlyDigits(input.providerDocument);
+  const providerEmail = String(input.providerEmail || '').trim().toLowerCase();
+
+  if (!providerName || providerDocument.length < 11 || !providerEmail.includes('@')) {
+    throw new SaasContractStepError(
+      'validation',
+      'Informe nome, CPF e e-mail válidos do representante da SV.',
+    );
+  }
+
+  const { data: contract, error: contractErr } = await supabaseAdmin
+    .from('company_contracts')
+    .select('*')
+    .eq('id', signatureRow.contract_id)
+    .single();
+
+  if (contractErr || !contract) {
+    throw new SaasContractStepError('validation', 'Contrato não encontrado.');
+  }
+
+  const contractRow = contract as CompanyContractRow & { pdf_signed_url?: string | null };
+  if (contractRow.pdf_signed_url || String(contractRow.status).toLowerCase() === 'signed') {
+    throw new SaasContractStepError('validation', 'Este contrato já possui PDF assinado final.');
+  }
+
+  const { company, subscription } = await loadFreshSaasContractContext(
+    supabaseAdmin,
+    companyId,
+  );
+
+  const pdfDates = subscriptionDatesForContractPdf(subscription);
+  const clientSignedAt = signatureRow.signed_at;
+  const providerSignedAt = new Date().toISOString();
+
+  const clientHashPayload = buildSignatureHashPayload({
+    contractId: contractRow.id,
     contractNumber: contractRow.contract_number,
-    signerName,
-    signerDocument,
-    signerEmail,
-    signerRole: input.signerRole || null,
-    ipAddress: input.ipAddress || '—',
-    signedDate: formatSignatureDateBr(signedAt),
-    signedTime: formatSignatureTimeBr(signedAt),
-    signatureHash,
+    signerName: signatureRow.signer_name!,
+    signerDocument: signatureRow.signer_document || '',
+    signerEmail: signatureRow.signer_email,
+    signedAt: clientSignedAt,
+    ipAddress: signatureRow.ip_address || '',
+    party: 'CLIENT',
+  });
+  const clientHash = signatureRow.signature_hash || (await computeSignatureHash(clientHashPayload));
+
+  const providerHashPayload = buildSignatureHashPayload({
+    contractId: contractRow.id,
+    contractNumber: contractRow.contract_number,
+    signerName: providerName,
+    signerDocument: providerDocument,
+    signerEmail: providerEmail,
+    signedAt: providerSignedAt,
+    ipAddress: input.ipAddress || '',
+    party: 'PROVIDER',
+  });
+  const providerHash = await computeSignatureHash(providerHashPayload);
+
+  const bilateralCertificate: BilateralSignatureCertificateData = {
+    contractNumber: contractRow.contract_number,
+    client: {
+      contractNumber: contractRow.contract_number,
+      signerName: signatureRow.signer_name!,
+      signerDocument: signatureRow.signer_document || '',
+      signerEmail: signatureRow.signer_email,
+      signerRole: signatureRow.signer_role,
+      ipAddress: signatureRow.ip_address || '—',
+      signedDate: formatSignatureDateBr(clientSignedAt),
+      signedTime: formatSignatureTimeBr(clientSignedAt),
+      signatureHash: clientHash,
+      partyLabel: 'CONTRATANTE',
+    },
+    provider: {
+      contractNumber: contractRow.contract_number,
+      signerName: providerName,
+      signerDocument: providerDocument,
+      signerEmail: providerEmail,
+      signerRole: input.providerRole || null,
+      ipAddress: input.ipAddress || '—',
+      signedDate: formatSignatureDateBr(providerSignedAt),
+      signedTime: formatSignatureTimeBr(providerSignedAt),
+      signatureHash: providerHash,
+      partyLabel: 'CONTRATADA',
+    },
   };
 
   const built = buildSaasContractPdfWithMeta(
@@ -544,7 +753,23 @@ export async function signContractElectronically(
         next_due_date: pdfDates.next_due_date,
       },
     },
-    { certificate },
+    {
+      bilateralCertificate,
+      executedSignatures: {
+        client: {
+          name: signatureRow.signer_name!,
+          document: signatureRow.signer_document || '',
+          role: signatureRow.signer_role,
+          signedDate: formatSignatureDateBr(clientSignedAt),
+        },
+        provider: {
+          name: providerName,
+          document: providerDocument,
+          role: input.providerRole || null,
+          signedDate: formatSignatureDateBr(providerSignedAt),
+        },
+      },
+    },
   );
 
   const validation = validateSaasContractPdfInput(
@@ -571,7 +796,7 @@ export async function signContractElectronically(
 
   const pdfSignedUrl = await uploadSignedContractPdf(
     supabaseAdmin,
-    signature.company_id,
+    companyId,
     contractRow.contract_number,
     built.pdf,
     contractRow.version,
@@ -580,25 +805,25 @@ export async function signContractElectronically(
   const { data: updatedSignature, error: signErr } = await supabaseAdmin
     .from('company_contract_signatures')
     .update({
-      signer_name: signerName,
-      signer_email: signerEmail,
-      signer_document: signerDocument,
-      signer_role: input.signerRole || null,
+      provider_signer_name: providerName,
+      provider_signer_email: providerEmail,
+      provider_signer_document: providerDocument,
+      provider_signer_role: input.providerRole || null,
+      provider_signed_at: providerSignedAt,
+      provider_signature_hash: providerHash,
+      provider_ip_address: input.ipAddress || null,
+      provider_user_agent: input.userAgent || null,
       signature_status: 'SIGNED',
-      signed_at: signedAt,
-      signature_hash: signatureHash,
-      ip_address: input.ipAddress || null,
-      user_agent: input.userAgent || null,
-      updated_at: signedAt,
+      updated_at: providerSignedAt,
     })
-    .eq('id', signature.id)
+    .eq('id', signatureRow.id)
     .select('*')
     .single();
 
   if (signErr || !updatedSignature) {
     throw new SaasContractStepError(
       'db_save',
-      `Falha ao registrar assinatura: ${signErr?.message || 'sem retorno'}`,
+      `Falha ao registrar assinatura da SV: ${signErr?.message || 'sem retorno'}`,
     );
   }
 
@@ -607,7 +832,7 @@ export async function signContractElectronically(
     .update({
       status: 'signed',
       pdf_signed_url: pdfSignedUrl,
-      updated_at: signedAt,
+      updated_at: providerSignedAt,
     })
     .eq('id', contractRow.id);
 
@@ -615,9 +840,9 @@ export async function signContractElectronically(
     .from('company_subscriptions')
     .update({
       contract_status: 'signed',
-      updated_at: signedAt,
+      updated_at: providerSignedAt,
     })
-    .eq('company_id', signature.company_id);
+    .eq('company_id', companyId);
 
   return {
     signature: updatedSignature as CompanyContractSignatureRow,

@@ -19,9 +19,12 @@ import {
   formatContractPhone,
 } from '@/lib/saasContractFormat';
 import {
+  appendBilateralSignatureCertificateToPdf,
   appendSignatureCertificateToPdf,
+  type BilateralSignatureCertificateData,
   type SignatureCertificateData,
 } from '@/lib/saasContractSignaturePdf';
+import { formatCpfCnpj } from '@/lib/inputMasks';
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
@@ -292,20 +295,27 @@ function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
   }
 }
 
-function estimateSignatureBlockHeight(writer: PdfWriter): number {
+function estimateSignatureBlockHeight(writer: PdfWriter, executed?: boolean): number {
   const intro =
     'E, por estarem assim justas e contratadas, as partes declaram ter lido e compreendido todas as cláusulas deste instrumento, firmando-o em 2 (duas) vias de igual teor e forma, na data abaixo.';
   const note =
     'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.';
   const introLines = writer.doc.splitTextToSize(intro, writer.contentW).length;
-  const noteLines = writer.doc.splitTextToSize(note, writer.contentW).length;
-  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 52 + 10 + noteLines * CONTENT_LINE_H + 8;
+  const noteLines = executed
+    ? 0
+    : writer.doc.splitTextToSize(note, writer.contentW).length;
+  const block = executed ? 68 : 52;
+  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + block + 10 + noteLines * CONTENT_LINE_H + 8;
 }
 
-function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
+function renderSignaturePage(
+  writer: PdfWriter,
+  ctx: ReturnType<typeof resolveSaasContractContext>,
+  executed?: SaasContractPdfBuildOptions['executedSignatures'],
+) {
   const w = writer;
   w.y += 6;
-  w.ensureSpace(estimateSignatureBlockHeight(w));
+  w.ensureSpace(estimateSignatureBlockHeight(w, Boolean(executed?.client && executed?.provider)));
 
   w.sectionTitle('PÁGINA DE ASSINATURA');
   w.writeParagraph(
@@ -315,8 +325,9 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
 
   const signDate = new Date().toLocaleDateString('pt-BR');
   const colW = (w.contentW - 12) / 2;
+  const blockH = executed?.client && executed?.provider ? 68 : 52;
 
-  w.ensureSpace(52);
+  w.ensureSpace(blockH);
   w.doc.setDrawColor(160);
   w.doc.line(w.margin, w.y + 20, w.margin + colW, w.y + 20);
   w.doc.line(w.margin + colW + 12, w.y + 20, w.margin + w.contentW, w.y + 20);
@@ -332,26 +343,55 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
 
   w.doc.setFont('helvetica', 'normal');
   w.doc.setFontSize(8.5);
-  w.doc.text(ctx.contractor.name, w.margin, w.y);
-  w.doc.text(ctx.provider.legalName, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(`CNPJ ${formatContractCnpj(ctx.contractor.cnpj)}`, w.margin, w.y);
-  w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(ctx.contractor.responsible, w.margin, w.y);
-  w.doc.text(ctx.provider.tradeName, providerColX, w.y);
-  w.y += 8;
-  w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
-  w.doc.text(`Local e data: ${saasProviderCityState(ctx.provider)}, ${signDate}`, providerColX, w.y);
-  w.y += 10;
+  if (executed?.client && executed?.provider) {
+    w.doc.text(executed.client.name, w.margin, w.y);
+    w.doc.text(executed.provider.name, providerColX, w.y);
+    w.y += 5;
+    w.doc.text(
+      `CPF ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
+      w.margin,
+      w.y,
+    );
+    w.doc.text(
+      `CPF ${formatCpfCnpj(executed.provider.document) || executed.provider.document}`,
+      providerColX,
+      w.y,
+    );
+    w.y += 5;
+    w.doc.text(executed.client.role || ctx.contractor.responsible, w.margin, w.y);
+    w.doc.text(executed.provider.role || ctx.provider.tradeName, providerColX, w.y);
+    w.y += 5;
+    w.doc.text(`Assinado em ${executed.client.signedDate}`, w.margin, w.y);
+    w.doc.text(`Assinado em ${executed.provider.signedDate}`, providerColX, w.y);
+    w.y += 5;
+    w.doc.setFont('helvetica', 'bold');
+    w.doc.setFontSize(8);
+    w.doc.setTextColor(16, 120, 72);
+    w.doc.text('Assinatura eletrônica válida', w.margin, w.y);
+    w.doc.text('Assinatura eletrônica válida', providerColX, w.y);
+    w.y += 8;
+  } else {
+    w.doc.text(ctx.contractor.name, w.margin, w.y);
+    w.doc.text(ctx.provider.legalName, providerColX, w.y);
+    w.y += 5;
+    w.doc.text(`CNPJ ${formatContractCnpj(ctx.contractor.cnpj)}`, w.margin, w.y);
+    w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, providerColX, w.y);
+    w.y += 5;
+    w.doc.text(ctx.contractor.responsible, w.margin, w.y);
+    w.doc.text(ctx.provider.tradeName, providerColX, w.y);
+    w.y += 8;
+    w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
+    w.doc.text(`Local e data: ${saasProviderCityState(ctx.provider)}, ${signDate}`, providerColX, w.y);
+    w.y += 10;
 
-  w.doc.setFont('helvetica', 'italic');
-  w.doc.setFontSize(8);
-  w.doc.setTextColor(90, 90, 90);
-  w.writeParagraph(
-    'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
-    4,
-  );
+    w.doc.setFont('helvetica', 'italic');
+    w.doc.setFontSize(8);
+    w.doc.setTextColor(90, 90, 90);
+    w.writeParagraph(
+      'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
+      4,
+    );
+  }
 }
 
 export type SaasContractPdfBuildResult = {
@@ -364,6 +404,21 @@ export type SaasContractPdfBuildResult = {
 
 export type SaasContractPdfBuildOptions = {
   certificate?: SignatureCertificateData;
+  bilateralCertificate?: BilateralSignatureCertificateData;
+  executedSignatures?: {
+    client: {
+      name: string;
+      document: string;
+      role?: string | null;
+      signedDate: string;
+    };
+    provider?: {
+      name: string;
+      document: string;
+      role?: string | null;
+      signedDate: string;
+    };
+  };
 };
 
 export function buildSaasContractPdfWithMeta(
@@ -439,9 +494,16 @@ export function buildSaasContractPdfWithMeta(
   writer.y += 3;
 
   renderSections(writer, sections);
-  renderSignaturePage(writer, ctx);
+  renderSignaturePage(writer, ctx, options?.executedSignatures);
 
-  if (options?.certificate) {
+  if (options?.bilateralCertificate) {
+    appendBilateralSignatureCertificateToPdf(
+      doc,
+      options.bilateralCertificate,
+      margin,
+      pageW,
+    );
+  } else if (options?.certificate) {
     appendSignatureCertificateToPdf(doc, options.certificate, margin, pageW);
   }
 

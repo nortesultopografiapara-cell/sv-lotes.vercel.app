@@ -13,6 +13,10 @@ import { SaasContractStepError } from '@/lib/saasContractErrors';
 import { loadFreshSaasContractContext } from '@/lib/saasContractService';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import { signatureStatusLabel } from '@/lib/saasContractStatus';
+import {
+  canPublicClientSign,
+  isPublicClientSignBlocked,
+} from '@/lib/saasContractBilateralSignature';
 
 export const runtime = 'nodejs';
 
@@ -49,7 +53,7 @@ export async function GET(
     return NextResponse.json({ error: 'Link inválido ou expirado.' }, { status: 404 });
   }
 
-  if (isSignatureExpired(signature.expires_at) && signature.signature_status !== 'SIGNED') {
+  if (isSignatureExpired(signature.expires_at) && !isPublicClientSignBlocked(signature.signature_status)) {
     if (signature.signature_status !== 'EXPIRED') {
       const { data } = await supabaseAdmin
         .from('company_contract_signatures')
@@ -119,10 +123,7 @@ export async function GET(
     });
   }
 
-  const blocked =
-    signature.signature_status === 'SIGNED' ||
-    signature.signature_status === 'EXPIRED' ||
-    signature.signature_status === 'CANCELLED';
+  const blocked = isPublicClientSignBlocked(signature.signature_status);
 
   return NextResponse.json({
     success: true,
@@ -146,7 +147,9 @@ export async function GET(
         ? formatCpfCnpj(signature.signer_document)
         : null,
       blocked,
-      canSign: signature.signature_status === 'PENDING' || signature.signature_status === 'VIEWED',
+      canSign: canPublicClientSign(signature.signature_status),
+      awaitingProvider:
+        signature.signature_status === 'CLIENT_SIGNED',
     },
     pdfUrl: `/api/sign/${encodeURIComponent(token)}?pdf=1`,
     pdfDownloadUrl: `/api/sign/${encodeURIComponent(token)}?pdf=1&download=1`,
@@ -179,6 +182,7 @@ export async function POST(
       success: true,
       signature: result.signature,
       pdfSignedUrl: result.pdfSignedUrl,
+      awaitingProvider: result.signature.signature_status === 'CLIENT_SIGNED',
     });
   } catch (err) {
     const message =

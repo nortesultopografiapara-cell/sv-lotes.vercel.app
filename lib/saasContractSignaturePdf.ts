@@ -4,6 +4,7 @@
 
 import type { jsPDF } from 'jspdf';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
+import { SAAS_PROVIDER } from '@/lib/saasContractContent';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 
 export type SignatureCertificateData = {
@@ -16,6 +17,13 @@ export type SignatureCertificateData = {
   signedDate: string;
   signedTime: string;
   signatureHash: string;
+  partyLabel?: 'CONTRATANTE' | 'CONTRATADA';
+};
+
+export type BilateralSignatureCertificateData = {
+  contractNumber: string;
+  client: SignatureCertificateData;
+  provider: SignatureCertificateData;
 };
 
 const CONTENT_LINE_H = 5;
@@ -40,37 +48,126 @@ export function appendSignatureCertificateToPdf(
   margin: number,
   pageW: number,
 ): void {
+  appendPartyCertificateBlock(doc, cert, margin, pageW, {
+    title: 'CERTIFICADO DE ASSINATURA',
+    intro:
+      'O documento abaixo certifica a assinatura eletrônica do contrato de licença SaaS SV LOTES, ' +
+      'registrada digitalmente com os metadados de autenticidade indicados neste certificado.',
+  });
+}
+
+export function appendBilateralSignatureCertificateToPdf(
+  doc: jsPDF,
+  bilateral: BilateralSignatureCertificateData,
+  margin: number,
+  pageW: number,
+): void {
   doc.addPage();
   const contentW = pageW - margin * 2;
-
-  doc.setFillColor(8, 15, 30);
-  doc.rect(0, 0, pageW, 28, 'F');
-
-  const logo = loadSvLotesLogoDataUrl();
-  if (logo) {
-    doc.addImage(logo, 'PNG', margin, 4, 20, 20);
-  }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('CERTIFICADO DE ASSINATURA', pageW / 2, 18, { align: 'center' });
+  drawCertificateHeader(doc, margin, pageW, 'CERTIFICADO DE ASSINATURA BILATERAL');
 
   let y = 40;
   doc.setTextColor(30, 30, 30);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-
   const intro =
-    'O documento abaixo certifica a assinatura eletrônica do contrato de licença SaaS SV LOTES, ' +
-    'registrada digitalmente com os metadados de autenticidade indicados neste certificado.';
+    'Este certificado registra as assinaturas eletrônicas da CONTRATANTE e da CONTRATADA no contrato ' +
+    `de licença SaaS nº ${bilateral.contractNumber}, com validade jurídica conforme legislação aplicável.`;
   const introLines = doc.splitTextToSize(intro, contentW);
+  doc.text(introLines, margin, y);
+  y += introLines.length * CONTENT_LINE_H + 8;
+
+  y = renderPartyCertificateSection(
+    doc,
+    bilateral.client,
+    margin,
+    pageW,
+    y,
+    'CONTRATANTE',
+  );
+  y += 8;
+  renderPartyCertificateSection(
+    doc,
+    bilateral.provider,
+    margin,
+    pageW,
+    y,
+    'CONTRATADA',
+  );
+}
+
+function drawCertificateHeader(doc: jsPDF, margin: number, pageW: number, title: string) {
+  doc.setFillColor(8, 15, 30);
+  doc.rect(0, 0, pageW, 28, 'F');
+  const logo = loadSvLotesLogoDataUrl();
+  if (logo) {
+    doc.addImage(logo, 'PNG', margin, 4, 20, 20);
+  }
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text(title, pageW / 2, 18, { align: 'center' });
+}
+
+function appendPartyCertificateBlock(
+  doc: jsPDF,
+  cert: SignatureCertificateData,
+  margin: number,
+  pageW: number,
+  meta: { title: string; intro: string },
+) {
+  doc.addPage();
+  const contentW = pageW - margin * 2;
+  drawCertificateHeader(doc, margin, pageW, meta.title);
+
+  let y = 40;
+  doc.setTextColor(30, 30, 30);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  const introLines = doc.splitTextToSize(meta.intro, contentW);
   doc.text(introLines, margin, y);
   y += introLines.length * CONTENT_LINE_H + 10;
 
+  renderPartyCertificateSection(
+    doc,
+    cert,
+    margin,
+    pageW,
+    y,
+    cert.partyLabel || 'SIGNATÁRIO',
+  );
+
+  y += 90;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 110, 120);
+  const footer =
+    'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
+    'como prova de aceite eletrônico dos termos contratuais.';
+  const footerLines = doc.splitTextToSize(footer, contentW);
+  doc.text(footerLines, margin, y);
+}
+
+function renderPartyCertificateSection(
+  doc: jsPDF,
+  cert: SignatureCertificateData,
+  margin: number,
+  pageW: number,
+  startY: number,
+  partyLabel: string,
+): number {
+  const contentW = pageW - margin * 2;
+  let y = startY;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(20, 30, 55);
+  doc.text(partyLabel, margin, y);
+  y += 8;
+
   doc.setDrawColor(200, 210, 220);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(margin, y, contentW, 72, 2, 2, 'FD');
+  doc.roundedRect(margin, y, contentW, 78, 2, 2, 'FD');
   y += 10;
 
   const row = (label: string, value: string) => {
@@ -96,15 +193,17 @@ export function appendSignatureCertificateToPdf(
   row('Hora', cert.signedTime);
   row('Hash', cert.signatureHash);
 
-  y += 12;
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(8);
-  doc.setTextColor(100, 110, 120);
-  const footer =
-    'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
-    'como prova de aceite eletrônico dos termos contratuais.';
-  const footerLines = doc.splitTextToSize(footer, contentW);
-  doc.text(footerLines, margin, y);
+  return y + 6;
+}
+
+export function buildProviderCertificateDefaults(): {
+  legalName: string;
+  tradeName: string;
+} {
+  return {
+    legalName: SAAS_PROVIDER.legalName,
+    tradeName: SAAS_PROVIDER.tradeName,
+  };
 }
 
 export function buildSignatureHashPayload(input: {
@@ -115,8 +214,10 @@ export function buildSignatureHashPayload(input: {
   signerEmail?: string | null;
   signedAt: string;
   ipAddress: string;
+  party?: 'CLIENT' | 'PROVIDER';
 }): string {
   return [
+    input.party || 'CLIENT',
     input.contractId,
     input.contractNumber,
     input.signerName.trim().toUpperCase(),

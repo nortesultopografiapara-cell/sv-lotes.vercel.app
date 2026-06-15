@@ -8,6 +8,7 @@ export const SAAS_CONTRACT_DOCUMENT_STATUSES = [
   'generated',
   'sent',
   'viewed',
+  'client_signed',
   'signed',
   'active',
   'cancelled',
@@ -21,6 +22,7 @@ const READY_DOCUMENT_STATUSES = new Set<SaasContractDocumentStatus>([
   'generated',
   'sent',
   'viewed',
+  'client_signed',
   'signed',
   'active',
 ]);
@@ -30,6 +32,7 @@ const DOCUMENT_STATUS_LABELS: Record<string, string> = {
   generated: 'Gerado',
   sent: 'Enviado',
   viewed: 'Visualizado',
+  client_signed: 'Cliente assinou — aguardando SV',
   signed: 'Assinado',
   active: 'Ativo',
   cancelled: 'Cancelado',
@@ -65,6 +68,7 @@ const CURRENT_DOCUMENT_STATUSES = new Set<SaasContractDocumentStatus>([
   'generated',
   'sent',
   'viewed',
+  'client_signed',
   'signed',
   'active',
 ]);
@@ -81,15 +85,23 @@ export const SAAS_CONTRACT_CURRENT_VERSION_STATUSES: SaasContractDocumentStatus[
   'generated',
   'sent',
   'viewed',
+  'client_signed',
   'signed',
   'active',
 ];
 
-export type SignatureStatus = 'PENDING' | 'VIEWED' | 'SIGNED' | 'EXPIRED' | 'CANCELLED';
+export type SignatureStatus =
+  | 'PENDING'
+  | 'VIEWED'
+  | 'CLIENT_SIGNED'
+  | 'SIGNED'
+  | 'EXPIRED'
+  | 'CANCELLED';
 
 const SIGNATURE_STATUS_LABELS: Record<SignatureStatus, string> = {
   PENDING: 'Aguardando assinatura',
   VIEWED: 'Visualizado',
+  CLIENT_SIGNED: 'Cliente assinou — aguardando SV',
   SIGNED: 'Assinado',
   EXPIRED: 'Expirado',
   CANCELLED: 'Cancelado',
@@ -103,6 +115,7 @@ export function signatureStatusLabel(status?: string | null): string {
 export function signatureStatusEmoji(status?: string | null): string {
   const key = String(status || 'PENDING').toUpperCase();
   if (key === 'SIGNED') return '🟢';
+  if (key === 'CLIENT_SIGNED') return '🟠';
   if (key === 'VIEWED') return '🔵';
   if (key === 'EXPIRED') return '🔴';
   if (key === 'CANCELLED') return '⚫';

@@ -25,6 +25,7 @@ type SignPageData = {
     signerName?: string | null;
     blocked: boolean;
     canSign: boolean;
+    awaitingProvider?: boolean;
   };
   pdfUrl: string;
   pdfDownloadUrl: string;
@@ -80,6 +81,9 @@ export default function SignContractPage() {
         if (json.signature?.status === 'SIGNED') {
           setSigned(true);
         }
+        if (json.signature?.status === 'CLIENT_SIGNED') {
+          setSigned(true);
+        }
       } catch {
         setError('Não foi possível carregar o contrato.');
       } finally {
@@ -118,16 +122,22 @@ export default function SignContractPage() {
         return;
       }
       setSigned(true);
+      const clientSigned =
+        json.awaitingProvider ||
+        json.signature?.signature_status === 'CLIENT_SIGNED';
       setData((prev) =>
         prev
           ? {
               ...prev,
               signature: {
                 ...prev.signature,
-                status: 'SIGNED',
-                statusLabel: 'Assinado',
+                status: clientSigned ? 'CLIENT_SIGNED' : 'SIGNED',
+                statusLabel: clientSigned
+                  ? 'Cliente assinou — aguardando SV'
+                  : 'Assinado',
                 blocked: true,
                 canSign: false,
+                awaitingProvider: clientSigned,
                 signedAt: new Date().toISOString(),
                 signerName: signerName.trim(),
               },
@@ -213,7 +223,7 @@ export default function SignContractPage() {
                 </dl>
               </div>
 
-              {signed || data.signature.status === 'SIGNED' ? (
+              {data.signature.status === 'SIGNED' ? (
                 <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center">
                   <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
                   <h3 className="text-lg font-bold text-emerald-300">Contrato assinado</h3>
@@ -230,6 +240,26 @@ export default function SignContractPage() {
                     <Download className="w-4 h-4" />
                     Baixar contrato assinado
                   </a>
+                </div>
+              ) : data.signature.status === 'CLIENT_SIGNED' ||
+                data.signature.awaitingProvider ||
+                (signed && !data.signature.canSign) ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
+                  <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+                  <h3 className="text-lg font-bold text-amber-200">Assinatura registrada</h3>
+                  <p className="text-sm text-gray-300 mt-2">
+                    Sua assinatura foi registrada com sucesso.
+                  </p>
+                  <p className="text-sm text-gray-400 mt-2">
+                    Assinado por {data.signature.signerName || signerName || 'signatário'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {formatDateTimeBr(data.signature.signedAt)}
+                  </p>
+                  <p className="text-xs text-amber-200/80 mt-4 leading-relaxed">
+                    O contrato aguarda a assinatura da CONTRATADA (SV LOTES). Você será
+                    notificado quando o documento final estiver disponível.
+                  </p>
                 </div>
               ) : data.signature.canSign ? (
                 <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4">
