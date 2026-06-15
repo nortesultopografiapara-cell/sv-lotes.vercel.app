@@ -51,6 +51,8 @@ export type MasterSaasInvoice = {
 export type SaasBillingMetrics = {
   projectedRevenue: number;
   receivedRevenue: number;
+  revenueToReceive: number;
+  overdueRevenue: number;
   delinquencyAmount: number;
   pendingCount: number;
   overdueCount: number;
@@ -585,39 +587,91 @@ export async function markInvoicePaid(
 export function computeSaasBillingMetrics(
   invoices: MasterSaasInvoice[],
   mrrProjected = 0,
+  paymentsReceivedTotal = 0,
+  today = todayIsoDate(),
 ): SaasBillingMetrics {
-  let receivedRevenue = 0;
-  let delinquencyAmount = 0;
+  let receivedFromInvoices = 0;
+  let revenueToReceive = 0;
+  let overdueRevenue = 0;
   let pendingCount = 0;
   let overdueCount = 0;
+  let dueSoonCount = 0;
 
   for (const inv of invoices) {
-    if (inv.status === 'PAGO') receivedRevenue += inv.final_amount;
-    if (inv.status === 'PENDENTE') {
-      pendingCount += 1;
+    const status = String(inv.status || '').toUpperCase();
+
+    if (status === 'PAGO' && inv.paid_at) {
+      receivedFromInvoices += inv.final_amount;
     }
-    if (inv.status === 'VENCIDO') {
+
+    if (status === 'PENDENTE') {
+      const due = toIsoDateOnly(inv.due_date) || inv.due_date;
+      if (due >= today) {
+        revenueToReceive += inv.final_amount;
+        pendingCount += 1;
+        const days = daysBetweenIso(today, due);
+        if (days >= 0 && days <= 7) dueSoonCount += 1;
+      } else {
+        overdueRevenue += inv.final_amount;
+        overdueCount += 1;
+      }
+    }
+
+    if (status === 'VENCIDO') {
+      overdueRevenue += inv.final_amount;
       overdueCount += 1;
-      delinquencyAmount += inv.final_amount;
     }
   }
 
-  const today = todayIsoDate();
-  const dueSoonCount = invoices.filter((inv) => {
-    if (inv.status !== 'PENDENTE') return false;
-    const days = daysBetweenIso(today, inv.due_date);
-    return days >= 0 && days <= 7;
-  }).length;
+  const receivedRevenue =
+    paymentsReceivedTotal > 0 ? paymentsReceivedTotal : receivedFromInvoices;
 
   return {
     projectedRevenue: mrrProjected,
     receivedRevenue,
-    delinquencyAmount,
+    revenueToReceive,
+    overdueRevenue,
+    delinquencyAmount: overdueRevenue,
     pendingCount,
     overdueCount,
     dueSoonCount,
     suspendedCount: 0,
   };
+}
+
+export function formatInvoiceStatusDetail(
+  invoice: Pick<MasterSaasInvoice, 'status' | 'due_date' | 'paid_at'>,
+  formatDate: (iso?: string | null) => string = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('pt-BR');
+  },
+): string {
+  const status = String(invoice.status || '').toUpperCase();
+  if (status === 'PAGO') {
+    return `Pago em ${formatDate(invoice.paid_at || invoice.due_date)}`;
+  }
+  if (status === 'PENDENTE') {
+    return `Aguardando pagamento até ${formatDate(invoice.due_date)}`;
+  }
+  if (status === 'VENCIDO') {
+    return 'Pagamento em atraso';
+  }
+  if (status === 'CANCELADO') {
+    return 'Cobrança cancelada';
+  }
+  return '—';
+}
+
+export function invoiceStatusBadgeTone(
+  status: SaasInvoiceStatus | string,
+): 'green' | 'amber' | 'red' | 'gray' {
+  const key = String(status || '').toUpperCase();
+  if (key === 'PAGO') return 'green';
+  if (key === 'PENDENTE') return 'amber';
+  if (key === 'VENCIDO') return 'red';
+  return 'gray';
 }
 
 export function buildSaasBillingAlerts(

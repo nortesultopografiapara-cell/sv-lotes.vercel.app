@@ -10,6 +10,7 @@ import {
   computeSaasBillingMetrics,
   currentReferenceMonth,
   formatSaasInvoiceNumber,
+  formatInvoiceStatusDetail,
   isInvoiceEligibleForSuspension,
   isValidSaasInvoiceNumber,
   resolveInvoiceDueDate,
@@ -79,6 +80,7 @@ function testBillingMetrics() {
       final_amount: 549.99,
       due_date: '2026-06-27',
       issued_at: '2026-06-01',
+      paid_at: '2026-06-27T12:00:00.000Z',
       status: 'PAGO',
     },
     {
@@ -89,7 +91,7 @@ function testBillingMetrics() {
       amount: 549.99,
       discount_amount: 0,
       final_amount: 549.99,
-      due_date: '2026-06-27',
+      due_date: '2026-06-30',
       issued_at: '2026-06-01',
       status: 'PENDENTE',
     },
@@ -107,13 +109,85 @@ function testBillingMetrics() {
     },
   ];
 
-  const metrics = computeSaasBillingMetrics(invoices, 1099.98);
+  const metrics = computeSaasBillingMetrics(invoices, 1099.98, 0, '2026-06-15');
   assert(metrics.projectedRevenue === 1099.98, 'receita prevista');
-  assert(metrics.receivedRevenue === 549.99, 'receita recebida');
-  assert(metrics.delinquencyAmount === 549.99, 'inadimplência');
-  assert(metrics.pendingCount === 1, 'faturas pendentes');
+  assert(metrics.receivedRevenue === 549.99, 'receita recebida via fatura paga');
+  assert(metrics.revenueToReceive === 549.99, 'receita a receber pendente no prazo');
+  assert(metrics.overdueRevenue === 549.99, 'receita vencida');
+  assert(metrics.delinquencyAmount === 549.99, 'inadimplência = vencidas');
+  assert(metrics.pendingCount === 1, 'faturas pendentes no prazo');
   assert(metrics.overdueCount === 1, 'faturas vencidas');
   console.log('OK testBillingMetrics');
+}
+
+function testMenesesSplitMetrics() {
+  const invoices: MasterSaasInvoice[] = [
+    {
+      id: 'may',
+      company_id: MENESES_COMPANY_ID,
+      invoice_number: '00001/2026-05',
+      reference_month: '2026-05',
+      amount: 549.99,
+      discount_amount: 0,
+      final_amount: 549.99,
+      due_date: '2026-05-27',
+      issued_at: '2026-05-01',
+      paid_at: '2026-05-27T12:00:00.000Z',
+      status: 'PAGO',
+    },
+    {
+      id: 'jun',
+      company_id: MENESES_COMPANY_ID,
+      invoice_number: '00002/2026-06',
+      reference_month: '2026-06',
+      amount: 549.99,
+      discount_amount: 0,
+      final_amount: 549.99,
+      due_date: '2026-06-27',
+      issued_at: '2026-06-01',
+      status: 'PENDENTE',
+    },
+  ];
+
+  const withPayments = computeSaasBillingMetrics(invoices, 549.99, 549.99, '2026-06-15');
+  assert(withPayments.receivedRevenue === 549.99, 'Meneses recebida R$ 549,99');
+  assert(withPayments.revenueToReceive === 549.99, 'Meneses a receber Junho R$ 549,99');
+  assert(withPayments.overdueRevenue === 0, 'Meneses vencida R$ 0');
+  assert(withPayments.delinquencyAmount === 0, 'Meneses inadimplência R$ 0');
+
+  const detailPending = formatInvoiceStatusDetail(invoices[1]);
+  assert(detailPending.includes('Aguardando pagamento até'), 'texto pendente');
+  assert(detailPending.includes('27/06/2026'), 'data vencimento pendente');
+
+  const detailPaid = formatInvoiceStatusDetail(invoices[0]);
+  assert(detailPaid.includes('Pago em'), 'texto pago');
+  console.log('OK testMenesesSplitMetrics');
+}
+
+function testOverdueDelinquencyMetrics() {
+  const invoices: MasterSaasInvoice[] = [
+    {
+      id: 'ov',
+      company_id: 'c-overdue',
+      invoice_number: '00001/2026-04',
+      reference_month: '2026-04',
+      amount: 549.99,
+      discount_amount: 0,
+      final_amount: 549.99,
+      due_date: '2026-04-27',
+      issued_at: '2026-04-01',
+      status: 'VENCIDO',
+    },
+  ];
+
+  const metrics = computeSaasBillingMetrics(invoices, 0, 0, '2026-06-15');
+  assert(metrics.overdueRevenue === 549.99, 'receita vencida isolada');
+  assert(metrics.delinquencyAmount === 549.99, 'inadimplência isolada');
+  assert(metrics.revenueToReceive === 0, 'a receber zero com só vencida');
+
+  const detail = formatInvoiceStatusDetail(invoices[0]);
+  assert(detail === 'Pagamento em atraso', 'texto vencido');
+  console.log('OK testOverdueDelinquencyMetrics');
 }
 
 function testBillingAlerts() {
@@ -233,6 +307,8 @@ async function main() {
   testResolveInvoiceDueDate();
   testCurrentReferenceMonth();
   testBillingMetrics();
+  testMenesesSplitMetrics();
+  testOverdueDelinquencyMetrics();
   testBillingAlerts();
   testOverdueMarkingLogic();
   testNoDuplicateCompetenceRule();

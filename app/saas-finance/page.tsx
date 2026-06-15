@@ -42,6 +42,10 @@ import {
   FileText,
   DollarSign,
   Plus,
+  CheckCircle,
+  AlertTriangle,
+  ShieldAlert,
+  FileClock,
 } from 'lucide-react';
 import {
   LineChart,
@@ -67,7 +71,9 @@ import {
 import {
   buildSaasBillingAlerts,
   computeSaasBillingMetrics,
+  formatInvoiceStatusDetail,
   formatReferenceMonthLabel as formatInvoiceCompetenceLabel,
+  invoiceStatusBadgeTone,
   invoiceStatusLabel,
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
@@ -277,20 +283,18 @@ function SaaSFinancePageContent() {
       }
     });
 
-    const invoiceMetrics = computeSaasBillingMetrics(saasInvoices, mrr);
-    const receivedRevenue = Math.max(
-      sumReceivedRevenue(saasPayments),
-      invoiceMetrics.receivedRevenue,
-    );
+    const paymentsReceived = sumReceivedRevenue(saasPayments);
+    const invoiceMetrics = computeSaasBillingMetrics(saasInvoices, mrr, paymentsReceived);
 
     return {
       mrr,
       arr: mrr * 12,
       projectedRevenue: invoiceMetrics.projectedRevenue,
-      receivedRevenue,
+      receivedRevenue: invoiceMetrics.receivedRevenue,
+      revenueToReceive: invoiceMetrics.revenueToReceive,
+      overdueRevenue: invoiceMetrics.overdueRevenue,
       activeClients,
-      delayedAmount: invoiceMetrics.delinquencyAmount,
-      outstandingCount: invoiceMetrics.overdueCount,
+      delinquencyAmount: invoiceMetrics.delinquencyAmount,
       pendingInvoices: invoiceMetrics.pendingCount,
       overdueInvoices: invoiceMetrics.overdueCount,
       dueSoonInvoices: invoiceMetrics.dueSoonCount,
@@ -708,62 +712,75 @@ function SaaSFinancePageContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 min-w-0">
-        <StatCard
-          title="Receita prevista (MRR)"
-          value={formatCurrency(stats.projectedRevenue)}
-          description="Valor mensal esperado das assinaturas ativas"
-          icon={<DollarSign className="w-5 h-5 text-green-400" />}
-          border="border-green-500/20"
-        />
-        <StatCard
-          title="Receita recebida"
+      <FinanceMetricsLegend />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4 min-w-0">
+        <FinanceMetricCard
+          title="Receita Recebida"
           value={formatCurrency(stats.receivedRevenue)}
-          description="Soma dos pagamentos SaaS registrados"
-          icon={<Wallet className="w-5 h-5 text-emerald-400" />}
-          border="border-emerald-500/20"
+          description="Pagamentos confirmados"
+          tooltip="Total já recebido — dinheiro confirmado em pagamentos ou faturas pagas."
+          icon={<CheckCircle className="w-5 h-5" />}
+          tone="green"
         />
-        <StatCard
+        <FinanceMetricCard
+          title="Receita a Receber"
+          value={formatCurrency(stats.revenueToReceive)}
+          description="Cobranças emitidas"
+          tooltip="Cobranças emitidas dentro do prazo, ainda não vencidas."
+          icon={<Wallet className="w-5 h-5" />}
+          tone="blue"
+        />
+        <FinanceMetricCard
+          title="Receita Vencida"
+          value={formatCurrency(stats.overdueRevenue)}
+          description="Pagamentos em atraso"
+          tooltip="Faturas com vencimento ultrapassado — valores em atraso."
+          icon={<AlertTriangle className="w-5 h-5" />}
+          tone="red"
+        />
+        <FinanceMetricCard
           title="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
-          description="Soma dos preços aplicados por tenant"
-          icon={<DollarSign className="w-5 h-5 text-green-400" />}
-          border="border-green-500/20"
+          description="Receita mensal recorrente"
+          tooltip="Receita mensal recorrente das assinaturas ativas."
+          icon={<DollarSign className="w-5 h-5" />}
+          tone="cyan"
         />
-        <StatCard
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6 min-w-0">
+        <FinanceMetricCard
           title="Receita Anual (ARR)"
           value={formatCurrency(stats.arr)}
-          description="Projeção anual com base no MRR"
-          icon={<TrendingUp className="w-5 h-5 text-blue-400" />}
-          border="border-blue-500/20"
+          description="Projeção anual"
+          tooltip="Projeção anual com base no MRR (MRR × 12)."
+          icon={<TrendingUp className="w-5 h-5" />}
+          tone="purple"
         />
-        <StatCard
+        <FinanceMetricCard
           title="Inadimplência"
-          value={formatCurrency(stats.delayedAmount)}
-          description={`${stats.outstandingCount} empresa(s) inadimplente(s)`}
-          icon={<AlertCircle className="w-5 h-5 text-rose-400" />}
-          border="border-rose-500/20"
+          value={formatCurrency(stats.delinquencyAmount)}
+          description="Valores vencidos"
+          tooltip="Soma apenas de faturas vencidas — não inclui pendentes dentro do prazo."
+          icon={<ShieldAlert className="w-5 h-5" />}
+          tone="redDark"
         />
-        <StatCard
+        <FinanceMetricCard
           title="Faturas Pendentes"
           value={String(stats.pendingInvoices)}
           description="Cobranças aguardando pagamento"
-          icon={<Wallet className="w-5 h-5 text-amber-400" />}
-          border="border-amber-500/20"
+          tooltip={`${stats.dueSoonInvoices} vence(m) em até 7 dias — dentro do prazo.`}
+          icon={<FileClock className="w-5 h-5" />}
+          tone="amber"
         />
-        <StatCard
-          title="Faturas Vencidas"
-          value={String(stats.overdueInvoices)}
-          description={`${stats.dueSoonInvoices} vence(m) em até 7 dias`}
-          icon={<AlertCircle className="w-5 h-5 text-orange-400" />}
-          border="border-orange-500/20"
-        />
-        <StatCard
+        <FinanceMetricCard
           title="Clientes Ativos"
           value={String(stats.activeClients)}
-          description="Tenants com assinatura faturável"
-          icon={<Users className="w-5 h-5 text-purple-400" />}
-          border="border-purple-500/20"
+          description="Empresas faturáveis"
+          tooltip="Tenants com assinatura faturável ativa."
+          icon={<Users className="w-5 h-5" />}
+          tone="teal"
         />
       </div>
 
@@ -1027,19 +1044,7 @@ function SaaSFinancePageContent() {
                       </td>
                       <td className="p-4 text-[12px] text-gray-300">{formatDateBr(inv.due_date)}</td>
                       <td className="p-4 text-[12px]">
-                        <span
-                          className={
-                            inv.status === 'PAGO'
-                              ? 'text-emerald-400'
-                              : inv.status === 'VENCIDO'
-                                ? 'text-rose-400'
-                                : inv.status === 'PENDENTE'
-                                  ? 'text-amber-400'
-                                  : 'text-gray-400'
-                          }
-                        >
-                          {invoiceStatusLabel(inv.status)}
-                        </span>
+                        <InvoiceStatusBadge invoice={inv} />
                       </td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1.5">
@@ -1448,33 +1453,170 @@ function AlertPanel({
   );
 }
 
-function StatCard({
+function FinanceMetricsLegend() {
+  const items = [
+    { color: 'bg-emerald-500', label: 'Recebida = dinheiro já confirmado' },
+    { color: 'bg-blue-500', label: 'A receber = cobranças emitidas dentro do prazo' },
+    { color: 'bg-amber-500', label: 'Pendente = aguardando vencimento' },
+    { color: 'bg-rose-500', label: 'Vencida = cobranças atrasadas' },
+  ];
+  return (
+    <div className="mb-4 rounded-xl border border-white/10 bg-[#11161d]/80 px-4 py-3">
+      <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">
+        Legenda financeira
+      </p>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center gap-2 text-[12px] text-gray-300">
+            <span className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
+            {item.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type FinanceMetricTone =
+  | 'green'
+  | 'blue'
+  | 'red'
+  | 'cyan'
+  | 'purple'
+  | 'redDark'
+  | 'amber'
+  | 'teal';
+
+const METRIC_TONE_STYLES: Record<
+  FinanceMetricTone,
+  { bar: string; border: string; glow: string; iconBg: string; icon: string; value: string }
+> = {
+  green: {
+    bar: 'bg-emerald-500',
+    border: 'border-emerald-500/30',
+    glow: 'shadow-[0_0_24px_rgba(16,185,129,0.12)]',
+    iconBg: 'bg-emerald-500/15',
+    icon: 'text-emerald-400',
+    value: 'text-emerald-50',
+  },
+  blue: {
+    bar: 'bg-blue-500',
+    border: 'border-blue-500/30',
+    glow: 'shadow-[0_0_24px_rgba(59,130,246,0.12)]',
+    iconBg: 'bg-blue-500/15',
+    icon: 'text-blue-400',
+    value: 'text-blue-50',
+  },
+  red: {
+    bar: 'bg-rose-500',
+    border: 'border-rose-500/30',
+    glow: 'shadow-[0_0_24px_rgba(244,63,94,0.12)]',
+    iconBg: 'bg-rose-500/15',
+    icon: 'text-rose-400',
+    value: 'text-rose-50',
+  },
+  cyan: {
+    bar: 'bg-cyan-500',
+    border: 'border-cyan-500/30',
+    glow: 'shadow-[0_0_24px_rgba(6,182,212,0.12)]',
+    iconBg: 'bg-cyan-500/15',
+    icon: 'text-cyan-400',
+    value: 'text-cyan-50',
+  },
+  purple: {
+    bar: 'bg-purple-500',
+    border: 'border-purple-500/30',
+    glow: 'shadow-[0_0_24px_rgba(168,85,247,0.12)]',
+    iconBg: 'bg-purple-500/15',
+    icon: 'text-purple-400',
+    value: 'text-purple-50',
+  },
+  redDark: {
+    bar: 'bg-red-700',
+    border: 'border-red-700/40',
+    glow: 'shadow-[0_0_24px_rgba(185,28,28,0.15)]',
+    iconBg: 'bg-red-700/20',
+    icon: 'text-red-400',
+    value: 'text-red-50',
+  },
+  amber: {
+    bar: 'bg-amber-500',
+    border: 'border-amber-500/30',
+    glow: 'shadow-[0_0_24px_rgba(245,158,11,0.12)]',
+    iconBg: 'bg-amber-500/15',
+    icon: 'text-amber-400',
+    value: 'text-amber-50',
+  },
+  teal: {
+    bar: 'bg-teal-500',
+    border: 'border-teal-500/30',
+    glow: 'shadow-[0_0_24px_rgba(20,184,166,0.12)]',
+    iconBg: 'bg-teal-500/15',
+    icon: 'text-teal-400',
+    value: 'text-teal-50',
+  },
+};
+
+function FinanceMetricCard({
   title,
   value,
   description,
+  tooltip,
   icon,
-  border,
+  tone,
 }: {
   title: string;
   value: string;
   description: string;
+  tooltip: string;
   icon: ReactNode;
-  border: string;
+  tone: FinanceMetricTone;
 }) {
+  const s = METRIC_TONE_STYLES[tone];
   return (
     <div
-      className={`bg-[#11161d] border ${border} rounded-xl p-5 min-w-0 overflow-visible flex flex-col gap-3`}
+      title={tooltip}
+      className={`relative overflow-hidden rounded-xl border ${s.border} ${s.glow} bg-[#11161d] p-5 min-w-0 flex flex-col gap-2 transition-transform hover:-translate-y-0.5`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-[12px] text-gray-400 font-medium leading-snug">{title}</p>
-        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+      <div className={`absolute top-0 left-0 right-0 h-1 ${s.bar}`} />
+      <div className="flex items-start justify-between gap-3 pt-1">
+        <p className="text-[12px] text-gray-400 font-semibold leading-snug">{title}</p>
+        <div className={`w-10 h-10 rounded-xl ${s.iconBg} flex items-center justify-center shrink-0 ${s.icon}`}>
           {icon}
         </div>
       </div>
-      <p className="text-[clamp(16px,2.5vw,24px)] font-bold text-white whitespace-nowrap tabular-nums leading-tight">
+      <p className={`text-[clamp(20px,2.8vw,28px)] font-bold ${s.value} whitespace-nowrap tabular-nums leading-tight`}>
         {value}
       </p>
       <p className="text-[11px] text-gray-500 leading-snug">{description}</p>
+    </div>
+  );
+}
+
+function InvoiceStatusBadge({ invoice }: { invoice: MasterSaasInvoice }) {
+  const tone = invoiceStatusBadgeTone(invoice.status);
+  const styles =
+    tone === 'green'
+      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+      : tone === 'amber'
+        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+        : tone === 'red'
+          ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+          : 'bg-gray-500/15 text-gray-300 border-gray-500/30';
+
+  return (
+    <div className="space-y-1">
+      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${styles}`}>
+        {invoiceStatusLabel(invoice.status)}
+      </span>
+      <p className="text-[10px] text-gray-500 max-w-[200px]">
+        {formatInvoiceStatusDetail(invoice, (iso) => {
+          if (!iso) return '—';
+          const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`);
+          if (Number.isNaN(d.getTime())) return '—';
+          return d.toLocaleDateString('pt-BR');
+        })}
+      </p>
     </div>
   );
 }
