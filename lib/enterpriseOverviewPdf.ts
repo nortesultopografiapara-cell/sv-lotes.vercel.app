@@ -121,7 +121,54 @@ export function buildEnterpriseOverviewPayload(
   };
 }
 
-/** Caminho fechado do polígono — apenas perímetro (M → L… → Z), sem triangulação. */
+/** Estatísticas do último desenho de lotes no mapa (para testes/diagnóstico). */
+export type EnterpriseLotDrawStats = {
+  lotsTotal: number;
+  fillsDrawn: number;
+  strokesDrawn: number;
+  skippedInvalidRing: number;
+};
+
+let lastEnterpriseLotDrawStats: EnterpriseLotDrawStats | null = null;
+
+export function getLastEnterpriseLotDrawStats(): EnterpriseLotDrawStats | null {
+  return lastEnterpriseLotDrawStats;
+}
+
+/** Converte anel fechado em deltas relativos para jsPDF.lines(). */
+export function ringToLineDeltas(
+  points: [number, number][],
+): [number, number][] {
+  const deltas: [number, number][] = [];
+  for (let i = 1; i < points.length; i++) {
+    deltas.push([
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1],
+    ]);
+  }
+  return deltas;
+}
+
+export function isValidPdfRing(points: [number, number][]): boolean {
+  if (points.length < 3) return false;
+  return points.every(
+    ([x, y]) => Number.isFinite(x) && Number.isFinite(y),
+  );
+}
+
+/** Desenha polígono fechado via jsPDF.lines (API suportada com fill/stroke). */
+export function drawClosedPolygonLines(
+  doc: jsPDF,
+  points: [number, number][],
+  style: 'F' | 'S' | 'FD',
+): boolean {
+  if (!isValidPdfRing(points)) return false;
+  const deltas = ringToLineDeltas(points);
+  doc.lines(deltas, points[0][0], points[0][1], [1, 1], style, true);
+  return true;
+}
+
+/** Caminho lógico do polígono — apenas perímetro (M → L… → Z), sem triangulação. */
 export function buildClosedPolygonPath(
   points: [number, number][],
 ): (string | number)[][] {
@@ -166,40 +213,127 @@ export function blendFillColorForWhiteBackground(
   ];
 }
 
-/** Apenas preenchimento — sem contorno. */
+/** Apenas preenchimento — GState 50% + cor por status. */
 export function drawLotFillOnly(
   doc: jsPDF,
   points: [number, number][],
   fill: [number, number, number],
-  opts: { onSatellite: boolean },
-) {
-  if (points.length < 3) return;
-  const path = buildClosedPolygonPath(points);
-  if (opts.onSatellite) {
-    applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
-    doc.setFillColor(...fill);
-    doc.path(path, 'F');
-    resetOpacity(doc);
-  } else {
-    doc.setFillColor(...blendFillColorForWhiteBackground(fill));
-    doc.path(path, 'F');
-  }
+  _opts?: { onSatellite?: boolean },
+): boolean {
+  if (!isValidPdfRing(points)) return false;
+  applyFillOpacity(doc, ENTERPRISE_LOT_FILL_OPACITY);
+  doc.setFillColor(...fill);
+  const ok = drawClosedPolygonLines(doc, points, 'F');
+  resetOpacity(doc);
+  return ok;
 }
 
-/** Contorno 100% opaco — sempre após preenchimentos. */
+/** Contorno 100% opaco — ciano #00E5FF, sem GState de fill. */
 export function drawLotStrokeOnly(
   doc: jsPDF,
   points: [number, number][],
   lw = ENTERPRISE_LOT_STROKE_WIDTH_MM,
-) {
-  if (points.length < 3) return;
-  const path = buildClosedPolygonPath(points);
+): boolean {
+  if (!isValidPdfRing(points)) return false;
   resetOpacity(doc);
   doc.setDrawColor(...ENTERPRISE_LOT_STROKE_RGB);
   doc.setLineWidth(lw);
   doc.setLineCap('round');
   doc.setLineJoin('round');
-  doc.path(path, 'S');
+  return drawClosedPolygonLines(doc, points, 'S');
+}
+
+/** Preenchimento 50% de todos os lotes no mapa. */
+export function drawEnterpriseLotFillsOnMap(
+  doc: jsPDF,
+  layout: EnterpriseOverviewLayout,
+): number {
+  let drawn = 0;
+  for (const lot of layout.lots) {
+    const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
+    if (drawLotFillOnly(doc, pts, lot.fillRgb)) drawn++;
+  }
+  return drawn;
+}
+
+/** Divisas ciano de todos os lotes — chamar após ruas. */
+export function drawEnterpriseLotStrokesOnMap(
+  doc: jsPDF,
+  layout: EnterpriseOverviewLayout,
+): number {
+  let drawn = 0;
+  for (const lot of layout.lots) {
+    const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
+    if (drawLotStrokeOnly(doc, pts)) drawn++;
+  }
+  return drawn;
+}
+
+/** Desenha fills + strokes e registra estatísticas (fills antes, strokes depois das ruas). */
+export function drawEnterpriseLotsOnMap(
+  doc: jsPDF,
+  layout: EnterpriseOverviewLayout,
+  phase: 'fills' | 'strokes',
+): EnterpriseLotDrawStats {
+  const base = lastEnterpriseLotDrawStats ?? {
+    lotsTotal: layout.lots.length,
+    fillsDrawn: 0,
+    strokesDrawn: 0,
+    skippedInvalidRing: 0,
+  };
+
+  if (phase === 'fills') {
+    const fillsDrawn = drawEnterpriseLotFillsOnMap(doc, layout);
+    const skippedInvalidRing = layout.lots.length - fillsDrawn;
+    lastEnterpriseLotDrawStats = {
+      lotsTotal: layout.lots.length,
+      fillsDrawn,
+      strokesDrawn: 0,
+      skippedInvalidRing,
+    };
+    if (fillsDrawn === 0 && layout.lots.length > 0) {
+      console.warn('ENTERPRISE_OVERVIEW_NO_LOT_FILLS_DRAWN', lastEnterpriseLotDrawStats);
+    }
+    return lastEnterpriseLotDrawStats;
+  }
+
+  const strokesDrawn = drawEnterpriseLotStrokesOnMap(doc, layout);
+  lastEnterpriseLotDrawStats = {
+    ...base,
+    lotsTotal: layout.lots.length,
+    strokesDrawn,
+    skippedInvalidRing: Math.max(
+      base.skippedInvalidRing,
+      layout.lots.length - strokesDrawn,
+    ),
+  };
+  if (strokesDrawn === 0 && layout.lots.length > 0) {
+    console.warn('ENTERPRISE_OVERVIEW_NO_LOT_STROKES_DRAWN', lastEnterpriseLotDrawStats);
+  }
+  return lastEnterpriseLotDrawStats;
+}
+
+/** Stream PDF bruto para validação de operadores gráficos. */
+export function enterpriseOverviewPdfRawStream(doc: jsPDF): string {
+  return Buffer.from(doc.output('arraybuffer')).toString('latin1');
+}
+
+/** Conta operadores de preenchimento e traço no stream PDF. */
+export function countPdfPaintOperators(stream: string): {
+  fills: number;
+  strokes: number;
+  cyanStrokeRgb: boolean;
+  strokeWidth07: boolean;
+} {
+  const fills = (stream.match(/\sf[\s\n]/g) ?? []).length;
+  const strokes = (stream.match(/\sS[\s\n]/g) ?? []).length;
+  const cyanStrokeRgb = /0\.\s*0\.9\s+1\.\s+RG/.test(stream);
+  const strokeWidthPt =
+    ENTERPRISE_LOT_STROKE_WIDTH_MM * (72 / 25.4);
+  const strokeWidth07 =
+    stream.includes(`${strokeWidthPt} w`) ||
+    /1\.98\d* w/.test(stream);
+  return { fills, strokes, cyanStrokeRgb, strokeWidth07 };
 }
 
 function addRasterImageToDoc(
@@ -509,9 +643,6 @@ function drawMapArea(
 ) {
   const { layout, options } = payload;
   const box = layout.mapBoxMm;
-  const onSatellite = Boolean(
-    options.showSatelliteBackground && satellite.ok && satellite.base64,
-  );
 
   // 1. Fundo branco
   doc.setFillColor(255, 255, 255);
@@ -532,11 +663,8 @@ function drawMapArea(
     drawSatelliteUnavailableNotice(doc, box);
   }
 
-  // 4. Preenchimento translúcido dos lotes
-  for (const lot of layout.lots) {
-    const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
-    drawLotFillOnly(doc, pts, lot.fillRgb, { onSatellite });
-  }
+  // 4. Preenchimento 50% dos lotes
+  drawEnterpriseLotsOnMap(doc, layout, 'fills');
 
   // 5. Ruas
   if (options.showStreets) {
@@ -547,11 +675,8 @@ function drawMapArea(
     }
   }
 
-  // 6. Contorno/divisa dos lotes (por cima de tudo)
-  for (const lot of layout.lots) {
-    const pts = lot.ring.map((p) => projectEnterprisePointToPdf(p, layout));
-    drawLotStrokeOnly(doc, pts);
-  }
+  // 6. Divisas ciano dos lotes (por cima das ruas)
+  drawEnterpriseLotsOnMap(doc, layout, 'strokes');
 
   // 7. Números dos lotes
   if (options.showLotNumbers) {
@@ -677,6 +802,7 @@ export async function generateEnterpriseOverviewPdf(
   if (payload.options.showLegend) {
     drawSidePanel(doc, payload);
   }
+  lastEnterpriseLotDrawStats = null;
   drawMapArea(doc, payload, satellite);
 
   return doc;

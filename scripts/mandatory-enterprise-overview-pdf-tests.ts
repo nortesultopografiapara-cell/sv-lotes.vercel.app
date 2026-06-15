@@ -28,16 +28,22 @@ import {
   buildClosedPolygonPath,
   buildEnterpriseOverviewPayload,
   computeEnterpriseMapContentRectMm as pdfContentRect,
+  countPdfPaintOperators,
+  drawClosedPolygonLines,
   drawLotFillOnly,
   drawLotStrokeOnly,
+  enterpriseOverviewPdfRawStream,
   ENTERPRISE_MAP_DRAW_ORDER,
   ENTERPRISE_SATELLITE_UNAVAILABLE_MSG,
   enterpriseOverviewPdfTextContent,
   ENTERPRISE_LOT_FILL_OPACITY as PDF_FILL_OPACITY,
   ENTERPRISE_LOT_STROKE_RGB as PDF_STROKE_RGB,
   generateEnterpriseOverviewPdf,
+  getLastEnterpriseLotDrawStats,
   isPerimeterOnlyPolygonPath,
+  isValidPdfRing,
   projectGeographicPointToPdf as pdfProjectGeo,
+  ringToLineDeltas,
 } from '../lib/enterpriseOverviewPdf';
 import {
   fetchSatelliteBackgroundBase64,
@@ -225,11 +231,99 @@ function testFillStrokeSeparatePasses() {
     [60, 60],
     [20, 60],
   ];
-  drawLotFillOnly(doc, pts, [34, 197, 94], { onSatellite: false });
-  drawLotStrokeOnly(doc, pts);
-  const buf = Buffer.from(doc.output('arraybuffer'));
-  assert(buf.length > 1000, 'pdf com fill+stroke');
+  assert(drawClosedPolygonLines(doc, pts, 'F'), 'fill polygon');
+  assert(drawLotFillOnly(doc, pts, [34, 197, 94]), 'lot fill');
+  assert(drawLotStrokeOnly(doc, pts), 'lot stroke');
+  const stream = enterpriseOverviewPdfRawStream(doc);
+  const ops = countPdfPaintOperators(stream);
+  assert(ops.fills >= 2, `pdf fills ${ops.fills}`);
+  assert(ops.strokes >= 1, `pdf strokes ${ops.strokes}`);
+  assert(ops.cyanStrokeRgb, 'ciano no stream');
+  assert(ops.strokeWidth07, 'espessura 0.7 no stream');
   console.log('OK testFillStrokeSeparatePasses');
+}
+
+function testRingToLineDeltasPerimeterOnly() {
+  const pts: [number, number][] = [
+    [10, 10],
+    [50, 10],
+    [50, 40],
+    [10, 40],
+  ];
+  const deltas = ringToLineDeltas(pts);
+  assert(deltas.length === pts.length - 1, 'deltas perimetro');
+  assert(isValidPdfRing(pts), 'anel valido');
+  const path = buildClosedPolygonPath(pts);
+  assert(isPerimeterOnlyPolygonPath(path, pts.length), 'path somente perimetro');
+  console.log('OK testRingToLineDeltasPerimeterOnly');
+}
+
+async function testMapLotsDrawnEqualTotal() {
+  const blocks = buildMartineIiiBlocks();
+  const payload = buildEnterpriseOverviewPayload({
+    blocks,
+    project: MARTINE_PROJECT,
+    company: MARTINE_COMPANY,
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+    generatedAt: '15/06/2026',
+  });
+  const doc = await generateEnterpriseOverviewPdf({
+    ...payload,
+    logoBase64: null,
+    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: false },
+  });
+  const stats = getLastEnterpriseLotDrawStats();
+  assert(stats != null, 'stats desenho');
+  assert(stats!.lotsTotal === blocks.length, `total ${stats!.lotsTotal}`);
+  assert(stats!.fillsDrawn === blocks.length, `fills ${stats!.fillsDrawn}`);
+  assert(stats!.strokesDrawn === blocks.length, `strokes ${stats!.strokesDrawn}`);
+  assert(stats!.skippedInvalidRing === 0, 'nenhum lote ignorado');
+
+  const stream = enterpriseOverviewPdfRawStream(doc);
+  const ops = countPdfPaintOperators(stream);
+  assert(ops.fills >= blocks.length, `stream fills ${ops.fills}`);
+  assert(ops.strokes >= blocks.length, `stream strokes ${ops.strokes}`);
+  assert(ops.cyanStrokeRgb, 'ciano nos poligonos do mapa');
+  assert(ops.strokeWidth07, '0.7mm nos strokes do mapa');
+  console.log('OK testMapLotsDrawnEqualTotal');
+}
+
+async function testLegendAloneDoesNotSatisfyMapFill() {
+  const doc = new jsPDF({ unit: 'mm', format: 'a3', orientation: 'landscape' });
+  const legendOnly = blendFillColorForWhiteBackground([34, 197, 94]);
+  doc.setFillColor(...legendOnly);
+  doc.rect(10, 10, 4, 4, 'F');
+  doc.setDrawColor(...ENTERPRISE_LOT_STROKE_RGB);
+  doc.setLineWidth(0.35);
+  doc.rect(10, 10, 4, 4, 'S');
+  const opsLegend = countPdfPaintOperators(enterpriseOverviewPdfRawStream(doc));
+
+  const blocks = buildMartineIiiBlocks();
+  const payload = buildEnterpriseOverviewPayload({
+    blocks,
+    project: MARTINE_PROJECT,
+    company: MARTINE_COMPANY,
+    options: DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+  });
+  const mapDoc = await generateEnterpriseOverviewPdf({
+    ...payload,
+    logoBase64: null,
+    options: { ...DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS, showSatelliteBackground: false },
+  });
+  const opsMap = countPdfPaintOperators(enterpriseOverviewPdfRawStream(mapDoc));
+  const stats = getLastEnterpriseLotDrawStats();
+
+  assert(
+    opsMap.fills > opsLegend.fills + blocks.length - 1,
+    `mapa fills ${opsMap.fills} vs legenda ${opsLegend.fills}`,
+  );
+  assert(
+    opsMap.strokes >= blocks.length + opsLegend.strokes,
+    `mapa strokes ${opsMap.strokes}`,
+  );
+  assert(stats!.fillsDrawn === blocks.length, 'fills reais no mapa');
+  assert(opsMap.cyanStrokeRgb, 'ciano nos poligonos, nao so legenda');
+  console.log('OK testLegendAloneDoesNotSatisfyMapFill');
 }
 
 function testDrawOrderDefinition() {
@@ -451,6 +545,7 @@ async function main() {
   testAllLotsFitMapBox();
   testLotLabelsShortNumbers();
   testNoTriangulationInPolygonPath();
+  testRingToLineDeltasPerimeterOnly();
   testLotFillOpacityAndStrokeWidth();
   testFillStrokeSeparatePasses();
   testDrawOrderDefinition();
@@ -459,6 +554,8 @@ async function main() {
   await testEsriSatelliteFetch();
   await testSatelliteFailureNoticeInPdf();
   await testPdfGeneratesForMartine();
+  await testMapLotsDrawnEqualTotal();
+  await testLegendAloneDoesNotSatisfyMapFill();
   await testWriteValidationPdfs();
   console.log('mandatory-enterprise-overview-pdf-tests: all passed');
 }
