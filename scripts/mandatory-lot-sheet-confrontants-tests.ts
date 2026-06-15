@@ -11,7 +11,15 @@ import {
   officialSegmentIndexesForSide,
 } from '../lib/assistedConfrontation';
 import { buildOfficialLotDocumentBundle } from '../lib/officialLotDocumentData';
+import { buildOfficialSheetLocalGeometry } from '../lib/lotSheetCoordinates';
 import { buildSketchLayoutFromBlock } from '../lib/lotSheetLayout';
+import {
+  generateLotSheetPdf,
+  lotSheetPdfTextContent,
+} from '../lib/lotSheetPdf';
+import type { LotSheetPayload } from '../lib/lotSheetData';
+import { segmentTableToMetricRows } from '../lib/lotSheetEnrichment';
+import { getOfficialLotSegmentTable } from '../lib/officialLotMeasurements';
 import { buildSideConfrontantsWithSources } from '../lib/lotSegmentConfrontation';
 
 function assert(cond: boolean, msg: string) {
@@ -453,6 +461,155 @@ function testMartinePranchaUsesOfficialSegmentRows() {
   console.log('OK testMartinePranchaUsesOfficialSegmentRows');
 }
 
+function buildMartineLot01Qd02Block() {
+  const segs = [
+    lineSeg(0, 7500000, 500000, 7500000, 500100.05, 100.05),
+    lineSeg(1, 7500000, 500100.05, 7500014.86, 500100.05, 14.86),
+    lineSeg(2, 7500014.86, 500100.05, 7500021.64, 500106.83, 6.78),
+    lineSeg(3, 7500021.64, 500106.83, 7500021.64, 500000, 106.83, 'front'),
+    lineSeg(4, 7500021.64, 500000, 7500197.84, 500000, 176.2),
+    lineSeg(5, 7500197.84, 500000, 7500197.84, 500069.08, 69.08),
+    lineSeg(6, 7500197.84, 500069.08, 7500000, 500069.08, 197.84, 'back'),
+  ];
+  const lot = block(segs, {
+    id: 'martine-lt01',
+    number: '1',
+    block_name: '02',
+    front_segment_index: 3,
+    front_street_name: 'RUA 01',
+    area: 6056.14,
+  });
+  const lot43 = neighborLot('lt43', '43', 500069.08, 7500197.84, 30, 80);
+  const lot02 = neighborLot('lt02', '2', 500000, 7500021.64, 80, 30);
+  const all = [lot, lot43, lot02];
+
+  const frenteIdx = officialSegmentIndexesForSide(lot, all, 'frente');
+  const fundoIdx = officialSegmentIndexesForSide(lot, all, 'fundo');
+  const dirIdx = officialSegmentIndexesForSide(lot, all, 'ladoDireito');
+  const esqIdx = officialSegmentIndexesForSide(lot, all, 'ladoEsquerdo');
+
+  let updated = applyManualConfrontantToBlock(lot, frenteIdx, 'RUA 01', 'street');
+  updated = applyManualConfrontantToBlock(updated, fundoIdx, 'Lote 43', 'lot');
+  updated = applyManualConfrontantToBlock(updated, dirIdx, 'RUA 02', 'street');
+  updated = applyManualConfrontantToBlock(
+    updated,
+    esqIdx,
+    'Lote 02 e 43',
+    'lot',
+  );
+  return { lot: updated, all };
+}
+
+/** PDF — quadro CONFRONTAÇÕES usa bundle oficial (não audit.sides legado). */
+async function testMartinePranchaPdfConfrontationsQuadro() {
+  const { lot, all } = buildMartineLot01Qd02Block();
+  const project = {
+    name: 'CHACARAS E LOTES MARTINE III',
+    city: 'Parauapebas',
+    uf: 'PA',
+    escala_padrao: '1:800',
+  };
+  const bundle = buildOfficialLotDocumentBundle({
+    block: lot,
+    blockId: 'martine-lt01',
+    project,
+    allBlocks: all,
+  });
+  const layout = buildSketchLayoutFromBlock(
+    lot,
+    'martine-lt01',
+    all,
+    [],
+    project,
+  );
+  const geom = buildOfficialSheetLocalGeometry(lot);
+  assert(geom != null, 'geometria martine');
+  const officialTable = getOfficialLotSegmentTable(lot, project);
+  const metricRows = segmentTableToMetricRows(officialTable);
+
+  assert(
+    layout.confrontants.fundo === bundle.confrontations.fundo,
+    'layout=bundle fundo',
+  );
+  assert(bundle.confrontations.fundo === 'Lote 43', bundle.confrontations.fundo);
+
+  const payload = {
+    project,
+    lot,
+    owner: 'Teste',
+    ownerDocument: '—',
+    ownerDetails: {
+      name: 'Teste',
+      cpf: '—',
+      fatherName: '—',
+      motherName: '—',
+      address: '—',
+      neighborhood: '—',
+      municipality: 'Parauapebas/PA',
+      cadastralInscription: '—',
+    },
+    company: null,
+    technicalResponsible: null,
+    neighbors: [],
+    cardinalConfrontants: [],
+    blockSketch: null,
+    projectMap: [],
+    vertices: [],
+    segments: [],
+    metricRows,
+    coordinatesAvailable: true,
+    frontEdgeIndex: 3,
+    quadraStreetNames: ['RUA 01', 'RUA 02'],
+    validation: {
+      code: 'TEST',
+      url: 'https://local',
+      emittedAt: new Date().toISOString(),
+    },
+    version: 'test',
+    geometry: {
+      utmRing: geom!.utmRing,
+      localRing: geom!.localRing,
+      bboxMeters: geom!.bboxMeters,
+    },
+    measures: {
+      frente: '106,83 m',
+      fundo: '197,84 m',
+      ladoDireito: '124,49 m',
+      ladoEsquerdo: '176,20 m',
+      chanfre: '6,78 m',
+      curva: '—',
+      raio: '—',
+      corda: '—',
+      area: '6.056,14 m²',
+    },
+    scaleLabel: '1 : 800',
+    sideConfrontants: bundle.confrontations,
+    lotAddressLine: '—',
+    memorialFrontClause: '—',
+    memorialTechnicalHtml: '',
+    memorialDraftPlain: '',
+    officialEdgeLengths: layout.edgeLabels,
+    sketchSides: layout.sketchSides,
+    ignoredSegmentNote: null,
+  } as LotSheetPayload;
+
+  const doc = await generateLotSheetPdf(payload);
+  const text = lotSheetPdfTextContent(doc).toUpperCase();
+
+  assert(text.includes('CONFRONTAÇÕES') || text.includes('CONFRONTA'), 'secao confrontacoes');
+  assert(/FUNDO/.test(text) && /LOTE 43/.test(text), 'pdf fundo lote 43');
+  assert(!/FUNDO\s+RUA\s*0?2/.test(text), 'pdf nao pode ter FUNDO RUA 02');
+  assert(/FRENTE/.test(text) && /RUA\s*0?1/.test(text), 'pdf frente rua 01');
+  assert(/LADO\s+DIREITO/.test(text) && /RUA\s*0?2/.test(text), 'pdf dir rua 02');
+  assert(
+    /LADO\s+ESQUERDO/.test(text) && /LOTE\s+02/.test(text) && /43/.test(text),
+    'pdf esq lote 02 e 43',
+  );
+  assert(/CHANFRE/.test(text) && /6,78/.test(text), 'pdf chanfre 6,78');
+
+  console.log('OK testMartinePranchaPdfConfrontationsQuadro');
+}
+
 /** Sempre exibe os quatro lados, mesmo vazios. */
 function testAllSidesAlwaysPresent() {
   const segs = [
@@ -481,14 +638,15 @@ function testAllSidesAlwaysPresent() {
   console.log('OK testAllSidesAlwaysPresent');
 }
 
-function main() {
+async function main() {
   testSimpleSides();
   testDuplicateSameSide();
   testTwoDifferentOnSameSide();
   testMartineLot01Qd02();
   testMartinePranchaUsesOfficialSegmentRows();
+  await testMartinePranchaPdfConfrontationsQuadro();
   testAllSidesAlwaysPresent();
   console.log('mandatory-lot-sheet-confrontants-tests: all passed');
 }
 
-main();
+void main();

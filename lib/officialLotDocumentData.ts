@@ -33,6 +33,13 @@ export type OfficialLotDocumentBundle = {
   chanfreLabel: string;
 };
 
+/** Confrontações do quadro da prancha e do memorial — sem recálculo heurístico. */
+export function officialLotDocumentConfrontations(
+  input: OfficialLotDocumentInput,
+): OfficialLotConfrontations {
+  return buildOfficialLotDocumentBundle(input).confrontations;
+}
+
 export function buildOfficialLotDocumentBundle(
   input: OfficialLotDocumentInput,
 ): OfficialLotDocumentBundle {

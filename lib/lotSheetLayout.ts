@@ -4,11 +4,12 @@
  */
 
 import {
-  buildLotConfrontationAudit,
   buildOfficialLotConfrontations,
   officialSegmentIndexesForSide,
   type LotConfrontationAudit,
 } from '@/lib/assistedConfrontation';
+import { buildOfficialLotDocumentBundle } from '@/lib/officialLotDocumentData';
+import type { StreetGuideConfrontInput } from '@/lib/streetGuideConfrontation';
 import {
   getOfficialLotMeasurements,
   getOfficialLotSegmentTable,
@@ -1985,21 +1986,22 @@ export function buildSketchLayoutFromBlock(
 } {
   const segs = parseOfficialSegmentsFromBlock(block);
   const count = edgeCount ?? segs.length;
-  const audit = buildLotConfrontationAudit(
+  const bundle = buildOfficialLotDocumentBundle({
     block,
     blockId,
+    project: project ?? {},
     allBlocks,
-    streetGuides,
-    project,
-  );
+    streetGuides: streetGuides as StreetGuideConfrontInput[],
+  });
   return {
     edgeLabels: buildGroupedOfficialEdgeLabels(block, count, project),
-    sketchSides: buildLotSheetSketchSides(block, audit, allBlocks, project),
-    confrontants: buildOfficialLotConfrontations(audit, {
+    sketchSides: buildLotSheetSketchSides(
       block,
+      bundle.audit,
       allBlocks,
       project,
-    }),
-    audit,
+    ),
+    confrontants: bundle.confrontations,
+    audit: bundle.audit,
   };
 }

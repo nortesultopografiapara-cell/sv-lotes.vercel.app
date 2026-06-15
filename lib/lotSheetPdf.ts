@@ -2627,6 +2627,26 @@ export async function generateLotSheetPdf(
   return doc;
 }
 
+/** Extrai texto do PDF da prancha para validação em testes Node. */
+export function lotSheetPdfTextContent(doc: jsPDF): string {
+  const parts: string[] = [];
+  const pageCount = doc.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    const text = (
+      doc as unknown as {
+        getPage: (n: number) => {
+          getTextContent?: () => { items: { str: string }[] };
+        };
+      }
+    ).getPage?.(p)?.getTextContent?.();
+    if (text?.items) {
+      parts.push(text.items.map((i) => i.str).join(' '));
+    }
+  }
+  if (parts.length) return parts.join('\n');
+  return Buffer.from(doc.output('arraybuffer')).toString('latin1');
+}
+
 export function lotSheetPdfToBlob(doc: jsPDF): Blob {
   return doc.output('blob');
 }

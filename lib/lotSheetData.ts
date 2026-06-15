@@ -423,9 +423,7 @@ export async function loadLotSheetPayload(
 
   const { data: allBlocks } = await supabase
     .from('blocks')
-    .select(
-      'id, number, lot, block, block_name, quadra, name, geometry, bounds, status, area',
-    )
+    .select('*')
     .eq('project_id', params.projectId);
 
   const { data: guides } = await supabase
@@ -539,6 +537,8 @@ export async function loadLotSheetPayload(
   const sketchSides = buildLotSheetSketchSides(
     blockRecord,
     confrontationAudit,
+    blocksList,
+    project as Record<string, unknown>,
   );
   const ignoredSegmentNote =
     officialTable.ignoredInvalidCount > 0
@@ -554,6 +554,7 @@ export async function loadLotSheetPayload(
     (company as Record<string, unknown>) || null,
   );
 
+  /** Quadro CONFRONTAÇÕES — mesma fonte do memorial/popup (bundle oficial). */
   const sideConfrontants = officialBundle.confrontations;
   const lotAddressLine = buildLotAddressLine(block as Record<string, unknown>);
   const memorialFrontClause = formatMemorialFrontClause(
