@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
+import { markInvoicePaid, reactivateCompanyOnPayment } from '@/lib/saasBilling';
 
 export async function GET(request: Request) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
@@ -75,6 +76,33 @@ export async function POST(request: Request) {
       subscriptionId = sub?.id ?? null;
     }
 
+    const invoiceId = body.invoiceId ? String(body.invoiceId).trim() : null;
+
+    if (invoiceId) {
+      const result = await markInvoicePaid(supabaseAdmin, {
+        invoiceId,
+        paidAt,
+        paymentMethod,
+        notes,
+        createdBy: body.userId,
+      });
+
+      await supabaseAdmin.from('audit_logs').insert({
+        tenant_id: companyId,
+        company_id: companyId,
+        user_id: body.userId,
+        module: 'SUBSCRIPTIONS',
+        action: 'SAAS_PAYMENT_REGISTERED',
+        description: `Pagamento fatura ${result.invoice.invoice_number} — R$ ${result.invoice.final_amount.toFixed(2)}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        payment: { id: result.paymentId },
+        invoice: result.invoice,
+      });
+    }
+
     const { data: payment, error: payErr } = await supabaseAdmin
       .from('master_saas_payments')
       .insert({
@@ -104,6 +132,8 @@ export async function POST(request: Request) {
         })
         .eq('id', subscriptionId);
     }
+
+    await reactivateCompanyOnPayment(supabaseAdmin, companyId);
 
     await supabaseAdmin.from('audit_logs').insert({
       tenant_id: companyId,

@@ -24,7 +24,9 @@ import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing'
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { mapAuditLogRow } from '@/lib/masterAudit';
 import type { CompanySubscription } from '@/lib/saasSubscription';
+import { isRealSaasCompany } from '@/lib/saasSubscription';
 import { computeDaysLate } from '@/lib/masterSaasReports';
+import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 
 type TabId = 'geral' | 'plano' | 'recursos' | 'usuarios' | 'empreendimentos' | 'historico';
 
@@ -58,6 +60,8 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
   const [projects, setProjects] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -138,6 +142,31 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
       alert(err instanceof Error ? err.message : 'Erro');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleGenerateInvoice = async () => {
+    if (!user?.id) return;
+    setGeneratingInvoice(true);
+    try {
+      const res = await fetch('/api/master/saas-invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          companyId,
+          action: 'generate_company',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança');
+      if (json.skipped) alert(json.skipped);
+      else alert(`Cobrança gerada: ${json.invoice?.invoice_number || 'OK'}`);
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao gerar cobrança');
+    } finally {
+      setGeneratingInvoice(false);
     }
   };
 
@@ -253,6 +282,20 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
             <InfoCard label="Dias em atraso" value={daysLate > 0 ? `${daysLate} dias` : '—'} />
           </div>
           <div className="flex flex-wrap gap-2">
+            {isRealSaasCompany(company) && (
+              <ActionBtn
+                label={generatingInvoice ? 'Gerando…' : 'Gerar Cobrança'}
+                loading={generatingInvoice}
+                onClick={() => void handleGenerateInvoice()}
+                variant="primary"
+              />
+            )}
+            <ActionBtn
+              label="Registrar pagamento"
+              loading={false}
+              onClick={() => setPaymentModalOpen(true)}
+              variant="success"
+            />
             <ActionBtn
               label="Suspender"
               loading={actionLoading === 'suspend'}
@@ -325,6 +368,23 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
             h.details,
           ])}
           empty="Nenhum histórico registrado."
+        />
+      )}
+      {user?.id && (
+        <RegisterSaasPaymentModal
+          open={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          userId={user.id}
+          companies={[
+            {
+              id: companyId,
+              name: company.name || '—',
+              defaultAmount: pricing.appliedPrice,
+              subscriptionId: subscription?.id ?? null,
+            },
+          ]}
+          initialCompanyId={companyId}
+          onSuccess={loadData}
         />
       )}
     </div>

@@ -41,6 +41,7 @@ type RegisterSaasPaymentModalProps = {
   userId: string;
   companies: SaasPaymentCompanyOption[];
   initialCompanyId?: string;
+  initialInvoiceId?: string;
   onSuccess?: () => void | Promise<void>;
 };
 
@@ -50,6 +51,7 @@ export function RegisterSaasPaymentModal({
   userId,
   companies,
   initialCompanyId,
+  initialInvoiceId,
   onSuccess,
 }: RegisterSaasPaymentModalProps) {
   const [saving, setSaving] = useState(false);
@@ -92,6 +94,7 @@ export function RegisterSaasPaymentModal({
           userId,
           companyId: form.companyId,
           subscriptionId: company?.subscriptionId ?? null,
+          invoiceId: initialInvoiceId || null,
           amount,
           paidAt: form.paidAt,
           paymentMethod: form.paymentMethod,
@@ -108,7 +111,7 @@ export function RegisterSaasPaymentModal({
     } finally {
       setSaving(false);
     }
-  }, [form, userId, companies, onClose, onSuccess]);
+  }, [form, userId, companies, initialInvoiceId, onClose, onSuccess]);
 
   if (!open) return null;
 

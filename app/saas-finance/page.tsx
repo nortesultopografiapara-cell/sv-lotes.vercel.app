@@ -64,6 +64,13 @@ import {
   sumReceivedRevenue,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
+import {
+  buildSaasBillingAlerts,
+  computeSaasBillingMetrics,
+  formatReferenceMonthLabel as formatInvoiceCompetenceLabel,
+  invoiceStatusLabel,
+  type MasterSaasInvoice,
+} from '@/lib/saasBilling';
 import { formatPaymentHistoryDetails } from '@/lib/masterSaasFinancialStatus';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
@@ -116,7 +123,7 @@ function SaaSFinancePageContent() {
   const [filterPlan, setFilterPlan] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPayment, setFilterPayment] = useState('all');
-  const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato'>('assinaturas');
+  const [mainTab, setMainTab] = useState<'assinaturas' | 'contrato' | 'faturas'>('assinaturas');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [contractHistory, setContractHistory] = useState<CompanyContractRow[]>([]);
   const [loadingContractId, setLoadingContractId] = useState<string | null>(null);
@@ -128,8 +135,14 @@ function SaaSFinancePageContent() {
     ReturnType<typeof mapAuditLogRow>[]
   >([]);
   const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
+  const [saasInvoices, setSaasInvoices] = useState<MasterSaasInvoice[]>([]);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
+  const [paymentInitialInvoiceId, setPaymentInitialInvoiceId] = useState<string | undefined>();
+  const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
+  const [filterInvoiceCompany, setFilterInvoiceCompany] = useState('all');
+  const [filterInvoiceMonth, setFilterInvoiceMonth] = useState('');
+  const [filterInvoiceStatus, setFilterInvoiceStatus] = useState('all');
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -191,6 +204,13 @@ function SaaSFinancePageContent() {
       setSaasPayments(payments);
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
+      const invRes = await fetch(
+        `/api/master/saas-invoices?userId=${encodeURIComponent(user.id)}`,
+      );
+      const invJson = await invRes.json().catch(() => ({}));
+      const invoices = (invRes.ok ? invJson.invoices : []) as MasterSaasInvoice[];
+      setSaasInvoices(invoices);
+
       setCompanies(
         rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths, payments)),
       );
@@ -246,9 +266,6 @@ function SaaSFinancePageContent() {
   const stats = useMemo(() => {
     let mrr = 0;
     let activeClients = 0;
-    let delayedAmount = 0;
-    let outstandingCount = 0;
-    let receivedRevenue = 0;
 
     companies.forEach((c) => {
       const pricing = resolveCompanyPricing(c);
@@ -258,25 +275,53 @@ function SaaSFinancePageContent() {
         activeClients++;
         mrr += applied;
       }
-
-      if (c.financial_situation === 'VENCIDO') {
-        delayedAmount += applied;
-        outstandingCount++;
-      }
     });
 
-    receivedRevenue = sumReceivedRevenue(saasPayments);
+    const invoiceMetrics = computeSaasBillingMetrics(saasInvoices, mrr);
+    const receivedRevenue = Math.max(
+      sumReceivedRevenue(saasPayments),
+      invoiceMetrics.receivedRevenue,
+    );
 
     return {
       mrr,
       arr: mrr * 12,
-      projectedRevenue: mrr,
+      projectedRevenue: invoiceMetrics.projectedRevenue,
       receivedRevenue,
       activeClients,
-      delayedAmount,
-      outstandingCount,
+      delayedAmount: invoiceMetrics.delinquencyAmount,
+      outstandingCount: invoiceMetrics.overdueCount,
+      pendingInvoices: invoiceMetrics.pendingCount,
+      overdueInvoices: invoiceMetrics.overdueCount,
+      dueSoonInvoices: invoiceMetrics.dueSoonCount,
     };
-  }, [companies, saasPayments]);
+  }, [companies, saasPayments, saasInvoices]);
+
+  const billingAlerts = useMemo(
+    () =>
+      buildSaasBillingAlerts(
+        saasInvoices,
+        companies.map((c) => ({
+          id: (c as { id?: string }).id,
+          name: c.name,
+          status_operacional: c.company_operational_status || c.status_operacional,
+        })),
+      ),
+    [saasInvoices, companies],
+  );
+
+  const filteredInvoices = useMemo(() => {
+    return saasInvoices.filter((inv) => {
+      const matchCompany =
+        filterInvoiceCompany === 'all' || inv.company_id === filterInvoiceCompany;
+      const matchMonth =
+        !filterInvoiceMonth || inv.reference_month === filterInvoiceMonth;
+      const matchStatus =
+        filterInvoiceStatus === 'all' ||
+        inv.status.toUpperCase() === filterInvoiceStatus.toUpperCase();
+      return matchCompany && matchMonth && matchStatus;
+    });
+  }, [saasInvoices, filterInvoiceCompany, filterInvoiceMonth, filterInvoiceStatus]);
 
   const revenueByMonth = useMemo(
     () => buildReceivedRevenueByMonth(saasPayments),
@@ -298,10 +343,67 @@ function SaaSFinancePageContent() {
     [companies],
   );
 
-  const openPaymentModal = useCallback((company?: EnrichedCompany) => {
-    setPaymentInitialCompanyId((company as { id?: string } | undefined)?.id);
-    setPaymentModalOpen(true);
-  }, []);
+  const openPaymentModal = useCallback(
+    (company?: EnrichedCompany, invoice?: MasterSaasInvoice) => {
+      setPaymentInitialCompanyId((company as { id?: string } | undefined)?.id || invoice?.company_id);
+      setPaymentInitialInvoiceId(invoice?.id);
+      setPaymentModalOpen(true);
+    },
+    [],
+  );
+
+  const handleGenerateInvoice = useCallback(
+    async (company?: EnrichedCompany) => {
+      const companyId = (company as { id?: string } | undefined)?.id;
+      if (!companyId || !user?.id) return;
+      setGeneratingInvoiceId(companyId);
+      try {
+        const res = await fetch('/api/master/saas-invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            companyId,
+            action: 'generate_company',
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança');
+        if (json.skipped) {
+          alert(json.skipped);
+        }
+        await loadData();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Erro ao gerar cobrança');
+      } finally {
+        setGeneratingInvoiceId(null);
+      }
+    },
+    [user?.id, loadData],
+  );
+
+  const handleGenerateMonthlyInvoices = useCallback(async () => {
+    if (!user?.id) return;
+    setGeneratingInvoiceId('monthly');
+    try {
+      const res = await fetch('/api/master/saas-invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          action: 'generate_monthly',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Falha na geração mensal');
+      alert(`Cobranças criadas: ${json.created || 0}. Ignoradas: ${json.skipped || 0}.`);
+      await loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro na geração mensal');
+    } finally {
+      setGeneratingInvoiceId(null);
+    }
+  }, [user?.id, loadData]);
 
   const filteredCompanies = useMemo(() => {
     return companies.filter((c) => {
@@ -590,6 +692,14 @@ function SaaSFinancePageContent() {
           </Link>
           <button
             type="button"
+            onClick={() => void handleGenerateMonthlyInvoices()}
+            disabled={generatingInvoiceId === 'monthly'}
+            className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all"
+          >
+            {generatingInvoiceId === 'monthly' ? 'Gerando…' : 'Gerar cobranças do mês'}
+          </button>
+          <button
+            type="button"
             onClick={loadData}
             className="bg-[#11161d] border border-white/10 hover:bg-white/5 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2"
           >
@@ -635,6 +745,20 @@ function SaaSFinancePageContent() {
           border="border-rose-500/20"
         />
         <StatCard
+          title="Faturas Pendentes"
+          value={String(stats.pendingInvoices)}
+          description="Cobranças aguardando pagamento"
+          icon={<Wallet className="w-5 h-5 text-amber-400" />}
+          border="border-amber-500/20"
+        />
+        <StatCard
+          title="Faturas Vencidas"
+          value={String(stats.overdueInvoices)}
+          description={`${stats.dueSoonInvoices} vence(m) em até 7 dias`}
+          icon={<AlertCircle className="w-5 h-5 text-orange-400" />}
+          border="border-orange-500/20"
+        />
+        <StatCard
           title="Clientes Ativos"
           value={String(stats.activeClients)}
           description="Tenants com assinatura faturável"
@@ -642,6 +766,42 @@ function SaaSFinancePageContent() {
           border="border-purple-500/20"
         />
       </div>
+
+      {(billingAlerts.dueInSevenDays.length > 0 ||
+        billingAlerts.overdue.length > 0 ||
+        billingAlerts.suspendedCompanies.length > 0) && (
+        <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <AlertPanel
+            title="Cobranças vencendo em 7 dias"
+            items={billingAlerts.dueInSevenDays.map((inv) => ({
+              key: inv.id,
+              label: inv.company_name || '—',
+              detail: `${formatInvoiceCompetenceLabel(inv.reference_month)} · ${formatDateBr(inv.due_date)}`,
+            }))}
+            empty="Nenhuma cobrança próxima do vencimento."
+          />
+          <AlertPanel
+            title="Cobranças vencidas"
+            items={billingAlerts.overdue.map((inv) => ({
+              key: inv.id,
+              label: inv.company_name || '—',
+              detail: `${formatInvoiceCompetenceLabel(inv.reference_month)} · ${formatCurrency(inv.final_amount)}`,
+            }))}
+            empty="Nenhuma fatura vencida."
+            tone="rose"
+          />
+          <AlertPanel
+            title="Empresas suspensas"
+            items={billingAlerts.suspendedCompanies.map((c) => ({
+              key: c.companyId,
+              label: c.companyName,
+              detail: 'Acesso tenant bloqueado',
+            }))}
+            empty="Nenhuma empresa suspensa."
+            tone="orange"
+          />
+        </div>
+      )}
 
       {delinquentCompanies.length > 0 ? (
         <div className="mb-8 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5">
@@ -782,7 +942,140 @@ function SaaSFinancePageContent() {
         >
           <FileText className="w-4 h-4" /> Contrato
         </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('faturas')}
+          className={`px-4 py-2 rounded-lg text-[13px] font-medium flex items-center gap-2 ${
+            mainTab === 'faturas'
+              ? 'bg-blue-600 text-white'
+              : 'bg-[#11161d] border border-white/10 text-gray-400'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" /> Faturas
+        </button>
       </div>
+
+      {mainTab === 'faturas' && (
+        <div className="mb-8 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
+          <div className="p-5 border-b border-white/5 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-[16px] font-bold text-white">Faturas SaaS</h3>
+              <p className="text-[12px] text-gray-400">Competência, vencimento, status e ações de cobrança.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={filterInvoiceCompany}
+                onChange={(e) => setFilterInvoiceCompany(e.target.value)}
+                className="bg-[#0B0E14] border border-white/10 text-white px-3 py-2 rounded-lg text-[13px]"
+              >
+                <option value="all">Todas empresas</option>
+                {companies.map((c) => (
+                  <option key={(c as { id?: string }).id} value={(c as { id?: string }).id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="month"
+                value={filterInvoiceMonth}
+                onChange={(e) => setFilterInvoiceMonth(e.target.value)}
+                className="bg-[#0B0E14] border border-white/10 text-white px-3 py-2 rounded-lg text-[13px]"
+              />
+              <select
+                value={filterInvoiceStatus}
+                onChange={(e) => setFilterInvoiceStatus(e.target.value)}
+                className="bg-[#0B0E14] border border-white/10 text-white px-3 py-2 rounded-lg text-[13px]"
+              >
+                <option value="all">Todos status</option>
+                <option value="PENDENTE">Pendente</option>
+                <option value="PAGO">Pago</option>
+                <option value="VENCIDO">Vencido</option>
+                <option value="CANCELADO">Cancelado</option>
+              </select>
+            </div>
+          </div>
+          <div className="sv-table-scroll">
+            <table className="w-full text-left min-w-[960px]">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="p-4 text-[12px] text-gray-400">Competência</th>
+                  <th className="p-4 text-[12px] text-gray-400">Empresa</th>
+                  <th className="p-4 text-[12px] text-gray-400">Plano</th>
+                  <th className="p-4 text-[12px] text-gray-400">Valor</th>
+                  <th className="p-4 text-[12px] text-gray-400">Vencimento</th>
+                  <th className="p-4 text-[12px] text-gray-400">Status</th>
+                  <th className="p-4 text-[12px] text-gray-400">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-gray-500 text-sm">
+                      Nenhuma fatura encontrada.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInvoices.map((inv) => (
+                    <tr key={inv.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                      <td className="p-4 text-[12px] text-gray-300">
+                        {formatInvoiceCompetenceLabel(inv.reference_month)}
+                      </td>
+                      <td className="p-4 text-[13px] text-white">{inv.company_name}</td>
+                      <td className="p-4 text-[12px] text-gray-400">{inv.plan_label || '—'}</td>
+                      <td className="p-4 text-[13px] text-emerald-300 tabular-nums">
+                        {formatCurrency(inv.final_amount)}
+                      </td>
+                      <td className="p-4 text-[12px] text-gray-300">{formatDateBr(inv.due_date)}</td>
+                      <td className="p-4 text-[12px]">
+                        <span
+                          className={
+                            inv.status === 'PAGO'
+                              ? 'text-emerald-400'
+                              : inv.status === 'VENCIDO'
+                                ? 'text-rose-400'
+                                : inv.status === 'PENDENTE'
+                                  ? 'text-amber-400'
+                                  : 'text-gray-400'
+                          }
+                        >
+                          {invoiceStatusLabel(inv.status)}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {inv.status !== 'PAGO' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const company = companies.find(
+                                  (c) => (c as { id?: string }).id === inv.company_id,
+                                );
+                                openPaymentModal(company, inv);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10"
+                            >
+                              Registrar pagamento
+                            </button>
+                          )}
+                          {inv.pix_code && (
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(inv.pix_code || '')}
+                              className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
+                            >
+                              Copiar PIX
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {mainTab === 'contrato' && (
         <div className="mb-8">
@@ -817,7 +1110,7 @@ function SaaSFinancePageContent() {
         </div>
       )}
 
-      <div className={`flex flex-col lg:flex-row gap-6 mb-8 min-w-0 ${mainTab === 'contrato' ? 'hidden' : ''}`}>
+      <div className={`flex flex-col lg:flex-row gap-6 mb-8 min-w-0 ${mainTab !== 'assinaturas' ? 'hidden' : ''}`}>
         <div className="flex-1 min-w-0 bg-[#11161d] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
           <div className="p-5 border-b border-white/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
@@ -1028,13 +1321,25 @@ function SaaSFinancePageContent() {
                         </div>
                       </td>
                       <td className="p-4">
-                        <button
-                          type="button"
-                          onClick={() => openPaymentModal(c)}
-                          className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10"
-                        >
-                          Registrar pagamento
-                        </button>
+                        <div className="flex flex-wrap gap-1.5">
+                          {isRealSaasCompany(c) && (
+                            <button
+                              type="button"
+                              disabled={generatingInvoiceId === companyId}
+                              onClick={() => void handleGenerateInvoice(c)}
+                              className="px-2.5 py-1.5 rounded-lg border border-blue-500/30 text-[11px] font-semibold text-blue-300 hover:bg-blue-500/10 disabled:opacity-50"
+                            >
+                              {generatingInvoiceId === companyId ? 'Gerando…' : 'Gerar Cobrança'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openPaymentModal(c)}
+                            className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10"
+                          >
+                            Registrar pagamento
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1099,9 +1404,46 @@ function SaaSFinancePageContent() {
           userId={user.id}
           companies={paymentCompanyOptions}
           initialCompanyId={paymentInitialCompanyId}
+          initialInvoiceId={paymentInitialInvoiceId}
           onSuccess={loadData}
         />
       ) : null}
+    </div>
+  );
+}
+
+function AlertPanel({
+  title,
+  items,
+  empty,
+  tone = 'amber',
+}: {
+  title: string;
+  items: { key: string; label: string; detail: string }[];
+  empty: string;
+  tone?: 'amber' | 'rose' | 'orange';
+}) {
+  const border =
+    tone === 'rose'
+      ? 'border-rose-500/20'
+      : tone === 'orange'
+        ? 'border-orange-500/20'
+        : 'border-amber-500/20';
+  return (
+    <div className={`rounded-2xl border ${border} bg-[#11161d] p-4`}>
+      <h3 className="text-sm font-bold text-white mb-3">{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-xs text-gray-500">{empty}</p>
+      ) : (
+        <div className="space-y-2">
+          {items.slice(0, 6).map((item) => (
+            <div key={item.key} className="rounded-lg border border-white/5 px-3 py-2">
+              <p className="text-sm text-white">{item.label}</p>
+              <p className="text-xs text-gray-500">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
