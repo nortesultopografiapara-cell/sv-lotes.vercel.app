@@ -440,7 +440,7 @@ export function menesesSaasContractFixture(): SaasContractPdfInput {
       responsible_name: 'Representante Meneses',
     },
     subscription: {
-      contract_number: 'SAAS-2026-000003',
+      contract_number: '00003/2026',
       plan_type: 'business',
       monthly_price: 549.99,
       start_date: '2026-05-27',

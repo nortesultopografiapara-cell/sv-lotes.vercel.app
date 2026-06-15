@@ -62,6 +62,10 @@ import {
   SAAS_CONTRACT_STATUS_AFTER_GENERATION,
   saasContractDocumentStatusLabel,
 } from '../lib/saasContractStatus';
+import {
+  formatCompanyContractNumber,
+  isNewFormatCompanyContractNumber,
+} from '../lib/companyContractNumber';
 import { hasSaasContractReady } from '../lib/saasSubscription';
 import { canEditProject, formatProjectApiError } from '../lib/projectEditAccess';
 import {
@@ -343,6 +347,15 @@ function testCompanyUserCounts() {
   console.log('OK testCompanyUserCounts');
 }
 
+function testCompanyContractNumber() {
+  assert(formatCompanyContractNumber(1, 2026) === '00001/2026', 'formato 00001/2026');
+  assert(formatCompanyContractNumber(125, 2026) === '00125/2026', 'formato 00125/2026');
+  assert(formatCompanyContractNumber(1, 2027) === '00001/2027', 'reinício anual');
+  assert(isNewFormatCompanyContractNumber('00003/2026'), 'valida novo formato');
+  assert(!isNewFormatCompanyContractNumber('SAAS-2026-933585'), 'rejeita formato legado');
+  console.log('OK testCompanyContractNumber');
+}
+
 function testSaasContractProfessional() {
   const fixture = menesesSaasContractFixture();
   const text = buildSaasContractDocumentText(fixture).toLowerCase();
@@ -396,6 +409,16 @@ function testSaasContractProfessional() {
   assert(servicosPos >= 0 && contratantePos > servicosPos, 'contratante após serviços');
   assert(roughPdf.includes('nova carajás') || roughPdf.includes('Nova Caraj'), 'bairro fornecedora no pdf');
   assert(roughPdf.includes('68.515-000') || rawPdfLatin.includes('68.515-000'), 'cep fornecedora no pdf');
+
+  assert(roughPdf.includes('00003/2026'), 'número contrato novo formato no pdf');
+  assert(!roughPdf.includes('saas-2026'), 'sem prefixo SAAS- no pdf');
+
+  const signaturePos = roughPdf.indexOf('página de assinatura');
+  const signatureSlice = signaturePos >= 0 ? roughPdf.slice(signaturePos) : '';
+  assert(signatureSlice.includes('contratada'), 'bloco contratada na assinatura');
+  assert(!signatureSlice.includes('rua 02'), 'assinatura sem rua contratada');
+  assert(!signatureSlice.includes('nova carajás'), 'assinatura sem bairro contratada');
+  assert(!signatureSlice.includes('68.515-000'), 'assinatura sem cep contratada');
 
   assert(text.includes('64.435.850/0001-03'), 'cnpj mascarado no contrato');
   assert(!text.includes('64435850000103'), 'cnpj sem máscara ausente');
@@ -576,6 +599,7 @@ function main() {
   testOfficialPaymentStatus();
   testSaasPayments();
   testCompanyUserCounts();
+  testCompanyContractNumber();
   testSaasContractProfessional();
   testProjectEditAccess();
   testProjectUpdatePayloads();

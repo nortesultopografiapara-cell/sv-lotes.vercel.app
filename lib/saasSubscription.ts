@@ -58,11 +58,21 @@ export function formatDateBr(iso?: string | null): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+import {
+  formatCompanyContractNumber,
+  isNewFormatCompanyContractNumber,
+} from '@/lib/companyContractNumber';
+
+/** @deprecated Use generateNextCompanyContractNumber() no servidor. */
 export function generateSaasContractNumber(): string {
-  const y = new Date().getFullYear();
-  const seq = String(Math.floor(100000 + Math.random() * 899999));
-  return `SAAS-${y}-${seq}`;
+  return formatCompanyContractNumber(1);
 }
+
+export function isLegacySaasContractNumber(value: string | null | undefined): boolean {
+  return Boolean(value && /^SAAS-\d{4}-/.test(String(value).trim()));
+}
+
+export { isNewFormatCompanyContractNumber };
 
 export function contractDownloadPath(companyId: string): string {
   return `/api/companies/${companyId}/contract?download=1`;

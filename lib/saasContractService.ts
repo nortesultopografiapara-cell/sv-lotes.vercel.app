@@ -16,9 +16,9 @@ import {
   type SaasContractCompanyInput,
 } from '@/lib/saasContractValidation';
 import {
-  generateSaasContractNumber,
-  type CompanySubscription,
-} from '@/lib/saasSubscription';
+  generateNextCompanyContractNumber,
+} from '@/lib/companyContractNumber';
+import { type CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_CONTRACT_CURRENT_VERSION_STATUSES, SAAS_CONTRACT_STATUS_AFTER_GENERATION } from '@/lib/saasContractStatus';
 
 function isTestCompany(company: {
@@ -279,7 +279,7 @@ export async function generateAndStoreSaasContract(
   const contractNumber =
     subscription.contract_number ||
     activeContract?.contract_number ||
-    generateSaasContractNumber();
+    (await generateNextCompanyContractNumber(supabaseAdmin));
 
   if (forceRegenerate) {
     await supersedeCompanyContracts(supabaseAdmin, companyId);

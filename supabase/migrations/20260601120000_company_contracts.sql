@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS public.company_contracts (
   version integer NOT NULL DEFAULT 1,
   generated_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),
   status text NOT NULL DEFAULT 'active',
+  superseded_by uuid REFERENCES public.company_contracts(id) ON DELETE SET NULL,
+  regenerated_from uuid REFERENCES public.company_contracts(id) ON DELETE SET NULL,
+  regenerated_at timestamptz,
+  regenerated_by uuid,
   created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
@@ -34,6 +38,8 @@ CREATE POLICY "tenant_read_own_contracts" ON public.company_contracts
   USING (company_id = public.current_tenant_id());
 
 COMMENT ON TABLE public.company_contracts IS 'Contratos SaaS gerados (PDF) com histórico de versões';
+
+NOTIFY pgrst, 'reload schema';
 
 -- Bucket opcional para PDFs (fallback: company-assets/contracts/saas/...)
 INSERT INTO storage.buckets (id, name, public)

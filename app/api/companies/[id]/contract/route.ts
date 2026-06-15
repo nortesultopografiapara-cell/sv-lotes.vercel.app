@@ -6,7 +6,7 @@ import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates'
 import { listCompanyContracts } from '@/lib/saasContractService';
 import { isCurrentSaasContractVersion } from '@/lib/saasContractStatus';
 import { getSubscriptionByCompanyId } from '@/lib/saasSubscriptionService';
-import { generateSaasContractNumber } from '@/lib/saasSubscription';
+import { formatCompanyContractNumber } from '@/lib/companyContractNumber';
 
 export const runtime = 'nodejs';
 
@@ -95,7 +95,7 @@ export async function GET(
     contract_number:
       activeContract?.contract_number ||
       subscription.contract_number ||
-      generateSaasContractNumber(),
+      formatCompanyContractNumber(1),
     plan_type: subscription.plan_type,
     monthly_price: subscription.monthly_price,
     start_date: pdfDates.start_date,

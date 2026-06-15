@@ -70,29 +70,25 @@ function drawPageHeader(doc: jsPDF, margin: number, pageW: number, compact: bool
 
   const platformLogo = loadSvLotesLogoDataUrl();
   if (platformLogo) {
-    doc.addImage(platformLogo, 'PNG', margin, 4, 26, 26);
+    doc.addImage(platformLogo, 'PNG', margin, 4, 32, 32);
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(SAAS_PROVIDER.tradeName, margin + 32, 12);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(SAAS_PROVIDER.legalName, margin + 32, 18);
-    doc.text(`CNPJ ${SAAS_PROVIDER.cnpj} · ${saasProviderCityState()}`, margin + 32, 24);
-  } else {
-    drawLogoBadge(doc, margin, 6, 44, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
-    drawLogoBadge(
-      doc,
-      margin + 50,
-      6,
-      58,
-      18,
-      'SV TOPOGRAFIA',
-      '& Projetos',
-      [16, 120, 100],
-    );
+    doc.setFontSize(13);
+    doc.text('CONTRATO DE LICENÇA DE SOFTWARE (SaaS)', pageW / 2, 22, { align: 'center' });
+    return 42;
   }
 
+  drawLogoBadge(doc, margin, 6, 44, 18, 'SV LOTES', 'Gestão Imobiliária SaaS', [37, 99, 235]);
+  drawLogoBadge(
+    doc,
+    margin + 50,
+    6,
+    58,
+    18,
+    'SV TOPOGRAFIA',
+    '& Projetos',
+    [16, 120, 100],
+  );
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
@@ -299,7 +295,7 @@ function estimateSignatureBlockHeight(writer: PdfWriter): number {
     'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.';
   const introLines = writer.doc.splitTextToSize(intro, writer.contentW).length;
   const noteLines = writer.doc.splitTextToSize(note, writer.contentW).length;
-  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 75 + 10 + noteLines * CONTENT_LINE_H + 8;
+  return 14 + 7 + introLines * CONTENT_LINE_H + 6 + 52 + 10 + noteLines * CONTENT_LINE_H + 8;
 }
 
 function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSaasContractContext>) {
@@ -316,7 +312,7 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   const signDate = new Date().toLocaleDateString('pt-BR');
   const colW = (w.contentW - 12) / 2;
 
-  w.ensureSpace(75);
+  w.ensureSpace(52);
   w.doc.setDrawColor(160);
   w.doc.line(w.margin, w.y + 20, w.margin + colW, w.y + 20);
   w.doc.line(w.margin + colW + 12, w.y + 20, w.margin + w.contentW, w.y + 20);
@@ -340,14 +336,6 @@ function renderSignaturePage(writer: PdfWriter, ctx: ReturnType<typeof resolveSa
   w.y += 5;
   w.doc.text(ctx.contractor.responsible, w.margin, w.y);
   w.doc.text(ctx.provider.tradeName, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(ctx.provider.address, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(ctx.provider.neighborhood, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(`CEP ${formatContractCepRegional(ctx.provider.cep)}`, providerColX, w.y);
-  w.y += 5;
-  w.doc.text(saasProviderCityState(ctx.provider), providerColX, w.y);
   w.y += 8;
   w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
   w.doc.text(`Local e data: ${saasProviderCityState(ctx.provider)}, ${signDate}`, providerColX, w.y);
