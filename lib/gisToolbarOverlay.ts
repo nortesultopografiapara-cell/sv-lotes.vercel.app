@@ -5,6 +5,8 @@ export type GisMapPageOverlayFlags = {
   isImportModalOpen?: boolean;
   isImportTxtModalOpen?: boolean;
   isImportShpModalOpen?: boolean;
+  isUpdateLotModalOpen?: boolean;
+  isEnterpriseOverviewModalOpen?: boolean;
   deleteQuadraConfirm?: boolean;
   gisMapOverlayOpen?: boolean;
 };
@@ -27,6 +29,8 @@ export function computeGisMapPageOverlayOpen(
       flags.isImportModalOpen ||
       flags.isImportTxtModalOpen ||
       flags.isImportShpModalOpen ||
+      flags.isUpdateLotModalOpen ||
+      flags.isEnterpriseOverviewModalOpen ||
       flags.deleteQuadraConfirm ||
       flags.gisMapOverlayOpen,
   );

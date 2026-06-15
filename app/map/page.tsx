@@ -10,7 +10,7 @@ import {
   updateProjectThroughApi,
 } from '@/lib/projects-api-client';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText } from 'lucide-react';
+import { Plus, Search, FolderOpen, MoreVertical, Pencil, Trash2, Loader2, ArrowLeft, Upload, Navigation, Map as MapIcon, Ruler, X, ChevronDown, ChevronUp, Scan, Eye, EyeOff, PenTool, Printer, Layers, GitCompare, ScrollText, MapPinned } from 'lucide-react';
 import { runAutomaticConfrontation } from '@/lib/automaticConfrontation';
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { LotSheetPrintModal } from '@/components/map/LotSheetPrintModal';
@@ -51,6 +51,15 @@ import {
 } from '@/lib/projectQuadras';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
 import { UpdateIndividualLotModal } from '@/components/map/UpdateIndividualLotModal';
+import {
+  EnterpriseOverviewModal,
+  DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
+} from '@/components/map/EnterpriseOverviewModal';
+import {
+  downloadEnterpriseOverviewPdf,
+  generateEnterpriseOverviewFromInput,
+} from '@/lib/enterpriseOverviewPdf';
+import type { EnterpriseOverviewOptions } from '@/lib/enterpriseOverviewLayout';
 import {
   clearGisMapProjectPersistence,
   GIS_MAP_PROJECT_ID_KEY,
@@ -335,6 +344,13 @@ export default function MapPage() {
     useState<IndividualLotUpdateMode>('geometry_technical');
   const [updatingIndividualLot, setUpdatingIndividualLot] = useState(false);
 
+  const [isEnterpriseOverviewModalOpen, setIsEnterpriseOverviewModalOpen] =
+    useState(false);
+  const [enterpriseOverviewOptions, setEnterpriseOverviewOptions] =
+    useState<EnterpriseOverviewOptions>(DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS);
+  const [enterpriseOverviewGenerating, setEnterpriseOverviewGenerating] =
+    useState(false);
+
   const [isImportShpModalOpen, setIsImportShpModalOpen] = useState(false);
   const [importShpFile, setImportShpFile] = useState<File | null>(null);
   const [importShpDefaultQuadra, setImportShpDefaultQuadra] = useState('');
@@ -414,6 +430,8 @@ export default function MapPage() {
         isImportModalOpen,
         isImportTxtModalOpen,
         isImportShpModalOpen,
+        isUpdateLotModalOpen,
+        isEnterpriseOverviewModalOpen,
         deleteQuadraConfirm: Boolean(deleteQuadraConfirm),
         gisMapOverlayOpen,
       }),
@@ -424,6 +442,8 @@ export default function MapPage() {
       isImportModalOpen,
       isImportTxtModalOpen,
       isImportShpModalOpen,
+      isUpdateLotModalOpen,
+      isEnterpriseOverviewModalOpen,
       deleteQuadraConfirm,
       gisMapOverlayOpen,
     ],
@@ -565,6 +585,58 @@ export default function MapPage() {
     setUpdateLotMode('geometry_technical');
     setUpdateLotUtmZone(importTxtUtmZone || '22S');
     setIsUpdateLotModalOpen(true);
+  };
+
+  const handleGenerateEnterpriseOverview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProject || !user) return;
+    setEnterpriseOverviewGenerating(true);
+    try {
+      let blocksQuery = supabase
+        .from('blocks')
+        .select('*')
+        .eq('project_id', selectedProject.id);
+      if (!isPlatformAdmin(user.role) && user.tenant_id) {
+        blocksQuery = blocksQuery.or(
+          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
+        );
+      }
+      const { data: blocks, error: blocksErr } = await blocksQuery;
+      if (blocksErr) throw blocksErr;
+      if (!blocks?.length) {
+        alert('Nenhum lote encontrado neste empreendimento.');
+        return;
+      }
+
+      const doc = await generateEnterpriseOverviewFromInput({
+        project: selectedProject,
+        blocks: blocks as Record<string, unknown>[],
+        streetGuides: streetGuides as Record<string, unknown>[],
+        company: (saasCompany ?? null) as Record<string, unknown> | null,
+        options: enterpriseOverviewOptions,
+      });
+
+      const safeName = String(selectedProject.name || 'empreendimento')
+        .replace(/[^\w\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_');
+      downloadEnterpriseOverviewPdf(doc, `mapa_geral_${safeName}.pdf`);
+      setIsEnterpriseOverviewModalOpen(false);
+      console.log('ENTERPRISE_OVERVIEW_PDF_GENERATED', {
+        projectId: selectedProject.id,
+        lots: blocks.length,
+        format: enterpriseOverviewOptions.format,
+      });
+    } catch (err: unknown) {
+      console.error('ENTERPRISE_OVERVIEW_PDF_ERROR', err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : 'Erro ao gerar prancha geral do empreendimento.',
+      );
+    } finally {
+      setEnterpriseOverviewGenerating(false);
+    }
   };
 
   const handleSubmitIndividualLotUpdate = async (e: React.FormEvent) => {
@@ -2610,6 +2682,19 @@ export default function MapPage() {
                 <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Medição</span>
              </button>
 
+             {/* Prancha Geral */}
+             <button
+                type="button"
+                onClick={() => {
+                  setEnterpriseOverviewOptions(DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS);
+                  setIsEnterpriseOverviewModalOpen(true);
+                }}
+                className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${isEnterpriseOverviewModalOpen ? 'bg-emerald-500/20 text-emerald-400' : 'bg-transparent hover:bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-emerald-400'}`}
+             >
+                <MapPinned className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase">Prancha Geral</span>
+             </button>
+
              {/* Prancha PDF */}
              <button
                 type="button"
@@ -3020,6 +3105,16 @@ export default function MapPage() {
           onFileChange={setUpdateLotFile}
           onModeChange={setUpdateLotMode}
           onSubmit={handleSubmitIndividualLotUpdate}
+        />
+
+        <EnterpriseOverviewModal
+          open={isEnterpriseOverviewModalOpen}
+          projectName={selectedProject?.name || ''}
+          options={enterpriseOverviewOptions}
+          loading={enterpriseOverviewGenerating}
+          onClose={() => setIsEnterpriseOverviewModalOpen(false)}
+          onOptionsChange={setEnterpriseOverviewOptions}
+          onSubmit={handleGenerateEnterpriseOverview}
         />
 
         {isImportShpModalOpen && (
