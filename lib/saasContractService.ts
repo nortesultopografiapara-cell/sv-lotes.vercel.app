@@ -22,7 +22,6 @@ import { type CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_CONTRACT_CURRENT_VERSION_STATUSES, SAAS_CONTRACT_STATUS_AFTER_GENERATION } from '@/lib/saasContractStatus';
 import {
   SAAS_CONTRACT_CONTENT_VERSION,
-  SAAS_CONTRACT_LEGACY_CONTENT_VERSION,
 } from '@/lib/saasContractContent';
 
 function isTestCompany(company: {
@@ -269,6 +268,33 @@ export async function getCompanyContractById(
   return (data as CompanyContractRow) || null;
 }
 
+/** Substitui draft PDF no Storage quando contract_url aponta para conteúdo desatualizado. */
+export async function refreshCompanyContractDraftPdf(
+  supabaseAdmin: SupabaseClient,
+  contract: CompanyContractRow,
+  pdfBytes: Uint8Array,
+): Promise<string> {
+  const contractPdfUrl = await uploadContractPdf(
+    supabaseAdmin,
+    contract.company_id,
+    contract.contract_number,
+    pdfBytes,
+    contract.version,
+  );
+
+  const { error } = await supabaseAdmin
+    .from('company_contracts')
+    .update({ contract_url: contractPdfUrl })
+    .eq('id', contract.id)
+    .eq('company_id', contract.company_id);
+
+  if (error) {
+    console.warn('[SAAS_CONTRACT] refresh draft pdf url', error.message);
+  }
+
+  return contractPdfUrl;
+}
+
 export type GenerateSaasContractOptions = {
   /** Regenerar com dados atuais; mantém histórico */
   forceRegenerate?: boolean;
@@ -345,9 +371,8 @@ export async function generateAndStoreSaasContract(
 
   const version = await getNextContractVersion(supabaseAdmin, companyId);
   const generatedAt = new Date().toISOString();
-  const contentVersion = !activeContract
-    ? SAAS_CONTRACT_CONTENT_VERSION
-    : (activeContract.content_version ?? SAAS_CONTRACT_LEGACY_CONTENT_VERSION);
+  /** Novos registros sempre usam o modelo jurídico atual (v2). Legado v1 permanece apenas em linhas antigas. */
+  const contentVersion = SAAS_CONTRACT_CONTENT_VERSION;
 
   let pdfBytes: Uint8Array;
   let pdfMeta: { pageCount: number; clausesCount: number; contractNumber: string };

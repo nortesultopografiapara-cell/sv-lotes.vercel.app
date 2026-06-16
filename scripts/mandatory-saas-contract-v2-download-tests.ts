@@ -114,20 +114,26 @@ function testHttpHeadersAndResponse() {
   const headers = buildSaasContractPdfHttpHeaders('attachment', '00007/2026', {
     pageCount: built.pageCount,
     clausesCount: built.clausesCount,
+    contentVersion: 2,
   });
   assert(headers['Content-Type'] === 'application/pdf', 'Content-Type application/pdf');
   assert(headers['Content-Disposition'].includes('attachment'), 'Content-Disposition attachment');
   assert(headers['Cache-Control'].includes('no-store'), 'Cache-Control no-store');
+  assert(headers['X-Saas-Contract-Content-Version'] === '2', 'header content version 2');
+  assert(headers['X-Saas-Contract-Clauses'] === '25', 'header clauses 25');
 
   const res = createSaasContractPdfResponse(built.pdf, 'attachment', {
     contractNumber: '00007/2026',
     pageCount: built.pageCount,
     clausesCount: built.clausesCount,
+    contentVersion: 2,
     source: 'regenerated',
   });
   assert(res.status === 200, 'response status 200');
   assert(res.headers.get('Content-Type') === 'application/pdf', 'response Content-Type');
   assert(res.headers.get('Content-Length') != null, 'Content-Length presente');
+  assert(res.headers.get('X-Saas-Contract-Content-Version') === '2', 'response header content version');
+  assert(res.headers.get('X-Saas-Contract-Clauses') === '25', 'response header clauses');
   console.log('OK testHttpHeadersAndResponse');
 }
 

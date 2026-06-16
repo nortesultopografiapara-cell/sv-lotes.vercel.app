@@ -3,6 +3,8 @@
  */
 
 import type { CompanyContractRow } from '@/lib/saasContractService';
+import { storedPdfMatchesExpectedContentVersion } from '@/lib/saasContractPdfContentDetect';
+import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 
 export type SaasContractPdfDisposition = 'inline' | 'attachment';
 
@@ -11,6 +13,7 @@ export type SaasContractPdfHttpMeta = {
   pageCount?: number;
   clausesCount?: number;
   contractNumber: string;
+  contentVersion?: number;
   source?: 'pdf_signed_url' | 'contract_url' | 'regenerated';
 };
 
@@ -46,11 +49,15 @@ export async function fetchPdfBytesFromUrl(url: string): Promise<Uint8Array | nu
   }
 }
 
-/** Prioridade: PDF assinado final → PDF gravado no storage → null (regenerar). */
+/** Prioridade: PDF assinado final → draft gravado (se bater content_version) → null (regenerar). */
 export async function fetchStoredSaasContractPdf(
   contract: CompanyContractRow | null | undefined,
+  expectedContentVersion?: number,
 ): Promise<{ bytes: Uint8Array; source: 'pdf_signed_url' | 'contract_url' } | null> {
   if (!contract) return null;
+
+  const contentVersion =
+    expectedContentVersion ?? resolveStoredSaasContractContentVersion(contract);
 
   const signedUrl = contract.pdf_signed_url?.trim();
   if (signedUrl) {
@@ -61,7 +68,16 @@ export async function fetchStoredSaasContractPdf(
   const draftUrl = contract.contract_url?.trim();
   if (draftUrl) {
     const draft = await fetchPdfBytesFromUrl(draftUrl);
-    if (draft) return { bytes: draft, source: 'contract_url' };
+    if (draft && storedPdfMatchesExpectedContentVersion(draft, contentVersion)) {
+      return { bytes: draft, source: 'contract_url' };
+    }
+    if (draft) {
+      console.warn('SAAS_CONTRACT_STALE_DRAFT_PDF', {
+        contract_id: contract.id,
+        contract_number: contract.contract_number,
+        expected_content_version: contentVersion,
+      });
+    }
   }
 
   return null;
@@ -70,7 +86,7 @@ export async function fetchStoredSaasContractPdf(
 export function buildSaasContractPdfHttpHeaders(
   disposition: SaasContractPdfDisposition,
   contractNumber: string,
-  meta?: Pick<SaasContractPdfHttpMeta, 'pageCount' | 'clausesCount'>,
+  meta?: Pick<SaasContractPdfHttpMeta, 'pageCount' | 'clausesCount' | 'contentVersion'>,
 ): Record<string, string> {
   const filename = `contrato-saas-${contractNumber.replace(/[^\w-]+/g, '_')}.pdf`;
   const headers: Record<string, string> = {
@@ -87,6 +103,9 @@ export function buildSaasContractPdfHttpHeaders(
   }
   if (meta?.clausesCount != null) {
     headers['X-Saas-Contract-Clauses'] = String(meta.clausesCount);
+  }
+  if (meta?.contentVersion != null) {
+    headers['X-Saas-Contract-Content-Version'] = String(meta.contentVersion);
   }
   headers['X-Saas-Contract-Number'] = contractNumber;
   return headers;

@@ -11,6 +11,7 @@ import {
   getCompanyContractById,
   listCompanyContracts,
   loadFreshSaasContractContext,
+  refreshCompanyContractDraftPdf,
   type CompanyContractRow,
 } from '@/lib/saasContractService';
 import { findActiveVisibleSaasContract } from '@/lib/saasContractArchive';
@@ -20,6 +21,11 @@ import {
   fetchStoredSaasContractPdf,
   isPdfBytes,
 } from '@/lib/saasContractPdfHttp';
+import {
+  detectSaasContractPdfContentVersion,
+  storedPdfMatchesExpectedContentVersion,
+} from '@/lib/saasContractPdfContentDetect';
+import { SAAS_CONTRACT_CONTENT_VERSION } from '@/lib/saasContractContent';
 
 export const runtime = 'nodejs';
 
@@ -98,7 +104,7 @@ export async function GET(
     let pageCount = 0;
     let clausesCount = 0;
 
-    const stored = await fetchStoredSaasContractPdf(contractRecord);
+    const stored = await fetchStoredSaasContractPdf(contractRecord, contentVersion);
     if (stored) {
       pdfBytes = stored.bytes;
       source = stored.source;
@@ -117,6 +123,47 @@ export async function GET(
       pageCount = built.pageCount;
       clausesCount = built.clausesCount;
       source = 'regenerated';
+    }
+
+    if (
+      contentVersion >= SAAS_CONTRACT_CONTENT_VERSION &&
+      pdfBytes &&
+      !storedPdfMatchesExpectedContentVersion(pdfBytes, contentVersion)
+    ) {
+      console.warn('SAAS_CONTRACT_PDF_CONTENT_MISMATCH', {
+        company_id: companyId,
+        contract_id: contractRecord?.id ?? null,
+        expected_content_version: contentVersion,
+        detected: detectSaasContractPdfContentVersion(pdfBytes),
+        source,
+      });
+      let built;
+      try {
+        built = buildSaasContractPdfWithMeta({ company, subscription: subForPdf }, { contentVersion });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao gerar PDF v2';
+        return jsonError(message, 500, { step: 'pdf_regeneration_v2', companyId, contractId });
+      }
+      pdfBytes = built.pdf;
+      pageCount = built.pageCount;
+      clausesCount = built.clausesCount;
+      source = 'regenerated';
+    }
+
+    if (
+      source === 'regenerated' &&
+      contractRecord &&
+      contentVersion >= SAAS_CONTRACT_CONTENT_VERSION &&
+      pdfBytes?.length
+    ) {
+      try {
+        await refreshCompanyContractDraftPdf(supabaseAdmin, contractRecord, pdfBytes);
+      } catch (err) {
+        console.warn('SAAS_CONTRACT_REFRESH_DRAFT_FAILED', {
+          contract_id: contractRecord.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     if (!pdfBytes?.length || !isPdfBytes(pdfBytes)) {
@@ -196,6 +243,7 @@ export async function GET(
         pageCount,
         clausesCount,
         contractNumber,
+        contentVersion,
         source,
       },
     );
