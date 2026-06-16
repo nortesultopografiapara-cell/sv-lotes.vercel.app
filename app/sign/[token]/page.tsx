@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import {
   CheckCircle2,
   Download,
+  ExternalLink,
   FileText,
   Loader2,
   ShieldCheck,
@@ -151,25 +152,132 @@ export default function SignContractPage() {
     }
   };
 
+  const signaturePanel =
+    data &&
+    (data.signature.status === 'SIGNED' ? (
+      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center">
+        <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+        <h3 className="text-lg font-bold text-emerald-300">Contrato assinado</h3>
+        <p className="text-sm text-gray-300 mt-2">
+          Assinado por {data.signature.signerName || signerName || 'signatário'}
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          {formatDateTimeBr(data.signature.signedAt)}
+        </p>
+        <a
+          href={data.pdfDownloadUrl}
+          className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold"
+        >
+          <Download className="w-4 h-4" />
+          Baixar contrato assinado
+        </a>
+      </div>
+    ) : data.signature.status === 'CLIENT_SIGNED' ||
+      data.signature.awaitingProvider ||
+      (signed && !data.signature.canSign) ? (
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
+        <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+        <h3 className="text-lg font-bold text-amber-200">Assinatura registrada</h3>
+        <p className="text-sm text-gray-300 mt-2">
+          Sua assinatura foi registrada com sucesso.
+        </p>
+        <p className="text-sm text-gray-400 mt-2">
+          Assinado por {data.signature.signerName || signerName || 'signatário'}
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          {formatDateTimeBr(data.signature.signedAt)}
+        </p>
+        <p className="text-xs text-amber-200/80 mt-4 leading-relaxed">
+          O contrato aguarda a assinatura da CONTRATADA (SV LOTES). Você será
+          notificado quando o documento final estiver disponível.
+        </p>
+      </div>
+    ) : data.signature.canSign ? (
+      <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-amber-400" />
+          <h3 className="font-semibold">Assinar contrato</h3>
+        </div>
+
+        <Field
+          label="Nome completo"
+          value={signerName}
+          onChange={setSignerName}
+          placeholder="Nome do signatário"
+        />
+        <Field
+          label="CPF"
+          value={signerDocument}
+          onChange={(v) => setSignerDocument(formatCpfCnpj(v))}
+          placeholder="000.000.000-00"
+        />
+        <Field
+          label="E-mail"
+          value={signerEmail}
+          onChange={setSignerEmail}
+          placeholder="email@empresa.com"
+          type="email"
+        />
+        <Field
+          label="Cargo"
+          value={signerRole}
+          onChange={setSignerRole}
+          placeholder="Ex.: Sócio administrador"
+        />
+
+        <label className="flex items-start gap-3 text-sm text-gray-300 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+            className="mt-1 shrink-0"
+          />
+          <span>Li e concordo com os termos do contrato.</span>
+        </label>
+
+        {formError && (
+          <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+            {formError}
+          </p>
+        )}
+
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => void handleSign()}
+          className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 font-bold text-sm tracking-wide"
+        >
+          {submitting ? 'Registrando assinatura…' : 'ASSINAR CONTRATO'}
+        </button>
+      </div>
+    ) : (
+      <div className="bg-[#11161d] border border-red-500/20 rounded-2xl p-6 text-center">
+        <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+        <p className="text-red-300">
+          Este link não está mais disponível para assinatura.
+        </p>
+      </div>
+    ));
+
   return (
     <div className="min-h-screen bg-[#0b0e14] text-white">
-      <header className="border-b border-white/10 bg-[#11161d]">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center gap-4">
+      <header className="border-b border-white/10 bg-[#11161d] shrink-0">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center gap-3 sm:gap-4">
           <Image
             src="/logo-sv-lotes.png"
             alt="SV LOTES"
             width={48}
             height={48}
-            className="rounded-lg"
+            className="rounded-lg shrink-0"
           />
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-gray-400 uppercase tracking-widest">Assinatura eletrônica</p>
-            <h1 className="text-lg font-bold">Contrato de Licença SaaS</h1>
+            <h1 className="text-base sm:text-lg font-bold truncate">Contrato de Licença SaaS</h1>
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8">
         {loading ? (
           <div className="flex flex-col items-center gap-3 text-gray-400 py-16">
             <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
@@ -181,38 +289,36 @@ export default function SignContractPage() {
             <p className="text-red-300">{error}</p>
           </div>
         ) : data ? (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            <div className="lg:col-span-3 space-y-4">
-              <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5">
-                <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Contrato</p>
-                    <h2 className="text-xl font-bold">{data.contract.number}</h2>
-                    <p className="text-sm text-gray-400 mt-1">{data.company.name}</p>
-                  </div>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6">
+            {/* Mobile/tablet: dados + assinatura primeiro */}
+            <div className="lg:col-span-2 order-1 lg:order-2 space-y-4">
+              <div className="md:hidden bg-[#11161d] border border-white/10 rounded-2xl p-4">
+                <p className="text-xs text-gray-500 uppercase">Contrato</p>
+                <h2 className="text-lg font-bold">{data.contract.number}</h2>
+                <p className="text-sm text-gray-400 mt-1">{data.company.name}</p>
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
                   <a
                     href={data.pdfDownloadUrl}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-sm hover:bg-white/5"
+                    className="inline-flex flex-1 items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 text-sm hover:bg-white/5"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-4 h-4 shrink-0" />
                     Baixar PDF
                   </a>
-                </div>
-
-                <div className="rounded-xl overflow-hidden border border-white/10 bg-[#0b0e14] h-[70vh]">
-                  <iframe
-                    title="Contrato SaaS"
-                    src={data.pdfUrl}
-                    className="w-full h-full"
-                  />
+                  <a
+                    href={data.pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex flex-1 items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium"
+                  >
+                    <ExternalLink className="w-4 h-4 shrink-0" />
+                    Abrir PDF
+                  </a>
                 </div>
               </div>
-            </div>
 
-            <div className="lg:col-span-2 space-y-4">
               <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <FileText className="w-5 h-5 text-blue-400" />
+                  <FileText className="w-5 h-5 text-blue-400 shrink-0" />
                   <h3 className="font-semibold">Dados do contrato</h3>
                 </div>
                 <dl className="space-y-2 text-sm">
@@ -223,110 +329,46 @@ export default function SignContractPage() {
                 </dl>
               </div>
 
-              {data.signature.status === 'SIGNED' ? (
-                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 text-center">
-                  <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                  <h3 className="text-lg font-bold text-emerald-300">Contrato assinado</h3>
-                  <p className="text-sm text-gray-300 mt-2">
-                    Assinado por {data.signature.signerName || signerName || 'signatário'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {formatDateTimeBr(data.signature.signedAt)}
-                  </p>
-                  <a
-                    href={data.pdfDownloadUrl}
-                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold"
-                  >
-                    <Download className="w-4 h-4" />
-                    Baixar contrato assinado
-                  </a>
-                </div>
-              ) : data.signature.status === 'CLIENT_SIGNED' ||
-                data.signature.awaitingProvider ||
-                (signed && !data.signature.canSign) ? (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
-                  <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
-                  <h3 className="text-lg font-bold text-amber-200">Assinatura registrada</h3>
-                  <p className="text-sm text-gray-300 mt-2">
-                    Sua assinatura foi registrada com sucesso.
-                  </p>
-                  <p className="text-sm text-gray-400 mt-2">
-                    Assinado por {data.signature.signerName || signerName || 'signatário'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {formatDateTimeBr(data.signature.signedAt)}
-                  </p>
-                  <p className="text-xs text-amber-200/80 mt-4 leading-relaxed">
-                    O contrato aguarda a assinatura da CONTRATADA (SV LOTES). Você será
-                    notificado quando o documento final estiver disponível.
-                  </p>
-                </div>
-              ) : data.signature.canSign ? (
-                <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-amber-400" />
-                    <h3 className="font-semibold">Assinar contrato</h3>
+              {signaturePanel}
+            </div>
+
+            {/* Preview embutido — somente tablet/desktop */}
+            <div className="hidden md:block lg:col-span-3 order-2 lg:order-1 space-y-4">
+              <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500 uppercase">Contrato</p>
+                    <h2 className="text-xl font-bold">{data.contract.number}</h2>
+                    <p className="text-sm text-gray-400 mt-1">{data.company.name}</p>
                   </div>
-
-                  <Field
-                    label="Nome completo"
-                    value={signerName}
-                    onChange={setSignerName}
-                    placeholder="Nome do signatário"
-                  />
-                  <Field
-                    label="CPF"
-                    value={signerDocument}
-                    onChange={(v) => setSignerDocument(formatCpfCnpj(v))}
-                    placeholder="000.000.000-00"
-                  />
-                  <Field
-                    label="E-mail"
-                    value={signerEmail}
-                    onChange={setSignerEmail}
-                    placeholder="email@empresa.com"
-                    type="email"
-                  />
-                  <Field
-                    label="Cargo"
-                    value={signerRole}
-                    onChange={setSignerRole}
-                    placeholder="Ex.: Sócio administrador"
-                  />
-
-                  <label className="flex items-start gap-3 text-sm text-gray-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={accepted}
-                      onChange={(e) => setAccepted(e.target.checked)}
-                      className="mt-1"
-                    />
-                    <span>Li e concordo com os termos do contrato.</span>
-                  </label>
-
-                  {formError && (
-                    <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                      {formError}
-                    </p>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => void handleSign()}
-                    className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 font-bold text-sm tracking-wide"
-                  >
-                    {submitting ? 'Registrando assinatura…' : 'ASSINAR CONTRATO'}
-                  </button>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <a
+                      href={data.pdfDownloadUrl}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-sm hover:bg-white/5"
+                    >
+                      <Download className="w-4 h-4" />
+                      Baixar PDF
+                    </a>
+                    <a
+                      href={data.pdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 text-sm hover:bg-white/5"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Abrir PDF
+                    </a>
+                  </div>
                 </div>
-              ) : (
-                <div className="bg-[#11161d] border border-red-500/20 rounded-2xl p-6 text-center">
-                  <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-                  <p className="text-red-300">
-                    Este link não está mais disponível para assinatura.
-                  </p>
+
+                <div className="rounded-xl overflow-hidden border border-white/10 bg-[#0b0e14] h-[55vh] lg:h-[65vh]">
+                  <iframe
+                    title="Contrato SaaS"
+                    src={data.pdfUrl}
+                    className="w-full h-full min-h-[320px]"
+                  />
                 </div>
-              )}
+              </div>
             </div>
           </div>
         ) : null}
