@@ -17,6 +17,13 @@ import {
   shouldAutoCreatePendingCommission,
   withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
+import {
+  formatSaleBlockLotLabel,
+  formatSaleLotsLabel,
+  resolveBlocksForSale,
+  resolveQuadraFromBlock,
+  resolveLoteFromBlock,
+} from '@/lib/saleBlockLotLabel';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import {
@@ -206,20 +213,16 @@ export default function CorretoresPage() {
         }, 0);
         
         bSales.forEach(v => {
-           let blocksForSale = blockData.filter(bl => bl.sale_id === v.id);
-           if (blocksForSale.length === 0 && (v.block_id || v.lot_id)) {
-               const directBlock = blockData.find(bl => bl.id === v.block_id || bl.id === v.lot_id);
-               if (directBlock) blocksForSale = [directBlock];
-           }
-           if (blocksForSale.length === 0) blocksForSale = [{} as any];
+           const blocksForSale = resolveBlocksForSale(v, blockData);
+           const blocksToRender = blocksForSale.length > 0 ? blocksForSale : [{} as any];
 
-           const prj_match = projectsData.find(p => p.id === v.project_id || p.id === blocksForSale[0]?.project_id);
+           const prj_match = projectsData.find(p => p.id === v.project_id || p.id === blocksToRender[0]?.project_id);
            const contract = contractsData.find((cc: any) => cc.sale_id === v.id || cc.id === v.contract_id);
            
-           blocksForSale.forEach(bl => {
-              const qString = bl?.quadra || bl?.quadra_number || bl?.block_number || bl?.block || bl?.block_name || '';
-              const nameString = bl?.lote || bl?.lot_number || bl?.number || bl?.name || '';
-              const lotStr = qString || nameString ? `QD ${qString || '?'} - LT ${nameString || '?'}` : '';
+           blocksToRender.forEach(bl => {
+              const lotStr = formatSaleBlockLotLabel(bl);
+              const qString = resolveQuadraFromBlock(bl);
+              const nameString = resolveLoteFromBlock(bl);
               const contractNo = contract?.contract_number || contract?.number || contract?.code || contract?.id || '';
               
               const safeSaleValue = v.total_amount ?? v.agreed_price ?? v.lot_price ?? v.price ?? v.total ?? v.value ?? v.sale_value ?? v.valor ?? v.total_value ?? 0;
@@ -284,7 +287,7 @@ export default function CorretoresPage() {
           if (s.broker_id) {
               const b = finalActiveBrokers.find(x => x.id === s.broker_id);
               if (b) {
-                  const lots = blockData.filter(bl => bl.sale_id === s.id).map(bl => `QD ${bl.block || bl.block_name || '?'} - LT ${bl.name || '?'}`).join(', ');
+                  const lots = formatSaleLotsLabel(s, blockData);
                   const safeSaleValue = s.total_amount ?? s.agreed_price ?? s.lot_price ?? s.price ?? s.total ?? s.value ?? s.sale_value ?? s.valor ?? s.total_value ?? 0;
                   rActs.push({
                      id: `s-${s.id}`,
