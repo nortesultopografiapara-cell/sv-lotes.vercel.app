@@ -59,6 +59,9 @@ export type CompanyContractRow = {
   regenerated_at?: string | null;
   regenerated_by?: string | null;
   content_version?: number | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archive_kind?: string | null;
 };
 
 const SAAS_CONTRACT_BUCKET = 'company-assets';
@@ -208,6 +211,31 @@ export async function supersedeCompanyContracts(
 export async function listCompanyContracts(
   supabaseAdmin: SupabaseClient,
   companyId: string,
+  options?: { includeArchived?: boolean },
+): Promise<CompanyContractRow[]> {
+  let query = supabaseAdmin
+    .from('company_contracts')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('generated_at', { ascending: false });
+
+  if (!options?.includeArchived) {
+    query = query.is('archived_at', null);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.warn('[SAAS_CONTRACT] list contracts', error.message);
+    return [];
+  }
+  return (data || []) as CompanyContractRow[];
+}
+
+/** Lista completa (inclui arquivados) — uso interno Master. */
+export async function listAllCompanyContractsIncludingArchived(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
 ): Promise<CompanyContractRow[]> {
   const { data, error } = await supabaseAdmin
     .from('company_contracts')
@@ -216,7 +244,7 @@ export async function listCompanyContracts(
     .order('generated_at', { ascending: false });
 
   if (error) {
-    console.warn('[SAAS_CONTRACT] list contracts', error.message);
+    console.warn('[SAAS_CONTRACT] list all contracts', error.message);
     return [];
   }
   return (data || []) as CompanyContractRow[];
@@ -267,8 +295,9 @@ export async function generateAndStoreSaasContract(
 
   const { data: activeContract } = await supabaseAdmin
     .from('company_contracts')
-    .select('id, version, contract_number')
+    .select('id, version, contract_number, content_version')
     .eq('company_id', companyId)
+    .is('archived_at', null)
     .in('status', SAAS_CONTRACT_CURRENT_VERSION_STATUSES)
     .order('version', { ascending: false })
     .limit(1)

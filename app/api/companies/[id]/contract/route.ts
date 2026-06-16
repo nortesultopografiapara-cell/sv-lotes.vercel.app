@@ -5,8 +5,7 @@ import { validateSaasContractPdfInput } from '@/lib/saasContractPdfValidation';
 import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import { listCompanyContracts } from '@/lib/saasContractService';
-import { isCurrentSaasContractVersion } from '@/lib/saasContractStatus';
-import { getSubscriptionByCompanyId } from '@/lib/saasSubscriptionService';
+import { findActiveVisibleSaasContract } from '@/lib/saasContractArchive';
 import { formatCompanyContractNumber } from '@/lib/companyContractNumber';
 
 export const runtime = 'nodejs';
@@ -85,11 +84,13 @@ export async function GET(
     return NextResponse.json({ error: 'Assinatura não encontrada.' }, { status: 404 });
   }
 
-  const contracts = await listCompanyContracts(supabaseAdmin, companyId);
+  const contracts = await listCompanyContracts(supabaseAdmin, companyId, {
+    includeArchived: true,
+  });
   const activeContract =
     (contractId
       ? contracts.find((c) => c.id === contractId)
-      : contracts.find((c) => isCurrentSaasContractVersion(c.status))) ?? null;
+      : findActiveVisibleSaasContract(contracts)) ?? null;
 
   const pdfDates = subscriptionDatesForContractPdf(subscription);
   const subForPdf = {

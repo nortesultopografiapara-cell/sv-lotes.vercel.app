@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_PLAN_UPDATE: 'Alteração de plano',
   SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
   SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
+  CONTRACT_ARCHIVED: 'Contrato SaaS arquivado',
   SUBSCRIPTION_UPDATED: 'Edição de assinatura',
   LOGIN: 'Login',
   LOGIN_SUCCESS: 'Login realizado',

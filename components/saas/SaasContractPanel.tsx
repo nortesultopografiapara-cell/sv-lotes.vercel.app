@@ -11,6 +11,9 @@ import {
   Send,
   ShieldCheck,
   Share2,
+  Archive,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency, resolveCompanyPricing, type CompanyPricingSource } from '@/lib/companyPricing';
@@ -58,7 +61,13 @@ import {
 import { ContractProviderSignModal } from '@/components/saas/ContractProviderSignModal';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
+import { ArchiveSaasContractModal } from '@/components/saas/ArchiveSaasContractModal';
 import { ContractSignatureShareModal } from '@/components/saas/ContractSignatureShareModal';
+import {
+  filterVisibleSaasContracts,
+  findActiveVisibleSaasContract,
+  isArchivedSaasContract,
+} from '@/lib/saasContractArchive';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
@@ -101,12 +110,25 @@ export function SaasContractPanel({
   const [providerSignModalOpen, setProviderSignModalOpen] = useState(false);
   const [signingProvider, setSigningProvider] = useState(false);
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<CompanyContractRow | null>(null);
+  const [archivingContract, setArchivingContract] = useState(false);
+
+  const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
   const companyId = (company as { id?: string } | null)?.id;
   const sub =
     subscriptionProp ??
     ((company?.saas_subscription as CompanySubscription | null) ?? null);
   const contracts = contractsProp ?? localContracts;
+  const visibleContracts = useMemo(
+    () => filterVisibleSaasContracts(contracts, showArchived),
+    [contracts, showArchived],
+  );
+  const archivedCount = useMemo(
+    () => contracts.filter((c) => isArchivedSaasContract(c)).length,
+    [contracts],
+  );
   const busy = generating;
 
   const pricing = company ? resolveCompanyPricing(company as CompanyPricingSource) : null;
@@ -126,11 +148,7 @@ export function SaasContractPanel({
       : '#';
 
   const activeContract = useMemo(() => {
-    return (
-      contracts.find((c) => isCurrentSaasContractVersion(c.status)) ??
-      contracts[0] ??
-      null
-    );
+    return findActiveVisibleSaasContract(contracts);
   }, [contracts]);
 
   const generatedAtLabel = useMemo(() => {
@@ -147,20 +165,23 @@ export function SaasContractPanel({
 
   const loadContracts = useCallback(async () => {
     if (!companyId || !user?.id) return;
-    if (onContractsReload) {
-      await onContractsReload();
-      return;
-    }
     try {
-      const res = await fetch(
-        `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}`,
-      );
+      const params = new URLSearchParams({
+        userId: user.id,
+        includeArchived: '1',
+      });
+      const res = await fetch(`/api/companies/${companyId}/contracts?${params.toString()}`);
       const json = await res.json().catch(() => ({}));
-      if (res.ok) setLocalContracts(json.contracts || []);
+      if (res.ok) {
+        setLocalContracts(json.contracts || []);
+        if (onContractsReload && !contractsProp) {
+          /* noop — lista local atualizada */
+        }
+      }
     } catch {
       setLocalContracts([]);
     }
-  }, [companyId, user?.id, onContractsReload]);
+  }, [companyId, user?.id, contractsProp, onContractsReload]);
 
   const loadSignatureInfo = useCallback(async () => {
     if (!companyId || !user?.id) return;
@@ -343,6 +364,39 @@ export function SaasContractPanel({
     const latest = signatureInfo.latest;
     if (!latest?.signature_url) return;
     setShareModalOpen(true);
+  };
+
+  const handleConfirmArchive = async () => {
+    if (!archiveTarget || !companyId || !user?.id || archivingContract) return;
+    setArchivingContract(true);
+    setError(null);
+    try {
+      const isActiveVersion = isCurrentSaasContractVersion(archiveTarget.status);
+      const res = await fetch(
+        `/api/companies/${companyId}/contracts/${archiveTarget.id}/archive`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            confirmActive: isActiveVersion,
+            archiveKind: isActiveVersion ? 'manual' : 'test',
+          }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Falha ao arquivar contrato.');
+      }
+      setArchiveTarget(null);
+      await loadContracts();
+      if (onContractsReload) await onContractsReload();
+      onRefresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao arquivar contrato.');
+    } finally {
+      setArchivingContract(false);
+    }
   };
 
   const mergedTimeline = useMemo(
@@ -709,46 +763,99 @@ export function SaasContractPanel({
       </div>
 
       <div className="px-5 pb-5">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
-          <History className="w-4 h-4 text-gray-400" />
-          Histórico de versões
-        </h4>
-        {contracts.length === 0 ? (
-          <p className="text-xs text-gray-500">Nenhuma versão registrada ainda.</p>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+            <History className="w-4 h-4 text-gray-400" />
+            Histórico de versões
+          </h4>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowArchived((v) => !v)}
+              className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1.5 shrink-0"
+            >
+              {showArchived ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  Ocultar arquivados
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  Mostrar arquivados{archivedCount > 0 ? ` (${archivedCount})` : ''}
+                </>
+              )}
+            </button>
+          )}
+        </div>
+        {visibleContracts.length === 0 ? (
+          <p className="text-xs text-gray-500">
+            {showArchived
+              ? 'Nenhuma versão visível com o filtro atual.'
+              : 'Nenhuma versão registrada ainda.'}
+          </p>
         ) : (
-          <div className="space-y-2 max-h-[200px] overflow-y-auto">
-            {contracts.map((c) => (
+          <div className="space-y-2 max-h-[240px] overflow-y-auto">
+            {visibleContracts.map((c) => {
+              const archived = isArchivedSaasContract(c);
+              const isActiveVersion = isCurrentSaasContractVersion(c.status) && !archived;
+              return (
               <div
                 key={c.id}
-                className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[#0B0E14] border border-white/5 text-[12px]"
+                className={`flex items-center justify-between gap-3 p-3 rounded-lg border text-[12px] ${
+                  archived
+                    ? 'bg-[#0B0E14]/60 border-amber-500/20 opacity-80'
+                    : 'bg-[#0B0E14] border-white/5'
+                }`}
               >
-                <div>
+                <div className="min-w-0">
                   <span className="text-white font-medium">{c.contract_number}</span>
                   <span className="text-gray-500 ml-2">Versão {c.version ?? 1}</span>
                   <span
                     className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
-                      isCurrentSaasContractVersion(c.status)
+                      isActiveVersion
                         ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-gray-500/20 text-gray-400'
+                        : archived
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-gray-500/20 text-gray-400'
                     }`}
                   >
-                    {saasVersionStatusLabel(c.status)}
+                    {archived ? 'Arquivado' : saasVersionStatusLabel(c.status)}
                   </span>
                   <p className="text-gray-500 mt-0.5">
                     {formatDateBr(c.generated_at?.split('T')[0])}
+                    {archived && c.archive_kind ? ` · ${c.archive_kind}` : ''}
                   </p>
                 </div>
-                {user?.id && companyId && (
-                  <a
-                    href={buildSaasContractPdfUrl(companyId, user.id, 'download', c.id)}
-                    className="text-blue-300 hover:underline shrink-0 flex items-center gap-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    Baixar
-                  </a>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {user?.id && companyId && (
+                    <a
+                      href={buildSaasContractPdfUrl(companyId, user.id, 'download', c.id)}
+                      className="text-blue-300 hover:underline flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" />
+                      Baixar
+                    </a>
+                  )}
+                  {isSuperAdmin && !archived && (
+                    <button
+                      type="button"
+                      onClick={() => setArchiveTarget(c)}
+                      className="text-amber-300/90 hover:text-amber-200 flex items-center gap-1"
+                      title={
+                        isActiveVersion
+                          ? 'Arquivar versão vigente (requer confirmação)'
+                          : 'Ocultar versão de teste'
+                      }
+                    >
+                      <Archive className="w-3 h-3" />
+                      {isActiveVersion ? 'Arquivar' : 'Ocultar teste'}
+                    </button>
+                  )}
+                </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>
@@ -786,6 +893,20 @@ export function SaasContractPanel({
         contractNumber={contractNumber}
         busy={signingProvider}
         onSign={handleProviderSign}
+      />
+
+      <ArchiveSaasContractModal
+        open={Boolean(archiveTarget)}
+        contractNumber={archiveTarget?.contract_number || '—'}
+        version={archiveTarget?.version ?? 1}
+        isActiveVersion={
+          archiveTarget
+            ? isCurrentSaasContractVersion(archiveTarget.status)
+            : false
+        }
+        busy={archivingContract}
+        onCancel={() => setArchiveTarget(null)}
+        onConfirm={handleConfirmArchive}
       />
     </div>
   );

@@ -483,7 +483,7 @@ function SaaSFinancePageContent() {
       if (!user?.id) return [];
       try {
         const res = await fetch(
-          `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}`,
+          `/api/companies/${companyId}/contracts?userId=${encodeURIComponent(user.id)}&includeArchived=1`,
         );
         const json = await res.json().catch(() => ({}));
         const list = (json.contracts || []) as CompanyContractRow[];
