@@ -1,171 +1,206 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
-import { validateSaasContractPdfInput } from '@/lib/saasContractPdfValidation';
+import {
+  countPdfPages,
+  validateSaasContractPdfInput,
+} from '@/lib/saasContractPdfValidation';
 import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
-import { listCompanyContracts } from '@/lib/saasContractService';
+import {
+  getCompanyContractById,
+  listCompanyContracts,
+  loadFreshSaasContractContext,
+  type CompanyContractRow,
+} from '@/lib/saasContractService';
 import { findActiveVisibleSaasContract } from '@/lib/saasContractArchive';
 import { formatCompanyContractNumber } from '@/lib/companyContractNumber';
+import {
+  createSaasContractPdfResponse,
+  fetchStoredSaasContractPdf,
+  isPdfBytes,
+} from '@/lib/saasContractPdfHttp';
 
 export const runtime = 'nodejs';
 
-function pdfResponse(
-  pdfBytes: Uint8Array,
-  companyId: string,
-  disposition: 'inline' | 'attachment',
-  meta: {
-    contractId?: string | null;
-    pageCount: number;
-    clausesCount: number;
-    contractNumber: string;
-  },
-) {
-  const filename = `contrato-saas-${meta.contractNumber || companyId}.pdf`;
-  console.log('SAAS_CONTRACT_PDF_SERVE', {
-    company_id: companyId,
-    contract_id: meta.contractId ?? null,
-    contract_number: meta.contractNumber,
-    page_count: meta.pageCount,
-    clauses_count: meta.clausesCount,
-    bytes: pdfBytes.byteLength,
-    disposition,
-  });
+function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
+  console.error('SAAS_CONTRACT_PDF_HTTP_ERROR', { status, message, ...extra });
+  return NextResponse.json({ success: false, error: message, ...extra }, { status });
+}
 
-  return new NextResponse(pdfBytes, {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition':
-        disposition === 'attachment'
-          ? `attachment; filename="${filename}"`
-          : `inline; filename="${filename}"`,
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-Saas-Contract-Pages': String(meta.pageCount),
-      'X-Saas-Contract-Clauses': String(meta.clausesCount),
-      'X-Saas-Contract-Number': meta.contractNumber,
-    },
+async function resolveContractRecord(
+  supabaseAdmin: NonNullable<Awaited<ReturnType<typeof createServiceSupabase>>['client']>,
+  companyId: string,
+  contractId: string | null,
+): Promise<CompanyContractRow | null> {
+  if (contractId) {
+    return getCompanyContractById(supabaseAdmin, companyId, contractId);
+  }
+  const contracts = await listCompanyContracts(supabaseAdmin, companyId, {
+    includeArchived: false,
   });
+  return findActiveVisibleSaasContract(contracts);
 }
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
-  const { id: companyId } = await params;
-  const url = new URL(request.url);
-  const userId = url.searchParams.get('userId');
-  const download = url.searchParams.get('download') === '1';
-  const inline = url.searchParams.get('inline') === '1' || !download;
-  const contractId = url.searchParams.get('contractId');
-  const metaOnly = url.searchParams.get('meta') === '1';
-
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
-
-  const { data: company, error: companyErr } = await supabaseAdmin
-    .from('companies')
-    .select('*')
-    .eq('id', companyId)
-    .single();
-
-  if (companyErr || !company) {
-    return NextResponse.json({ error: 'Empresa não encontrada.' }, { status: 404 });
-  }
-
-  const subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
-  if (!subscription) {
-    return NextResponse.json({ error: 'Assinatura não encontrada.' }, { status: 404 });
-  }
-
-  const contracts = await listCompanyContracts(supabaseAdmin, companyId, {
-    includeArchived: true,
-  });
-  const activeContract =
-    (contractId
-      ? contracts.find((c) => c.id === contractId)
-      : findActiveVisibleSaasContract(contracts)) ?? null;
-
-  const pdfDates = subscriptionDatesForContractPdf(subscription);
-  const subForPdf = {
-    contract_number:
-      activeContract?.contract_number ||
-      subscription.contract_number ||
-      formatCompanyContractNumber(1),
-    plan_type: subscription.plan_type,
-    monthly_price: subscription.monthly_price,
-    start_date: pdfDates.start_date,
-    first_payment_date: pdfDates.first_payment_date,
-    next_due_date: pdfDates.next_due_date,
-  };
-
-  const contentVersion = resolveStoredSaasContractContentVersion(activeContract);
-
-  let built;
   try {
-    built = buildSaasContractPdfWithMeta({ company, subscription: subForPdf }, { contentVersion });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erro ao gerar PDF';
-    console.error('SAAS_CONTRACT_PDF_BUILD_ERROR', { companyId, message });
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+    const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+    if (!supabaseAdmin) {
+      return jsonError(configError || 'Service role não configurada.', 500);
+    }
 
-  const validation = validateSaasContractPdfInput(
-    { company, subscription: subForPdf },
-    built.pdf,
-    contentVersion,
-  );
+    const { id: companyId } = await params;
+    const url = new URL(request.url);
+    const userId = url.searchParams.get('userId');
+    const download = url.searchParams.get('download') === '1';
+    const inline = url.searchParams.get('inline') === '1' || !download;
+    const contractId = url.searchParams.get('contractId');
+    const metaOnly = url.searchParams.get('meta') === '1';
 
-  console.log('SAAS_CONTRACT_PDF_VALIDATION', {
-    company_id: companyId,
-    contract_id: activeContract?.id ?? null,
-    ok: validation.ok,
-    page_count: built.pageCount,
-    clauses_count: built.clausesCount,
-    errors: validation.errors,
-  });
+    const auth = await assertSuperAdmin(supabaseAdmin, userId);
+    if (!auth.ok) {
+      return jsonError(auth.error || 'Permissão negada.', 403);
+    }
 
-  if (!validation.ok) {
-    console.warn('SAAS_CONTRACT_PDF_VALIDATION_WARN', validation.errors);
-  }
+    const contractRecord = contractId
+      ? await resolveContractRecord(supabaseAdmin, companyId, contractId)
+      : await resolveContractRecord(supabaseAdmin, companyId, null);
 
-  if (metaOnly) {
-    return NextResponse.json({
-      success: true,
+    if (contractId && !contractRecord) {
+      return jsonError('Contrato não encontrado.', 404, { contractId });
+    }
+
+    const { company, subscription } = await loadFreshSaasContractContext(
+      supabaseAdmin,
+      companyId,
+    );
+
+    const pdfDates = subscriptionDatesForContractPdf(subscription);
+    const contractNumber =
+      contractRecord?.contract_number ||
+      subscription.contract_number ||
+      formatCompanyContractNumber(1);
+    const contentVersion = resolveStoredSaasContractContentVersion(contractRecord);
+    const subForPdf = {
+      contract_number: contractNumber,
+      plan_type: subscription.plan_type,
+      monthly_price: subscription.monthly_price,
+      start_date: pdfDates.start_date,
+      first_payment_date: pdfDates.first_payment_date,
+      next_due_date: pdfDates.next_due_date,
+    };
+
+    let pdfBytes: Uint8Array | null = null;
+    let source: 'pdf_signed_url' | 'contract_url' | 'regenerated' = 'regenerated';
+    let pageCount = 0;
+    let clausesCount = 0;
+
+    const stored = await fetchStoredSaasContractPdf(contractRecord);
+    if (stored) {
+      pdfBytes = stored.bytes;
+      source = stored.source;
+      pageCount = countPdfPages(stored.bytes);
+    }
+
+    if (!pdfBytes) {
+      let built;
+      try {
+        built = buildSaasContractPdfWithMeta({ company, subscription: subForPdf }, { contentVersion });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erro ao gerar PDF';
+        return jsonError(message, 500, { step: 'pdf_generation', companyId, contractId });
+      }
+      pdfBytes = built.pdf;
+      pageCount = built.pageCount;
+      clausesCount = built.clausesCount;
+      source = 'regenerated';
+    }
+
+    if (!pdfBytes?.length || !isPdfBytes(pdfBytes)) {
+      return jsonError('PDF do contrato inválido ou vazio.', 500, {
+        companyId,
+        contractId,
+        source,
+      });
+    }
+
+    const validation = validateSaasContractPdfInput(
+      { company, subscription: subForPdf },
+      pdfBytes,
+      contentVersion,
+    );
+
+    if (!clausesCount) {
+      clausesCount = validation.clausesCount;
+    }
+    if (!pageCount) {
+      pageCount = validation.pageCount;
+    }
+
+    console.log('SAAS_CONTRACT_PDF_SERVE', {
       company_id: companyId,
-      contract_id: activeContract?.id ?? null,
-      contract_number: built.contractNumber,
-      page_count: built.pageCount,
-      clauses_count: built.clausesCount,
-      validation,
-      stored_contract_url: activeContract?.contract_url ?? subscription.contract_pdf_url ?? null,
+      contract_id: contractRecord?.id ?? null,
+      contract_number: contractNumber,
+      content_version: contentVersion,
+      source,
+      page_count: pageCount,
+      clauses_count: clausesCount,
+      bytes: pdfBytes.byteLength,
+      validation_ok: validation.ok,
     });
-  }
 
-  if (!download && !inline) {
-    return NextResponse.json({
-      company: { id: company.id, name: company.name, cnpj: company.cnpj },
-      subscription,
-      active_contract: activeContract,
-      pdf_meta: {
-        page_count: built.pageCount,
-        clauses_count: built.clausesCount,
-        contract_number: built.contractNumber,
-        validation_ok: validation.ok,
+    if (!validation.ok) {
+      console.warn('SAAS_CONTRACT_PDF_VALIDATION_WARN', validation.errors);
+    }
+
+    if (metaOnly) {
+      return NextResponse.json({
+        success: true,
+        company_id: companyId,
+        contract_id: contractRecord?.id ?? null,
+        contract_number: contractNumber,
+        content_version: contentVersion,
+        page_count: pageCount,
+        clauses_count: clausesCount,
+        source,
+        validation,
+        stored_contract_url: contractRecord?.contract_url ?? subscription.contract_pdf_url ?? null,
+        pdf_signed_url: contractRecord?.pdf_signed_url ?? null,
+      });
+    }
+
+    if (!download && !inline) {
+      return NextResponse.json({
+        company: { id: company.id, name: company.name, cnpj: company.cnpj },
+        subscription,
+        active_contract: contractRecord,
+        pdf_meta: {
+          page_count: pageCount,
+          clauses_count: clausesCount,
+          contract_number: contractNumber,
+          content_version: contentVersion,
+          source,
+          validation_ok: validation.ok,
+        },
+      });
+    }
+
+    return createSaasContractPdfResponse(
+      pdfBytes,
+      download ? 'attachment' : 'inline',
+      {
+        contractId: contractRecord?.id ?? null,
+        pageCount,
+        clausesCount,
+        contractNumber,
+        source,
       },
-    });
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro interno ao servir PDF.';
+    return jsonError(message, 500);
   }
-
-  return pdfResponse(built.pdf, companyId, download ? 'attachment' : 'inline', {
-    contractId: activeContract?.id ?? null,
-    pageCount: built.pageCount,
-    clausesCount: built.clausesCount,
-    contractNumber: built.contractNumber,
-  });
 }

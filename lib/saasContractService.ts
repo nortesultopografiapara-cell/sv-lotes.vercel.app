@@ -250,6 +250,25 @@ export async function listAllCompanyContractsIncludingArchived(
   return (data || []) as CompanyContractRow[];
 }
 
+export async function getCompanyContractById(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  contractId: string,
+): Promise<CompanyContractRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from('company_contracts')
+    .select('*')
+    .eq('id', contractId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[SAAS_CONTRACT] get by id', error.message);
+    return null;
+  }
+  return (data as CompanyContractRow) || null;
+}
+
 export type GenerateSaasContractOptions = {
   /** Regenerar com dados atuais; mantém histórico */
   forceRegenerate?: boolean;
