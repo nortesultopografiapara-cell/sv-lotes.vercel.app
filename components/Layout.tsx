@@ -459,6 +459,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const isPublicStandalone =
     pathname === '/' ||
+    pathname.startsWith('/sign/') ||
     ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
       pathname.startsWith(route)
     );

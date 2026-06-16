@@ -193,7 +193,7 @@ export default function SignContractPage() {
         </p>
       </div>
     ) : data.signature.canSign ? (
-      <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4">
+      <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-5">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-amber-400" />
           <h3 className="font-semibold">Assinar contrato</h3>
@@ -260,7 +260,7 @@ export default function SignContractPage() {
     ));
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-white">
+    <div className="min-h-[100dvh] overflow-y-auto pb-32 md:pb-8 bg-[#0b0e14] text-white">
       <header className="border-b border-white/10 bg-[#11161d] shrink-0">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center gap-3 sm:gap-4">
           <Image
@@ -277,7 +277,7 @@ export default function SignContractPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         {loading ? (
           <div className="flex flex-col items-center gap-3 text-gray-400 py-16">
             <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
