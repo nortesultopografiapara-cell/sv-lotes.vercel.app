@@ -7,6 +7,7 @@ import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import {
   buildSaasContractSections,
   resolveSaasContractContext,
+  SAAS_CONTRACT_CONTENT_VERSION,
   SAAS_PROVIDER,
   saasProviderCityState,
   type SaasContractSection,
@@ -268,13 +269,18 @@ function createPdfWriter(doc: jsPDF, startY: number): PdfWriter {
   return writer;
 }
 
+function formatSectionTitle(section: SaasContractSection): string {
+  const num = section.suffix ? `${section.number}-${section.suffix}` : String(section.number);
+  return `CLÁUSULA ${num} — ${section.title}`;
+}
+
 function renderSections(writer: PdfWriter, sections: SaasContractSection[]) {
   const w = writer;
   w.sectionTitle('CLÁUSULAS CONTRATUAIS');
   w.y += 2;
 
   for (const section of sections) {
-    const title = `CLÁUSULA ${section.number} — ${section.title}`;
+    const title = formatSectionTitle(section);
     const titleLines = w.doc.splitTextToSize(title, w.contentW);
     const titleH = titleLines.length * CONTENT_LINE_H + 6;
     w.ensureSpace(titleH);
@@ -312,6 +318,7 @@ function renderSignaturePage(
   writer: PdfWriter,
   ctx: ReturnType<typeof resolveSaasContractContext>,
   executed?: SaasContractPdfBuildOptions['executedSignatures'],
+  contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
 ) {
   const w = writer;
   w.y += 6;
@@ -388,7 +395,9 @@ function renderSignaturePage(
     w.doc.setFontSize(8);
     w.doc.setTextColor(90, 90, 90);
     w.writeParagraph(
-      'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
+      contentVersion >= SAAS_CONTRACT_CONTENT_VERSION
+        ? 'As assinaturas eletrônicas formalizadas na plataforma SV LOTES, conforme Cláusulas 22 e 22-A, produzem plenos efeitos jurídicos nos termos da MP nº 2.200-2/2001 e da Lei nº 14.063/2020.'
+        : 'Assinatura eletrônica ou digital poderá ser formalizada em fase posterior, conforme Cláusula 22.',
       4,
     );
   }
@@ -403,6 +412,7 @@ export type SaasContractPdfBuildResult = {
 };
 
 export type SaasContractPdfBuildOptions = {
+  contentVersion?: number;
   certificate?: SignatureCertificateData;
   bilateralCertificate?: BilateralSignatureCertificateData;
   executedSignatures?: {
@@ -426,7 +436,8 @@ export function buildSaasContractPdfWithMeta(
   options?: SaasContractPdfBuildOptions,
 ): SaasContractPdfBuildResult {
   const ctx = resolveSaasContractContext(input);
-  const sections = buildSaasContractSections(ctx);
+  const contentVersion = options?.contentVersion ?? SAAS_CONTRACT_CONTENT_VERSION;
+  const sections = buildSaasContractSections(ctx, contentVersion);
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -494,7 +505,7 @@ export function buildSaasContractPdfWithMeta(
   writer.y += 3;
 
   renderSections(writer, sections);
-  renderSignaturePage(writer, ctx, options?.executedSignatures);
+  renderSignaturePage(writer, ctx, options?.executedSignatures, contentVersion);
 
   if (options?.bilateralCertificate) {
     appendBilateralSignatureCertificateToPdf(

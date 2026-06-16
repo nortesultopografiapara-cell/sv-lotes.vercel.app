@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
 import { validateSaasContractPdfInput } from '@/lib/saasContractPdfValidation';
+import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import { listCompanyContracts } from '@/lib/saasContractService';
 import { isCurrentSaasContractVersion } from '@/lib/saasContractStatus';
@@ -103,9 +104,11 @@ export async function GET(
     next_due_date: pdfDates.next_due_date,
   };
 
+  const contentVersion = resolveStoredSaasContractContentVersion(activeContract);
+
   let built;
   try {
-    built = buildSaasContractPdfWithMeta({ company, subscription: subForPdf });
+    built = buildSaasContractPdfWithMeta({ company, subscription: subForPdf }, { contentVersion });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao gerar PDF';
     console.error('SAAS_CONTRACT_PDF_BUILD_ERROR', { companyId, message });
@@ -115,6 +118,7 @@ export async function GET(
   const validation = validateSaasContractPdfInput(
     { company, subscription: subForPdf },
     built.pdf,
+    contentVersion,
   );
 
   console.log('SAAS_CONTRACT_PDF_VALIDATION', {

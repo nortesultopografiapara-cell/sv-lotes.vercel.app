@@ -2,10 +2,14 @@
  * Validação do PDF do contrato SaaS (conteúdo, páginas, cláusulas).
  */
 
-import { buildSaasContractDocumentText } from '@/lib/saasContractContent';
+import {
+  buildSaasContractDocumentText,
+  SAAS_CONTRACT_CONTENT_VERSION,
+} from '@/lib/saasContractContent';
 import type { SaasContractPdfInput } from '@/lib/saasContractContent';
 
-export const SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT = 24;
+export const SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT = 25;
+export const SAAS_CONTRACT_LEGACY_CLAUSES_COUNT = 24;
 export const SAAS_CONTRACT_MIN_PAGE_COUNT = 3;
 /** Faixa esperada para contrato Meneses com paginação natural (sem forçar 8/9 páginas). */
 export const SAAS_CONTRACT_NATURAL_MAX_PAGE_COUNT = 10;
@@ -52,10 +56,15 @@ export function extractRoughPdfText(pdfBytes: Uint8Array): string {
 export function validateSaasContractPdfBytes(
   pdfBytes: Uint8Array,
   documentText?: string,
+  contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
 ): SaasContractPdfValidation {
   const rough = `${extractRoughPdfText(pdfBytes)} ${documentText || ''}`.toLowerCase();
   const pageCount = countPdfPages(pdfBytes);
   const errors: string[] = [];
+  const expectedClauses =
+    contentVersion >= SAAS_CONTRACT_CONTENT_VERSION
+      ? SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT
+      : SAAS_CONTRACT_LEGACY_CLAUSES_COUNT;
 
   const hasTitle =
     rough.includes('contrato de licença de software') ||
@@ -80,7 +89,7 @@ export function validateSaasContractPdfBytes(
   return {
     byteLength: pdfBytes.byteLength,
     pageCount,
-    clausesCount: SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT,
+    clausesCount: expectedClauses,
     hasTitle,
     hasLgpd,
     hasIntellectualProperty,
@@ -92,9 +101,13 @@ export function validateSaasContractPdfBytes(
   };
 }
 
-export function validateSaasContractPdfInput(input: SaasContractPdfInput, pdfBytes: Uint8Array) {
-  const documentText = buildSaasContractDocumentText(input);
-  return validateSaasContractPdfBytes(pdfBytes, documentText);
+export function validateSaasContractPdfInput(
+  input: SaasContractPdfInput,
+  pdfBytes: Uint8Array,
+  contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
+) {
+  const documentText = buildSaasContractDocumentText(input, contentVersion);
+  return validateSaasContractPdfBytes(pdfBytes, documentText, contentVersion);
 }
 
 export type SaasContractPageDensity = {

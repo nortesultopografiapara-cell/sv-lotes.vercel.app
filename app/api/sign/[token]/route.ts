@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
+import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import {
   getSignatureByToken,
@@ -70,7 +71,7 @@ export async function GET(
 
   const { data: contract } = await supabaseAdmin
     .from('company_contracts')
-    .select('id, contract_number, contract_url, pdf_signed_url, status, version')
+    .select('id, contract_number, contract_url, pdf_signed_url, status, version, content_version')
     .eq('id', signature.contract_id)
     .single();
 
@@ -98,17 +99,21 @@ export async function GET(
       signature.company_id,
     );
     const pdfDates = subscriptionDatesForContractPdf(subscription);
-    const built = buildSaasContractPdfWithMeta({
-      company: companyFull,
-      subscription: {
-        contract_number: contract.contract_number,
-        plan_type: subscription.plan_type,
-        monthly_price: subscription.monthly_price,
-        start_date: pdfDates.start_date,
-        first_payment_date: pdfDates.first_payment_date,
-        next_due_date: pdfDates.next_due_date,
+    const contentVersion = resolveStoredSaasContractContentVersion(contract);
+    const built = buildSaasContractPdfWithMeta(
+      {
+        company: companyFull,
+        subscription: {
+          contract_number: contract.contract_number,
+          plan_type: subscription.plan_type,
+          monthly_price: subscription.monthly_price,
+          start_date: pdfDates.start_date,
+          first_payment_date: pdfDates.first_payment_date,
+          next_due_date: pdfDates.next_due_date,
+        },
       },
-    });
+      { contentVersion },
+    );
     return pdfResponse(
       built.pdf,
       contract.contract_number,

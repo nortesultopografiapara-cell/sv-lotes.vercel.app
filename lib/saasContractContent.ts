@@ -88,9 +88,23 @@ export function saasProviderHeadquartersQualification(
 
 export type SaasContractSection = {
   number: number;
+  /** Ex.: "A" para exibir CLÁUSULA 22-A */
+  suffix?: string;
   title: string;
   paragraphs: string[];
 };
+
+/** Versão atual do modelo jurídico (assinatura eletrônica integrada). */
+export const SAAS_CONTRACT_CONTENT_VERSION = 2;
+export const SAAS_CONTRACT_LEGACY_CONTENT_VERSION = 1;
+
+/** Versão do modelo de cláusulas gravada no contrato (legado = 1 quando ausente). */
+export function resolveStoredSaasContractContentVersion(
+  contract?: { content_version?: number | null } | null,
+): number {
+  if (!contract) return SAAS_CONTRACT_CONTENT_VERSION;
+  return contract.content_version ?? SAAS_CONTRACT_LEGACY_CONTENT_VERSION;
+}
 
 function displayField(value: string | null | undefined, fallback = 'Não informado'): string {
   const v = String(value ?? '').trim();
@@ -182,7 +196,11 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
   };
 }
 
-export function buildSaasContractSections(ctx: SaasContractContext): SaasContractSection[] {
+export function buildSaasContractSections(
+  ctx: SaasContractContext,
+  contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
+): SaasContractSection[] {
+  const useElectronicSignatureV2 = contentVersion >= SAAS_CONTRACT_CONTENT_VERSION;
   const p = ctx.provider;
   const c = ctx.contractor;
   const pl = ctx.plan;
@@ -191,7 +209,44 @@ export function buildSaasContractSections(ctx: SaasContractContext): SaasContrac
     ? ` Valor padrão do plano: ${pl.standardPrice}. Desconto comercial aplicado: ${pl.discount}.`
     : '';
 
-  return [
+  const clause12Security = useElectronicSignatureV2
+    ? [
+        'A CONTRATADA adota medidas técnicas e organizacionais razoáveis de segurança, backup e proteção de dados, compatíveis com a natureza do serviço e com a infraestrutura utilizada (incluindo provedores como Supabase, Vercel e serviços de mapas/APIs).',
+        'Os registros de assinatura eletrônica, tokens de autenticação, endereços IP, data e hora, identificação do signatário, histórico de eventos e certificados digitais são armazenados em banco de dados seguro, com preservação do histórico para fins de auditoria, rastreabilidade e comprovação da manifestação de vontade das partes.',
+        'A CONTRATANTE reconhece que nenhum sistema é absolutamente imune a falhas. Indisponibilidades causadas por provedores terceiros, internet, ataques externos, manutenção emergencial ou caso fortuito não geram responsabilidade ilimitada da CONTRATADA.',
+        'Recomenda-se que a CONTRATANTE mantenha cópias de documentos críticos e revise periodicamente os dados cadastrados. Backups de contingência não substituem a responsabilidade da CONTRATANTE sobre seus registros de negócio.',
+      ]
+    : [
+        'A CONTRATADA adota medidas técnicas e organizacionais razoáveis de segurança, backup e proteção de dados, compatíveis com a natureza do serviço e com a infraestrutura utilizada (incluindo provedores como Supabase, Vercel e serviços de mapas/APIs).',
+        'A CONTRATANTE reconhece que nenhum sistema é absolutamente imune a falhas. Indisponibilidades causadas por provedores terceiros, internet, ataques externos, manutenção emergencial ou caso fortuito não geram responsabilidade ilimitada da CONTRATADA.',
+        'Recomenda-se que a CONTRATANTE mantenha cópias de documentos críticos e revise periodicamente os dados cadastrados. Backups de contingência não substituem a responsabilidade da CONTRATANTE sobre seus registros de negócio.',
+      ];
+
+  const clause21Comms = useElectronicSignatureV2
+    ? [
+        'As comunicações oficiais entre as partes serão realizadas preferencialmente por e-mail cadastrado, notificações no painel administrativo da plataforma SV LOTES, links individuais de assinatura eletrônica e demais canais informados pela CONTRATADA.',
+        'A CONTRATANTE autoriza o recebimento de comunicações contratuais, financeiras e operacionais por e-mail, notificações in-app e, quando informado e consentido, por WhatsApp cadastrado junto à CONTRATADA.',
+        'A CONTRATANTE deve manter endereço de e-mail, telefone e WhatsApp de contato atualizados. Comunicações enviadas aos dados cadastrados presumem-se recebidas para fins contratuais, inclusive convites e lembretes de assinatura eletrônica.',
+      ]
+    : [
+        'As comunicações oficiais entre as partes serão realizadas preferencialmente por e-mail cadastrado, notificações no painel administrativo ou outros canais informados pela CONTRATADA.',
+        'A CONTRATANTE deve manter endereço de e-mail e telefone de contato atualizados. Comunicações enviadas aos dados cadastrados presumem-se recebidas para fins contratuais.',
+      ];
+
+  const clause22Signature = useElectronicSignatureV2
+    ? [
+        'As partes reconhecem e aceitam a celebração, formalização e execução deste instrumento por meio de assinatura eletrônica disponibilizada pela plataforma SV LOTES, com plena validade jurídica nos termos da Medida Provisória nº 2.200-2/2001 e da Lei nº 14.063/2020, dispensada a assinatura física em papel quando a assinatura eletrônica for concluída pelas partes na plataforma.',
+        'O fluxo de assinatura eletrônica utiliza link individual protegido por token de autenticação de uso único e prazo de validade, permitindo ao signatário visualizar o contrato, confirmar seus dados e manifestar concordância com os termos contratuais.',
+        'Cada assinatura eletrônica gera registro automático contendo, no mínimo: nome completo e CPF do signatário, e-mail e cargo quando informados, endereço IP, data e hora da assinatura (registro de timestamp), identificação do contrato, histórico de eventos (envio, visualização e assinatura) e hash de integridade do documento (SHA-256) vinculado ao conteúdo assinado.',
+        'Ao final do processo bilateral de assinatura, o sistema emite certificado eletrônico de assinatura anexo ao PDF do contrato, consolidando as evidências de autenticidade e integridade do documento.',
+        'A CONTRATANTE declara que a assinatura eletrônica realizada por seu representante legal ou procurador devidamente autorizado constitui manifestação válida de vontade, produzindo os mesmos efeitos de documento firmado presencialmente, ressalvadas as hipóteses legais de invalidação.',
+      ]
+    : [
+        'As partes admitem a celebração e formalização deste instrumento por meio de assinatura eletrônica ou digital, nos termos da legislação aplicável, incluindo a Medida Provisória nº 2.200-2/2001 e a Lei nº 14.063/2020, quando disponibilizada pela CONTRATADA.',
+        'Até a implementação do fluxo de assinatura eletrônica integrado, a geração do PDF e o aceite comercial constituem manifestação preliminar de vontade, sem prejuízo de formalização posterior por assinatura qualificada ou processo equivalente.',
+      ];
+
+  const sections: SaasContractSection[] = [
     {
       number: 1,
       title: 'QUALIFICAÇÃO DAS PARTES',
@@ -293,11 +348,7 @@ export function buildSaasContractSections(ctx: SaasContractContext): SaasContrac
     {
       number: 12,
       title: 'SEGURANÇA, BACKUP E DISPONIBILIDADE',
-      paragraphs: [
-        'A CONTRATADA adota medidas técnicas e organizacionais razoáveis de segurança, backup e proteção de dados, compatíveis com a natureza do serviço e com a infraestrutura utilizada (incluindo provedores como Supabase, Vercel e serviços de mapas/APIs).',
-        'A CONTRATANTE reconhece que nenhum sistema é absolutamente imune a falhas. Indisponibilidades causadas por provedores terceiros, internet, ataques externos, manutenção emergencial ou caso fortuito não geram responsabilidade ilimitada da CONTRATADA.',
-        'Recomenda-se que a CONTRATANTE mantenha cópias de documentos críticos e revise periodicamente os dados cadastrados. Backups de contingência não substituem a responsabilidade da CONTRATANTE sobre seus registros de negócio.',
-      ],
+      paragraphs: clause12Security,
     },
     {
       number: 13,
@@ -372,18 +423,12 @@ export function buildSaasContractSections(ctx: SaasContractContext): SaasContrac
     {
       number: 21,
       title: 'COMUNICAÇÕES OFICIAIS',
-      paragraphs: [
-        'As comunicações oficiais entre as partes serão realizadas preferencialmente por e-mail cadastrado, notificações no painel administrativo ou outros canais informados pela CONTRATADA.',
-        'A CONTRATANTE deve manter endereço de e-mail e telefone de contato atualizados. Comunicações enviadas aos dados cadastrados presumem-se recebidas para fins contratuais.',
-      ],
+      paragraphs: clause21Comms,
     },
     {
       number: 22,
       title: 'ASSINATURA ELETRÔNICA OU DIGITAL',
-      paragraphs: [
-        'As partes admitem a celebração e formalização deste instrumento por meio de assinatura eletrônica ou digital, nos termos da legislação aplicável, incluindo a Medida Provisória nº 2.200-2/2001 e a Lei nº 14.063/2020, quando disponibilizada pela CONTRATADA.',
-        'Até a implementação do fluxo de assinatura eletrônica integrado, a geração do PDF e o aceite comercial constituem manifestação preliminar de vontade, sem prejuízo de formalização posterior por assinatura qualificada ou processo equivalente.',
-      ],
+      paragraphs: clause22Signature,
     },
     {
       number: 23,
@@ -402,12 +447,32 @@ export function buildSaasContractSections(ctx: SaasContractContext): SaasContrac
       ],
     },
   ];
+
+  if (useElectronicSignatureV2) {
+    const clause22A: SaasContractSection = {
+      number: 22,
+      suffix: 'A',
+      title: 'EVIDÊNCIAS ELETRÔNICAS',
+      paragraphs: [
+        'As partes concordam que os registros eletrônicos gerados pela plataforma SV LOTES — incluindo logs de sistema, endereço IP, data e hora (timestamp), token de autenticação do link de assinatura, histórico de visualização do documento, certificado eletrônico de assinatura e hash de integridade (SHA-256) — constituem elementos de prova válidos da manifestação de vontade e da integridade do contrato.',
+        'Em caso de disputa, tais evidências poderão ser utilizadas para comprovar a autoria, autenticidade, integridade e cronologia das assinaturas eletrônicas, observada a legislação aplicável e as boas práticas de auditoria digital.',
+        'A CONTRATADA compromete-se a preservar o histórico de eventos de assinatura pelo prazo mínimo exigido pela legislação e pelas políticas internas de retenção, ressalvadas exclusões decorrentes de obrigação legal ou encerramento contratual após exportação dos dados pela CONTRATANTE.',
+      ],
+    };
+    const foroIndex = sections.findIndex((s) => s.number === 23);
+    sections.splice(foroIndex, 0, clause22A);
+  }
+
+  return sections;
 }
 
 /** Texto integral do contrato (para testes e busca de cláusulas). */
-export function buildSaasContractDocumentText(input: SaasContractPdfInput): string {
+export function buildSaasContractDocumentText(
+  input: SaasContractPdfInput,
+  contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
+): string {
   const ctx = resolveSaasContractContext(input);
-  const sections = buildSaasContractSections(ctx);
+  const sections = buildSaasContractSections(ctx, contentVersion);
   const parts: string[] = [
     `CONTRATO DE LICENÇA DE SOFTWARE (SaaS) Nº ${ctx.contractNumber}`,
     `Emitido em ${ctx.emissionDate}`,
@@ -416,7 +481,10 @@ export function buildSaasContractDocumentText(input: SaasContractPdfInput): stri
     `PLANO: ${ctx.plan.name} — ${ctx.plan.monthlyPrice}`,
   ];
   for (const section of sections) {
-    parts.push(`${section.number}. ${section.title}`);
+    const label = section.suffix
+      ? `${section.number}-${section.suffix}`
+      : String(section.number);
+    parts.push(`${label}. ${section.title}`);
     parts.push(...section.paragraphs);
   }
   return parts.join('\n');

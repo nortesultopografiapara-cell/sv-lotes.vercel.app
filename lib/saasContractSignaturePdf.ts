@@ -49,10 +49,11 @@ export function appendSignatureCertificateToPdf(
   pageW: number,
 ): void {
   appendPartyCertificateBlock(doc, cert, margin, pageW, {
-    title: 'CERTIFICADO DE ASSINATURA',
+    title: 'CERTIFICADO DE ASSINATURA ELETRÔNICA',
     intro:
-      'O documento abaixo certifica a assinatura eletrônica do contrato de licença SaaS SV LOTES, ' +
-      'registrada digitalmente com os metadados de autenticidade indicados neste certificado.',
+      'Este certificado comprova a assinatura eletrônica do contrato de licença SaaS SV LOTES, ' +
+      'registrada digitalmente com validade jurídica conforme a Medida Provisória nº 2.200-2/2001 e a Lei nº 14.063/2020, ' +
+      'contendo os metadados de autenticidade e integridade indicados abaixo.',
   });
 }
 
@@ -72,7 +73,8 @@ export function appendBilateralSignatureCertificateToPdf(
   doc.setFontSize(9);
   const intro =
     'Este certificado registra as assinaturas eletrônicas da CONTRATANTE e da CONTRATADA no contrato ' +
-    `de licença SaaS nº ${bilateral.contractNumber}, com validade jurídica conforme legislação aplicável.`;
+    `de licença SaaS nº ${bilateral.contractNumber}, com validade jurídica conforme a Medida Provisória nº 2.200-2/2001, ` +
+    'a Lei nº 14.063/2020 e a legislação aplicável, incluindo hash de integridade (SHA-256) para cada signatário.';
   const introLines = doc.splitTextToSize(intro, contentW);
   doc.text(introLines, margin, y);
   y += introLines.length * CONTENT_LINE_H + 8;
@@ -143,7 +145,7 @@ function appendPartyCertificateBlock(
   doc.setTextColor(100, 110, 120);
   const footer =
     'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
-    'como prova de aceite eletrônico dos termos contratuais.';
+    'como prova de aceite eletrônico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovação de manifestação de vontade.';
   const footerLines = doc.splitTextToSize(footer, contentW);
   doc.text(footerLines, margin, y);
 }
@@ -167,7 +169,7 @@ function renderPartyCertificateSection(
 
   doc.setDrawColor(200, 210, 220);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(margin, y, contentW, 78, 2, 2, 'FD');
+  doc.roundedRect(margin, y, contentW, 88, 2, 2, 'FD');
   y += 10;
 
   const row = (label: string, value: string) => {
@@ -186,12 +188,12 @@ function renderPartyCertificateSection(
   row('Contrato nº', cert.contractNumber);
   row('Assinado por', cert.signerName);
   row('CPF', formatCpfCnpj(cert.signerDocument) || cert.signerDocument);
-  if (cert.signerEmail) row('E-mail', cert.signerEmail);
-  if (cert.signerRole) row('Cargo', cert.signerRole);
-  row('IP', cert.ipAddress || '—');
-  row('Data', cert.signedDate);
-  row('Hora', cert.signedTime);
-  row('Hash', cert.signatureHash);
+  row('E-mail', cert.signerEmail?.trim() || '—');
+  row('Cargo', cert.signerRole?.trim() || '—');
+  row('Endereço IP', cert.ipAddress || '—');
+  row('Data da assinatura', cert.signedDate);
+  row('Hora da assinatura', cert.signedTime);
+  row('Hash de integridade (SHA-256)', cert.signatureHash);
 
   return y + 6;
 }

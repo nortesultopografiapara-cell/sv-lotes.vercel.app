@@ -383,8 +383,19 @@ function testSaasContractProfessional() {
     fixture.subscription as import('../lib/saasSubscription').CompanySubscription,
   ).ui_plan;
   assert(text.includes(menesesUiPlan.toLowerCase()), 'plano meneses alinhado ui_plan');
+  assert(text.includes('evidências eletrônicas'), 'cláusula 22-a evidências');
+  assert(text.includes('token de autenticação'), 'cláusula 22 token');
+  assert(text.includes('whatsapp'), 'cláusula 21 whatsapp');
+  assert(text.includes('banco de dados seguro'), 'cláusula 12 registros assinatura');
+
+  const legacyText = buildSaasContractDocumentText(fixture, 1).toLowerCase();
+  assert(!legacyText.includes('cláusula 22-a'), 'v1 sem cláusula 22-a');
+  assert(legacyText.includes('manifestação preliminar') || legacyText.includes('implementação do fluxo'), 'v1 cláusula 22 legado');
+  const legacyBuilt = buildSaasContractPdfWithMeta(fixture, { contentVersion: 1 });
+  assert(legacyBuilt.clausesCount === 24, 'pdf v1 com 24 cláusulas');
 
   const built = buildSaasContractPdfWithMeta(fixture);
+  const roughPdf = extractRoughPdfText(built.pdf).toLowerCase();
   const pdfValidation = validateSaasContractPdfInput(fixture, built.pdf);
   assert(pdfValidation.ok, `pdf validação meneses: ${pdfValidation.errors.join('; ')}`);
   assert(pdfValidation.hasTitle, 'pdf título contrato');
@@ -395,12 +406,13 @@ function testSaasContractProfessional() {
   assert(pdfValidation.isNotSaasReport, 'pdf não é relatório saas');
   assert(built.pageCount >= SAAS_CONTRACT_MIN_PAGE_COUNT, 'pdf páginas mínimas');
   assert(built.pageCount <= SAAS_CONTRACT_NATURAL_MAX_PAGE_COUNT, 'pdf paginação natural (sem forçar)');
-  assert(built.clausesCount === 24, 'pdf 24 cláusulas');
+  assert(built.clausesCount === 25, 'pdf 25 cláusulas (v2 assinatura eletrônica)');
+  assert(roughPdf.includes('evidências eletrônicas') || roughPdf.includes('evidencias eletronicas'), 'cláusula 22-a');
+  assert(roughPdf.includes('14.063') || roughPdf.includes('2.200-2'), 'base legal assinatura eletrônica');
 
   const pagination = validateSaasContractNaturalPagination(built.pdf);
   assert(pagination.ok, `paginação natural: ${pagination.errors.join('; ')}`);
 
-  const roughPdf = extractRoughPdfText(built.pdf).toLowerCase();
   const rawPdfLatin = Buffer.from(built.pdf).toString('latin1');
   const fornecedoraPos = roughPdf.indexOf('dados da fornecedora');
   const servicosPos = roughPdf.indexOf('serviços licenciados');

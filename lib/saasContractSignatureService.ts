@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHash, randomUUID } from 'node:crypto';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
+import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { validateSaasContractPdfInput } from '@/lib/saasContractPdfValidation';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
 import {
@@ -741,6 +742,8 @@ export async function signContractByProvider(
     },
   };
 
+  const contentVersion = resolveStoredSaasContractContentVersion(contractRow);
+
   const built = buildSaasContractPdfWithMeta(
     {
       company,
@@ -754,6 +757,7 @@ export async function signContractByProvider(
       },
     },
     {
+      contentVersion,
       bilateralCertificate,
       executedSignatures: {
         client: {
@@ -785,6 +789,7 @@ export async function signContractByProvider(
       },
     },
     built.pdf,
+    contentVersion,
   );
 
   if (!validation.ok) {

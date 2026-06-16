@@ -20,6 +20,10 @@ import {
 } from '@/lib/companyContractNumber';
 import { type CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_CONTRACT_CURRENT_VERSION_STATUSES, SAAS_CONTRACT_STATUS_AFTER_GENERATION } from '@/lib/saasContractStatus';
+import {
+  SAAS_CONTRACT_CONTENT_VERSION,
+  SAAS_CONTRACT_LEGACY_CONTENT_VERSION,
+} from '@/lib/saasContractContent';
 
 function isTestCompany(company: {
   is_test_company?: boolean | null;
@@ -54,6 +58,7 @@ export type CompanyContractRow = {
   regenerated_from?: string | null;
   regenerated_at?: string | null;
   regenerated_by?: string | null;
+  content_version?: number | null;
 };
 
 const SAAS_CONTRACT_BUCKET = 'company-assets';
@@ -292,21 +297,27 @@ export async function generateAndStoreSaasContract(
 
   const version = await getNextContractVersion(supabaseAdmin, companyId);
   const generatedAt = new Date().toISOString();
+  const contentVersion = !activeContract
+    ? SAAS_CONTRACT_CONTENT_VERSION
+    : (activeContract.content_version ?? SAAS_CONTRACT_LEGACY_CONTENT_VERSION);
 
   let pdfBytes: Uint8Array;
   let pdfMeta: { pageCount: number; clausesCount: number; contractNumber: string };
   try {
-    const built = buildSaasContractPdfWithMeta({
-      company,
-      subscription: {
-        contract_number: contractNumber,
-        plan_type: subscription.plan_type,
-        monthly_price: subscription.monthly_price,
-        start_date: pdfDates.start_date,
-        first_payment_date: pdfDates.first_payment_date,
-        next_due_date: pdfDates.next_due_date,
+    const built = buildSaasContractPdfWithMeta(
+      {
+        company,
+        subscription: {
+          contract_number: contractNumber,
+          plan_type: subscription.plan_type,
+          monthly_price: subscription.monthly_price,
+          start_date: pdfDates.start_date,
+          first_payment_date: pdfDates.first_payment_date,
+          next_due_date: pdfDates.next_due_date,
+        },
       },
-    });
+      { contentVersion },
+    );
     pdfBytes = built.pdf;
     pdfMeta = {
       pageCount: built.pageCount,
@@ -326,6 +337,7 @@ export async function generateAndStoreSaasContract(
         },
       },
       pdfBytes,
+      contentVersion,
     );
     console.log('SAAS_CONTRACT_PDF_VALIDATION', {
       company_id: companyId,
@@ -391,6 +403,7 @@ export async function generateAndStoreSaasContract(
       regenerated_from: forceRegenerate ? previousActiveId : null,
       regenerated_at: forceRegenerate ? generatedAt : null,
       regenerated_by: forceRegenerate ? options?.regeneratedByUserId || null : null,
+      content_version: contentVersion,
     })
     .select('*')
     .single();
