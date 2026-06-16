@@ -38,6 +38,10 @@ export type ContractSignatureShareModalProps = {
   signatureUrl: string;
   expiresAt: string;
   status?: SignatureStatus | string | null;
+  shareMessage?: string;
+  emailSubject?: string;
+  modalTitle?: string;
+  modalSubtitle?: string;
   onLinkCopied?: () => void;
   onLinkOpened?: () => void;
 };
@@ -53,6 +57,10 @@ export function ContractSignatureShareModal({
   signatureUrl,
   expiresAt,
   status = 'PENDING',
+  shareMessage: shareMessageOverride,
+  emailSubject: emailSubjectOverride,
+  modalTitle = 'Contrato enviado para assinatura',
+  modalSubtitle = 'Compartilhe o link com o signatário por WhatsApp, e-mail ou QR Code.',
   onLinkCopied,
   onLinkOpened,
 }: ContractSignatureShareModalProps) {
@@ -60,18 +68,20 @@ export function ContractSignatureShareModal({
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
-  const shareMessage = buildSignatureShareMessage({
-    signerName: signerName || 'responsável',
-    companyName,
-    contractNumber,
-    signatureUrl,
-    expiresAt,
-  });
+  const shareMessage =
+    shareMessageOverride ||
+    buildSignatureShareMessage({
+      signerName: signerName || 'responsável',
+      companyName,
+      contractNumber,
+      signatureUrl,
+      expiresAt,
+    });
 
   const whatsappUrl = buildSignatureShareWhatsAppUrl(signerPhone, shareMessage);
   const mailtoUrl = buildSignatureShareMailtoUrl(
     signerEmail,
-    buildSignatureShareEmailSubject(companyName),
+    emailSubjectOverride || buildSignatureShareEmailSubject(companyName),
     shareMessage,
   );
 
@@ -139,11 +149,9 @@ export function ContractSignatureShareModal({
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-400" />
-              Contrato enviado para assinatura
+              {modalTitle}
             </h3>
-            <p className="text-xs text-gray-400 mt-1">
-              Compartilhe o link com o signatário por WhatsApp, e-mail ou QR Code.
-            </p>
+            <p className="text-xs text-gray-400 mt-1">{modalSubtitle}</p>
           </div>
           <button
             type="button"

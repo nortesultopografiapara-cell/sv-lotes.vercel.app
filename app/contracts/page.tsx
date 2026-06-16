@@ -50,6 +50,7 @@ import {
   type CustomerContractValidation,
 } from "@/lib/validateCustomerForContract";
 import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
+import { SaleContractSignatureSection } from "@/components/contracts/SaleContractSignatureSection";
 import {
   getCompanyDisplayName,
   formatCompanyAddressForHeader,
@@ -1921,12 +1922,16 @@ export default function ContractsPage() {
                       <Download className="w-4 h-4" />
                       Baixar PDF
                     </button>
-                    <button className="sv-theme-button sv-theme-button--primary flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-medium shadow-sm">
-                      <Send className="w-4 h-4" />
-                      Assinar via WhatsApp
-                    </button>
                   </div>
                 </div>
+
+                <SaleContractSignatureSection
+                  contract={selectedContract}
+                  userRole={user?.role}
+                  onSigned={() => {
+                    void reloadContractsList();
+                  }}
+                />
 
                 {/* Header Infos */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 text-sm mt-4">
