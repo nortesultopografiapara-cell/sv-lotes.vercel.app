@@ -388,6 +388,7 @@ export default function MapPage() {
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const [enterpriseRefreshKey, setEnterpriseRefreshKey] = useState(0);
   const [quadrasPanelOpen, setQuadrasPanelOpen] = useState(false);
   const [projectQuadras, setProjectQuadras] = useState<string[]>([]);
   const [quadrasLoading, setQuadrasLoading] = useState(false);
@@ -2943,7 +2944,7 @@ export default function MapPage() {
           {(canViewEnterpriseValues(user?.role) || isOwnerRole(user?.role)) && selectedProject?.id ? (
             <EnterpriseValueOverlay
               projectId={selectedProject.id}
-              refreshKey={mapRefreshKey}
+              refreshKey={enterpriseRefreshKey}
             />
           ) : null}
           <GISMap 
@@ -2994,6 +2995,9 @@ export default function MapPage() {
             insertConfrontantTool={insertConfrontantTool}
             defineOfficialSideTool={defineOfficialSideTool}
             onOverlayOpenChange={setGisMapOverlayOpen}
+            onEnterpriseValueRefresh={() =>
+              setEnterpriseRefreshKey((k) => k + 1)
+            }
           />
         </div>
 

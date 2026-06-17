@@ -145,7 +145,14 @@ function testPopupResponsiveClasses() {
   const source = fs.readFileSync(gisMapPath, 'utf8');
   assert(source.includes('GIS_LOT_POPUP_CONTAINER_CLASS'), 'GISMap usa container class');
   assert(source.includes('GIS_LOT_POPUP_PRICE_INPUT_CLASS'), 'GISMap usa input class');
-  assert(source.includes('parseCurrencyBRL'), 'GISMap usa parseCurrencyBRL');
+  assert(source.includes('priceDraft'), 'GISMap usa priceDraft controlado');
+  assert(source.includes('GIS_LOT_PRICE_SAVE_START'), 'log save preço');
+  assert(!source.includes('setPriceText'), 'não usa setPriceText legado');
+  assert(
+    !source.match(/useEffect\(\(\) => \{[\s\S]*?setPriceDraft[\s\S]*?\}, \[currentPrice/),
+    'não reseta draft em currentPrice',
+  );
+  assert(source.includes('onMouseDown={(e) => e.preventDefault()}'), 'salvar sem blur');
   assert(source.includes('onPriceSaved'), 'GISMap usa onPriceSaved');
   assert(source.includes('handleLotPriceSaved'), 'GISMap atualiza estado local');
   assert(!source.includes('onAction(lot, lot.status, parsed'), 'save preço não chama onAction');

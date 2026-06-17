@@ -1768,10 +1768,9 @@ function LotPopupContent({
       .replace(/.*linha.*/i, "")
       .replace(/.*kml.*/i, "") || String(lot.number).replace(/\D/g, "");
 
-  const [priceText, setPriceText] = useState(() =>
+  const [priceDraft, setPriceDraft] = useState(() =>
     currentPrice != null ? formatBRL(currentPrice) : "",
   );
-  const [priceFocused, setPriceFocused] = useState(false);
   const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [popupTab, setPopupTab] = useState<
@@ -1789,16 +1788,16 @@ function LotPopupContent({
   const formattedPrice =
     currentPrice != null ? formatBRL(currentPrice) : "—";
 
-  const parsedPriceText = parseCurrencyBRL(priceText);
+  const parsedPriceDraft = parseCurrencyBRL(priceDraft);
   const priceChanged =
-    parsedPriceText !== currentPrice &&
-    !(parsedPriceText == null && currentPrice == null);
+    parsedPriceDraft !== currentPrice &&
+    !(parsedPriceDraft == null && currentPrice == null);
 
+  // Inicializa rascunho apenas ao trocar de lote — nunca durante digitação/salvamento.
   useEffect(() => {
-    if (!priceFocused) {
-      setPriceText(currentPrice != null ? formatBRL(currentPrice) : "");
-    }
-  }, [currentPrice, priceFocused]);
+    const saved = normalizeSavedLotPrice(lot.price);
+    setPriceDraft(saved != null ? formatBRL(saved) : "");
+  }, [lot.id]);
 
   useEffect(() => {
     if (popupTab !== "historico" || !lot?.id) return;
@@ -1846,38 +1845,68 @@ function LotPopupContent({
 
   const handleSavePrice = async () => {
     if (!canEditLotPrice) return;
-    const parsed = parseCurrencyBRL(priceText);
-    if (priceText.trim() && parsed == null) {
+    const rawDraft = priceDraft;
+    const parsed = parseCurrencyBRL(rawDraft);
+    console.log("GIS_LOT_PRICE_SAVE_START", {
+      lotId: lot.id,
+      rawDraft,
+      parsed,
+      currentPrice,
+    });
+    if (rawDraft.trim() && parsed == null) {
       alert("Informe um valor válido em reais (ex.: R$ 80.000,00).");
       return;
     }
+
+    const previousPrice = currentPrice;
+    const formattedSaved = parsed != null ? formatBRL(parsed) : "";
+
+    // Proteção realtime + estado local ANTES do update Supabase.
+    onPriceSaved?.(lot.id, parsed);
+    setPriceDraft(formattedSaved);
+
     try {
       setIsSavingPrice(true);
       setSavedSuccess(false);
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("blocks")
         .update({ price: parsed })
-        .eq("id", lot.id);
+        .eq("id", lot.id)
+        .select("price")
+        .maybeSingle();
+      console.log("GIS_LOT_PRICE_SAVE_RESULT", {
+        lotId: lot.id,
+        parsed,
+        error: error?.message ?? null,
+        data,
+      });
       if (error) throw error;
-
-      onPriceSaved?.(lot.id, parsed);
 
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot),
         action: "value_changed",
         title: "Valor do lote alterado",
-        description: `${currentPrice != null ? formatBRL(currentPrice) : "—"} → ${parsed != null ? formatBRL(parsed) : "—"}`,
-        oldData: { price: currentPrice },
+        description: `${previousPrice != null ? formatBRL(previousPrice) : "—"} → ${parsed != null ? formatBRL(parsed) : "—"}`,
+        oldData: { price: previousPrice },
         newData: { price: parsed },
         source: "gis_map",
       });
 
-      setPriceText(parsed != null ? formatBRL(parsed) : "");
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
-    } catch (err: any) {
-      console.error(err);
-      alert("Erro ao salvar preço: " + err.message);
+    } catch (err: unknown) {
+      console.error("GIS_LOT_PRICE_SAVE_ERROR", {
+        lotId: lot.id,
+        parsed,
+        err,
+      });
+      onPriceSaved?.(lot.id, previousPrice);
+      setPriceDraft(
+        previousPrice != null ? formatBRL(previousPrice) : "",
+      );
+      const message =
+        err instanceof Error ? err.message : "Erro desconhecido ao salvar preço.";
+      alert(`Erro ao salvar preço: ${message}`);
     } finally {
       setIsSavingPrice(false);
     }
@@ -2207,12 +2236,11 @@ function LotPopupContent({
               <input
                 type="text"
                 inputMode="decimal"
-                value={priceText}
-                onChange={(e) => setPriceText(e.target.value)}
+                value={priceDraft}
+                onChange={(e) => setPriceDraft(e.target.value)}
                 onFocus={() => {
-                  setPriceFocused(true);
                   if (currentPrice != null) {
-                    setPriceText(
+                    setPriceDraft(
                       currentPrice.toLocaleString("pt-BR", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -2221,20 +2249,20 @@ function LotPopupContent({
                   }
                 }}
                 onBlur={() => {
-                  setPriceFocused(false);
-                  const parsed = parseCurrencyBRL(priceText);
-                  if (priceText.trim() && parsed == null) {
-                    setPriceText(
-                      currentPrice != null ? formatBRL(currentPrice) : "",
-                    );
+                  const parsed = parseCurrencyBRL(priceDraft);
+                  if (priceDraft.trim() && parsed == null) {
+                    const saved = normalizeSavedLotPrice(lot.price);
+                    setPriceDraft(saved != null ? formatBRL(saved) : "");
                     return;
                   }
-                  setPriceText(parsed != null ? formatBRL(parsed) : "");
+                  setPriceDraft(parsed != null ? formatBRL(parsed) : "");
                 }}
                 placeholder="R$ 0,00"
                 className={GIS_LOT_POPUP_PRICE_INPUT_CLASS}
               />
               <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={handleSavePrice}
                 disabled={isSavingPrice || !priceChanged}
                 className={`px-2.5 py-1.5 text-[10px] md:text-xs font-bold rounded transition-colors ${
@@ -2719,6 +2747,7 @@ export default function GISMap({
   insertConfrontantTool = false,
   defineOfficialSideTool = false,
   onOverlayOpenChange,
+  onEnterpriseValueRefresh,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2765,6 +2794,8 @@ export default function GISMap({
   defineOfficialSideTool?: boolean;
   /** Notifica o container quando modais/popups do GIS estão abertos (SVL-UI-029). */
   onOverlayOpenChange?: (open: boolean) => void;
+  /** Atualiza card Valor do Empreendimento após salvar preço manual. */
+  onEnterpriseValueRefresh?: () => void;
 }) {
   const { user } = useAuth();
   const ownerMapWriteBlocked = isOwnerRole(user?.role);
@@ -3807,6 +3838,7 @@ export default function GISMap({
     setBlocksData((prev) =>
       prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
     );
+    onEnterpriseValueRefresh?.();
   };
 
   const handleLotAction = async (
