@@ -8,11 +8,17 @@ import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSec
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
+import {
+  normalizeSaleContractModel,
+  SALE_CONTRACT_MODEL_LABELS,
+  SALE_CONTRACT_MODELS,
+  type SaleContractModel,
+} from '@/lib/contractModel';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
 const COMPANY_TECHNICAL_COLUMNS =
-  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
+  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, contract_model, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
 
 function resolveSettingsCompanyId(user: { tenant_id?: string; company_id?: string; role?: string } | null): string | null {
   if (!user) return null;
@@ -101,7 +107,7 @@ export default function SettingsPage() {
     }
   }, [user, authLoading]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
      setCompany({ ...company, [e.target.name]: e.target.value });
   };
 
@@ -212,6 +218,7 @@ export default function SettingsPage() {
        representative_cpf: company?.representative_cpf,
        logo_url: company?.logo_url,
        signature_url: company?.signature_url,
+       contract_model: normalizeSaleContractModel(company?.contract_model),
        technical_responsible_name: technical.name.trim() || null,
        technical_responsible_role: technical.title.trim() || null,
        technical_responsible_crea: technical.crea.trim() || null,
@@ -438,6 +445,28 @@ export default function SettingsPage() {
                  <label className="sv-theme-label">CNPJ</label>
                  <input type="text" name="cnpj" value={company?.cnpj || ''} onChange={handleChange} className="sv-theme-field" />
               </div>
+           </div>
+        </div>
+
+        <div className="space-y-4">
+           <h2 className="sv-theme-heading">Modelo de Contrato</h2>
+           <p className="text-xs sv-theme-muted">
+             Define qual modelo jurídico será usado na geração de novos contratos de compra e venda. Contratos já gerados não são alterados.
+           </p>
+           <div className="max-w-md">
+              <label className="sv-theme-label">Modelo de Contrato</label>
+              <select
+                name="contract_model"
+                value={normalizeSaleContractModel(company?.contract_model)}
+                onChange={handleChange}
+                className="sv-theme-field"
+              >
+                {SALE_CONTRACT_MODELS.map((model: SaleContractModel) => (
+                  <option key={model} value={model} disabled={model === 'CUSTOM'}>
+                    {SALE_CONTRACT_MODEL_LABELS[model]}
+                  </option>
+                ))}
+              </select>
            </div>
         </div>
 
