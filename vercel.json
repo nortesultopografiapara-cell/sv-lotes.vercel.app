@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "app/api/sign/sale/[token]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}

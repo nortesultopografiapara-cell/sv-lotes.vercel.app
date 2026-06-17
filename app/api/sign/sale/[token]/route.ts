@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { formatCpfCnpj } from '@/lib/inputMasks';
-import { createSaleContractPdfResponse } from '@/lib/saleContractPdfHttp';
+import {
+  createSaleContractHtmlPreviewResponse,
+  createSaleContractPdfResponse,
+} from '@/lib/saleContractPdfHttp';
+import {
+  logSaleSignPdfError,
+  SALE_SIGN_PDF_DOWNLOAD_ERROR,
+  shouldExposeSaleSignPdfError,
+} from '@/lib/saleContractPdfErrors';
 import {
   canPublicSaleSign,
   isSaleSignatureBlocked,
@@ -11,6 +19,7 @@ import {
   getSaleSignatureByToken,
   isSignatureExpired,
   loadSaleSignPageContext,
+  loadSaleContractHtmlForSign,
   loadSaleContractPdfForSign,
   markSaleSignatureViewed,
   resolveClientIp,
@@ -74,25 +83,65 @@ export async function GET(
   const { contract, customer, block, project, company } = ctx;
 
   if (pdf) {
+    const contractNumber = String(contract.contract_number || '');
     try {
-      const { pdf: pdfBytes, contractNumber } = await loadSaleContractPdfForSign(
+      const { pdf: pdfBytes, contractNumber: resolvedNumber } = await loadSaleContractPdfForSign(
         supabaseAdmin,
         signature.contract_id,
       );
       return createSaleContractPdfResponse(
         pdfBytes,
         download ? 'attachment' : 'inline',
-        contractNumber || String(contract.contract_number || ''),
+        resolvedNumber || contractNumber,
       );
     } catch (err) {
+      const detail = logSaleSignPdfError(
+        {
+          token: token.slice(0, 8),
+          contract_id: signature.contract_id,
+          contract_number: contractNumber,
+          download,
+        },
+        err,
+      );
+
+      if (!download) {
+        try {
+          const html = await loadSaleContractHtmlForSign(
+            supabaseAdmin,
+            signature.contract_id,
+          );
+          console.warn('[sale-sign-pdf] using HTML preview fallback', {
+            token: token.slice(0, 8),
+            contract_id: signature.contract_id,
+          });
+          return createSaleContractHtmlPreviewResponse(html, contractNumber);
+        } catch (htmlErr) {
+          logSaleSignPdfError(
+            {
+              token: token.slice(0, 8),
+              contract_id: signature.contract_id,
+              stage: 'html-preview-fallback',
+            },
+            htmlErr,
+          );
+        }
+      }
+
       const message =
-        err instanceof SaleContractSignatureError ? err.message : 'Falha ao gerar PDF do contrato.';
-      console.error('SALE_CONTRACT_PDF_ERROR', {
-        token: token.slice(0, 8),
-        contract_id: signature.contract_id,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      return NextResponse.json({ error: message }, { status: 404 });
+        err instanceof SaleContractSignatureError
+          ? err.message
+          : download
+            ? SALE_SIGN_PDF_DOWNLOAD_ERROR
+            : 'Falha ao gerar PDF do contrato.';
+
+      return NextResponse.json(
+        {
+          error: message,
+          ...(shouldExposeSaleSignPdfError() ? { detail: detail.message } : {}),
+        },
+        { status: download ? 503 : 502 },
+      );
     }
   }
 

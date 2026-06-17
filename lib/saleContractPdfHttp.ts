@@ -2,6 +2,7 @@
  * HTTP helpers para servir PDF de contrato de venda (assinatura pública).
  */
 
+import { wrapSaleContractHtmlDocument } from '@/lib/saleContractPdf';
 import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 
 export type SaleContractPdfDisposition = 'inline' | 'attachment';
@@ -50,6 +51,28 @@ export function createSaleContractPdfResponse(
     headers: {
       ...headers,
       'Content-Length': String(body.byteLength),
+    },
+  });
+}
+
+/** Preview HTML inline — fallback quando PDF falha (?pdf=1 sem download). */
+export function createSaleContractHtmlPreviewResponse(
+  htmlFragment: string,
+  contractNumber: string,
+): Response {
+  const body = wrapSaleContractHtmlDocument(
+    htmlFragment,
+    `Contrato ${contractNumber || 'preview'}`,
+  );
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Disposition': 'inline; filename="contrato-preview.html"',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Sale-Contract-Preview': 'html-fallback',
+      'X-Sale-Contract-Number': contractNumber,
     },
   });
 }

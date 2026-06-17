@@ -1,39 +1,97 @@
 /**
- * Geração server-side de PDF de contrato de venda — mesmo pipeline do módulo Contratos
- * (buildContractViewHtml → html2pdf.js → applyContractPdfChrome).
+ * Geração server-side de PDF de contrato de venda (Chromium + page.pdf).
+ * Pipeline HTML: buildContractViewHtml / loadSaleContractHtmlForSign + CONTRACT_PDF_PRINT_CSS.
  */
 
-import fs from 'fs';
-import path from 'path';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
+import { displayContractNumber } from '@/lib/contractNumber';
 import {
   CONTRACT_PDF_PRINT_CSS,
-  getContractHtml2pdfOptions,
   type ContractPdfChromeInput,
 } from '@/lib/contractPdfPostProcess';
-import { buildSaleContractPdfFilename } from '@/lib/saleContractPdfHttp';
+import { isPdfBytes } from '@/lib/saasContractPdfHttp';
 
-const HTML2PDF_BUNDLE_PATH = path.join(
-  process.cwd(),
-  'node_modules/html2pdf.js/dist/html2pdf.bundle.min.js',
-);
-const CHROME_BROWSER_SCRIPT_PATH = path.join(
-  process.cwd(),
-  'lib/contractPdfChromeBrowser.js',
-);
+function escapeHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
-async function launchBrowser(): Promise<Browser> {
-  const isServerless = Boolean(
-    process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION,
-  );
+export function wrapSaleContractHtmlDocument(
+  htmlFragment: string,
+  title = 'Contrato',
+): string {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(title)}</title>
+${CONTRACT_PDF_PRINT_CSS}
+<style>
+  body { margin: 0; padding: 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; color: #111; }
+</style>
+</head>
+<body>${htmlFragment}</body>
+</html>`;
+}
 
-  if (isServerless) {
+export function buildSaleContractPrintTemplates(chrome: ContractPdfChromeInput): {
+  headerTemplate: string;
+  footerTemplate: string;
+} {
+  const contractLabel = `Contrato nº ${displayContractNumber(chrome.contractNumber)}`;
+  const infoParts: string[] = [];
+  if (chrome.tenantCnpj) infoParts.push(`CNPJ: ${escapeHtml(chrome.tenantCnpj)}`);
+  if (chrome.cityUfLine) infoParts.push(escapeHtml(chrome.cityUfLine));
+  const infoLine = infoParts.join(' | ');
+
+  const logoImg = chrome.logoBase64
+    ? `<img src="${chrome.logoBase64}" style="height:12px; margin-right:6px; vertical-align:middle;" />`
+    : '';
+
+  const headerTemplate = `
+    <div style="font-size:8px; width:100%; padding:0 14mm 4px 14mm; font-family:'Times New Roman', Times, serif; color:#333; box-sizing:border-box;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #999; padding-bottom:4px;">
+        <div style="max-width:72%;">
+          ${logoImg}<strong>${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
+          ${infoLine ? `<br/><span>${infoLine}</span>` : ''}
+          ${chrome.addressLine ? `<br/><span>${escapeHtml(chrome.addressLine)}</span>` : ''}
+        </div>
+        <div style="text-align:right; white-space:nowrap;">${escapeHtml(contractLabel)}</div>
+      </div>
+    </div>`;
+
+  const footerTemplate = `
+    <div style="font-size:7px; width:100%; padding:4px 14mm 0; font-family:'Times New Roman', Times, serif; color:#666; font-style:italic; box-sizing:border-box;">
+      <div style="border-top:1px solid #ccc; padding-top:4px; display:flex; justify-content:space-between;">
+        <span>Documento emitido digitalmente pelo SV LOTES GIS</span>
+        <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+      </div>
+    </div>`;
+
+  return { headerTemplate, footerTemplate };
+}
+
+export function isSaleSignPdfServerless(): boolean {
+  return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION);
+}
+
+export async function launchSaleContractPdfBrowser(): Promise<Browser> {
+  if (isSaleSignPdfServerless()) {
+    chromium.setGraphicsMode = false;
+    const executablePath = await chromium.executablePath();
+    console.log('[sale-sign-pdf] launch serverless chromium', {
+      node: process.version,
+      executablePath,
+    });
     return puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
+      executablePath,
       headless: chromium.headless,
     });
   }
@@ -43,11 +101,15 @@ async function launchBrowser(): Promise<Browser> {
       channel: 'chrome',
       headless: true,
     });
-  } catch {
+  } catch (localChromeErr) {
+    console.warn('[sale-sign-pdf] chrome local indisponível, tentando @sparticuz/chromium', {
+      message: localChromeErr instanceof Error ? localChromeErr.message : String(localChromeErr),
+    });
+    chromium.setGraphicsMode = false;
     return puppeteer.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
-      headless: true,
+      headless: chromium.headless,
     });
   }
 }
@@ -75,64 +137,48 @@ export async function buildSaleContractPdfFromHtml(
   htmlFragment: string,
   chrome: ContractPdfChromeInput,
 ): Promise<Uint8Array> {
-  if (!fs.existsSync(HTML2PDF_BUNDLE_PATH)) {
-    throw new Error('html2pdf.js não encontrado — execute npm install.');
-  }
-  if (!fs.existsSync(CHROME_BROWSER_SCRIPT_PATH)) {
-    throw new Error('contractPdfChromeBrowser.js não encontrado.');
-  }
+  const documentHtml = wrapSaleContractHtmlDocument(
+    htmlFragment,
+    `Contrato ${chrome.contractNumber}`,
+  );
+  const { headerTemplate, footerTemplate } = buildSaleContractPrintTemplates(chrome);
 
-  const html2pdfBundle = fs.readFileSync(HTML2PDF_BUNDLE_PATH, 'utf8');
-  const chromeScript = fs.readFileSync(CHROME_BROWSER_SCRIPT_PATH, 'utf8');
-  const filename = buildSaleContractPdfFilename(chrome.contractNumber);
-  const options = getContractHtml2pdfOptions(filename);
-
-  const documentHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-${CONTRACT_PDF_PRINT_CSS}
-<style>body { margin: 0; padding: 0; font-family: 'Times New Roman', Times, serif; }</style>
-</head>
-<body></body>
-</html>`;
-
-  const browser = await launchBrowser();
-  const page = await browser.newPage();
+  let browser: Browser | null = null;
+  let page: Awaited<ReturnType<Browser['newPage']>> | null = null;
 
   try {
+    browser = await launchSaleContractPdfBrowser();
+    page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
-    await page.setContent(documentHtml, { waitUntil: 'networkidle0', timeout: 60_000 });
-    await page.addScriptTag({ content: html2pdfBundle });
-    await page.addScriptTag({ content: chromeScript });
+    await page.setContent(documentHtml, { waitUntil: 'load', timeout: 45_000 });
 
-    const pdfBytes = await page.evaluate(
-      async (bodyHtml, pdfOptions, chromeData) => {
-        const element = document.createElement('div');
-        element.innerHTML = bodyHtml;
-        document.body.appendChild(element);
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '35mm', right: '15mm', bottom: '25mm', left: '15mm' },
+      displayHeaderFooter: true,
+      headerTemplate,
+      footerTemplate,
+    });
 
-        // @ts-expect-error html2pdf global injetado
-        const pdf = await html2pdf()
-          .from(element)
-          .set(pdfOptions)
-          .toPdf()
-          .get('pdf');
-
-        // @ts-expect-error applyContractPdfChromeBrowser global injetado
-        applyContractPdfChromeBrowser(pdf, chromeData);
-
-        const buf = pdf.output('arraybuffer') as ArrayBuffer;
-        return Array.from(new Uint8Array(buf));
-      },
-      htmlFragment,
-      options,
-      chrome,
-    );
-
-    return new Uint8Array(pdfBytes);
+    const bytes = new Uint8Array(pdfBuffer);
+    if (!isPdfBytes(bytes)) {
+      throw new Error('Chromium retornou buffer inválido (cabeçalho %PDF ausente).');
+    }
+    return bytes;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[sale-sign-pdf] buildSaleContractPdfFromHtml failed', {
+      message,
+      stack,
+      contractNumber: chrome.contractNumber,
+      htmlLength: htmlFragment.length,
+      serverless: isSaleSignPdfServerless(),
+    });
+    throw err instanceof Error ? err : new Error(message);
   } finally {
-    await page.close().catch(() => undefined);
-    await browser.close().catch(() => undefined);
+    await page?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
   }
 }

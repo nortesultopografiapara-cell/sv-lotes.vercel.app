@@ -585,16 +585,21 @@ export async function loadSaleContractPdfForSign(
   const { addressLine, cityUfLine } = formatCompanyAddressForHeader(tenant);
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
-  const pdf = await buildSaleContractPdfFromHtml(html, {
-    tenantName: getCompanyDisplayName(tenant) || 'Imobiliária',
-    tenantCnpj: formatCpfCnpj(String(tenant.cnpj || tenant.document || '')),
-    addressLine,
-    cityUfLine,
-    contractNumber,
-    logoBase64,
-  });
+  try {
+    const pdf = await buildSaleContractPdfFromHtml(html, {
+      tenantName: getCompanyDisplayName(tenant) || 'Imobiliária',
+      tenantCnpj: formatCpfCnpj(String(tenant.cnpj || tenant.document || '')),
+      addressLine,
+      cityUfLine,
+      contractNumber,
+      logoBase64,
+    });
 
-  return { pdf, contractNumber };
+    return { pdf, contractNumber };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`loadSaleContractPdfForSign: ${message}`);
+  }
 }
 
 export async function loadSaleSignPageContext(

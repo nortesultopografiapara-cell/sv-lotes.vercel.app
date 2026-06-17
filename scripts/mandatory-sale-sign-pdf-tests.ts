@@ -11,7 +11,10 @@ import {
   createSaleContractPdfResponse,
 } from '../lib/saleContractPdfHttp';
 import { isPdfBytes } from '../lib/saasContractPdfHttp';
-import { getContractHtml2pdfOptions } from '../lib/contractPdfPostProcess';
+import {
+  buildSaleContractPrintTemplates,
+  wrapSaleContractHtmlDocument,
+} from '../lib/saleContractPdf';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -70,12 +73,20 @@ function testPdfResponse() {
   console.log('OK testPdfResponse');
 }
 
-function testHtml2pdfOptionsReuse() {
-  const opt = getContractHtml2pdfOptions('contrato-000000022_2026.pdf');
-  assert(Array.isArray(opt.margin) && opt.margin.length === 4, 'margin array');
-  assert(opt.filename.endsWith('.pdf'), 'html2pdf filename .pdf');
-  assert(opt.jsPDF.format === 'a4', 'format a4');
-  console.log('OK testHtml2pdfOptionsReuse');
+function testPrintTemplates() {
+  const { headerTemplate, footerTemplate } = buildSaleContractPrintTemplates({
+    tenantName: 'Imobiliária Teste',
+    tenantCnpj: '00.000.000/0001-00',
+    addressLine: 'Rua A',
+    cityUfLine: 'Goiânia - GO',
+    contractNumber: '000000022/2026',
+    logoBase64: null,
+  });
+  assert(headerTemplate.includes('000000022/2026'), 'header contrato');
+  assert(footerTemplate.includes('SV LOTES GIS'), 'footer plataforma');
+  const doc = wrapSaleContractHtmlDocument('<p>teste</p>', 'Contrato');
+  assert(doc.includes('sv-contract-document') || doc.includes('<p>teste</p>'), 'wrap html');
+  console.log('OK testPrintTemplates');
 }
 
 function testSignApiPdfUrls() {
@@ -119,7 +130,7 @@ async function main() {
   testFilename();
   testHttpHeaders();
   testPdfResponse();
-  testHtml2pdfOptionsReuse();
+  testPrintTemplates();
   testSignApiPdfUrls();
   await testBrowserPdfGeneration();
   console.log('\nAll mandatory sale sign PDF tests passed.');
