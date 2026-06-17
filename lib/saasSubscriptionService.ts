@@ -16,6 +16,10 @@ import {
   type CompanySubscriptionDatesSource,
 } from '@/lib/companySubscriptionDates';
 import { type CompanySubscription } from '@/lib/saasSubscription';
+import {
+  isSubscriptionCustomPriceSchemaError,
+  omitSubscriptionCustomPriceColumns,
+} from '@/lib/saasSubscriptionCustomPriceSchema';
 
 export function isTestCompany(company: {
   is_test_company?: boolean | null;
@@ -59,6 +63,44 @@ function buildSubscriptionRow(
   };
 }
 
+async function persistSaasSubscriptionRow(
+  supabaseAdmin: SupabaseClient,
+  mode: 'insert' | 'update',
+  row: Record<string, unknown>,
+  existingId?: string,
+): Promise<{ data: CompanySubscription | null; error?: string }> {
+  const attempt = async (payload: Record<string, unknown>) => {
+    if (mode === 'update' && existingId) {
+      return supabaseAdmin
+        .from('company_subscriptions')
+        .update(payload)
+        .eq('id', existingId)
+        .select('*')
+        .single();
+    }
+    return supabaseAdmin
+      .from('company_subscriptions')
+      .insert(payload)
+      .select('*')
+      .single();
+  };
+
+  let { data, error } = await attempt(row);
+
+  if (error && isSubscriptionCustomPriceSchemaError(error.message)) {
+    console.warn('[SAAS_SUBSCRIPTION] schema sem colunas custom_price — retry sem espelho', {
+      mode,
+      companyId: row.company_id,
+    });
+    ({ data, error } = await attempt(omitSubscriptionCustomPriceColumns(row)));
+  }
+
+  if (error || !data) {
+    return { data: null, error: error?.message || 'sem retorno' };
+  }
+  return { data: data as CompanySubscription };
+}
+
 /** Cria ou atualiza assinatura sem gerar contrato PDF. */
 export async function ensureSaasSubscription(
   supabaseAdmin: SupabaseClient,
@@ -95,29 +137,27 @@ export async function ensureSaasSubscription(
     patch.custom_price_enabled = row.custom_price_enabled;
     patch.custom_monthly_price = row.custom_monthly_price;
 
-    const { data, error } = await supabaseAdmin
-      .from('company_subscriptions')
-      .update(patch)
-      .eq('id', existing.id)
-      .select('*')
-      .single();
-
-    if (error) return { subscription: null, error: error.message };
-    subscription = data as CompanySubscription;
+    const saved = await persistSaasSubscriptionRow(
+      supabaseAdmin,
+      'update',
+      patch,
+      existing.id,
+    );
+    if (saved.error) return { subscription: null, error: saved.error };
+    subscription = saved.data;
   } else {
-    const { data, error } = await supabaseAdmin
-      .from('company_subscriptions')
-      .insert({
-        ...row,
-        payment_status: 'pending',
-        contract_status: 'pending',
-      })
-      .select('*')
-      .single();
-
-    if (error) return { subscription: null, error: error.message };
-    subscription = data as CompanySubscription;
+    const saved = await persistSaasSubscriptionRow(supabaseAdmin, 'insert', {
+      ...row,
+      payment_status: 'pending',
+      contract_status: 'pending',
+    });
+    if (saved.error) return { subscription: null, error: saved.error };
+    subscription = saved.data;
     created = true;
+  }
+
+  if (!subscription) {
+    return { subscription: null, error: 'Assinatura não retornada após gravação.' };
   }
 
   const billing = normalizeSubscriptionDates(company, subscription);

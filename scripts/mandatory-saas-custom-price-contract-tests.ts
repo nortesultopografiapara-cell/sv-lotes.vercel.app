@@ -17,6 +17,10 @@ import {
   resolveCompanyPricing,
 } from '../lib/companyPricing';
 import { roughSaasContractPdfText } from '../lib/saasContractPdfContentDetect';
+import {
+  isSubscriptionCustomPriceSchemaError,
+  omitSubscriptionCustomPriceColumns,
+} from '../lib/saasSubscriptionCustomPriceSchema';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -38,8 +42,8 @@ function ivanildeCompanyFixture() {
     custom_price_enabled: true,
     custom_monthly_price: 300,
     custom_price_badge: 'desconto_especial',
-    subscription_due_day: 10,
-    subscription_start_date: '2026-06-10',
+    subscription_due_day: 17,
+    subscription_start_date: '2026-06-17',
     responsible_name: 'Ivanilde de Moura Silva',
     active: true,
     status_operacional: 'Ativa',
@@ -78,10 +82,40 @@ function subscriptionFixture(
     contract_number: '00099/2026',
     plan_type: 'basic',
     monthly_price: monthlyPrice,
-    start_date: '2026-06-10',
-    first_payment_date: '2026-06-10',
-    next_due_date: '2026-07-10',
+    start_date: '2026-06-17',
+    first_payment_date: '2026-06-17',
+    next_due_date: '2026-07-17',
   };
+}
+
+function testSchemaFallbackOmitsCustomColumns() {
+  const stripped = omitSubscriptionCustomPriceColumns({
+    monthly_price: 300,
+    custom_monthly_price: 300,
+    custom_price_enabled: true,
+    has_custom_price: true,
+  });
+  assert(stripped.monthly_price === 300, 'monthly_price preservado no fallback');
+  assert(stripped.custom_monthly_price === undefined, 'custom_monthly_price removido');
+  assert(stripped.custom_price_enabled === undefined, 'custom_price_enabled removido');
+
+  assert(
+    isSubscriptionCustomPriceSchemaError(
+      "Could not find the 'custom_monthly_price' column of 'company_subscriptions' in the schema cache",
+    ),
+    'detecta erro schema cache',
+  );
+  console.log('OK testSchemaFallbackOmitsCustomColumns');
+}
+
+function testIvanildeNextDueDate() {
+  const company = ivanildeCompanyFixture();
+  const ctx = resolveSaasContractContext({
+    company,
+    subscription: subscriptionFixture(company, 300),
+  });
+  assert(ctx.plan.nextDueDate === '17/07/2026', 'próximo vencimento 17/07/2026');
+  console.log('OK testIvanildeNextDueDate');
 }
 
 function testMigrationDefinesCustomPriceColumns() {
@@ -223,6 +257,8 @@ function main() {
   testStandardCompanyGeneratesPdf();
   testCustomPriceCompanyGeneratesPdf();
   testBuildSubscriptionRowShape();
+  testSchemaFallbackOmitsCustomColumns();
+  testIvanildeNextDueDate();
   console.log('\nTodos os testes mandatory-saas-custom-price-contract passaram.');
 }
 

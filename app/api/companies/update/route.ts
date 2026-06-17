@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import {
-  isCustomPriceEnabled,
-  parseCustomMonthlyPrice,
-  resolveCompanyPricing,
-} from '@/lib/companyPricing';
 import { saasLimitsDbPayload } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
@@ -225,48 +220,9 @@ export async function PATCH(request: Request) {
     let subscriptionRow = null;
 
     if (companyRow && companyRow.is_test_company !== true) {
-      const pricing = resolveCompanyPricing(companyRow);
-      const { normalizeSubscriptionDates } = await import('@/lib/companySubscriptionDates');
-      const billing = normalizeSubscriptionDates(companyRow, null);
-
-      const subscriptionPayload = {
-        plan_type: limits.plan,
-        monthly_price: pricing.appliedPrice,
-        custom_price_enabled: isCustomPriceEnabled(companyRow),
-        custom_monthly_price: isCustomPriceEnabled(companyRow)
-          ? parseCustomMonthlyPrice(companyRow.custom_monthly_price)
-          : null,
-        billing_cycle: 'monthly',
-        start_date: billing.start_date,
-        first_payment_date: billing.first_payment_date,
-        next_due_date: billing.next_due_date,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data: existingSub } = await supabaseAdmin
-        .from('company_subscriptions')
-        .select('id, payment_status')
-        .eq('company_id', companyId)
-        .maybeSingle();
-
-      if (existingSub?.id) {
-        const { data: updatedSub, error: subUpdateErr } = await supabaseAdmin
-          .from('company_subscriptions')
-          .update({
-            ...subscriptionPayload,
-            payment_status: existingSub.payment_status || 'pending',
-          })
-          .eq('id', existingSub.id)
-          .select('*')
-          .single();
-
-        console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', updatedSub, subUpdateErr);
-        subscriptionRow = updatedSub;
-      } else {
-        const ensured = await ensureSaasSubscription(supabaseAdmin, companyRow);
-        subscriptionRow = ensured.subscription;
-        console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', subscriptionRow, ensured.error);
-      }
+      const ensured = await ensureSaasSubscription(supabaseAdmin, companyRow);
+      subscriptionRow = ensured.subscription;
+      console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', subscriptionRow, ensured.error);
     }
 
     const result = {
