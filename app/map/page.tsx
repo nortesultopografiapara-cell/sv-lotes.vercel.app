@@ -116,11 +116,15 @@ import {
 } from '@/lib/ownerProjectAccess';
 import {
   buildTxtImportAuditDescription,
-  calculateLotPriceFromAreaM2,
   lotNumberKey,
   parsePricePerM2Input,
   resolveImportedLotPrice,
 } from '@/lib/txtImportLotPricing';
+import {
+  computeGisMapPageOverlayOpen,
+  GIS_TOOLBAR_HIDE_CLASS,
+  GIS_TOOLBAR_SHOW_CLASS,
+} from '@/lib/gisToolbarOverlay';
 import '@/components/enterprise/enterprise-value.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
