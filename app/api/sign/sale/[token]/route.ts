@@ -85,10 +85,15 @@ export async function GET(
   if (pdf) {
     const contractNumber = String(contract.contract_number || '');
     try {
-      const { pdf: pdfBytes, contractNumber: resolvedNumber } = await loadSaleContractPdfForSign(
-        supabaseAdmin,
-        signature.contract_id,
-      );
+      const { pdf: pdfBytes, contractNumber: resolvedNumber } =
+        await loadSaleContractPdfForSign(
+          supabaseAdmin,
+          signature.contract_id,
+          {
+            signature,
+            signContext: ctx,
+          },
+        );
       return createSaleContractPdfResponse(
         pdfBytes,
         download ? 'attachment' : 'inline',

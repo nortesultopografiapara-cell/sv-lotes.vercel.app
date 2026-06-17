@@ -547,8 +547,12 @@ export async function loadSaleContractHtmlForSign(
 export async function loadSaleContractPdfForSign(
   supabaseAdmin: SupabaseClient,
   contractId: string,
+  options?: {
+    signature?: ContractSignatureRow | null;
+    signContext?: Awaited<ReturnType<typeof loadSaleSignPageContext>> | null;
+  },
 ): Promise<{ pdf: Uint8Array; contractNumber: string }> {
-  const html = await loadSaleContractHtmlForSign(supabaseAdmin, contractId);
+  let html = await loadSaleContractHtmlForSign(supabaseAdmin, contractId);
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
@@ -584,6 +588,52 @@ export async function loadSaleContractPdfForSign(
 
   const { addressLine, cityUfLine } = formatCompanyAddressForHeader(tenant);
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
+
+  const signature = options?.signature;
+  if (signature?.signature_status === 'SIGNED') {
+    const ctx = options?.signContext;
+    const { buildSaleContractSignatureCertificateHtml } = await import(
+      '@/lib/saleContractSignatureCertificateHtml'
+    );
+    const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
+
+    const block = ctx?.block as Record<string, unknown> | null;
+    const project = ctx?.project as Record<string, unknown> | null;
+    const company = ctx?.company as Record<string, unknown> | null;
+    const customer = ctx?.customer as Record<string, unknown> | null;
+    const contractCtx = ctx?.contract as Record<string, unknown> | null;
+
+    const quadra = String(
+      block?.quadra || block?.block_name || block?.name || '—',
+    );
+    const lote = String(
+      block?.lot_number ||
+        block?.lote ||
+        block?.number ||
+        contractCtx?.lot_number_snapshot ||
+        '—',
+    );
+
+    html += buildSaleContractSignatureCertificateHtml({
+      contractNumber,
+      projectName: String(
+        project?.name || contractCtx?.project_name_snapshot || '',
+      ),
+      quadra,
+      lote,
+      buyerName: String(signature.signer_name || customer?.name || ''),
+      buyerDocument: String(signature.signer_document || ''),
+      companyName: getCompanyDisplayName(company || tenant),
+      companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
+      representativeName: normalizeSellerFromCompany(tenant).representative,
+      signatureStatus: 'ASSINADO',
+      signedAt: signature.signed_at,
+      viewedAt: signature.viewed_at,
+      ipAddress: signature.ip_address,
+      signatureToken: signature.signature_token,
+      signatureHash: signature.signature_hash,
+    });
+  }
 
   try {
     const pdf = await buildSaleContractPdfFromHtml(html, {

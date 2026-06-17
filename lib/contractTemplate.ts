@@ -18,6 +18,13 @@ import {
   formatContractSpouseQualificationSuffix,
   formatSellerRepresentativeIdentitySuffix,
 } from "@/lib/contractIdentity";
+import {
+  buildSaleContractClauseQuartaHtml,
+  buildSaleContractElectronicSignatureClauseHtml,
+  buildSaleContractForumClauseHtml,
+  buildSaleContractRepresentativeSignatureHtml,
+  isSaleContractCashPayment,
+} from "@/lib/saleContractLegalTemplate";
 
 const formatArea = (val: any) => {
   if (!val) return "não informado";
@@ -238,13 +245,15 @@ export function generateContractHTML({
   const empresaTelefone = seller.phone;
   const empresaEmail = seller.email;
   const empresaRepresentante = toTitleCase(seller.representative);
-  const empresaRepresentanteCpf =
-    seller.representativeCpf !== "Não informado"
-      ? formatCNPJCPF(seller.representativeCpf)
-      : "Não informado";
-  const sellerText = formatClassicSellerInstallationText(seller);
   const vendedorRepresentanteIdentitySuffix =
     formatSellerRepresentativeIdentitySuffix(tenant);
+  const representanteAssinaturaHtml = buildSaleContractRepresentativeSignatureHtml({
+    representativeName: empresaRepresentante,
+    representativeCpfRaw: seller.representativeCpf,
+    companyName: empresaNome,
+    identitySuffix: vendedorRepresentanteIdentitySuffix,
+  });
+  const sellerText = formatClassicSellerInstallationText(seller);
   const empresaAssinatura = seller.signatureUrl
     ? `<img src="${seller.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
     : "";
@@ -397,11 +406,8 @@ export function generateContractHTML({
     });
   } catch (e) {}
 
-  const tipoVenda =
-    sale?.payment_type?.toLowerCase() === "à vista" ||
-    sale?.payment_type === "A vista"
-      ? "À Vista"
-      : "Parcelada";
+  const isCashPayment = isSaleContractCashPayment(sale as Record<string, unknown>);
+  const tipoVenda = isCashPayment ? "À Vista" : "Parcelada";
   const valorEntradaFmt = formatBRL(valEntrada);
 
   let valorEntradaExtenso = "";
@@ -432,27 +438,28 @@ export function generateContractHTML({
     sale as Record<string, unknown>,
     financeReceipts,
   );
-  const dataEntradaFmt = paymentDates.entryDueFmt;
   const dataPrimeiraParcelaFmt = paymentDates.firstInstallmentDueFmt;
   const dataUltimaParcelaFmt = paymentDates.lastInstallmentDueFmt;
 
+  const clauseQuartaHtml = buildSaleContractClauseQuartaHtml({
+    isCash: isCashPayment,
+    valorTotalFmt,
+    valorTotalExtenso,
+    valorEntradaFmt,
+    valorEntradaExtenso,
+    qtdParcelas,
+    valorParcelaFmt,
+    valorParcelaExtenso,
+    dataPrimeiraParcelaFmt,
+    dataUltimaParcelaFmt,
+  });
+
+  const electronicSignatureClauseHtml =
+    buildSaleContractElectronicSignatureClauseHtml();
+  const forumClauseHtml = buildSaleContractForumClauseHtml(foroText);
+
   const dContrato = new Date(contractDate || sale?.created_at || new Date());
   const dataContratoFmt = dContrato.toLocaleDateString("pt-BR");
-
-  let clPagamento = "";
-  if (tipoVenda === "À Vista") {
-    clPagamento = `<p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR neste ato, valendo este contrato como recibo.</p>`;
-  } else {
-    clPagamento = `
-            <p>O preço certo e ajustado da presente compra e venda é de <strong>${valorTotalFmt}</strong> (${valorTotalExtenso}), que o COMPRADOR pagará ao VENDEDOR da seguinte forma:</p>
-            <ul>
-                <li>Entrada: <strong>${valorEntradaFmt}</strong> (${valorEntradaExtenso})${dataEntradaFmt ? `, com vencimento em <strong>${dataEntradaFmt}</strong>` : ", paga no ato da assinatura"}.</li>
-                <li>Restante: Dividido em <strong>${qtdParcelas}</strong> parcelas mensais e sucessivas no valor de <strong>${valorParcelaFmt}</strong> (${valorParcelaExtenso}) cada.</li>
-                <li>Vencimento da primeira parcela: <strong>${dataPrimeiraParcelaFmt || "—"}</strong></li>
-                <li>Vencimento da última parcela: <strong>${dataUltimaParcelaFmt || "—"}</strong></li>
-            </ul>
-        `;
-  }
 
   const projectNeighborhood = toTitleCase(
     (isValid(project?.neighborhood) ? project.neighborhood : null) ||
@@ -529,9 +536,7 @@ export function generateContractHTML({
             </div>
 
             <div class="contract-clause" style="padding-bottom: 5px;">
-                <p style="margin-bottom: 0;">
-                    <strong>Cláusula Quarta:</strong> Fica a cargo exclusivo do PROMISSÁRIO COMPRADOR, com o valor de <strong>${valorTotalFmt} (${valorTotalExtenso})</strong>, entrada de <strong>${valorEntradaFmt} (${valorEntradaExtenso})</strong>, e o restante parcelado via boleto bancário em <strong>${qtdParcelas} parcelas iguais no valor de ${valorParcelaFmt} (${valorParcelaExtenso})</strong>. Sendo a primeira parcela para o dia <strong>${dataPrimeiraParcelaFmt}</strong> e a última parcela para o dia <strong>${dataUltimaParcelaFmt}</strong>. Taxas decorrentes do presente contrato e da escritura definitiva de compra e venda, respectivo registro, bem como todos os impostos e taxas incidentes sobre o imóvel a partir da assinatura do presente instrumento, são de inteira responsabilidade do PROMISSÁRIO COMPRADOR.
-                </p>
+                ${clauseQuartaHtml}
             </div>
 
             <div class="contract-clause" style="padding-bottom: 5px;">
@@ -573,11 +578,9 @@ export function generateContractHTML({
                 </p>
             </div>
 
-            <div class="contract-clause" style="padding-bottom: 5px;">
-                <p style="margin-bottom: 0;">
-                    <strong>Cláusula Décima Primeira:</strong> Fica eleito o foro ${foroText} para a solução de qualquer questão oriunda do presente contrato, renunciando as partes contratantes a qualquer outro, por mais especial que seja.
-                </p>
-            </div>
+            ${electronicSignatureClauseHtml}
+
+            ${forumClauseHtml}
 
             <div class="contract-clause">
                 <p style="margin-bottom: 20px;">
@@ -594,7 +597,7 @@ export function generateContractHTML({
                     <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
                     <p style="margin: 0; font-weight: bold; text-transform: uppercase;">${empresaNome}</p>
                     <p style="margin: 0; font-size: 10pt; font-weight: normal;">PROMITENTE VENDEDOR<br/>CNPJ: ${empresaCnpj}</p>
-                    <p style="margin: 4px 0 0 0; font-size: 9pt;">${empresaRepresentante}${empresaRepresentanteCpf !== "Não informado" ? ` — CPF: ${empresaRepresentanteCpf}` : ""}${vendedorRepresentanteIdentitySuffix}</p>
+                    ${representanteAssinaturaHtml}
                 </div>
 
                 <div class="signature-slot">
