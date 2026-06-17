@@ -16,12 +16,13 @@ import {
 } from 'lucide-react';
 import { buildSaleSignApiUrl } from '@/lib/saleContractUrls';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
+import { isValidSignerEmail } from '@/lib/saleContractEmailValidation';
 
 type SaleSignPageData = {
   contract: { id: string; number: string; status: string };
   company: { id: string; name: string; cnpj?: string | null } | null;
   lot: { quadra: string; lote: string; project: string };
-  buyer: { name: string | null; document?: string | null };
+  buyer: { name: string | null; document?: string | null; email?: string | null };
   signature: {
     status: string;
     statusLabel: string;
@@ -55,6 +56,7 @@ export default function SaleSignContractPage() {
 
   const [signerName, setSignerName] = useState('');
   const [signerDocument, setSignerDocument] = useState('');
+  const [signerEmail, setSignerEmail] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -84,6 +86,9 @@ export default function SaleSignContractPage() {
         if (payload.buyer?.document) {
           setSignerDocument(formatCpfCnpj(String(payload.buyer.document)));
         }
+        if (payload.buyer?.email) {
+          setSignerEmail(String(payload.buyer.email));
+        }
       } catch {
         setError('Não foi possível carregar o contrato.');
       } finally {
@@ -103,6 +108,10 @@ export default function SaleSignContractPage() {
       setFormError('Você precisa concordar com os termos do contrato.');
       return;
     }
+    if (!isValidSignerEmail(signerEmail)) {
+      setFormError('Informe um e-mail válido.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -112,6 +121,7 @@ export default function SaleSignContractPage() {
         body: JSON.stringify({
           signerName: signerName.trim(),
           signerDocument: doc,
+          signerEmail: signerEmail.trim(),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -182,6 +192,13 @@ export default function SaleSignContractPage() {
           value={signerDocument}
           onChange={(v) => setSignerDocument(formatCpfCnpj(v))}
           placeholder="000.000.000-00"
+        />
+        <Field
+          label="E-mail"
+          type="email"
+          value={signerEmail}
+          onChange={setSignerEmail}
+          placeholder="seu@email.com"
         />
 
         <label className="flex items-start gap-3 text-sm text-gray-300 cursor-pointer">
@@ -376,17 +393,19 @@ function Field({
   value,
   onChange,
   placeholder,
+  type = 'text',
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  type?: string;
 }) {
   return (
     <label className="block text-sm">
       <span className="text-gray-400 text-xs uppercase tracking-wide">{label}</span>
       <input
-        type="text"
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

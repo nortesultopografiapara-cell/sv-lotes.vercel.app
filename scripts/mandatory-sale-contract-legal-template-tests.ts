@@ -178,12 +178,13 @@ function testSignatureCertificateHtml() {
     companyName: 'MENESES IMOBILIARIA LTDA',
     companyCnpj: '64435850000103',
     representativeName: 'Carlos Daniel Araujo Meneses',
-    signatureStatus: 'ASSINADO',
+    signatureStatus: 'ASSINADO ELETRONICAMENTE',
     signedAt: '2026-06-08T15:30:00.000Z',
     viewedAt: '2026-06-08T15:20:00.000Z',
     ipAddress: '177.1.2.3',
     signatureToken: 'abc123token456',
     signatureHash: 'sha256hash',
+    signerEmail: 'comprador@test.com',
   });
 
   assert(cert.includes('000000022/2026'), 'cert contrato');
@@ -191,8 +192,9 @@ function testSignatureCertificateHtml() {
   assert(cert.includes('QD 04'), 'cert quadra');
   assert(cert.includes('LT 22'), 'cert lote');
   assert(cert.includes('Comprador Teste'), 'cert comprador');
+  assert(cert.includes('comprador@test.com'), 'cert email');
   assert(cert.includes('Hash de integridade'), 'cert hash');
-  assert(cert.includes('ASSINADO'), 'cert status');
+  assert(cert.includes('ASSINADO ELETRONICAMENTE'), 'cert status');
   console.log('OK testSignatureCertificateHtml');
 }
 

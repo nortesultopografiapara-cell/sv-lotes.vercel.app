@@ -847,6 +847,30 @@ export default function ContractsPage() {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
     try {
+      const isElectronicallySigned =
+        String(selectedContract.signature_status || '').toUpperCase() === 'SIGNED';
+
+      if (isElectronicallySigned) {
+        const res = await fetch(
+          `/api/contracts/${selectedContract.id}/pdf?download=1`,
+        );
+        if (res.ok) {
+          const blob = await res.blob();
+          const disposition = res.headers.get('Content-Disposition') || '';
+          const match = disposition.match(/filename="([^"]+)"/);
+          const filename =
+            match?.[1] ||
+            `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = filename;
+          anchor.click();
+          URL.revokeObjectURL(url);
+          return;
+        }
+      }
+
       const { default: html2pdf } = await import("html2pdf.js");
       const element = document.createElement("div");
 

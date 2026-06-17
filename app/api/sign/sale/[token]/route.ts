@@ -188,6 +188,8 @@ export async function GET(
     buyer: {
       name: buyerName,
       document: customer?.document || customer?.cpf || null,
+      email:
+        String(customer?.email || customer?.contact_email || '').trim() || null,
     },
     signature: {
       status: signature.signature_status,
@@ -222,6 +224,7 @@ export async function POST(
     const result = await signSaleContractElectronically(supabaseAdmin, token, {
       signerName: String(body.signerName || ''),
       signerDocument: String(body.signerDocument || ''),
+      signerEmail: String(body.signerEmail || ''),
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
     });

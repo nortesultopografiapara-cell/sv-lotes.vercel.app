@@ -12,7 +12,8 @@ export type SaleContractSignatureCertificateInput = {
   lote: string;
   buyerName: string;
   buyerDocument: string;
-  companyName: string;
+  signerEmail?: string | null;
+  companyName?: string | null;
   companyCnpj?: string | null;
   representativeName?: string | null;
   signatureStatus: string;
@@ -32,40 +33,42 @@ export function buildSaleContractSignatureCertificateHtml(
   const signedTime = input.signedAt
     ? formatSignatureTimeBr(input.signedAt)
     : '—';
-  const viewedDate = input.viewedAt
-    ? `${formatSignatureDateBr(input.viewedAt)} ${formatSignatureTimeBr(input.viewedAt)}`
-    : '—';
+  const dateTimeLabel =
+    input.signedAt && signedDate !== '—'
+      ? `${signedDate} ${signedTime}`
+      : '—';
+
+  const lotLabel = `QD ${input.quadra || '—'} · LT ${input.lote || '—'}`;
 
   return `
     <div class="contract-clause contract-clause--tight" style="page-break-before: always; margin-top: 24px; border-top: 2px solid #333; padding-top: 20px;">
-      <h3 style="text-align: center; font-size: 13pt; margin: 0 0 16px 0; text-transform: uppercase;">
+      <h3 style="text-align: center; font-size: 13pt; margin: 0 0 16px 0; text-transform: uppercase; letter-spacing: 0.04em;">
         Certificado de Assinatura Eletrônica
       </h3>
-      <p style="font-size: 10pt; margin-bottom: 14px;">
-        Este certificado comprova a assinatura eletrônica do contrato de compra e venda registrada na plataforma SV LOTES,
-        com validade jurídica conforme a Medida Provisória nº 2.200-2/2001 e a Lei nº 14.063/2020.
-      </p>
-      <table style="width: 100%; font-size: 10pt; border-collapse: collapse;">
+      <table style="width: 100%; font-size: 10pt; border-collapse: collapse; margin-bottom: 16px;">
         <tbody>
-          <tr><td style="padding: 4px 8px; width: 38%; font-weight: bold;">Contrato nº</td><td style="padding: 4px 8px;">${escapeHtml(input.contractNumber)}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Empreendimento</td><td style="padding: 4px 8px;">${escapeHtml(input.projectName || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Quadra / Lote</td><td style="padding: 4px 8px;">QD ${escapeHtml(input.quadra || '—')} · LT ${escapeHtml(input.lote || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Comprador</td><td style="padding: 4px 8px;">${escapeHtml(input.buyerName || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">CPF do comprador</td><td style="padding: 4px 8px;">${escapeHtml(formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Imobiliária / Vendedor</td><td style="padding: 4px 8px;">${escapeHtml(input.companyName || '—')}${input.companyCnpj ? ` — CNPJ ${escapeHtml(formatCpfCnpj(input.companyCnpj) || input.companyCnpj)}` : ''}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Representante da imobiliária</td><td style="padding: 4px 8px;">${escapeHtml(input.representativeName || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Status</td><td style="padding: 4px 8px;">${escapeHtml(input.signatureStatus || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Visualização</td><td style="padding: 4px 8px;">${escapeHtml(viewedDate)}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Data da assinatura</td><td style="padding: 4px 8px;">${escapeHtml(signedDate)}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Hora da assinatura</td><td style="padding: 4px 8px;">${escapeHtml(signedTime)}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Endereço IP</td><td style="padding: 4px 8px;">${escapeHtml(input.ipAddress || '—')}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Token de autenticação</td><td style="padding: 4px 8px; word-break: break-all;">${escapeHtml(maskToken(input.signatureToken))}</td></tr>
-          <tr><td style="padding: 4px 8px; font-weight: bold;">Hash de integridade (SHA-256)</td><td style="padding: 4px 8px; word-break: break-all;">${escapeHtml(input.signatureHash || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; width: 34%; font-weight: bold;">CONTRATO</td><td style="padding: 4px 8px;">${escapeHtml(input.contractNumber)}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">EMPREENDIMENTO</td><td style="padding: 4px 8px;">${escapeHtml(input.projectName || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">LOTE</td><td style="padding: 4px 8px;">${escapeHtml(lotLabel)}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">ASSINANTE</td><td style="padding: 4px 8px;">${escapeHtml(input.buyerName || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">CPF</td><td style="padding: 4px 8px;">${escapeHtml(formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">E-MAIL</td><td style="padding: 4px 8px;">${escapeHtml(input.signerEmail || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">IP</td><td style="padding: 4px 8px;">${escapeHtml(input.ipAddress || '—')}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">DATA E HORA</td><td style="padding: 4px 8px;">${escapeHtml(dateTimeLabel)}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">TOKEN</td><td style="padding: 4px 8px; word-break: break-all;">${escapeHtml(maskToken(input.signatureToken))}</td></tr>
+          <tr><td style="padding: 4px 8px; font-weight: bold;">STATUS</td><td style="padding: 4px 8px;">${escapeHtml(input.signatureStatus || 'ASSINADO ELETRONICAMENTE')}</td></tr>
         </tbody>
       </table>
-      <p style="font-size: 9pt; color: #444; margin-top: 16px; font-style: italic;">
-        Documento emitido digitalmente pelo SV LOTES GIS. Este certificado integra o contrato assinado como prova de aceite eletrônico.
+      <p style="font-size: 10pt; margin: 0 0 8px 0; font-weight: bold;">DECLARAÇÃO</p>
+      <p style="font-size: 10pt; margin: 0; line-height: 1.5;">
+        Este contrato foi assinado eletronicamente através da plataforma SV LOTES, com registro de identificação do signatário,
+        endereço IP, data, hora, token de autenticação e demais evidências eletrônicas armazenadas pelo sistema.
       </p>
+      ${
+        input.signatureHash
+          ? `<p style="font-size: 8pt; color: #444; margin-top: 12px; word-break: break-all;">Hash de integridade (SHA-256): ${escapeHtml(input.signatureHash)}</p>`
+          : ''
+      }
     </div>`;
 }
 

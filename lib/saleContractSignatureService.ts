@@ -6,6 +6,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildContractViewHtml } from '@/lib/buildContractViewHtml';
 import { onlyDigits } from '@/lib/inputMasks';
 import {
+  isValidSignerEmail,
+  normalizeSignerEmail,
+} from '@/lib/saleContractEmailValidation';
+import {
   buildSignatureHashPayload,
   computeSignatureHash,
 } from '@/lib/saasContractSignaturePdf';
@@ -23,6 +27,99 @@ import {
 } from '@/lib/saleContractSignatureStatus';
 
 export { resolveClientIp, isSignatureExpired };
+
+const SALE_CONTRACT_BUCKET = 'company-assets';
+
+function sanitizeContractFileName(contractNumber: string): string {
+  return contractNumber.replace(/[^\w-]+/g, '_');
+}
+
+function buildSignedSaleContractStoragePath(
+  tenantId: string,
+  contractNumber: string,
+): string {
+  const safeName = sanitizeContractFileName(contractNumber);
+  return `contracts/sale-signed/${tenantId}/${safeName}.pdf`;
+}
+
+async function uploadSignedSaleContractPdf(
+  supabaseAdmin: SupabaseClient,
+  tenantId: string,
+  contractNumber: string,
+  pdfBytes: Uint8Array,
+): Promise<string | null> {
+  const storagePath = buildSignedSaleContractStoragePath(tenantId, contractNumber);
+  const fileBody = Buffer.from(pdfBytes);
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(SALE_CONTRACT_BUCKET)
+    .upload(storagePath, fileBody, {
+      contentType: 'application/pdf',
+      upsert: true,
+      cacheControl: '3600',
+    });
+
+  if (uploadError) {
+    console.warn('[SALE_CONTRACT_SIGN] upload signed pdf', uploadError.message);
+    return null;
+  }
+
+  const { data: signedData, error: signError } = await supabaseAdmin.storage
+    .from(SALE_CONTRACT_BUCKET)
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
+
+  if (signError || !signedData?.signedUrl) {
+    const { data: publicData } = supabaseAdmin.storage
+      .from(SALE_CONTRACT_BUCKET)
+      .getPublicUrl(storagePath);
+    return publicData.publicUrl || null;
+  }
+
+  return signedData.signedUrl;
+}
+
+async function recordSaleContractSignatureAudit(
+  supabaseAdmin: SupabaseClient,
+  params: {
+    tenantId: string;
+    contractId: string;
+    contractNumber: string;
+    signerName: string;
+    signerDocument: string;
+    signerEmail: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    signedAt: string;
+    token: string;
+  },
+): Promise<void> {
+  const description = [
+    `Contrato ${params.contractNumber}`,
+    params.signerName,
+    params.signerEmail,
+    params.signerDocument ? `CPF ${params.signerDocument}` : null,
+    params.ipAddress ? `IP ${params.ipAddress}` : null,
+    params.userAgent ? `UA ${params.userAgent.slice(0, 120)}` : null,
+    `token ${params.token.slice(0, 8)}…`,
+    params.signedAt,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
+  const { error } = await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: params.tenantId,
+    company_id: params.tenantId,
+    user_id: null,
+    action: 'CONTRACT_SIGNED_ELECTRONICALLY',
+    module: 'CONTRACTS',
+    reference_id: params.contractId,
+    description,
+  });
+
+  if (error) {
+    console.warn('[SALE_CONTRACT_SIGN] audit log', error.message);
+  }
+}
 
 export class SaleContractSignatureError extends Error {
   constructor(
@@ -118,12 +215,16 @@ export function buildSaleSignatureHistory(
   if (signature.signed_at) {
     events.push({
       at: signature.signed_at,
-      event: 'Contrato assinado',
+      event: 'CONTRACT_SIGNED_ELECTRONICALLY',
       user: signature.signer_name || 'Comprador',
       ip: signature.ip_address,
-      details: signature.signer_document
-        ? `CPF ${signature.signer_document}`
-        : signature.signer_name,
+      details: [
+        signature.signer_document ? `CPF ${signature.signer_document}` : null,
+        signature.signer_email ? `E-mail ${signature.signer_email}` : null,
+        signature.signature_token ? `Token ${signature.signature_token.slice(0, 8)}…` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
     });
   }
 
@@ -343,6 +444,7 @@ export async function markSaleSignatureViewed(
 export type SignSaleContractInput = {
   signerName: string;
   signerDocument: string;
+  signerEmail: string;
   ipAddress?: string | null;
   userAgent?: string | null;
 };
@@ -384,9 +486,13 @@ export async function signSaleContractElectronically(
 
   const signerName = String(input.signerName || '').trim();
   const signerDocument = onlyDigits(input.signerDocument);
+  const signerEmail = normalizeSignerEmail(input.signerEmail);
 
   if (!signerName || signerDocument.length < 11) {
     throw new SaleContractSignatureError('Informe nome completo e CPF válidos para assinar.');
+  }
+  if (!isValidSignerEmail(signerEmail)) {
+    throw new SaleContractSignatureError('Informe um e-mail válido para assinar.');
   }
 
   const { data: contract, error: contractErr } = await supabaseAdmin
@@ -400,6 +506,7 @@ export async function signSaleContractElectronically(
   }
 
   const contractRow = contract as Record<string, unknown>;
+  const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
   const contractStatus = String(contractRow.status || '').toLowerCase();
   if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
     throw new SaleContractSignatureError('Contrato cancelado. Assinatura não permitida.');
@@ -414,7 +521,7 @@ export async function signSaleContractElectronically(
     contractNumber: String(contractRow.contract_number || ''),
     signerName,
     signerDocument,
-    signerEmail: '',
+    signerEmail,
     signedAt,
     ipAddress: input.ipAddress || '',
     party: 'CLIENT',
@@ -425,6 +532,7 @@ export async function signSaleContractElectronically(
     .from('contract_signatures')
     .update({
       signer_name: signerName,
+      signer_email: signerEmail,
       signer_document: signerDocument,
       signature_status: 'SIGNED',
       signed_at: signedAt,
@@ -466,7 +574,54 @@ export async function signSaleContractElectronically(
       .eq('id', saleId);
   }
 
-  return { signature: updatedSignature as ContractSignatureRow };
+  const signedSignature = updatedSignature as ContractSignatureRow;
+
+  await recordSaleContractSignatureAudit(supabaseAdmin, {
+    tenantId,
+    contractId: String(contractRow.id),
+    contractNumber: String(contractRow.contract_number || ''),
+    signerName,
+    signerDocument,
+    signerEmail,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt,
+    token,
+  });
+
+  try {
+    const signContext = await loadSaleSignPageContext(supabaseAdmin, signedSignature);
+    const { pdf } = await loadSaleContractPdfForSign(
+      supabaseAdmin,
+      signature.contract_id,
+      {
+        signature: signedSignature,
+        signContext,
+      },
+    );
+    const contractNumber = String(contractRow.contract_number || '');
+    const pdfSignedUrl = tenantId
+      ? await uploadSignedSaleContractPdf(
+          supabaseAdmin,
+          tenantId,
+          contractNumber,
+          pdf,
+        )
+      : null;
+    if (pdfSignedUrl) {
+      await supabaseAdmin
+        .from('contracts')
+        .update({ pdf_signed_url: pdfSignedUrl, updated_at: signedAt })
+        .eq('id', signature.contract_id);
+    }
+  } catch (pdfErr) {
+    console.warn(
+      '[SALE_CONTRACT_SIGN] signed pdf generation',
+      pdfErr instanceof Error ? pdfErr.message : pdfErr,
+    );
+  }
+
+  return { signature: signedSignature };
 }
 
 export async function loadSaleContractHtmlForSign(
@@ -623,10 +778,11 @@ export async function loadSaleContractPdfForSign(
       lote,
       buyerName: String(signature.signer_name || customer?.name || ''),
       buyerDocument: String(signature.signer_document || ''),
+      signerEmail: signature.signer_email,
       companyName: getCompanyDisplayName(company || tenant),
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
       representativeName: normalizeSellerFromCompany(tenant).representative,
-      signatureStatus: 'ASSINADO',
+      signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,
       ipAddress: signature.ip_address,
@@ -650,6 +806,21 @@ export async function loadSaleContractPdfForSign(
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`loadSaleContractPdfForSign: ${message}`);
   }
+}
+
+export async function getLatestSignedSaleSignature(
+  supabaseAdmin: SupabaseClient,
+  contractId: string,
+): Promise<ContractSignatureRow | null> {
+  const { data } = await supabaseAdmin
+    .from('contract_signatures')
+    .select('*')
+    .eq('contract_id', contractId)
+    .eq('signature_status', 'SIGNED')
+    .order('signed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as ContractSignatureRow) || null;
 }
 
 export async function loadSaleSignPageContext(
