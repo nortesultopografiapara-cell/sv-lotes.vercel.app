@@ -91,9 +91,9 @@ export async function ensureSaasSubscription(
     patch.start_date = billing.start_date;
     patch.first_payment_date = billing.first_payment_date;
     patch.next_due_date = billing.next_due_date;
-    if (!existing.monthly_price || Number(existing.monthly_price) === 0) {
-      patch.monthly_price = row.monthly_price;
-    }
+    patch.monthly_price = row.monthly_price;
+    patch.custom_price_enabled = row.custom_price_enabled;
+    patch.custom_monthly_price = row.custom_monthly_price;
 
     const { data, error } = await supabaseAdmin
       .from('company_subscriptions')

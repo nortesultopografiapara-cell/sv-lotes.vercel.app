@@ -173,9 +173,24 @@ export async function loadFreshSaasContractContext(
     throw new SaasContractStepError('validation', 'Empresa não encontrada.');
   }
 
-  const subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
+  let subscription = await getSubscriptionByCompanyId(supabaseAdmin, companyId);
   if (!subscription) {
     throw new SaasContractStepError('validation', 'Assinatura não encontrada.');
+  }
+
+  const { ensureSaasSubscription } = await import('@/lib/saasSubscriptionService');
+  const synced = await ensureSaasSubscription(
+    supabaseAdmin,
+    company as SaasContractCompanyInput & { id: string },
+  );
+  if (synced.error) {
+    throw new SaasContractStepError(
+      'db_save',
+      `Falha ao sincronizar assinatura: ${synced.error}`,
+    );
+  }
+  if (synced.subscription) {
+    subscription = synced.subscription;
   }
 
   console.log('SAAS_CONTRACT_FRESH_DB_COMPANY', company);

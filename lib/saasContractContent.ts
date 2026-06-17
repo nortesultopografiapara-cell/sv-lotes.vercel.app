@@ -137,6 +137,8 @@ export type SaasContractContext = {
     firstPaymentDate: string;
     nextDueDate: string;
     cycle: string;
+    /** Preço comercial especial: sem reajuste anual automático */
+    noAnnualAdjustment?: boolean;
   };
 };
 
@@ -155,7 +157,7 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
   const saas = getCompanySaasPlan(company);
   const billingUi = augmentCompanyBilling(company, subscription as CompanySubscription);
   const standardPrice = getStandardPlanMonthlyPrice(company);
-  const applied = Number(subscription.monthly_price) || pricing.appliedPrice;
+  const applied = pricing.appliedPrice;
   const billing = subscriptionDatesForContractPdf(subscription);
   const dueDay = dueDayFromDate(billing.start_date);
   const responsible =
@@ -192,6 +194,9 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
       firstPaymentDate: formatDateBr(billing.first_payment_date),
       nextDueDate: formatDateBr(billing.next_due_date),
       cycle: 'Mensal',
+      noAnnualAdjustment:
+        pricing.hasCustomPrice &&
+        (pricing.badge === 'desconto_especial' || pricing.badge === 'founding_client'),
     },
   };
 }
@@ -295,10 +300,15 @@ export function buildSaasContractSections(
     {
       number: 6,
       title: 'REAJUSTE ANUAL',
-      paragraphs: [
-        'Os valores poderão ser reajustados anualmente, a cada 12 (doze) meses contados da data de início ou da última alteração contratual, pelo índice IGPM/FGV ou, na sua ausência, por índice oficial que o substitua, limitado ao percentual acumulado do período.',
-        'A CONTRATADA comunicará o reajuste com antecedência mínima de 30 (trinta) dias por e-mail ou canal oficial. A continuidade do uso após a vigência do novo valor implica aceitação tácita, salvo manifestação contrária formalizada.',
-      ],
+      paragraphs: pl.noAnnualAdjustment
+        ? [
+            `Em razão do desconto comercial especial pactuado (valor mensal fixo de ${pl.monthlyPrice}), o valor contratado permanecerá inalterado durante a vigência deste instrumento, sem aplicação de reajuste anual automático.`,
+            'Eventual revisão de valor dependerá de acordo expresso e formalizado entre as partes, mediante aditivo contratual ou nova proposta comercial aceita pela CONTRATANTE.',
+          ]
+        : [
+            'Os valores poderão ser reajustados anualmente, a cada 12 (doze) meses contados da data de início ou da última alteração contratual, pelo índice IGPM/FGV ou, na sua ausência, por índice oficial que o substitua, limitado ao percentual acumulado do período.',
+            'A CONTRATADA comunicará o reajuste com antecedência mínima de 30 (trinta) dias por e-mail ou canal oficial. A continuidade do uso após a vigência do novo valor implica aceitação tácita, salvo manifestação contrária formalizada.',
+          ],
     },
     {
       number: 7,
