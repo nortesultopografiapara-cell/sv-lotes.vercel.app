@@ -118,7 +118,7 @@ export function resolveSubscriptionDueDay(
   return dueDayFromDate(startDate);
 }
 
-/** Data de ativação SaaS (início da assinatura). */
+/** Data de ativação SaaS (início da assinatura). Não usa created_at — evita reverter edição manual. */
 export function resolveSubscriptionStartDate(
   company?: CompanySubscriptionDatesSource | null,
   subscription?: BillingSubscriptionLike | null,
@@ -126,10 +126,34 @@ export function resolveSubscriptionStartDate(
   return (
     toIsoDateOnly(company?.subscription_start_date) ||
     toIsoDateOnly(subscription?.start_date) ||
-    toIsoDateOnly(company?.created_at) ||
-    toIsoDateOnly(subscription?.created_at) ||
+    toIsoDateOnly(subscription?.first_payment_date) ||
     todayIsoDate()
   );
+}
+
+/** Billing explícito informado pelo Super Admin (prioridade sobre sync automático). */
+export function explicitBillingToSubscriptionDates(
+  billing: ResolvedSubscriptionDates,
+): SubscriptionBillingDates {
+  return {
+    start_date: billing.subscription_start_date,
+    first_payment_date: billing.first_payment_date,
+    next_due_date: billing.next_payment_date,
+  };
+}
+
+export function companyBillingFromResolved(
+  billing: ResolvedSubscriptionDates,
+): Pick<
+  CompanySubscriptionDatesSource,
+  'subscription_start_date' | 'subscription_due_day' | 'next_payment_date' | 'vencimento_plano'
+> {
+  return {
+    subscription_start_date: billing.subscription_start_date,
+    subscription_due_day: billing.subscription_due_day,
+    next_payment_date: billing.next_payment_date,
+    vencimento_plano: billing.next_payment_date,
+  };
 }
 
 /** Primeira cobrança = data de início (ativação). */

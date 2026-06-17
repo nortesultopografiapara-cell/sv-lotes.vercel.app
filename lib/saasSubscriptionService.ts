@@ -11,9 +11,12 @@ import {
   type CompanyPricingSource,
 } from '@/lib/companyPricing';
 import {
+  companyBillingFromResolved,
+  explicitBillingToSubscriptionDates,
   normalizeSubscriptionDates,
   resolveCompanySubscriptionDates,
   type CompanySubscriptionDatesSource,
+  type ResolvedSubscriptionDates,
 } from '@/lib/companySubscriptionDates';
 import { type CompanySubscription } from '@/lib/saasSubscription';
 import {
@@ -35,13 +38,25 @@ export function isRealSaasCompany(company: {
   return !isTestCompany(company);
 }
 
+export function resolveSaasSubscriptionBilling(
+  company: CompanySubscriptionDatesSource,
+  existing?: CompanySubscription | null,
+  explicitBilling?: ResolvedSubscriptionDates | null,
+) {
+  if (explicitBilling) {
+    return explicitBillingToSubscriptionDates(explicitBilling);
+  }
+  return normalizeSubscriptionDates(company, existing);
+}
+
 function buildSubscriptionRow(
   company: CompanyPricingSource & CompanySubscriptionDatesSource & { id: string },
   existing?: CompanySubscription | null,
+  explicitBilling?: ResolvedSubscriptionDates | null,
 ) {
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
-  const billing = normalizeSubscriptionDates(company, existing);
+  const billing = resolveSaasSubscriptionBilling(company, existing, explicitBilling);
 
   return {
     company_id: company.id,
@@ -101,6 +116,11 @@ async function persistSaasSubscriptionRow(
   return { data: data as CompanySubscription };
 }
 
+export type EnsureSaasSubscriptionOptions = {
+  /** Billing editado manualmente no Master — não recalcular a partir de start_date/created_at. */
+  explicitBilling?: ResolvedSubscriptionDates | null;
+};
+
 /** Cria ou atualiza assinatura sem gerar contrato PDF. */
 export async function ensureSaasSubscription(
   supabaseAdmin: SupabaseClient,
@@ -110,7 +130,12 @@ export async function ensureSaasSubscription(
     is_test_company?: boolean | null;
     is_test?: boolean | null;
   },
+  options?: EnsureSaasSubscriptionOptions,
 ): Promise<{ subscription: CompanySubscription | null; error?: string; created?: boolean }> {
+  const explicitBilling = options?.explicitBilling ?? null;
+  const companyForBilling: CompanySubscriptionDatesSource = explicitBilling
+    ? { ...company, ...companyBillingFromResolved(explicitBilling) }
+    : company;
   if (isTestCompany(company)) {
     return { subscription: null };
   }
@@ -121,14 +146,18 @@ export async function ensureSaasSubscription(
     .eq('company_id', company.id)
     .maybeSingle();
 
-  const row = buildSubscriptionRow(company, existing as CompanySubscription | null);
+  const row = buildSubscriptionRow(
+    companyForBilling as CompanyPricingSource & CompanySubscriptionDatesSource & { id: string },
+    existing as CompanySubscription | null,
+    explicitBilling,
+  );
 
   let subscription: CompanySubscription | null = null;
   let created = false;
 
   if (existing) {
     const patch: Record<string, unknown> = { ...row };
-    const billing = normalizeSubscriptionDates(company, existing);
+    const billing = resolveSaasSubscriptionBilling(companyForBilling, existing, explicitBilling);
 
     patch.start_date = billing.start_date;
     patch.first_payment_date = billing.first_payment_date;
@@ -160,8 +189,8 @@ export async function ensureSaasSubscription(
     return { subscription: null, error: 'Assinatura não retornada após gravação.' };
   }
 
-  const billing = normalizeSubscriptionDates(company, subscription);
-  const syncedDates = resolveCompanySubscriptionDates(company);
+  const billing = resolveSaasSubscriptionBilling(companyForBilling, subscription, explicitBilling);
+  const syncedDates = explicitBilling ?? resolveCompanySubscriptionDates(companyForBilling);
 
   await supabaseAdmin
     .from('companies')

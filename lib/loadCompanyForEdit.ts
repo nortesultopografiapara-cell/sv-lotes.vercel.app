@@ -93,7 +93,9 @@ export function mapCompanyForEditForm(
   const subscription_due_day = String(
     company.subscription_due_day != null && String(company.subscription_due_day).trim() !== ''
       ? clampDueDay(Number(company.subscription_due_day))
-      : dueDayFromDate(subscription_start_date),
+      : dueDayFromDate(
+          (company.next_payment_date as string) || subscription?.next_due_date || subscription_start_date,
+        ),
   );
 
   const next_payment_date =

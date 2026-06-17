@@ -100,6 +100,8 @@ export async function PATCH(request: Request) {
       updatePayload.admin_users_limit = Math.max(1, Math.trunc(Number(body.admin_users_limit)));
     }
 
+    let explicitBilling: ReturnType<typeof buildCompanySubscriptionDatePayload> | null = null;
+
     if (body.is_test_company !== true && body.subscription_start_date) {
       const billingPayload = {
         subscription_start_date: body.subscription_start_date,
@@ -107,12 +109,13 @@ export async function PATCH(request: Request) {
         next_payment_date: body.next_payment_date,
       };
       console.log('[company-update-billing]', billingPayload);
+      console.log('[company-edit-save-payload]', billingPayload);
 
-      const subDates = buildCompanySubscriptionDatePayload(billingPayload);
-      updatePayload.subscription_start_date = subDates.subscription_start_date;
-      updatePayload.subscription_due_day = subDates.subscription_due_day;
-      updatePayload.next_payment_date = subDates.next_payment_date;
-      updatePayload.vencimento_plano = subDates.next_payment_date;
+      explicitBilling = buildCompanySubscriptionDatePayload(billingPayload);
+      updatePayload.subscription_start_date = explicitBilling.subscription_start_date;
+      updatePayload.subscription_due_day = explicitBilling.subscription_due_day;
+      updatePayload.next_payment_date = explicitBilling.next_payment_date;
+      updatePayload.vencimento_plano = explicitBilling.next_payment_date;
     }
 
     console.log('SAVE_COMPANY_SUBSCRIPTION_PAYLOAD', {
@@ -223,17 +226,45 @@ export async function PATCH(request: Request) {
     let subscriptionRow = null;
 
     if (companyRow && companyRow.is_test_company !== true) {
-      const ensured = await ensureSaasSubscription(supabaseAdmin, companyRow);
+      const ensured = await ensureSaasSubscription(supabaseAdmin, companyRow, {
+        explicitBilling,
+      });
       subscriptionRow = ensured.subscription;
       console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', subscriptionRow, ensured.error);
     }
 
+    const { data: finalCompany } = await supabaseAdmin
+      .from('companies')
+      .select('*')
+      .eq('id', companyId)
+      .single();
+
+    const { data: finalSubscription } = await supabaseAdmin
+      .from('company_subscriptions')
+      .select('*')
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const savedBilling = finalCompany
+      ? {
+          subscription_start_date: finalCompany.subscription_start_date,
+          subscription_due_day: finalCompany.subscription_due_day,
+          next_payment_date: finalCompany.next_payment_date,
+          vencimento_plano: finalCompany.vencimento_plano,
+          subscription_next_due_date: finalSubscription?.next_due_date ?? null,
+        }
+      : null;
+
+    console.log('[company-edit-billing-after-save]', savedBilling);
+
     const result = {
       success: true,
-      company: refreshedCompany || data,
-      subscription: subscriptionRow,
+      company: finalCompany || refreshedCompany || data,
+      subscription: finalSubscription || subscriptionRow,
+      billing: savedBilling,
     };
 
+    console.log('[company-edit-save-response]', result.billing);
     console.log('REFRESH_COMPANY_AFTER_SAVE', result);
 
     return NextResponse.json(result);

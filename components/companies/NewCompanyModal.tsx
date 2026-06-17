@@ -16,7 +16,7 @@ import {
   computeNextPaymentDate,
   defaultNewCompanySubscriptionDates,
 } from '@/lib/companySubscriptionDates';
-import { loadCompanyForEdit, type CompanyForEditMerged } from '@/lib/loadCompanyForEdit';
+import { loadCompanyForEdit, mapCompanyForEditForm, type CompanyForEditMerged } from '@/lib/loadCompanyForEdit';
 import { formatDateBr } from '@/lib/saasSubscription';
 
 interface NewCompanyModalProps {
@@ -354,6 +354,8 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
 
          console.log('SAVE_COMPANY_SUBSCRIPTION_PAYLOAD', apiBody);
 
+         console.log('[company-edit-save-payload]', subscriptionDatesPayload);
+
          const res = await fetch('/api/companies/update', {
            method: 'PATCH',
            headers: { 'Content-Type': 'application/json' },
@@ -361,27 +363,27 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          });
          const result = await res.json();
 
+         console.log('[company-edit-save-response]', result);
          console.log('SAVE_COMPANY_SUBSCRIPTION_RESULT', result);
 
          if (!res.ok || result.error) {
            throw new Error(result.error || 'Erro ao salvar empresa.');
          }
 
-         const { data: refreshedRow, error: refreshRowErr } = await supabase
-           .from('companies')
-           .select('*')
-           .eq('id', initialData.id)
-           .single();
-
-         console.log('SAVE_COMPANY_ADDRESS_RESULT', refreshedRow, refreshRowErr);
-         if (refreshedRow) {
-           console.log('REFRESHED_COMPANY_ADDRESS', {
-             address: refreshedRow.address,
-             city: refreshedRow.city,
-             state: refreshedRow.state,
-             zip_code: refreshedRow.zip_code,
-             cep: refreshedRow.cep,
+         if (result.company) {
+           const merged = mapCompanyForEditForm(
+             result.company as Record<string, unknown>,
+             (result.subscription as CompanyForEditMerged['saas_subscription']) || null,
+           );
+           console.log('[company-edit-billing-after-save]', {
+             subscription_start_date: merged.subscription_start_date,
+             subscription_due_day: merged.subscription_due_day,
+             next_payment_date: merged.next_payment_date,
            });
+           setFormData(buildFormStateFromMerged(merged));
+           setSuccessMsg('Configurações salvas e recarregadas com sucesso.');
+           if (onSuccess) onSuccess(merged);
+           return;
          }
 
          const refreshed = await loadCompanyForEdit(initialData.id);
