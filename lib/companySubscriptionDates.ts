@@ -1,6 +1,6 @@
 /**
  * Datas de assinatura SaaS (companies + company_subscriptions).
- * Regra: primeira cobrança = data de início; próximo vencimento = início + 1 mês.
+ * Regra: primeira cobrança = data de início; próximo vencimento = mês seguinte no dia de vencimento.
  */
 
 export type CompanySubscriptionDatesSource = {
@@ -97,6 +97,27 @@ export function clampDueDay(day: number): number {
   return Math.min(31, Math.max(1, Math.round(day)));
 }
 
+/** ISO date no mesmo mês/ano do anchor com o dia informado (ajustado ao fim do mês). */
+export function isoDateWithDay(anchorIso: string, day: number): string {
+  const anchor = toIsoDateOnly(anchorIso) || todayIsoDate();
+  const [year, month] = anchor.split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  const d = Math.min(Math.max(1, clampDueDay(day)), lastDay);
+  return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** Dia de vencimento mensal explícito ou derivado da data de início. */
+export function resolveSubscriptionDueDay(
+  company?: CompanySubscriptionDatesSource | null,
+  startDate?: string,
+): number {
+  const fromCompany = Number(company?.subscription_due_day);
+  if (Number.isFinite(fromCompany) && fromCompany >= 1 && fromCompany <= 31) {
+    return clampDueDay(fromCompany);
+  }
+  return dueDayFromDate(startDate);
+}
+
 /** Data de ativação SaaS (início da assinatura). */
 export function resolveSubscriptionStartDate(
   company?: CompanySubscriptionDatesSource | null,
@@ -116,14 +137,24 @@ export function calculateFirstPaymentDate(startDate: string): string {
   return toIsoDateOnly(startDate) || todayIsoDate();
 }
 
-/** Próximo vencimento = mesmo dia no mês seguinte. */
-export function calculateNextDueDate(startDate: string): string {
-  return addOneMonthToIsoDate(startDate);
+/** Próximo vencimento = mês seguinte ao início, no dia de vencimento mensal. */
+export function calculateNextDueDateWithDueDay(startDate: string, dueDay: number): string {
+  const start = toIsoDateOnly(startDate) || todayIsoDate();
+  const nextMonthAnchor = addOneMonthToIsoDate(start);
+  return isoDateWithDay(nextMonthAnchor, dueDay);
 }
 
-/** @deprecated Use calculateNextDueDate */
-export function computeNextPaymentDate(startDate: string, _dueDay?: number): string {
-  return calculateNextDueDate(startDate);
+/** Próximo vencimento (compatível: usa dia da start se dueDay omitido). */
+export function calculateNextDueDate(startDate: string, dueDay?: number): string {
+  const start = toIsoDateOnly(startDate) || todayIsoDate();
+  const day = dueDay != null ? clampDueDay(dueDay) : dueDayFromDate(start);
+  return calculateNextDueDateWithDueDay(start, day);
+}
+
+export function computeNextPaymentDate(startDate: string, dueDay?: number): string {
+  const start = toIsoDateOnly(startDate) || todayIsoDate();
+  const day = clampDueDay(dueDay ?? dueDayFromDate(start));
+  return calculateNextDueDateWithDueDay(start, day);
 }
 
 export function validateSubscriptionDateOrder(
@@ -165,8 +196,15 @@ export function normalizeSubscriptionDates(
   subscription?: BillingSubscriptionLike | null,
 ): SubscriptionBillingDates {
   const start_date = resolveSubscriptionStartDate(company, subscription);
+  const dueDay = resolveSubscriptionDueDay(company, start_date);
   const first_payment_date = calculateFirstPaymentDate(start_date);
-  const next_due_date = calculateNextDueDate(start_date);
+
+  const explicitNext =
+    toIsoDateOnly(company?.next_payment_date) ||
+    toIsoDateOnly(company?.vencimento_plano);
+
+  const next_due_date =
+    explicitNext || calculateNextDueDateWithDueDay(start_date, dueDay);
 
   const normalized: SubscriptionBillingDates = {
     start_date,
@@ -174,7 +212,7 @@ export function normalizeSubscriptionDates(
     next_due_date,
   };
 
-  console.log('SAAS_SUBSCRIPTION_DATES_NORMALIZED', normalized);
+  console.log('SAAS_SUBSCRIPTION_DATES_NORMALIZED', { ...normalized, dueDay });
   return normalized;
 }
 
@@ -188,11 +226,12 @@ export function normalizeSubscriptionBillingDates(
 
 export function defaultNewCompanySubscriptionDates(): ResolvedSubscriptionDates {
   const start = todayIsoDate();
+  const dueDay = dueDayFromDate(start);
   return {
     subscription_start_date: start,
     first_payment_date: start,
-    subscription_due_day: dueDayFromDate(start),
-    next_payment_date: calculateNextDueDate(start),
+    subscription_due_day: dueDay,
+    next_payment_date: calculateNextDueDateWithDueDay(start, dueDay),
   };
 }
 
@@ -200,9 +239,7 @@ export function resolveCompanySubscriptionDates(
   company?: CompanySubscriptionDatesSource | null,
 ): ResolvedSubscriptionDates {
   const billing = normalizeSubscriptionDates(company, null);
-  const dueDay = clampDueDay(
-    Number(company?.subscription_due_day) || dueDayFromDate(billing.start_date),
-  );
+  const dueDay = resolveSubscriptionDueDay(company, billing.start_date);
 
   return {
     subscription_start_date: billing.start_date,
@@ -219,16 +256,16 @@ export function buildCompanySubscriptionDatePayload(input: {
 }): ResolvedSubscriptionDates {
   const start = toIsoDateOnly(input.subscription_start_date) || todayIsoDate();
   const dueDay = clampDueDay(Number(input.subscription_due_day) || dueDayFromDate(start));
-  const billing = normalizeSubscriptionDates(
-    { subscription_start_date: start, subscription_due_day: dueDay },
-    null,
-  );
+  const explicitNext = toIsoDateOnly(input.next_payment_date);
+  const next_payment_date =
+    explicitNext || calculateNextDueDateWithDueDay(start, dueDay);
+  const first_payment_date = calculateFirstPaymentDate(start);
 
   return {
-    subscription_start_date: billing.start_date,
-    first_payment_date: billing.first_payment_date,
+    subscription_start_date: start,
+    first_payment_date,
     subscription_due_day: dueDay,
-    next_payment_date: billing.next_due_date,
+    next_payment_date,
   };
 }
 

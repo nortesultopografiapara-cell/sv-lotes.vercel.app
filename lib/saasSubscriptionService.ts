@@ -161,11 +161,7 @@ export async function ensureSaasSubscription(
   }
 
   const billing = normalizeSubscriptionDates(company, subscription);
-  const syncedDates = resolveCompanySubscriptionDates({
-    ...company,
-    subscription_start_date: billing.start_date,
-    next_payment_date: billing.next_due_date,
-  });
+  const syncedDates = resolveCompanySubscriptionDates(company);
 
   await supabaseAdmin
     .from('companies')

@@ -1,7 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import {
+  clampDueDay,
+  computeNextPaymentDate,
   dueDayFromDate,
-  normalizeSubscriptionDates,
+  toIsoDateOnly,
 } from '@/lib/companySubscriptionDates';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
@@ -82,17 +84,24 @@ export function mapCompanyForEditForm(
   company: Record<string, unknown>,
   subscription: CompanySubscription | null,
 ): CompanyForEditMerged {
-  const billing = normalizeSubscriptionDates(
-    company as { subscription_start_date?: string | null; created_at?: string | null },
-    subscription,
-  );
-  const subscription_start_date = billing.start_date;
+  const subscription_start_date =
+    toIsoDateOnly(company.subscription_start_date as string) ||
+    toIsoDateOnly(subscription?.start_date) ||
+    toIsoDateOnly(company.created_at as string) ||
+    '';
 
   const subscription_due_day = String(
-    company.subscription_due_day ?? dueDayFromDate(subscription_start_date),
+    company.subscription_due_day != null && String(company.subscription_due_day).trim() !== ''
+      ? clampDueDay(Number(company.subscription_due_day))
+      : dueDayFromDate(subscription_start_date),
   );
 
-  const next_payment_date = billing.next_due_date;
+  const next_payment_date =
+    toIsoDateOnly(company.next_payment_date as string) ||
+    toIsoDateOnly(subscription?.next_due_date) ||
+    (subscription_start_date
+      ? computeNextPaymentDate(subscription_start_date, Number(subscription_due_day))
+      : '');
 
   return {
     id: String(company.id),

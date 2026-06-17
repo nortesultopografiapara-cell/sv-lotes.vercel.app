@@ -101,11 +101,14 @@ export async function PATCH(request: Request) {
     }
 
     if (body.is_test_company !== true && body.subscription_start_date) {
-      const subDates = buildCompanySubscriptionDatePayload({
+      const billingPayload = {
         subscription_start_date: body.subscription_start_date,
         subscription_due_day: body.subscription_due_day,
         next_payment_date: body.next_payment_date,
-      });
+      };
+      console.log('[company-update-billing]', billingPayload);
+
+      const subDates = buildCompanySubscriptionDatePayload(billingPayload);
       updatePayload.subscription_start_date = subDates.subscription_start_date;
       updatePayload.subscription_due_day = subDates.subscription_due_day;
       updatePayload.next_payment_date = subDates.next_payment_date;
