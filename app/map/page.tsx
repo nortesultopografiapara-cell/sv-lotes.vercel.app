@@ -115,10 +115,12 @@ import {
   loadOwnerAccessContext,
 } from '@/lib/ownerProjectAccess';
 import {
-  computeGisMapPageOverlayOpen,
-  GIS_TOOLBAR_HIDE_CLASS,
-  GIS_TOOLBAR_SHOW_CLASS,
-} from '@/lib/gisToolbarOverlay';
+  buildTxtImportAuditDescription,
+  calculateLotPriceFromAreaM2,
+  lotNumberKey,
+  parsePricePerM2Input,
+  resolveImportedLotPrice,
+} from '@/lib/txtImportLotPricing';
 import '@/components/enterprise/enterprise-value.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
@@ -334,6 +336,9 @@ export default function MapPage() {
   const [importTxtFile, setImportTxtFile] = useState<File | null>(null);
   const [importingTxt, setImportingTxt] = useState(false);
   const [importTxtUtmZone, setImportTxtUtmZone] = useState('22S');
+  const [importTxtPricePerM2, setImportTxtPricePerM2] = useState('');
+  const [importTxtOverwritePrices, setImportTxtOverwritePrices] = useState(false);
+  const [importTxtIsReimport, setImportTxtIsReimport] = useState(false);
 
   const [isUpdateLotModalOpen, setIsUpdateLotModalOpen] = useState(false);
   const [updateLotQuadra, setUpdateLotQuadra] = useState('');
@@ -567,6 +572,31 @@ export default function MapPage() {
     }
   }, [selectedProject?.id, mapRefreshKey, loadProjectQuadras]);
 
+  useEffect(() => {
+    if (!isImportTxtModalOpen || !selectedProject?.id || !importTxtQuadra.trim()) {
+      setImportTxtIsReimport(false);
+      return;
+    }
+    let cancelled = false;
+    const quadra = importTxtQuadra.toUpperCase().trim();
+    (async () => {
+      const { count, error } = await supabase
+        .from('blocks')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', selectedProject.id)
+        .eq('block_name', quadra);
+      if (cancelled) return;
+      if (error) {
+        setImportTxtIsReimport(false);
+        return;
+      }
+      setImportTxtIsReimport((count ?? 0) > 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isImportTxtModalOpen, importTxtQuadra, selectedProject?.id]);
+
   const handleViewQuadraOnMap = (blockName: string) => {
     setFocusBlockName(normalizeQuadraBlockName(blockName));
     setFocusBlockKey((k) => k + 1);
@@ -575,6 +605,9 @@ export default function MapPage() {
   const handleReimportQuadraTxt = (blockName: string) => {
     setImportTxtQuadra(normalizeQuadraBlockName(blockName));
     setImportTxtFile(null);
+    setImportTxtPricePerM2('');
+    setImportTxtOverwritePrices(false);
+    setImportTxtIsReimport(true);
     setIsImportTxtModalOpen(true);
   };
 
@@ -1716,6 +1749,14 @@ export default function MapPage() {
          return;
       }
 
+      const priceParse = parsePricePerM2Input(importTxtPricePerM2);
+      if (!priceParse.ok) {
+        alert(priceParse.error);
+        setImportingTxt(false);
+        return;
+      }
+      const pricePerM2 = priceParse.value;
+
       const text = await importTxtFile.text();
       const zoneNum = parseInt(importTxtUtmZone.replace(/\D/g, ''));
       const proj4String = `+proj=utm +zone=${zoneNum} +south +datum=WGS84 +units=m +no_defs`;
@@ -1824,6 +1865,24 @@ export default function MapPage() {
         console.warn('[CACHE] falha ao limpar IndexedDB do mapa', cacheErr);
       }
 
+      const { data: existingQuadraLots } = await supabase
+        .from('blocks')
+        .select('number, lot_number, price')
+        .eq('project_id', selectedProject.id)
+        .eq('block_name', quadraName);
+
+      const existingPriceByLot = new Map<string, number>();
+      const existingLotNumbers = new Set<string>();
+      for (const row of existingQuadraLots ?? []) {
+        const key = lotNumberKey(row.number ?? row.lot_number);
+        if (!key) continue;
+        existingLotNumbers.add(key);
+        if (row.price != null && Number.isFinite(Number(row.price))) {
+          existingPriceByLot.set(key, Number(row.price));
+        }
+      }
+      const isReimport = existingLotNumbers.size > 0;
+
       const { error: deleteQuadraError } = await supabase
         .from('blocks')
         .delete()
@@ -1837,9 +1896,7 @@ export default function MapPage() {
       console.log('[TXT] geometrias antigas removidas da quadra', quadraName);
 
       try { await supabase.rpc('reload_schema_cache'); } catch(e) {}
-          
-      const PRICE_PER_M2 = 0.0993035247984734; // Placeholder
-      
+
       const lotsWithGeometry = blocksParsed.filter((b) => b.geometrySaved);
       const lotsWithoutGeometry = blocksParsed.length - lotsWithGeometry.length;
 
@@ -1848,11 +1905,43 @@ export default function MapPage() {
         total: blocksParsed.length,
         comGeometria: lotsWithGeometry.length,
         semGeometria: lotsWithoutGeometry,
+        pricePerM2,
+        overwriteExistingPrices: importTxtOverwritePrices,
+        isReimport,
       });
+
+      let pricedFromM2Count = 0;
+      let preservedPriceCount = 0;
 
       const blocksToInsert = blocksParsed.map((b) => {
           const finalArea = b.area;
-          const finalPrice = parseFloat((finalArea * 120.00).toFixed(2));
+          const lotKey = lotNumberKey(b.name);
+          const hadExistingLot = existingLotNumbers.has(lotKey);
+          const existingPrice = existingPriceByLot.get(lotKey) ?? null;
+          const finalPrice = resolveImportedLotPrice({
+            areaM2: finalArea,
+            pricePerM2,
+            existingPrice,
+            overwriteExistingPrices: importTxtOverwritePrices,
+            hadExistingLot,
+          });
+
+          if (
+            pricePerM2 != null &&
+            finalPrice != null &&
+            (!hadExistingLot || importTxtOverwritePrices || existingPrice == null)
+          ) {
+            pricedFromM2Count += 1;
+          } else if (
+            hadExistingLot &&
+            finalPrice != null &&
+            existingPrice != null &&
+            finalPrice === existingPrice &&
+            !importTxtOverwritePrices
+          ) {
+            preservedPriceCount += 1;
+          }
+
           const officialSegs = b.officialSegs;
           const segmentsJson = b.segmentsJson;
           const provisionalFrontIndex = 0;
@@ -1930,6 +2019,7 @@ export default function MapPage() {
             for (let i = 0; i < inserted.length; i++) {
               const lotId = inserted[i]?.id;
               const officialSegs = blocksToInsert[i]?._officialSegs;
+              const lotRow = blocksToInsert[i];
               if (!lotId || !officialSegs?.length) continue;
               try {
                 await supabase
@@ -1942,8 +2032,57 @@ export default function MapPage() {
               } catch (segErr) {
                 console.warn('[TXT] lot_segments não persistido (tabela ausente?)', segErr);
               }
+
+              if (lotRow && lotRow.price != null) {
+                void logLotAuditEvent(supabase, {
+                  ...lotAuditContextFromBlock({
+                    id: lotId,
+                    project_id: selectedProject.id,
+                    tenant_id: finalTenantId,
+                    company_id: finalTenantId,
+                    number: lotRow.number,
+                    block_name: quadraName,
+                  }),
+                  userId: user.id,
+                  action: 'lot_created',
+                  title: 'Lote importado (TXT Civil 3D)',
+                  description:
+                    pricePerM2 != null
+                      ? `Valor calculado: ${Number(lotRow.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${Number(lotRow.area).toLocaleString('pt-BR')} m² × R$ ${pricePerM2.toFixed(2).replace('.', ',')}/m²)`
+                      : 'Importado sem preço por m²',
+                  newData: {
+                    price: lotRow.price,
+                    area: lotRow.area,
+                    source_import: 'TXT_CIVIL3D',
+                    price_per_m2: pricePerM2,
+                  },
+                  source: 'gis_map',
+                });
+              }
             }
           }
+      }
+
+      try {
+        await supabase.from('audit_logs').insert({
+          tenant_id: finalTenantId,
+          company_id: finalTenantId,
+          user_id: user.id,
+          action: 'TXT_CIVIL3D_IMPORT',
+          module: 'GIS',
+          description: buildTxtImportAuditDescription({
+            quadraName,
+            lotCount: blocksToInsert.length,
+            pricePerM2,
+            overwriteExistingPrices: importTxtOverwritePrices,
+            isReimport,
+            pricedFromM2Count,
+            preservedPriceCount,
+          }),
+          reference_id: selectedProject.id,
+        });
+      } catch (auditErr) {
+        console.warn('[TXT] audit_logs importação', auditErr);
       }
       
       if (lotsWithGeometry.length === 0) {
@@ -1962,6 +2101,9 @@ export default function MapPage() {
       setIsImportTxtModalOpen(false);
       setImportTxtFile(null);
       setImportTxtQuadra('');
+      setImportTxtPricePerM2('');
+      setImportTxtOverwritePrices(false);
+      setImportTxtIsReimport(false);
       setMapRefreshKey(prev => prev + 1);
     } catch(err: any) {
        console.error("Erro no import TXT: ", err);
@@ -3061,6 +3203,37 @@ export default function MapPage() {
                          className="w-full text-sm text-[var(--color-text-muted)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[var(--color-primary)]/10 file:text-[var(--color-primary)] hover:file:bg-[var(--color-primary)]/20 file:transition-colors file:cursor-pointer cursor-pointer border border-[var(--color-border)] bg-[var(--color-background)] rounded-lg p-2"
                        />
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">
+                        Preço por m² (R$)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={importTxtPricePerM2}
+                        onChange={(e) => setImportTxtPricePerM2(e.target.value)}
+                        placeholder="Ex: 120,00"
+                        className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg p-3 text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+                      />
+                      <p className="text-[11px] text-[var(--color-text-muted)] mt-2 leading-relaxed">
+                        Se informado, o sistema calculará automaticamente o valor de cada lote com base na área importada.
+                      </p>
+                    </div>
+
+                    {importTxtIsReimport && (
+                      <label className="flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={importTxtOverwritePrices}
+                          onChange={(e) => setImportTxtOverwritePrices(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                          Atualizar valores dos lotes existentes com o preço por m² informado
+                        </span>
+                      </label>
+                    )}
 
                     <button 
                        type="submit" disabled={importingTxt}
