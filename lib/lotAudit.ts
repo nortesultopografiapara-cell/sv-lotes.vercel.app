@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatCurrencyBRL as formatCurrencyBRLShared } from '@/lib/currencyBrl';
 
 export type LotAuditAction =
   | 'lot_created'
@@ -219,11 +220,8 @@ export function lotAuditContextFromBlock(
   };
 }
 
-export function formatCurrencyBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
+export function formatCurrencyBRL(value: number | null | undefined): string {
+  return formatCurrencyBRLShared(value);
 }
 
 export async function logLotAuditEvent(

@@ -67,6 +67,16 @@ import {
   type FormattedLotAuditEvent,
   type LotAuditLogRow,
 } from "@/lib/lotAudit";
+import {
+  formatCurrencyBRL as formatBRL,
+  formatLotAuditDescription,
+  parseCurrencyBRL,
+} from "@/lib/currencyBrl";
+import {
+  GIS_LOT_POPUP_ACTION_BTN_CLASS,
+  GIS_LOT_POPUP_CONTAINER_CLASS,
+  GIS_LOT_POPUP_PRICE_INPUT_CLASS,
+} from "@/lib/gisLotPopupLayout";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
@@ -1741,14 +1751,21 @@ function LotPopupContent({
   }, [lot]);
 
   const area = (officialMeasures.area ?? Number(lot.area)) || 0;
-  const currentPrice = Number(lot.price) || 0;
+  const currentPrice = useMemo(() => {
+    if (lot.price == null || lot.price === "") return null;
+    const n = Number(lot.price);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }, [lot.price]);
   const displayNum =
     String(lot.number)
       .replace(/[^0-9A-Za-z]/g, "")
       .replace(/.*linha.*/i, "")
       .replace(/.*kml.*/i, "") || String(lot.number).replace(/\D/g, "");
 
-  const [editablePrice, setEditablePrice] = useState(currentPrice);
+  const [priceText, setPriceText] = useState(() =>
+    currentPrice != null ? formatBRL(currentPrice) : "",
+  );
+  const [priceFocused, setPriceFocused] = useState(false);
   const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [popupTab, setPopupTab] = useState<
@@ -1763,15 +1780,19 @@ function LotPopupContent({
   );
 
   const quadraLabel = String(lot.block ?? lot.block_name ?? "").trim();
-  const formattedPrice = currentPrice.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
+  const formattedPrice =
+    currentPrice != null ? formatBRL(currentPrice) : "—";
+
+  const parsedPriceText = parseCurrencyBRL(priceText);
+  const priceChanged =
+    parsedPriceText !== currentPrice &&
+    !(parsedPriceText == null && currentPrice == null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEditablePrice(currentPrice);
-  }, [currentPrice]);
+    if (!priceFocused) {
+      setPriceText(currentPrice != null ? formatBRL(currentPrice) : "");
+    }
+  }, [currentPrice, priceFocused]);
 
   useEffect(() => {
     if (popupTab !== "historico" || !lot?.id) return;
@@ -1818,24 +1839,33 @@ function LotPopupContent({
   }, [popupTab, lot?.id]);
 
   const handleSavePrice = async () => {
+    const parsed = parseCurrencyBRL(priceText);
+    if (priceText.trim() && parsed == null) {
+      alert("Informe um valor válido em reais (ex.: R$ 80.000,00).");
+      return;
+    }
     try {
       setIsSavingPrice(true);
       setSavedSuccess(false);
-      const { error } = await supabase.from("blocks").update({ price: editablePrice }).eq("id", lot.id);
+      const { error } = await supabase
+        .from("blocks")
+        .update({ price: parsed })
+        .eq("id", lot.id);
       if (error) throw error;
-      
-      onAction(lot, lot.status, editablePrice);
+
+      onAction(lot, lot.status, parsed ?? 0);
 
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot),
         action: "value_changed",
         title: "Valor do lote alterado",
-        description: `${formatCurrencyBRL(currentPrice)} → ${formatCurrencyBRL(editablePrice)}`,
+        description: `${currentPrice != null ? formatBRL(currentPrice) : "—"} → ${parsed != null ? formatBRL(parsed) : "—"}`,
         oldData: { price: currentPrice },
-        newData: { price: editablePrice },
+        newData: { price: parsed },
         source: "gis_map",
       });
-      
+
+      setPriceText(parsed != null ? formatBRL(parsed) : "");
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
     } catch (err: any) {
@@ -1879,7 +1909,7 @@ function LotPopupContent({
   ];
 
   return (
-    <div className="p-2 min-w-[300px] max-w-[340px] bg-white text-gray-900 rounded-md font-sans shadow-xl">
+    <div className={GIS_LOT_POPUP_CONTAINER_CLASS}>
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0 flex-1">
           <h3 className="font-bold text-sm text-gray-900 leading-tight">
@@ -1923,7 +1953,7 @@ function LotPopupContent({
       </div>
 
       {popupTab === "resumo" && (
-        <div className="space-y-1.5 text-[11px]">
+        <div className="space-y-1.5 text-[11px] md:text-xs">
           <div className="flex justify-between items-center py-0.5">
             <span className="text-gray-500">Área</span>
             <span className="font-medium text-gray-900">
@@ -2015,7 +2045,9 @@ function LotPopupContent({
           )}
           <div className="flex justify-between items-center py-0.5">
             <span className="text-gray-500">Valor</span>
-            <span className="font-semibold text-gray-900">{formattedPrice}</span>
+            <span className="font-semibold text-gray-900 text-sm md:text-base">
+              {formattedPrice}
+            </span>
           </div>
           {isSold && lot.customerName && (
             <div className="flex justify-between items-center py-0.5">
@@ -2156,28 +2188,52 @@ function LotPopupContent({
       )}
 
       {popupTab === "comercial" && (
-        <div className="space-y-2 text-[11px]">
+        <div className="space-y-2.5 text-[11px] md:text-xs">
           <div className="flex justify-between items-center gap-2">
             <span className="text-gray-500 shrink-0">Valor do lote</span>
             {ownerReadOnly ? (
-              <span className="font-mono font-bold text-gray-900">
+              <span className="font-mono font-bold text-gray-900 text-sm md:text-base">
                 {formattedPrice}
               </span>
             ) : (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <input
-                type="number"
-                value={editablePrice}
-                onChange={(e) => setEditablePrice(Number(e.target.value))}
-                className="w-24 px-1.5 py-1 text-right text-[11px] border border-gray-300 rounded font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-gray-900"
+                type="text"
+                inputMode="decimal"
+                value={priceText}
+                onChange={(e) => setPriceText(e.target.value)}
+                onFocus={() => {
+                  setPriceFocused(true);
+                  if (currentPrice != null) {
+                    setPriceText(
+                      currentPrice.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }),
+                    );
+                  }
+                }}
+                onBlur={() => {
+                  setPriceFocused(false);
+                  const parsed = parseCurrencyBRL(priceText);
+                  if (priceText.trim() && parsed == null) {
+                    setPriceText(
+                      currentPrice != null ? formatBRL(currentPrice) : "",
+                    );
+                    return;
+                  }
+                  setPriceText(parsed != null ? formatBRL(parsed) : "");
+                }}
+                placeholder="R$ 0,00"
+                className={GIS_LOT_POPUP_PRICE_INPUT_CLASS}
               />
               <button
                 onClick={handleSavePrice}
-                disabled={isSavingPrice || editablePrice === currentPrice}
-                className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                disabled={isSavingPrice || !priceChanged}
+                className={`px-2.5 py-1.5 text-[10px] md:text-xs font-bold rounded transition-colors ${
                   savedSuccess
                     ? "bg-green-500 text-white"
-                    : editablePrice !== currentPrice
+                    : priceChanged
                       ? "bg-blue-600 text-white hover:bg-blue-700"
                       : "bg-gray-200 text-gray-500 cursor-not-allowed"
                 }`}
@@ -2203,13 +2259,13 @@ function LotPopupContent({
             <button
               onClick={() => {
                 if (isSold) {
-                  onRequestClear(lot, currentPrice);
+                  onRequestClear(lot, currentPrice ?? 0);
                 } else {
-                  onAction(lot, "Disponível", currentPrice);
+                  onAction(lot, "Disponível", currentPrice ?? 0);
                 }
               }}
               disabled={actionLoading === lot.id}
-              className="flex-1 bg-gray-200 text-gray-700 hover:bg-gray-300 text-[10px] font-bold py-1.5 rounded"
+              className={`${GIS_LOT_POPUP_ACTION_BTN_CLASS} bg-gray-200 text-gray-700 hover:bg-gray-300`}
             >
               Disponibilizar
             </button>
@@ -2221,11 +2277,11 @@ function LotPopupContent({
                   );
                   return;
                 }
-                onRequestCustomerForm(lot, "Reservado", currentPrice);
+                onRequestCustomerForm(lot, "Reservado", currentPrice ?? 0);
               }}
               disabled={actionLoading === lot.id || isSold}
               title={isSold ? "Este lote já está vendido" : "Reservar lote"}
-              className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-yellow-400 text-yellow-900 hover:bg-yellow-500"}`}
+              className={`${GIS_LOT_POPUP_ACTION_BTN_CLASS} ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-yellow-400 text-yellow-900 hover:bg-yellow-500"}`}
             >
               Reservar
             </button>
@@ -2241,16 +2297,16 @@ function LotPopupContent({
                   blockOfflineSale();
                   return;
                 }
-                onRequestCustomerForm(lot, "Vendido", currentPrice);
+                onRequestCustomerForm(lot, "Vendido", currentPrice ?? 0);
               }}
               disabled={actionLoading === lot.id || isSold}
               title={isSold ? "Este lote já está vendido" : "Vender lote"}
-              className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-colors ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}
+              className={`${GIS_LOT_POPUP_ACTION_BTN_CLASS} ${isSold ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"}`}
             >
               Vender
             </button>
             <button
-              onClick={() => onRequestClear(lot, currentPrice)}
+              onClick={() => onRequestClear(lot, currentPrice ?? 0)}
               disabled={actionLoading === lot.id}
               className="flex-none px-1.5 bg-gray-100 text-gray-500 hover:text-gray-900 border border-gray-200 hover:bg-gray-200 rounded flex flex-col items-center justify-center"
               title="Limpar status"
@@ -2338,7 +2394,7 @@ function LotPopupContent({
       )}
 
       {popupTab === "historico" && (
-        <div className="text-[11px] max-h-52 overflow-y-auto">
+        <div className="text-[11px] md:text-xs max-h-56 md:max-h-64 overflow-y-auto">
           {auditHistoryLoading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
@@ -2374,8 +2430,8 @@ function LotPopupContent({
                     {entry.title}
                   </p>
                   {entry.description && (
-                    <p className="text-[10px] text-gray-600 mt-0.5 leading-snug">
-                      {entry.description}
+                    <p className="text-[10px] md:text-[11px] text-gray-600 mt-0.5 leading-snug">
+                      {formatLotAuditDescription(entry.description)}
                     </p>
                   )}
                   <p className="text-[9px] text-gray-400 mt-0.5">
