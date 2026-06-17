@@ -6,6 +6,10 @@ import {
 } from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
+import {
+  contractPartyDigits,
+  resolveCompanyContractDocument,
+} from '@/lib/saasContractParty';
 
 export type SaasContractCompanyInput = CompanyPricingSource & {
   id?: string;
@@ -96,7 +100,14 @@ export function validateSaasContractGeneration(
 
   require('id', 'ID da empresa', company.id);
   require('name', 'Nome da empresa', company.name);
-  require('cnpj', 'CNPJ', company.cnpj);
+
+  const contractDocument = resolveCompanyContractDocument(company);
+  require('document', 'CPF/CNPJ', contractDocument);
+  const docDigits = contractPartyDigits(contractDocument);
+  if (contractDocument && docDigits.length !== 11 && docDigits.length !== 14) {
+    missing.push('document_invalid');
+    missingLabels.push('CPF/CNPJ inválido (11 ou 14 dígitos)');
+  }
 
   const saas = getCompanySaasPlan(company);
   const planType =

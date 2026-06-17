@@ -355,7 +355,7 @@ function renderSignaturePage(
     w.doc.text(executed.provider.name, providerColX, w.y);
     w.y += 5;
     w.doc.text(
-      `CPF ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
+      `${ctx.contractor.documentLabel} ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
       w.margin,
       w.y,
     );
@@ -365,7 +365,9 @@ function renderSignaturePage(
       w.y,
     );
     w.y += 5;
-    w.doc.text(executed.client.role || ctx.contractor.responsible, w.margin, w.y);
+    if (executed.client.role && ctx.contractor.showRepresentative) {
+      w.doc.text(executed.client.role, w.margin, w.y);
+    }
     w.doc.text(executed.provider.role || ctx.provider.tradeName, providerColX, w.y);
     w.y += 5;
     w.doc.text(`Assinado em ${executed.client.signedDate}`, w.margin, w.y);
@@ -378,15 +380,38 @@ function renderSignaturePage(
     w.doc.text('Assinatura eletrônica válida', providerColX, w.y);
     w.y += 8;
   } else {
-    w.doc.text(ctx.contractor.name, w.margin, w.y);
-    w.doc.text(ctx.provider.legalName, providerColX, w.y);
-    w.y += 5;
-    w.doc.text(`CNPJ ${formatContractCnpj(ctx.contractor.cnpj)}`, w.margin, w.y);
-    w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, providerColX, w.y);
-    w.y += 5;
-    w.doc.text(ctx.contractor.responsible, w.margin, w.y);
-    w.doc.text(ctx.provider.tradeName, providerColX, w.y);
-    w.y += 8;
+    let clientY = w.y;
+    let providerY = w.y;
+
+    w.doc.text(ctx.contractor.name, w.margin, clientY);
+    w.doc.text(ctx.provider.legalName, providerColX, providerY);
+    clientY += 5;
+    providerY += 5;
+
+    w.doc.text(
+      `${ctx.contractor.documentLabel} ${ctx.contractor.document}`,
+      w.margin,
+      clientY,
+    );
+    w.doc.text(`CNPJ ${formatContractCnpj(ctx.provider.cnpj)}`, providerColX, providerY);
+    clientY += 5;
+    providerY += 5;
+
+    if (ctx.contractor.showRepresentative) {
+      w.doc.text(ctx.contractor.responsible, w.margin, clientY);
+      clientY += 4;
+      w.doc.setFont('helvetica', 'italic');
+      w.doc.setFontSize(8);
+      w.doc.text('Representante legal', w.margin, clientY);
+      w.doc.setFont('helvetica', 'normal');
+      w.doc.setFontSize(8.5);
+      clientY += 5;
+    }
+
+    w.doc.text(ctx.provider.tradeName, providerColX, providerY);
+    providerY += 5;
+
+    w.y = Math.max(clientY, providerY) + 3;
     w.doc.text(`Local e data: ${formatContractCity(ctx.contractor.cityState)}, ${signDate}`, w.margin, w.y);
     w.doc.text(`Local e data: ${saasProviderCityState(ctx.provider)}, ${signDate}`, providerColX, w.y);
     w.y += 10;
@@ -479,9 +504,11 @@ export function buildSaasContractPdfWithMeta(
 
   writer.sectionTitle('DADOS DA CONTRATANTE');
   writer.dataTableHeader();
-  writer.row('Empresa', ctx.contractor.name);
-  writer.row('CNPJ', formatContractCnpj(ctx.contractor.cnpj));
-  writer.row('Responsável', ctx.contractor.responsible);
+  writer.row(ctx.contractor.nameLabel, ctx.contractor.name);
+  writer.row(ctx.contractor.documentLabel, ctx.contractor.document);
+  if (ctx.contractor.showRepresentative) {
+    writer.row('Representante legal', ctx.contractor.responsible);
+  }
   writer.row('Telefone', formatContractPhone(ctx.contractor.phone));
   writer.row('E-mail', ctx.contractor.email);
   writer.row('Endereço', ctx.contractor.address);

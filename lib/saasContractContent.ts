@@ -11,6 +11,7 @@ import {
 import {
   dueDayFromDate,
   subscriptionDatesForContractPdf,
+  clampDueDay,
 } from '@/lib/companySubscriptionDates';
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
@@ -20,9 +21,15 @@ import {
   formatContractCep,
   formatContractCepRegional,
   formatContractCity,
-  formatContractCnpj,
   formatContractPhone,
 } from '@/lib/saasContractFormat';
+import {
+  buildSaasContractorHeaderLine,
+  buildSaasContractorQualificationText,
+  resolveSaasContractorParty,
+  resolveSaasContractRepresentative,
+  type SaasContractPartyType,
+} from '@/lib/saasContractParty';
 
 export const MENESES_COMPANY_ID = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
 
@@ -117,13 +124,19 @@ export type SaasContractContext = {
   provider: typeof SAAS_PROVIDER;
   contractor: {
     name: string;
-    cnpj: string;
+    partyType: SaasContractPartyType;
+    documentLabel: 'CPF' | 'CNPJ';
+    document: string;
+    showRepresentative: boolean;
+    nameLabel: 'Nome' | 'Empresa';
     responsible: string;
     phone: string;
     email: string;
     address: string;
     cityState: string;
     cep?: string;
+    /** @deprecated use document + documentLabel */
+    cnpj: string;
   };
   plan: {
     name: string;
@@ -159,9 +172,12 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const applied = pricing.appliedPrice;
   const billing = subscriptionDatesForContractPdf(subscription);
-  const dueDay = dueDayFromDate(billing.start_date);
-  const responsible =
-    company.legal_representative || company.responsible_name || 'Representante legal';
+  const dueDay = clampDueDay(
+    Number(company.subscription_due_day) || dueDayFromDate(billing.start_date),
+  );
+  const party = resolveSaasContractorParty(company);
+  const documentFormatted = party.documentFormatted;
+  const responsible = resolveSaasContractRepresentative(company, party);
 
   return {
     contractNumber: subscription.contract_number || '—',
@@ -169,8 +185,12 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
     provider: SAAS_PROVIDER,
     contractor: {
       name: displayField(company.name),
-      cnpj: formatContractCnpj(displayField(company.cnpj)),
-      responsible: displayField(responsible),
+      partyType: party.partyType,
+      documentLabel: party.documentLabel,
+      document: documentFormatted,
+      showRepresentative: party.showRepresentative,
+      nameLabel: party.nameLabel,
+      responsible: party.showRepresentative ? displayField(responsible) : '',
       phone: formatContractPhone(displayField(company.phone)),
       email: displayField(company.email),
       address: displayField(normalized.address || company.address),
@@ -178,6 +198,7 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
         `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
       ),
       cep: company.cep ? formatContractCep(String(company.cep).trim()) : undefined,
+      cnpj: documentFormatted,
     },
     plan: {
       name: billingUi.ui_plan,
@@ -257,7 +278,24 @@ export function buildSaasContractSections(
       title: 'QUALIFICAÇÃO DAS PARTES',
       paragraphs: [
         `CONTRATADA: ${p.legalName}, nome fantasia ${p.tradeName}, inscrita no CNPJ sob nº ${p.cnpj}, ${saasProviderHeadquartersQualification(p)}, doravante denominada simplesmente CONTRATADA ou FORNECEDORA.`,
-        `CONTRATANTE: ${c.name}, inscrita no CNPJ sob nº ${c.cnpj}, representada por ${c.responsible}, com endereço em ${c.address}, ${c.cityState}${c.cep ? `, CEP ${c.cep}` : ''}, telefone ${c.phone}, e-mail ${c.email}, doravante denominada simplesmente CONTRATANTE.`,
+        buildSaasContractorQualificationText({
+          name: c.name,
+          party: {
+            partyType: c.partyType,
+            documentLabel: c.documentLabel,
+            documentFormatted: c.document,
+            documentDigits: '',
+            isNaturalPerson: c.partyType === 'PF',
+            showRepresentative: c.showRepresentative,
+            nameLabel: c.nameLabel,
+          },
+          responsible: c.responsible,
+          address: c.address,
+          cityState: c.cityState,
+          cep: c.cep,
+          phone: c.phone,
+          email: c.email,
+        }),
         'As partes acima qualificadas celebram o presente Contrato de Licença de Uso de Software na modalidade SaaS (Software as a Service), regido pelas cláusulas e condições a seguir.',
       ],
     },
@@ -487,7 +525,18 @@ export function buildSaasContractDocumentText(
     `CONTRATO DE LICENÇA DE SOFTWARE (SaaS) Nº ${ctx.contractNumber}`,
     `Emitido em ${ctx.emissionDate}`,
     `FORNECEDORA: ${ctx.provider.legalName} — ${ctx.provider.tradeName}`,
-    `CONTRATANTE: ${ctx.contractor.name} — CNPJ ${ctx.contractor.cnpj}`,
+    buildSaasContractorHeaderLine({
+      name: ctx.contractor.name,
+      party: {
+        partyType: ctx.contractor.partyType,
+        documentLabel: ctx.contractor.documentLabel,
+        documentFormatted: ctx.contractor.document,
+        documentDigits: '',
+        isNaturalPerson: ctx.contractor.partyType === 'PF',
+        showRepresentative: ctx.contractor.showRepresentative,
+        nameLabel: ctx.contractor.nameLabel,
+      },
+    }),
     `PLANO: ${ctx.plan.name} — ${ctx.plan.monthlyPrice}`,
   ];
   for (const section of sections) {
@@ -515,7 +564,8 @@ export function menesesSaasContractFixture(): SaasContractPdfInput {
       plan: 'business',
       plan_type: 'business',
       subscription_due_day: 27,
-      responsible_name: 'Representante Meneses',
+      legal_representative: 'Carlos Daniel Araujo Meneses',
+      responsible_name: 'Carlos Daniel Araujo Meneses',
     },
     subscription: {
       contract_number: '00003/2026',

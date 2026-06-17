@@ -30,7 +30,7 @@ function ivanildeCompanyFixture() {
   return {
     id: '00000000-0000-4000-8000-000000000001',
     name: 'IVANILDE DE MOURA SILVA',
-    cnpj: '12345678000199',
+    cnpj: '32641281104',
     email: 'ivanilde@example.com',
     phone: '94999999999',
     address: 'Rua Teste, 1',
@@ -42,8 +42,8 @@ function ivanildeCompanyFixture() {
     custom_price_enabled: true,
     custom_monthly_price: 300,
     custom_price_badge: 'desconto_especial',
-    subscription_due_day: 17,
-    subscription_start_date: '2026-06-17',
+    subscription_due_day: 15,
+    subscription_start_date: '2026-06-15',
     responsible_name: 'Ivanilde de Moura Silva',
     active: true,
     status_operacional: 'Ativa',
@@ -82,9 +82,9 @@ function subscriptionFixture(
     contract_number: '00099/2026',
     plan_type: 'basic',
     monthly_price: monthlyPrice,
-    start_date: '2026-06-17',
-    first_payment_date: '2026-06-17',
-    next_due_date: '2026-07-17',
+    start_date: '2026-06-15',
+    first_payment_date: '2026-06-15',
+    next_due_date: '2026-07-15',
   };
 }
 
@@ -114,7 +114,7 @@ function testIvanildeNextDueDate() {
     company,
     subscription: subscriptionFixture(company, 300),
   });
-  assert(ctx.plan.nextDueDate === '17/07/2026', 'próximo vencimento 17/07/2026');
+  assert(ctx.plan.nextDueDate === '15/07/2026', 'próximo vencimento 15/07/2026');
   console.log('OK testIvanildeNextDueDate');
 }
 
