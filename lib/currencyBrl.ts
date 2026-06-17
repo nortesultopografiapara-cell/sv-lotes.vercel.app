@@ -10,6 +10,7 @@ export function formatCurrencyBRL(value: number | null | undefined): string {
   }).format(value);
 }
 
+
 /** Converte entrada do usuário para número decimal ou null se vazio/inválido. */
 export function parseCurrencyBRL(
   input: string | number | null | undefined,
@@ -37,6 +38,9 @@ export function parseCurrencyBRL(
   if (n === 0) return null;
   return Math.round(n * 100) / 100;
 }
+
+/** Alias usado no GIS — mesma função que parseCurrencyBRL. */
+export const parseCurrencyBR = parseCurrencyBRL;
 
 /** Normaliza valores monetários em descrições de auditoria/histórico. */
 export function formatLotAuditDescription(description: string | null | undefined): string {

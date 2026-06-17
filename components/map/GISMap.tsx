@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { isOwnerRole } from "@/lib/rolePermissions";
+import { isOwnerRole, canManageGisProject } from "@/lib/rolePermissions";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
 import {
   getNextContractNumber,
@@ -77,6 +77,7 @@ import {
   GIS_LOT_POPUP_CONTAINER_CLASS,
   GIS_LOT_POPUP_PRICE_INPUT_CLASS,
 } from "@/lib/gisLotPopupLayout";
+import { normalizeSavedLotPrice } from "@/lib/lotBlockPrice";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import {
   canEditCompletedSale,
@@ -1659,6 +1660,8 @@ function LotPopupContent({
   onCancelDefineOfficialSide,
   onPickOfficialSideSegment,
   onEditOfficialSideSegment,
+  onPriceSaved,
+  canEditLotPrice = false,
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
@@ -1693,6 +1696,10 @@ function LotPopupContent({
   onCancelDefineOfficialSide?: () => void;
   onPickOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
   onEditOfficialSideSegment?: (lot: any, segmentIndex: number) => void;
+  /** Atualiza blocks.price no estado do mapa após salvar manualmente. */
+  onPriceSaved?: (lotId: string, price: number | null) => void;
+  /** ADMIN / SUPER_ADMIN — OWNER e corretor não editam preço. */
+  canEditLotPrice?: boolean;
 }) {
   const ownerReadOnly = isOwnerRole(userRole);
   console.log("GIS_POPUP_RENDER", {
@@ -1751,11 +1758,10 @@ function LotPopupContent({
   }, [lot]);
 
   const area = (officialMeasures.area ?? Number(lot.area)) || 0;
-  const currentPrice = useMemo(() => {
-    if (lot.price == null || lot.price === "") return null;
-    const n = Number(lot.price);
-    return Number.isFinite(n) && n >= 0 ? n : null;
-  }, [lot.price]);
+  const currentPrice = useMemo(
+    () => normalizeSavedLotPrice(lot.price),
+    [lot.price],
+  );
   const displayNum =
     String(lot.number)
       .replace(/[^0-9A-Za-z]/g, "")
@@ -1839,6 +1845,7 @@ function LotPopupContent({
   }, [popupTab, lot?.id]);
 
   const handleSavePrice = async () => {
+    if (!canEditLotPrice) return;
     const parsed = parseCurrencyBRL(priceText);
     if (priceText.trim() && parsed == null) {
       alert("Informe um valor válido em reais (ex.: R$ 80.000,00).");
@@ -1853,7 +1860,7 @@ function LotPopupContent({
         .eq("id", lot.id);
       if (error) throw error;
 
-      onAction(lot, lot.status, parsed ?? 0);
+      onPriceSaved?.(lot.id, parsed);
 
       void logLotAuditEvent(supabase, {
         ...lotAuditContextFromBlock(lot),
@@ -2191,7 +2198,7 @@ function LotPopupContent({
         <div className="space-y-2.5 text-[11px] md:text-xs">
           <div className="flex justify-between items-center gap-2">
             <span className="text-gray-500 shrink-0">Valor do lote</span>
-            {ownerReadOnly ? (
+            {!canEditLotPrice ? (
               <span className="font-mono font-bold text-gray-900 text-sm md:text-base">
                 {formattedPrice}
               </span>
@@ -2785,6 +2792,7 @@ export default function GISMap({
   } | null>(null);
   const [defineOfficialSidePickLotId, setDefineOfficialSidePickLotId] =
     useState<string | null>(null);
+  const pendingLotPricesRef = useRef<Map<string, number | null>>(new Map());
   const [officialSideEdit, setOfficialSideEdit] = useState<{
     lot: any;
     segmentIndex: number;
@@ -3676,6 +3684,14 @@ export default function GISMap({
                 };
               }
 
+              const pendingManualPrice = pendingLotPricesRef.current.get(b.id);
+              const blockPrice =
+                pendingManualPrice !== undefined
+                  ? pendingManualPrice ?? 0
+                  : b.price !== null && b.price !== undefined
+                    ? Number(b.price)
+                    : 0;
+
               return {
                 id: b.id,
                 project_id: b.project_id,
@@ -3693,10 +3709,7 @@ export default function GISMap({
                 status: b.status || "Disponível",
                 area:
                   b.area !== null && b.area !== undefined ? Number(b.area) : 0,
-                price:
-                  b.price !== null && b.price !== undefined
-                    ? Number(b.price)
-                    : 0,
+                price: blockPrice,
                 geometryType,
                 coordCount,
                 bounds,
@@ -3780,6 +3793,21 @@ export default function GISMap({
       supabase.removeChannel(channel);
     };
   }, [user, projectId, refreshKey]);
+
+  const handleLotPriceSaved = (lotId: string, price: number | null) => {
+    pendingLotPricesRef.current.set(lotId, price);
+    window.setTimeout(() => {
+      pendingLotPricesRef.current.delete(lotId);
+    }, 8000);
+
+    const normalized = price ?? 0;
+    setLots((prev) =>
+      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+    );
+    setBlocksData((prev) =>
+      prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
+    );
+  };
 
   const handleLotAction = async (
     lot: any,
@@ -4747,6 +4775,8 @@ export default function GISMap({
                         onRequestClear={(l, p) => setClearConfirmModal({ lot: l, price: p })}
                         canEditSale={userCanEditSale}
                         userRole={user?.role}
+                        canEditLotPrice={canManageGisProject(user?.role)}
+                        onPriceSaved={handleLotPriceSaved}
                         onEditSale={(l) => void openEditSaleForm(l)}
                         onViewContract={handleViewContract}
                         onRegenerateContract={(l) =>
@@ -4957,6 +4987,8 @@ export default function GISMap({
                     }
                     canEditSale={userCanEditSale}
                     userRole={user?.role}
+                    canEditLotPrice={canManageGisProject(user?.role)}
+                    onPriceSaved={handleLotPriceSaved}
                     onEditSale={(l) => void openEditSaleForm(l)}
                     onViewContract={handleViewContract}
                     onRegenerateContract={(l) =>

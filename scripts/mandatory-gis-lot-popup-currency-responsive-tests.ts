@@ -1,5 +1,5 @@
 /**
- * Testes — moeda BRL e popup responsivo do lote no GIS.
+ * Testes — moeda BRL, preço manual e popup responsivo do lote no GIS.
  * npx tsx scripts/mandatory-gis-lot-popup-currency-responsive-tests.ts
  */
 
@@ -9,12 +9,19 @@ import {
   formatCurrencyBRL,
   formatLotAuditDescription,
   parseCurrencyBRL,
+  parseCurrencyBR,
 } from '../lib/currencyBrl';
 import {
   GIS_LOT_POPUP_CONTAINER_CLASS,
   GIS_LOT_POPUP_PRICE_INPUT_CLASS,
 } from '../lib/gisLotPopupLayout';
+import {
+  hasSavedLotPrice,
+  normalizeSavedLotPrice,
+  resolveLotBlockPrice,
+} from '../lib/lotBlockPrice';
 import { buildTxtImportAuditDescription } from '../lib/txtImportLotPricing';
+import { canManageGisProject, isOwnerRole } from '../lib/rolePermissions';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -34,11 +41,14 @@ function testFormat95286() {
 
 function testParseFormatted() {
   assertEq(parseCurrencyBRL('R$ 95.286,40'), 95286.4, 'parse R$ 95.286,40');
+  assertEq(parseCurrencyBR('R$ 33.960,00'), 33960, 'parseCurrencyBR alias');
 }
 
 function testParsePlainNumbers() {
   assertEq(parseCurrencyBRL('80000'), 80000, 'parse 80000');
   assertEq(parseCurrencyBRL('80.000,00'), 80000, 'parse 80.000,00');
+  assertEq(parseCurrencyBRL('33960.00'), 33960, 'parse 33960.00');
+  assertEq(parseCurrencyBRL('33.960,00'), 33960, 'parse 33.960,00');
 }
 
 function testRejectNegativeAndEmpty() {
@@ -47,11 +57,60 @@ function testRejectNegativeAndEmpty() {
   assertEq(parseCurrencyBRL('   '), null, 'espaços vira null');
 }
 
+function testSavedPricePrecedence() {
+  const calculated = resolveLotBlockPrice({
+    price: 33045.53,
+    areaM2: 412.8,
+    pricePerM2: 80,
+  });
+  assertEq(calculated, 33045.53, 'preço salvo prevalece sobre m²');
+
+  const manual = resolveLotBlockPrice({
+    price: 33960,
+    areaM2: 412.8,
+    pricePerM2: 80,
+  });
+  assertEq(manual, 33960, 'preço manual salvo');
+
+  const suggested = resolveLotBlockPrice({
+    price: null,
+    areaM2: 250,
+    pricePerM2: 120,
+  });
+  assertEq(suggested, 30000, 'sugestão m² só sem preço salvo');
+
+  assert(!hasSavedLotPrice(0), 'zero não é preço salvo');
+  assert(hasSavedLotPrice(33960), '33960 é preço salvo');
+  assertEq(normalizeSavedLotPrice(33045.53), 33045.53, 'normaliza salvo');
+}
+
+function testManualSaveFlow() {
+  const parsed = parseCurrencyBRL('33.960,00');
+  assertEq(parsed, 33960, 'digitação manual');
+  const blockUpdate = { price: parsed };
+  assertEq(blockUpdate.price, 33960, 'blocks.price decimal');
+
+  const lotState = { id: 'lot-1', price: 33045.53 };
+  const nextLot = { ...lotState, price: parsed ?? 0 };
+  assertEq(nextLot.price, 33960, 'estado local após salvar');
+}
+
+function testOwnerCannotEditPrice() {
+  assert(!canManageGisProject('OWNER'), 'OWNER não edita preço');
+  assert(isOwnerRole('OWNER'), 'OWNER identificado');
+  assert(canManageGisProject('ADMIN'), 'ADMIN edita preço');
+  assert(canManageGisProject('SUPER_ADMIN'), 'SUPER_ADMIN edita preço');
+}
+
 function testAuditHistoryFormatting() {
   const raw = 'R$ 95286,4 → R$ 80000';
   const formatted = formatLotAuditDescription(raw);
   assert(formatted.includes('95.286,40'), 'histórico formata origem');
   assert(formatted.includes('80.000,00'), 'histórico formata destino');
+
+  const manualChange = formatLotAuditDescription('R$ 33.045,53 → R$ 33.960,00');
+  assert(manualChange.includes('33.045,53'), 'histórico origem manual');
+  assert(manualChange.includes('33.960,00'), 'histórico destino manual');
 }
 
 function testImportAuditCurrency() {
@@ -78,23 +137,21 @@ function testPopupResponsiveClasses() {
     GIS_LOT_POPUP_CONTAINER_CLASS.includes('w-[min(92vw,360px)]'),
     'mobile width',
   );
-  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('md:w-[420px]'), 'tablet width');
+  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('md:w-[480px]'), 'notebook width');
   assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('lg:w-[520px]'), 'desktop width');
+  assert(GIS_LOT_POPUP_CONTAINER_CLASS.includes('xl:w-[540px]'), 'desktop grande');
 
   const gisMapPath = path.join(process.cwd(), 'components', 'map', 'GISMap.tsx');
   const source = fs.readFileSync(gisMapPath, 'utf8');
   assert(source.includes('GIS_LOT_POPUP_CONTAINER_CLASS'), 'GISMap usa container class');
   assert(source.includes('GIS_LOT_POPUP_PRICE_INPUT_CLASS'), 'GISMap usa input class');
   assert(source.includes('parseCurrencyBRL'), 'GISMap usa parseCurrencyBRL');
+  assert(source.includes('onPriceSaved'), 'GISMap usa onPriceSaved');
+  assert(source.includes('handleLotPriceSaved'), 'GISMap atualiza estado local');
+  assert(!source.includes('onAction(lot, lot.status, parsed'), 'save preço não chama onAction');
+  assert(source.includes('canEditLotPrice'), 'GISMap restringe edição de preço');
   assert(source.includes('type="text"'), 'input texto moeda');
   assert(GIS_LOT_POPUP_PRICE_INPUT_CLASS.includes('lg:w-40'), 'input desktop wider');
-}
-
-function testManualSaveUsesNumericPrice() {
-  const parsed = parseCurrencyBRL('80.000,00');
-  assertEq(parsed, 80000, 'save payload numérico');
-  const blockUpdate = { price: parsed };
-  assertEq(blockUpdate.price, 80000, 'blocks.price decimal');
 }
 
 function main() {
@@ -102,10 +159,12 @@ function main() {
   testParseFormatted();
   testParsePlainNumbers();
   testRejectNegativeAndEmpty();
+  testSavedPricePrecedence();
+  testManualSaveFlow();
+  testOwnerCannotEditPrice();
   testAuditHistoryFormatting();
   testImportAuditCurrency();
   testPopupResponsiveClasses();
-  testManualSaveUsesNumericPrice();
   console.log('OK — mandatory-gis-lot-popup-currency-responsive-tests passed');
 }
 

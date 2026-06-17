@@ -9,6 +9,7 @@ import {
   parsePricePerM2Input,
   resolveImportedLotPrice,
 } from '../lib/txtImportLotPricing';
+import { resolveLotBlockPrice } from '../lib/lotBlockPrice';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -102,13 +103,32 @@ function testReimportWithoutPricePerM2PreservesExisting() {
 
 function testCommercialPopupReadsBlockPrice() {
   const block = { price: 130104, area: 1084.2 };
-  const currentPrice = Number(block.price) || 0;
-  assertEq(currentPrice, 130104, 'popup comercial lê blocks.price');
-  const formatted = currentPrice.toLocaleString('pt-BR', {
+  const currentPrice = resolveLotBlockPrice({
+    price: block.price,
+    areaM2: block.area,
+    pricePerM2: 120,
+  });
+  assertEq(currentPrice, 130104, 'popup comercial lê blocks.price salvo');
+  const formatted = (currentPrice ?? 0).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   });
   assert(formatted.includes('130.104'), 'formatação BRL');
+}
+
+function testManualEditOverridesCalculatedPrice() {
+  const saved = resolveLotBlockPrice({
+    price: 33960,
+    areaM2: 412.8,
+    pricePerM2: 80,
+  });
+  assertEq(saved, 33960, 'manual 33960 prevalece sobre 412.8×80');
+  const calculatedOnly = resolveLotBlockPrice({
+    price: null,
+    areaM2: 412.8,
+    pricePerM2: 80,
+  });
+  assertEq(calculatedOnly, 33024, 'só calcula sem preço salvo');
 }
 
 function testManualEditStillUsesBlockPriceField() {
@@ -145,6 +165,7 @@ function main() {
   testReimportOverwriteWhenChecked();
   testReimportWithoutPricePerM2PreservesExisting();
   testCommercialPopupReadsBlockPrice();
+  testManualEditOverridesCalculatedPrice();
   testManualEditStillUsesBlockPriceField();
   testImportAuditDescription();
   console.log('OK — mandatory-txt-import-price-per-m2-tests passed');
