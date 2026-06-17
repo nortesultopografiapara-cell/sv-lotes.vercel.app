@@ -27,6 +27,7 @@ import type { CompanySubscription } from '@/lib/saasSubscription';
 import { isRealSaasCompany } from '@/lib/saasSubscription';
 import { computeDaysLate } from '@/lib/masterSaasReports';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
+import { MasterCompanyAdminsPanel } from '@/components/master/MasterCompanyAdminsPanel';
 
 type TabId = 'geral' | 'plano' | 'recursos' | 'usuarios' | 'empreendimentos' | 'historico';
 
@@ -323,6 +324,10 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
           <InfoCard label="Limite de projetos" value={String(saasPlan.maxProjects)} />
           <InfoCard label="Projetos em uso" value={String(projects.length)} />
           <InfoCard label="Limite de corretores" value={String(saasPlan.maxBrokers)} />
+          <InfoCard
+            label="Limite de administradores"
+            value={String(company.admin_users_limit ?? 1)}
+          />
           <InfoCard label="Usuários vinculados" value={String(tenantUsers.length)} />
           <InfoCard label="Preço personalizado" value={pricing.hasCustomPrice ? 'Sim' : 'Não'} />
           <InfoCard
@@ -332,18 +337,9 @@ function CompanyDetailContent({ companyId }: { companyId: string }) {
         </div>
       )}
 
-      {activeTab === 'usuarios' && (
-        <DataTable
-          headers={['Nome', 'E-mail', 'Perfil', 'Criado em']}
-          rows={tenantUsers.map((u) => [
-            u.name || '—',
-            u.email || '—',
-            u.role || '—',
-            u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '—',
-          ])}
-          empty="Nenhum usuário vinculado."
-        />
-      )}
+      {activeTab === 'usuarios' && user?.id ? (
+        <MasterCompanyAdminsPanel companyId={companyId} superAdminUserId={user.id} />
+      ) : null}
 
       {activeTab === 'empreendimentos' && (
         <DataTable

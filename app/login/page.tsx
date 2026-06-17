@@ -105,6 +105,16 @@ export default function LoginPage() {
           return;
         }
 
+        await supabase
+          .from('users')
+          .update({ last_login_at: new Date().toISOString() })
+          .eq('id', data.user.id)
+          .then(({ error: loginTrackErr }) => {
+            if (loginTrackErr) {
+              console.warn('[login] last_login_at não atualizado', loginTrackErr.message);
+            }
+          });
+
         if (userData?.role === 'BROKER' || userData?.role === 'CORRETOR') {
            window.location.href = '/map';
         } else if (userData?.role === 'OWNER') {

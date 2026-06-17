@@ -19,6 +19,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
   isBrokerRole,
+  isMasterConsoleRole,
   isOwnerRole,
 } from '@/lib/rolePermissions';
 import {
@@ -78,7 +79,7 @@ function receiptMatchesProject(
 export default function DashboardPage() {
   const { user } = useAuth();
   
-  if (user?.role === 'SUPER_ADMIN') {
+  if (isMasterConsoleRole(user?.role)) {
     return <SuperAdminDashboard user={user} />;
   }
   

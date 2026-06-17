@@ -6,6 +6,7 @@ import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette } from 'lucide-react';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
+import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
@@ -324,6 +325,22 @@ export default function SettingsPage() {
         </div>
         <ThemeAppearanceSection />
       </div>
+
+      {isTenantAdminRole(user?.role) && settingsCompanyId && user?.id ? (
+        <div className="mb-8">
+          <TenantCompanyAdminsPanel
+            callerUserId={user.id}
+            tenantId={settingsCompanyId}
+            impersonatingTenantId={
+              typeof window !== 'undefined' &&
+              PLATFORM_ADMIN_ROLES.includes(user.role || '') &&
+              localStorage.getItem('impersonating_tenant_id')
+                ? localStorage.getItem('impersonating_tenant_id')
+                : null
+            }
+          />
+        </div>
+      ) : null}
 
       {isTenantAdminRole(user?.role) && settingsCompanyId && user?.id ? (
         <div className="mb-8">

@@ -1,3 +1,5 @@
+import { isPlatformAdmin } from '@/lib/rls';
+
 export type UserCompanyLink = {
   tenant_id?: string | null;
   company_id?: string | null;
@@ -12,7 +14,7 @@ export function resolveUserCompanyId(user: UserCompanyLink): string | null {
 }
 
 export function isSuperAdminRole(role?: string | null): boolean {
-  return String(role || '').toUpperCase() === 'SUPER_ADMIN';
+  return isPlatformAdmin(role);
 }
 
 export function buildCompanyUserCounts(users: UserCompanyLink[]): Record<string, number> {

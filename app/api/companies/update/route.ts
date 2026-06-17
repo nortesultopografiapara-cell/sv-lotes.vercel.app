@@ -101,6 +101,9 @@ export async function PATCH(request: Request) {
     };
 
     if (body.slug) updatePayload.slug = body.slug;
+    if (body.admin_users_limit != null) {
+      updatePayload.admin_users_limit = Math.max(1, Math.trunc(Number(body.admin_users_limit)));
+    }
 
     if (body.is_test_company !== true && body.subscription_start_date) {
       const subDates = buildCompanySubscriptionDatePayload({

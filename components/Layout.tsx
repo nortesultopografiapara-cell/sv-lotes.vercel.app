@@ -43,7 +43,7 @@ import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
-import { isBrokerRole, isOwnerRole } from '@/lib/rolePermissions';
+import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
 import {
   getOwnerMenuItemsFromPermissions,
   loadOwnerAccessContext,
@@ -134,7 +134,7 @@ function NotificationBell({ user }: { user: any }) {
 
     // Supabase Realtime subscription
     let channel: any = null;
-    if (isSupabaseConfigured && (user?.tenant_id || user?.role === 'SUPER_ADMIN')) {
+    if (isSupabaseConfigured && (user?.tenant_id || shouldUseMasterConsoleLayout(user?.role))) {
         channel = supabase.channel('finance_receipts_changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_receipts' }, () => {
                 loadAlerts();
@@ -238,11 +238,11 @@ function NotificationBell({ user }: { user: any }) {
 }
 
 const getMenuItems = (role: string) => {
-  if (role === 'SUPER_ADMIN') {
+  if (shouldUseMasterConsoleLayout(role)) {
     return [];
   }
 
-  if (['ADMIN', 'COMPANY_ADMIN', 'ADMIN_EMPRESA', 'MASTER-ADMIN'].includes(role)) {
+  if (shouldShowFullTenantAdminMenu(role)) {
     return [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, color: 'text-[var(--color-primary)]' },
       { name: 'Mapa GIS', href: '/map', icon: MapIcon, color: 'text-[var(--color-success)]' },
@@ -329,7 +329,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   } | null>(null);
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const isMasterConsole = shouldUseMasterConsoleLayout(user?.role);
 
   useEffect(() => {
     try {
@@ -470,7 +470,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   }
 
   // Block the UI if the company is suspended/blocked/defaulting (except for Super Admin)
-  if (user?.role !== 'SUPER_ADMIN' && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional)) {
+  if (!isMasterConsole && company?.status_operacional && ['Suspensa', 'Bloqueada', 'Inativa', 'Inadimplente'].includes(company.status_operacional)) {
     return (
       <div className="h-screen w-full bg-[#0b1111] flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
@@ -511,7 +511,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 min-w-0">
-              {isSuperAdmin ? (
+              {isMasterConsole ? (
                 <SvLotesLogo size={32} showText subtitle="Master Console" />
               ) : company?.logo_url ? (
                 <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
@@ -522,7 +522,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-2">
             <OfflineStatusBar />
-            {isSuperAdmin && <SuperAdminQuickActions />}
+            {isMasterConsole && <SuperAdminQuickActions />}
             <GisProjectHeaderBadge />
             <NotificationBell user={user} />
             <Link
@@ -541,7 +541,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Super Admin Sidebar */}
-      {isSuperAdmin && (
+      {isMasterConsole && (
         <SuperAdminSidebar
           collapsed={sidebarCollapsed}
           onToggleCollapsed={toggleSidebarCollapsed}
@@ -553,7 +553,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Desktop Sidebar (tenant roles) */}
-      {!isMobile && !isSuperAdmin && (
+      {!isMobile && !isMasterConsole && (
         <aside className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] z-[200] flex flex-col flex-shrink-0">
           <div className="h-20 flex items-center px-6 gap-3">
              {company?.logo_url ? (
@@ -593,7 +593,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Mobile Drawer (tenant roles) */}
-      {isMobile && !isSuperAdmin && (
+      {isMobile && !isMasterConsole && (
         <aside 
           className={`fixed top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[400] transition-transform duration-300 ease-in-out flex flex-col ${
             isOpen ? 'translate-x-0' : '-translate-x-full'
@@ -645,7 +645,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main
         className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${
-          isMobile ? (isSuperAdmin ? 'pt-14' : 'pt-16 pb-20') : ''
+          isMobile ? (isMasterConsole ? 'pt-14' : 'pt-16 pb-20') : ''
         }`}
       >
         
@@ -672,7 +672,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             <button
                onClick={async () => {
                    try {
-                       await supabase.from('users').update({ tenant_id: null }).eq('id', user?.id).eq('role', 'SUPER_ADMIN');
+                       await supabase.from('users').update({ tenant_id: null }).eq('id', user?.id);
                        clearImpersonationState();
                        setImpersonatingTenantId(null);
                        setImpersonatingCompanyName(null);
@@ -699,18 +699,14 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                 <strong className="truncate">{user?.name || 'Usuário'}</strong>
               </h1>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                {isSuperAdmin
-                  ? 'Painel Master · SaaS'
-                  : isBrokerRole(user?.role)
-                    ? 'Corretor / Vendedor'
-                    : 'Admin Empresa'}
+                {resolveRoleDisplayLabel(user?.role)}
               </p>
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
               <OfflineStatusBar />
-              {isSuperAdmin && <SuperAdminQuickActions />}
-              {isSuperAdmin && (
+              {isMasterConsole && <SuperAdminQuickActions />}
+              {isMasterConsole && (
                 <span className="hidden md:inline-flex px-2.5 py-1 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold uppercase tracking-wider border border-[var(--color-primary)]/20">
                   Master
                 </span>
@@ -745,7 +741,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                     <p className="text-xs text-[var(--text-secondary)] mt-1 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
-                    {user?.role === 'SUPER_ADMIN' ? (
+                    {isMasterConsole ? (
                       <Link href="/super-admin/profile" className="flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors">
                         <User className="w-4 h-4" /> Meu Perfil Master
                       </Link>
@@ -785,7 +781,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile Bottom Navigation (tenant roles only) */}
-      {isMobile && !isSuperAdmin && menuItems.length > 0 && (
+      {isMobile && !isMasterConsole && menuItems.length > 0 && (
         <nav className="fixed bottom-0 left-0 right-0 h-[72px] bg-[var(--color-surface)] border-t border-[var(--color-border)] z-[300] flex items-center justify-around px-2 pb-safe overflow-x-auto">
           {menuItems.filter(item => !item.isSection).slice(0, 5).map((item) => {
             const isActive = pathname === item.href;

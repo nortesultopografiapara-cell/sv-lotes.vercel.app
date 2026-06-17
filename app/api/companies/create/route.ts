@@ -93,6 +93,7 @@ export async function POST(req: Request) {
       status_operacional: body.status_operacional || 'Ativa',
       project_limit: limits.project_limit,
       broker_limit: limits.broker_limit,
+      admin_users_limit: body.admin_users_limit != null ? Number(body.admin_users_limit) : 1,
       max_projects: limits.max_projects,
       max_brokers: limits.max_brokers,
     };

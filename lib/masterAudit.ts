@@ -26,6 +26,12 @@ const ACTION_LABELS: Record<string, string> = {
   SAAS_PAYMENT_REGISTERED: 'Pagamento de assinatura registrado',
   SAAS_PAYMENT_STATUS_CHANGED: 'Alteração de status de pagamento',
   CONTRACT_ARCHIVED: 'Contrato SaaS arquivado',
+  COMPANY_ADMIN_CREATED: 'Administrador da empresa cadastrado',
+  COMPANY_ADMIN_UPDATED: 'Administrador da empresa atualizado',
+  COMPANY_ADMIN_DISABLED: 'Administrador da empresa desativado',
+  COMPANY_ADMIN_ENABLED: 'Administrador da empresa reativado',
+  COMPANY_ADMIN_PASSWORD_RESET: 'Senha de administrador redefinida',
+  COMPANY_ADMIN_LIMIT_CHANGED: 'Limite de administradores alterado',
   SUBSCRIPTION_UPDATED: 'Edição de assinatura',
   LOGIN: 'Login',
   LOGIN_SUCCESS: 'Login realizado',
@@ -44,6 +50,7 @@ const MASTER_MODULES = new Set([
   'SALES',
   'AUTH',
   'IMPERSONATION',
+  'COMPANY_ADMINS',
 ]);
 
 const MASTER_ACTION_PREFIXES = [
@@ -53,6 +60,7 @@ const MASTER_ACTION_PREFIXES = [
   'SUBSCRIPTION_',
   'SAAS_',
   'RESOURCES_',
+  'COMPANY_ADMIN_',
   'IMPERSONATION_',
   'LOGIN',
 ];

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { isPlatformAdmin } from '@/lib/rls';
 
 export type TenantUser = {
   id: string;
@@ -16,7 +16,7 @@ export async function resolveActiveTenantId(user: TenantUser | null): Promise<st
 
   if (typeof window !== 'undefined') {
     const impersonating = localStorage.getItem('impersonating_tenant_id');
-    if (impersonating && user.role === 'SUPER_ADMIN') return impersonating;
+    if (impersonating && isPlatformAdmin(user.role)) return impersonating;
   }
 
   if (user.id && !['dev-preview-user', 'demo-user-id'].includes(user.id)) {

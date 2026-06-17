@@ -15,8 +15,44 @@ export const ENTERPRISE_ADMIN_ROLES = [
   'MASTER_ADMIN',
 ] as const;
 
+export const TENANT_ENTERPRISE_ADMIN_ROLES = [
+  'ADMIN',
+  'ADMIN_EMPRESA',
+  'COMPANY_ADMIN',
+] as const;
+
 export function normalizeUserRole(role?: string | null): string {
   return String(role || '').trim().toUpperCase();
+}
+
+export function isTenantEnterpriseAdminRole(role?: string | null): boolean {
+  const normalized = normalizeUserRole(role);
+  return (TENANT_ENTERPRISE_ADMIN_ROLES as readonly string[]).includes(normalized);
+}
+
+/** Painel Master (SaaS) — SUPER_ADMIN e aliases MASTER-ADMIN / MASTER_ADMIN. */
+export function isMasterConsoleRole(role?: string | null): boolean {
+  return isPlatformAdmin(role);
+}
+
+export function shouldUseMasterConsoleLayout(role?: string | null): boolean {
+  return isMasterConsoleRole(role);
+}
+
+/** Menu completo da empresa: ADMIN principal e admins secundários. */
+export function shouldShowFullTenantAdminMenu(role?: string | null): boolean {
+  if (isMasterConsoleRole(role)) return false;
+  return isTenantEnterpriseAdminRole(role);
+}
+
+export function resolveRoleDisplayLabel(role?: string | null): string {
+  const normalized = normalizeUserRole(role);
+  if (isMasterConsoleRole(normalized)) return 'Painel Master · SaaS';
+  if (isBrokerRole(normalized)) return 'Corretor / Vendedor';
+  if (isOwnerRole(normalized)) return 'Proprietário / Sócio';
+  if (normalized === 'ADMIN') return 'Administrador da Empresa';
+  if (isTenantEnterpriseAdminRole(normalized)) return 'Admin Empresa';
+  return 'Usuário';
 }
 
 export function isBrokerRole(role?: string | null): boolean {
@@ -68,7 +104,7 @@ export function canManageOwners(role?: string | null): boolean {
   if (isBrokerRole(role) || isOwnerRole(role)) return false;
   const normalized = normalizeUserRole(role);
   if (isPlatformAdmin(normalized)) return true;
-  return ['ADMIN', 'COMPANY_ADMIN', 'ADMIN_EMPRESA'].includes(normalized);
+  return isTenantEnterpriseAdminRole(normalized);
 }
 
 export const OWNERS_ADMIN_ROUTE = '/owners' as const;
