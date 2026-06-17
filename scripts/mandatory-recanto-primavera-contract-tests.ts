@@ -6,7 +6,7 @@
 import { generateContractHTML } from '../lib/contractTemplate';
 import { generateRecantoPrimaveraContract } from '../lib/recantoPrimaveraContractTemplate';
 import {
-  RECANTO_PRIMAVERA_CONTRACT_TITLE,
+  RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
 import {
@@ -201,9 +201,9 @@ function testMenesesUsesStandardModel() {
     'título Meneses',
   );
   assert(html.includes('Promitente Proprietário Vendedor'), 'qualificação Meneses');
-  assertNotIncludes(html, RECANTO_PRIMAVERA_CONTRACT_TITLE, 'sem título Recanto');
   assertNotIncludes(html, RECANTO_PRIMAVERA_LEGAL_MARKER, 'sem marcador Recanto');
-  assertNotIncludes(html, 'contract-vendor-block', 'sem bloco Recanto');
+  assertNotIncludes(html, 'sv-contract-recanto-primavera', 'sem classe Recanto');
+  assertNotIncludes(html, '<strong>Nacionalidade:</strong>', 'sem bloco jurídico Recanto');
   console.log('OK testMenesesUsesStandardModel');
 }
 
@@ -243,7 +243,7 @@ function testRecantoDirectGenerator() {
     contractDate: '2026-06-08',
   });
   assert(html.includes('VENDEDOR(A):'), 'bloco vendedor');
-  assert(html.includes(RECANTO_PRIMAVERA_CONTRACT_TITLE), 'título Recanto');
+  assert(html.includes(RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1), 'título Recanto');
   assert(html.includes('sv-contract-recanto-primavera'), 'classe template');
   console.log('OK testRecantoDirectGenerator');
 }

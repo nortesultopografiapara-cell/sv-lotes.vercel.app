@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette } from 'lucide-react';
+import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette, FileText, Landmark, Banknote } from 'lucide-react';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
@@ -18,7 +18,7 @@ import {
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
 const COMPANY_TECHNICAL_COLUMNS =
-  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, contract_model, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
+  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, contract_model, contract_legal_nationality, contract_legal_marital_status, contract_legal_profession, contract_legal_rg, contract_legal_rg_issuer, contract_legal_phone, contract_legal_email, contract_legal_address, contract_enterprise_name, contract_enterprise_location, contract_enterprise_municipality, contract_enterprise_uf, contract_forum_city, contract_bank_name, contract_bank_branch, contract_bank_account, contract_bank_pix, contract_bank_beneficiary, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
 
 function resolveSettingsCompanyId(user: { tenant_id?: string; company_id?: string; role?: string } | null): string | null {
   if (!user) return null;
@@ -107,7 +107,7 @@ export default function SettingsPage() {
     }
   }, [user, authLoading]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
      setCompany({ ...company, [e.target.name]: e.target.value });
   };
 
@@ -219,6 +219,24 @@ export default function SettingsPage() {
        logo_url: company?.logo_url,
        signature_url: company?.signature_url,
        contract_model: normalizeSaleContractModel(company?.contract_model),
+       contract_legal_nationality: company?.contract_legal_nationality || null,
+       contract_legal_marital_status: company?.contract_legal_marital_status || null,
+       contract_legal_profession: company?.contract_legal_profession || null,
+       contract_legal_rg: company?.contract_legal_rg || null,
+       contract_legal_rg_issuer: company?.contract_legal_rg_issuer || null,
+       contract_legal_phone: company?.contract_legal_phone || null,
+       contract_legal_email: company?.contract_legal_email || null,
+       contract_legal_address: company?.contract_legal_address || null,
+       contract_enterprise_name: company?.contract_enterprise_name || null,
+       contract_enterprise_location: company?.contract_enterprise_location || null,
+       contract_enterprise_municipality: company?.contract_enterprise_municipality || null,
+       contract_enterprise_uf: company?.contract_enterprise_uf || null,
+       contract_forum_city: company?.contract_forum_city || null,
+       contract_bank_name: company?.contract_bank_name || null,
+       contract_bank_branch: company?.contract_bank_branch || null,
+       contract_bank_account: company?.contract_bank_account || null,
+       contract_bank_pix: company?.contract_bank_pix || null,
+       contract_bank_beneficiary: company?.contract_bank_beneficiary || null,
        technical_responsible_name: technical.name.trim() || null,
        technical_responsible_role: technical.title.trim() || null,
        technical_responsible_crea: technical.crea.trim() || null,
@@ -312,6 +330,9 @@ export default function SettingsPage() {
   if (!company) {
      return <div className="p-8 text-center sv-theme-muted">Empresa não encontrada em companies.</div>;
   }
+
+  const isRecantoContract =
+    normalizeSaleContractModel(company?.contract_model) === 'RECANTO_PRIMAVERA';
 
   return (
     <div className="sv-page sv-page--scroll-y p-8 max-w-4xl mx-auto font-sans h-full w-full">
@@ -469,6 +490,112 @@ export default function SettingsPage() {
               </select>
            </div>
         </div>
+
+        {isRecantoContract ? (
+          <>
+            <div className="space-y-4">
+              <h2 className="sv-theme-heading flex items-center gap-2">
+                <FileText className="w-5 h-5 sv-theme-section-icon" />
+                Dados Jurídicos do Contrato
+              </h2>
+              <p className="text-xs sv-theme-muted">
+                Qualificação do vendedor no modelo Recanto Primavera. Se vazio, o sistema usa os dados principais da empresa quando disponíveis.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="sv-theme-label">Nacionalidade</label>
+                  <input type="text" name="contract_legal_nationality" value={company?.contract_legal_nationality || ''} onChange={handleChange} className="sv-theme-field" placeholder="Brasileira" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Estado Civil</label>
+                  <input type="text" name="contract_legal_marital_status" value={company?.contract_legal_marital_status || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Profissão</label>
+                  <input type="text" name="contract_legal_profession" value={company?.contract_legal_profession || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">RG</label>
+                  <input type="text" name="contract_legal_rg" value={company?.contract_legal_rg || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Órgão Emissor</label>
+                  <input type="text" name="contract_legal_rg_issuer" value={company?.contract_legal_rg_issuer || ''} onChange={handleChange} className="sv-theme-field" placeholder="SSP/PA" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Telefone (contrato)</label>
+                  <input type="text" name="contract_legal_phone" value={company?.contract_legal_phone || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">E-mail (contrato)</label>
+                  <input type="email" name="contract_legal_email" value={company?.contract_legal_email || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="sv-theme-label">Endereço Completo (contrato)</label>
+                  <input type="text" name="contract_legal_address" value={company?.contract_legal_address || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="sv-theme-heading flex items-center gap-2">
+                <Landmark className="w-5 h-5 sv-theme-section-icon" />
+                Dados do Empreendimento no Contrato
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <label className="sv-theme-label">Nome do Empreendimento para Contrato</label>
+                  <input type="text" name="contract_enterprise_name" value={company?.contract_enterprise_name || ''} onChange={handleChange} className="sv-theme-field" placeholder="CHACREAMENTO RECANTO PRIMAVERA" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="sv-theme-label">Localização do Empreendimento</label>
+                  <textarea name="contract_enterprise_location" value={company?.contract_enterprise_location || ''} onChange={handleChange} className="sv-theme-field min-h-[80px]" placeholder="Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Município</label>
+                  <input type="text" name="contract_enterprise_municipality" value={company?.contract_enterprise_municipality || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">UF</label>
+                  <input type="text" name="contract_enterprise_uf" value={company?.contract_enterprise_uf || ''} onChange={handleChange} className="sv-theme-field" maxLength={2} />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Cidade do Foro</label>
+                  <input type="text" name="contract_forum_city" value={company?.contract_forum_city || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="sv-theme-heading flex items-center gap-2">
+                <Banknote className="w-5 h-5 sv-theme-section-icon" />
+                Dados Bancários do Contrato
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="sv-theme-label">Banco</label>
+                  <input type="text" name="contract_bank_name" value={company?.contract_bank_name || ''} onChange={handleChange} className="sv-theme-field" placeholder="Sicredi" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Agência</label>
+                  <input type="text" name="contract_bank_branch" value={company?.contract_bank_branch || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">Conta Corrente</label>
+                  <input type="text" name="contract_bank_account" value={company?.contract_bank_account || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div>
+                  <label className="sv-theme-label">PIX</label>
+                  <input type="text" name="contract_bank_pix" value={company?.contract_bank_pix || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="sv-theme-label">Favorecido</label>
+                  <input type="text" name="contract_bank_beneficiary" value={company?.contract_bank_beneficiary || ''} onChange={handleChange} className="sv-theme-field" />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
 
         <div className="space-y-4">
            <h2 className="sv-theme-heading">Contato e Endereço</h2>
