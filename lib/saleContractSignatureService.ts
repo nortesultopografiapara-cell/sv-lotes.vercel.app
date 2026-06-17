@@ -544,6 +544,59 @@ export async function loadSaleContractHtmlForSign(
   });
 }
 
+export async function loadSaleContractPdfForSign(
+  supabaseAdmin: SupabaseClient,
+  contractId: string,
+): Promise<{ pdf: Uint8Array; contractNumber: string }> {
+  const html = await loadSaleContractHtmlForSign(supabaseAdmin, contractId);
+
+  const { data: contract, error } = await supabaseAdmin
+    .from('contracts')
+    .select('contract_number, tenant_id, company_id')
+    .eq('id', contractId)
+    .single();
+
+  if (error || !contract) {
+    throw new SaleContractSignatureError('Contrato não encontrado.');
+  }
+
+  const contractRow = contract as Record<string, unknown>;
+  const contractNumber = String(contractRow.contract_number || '');
+  const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
+
+  let tenant: Record<string, unknown> = {};
+  if (tenantId) {
+    const { data } = await supabaseAdmin
+      .from('companies')
+      .select('*')
+      .eq('id', tenantId)
+      .maybeSingle();
+    tenant = (data as Record<string, unknown>) || {};
+  }
+
+  const { getCompanyDisplayName, formatCompanyAddressForHeader } = await import(
+    '@/lib/contractCompanyDisplay'
+  );
+  const { formatCpfCnpj } = await import('@/lib/inputMasks');
+  const { buildSaleContractPdfFromHtml, loadTenantLogoBase64ForPdf } = await import(
+    '@/lib/saleContractPdf'
+  );
+
+  const { addressLine, cityUfLine } = formatCompanyAddressForHeader(tenant);
+  const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
+
+  const pdf = await buildSaleContractPdfFromHtml(html, {
+    tenantName: getCompanyDisplayName(tenant) || 'Imobiliária',
+    tenantCnpj: formatCpfCnpj(String(tenant.cnpj || tenant.document || '')),
+    addressLine,
+    cityUfLine,
+    contractNumber,
+    logoBase64,
+  });
+
+  return { pdf, contractNumber };
+}
+
 export async function loadSaleSignPageContext(
   supabaseAdmin: SupabaseClient,
   signature: ContractSignatureRow,

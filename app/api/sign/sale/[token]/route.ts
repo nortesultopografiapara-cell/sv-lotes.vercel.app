@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { formatCpfCnpj } from '@/lib/inputMasks';
+import { createSaleContractPdfResponse } from '@/lib/saleContractPdfHttp';
 import {
   canPublicSaleSign,
   isSaleSignatureBlocked,
@@ -9,8 +10,8 @@ import {
 import {
   getSaleSignatureByToken,
   isSignatureExpired,
-  loadSaleContractHtmlForSign,
   loadSaleSignPageContext,
+  loadSaleContractPdfForSign,
   markSaleSignatureViewed,
   resolveClientIp,
   SaleContractSignatureError,
@@ -18,19 +19,7 @@ import {
 } from '@/lib/saleContractSignatureService';
 
 export const runtime = 'nodejs';
-
-function htmlResponse(html: string, contractNumber: string, download: boolean) {
-  const filename = `contrato-${String(contractNumber).replace(/[^\w-]+/g, '_')}.html`;
-  return new NextResponse(html, {
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Disposition': download
-        ? `attachment; filename="${filename}"`
-        : `inline; filename="${filename}"`,
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    },
-  });
-}
+export const maxDuration = 60;
 
 function resolveQuadra(block: Record<string, unknown> | null): string {
   if (!block) return '—';
@@ -86,15 +75,23 @@ export async function GET(
 
   if (pdf) {
     try {
-      const html = await loadSaleContractHtmlForSign(
+      const { pdf: pdfBytes, contractNumber } = await loadSaleContractPdfForSign(
         supabaseAdmin,
         signature.contract_id,
       );
-      const wrapped = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Contrato ${contract.contract_number}</title></head><body>${html}</body></html>`;
-      return htmlResponse(wrapped, String(contract.contract_number || ''), download);
+      return createSaleContractPdfResponse(
+        pdfBytes,
+        download ? 'attachment' : 'inline',
+        contractNumber || String(contract.contract_number || ''),
+      );
     } catch (err) {
       const message =
-        err instanceof SaleContractSignatureError ? err.message : 'Falha ao carregar contrato.';
+        err instanceof SaleContractSignatureError ? err.message : 'Falha ao gerar PDF do contrato.';
+      console.error('SALE_CONTRACT_PDF_ERROR', {
+        token: token.slice(0, 8),
+        contract_id: signature.contract_id,
+        message: err instanceof Error ? err.message : String(err),
+      });
       return NextResponse.json({ error: message }, { status: 404 });
     }
   }

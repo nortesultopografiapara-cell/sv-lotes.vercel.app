@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  output: 'standalone',
+  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
   transpilePackages: ['motion', 'leaflet.gridlayer.googlemutant'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
