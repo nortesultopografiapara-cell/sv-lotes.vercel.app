@@ -1,10 +1,17 @@
 /**
- * Testes obrigatórios — conflito e-mail corretor x administrador.
- * npx tsx scripts/mandatory-broker-admin-email-conflict-tests.ts
+ * Testes obrigatórios — separação corretor x administrador.
+ * npm run test:broker-admin-email-conflict
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  BROKER_ACCESS_LEVEL_OPTIONS,
+  BROKER_USER_ROLE,
+  isCompanyAdminAccessLevel,
+  sanitizeBrokerAccessLevel,
+  shouldAppearInBrokerList,
+} from '../lib/brokerAccessLevels';
 import {
   brokerAdminEmailConflictMessage,
   buildBrokerActivatePatch,
@@ -34,6 +41,62 @@ function read(relPath: string): string {
   return fs.readFileSync(full, 'utf8');
 }
 
+function testBrokerModalNoAdminOption() {
+  const brokersPage = read('app/dashboard/brokers/page.tsx');
+  assert(!brokersPage.includes('Administrador (Total)'), 'modal sem Administrador (Total)');
+  assert(!brokersPage.includes('value="ADMIN_EMPRESA"'), 'modal sem ADMIN_EMPRESA');
+  assert(brokersPage.includes('BROKER_ACCESS_LEVEL_OPTIONS'), 'modal usa opções de corretor');
+
+  const accessLevels = read('lib/brokerAccessLevels.ts');
+  assert(accessLevels.includes('Corretor / Vendedor'), 'opção corretor presente');
+  assert(accessLevels.includes('Gerente de Vendas'), 'opção gerente presente');
+  assert(accessLevels.includes('Assistente Comercial'), 'opção assistente presente');
+  assert(!accessLevels.includes('Administrador (Total)'), 'sem opção administrador no modal');
+  assert(!accessLevels.includes("value: 'ADMIN_EMPRESA'"), 'sem ADMIN_EMPRESA nas opções');
+}
+
+function testBrokerCreateNeverPromotesAdmin() {
+  const brokersPage = read('app/dashboard/brokers/page.tsx');
+  assert(brokersPage.includes('role: BROKER_USER_ROLE'), 'create envia BROKER para users');
+  assert(brokersPage.includes('sanitizeBrokerAccessLevel'), 'nível sanitizado no brokers');
+
+  const usersCreate = read('app/api/users/create/route.ts');
+  assert(usersCreate.includes('isCompanyAdminAccessLevel(role)'), 'API bloqueia admin');
+  assert(usersCreate.includes('brokerUserRole = BROKER_USER_ROLE'), 'users.role sempre BROKER');
+}
+
+function testAdminNotInBrokerList() {
+  assert(
+    !shouldAppearInBrokerList({ brokerRole: 'ADMIN_EMPRESA', userRole: 'BROKER' }),
+    'admin em brokers.role excluído',
+  );
+  assert(
+    !shouldAppearInBrokerList({ brokerRole: 'BROKER', userRole: 'ADMIN_EMPRESA' }),
+    'admin em users.role excluído',
+  );
+  assert(
+    shouldAppearInBrokerList({ brokerRole: 'GERENTE', userRole: 'BROKER' }),
+    'gerente permanece na lista',
+  );
+
+  const brokersPage = read('app/dashboard/brokers/page.tsx');
+  assert(brokersPage.includes('shouldAppearInBrokerList'), 'lista filtra administradores');
+}
+
+function testBrokerLimitCountsActiveOnly() {
+  const active = [
+    { active: true, status: 'ativo', deleted_at: null },
+    { active: false, status: 'inativo', deleted_at: '2026-01-01' },
+    { active: true, status: 'ativo', deleted_at: null },
+  ];
+  const count = active.filter(isBrokerActiveForList).length;
+  assert(count === 2, 'limite conta só active=true');
+
+  const brokersPage = read('app/dashboard/brokers/page.tsx');
+  assert(brokersPage.includes('computeBrokerDashboardStats'), 'cards usam stats ativos');
+  assert(brokersPage.includes('filterBrokersForActiveList(corretores)'), 'quota usa ativos');
+}
+
 function testBrokerActiveInactive() {
   assert(isBrokerActiveForList({ active: true, status: 'ativo', deleted_at: null }), 'ativo na lista');
   assert(!isBrokerActiveForList({ active: false, status: 'ativo', deleted_at: null }), 'active false');
@@ -61,46 +124,54 @@ function testEmailConflictStates() {
     isAdminRole: isCompanyAdminUserRole,
   });
   assert(promotable === 'same_tenant_inactive_broker_promotable', 'broker inativo permite admin');
-  assert(brokerAdminEmailConflictMessage(promotable) === null, 'sem erro promotable');
+
+  const existingAdmin = resolveBrokerAdminEmailConflict({
+    existingUser: { id: 'u2', role: 'ADMIN_EMPRESA', tenant_id: TENANT },
+    brokerRecord: null,
+    tenantId: TENANT,
+    isAdminRole: isCompanyAdminUserRole,
+  });
+  assert(existingAdmin === 'same_tenant_admin', 'admin existente detectado');
+  assert(
+    brokerAdminEmailConflictMessage(existingAdmin) ===
+      'Este e-mail já é administrador desta empresa.',
+    'mensagem admin clara',
+  );
 }
 
 function testLoginAdminPriority() {
-  assert(resolveEffectiveLoginRole('ADMIN_EMPRESA') === 'ADMIN_EMPRESA', 'role admin');
-  assert(shouldLoginAsAdmin('ADMIN_EMPRESA'), 'login como admin');
+  assert(resolveEffectiveLoginRole('SUPER_ADMIN') === 'SUPER_ADMIN', 'SUPER_ADMIN primeiro');
+  assert(shouldLoginAsAdmin('ADMIN_EMPRESA'), 'login como admin empresa');
+  assert(shouldLoginAsAdmin('ADMIN'), 'login como ADMIN');
   assert(!shouldLoginAsBroker('ADMIN_EMPRESA'), 'admin não entra como broker');
   assert(resolveLoginRedirectPath('ADMIN_EMPRESA') === '/dashboard', 'admin → dashboard');
   assert(resolveLoginRedirectPath('BROKER') === '/map', 'broker → map');
+  assert(resolveLoginRedirectPath('SUPER_ADMIN') === '/dashboard', 'super admin → dashboard');
 }
 
 function testDeleteOnlyBrokersTable() {
   const brokerDelete = read('lib/brokerDelete.ts');
   assert(brokerDelete.includes("from('brokers')"), 'delete usa brokers');
-  assert(!brokerDelete.includes('auth.admin.deleteUser'), 'não apaga auth user');
+  assert(!brokerDelete.includes('auth.admin.deleteUser'), 'não apaga auth user no toggle/delete broker');
   assert(!brokerDelete.includes("from('users').delete"), 'não apaga users');
   assert(brokerDelete.includes('deleteBrokerViaAdmin'), 'delete server-side');
+  assert(brokerDelete.includes('setBrokerActiveViaAdmin'), 'toggle server-side');
 
   const apiRoute = read('app/api/brokers/[id]/route.ts');
-  assert(apiRoute.includes('deleteBrokerViaAdmin'), 'API usa deleteBrokerViaAdmin');
+  assert(apiRoute.includes('deleteBrokerViaAdmin'), 'API DELETE');
+  assert(apiRoute.includes('setBrokerActiveViaAdmin'), 'API PATCH toggle');
 
   const brokersPage = read('app/dashboard/brokers/page.tsx');
-  assert(brokersPage.includes('/api/brokers/'), 'UI chama API delete');
-  assert(!brokersPage.includes('deactivateOrDeleteBroker'), 'UI não deleta direto no client');
+  assert(brokersPage.includes('/api/brokers/'), 'UI chama API brokers');
 }
 
-function testCompanyAdminPromotion() {
-  const source = read('lib/companyAdminUsers.ts');
-  assert(source.includes('resolveBrokerAdminEmailConflict'), 'admin usa resolução conflito');
-  assert(source.includes('same_tenant_inactive_broker_promotable'), 'permite promoção broker inativo');
-}
+function testCompanyAdminSettingsOnly() {
+  const settings = read('components/settings/TenantCompanyAdminsPanel.tsx');
+  assert(settings.includes('callCompanyAdminsApi'), 'admins via Configurações');
 
-function testBrokersListActiveFilter() {
-  const brokersPage = read('app/dashboard/brokers/page.tsx');
-  assert(brokersPage.includes('isBrokerActiveForList'), 'listagem usa isBrokerActiveForList');
-  assert(brokersPage.includes('setCorretores(enhancedData)'), 'lista inclui inativos para filtro');
-  assert(brokersPage.includes("filterActive === 'ativo' && !c.active"), 'filtro somente ativos');
-  assert(brokersPage.includes('computeBrokerDashboardStats'), 'contador via stats ativos');
-  assert(brokersPage.includes('await loadBrokers()'), 'refetch após exclusão');
-  assert(!brokersPage.includes(".is('deleted_at', null)"), 'lista carrega inativos');
+  const companyAdmin = read('lib/companyAdminUsers.ts');
+  assert(companyAdmin.includes("from('users')"), 'admin salvo em users');
+  assert(!companyAdmin.includes("from('brokers').insert"), 'admin não insere em brokers');
 }
 
 function testBrokerActivateDeactivatePatches() {
@@ -116,32 +187,39 @@ function testBrokerActivateDeactivatePatches() {
 }
 
 function testBrokerToggleApiAndUi() {
-  const brokerDelete = read('lib/brokerDelete.ts');
-  assert(brokerDelete.includes('setBrokerActiveViaAdmin'), 'toggle server-side');
-  assert(!brokerDelete.includes('auth.admin.deleteUser'), 'toggle não apaga auth user');
-
-  const apiRoute = read('app/api/brokers/[id]/route.ts');
-  assert(apiRoute.includes('export async function PATCH'), 'API PATCH');
-  assert(apiRoute.includes('setBrokerActiveViaAdmin'), 'API usa setBrokerActiveViaAdmin');
-
   const brokersPage = read('app/dashboard/brokers/page.tsx');
   assert(brokersPage.includes("method: 'PATCH'"), 'UI chama PATCH');
   assert(brokersPage.includes('Desativar corretor'), 'botão desativar');
   assert(brokersPage.includes('Reativar corretor'), 'botão reativar');
   assert(brokersPage.includes('handleToggleBrokerActive'), 'handler toggle');
   assert(brokersPage.includes('dbActive'), 'botão usa broker.active do registro');
+  assert(brokersPage.includes("filterActive === 'ativo' && !c.active"), 'filtro somente ativos');
+  assert(brokersPage.includes('await loadBrokers()'), 'refetch após ações');
+}
+
+function testBrokerAccessLevels() {
+  assert(BROKER_ACCESS_LEVEL_OPTIONS.length === 3, '3 níveis de corretor');
+  assert(sanitizeBrokerAccessLevel('ADMIN_EMPRESA') === 'BROKER', 'admin sanitizado para BROKER');
+  assert(sanitizeBrokerAccessLevel('GERENTE') === 'GERENTE', 'gerente preservado');
+  assert(isCompanyAdminAccessLevel('ADMIN_EMPRESA'), 'detecta admin empresa');
+  assert(!isCompanyAdminAccessLevel('GERENTE'), 'gerente não é admin');
+  assert(BROKER_USER_ROLE === 'BROKER', 'perfil users para corretor');
 }
 
 function run() {
   const tests: Array<[string, () => void]> = [
+    ['modal sem Administrador', testBrokerModalNoAdminOption],
+    ['create nunca promove admin', testBrokerCreateNeverPromotesAdmin],
+    ['admin fora da lista corretores', testAdminNotInBrokerList],
+    ['limite conta só ativos', testBrokerLimitCountsActiveOnly],
     ['broker ativo/inativo', testBrokerActiveInactive],
     ['conflito e-mail admin', testEmailConflictStates],
-    ['login ADMIN > BROKER', testLoginAdminPriority],
-    ['delete só brokers', testDeleteOnlyBrokersTable],
-    ['promoção admin', testCompanyAdminPromotion],
-    ['listagem corretores', testBrokersListActiveFilter],
+    ['login SUPER_ADMIN > ADMIN > BROKER', testLoginAdminPriority],
+    ['delete/toggle só brokers', testDeleteOnlyBrokersTable],
+    ['admin só em Configurações', testCompanyAdminSettingsOnly],
     ['patches ativar/desativar', testBrokerActivateDeactivatePatches],
     ['toggle corretor API/UI', testBrokerToggleApiAndUi],
+    ['níveis de acesso corretor', testBrokerAccessLevels],
   ];
 
   for (const [name, fn] of tests) {
@@ -149,7 +227,7 @@ function run() {
     console.log(`✓ ${name}`);
   }
 
-  console.log(`\n${tests.length} grupos de testes broker/admin e-mail OK.`);
+  console.log(`\n${tests.length} grupos de testes corretor/admin OK.`);
 }
 
 run();

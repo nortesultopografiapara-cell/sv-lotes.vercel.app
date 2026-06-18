@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  assertBrokerModuleRole,
+  BROKER_USER_ROLE,
+  isCompanyAdminAccessLevel,
+} from '@/lib/brokerAccessLevels';
 
 export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -23,6 +28,19 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { fullName, email, phone, tenantId, role, password } = body;
 
+    if (isCompanyAdminAccessLevel(role)) {
+      return NextResponse.json(
+        {
+          error:
+            'Administrador da empresa deve ser cadastrado em Configurações > Usuários Administradores.',
+        },
+        { status: 400 },
+      );
+    }
+
+    assertBrokerModuleRole(role || BROKER_USER_ROLE);
+    const brokerUserRole = BROKER_USER_ROLE;
+
     // Verify calling user is ADMIN or SUPER_ADMIN
     // For now we trust the payload but ideally extract from token
 
@@ -44,7 +62,7 @@ export async function POST(req: Request) {
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
-        role: role || 'BROKER',
+        role: brokerUserRole,
         tenant_id: tenantId
       }
     });
@@ -82,9 +100,12 @@ export async function POST(req: Request) {
         if (existingUser.tenant_id && existingUser.tenant_id !== tenantId) {
             throw new Error("Este e-mail já está vinculado a outra empresa. Use outro e-mail ou solicite transferência.");
         }
+        if (isCompanyAdminAccessLevel(String(existingUser.role))) {
+            throw new Error('Este e-mail já é administrador desta empresa.');
+        }
         // update role and details
         const { error: userError } = await supabaseAdmin.from('users').update({
-            role: role || 'BROKER',
+            role: brokerUserRole,
             full_name: fullName,
             phone: phone,
             tenant_id: tenantId
@@ -96,7 +117,7 @@ export async function POST(req: Request) {
             tenant_id: tenantId,
             full_name: fullName,
             email: email,
-            role: role || 'BROKER',
+            role: brokerUserRole,
             status: 'ACTIVE',
             phone: phone,
             force_password_change: !isExisting // force password change only if new

@@ -43,6 +43,12 @@ import {
   rankBrokersByMonthlySales,
   removeBrokerFromList,
 } from '@/lib/brokerDelete';
+import {
+  BROKER_ACCESS_LEVEL_OPTIONS,
+  BROKER_USER_ROLE,
+  sanitizeBrokerAccessLevel,
+  shouldAppearInBrokerList,
+} from '@/lib/brokerAccessLevels';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
@@ -145,8 +151,25 @@ export default function CorretoresPage() {
       
       const { data: rawBrokers, error } = await query;
       if (error) throw error;
-      
-      const safeBrokers = rawBrokers || [];
+
+      const brokerIds = (rawBrokers || []).map((b) => b.id).filter(Boolean);
+      let userRoleByBrokerId = new Map<string, string>();
+      if (brokerIds.length > 0) {
+        const { data: userProfiles } = await supabase
+          .from('users')
+          .select('id, role')
+          .in('id', brokerIds);
+        userRoleByBrokerId = new Map(
+          (userProfiles || []).map((u) => [String(u.id), String(u.role || '')]),
+        );
+      }
+
+      const safeBrokers = (rawBrokers || []).filter((b) =>
+        shouldAppearInBrokerList({
+          brokerRole: b.role,
+          userRole: userRoleByBrokerId.get(String(b.id)),
+        }),
+      );
       console.log("BROKERS_RAW_FROM_DB", safeBrokers.length, safeBrokers);
       
       if (safeBrokers.length === 0 && !rlsCtx.isSuperAdmin) {
@@ -556,7 +579,7 @@ export default function CorretoresPage() {
         phone: broker.phone || '',
         cpf: broker.cpf || '',
         creci: broker.creci || '',
-        role: broker.role || 'BROKER',
+        role: sanitizeBrokerAccessLevel(broker.role),
         commission_percent: readBrokerCommissionPercent(broker.commission_percent),
         password: '',
         confirmPassword: ''
@@ -594,13 +617,14 @@ export default function CorretoresPage() {
         setIsSubmitting(true);
         setError('');
         try {
+            const brokerAccessLevel = sanitizeBrokerAccessLevel(formData.role);
             const { error: upErr } = await supabase.from('brokers').update({
                 name: formData.fullName,
                 phone: formData.phone,
                 creci: formData.creci,
                 cpf: formData.cpf,
                 commission_percent: readBrokerCommissionPercent(formData.commission_percent),
-                role: formData.role
+                role: brokerAccessLevel
             }).eq('id', selectedBroker.id);
             if (upErr) throw upErr;
             await loadBrokers();
@@ -671,6 +695,8 @@ export default function CorretoresPage() {
         (user as { company_id?: string })?.company_id ||
         null;
 
+      const brokerAccessLevel = sanitizeBrokerAccessLevel(formData.role);
+
       const response = await fetch('/api/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -679,7 +705,7 @@ export default function CorretoresPage() {
            email: formData.email,
            phone: formData.phone,
            tenantId: resolvedTenantId,
-           role: formData.role,
+           role: BROKER_USER_ROLE,
            password: formData.password
         })
       });
@@ -698,7 +724,7 @@ export default function CorretoresPage() {
          creci: formData.creci,
          phone: formData.phone,
          email: formData.email,
-         role: 'BROKER',
+         role: brokerAccessLevel,
          level: 'broker',
          commission_percent: defaultBrokerCommissionPercentForCreate(formData.commission_percent),
          name: formData.fullName,
@@ -1616,10 +1642,11 @@ export default function CorretoresPage() {
                             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                             className="w-full bg-[var(--bg-main)] border border-[var(--border-color)] rounded-lg py-2.5 px-4 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500/50 transition-colors appearance-none"
                           >
-                             <option value="BROKER">Corretor / Vendedor</option>
-                             <option value="GERENTE">Gerente de Vendas</option>
-                             <option value="ASSISTENTE">Assistente Comercial</option>
-                             <option value="ADMIN_EMPRESA">Administrador (Total)</option>
+                             {BROKER_ACCESS_LEVEL_OPTIONS.map((opt) => (
+                               <option key={opt.value} value={opt.value}>
+                                 {opt.label}
+                               </option>
+                             ))}
                           </select>
                        </div>
 

@@ -492,7 +492,7 @@ export function brokerAdminEmailConflictMessage(state: BrokerAdminEmailConflictS
     case 'same_tenant_active_broker':
       return 'Este e-mail pertence a um corretor ativo. Desative ou exclua o corretor antes de cadastrar como administrador.';
     case 'same_tenant_admin':
-      return 'Este e-mail já pertence a um administrador desta empresa.';
+      return 'Este e-mail já é administrador desta empresa.';
     default:
       return null;
   }
