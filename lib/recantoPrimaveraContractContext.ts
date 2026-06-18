@@ -7,22 +7,14 @@ const extenso = require('extenso');
 import { resolveLotMeasuresFromBlock } from '@/lib/lotChanfre';
 import { formatCurveClause } from '@/lib/officialLotMeasurements';
 import {
-  getCompanyDisplayName,
-  normalizeCompanyAddressLine,
-} from '@/lib/contractCompanyDisplay';
-import {
   formatContractLotBoundariesClause,
   resolveContractLotSides,
 } from '@/lib/contractLotBoundaries';
 import {
-  formatContractIdentityDocumentSuffix,
-  formatContractSpouseQualificationSuffix,
+  extractSpouseIdentitySource,
   resolveIdentityDocumentFields,
 } from '@/lib/contractIdentity';
-import {
-  buildSaleContractElectronicSignatureClauseHtml,
-  isSaleContractCashPayment,
-} from '@/lib/saleContractLegalTemplate';
+import { isSaleContractCashPayment } from '@/lib/saleContractLegalTemplate';
 import {
   resolveContractPaymentDates,
   type ContractFinanceReceiptRef,
@@ -46,7 +38,6 @@ export type RecantoPrimaveraContractParams = {
 
 export type RecantoPrimaveraContractContext = {
   profile: RecantoPrimaveraCompanyProfile;
-  empresaLogoHtml: string;
   empresaAssinatura: string;
   titleLine1: string;
   titleLine2: string;
@@ -64,39 +55,47 @@ export type RecantoPrimaveraContractContext = {
   clienteCidade: string;
   clienteUf: string;
   clienteCep: string;
-  clienteIdentitySuffix: string;
-  clienteConjugeSuffix: string;
+  clienteEnderecoCompleto: string;
+  conjugeNome: string;
+  conjugeNacionalidade: string;
+  conjugeEstadoCivil: string;
+  conjugeProfissao: string;
+  conjugeRg: string;
+  conjugeRgIssuer: string;
+  conjugeCpf: string;
+  conjugeTelefone: string;
+  conjugeEmail: string;
+  conjugeEndereco: string;
   quadra: string;
   lote: string;
   lotArea: string;
+  areaM2: string;
   lotSidesText: string;
+  lotMeasuresText: string;
+  lotObjectText: string;
   lotBoundariesClause: string;
   curvaClause: string;
-  enterpriseLocationSuffix: string;
-  enterpriseDescString: string;
   foroText: string;
   valorTotalFmt: string;
   valorTotalExtenso: string;
-  valorEntradaFmt: string;
-  valorEntradaExtenso: string;
-  valorSaldoFmt: string;
-  valorSaldoExtenso: string;
+  valorSinalFmt: string;
+  valorSinalExtenso: string;
+  valorSaldoParceladoFmt: string;
+  valorSaldoParceladoExtenso: string;
   valorParcelaFmt: string;
   valorParcelaExtenso: string;
   qtdParcelas: number;
   isCashPayment: boolean;
-  tipoVenda: string;
+  dueDay: string;
   dataPrimeiraParcelaFmt: string;
   dataUltimaParcelaFmt: string;
-  bankPaymentText: string;
+  bankBoletoText: string;
   brokerNome: string;
   brokerDocumento: string;
   brokerCreci: string;
-  brokerClauseHtml: string;
   dataContratoFmt: string;
   dataContratoCidade: string;
   dataContratoUf: string;
-  electronicSignatureClauseHtml: string;
 };
 
 function formatBRL(val: number): string {
@@ -131,19 +130,13 @@ function formatCNPJCPF(val: string): string {
   return clean;
 }
 
-function isValidField(v: unknown): v is string {
-  return !!sanitizeContractField(v);
-}
-
-function formatArea(val: unknown): string {
+function formatAreaM2(val: unknown): string {
   const num = Number(val);
   if (!Number.isFinite(num) || num <= 0) return '';
-  return (
-    num.toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }) + ' m²'
-  );
+  return num.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatExtensoCurrency(val: number): string {
@@ -153,6 +146,14 @@ function formatExtensoCurrency(val: number): string {
   } catch {
     return '';
   }
+}
+
+function extractDueDay(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const iso = String(raw).trim().split('T')[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const day = parseInt(iso.split('-')[2], 10);
+  return Number.isFinite(day) ? String(day) : '';
 }
 
 function resolveBroker(sale: Record<string, unknown>) {
@@ -186,17 +187,50 @@ function resolveBroker(sale: Record<string, unknown>) {
   return { nome, documento, creci };
 }
 
-function buildBankPaymentText(profile: RecantoPrimaveraCompanyProfile): string {
+function buildBankBoletoText(profile: RecantoPrimaveraCompanyProfile): string {
   const parts: string[] = [];
   if (profile.bankName) parts.push(`Banco <strong>${profile.bankName}</strong>`);
   if (profile.bankBranch) parts.push(`Agência <strong>${profile.bankBranch}</strong>`);
   if (profile.bankAccount) parts.push(`Conta <strong>${profile.bankAccount}</strong>`);
-  if (profile.bankPix) parts.push(`PIX <strong>${profile.bankPix}</strong>`);
   if (profile.bankBeneficiary) {
     parts.push(`Favorecido(a) <strong>${profile.bankBeneficiary}</strong>`);
   }
   if (parts.length === 0) return '';
   return parts.join(', ');
+}
+
+function buildLotObjectText(
+  lote: string,
+  quadra: string,
+  enterpriseName: string,
+  municipality: string,
+  uf: string,
+  areaM2: string,
+): string {
+  const lotLabel = lote ? `nº ${lote}` : '';
+  const blockLabel = quadra ? `nº ${quadra}` : '';
+  const enterprise = enterpriseName || 'Chacreamento Recanto Primavera';
+  const cityUf =
+    municipality && uf
+      ? `${municipality}/${uf}`
+      : municipality || uf || 'Parauapebas/PA';
+  const areaSuffix = areaM2 ? ` com área aproximada de ${areaM2} m²` : '';
+
+  return `LOTE DE TERRAS CHÁCARAS ${lotLabel}, QUADRA ${blockLabel} integrante do loteamento denominado <strong>${enterprise}</strong> situado no Município de <strong>${cityUf}</strong>${areaSuffix}`;
+}
+
+function buildLotMeasuresText(sidesText: string, boundariesClause: string): string {
+  if (sidesText) {
+    return `medindo ${sidesText}.`;
+  }
+  if (boundariesClause) {
+    return boundariesClause;
+  }
+  return 'medindo frente, fundo, lado direito e lado esquerdo conforme memorial descritivo do empreendimento.';
+}
+
+function buildFullAddress(parts: string[]): string {
+  return parts.filter((p) => sanitizeContractField(p)).join(', ');
 }
 
 export function buildRecantoPrimaveraContractContext(
@@ -205,26 +239,21 @@ export function buildRecantoPrimaveraContractContext(
   const {
     tenant,
     customer,
-    project,
     block,
     sale,
-    contractSnapshot,
     contractDate,
     financeReceipts,
   } = params;
 
   const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
 
-  const empresaLogoHtml = profile.logoUrl
-    ? `<img src="${profile.logoUrl}" alt="Logo" style="max-height: 72px; max-width: 220px; object-fit: contain; margin-bottom: 12px;" />`
-    : '';
   const empresaAssinatura = profile.signatureUrl
     ? `<img src="${profile.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
     : '';
 
   const clienteIdentity = resolveIdentityDocumentFields(customer);
   const clienteNome = toTitleCase(
-    sanitizeContractField(customer?.name) || 'Comprador',
+    sanitizeContractField(customer?.name) || '',
   );
   const clienteCpfCnpj = formatCNPJCPF(
     sanitizeContractField(customer?.document || customer?.cpf),
@@ -236,6 +265,37 @@ export function buildRecantoPrimaveraContractContext(
   ]
     .filter(Boolean)
     .join('/');
+
+  const spouse = extractSpouseIdentitySource(customer);
+  const conjugeRg = spouse
+    ? sanitizeContractField(
+        customer?.spouse_rg ??
+          customer?.conjuge_rg ??
+          (typeof customer?.spouse === 'object'
+            ? (customer.spouse as Record<string, unknown>).rg
+            : ''),
+      )
+    : '';
+  const conjugeRgIssuer = spouse
+    ? [
+        sanitizeContractField(
+          customer?.spouse_rg_issuer ??
+            customer?.conjuge_rg_issuer ??
+            (typeof customer?.spouse === 'object'
+              ? (customer.spouse as Record<string, unknown>).rg_issuer
+              : ''),
+        ),
+        sanitizeContractField(
+          customer?.spouse_rg_issuer_state ??
+            customer?.conjuge_rg_issuer_state ??
+            (typeof customer?.spouse === 'object'
+              ? (customer.spouse as Record<string, unknown>).rg_issuer_state
+              : ''),
+        ),
+      ]
+        .filter(Boolean)
+        .join('/')
+    : '';
 
   const quadra =
     sanitizeContractField(block?.block) ||
@@ -259,31 +319,39 @@ export function buildRecantoPrimaveraContractContext(
 
   const sides = resolveContractLotSides(block);
   const lotSidesText = [
-    sides.frente ? `frente ${Number(sides.frente).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : '',
-    sides.fundo ? `fundo ${Number(sides.fundo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : '',
-    sides.ladoDireito ? `lado direito ${Number(sides.ladoDireito).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : '',
-    sides.ladoEsquerdo ? `lado esquerdo ${Number(sides.ladoEsquerdo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m` : '',
+    sides.frente
+      ? `frente ${Number(sides.frente).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`
+      : '',
+    sides.fundo
+      ? `fundo ${Number(sides.fundo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`
+      : '',
+    sides.ladoDireito
+      ? `lado direito ${Number(sides.ladoDireito).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`
+      : '',
+    sides.ladoEsquerdo
+      ? `lado esquerdo ${Number(sides.ladoEsquerdo).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`
+      : '',
   ]
     .filter(Boolean)
     .join(', ');
 
-  const enterpriseLocationSuffix = profile.enterpriseLocation
-    ? `, situado em <strong>${profile.enterpriseLocation}</strong>`
-    : '';
+  const areaM2 = formatAreaM2(block?.area);
+  const lotArea = areaM2 ? `${areaM2} m²` : '';
 
-  const enterpriseDescParts: string[] = [];
-  if (profile.enterpriseName) {
-    enterpriseDescParts.push(
-      `integrante do empreendimento <strong>${profile.enterpriseName.toUpperCase()}</strong>`,
-    );
-  }
-  if (profile.enterpriseMunicipality && profile.enterpriseUf) {
-    enterpriseDescParts.push(
-      `localizado no município de <strong>${profile.enterpriseMunicipality} - ${profile.enterpriseUf}</strong>`,
-    );
-  }
-  const enterpriseDescString =
-    enterpriseDescParts.length > 0 ? `, ${enterpriseDescParts.join(', ')}` : '';
+  const enterpriseName =
+    profile.enterpriseName || 'Chacreamento Recanto Primavera';
+  const municipality = profile.enterpriseMunicipality || 'Parauapebas';
+  const uf = profile.enterpriseUf || 'PA';
+
+  const lotObjectText = buildLotObjectText(
+    lote,
+    quadra,
+    enterpriseName,
+    municipality,
+    uf,
+    areaM2,
+  );
+  const lotMeasuresText = buildLotMeasuresText(lotSidesText, lotBoundariesClause);
 
   const foroCidade = profile.forumCity || profile.enterpriseMunicipality || profile.city;
   const foroUf = profile.enterpriseUf || profile.state;
@@ -303,19 +371,38 @@ export function buildRecantoPrimaveraContractContext(
   if (valTotal <= 0 && sale?.receipts_sum) valTotal = Number(sale.receipts_sum);
   if (!Number.isFinite(valTotal) || valTotal < 0) valTotal = 0;
 
-  const valEntrada = Math.max(0, Number(sale?.down_payment || 0));
-  const valorSaldo = Math.max(0, valTotal - valEntrada);
+  const valSinal = Math.max(0, Number(sale?.down_payment || 0));
   const qtdParcelas = Math.max(1, Number(sale?.installments_count) || 1);
+  const isCashPayment = isSaleContractCashPayment(sale);
+
+  // Recanto: parcela = valor total da chácara / parcelas (sinal NÃO abate).
   const valorParcela =
-    qtdParcelas > 0 && !isSaleContractCashPayment(sale) ? valorSaldo / qtdParcelas : 0;
+    !isCashPayment && qtdParcelas > 0 ? valTotal / qtdParcelas : 0;
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
+  const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
   const broker = resolveBroker(sale);
 
-  const brokerClauseHtml =
-    broker.nome
-      ? `<p style="margin-bottom: 0;"><strong>Intermediação:</strong> A presente transação foi intermediada por <strong>${broker.nome}</strong>${broker.documento ? `, inscrito(a) no CPF/CNPJ sob o nº <strong>${broker.documento}</strong>` : ''}${broker.creci ? `, CRECI <strong>${broker.creci}</strong>` : ''}.</p>`
-      : '';
+  const clienteEndereco = toTitleCase(
+    sanitizeContractField(customer?.address || customer?.street),
+  );
+  const clienteBairro = toTitleCase(sanitizeContractField(customer?.neighborhood));
+  const clienteCidade = toTitleCase(sanitizeContractField(customer?.city));
+  const clienteUf = sanitizeContractField(customer?.state_uf || customer?.state).toUpperCase();
+  const clienteCep = sanitizeContractField(customer?.zip_code || customer?.cep);
+  const clienteEnderecoCompleto = buildFullAddress([
+    clienteEndereco,
+    clienteBairro ? `Bairro ${clienteBairro}` : '',
+    clienteCep ? `CEP ${clienteCep}` : '',
+    clienteCidade && clienteUf ? `${clienteCidade} - ${clienteUf}` : clienteCidade,
+  ]);
+
+  const titleLine2Raw = (profile.enterpriseName || 'CHACREAMENTO RECANTO PRIMAVERA')
+    .toUpperCase()
+    .trim();
+  const titleLine2 = titleLine2Raw.endsWith('.')
+    ? titleLine2Raw
+    : `${titleLine2Raw}.`;
 
   const dContrato = new Date(
     sanitizeContractField(contractDate) ||
@@ -325,17 +412,14 @@ export function buildRecantoPrimaveraContractContext(
 
   return {
     profile,
-    empresaLogoHtml,
     empresaAssinatura,
     titleLine1: 'INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA',
-    titleLine2: profile.enterpriseName || getCompanyDisplayName(tenant),
+    titleLine2,
     clienteNome,
     clienteCpfCnpj,
     clienteRg,
     clienteRgIssuer,
-    clienteProfissao: toTitleCase(
-      sanitizeContractField(customer?.profession),
-    ),
+    clienteProfissao: toTitleCase(sanitizeContractField(customer?.profession)),
     clienteEstadoCivil: toTitleCase(
       sanitizeContractField(customer?.civil_state || customer?.marital_status),
     ),
@@ -344,45 +428,55 @@ export function buildRecantoPrimaveraContractContext(
     ),
     clienteTelefone: sanitizeContractField(customer?.phone),
     clienteEmail: sanitizeContractField(customer?.email),
-    clienteEndereco: toTitleCase(
-      sanitizeContractField(customer?.address || customer?.street),
-    ),
-    clienteBairro: toTitleCase(sanitizeContractField(customer?.neighborhood)),
-    clienteCidade: toTitleCase(sanitizeContractField(customer?.city)),
-    clienteUf: sanitizeContractField(customer?.state_uf || customer?.state).toUpperCase(),
-    clienteCep: sanitizeContractField(customer?.zip_code || customer?.cep),
-    clienteIdentitySuffix: formatContractIdentityDocumentSuffix(customer),
-    clienteConjugeSuffix: formatContractSpouseQualificationSuffix(customer),
+    clienteEndereco,
+    clienteBairro,
+    clienteCidade,
+    clienteUf,
+    clienteCep,
+    clienteEnderecoCompleto,
+    conjugeNome: spouse ? toTitleCase(String(spouse.name || '')) : '',
+    conjugeNacionalidade: '',
+    conjugeEstadoCivil: '',
+    conjugeProfissao: spouse
+      ? toTitleCase(sanitizeContractField(spouse.profession))
+      : '',
+    conjugeRg,
+    conjugeRgIssuer: conjugeRgIssuer,
+    conjugeCpf: spouse
+      ? formatCNPJCPF(sanitizeContractField(spouse.document))
+      : '',
+    conjugeTelefone: '',
+    conjugeEmail: '',
+    conjugeEndereco: '',
     quadra,
     lote,
-    lotArea: formatArea(block?.area),
+    lotArea,
+    areaM2,
     lotSidesText,
+    lotMeasuresText,
+    lotObjectText,
     lotBoundariesClause,
     curvaClause,
-    enterpriseLocationSuffix,
-    enterpriseDescString,
     foroText,
     valorTotalFmt: formatBRL(valTotal),
     valorTotalExtenso: formatExtensoCurrency(valTotal),
-    valorEntradaFmt: formatBRL(valEntrada),
-    valorEntradaExtenso: formatExtensoCurrency(valEntrada),
-    valorSaldoFmt: formatBRL(valorSaldo),
-    valorSaldoExtenso: formatExtensoCurrency(valorSaldo),
+    valorSinalFmt: formatBRL(valSinal),
+    valorSinalExtenso: formatExtensoCurrency(valSinal),
+    valorSaldoParceladoFmt: formatBRL(valTotal),
+    valorSaldoParceladoExtenso: formatExtensoCurrency(valTotal),
     valorParcelaFmt: formatBRL(valorParcela),
     valorParcelaExtenso: formatExtensoCurrency(valorParcela),
     qtdParcelas,
-    isCashPayment: isSaleContractCashPayment(sale),
-    tipoVenda: isSaleContractCashPayment(sale) ? 'À Vista' : 'Parcelada',
+    isCashPayment,
+    dueDay,
     dataPrimeiraParcelaFmt: paymentDates.firstInstallmentDueFmt,
     dataUltimaParcelaFmt: paymentDates.lastInstallmentDueFmt,
-    bankPaymentText: buildBankPaymentText(profile),
+    bankBoletoText: buildBankBoletoText(profile),
     brokerNome: broker.nome,
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,
-    brokerClauseHtml,
     dataContratoFmt: dContrato.toLocaleDateString('pt-BR'),
     dataContratoCidade: profile.forumCity || profile.enterpriseMunicipality || profile.city,
     dataContratoUf: profile.enterpriseUf || profile.state,
-    electronicSignatureClauseHtml: buildSaleContractElectronicSignatureClauseHtml(),
   };
 }

@@ -76,6 +76,14 @@ function formatCNPJCPF(val: string): string {
   return val;
 }
 
+/** 11 dígitos → CPF; 14 dígitos → CNPJ. */
+export function resolveContractDocumentLabel(documentRaw: string): string {
+  const digits = documentRaw.replace(/\D/g, '');
+  if (digits.length === 11) return 'CPF';
+  if (digits.length === 14) return 'CNPJ';
+  return 'CPF/CNPJ';
+}
+
 function toTitleCase(str: string): string {
   if (!str) return '';
   return str
@@ -93,9 +101,8 @@ export function normalizeRecantoPrimaveraCompanyProfile(
     pickString(c.fantasy_name, c.name, c.legal_representative),
   );
   const documentRaw = pickString(c.cnpj, c.document);
-  const docDigits = documentRaw.replace(/\D/g, '');
-  const documentLabel = docDigits.length === 11 ? 'CPF' : 'CPF/CNPJ';
   const documentFmt = documentRaw ? formatCNPJCPF(documentRaw) : '';
+  const documentLabel = resolveContractDocumentLabel(documentRaw);
 
   const enterpriseName = toTitleCase(
     pickString(

@@ -45,7 +45,8 @@ export function buildSaleContractPrintTemplates(chrome: ContractPdfChromeInput):
 } {
   const contractLabel = `Contrato nº ${displayContractNumber(chrome.contractNumber)}`;
   const infoParts: string[] = [];
-  if (chrome.tenantCnpj) infoParts.push(`CNPJ: ${escapeHtml(chrome.tenantCnpj)}`);
+  const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
+  if (chrome.tenantCnpj) infoParts.push(`${docLabel}: ${escapeHtml(chrome.tenantCnpj)}`);
   if (chrome.cityUfLine) infoParts.push(escapeHtml(chrome.cityUfLine));
   const infoLine = infoParts.join(' | ');
 

@@ -52,11 +52,8 @@ import {
 import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
 import { SaleContractSignatureSection } from "@/components/contracts/SaleContractSignatureSection";
 import {
-  getCompanyDisplayName,
-  formatCompanyAddressForHeader,
-} from "@/lib/contractCompanyDisplay";
-import {
   applyContractPdfChrome,
+  buildContractPdfChromeFromTenant,
   getContractHtml2pdfOptions,
 } from "@/lib/contractPdfPostProcess";
 import "./contracts-mobile.css";
@@ -81,21 +78,6 @@ function formatCompactCurrencyBRL(value: number): string {
     currency: "BRL",
     maximumFractionDigits: 0,
   }).format(n);
-}
-
-function formatCNPJCPF(val: string): string {
-  if (!val) return "";
-  const numeric = val.replace(/\D/g, "");
-  if (numeric.length === 14) {
-    return numeric.replace(
-      /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-      "$1.$2.$3/$4-$5",
-    );
-  }
-  if (numeric.length === 11) {
-    return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-  }
-  return val;
 }
 
 /** Resolve tenant/empresa ativa (perfil + impersonação super admin). */
@@ -811,20 +793,16 @@ export default function ContractsPage() {
         .get("pdf")
         .then((pdf: any) => {
           if (tenantData) {
-            const { addressLine, cityUfLine } =
-              formatCompanyAddressForHeader(tenantData);
-            applyContractPdfChrome(pdf, {
-              tenantName: getCompanyDisplayName(tenantData),
-              tenantCnpj: formatCNPJCPF(
-                tenantData?.cnpj || tenantData?.document || "",
+            applyContractPdfChrome(
+              pdf,
+              buildContractPdfChromeFromTenant(
+                tenantData,
+                String(
+                  ver.contract_number || selectedContract?.contract_number || "",
+                ),
+                null,
               ),
-              addressLine,
-              cityUfLine,
-              contractNumber: String(
-                ver.contract_number || selectedContract?.contract_number || "",
-              ),
-              logoBase64: null,
-            });
+            );
           } else {
             applyContractPdfChrome(pdf, {
               tenantName: "Imobiliária",
@@ -901,10 +879,6 @@ export default function ContractsPage() {
         }
       }
 
-      const { addressLine, cityUfLine } = formatCompanyAddressForHeader(
-        tenantData || {},
-      );
-
       const opt = getContractHtml2pdfOptions(
         `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`,
       );
@@ -915,16 +889,14 @@ export default function ContractsPage() {
         .toPdf()
         .get("pdf")
         .then((pdf: any) => {
-          applyContractPdfChrome(pdf, {
-            tenantName: getCompanyDisplayName(tenantData || {}),
-            tenantCnpj: formatCNPJCPF(
-              tenantData?.cnpj || tenantData?.document || "",
+          applyContractPdfChrome(
+            pdf,
+            buildContractPdfChromeFromTenant(
+              tenantData || {},
+              String(selectedContract.contract_number || ""),
+              logoBase64,
             ),
-            addressLine,
-            cityUfLine,
-            contractNumber: String(selectedContract.contract_number || ""),
-            logoBase64,
-          });
+          );
         })
         .save();
     } catch (e) {

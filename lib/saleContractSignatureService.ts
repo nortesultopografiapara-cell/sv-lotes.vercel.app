@@ -733,15 +733,13 @@ export async function loadSaleContractPdfForSign(
     tenant = (data as Record<string, unknown>) || {};
   }
 
-  const { getCompanyDisplayName, formatCompanyAddressForHeader } = await import(
+  const { getCompanyDisplayName } = await import(
     '@/lib/contractCompanyDisplay'
   );
-  const { formatCpfCnpj } = await import('@/lib/inputMasks');
   const { buildSaleContractPdfFromHtml, loadTenantLogoBase64ForPdf } = await import(
     '@/lib/saleContractPdf'
   );
 
-  const { addressLine, cityUfLine } = formatCompanyAddressForHeader(tenant);
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
   const signature = options?.signature;
@@ -792,14 +790,13 @@ export async function loadSaleContractPdfForSign(
   }
 
   try {
-    const pdf = await buildSaleContractPdfFromHtml(html, {
-      tenantName: getCompanyDisplayName(tenant) || 'Imobiliária',
-      tenantCnpj: formatCpfCnpj(String(tenant.cnpj || tenant.document || '')),
-      addressLine,
-      cityUfLine,
-      contractNumber,
-      logoBase64,
-    });
+    const { buildContractPdfChromeFromTenant } = await import(
+      '@/lib/contractPdfPostProcess'
+    );
+    const pdf = await buildSaleContractPdfFromHtml(
+      html,
+      buildContractPdfChromeFromTenant(tenant, contractNumber, logoBase64),
+    );
 
     return { pdf, contractNumber };
   } catch (err) {

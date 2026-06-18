@@ -138,16 +138,22 @@ function testEmailUpdatesOnNewContract() {
   console.log('OK testEmailUpdatesOnNewContract');
 }
 
-function testLogoUpdatesOnNewContract() {
-  const tenantV1 = recantoTenant({ logo_url: 'https://cdn.test/logo-a.png' });
-  const htmlV1 = buildRecantoHtml(tenantV1);
-  assert(htmlV1.includes('https://cdn.test/logo-a.png'), 'logo a');
+function testNoLogoInContractBody() {
+  const htmlV1 = buildRecantoHtml(
+    recantoTenant({ logo_url: 'https://cdn.test/logo-a.png' }),
+  );
+  const htmlV2 = buildRecantoHtml(
+    recantoTenant({ logo_url: 'https://cdn.test/logo-b.png' }),
+  );
+  assertNotIncludes(htmlV1, 'logo-a.png', 'logo não no corpo v1');
+  assertNotIncludes(htmlV2, 'logo-b.png', 'logo não no corpo v2');
 
-  const tenantV2 = recantoTenant({ logo_url: 'https://cdn.test/logo-b.png' });
-  const htmlV2 = buildRecantoHtml(tenantV2);
-  assert(htmlV2.includes('https://cdn.test/logo-b.png'), 'logo b');
-  assertNotIncludes(htmlV2, 'logo-a.png', 'logo antiga removida');
-  console.log('OK testLogoUpdatesOnNewContract');
+  const headerMatch = htmlV2.match(
+    /<div class="contract-header-recanto"[\s\S]*?<\/div>/,
+  );
+  assert(!!headerMatch, 'cabeçalho Recanto');
+  assertNotIncludes(headerMatch![0], '<img', 'sem img antes do título');
+  console.log('OK testNoLogoInContractBody');
 }
 
 function testSignatureFromCompanySettings() {
@@ -259,7 +265,7 @@ function main() {
   testContractModelNormalization();
   testPhoneUpdatesOnNewContract();
   testEmailUpdatesOnNewContract();
-  testLogoUpdatesOnNewContract();
+  testNoLogoInContractBody();
   testSignatureFromCompanySettings();
   testNoHardcodedIvanildeData();
   testMenesesUsesStandardModel();

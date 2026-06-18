@@ -3,10 +3,19 @@
  */
 
 import { displayContractNumber } from "@/lib/contractNumber";
+import {
+  formatCompanyAddressForHeader,
+  getCompanyDisplayName,
+} from "@/lib/contractCompanyDisplay";
+import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { formatCpfCnpj } from "@/lib/inputMasks";
+import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
   tenantCnpj: string;
+  /** Rótulo do documento no cabeçalho PDF — padrão CNPJ (Meneses). */
+  tenantDocumentLabel?: string;
   addressLine: string;
   cityUfLine: string;
   contractNumber: string;
@@ -235,7 +244,8 @@ export function applyContractPdfChrome(
     let yPos = 13 + splitName.length * 3.5;
 
     const infoParts: string[] = [];
-    if (data.tenantCnpj) infoParts.push(`CNPJ: ${data.tenantCnpj}`);
+    const docLabel = data.tenantDocumentLabel || "CNPJ";
+    if (data.tenantCnpj) infoParts.push(`${docLabel}: ${data.tenantCnpj}`);
     if (data.cityUfLine) infoParts.push(data.cityUfLine);
     if (infoParts.length > 0) {
       pdf.text(infoParts.join(" | "), titleX, yPos);
@@ -273,4 +283,29 @@ export function applyContractPdfChrome(
       align: "right",
     });
   }
+}
+
+/** Chrome PDF do contrato conforme modelo da empresa (Recanto vs padrão). */
+export function buildContractPdfChromeFromTenant(
+  tenant: Record<string, unknown> | null | undefined,
+  contractNumber: string,
+  logoBase64: string | null = null,
+): ContractPdfChromeInput {
+  const row = tenant && typeof tenant === "object" ? tenant : {};
+
+  if (isRecantoPrimaveraContractModel(row)) {
+    return buildRecantoPrimaveraPdfChrome(row, contractNumber, logoBase64);
+  }
+
+  const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);
+
+  return {
+    tenantName: getCompanyDisplayName(row),
+    tenantCnpj: formatCpfCnpj(String(row.cnpj || row.document || "")),
+    tenantDocumentLabel: "CNPJ",
+    addressLine,
+    cityUfLine,
+    contractNumber,
+    logoBase64,
+  };
 }

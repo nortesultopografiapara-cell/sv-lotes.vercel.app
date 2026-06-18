@@ -8,6 +8,7 @@ import {
   buildRecantoPrimaveraBuyerClauseHtml,
   buildRecantoPrimaveraLegalBodyHtml,
   buildRecantoPrimaveraSignaturesHtml,
+  buildRecantoPrimaveraSpouseClauseHtml,
   buildRecantoPrimaveraTitleHtml,
   buildRecantoPrimaveraVendorHeaderHtml,
 } from '@/lib/recantoPrimaveraContractLegal';
@@ -27,6 +28,7 @@ export function generateRecantoPrimaveraContract(
             ${buildRecantoPrimaveraTitleHtml(ctx)}
             ${buildRecantoPrimaveraVendorHeaderHtml(ctx)}
             ${buildRecantoPrimaveraBuyerClauseHtml(ctx)}
+            ${buildRecantoPrimaveraSpouseClauseHtml(ctx)}
             ${buildRecantoPrimaveraLegalBodyHtml(ctx)}
             ${buildRecantoPrimaveraSignaturesHtml(ctx)}
 

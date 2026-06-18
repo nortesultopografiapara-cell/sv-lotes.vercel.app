@@ -1,5 +1,5 @@
 /**
- * Testes finais — template Recanto Primavera fiel ao modelo Ivanilde.
+ * Testes finais — template Recanto Primavera fiel ao modelo DOCX Ivanilde.
  * npx tsx scripts/mandatory-recanto-primavera-final-template-tests.ts
  */
 
@@ -11,7 +11,8 @@ import {
   RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
-import { sanitizeContractField } from '../lib/recantoPrimaveraCompanyProfile';
+import { RECANTO_PRIMAVERA_CLAUSE_MARKERS } from '../lib/recantoPrimaveraContractClauses';
+import { buildRecantoPrimaveraPdfChrome } from '../lib/recantoPrimaveraContractPdf';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -90,6 +91,7 @@ const sale = {
   installments_count: 24,
   total_value: 95000,
   down_payment: 10000,
+  first_installment_due_date: '2026-07-15',
   created_at: '2026-06-15',
   brokers: {
     name: 'Carlos Corretor',
@@ -111,11 +113,8 @@ function buildHtml() {
 
 function testTitleMatchesOriginal() {
   const html = buildHtml();
-  assert(
-    html.includes(RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1),
-    'título linha 1',
-  );
-  assert(html.includes('CHACREAMENTO RECANTO PRIMAVERA'), 'título linha 2 empreendimento');
+  assert(html.includes(RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1), 'título linha 1');
+  assert(html.includes('CHACREAMENTO RECANTO PRIMAVERA.'), 'título linha 2 com ponto');
   assertNotIncludes(
     html,
     'INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL',
@@ -124,59 +123,149 @@ function testTitleMatchesOriginal() {
   console.log('OK testTitleMatchesOriginal');
 }
 
-function testVendorHeaderComplete() {
+function testVendorAndBuyerStructuredBlocks() {
   const html = buildHtml();
   assert(html.includes('<strong>VENDEDOR(A):</strong>'), 'label vendedor');
-  assert(html.includes('<strong>Nacionalidade:</strong> Brasileira'), 'nacionalidade');
-  assert(html.includes('<strong>Estado civil:</strong> Solteira'), 'estado civil');
-  assert(html.includes('<strong>Profissão:</strong> Agricultora'), 'profissão');
-  assert(html.includes('<strong>RG:</strong> 1234567 — SSP/PA'), 'rg');
-  assert(html.includes('326.412.811-04'), 'cpf formatado');
-  assert(html.includes('(94) 99222-3344'), 'telefone jurídico');
-  assert(html.includes('ivanilde@recantoprimavera.test'), 'email jurídico');
-  console.log('OK testVendorHeaderComplete');
+  assert(html.includes('<strong>CPF:</strong>'), 'label CPF vendedor PF');
+  assert(html.includes('326.412.811-04'), 'cpf vendedor');
+  assert(html.includes('<strong>COMPRADOR(A):</strong>'), 'label comprador');
+  assert(html.includes('<strong>ENDEREÇO:</strong>'), 'label endereço comprador');
+  assert(html.includes('987.654.321-00'), 'cpf comprador');
+  console.log('OK testVendorAndBuyerStructuredBlocks');
 }
 
-function testEnterpriseLocationNotCompanyAddress() {
+function testSpouseBlockAlwaysPresent() {
   const html = buildHtml();
+  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge');
+  assert(html.includes('Maria Santos'), 'nome cônjuge');
+  assert(html.includes('111.222.333-44'), 'cpf cônjuge');
+
+  const htmlNoSpouse = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: { ...customer, spouse_name: '', spouse_cpf: '' },
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale,
+    contractDate: '2026-06-17',
+  });
+  assert(htmlNoSpouse.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge vazio mantido');
+  console.log('OK testSpouseBlockAlwaysPresent');
+}
+
+function testNoLogoBeforeTitle() {
+  const html = buildHtml();
+  const headerMatch = html.match(
+    /<div class="contract-header-recanto"[\s\S]*?<\/div>/,
+  );
+  assert(!!headerMatch, 'cabeçalho Recanto');
+  assertNotIncludes(headerMatch![0], '<img', 'sem logo no corpo antes do título');
+  console.log('OK testNoLogoBeforeTitle');
+}
+
+function testPdfChromeUsesCpfLabel() {
+  const chrome = buildRecantoPrimaveraPdfChrome(ivanildeTenant, 'TESTE/2026', null);
+  assert(chrome.tenantDocumentLabel === 'CPF', 'chrome com label CPF');
+  assert(chrome.tenantCnpj === '326.412.811-04', 'chrome com documento formatado');
+  console.log('OK testPdfChromeUsesCpfLabel');
+}
+
+function testDocxClausesPresent() {
+  const html = buildHtml();
+  for (const marker of RECANTO_PRIMAVERA_CLAUSE_MARKERS) {
+    assert(html.includes(marker), `cláusula ${marker}`);
+  }
+  assert(html.includes(RECANTO_PRIMAVERA_LEGAL_MARKER), 'marcador Recanto');
+  console.log('OK testDocxClausesPresent');
+}
+
+function testRemovedMenesesClauses() {
+  const html = buildHtml();
+  assertNotIncludes(html, 'Da Promessa', 'sem cláusula Promessa');
+  assertNotIncludes(html, 'Da Desistência', 'sem cláusula Desistência');
+  assertNotIncludes(html, 'Da Irretratabilidade', 'sem cláusula Irretratabilidade');
+  assertNotIncludes(html, 'Da Escritura', 'sem cláusula Escritura');
+  assertNotIncludes(html, 'Dos Honorários', 'sem cláusula Honorários');
+  assertNotIncludes(html, 'Assinatura Eletrônica', 'sem cláusula assinatura eletrônica');
+  assertNotIncludes(html, 'multa penal de 2%', 'sem multa genérica 2%');
+  console.log('OK testRemovedMenesesClauses');
+}
+
+function testSinalNotEntrada() {
+  const html = buildHtml();
+  assert(html.includes('SINAL'), 'contém SINAL');
+  assert(html.includes('SALDO PARCELADO'), 'contém SALDO PARCELADO');
   assert(
-    html.includes('situado em <strong>Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II</strong>'),
-    'localização empreendimento na cláusula do lote',
+    html.includes(
+      'o valor pago a título de sinal não possui natureza de entrada, não sendo abatido do valor da chácara',
+    ),
+    'texto natureza do sinal',
   );
-  const clauseMatch = html.match(/Cláusula Primeira[\s\S]*?Cláusula Segunda/);
-  assert(!!clauseMatch, 'cláusula primeira encontrada');
-  assertNotIncludes(
-    clauseMatch![0],
-    'Rua das Acácias',
-    'endereço comercial fora da cláusula do lote',
-  );
-  console.log('OK testEnterpriseLocationNotCompanyAddress');
+  assertNotIncludes(html.toLowerCase(), 'entrada de', 'sem entrada de');
+  assertNotIncludes(html.toLowerCase(), 'sendo entrada', 'sem sendo entrada');
+  console.log('OK testSinalNotEntrada');
 }
 
-function testBankDataInPaymentClause() {
+function normalizeMoneyText(html: string): string {
+  return html.replace(/\u00a0/g, ' ');
+}
+
+function testPaymentTableUsesTotalNotMinusSignal() {
+  const html = normalizeMoneyText(buildHtml());
+  assert(html.includes('R$ 10.000,00'), 'valor sinal');
+  assert(html.includes('R$ 95.000,00'), 'saldo parcelado = valor total chácara');
+  assert(html.includes('24 parcelas'), 'quantidade parcelas');
+  assert(html.includes('R$ 3.958,33'), 'parcela = total/24 sem abater sinal');
+  assertNotIncludes(html, 'R$ 85.000,00', 'não abate sinal do total');
+  console.log('OK testPaymentTableUsesTotalNotMinusSignal');
+}
+
+function testObjectClauseFormat() {
   const html = buildHtml();
+  assert(html.includes('LOTE DE TERRAS CHÁCARAS'), 'objeto chácaras');
+  assert(html.includes('QUADRA'), 'quadra no objeto');
+  assert(html.includes('Chacreamento Recanto Primavera'), 'empreendimento no objeto');
+  assert(html.includes('Parauapebas/PA'), 'município no objeto');
+  assert(html.includes('300,00 m²'), 'área no objeto');
+  assert(html.includes('frente'), 'medidas no objeto');
+  console.log('OK testObjectClauseFormat');
+}
+
+function testBankBoletoParagraph() {
+  const html = buildHtml();
+  assert(html.includes('boleto bancário'), 'pagamento por boleto');
   assert(html.includes('Sicredi'), 'banco');
   assert(html.includes('0804'), 'agência');
   assert(html.includes('91047-5'), 'conta');
-  assert(html.includes('32641281104'), 'pix');
-  assert(html.includes('Ivanilde De Moura Silva') || html.includes('Ivanilde de Moura Silva'), 'favorecido');
-  console.log('OK testBankDataInPaymentClause');
+  assert(
+    html.includes('Ivanilde De Moura Silva') || html.includes('Ivanilde de Moura Silva'),
+    'favorecido',
+  );
+  console.log('OK testBankBoletoParagraph');
 }
 
-function testBuyerBrokerLotAndSignatures() {
+function testDueDayParagraph() {
+  const html = normalizeMoneyText(buildHtml());
+  assert(html.includes('todo dia <strong>15</strong>'), 'dia vencimento');
+  assert(html.includes('R$ 3.958,33'), 'valor parcela no parágrafo terceiro');
+  assert(html.includes('15/07/2026'), 'início parcelas');
+  console.log('OK testDueDayParagraph');
+}
+
+function testSignaturesFormat() {
   const html = buildHtml();
-  assert(html.toUpperCase().includes('JOÃO DA SILVA SANTOS'), 'comprador');
-  assert(html.includes('987.654.321-00'), 'cpf comprador');
-  assert(html.includes('(94) 98888-7777'), 'telefone comprador');
-  assert(html.includes('joao@test.com'), 'email comprador');
-  assert(html.includes('Maria Santos'), 'cônjuge');
-  assert(html.includes('LOTE 15 DA QUADRA 03'), 'lote');
-  assert(html.includes('Carlos Corretor'), 'corretor');
+  assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
+  assert(html.includes('CORRETOR'), 'assinatura corretor');
+  assert(html.includes('Testemunhas:'), 'testemunhas');
+  assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
+  assert(html.includes('Carlos Corretor'), 'nome corretor');
   assert(html.includes('12345-PA'), 'creci');
-  assert(html.includes('https://cdn.test/recanto-signature-final.png'), 'assinatura');
-  assert(html.includes('TESTEMUNHA 1'), 'testemunha 1');
-  assert(html.includes('TESTEMUNHA 2'), 'testemunha 2');
-  console.log('OK testBuyerBrokerLotAndSignatures');
+  console.log('OK testSignaturesFormat');
+}
+
+function testNoBodyFooter() {
+  const html = buildHtml();
+  assertNotIncludes(html, 'contract-footer-recanto', 'rodapé carregado removido do corpo');
+  console.log('OK testNoBodyFooter');
 }
 
 function testNoUndefinedNullNaN() {
@@ -198,7 +287,17 @@ function testMenesesUnchanged() {
       city: 'Goiânia',
       state: 'GO',
     },
-    customer: { name: 'Cliente', document: '12345678901', profession: 'x', civil_state: 's', address: 'a', neighborhood: 'b', city: 'c', state: 'GO', zip_code: '1' },
+    customer: {
+      name: 'Cliente',
+      document: '12345678901',
+      profession: 'x',
+      civil_state: 's',
+      address: 'a',
+      neighborhood: 'b',
+      city: 'c',
+      state: 'GO',
+      zip_code: '1',
+    },
     project: { name: 'Residencial', city: 'Goiânia', uf: 'GO' },
     block: { quadra: '1', lot: '1', area: 100 },
     sale: { total_value: 1000, installments_count: 1, down_payment: 0 },
@@ -240,7 +339,7 @@ async function writeSampleArtifacts() {
     );
     const pdf = await buildSaleContractPdfFromHtml(
       wrapSaleContractHtmlDocument(html, 'Contrato Recanto Primavera'),
-      { contractNumber: 'TESTE/2026' },
+      buildRecantoPrimaveraPdfChrome(ivanildeTenant, 'TESTE/2026', null),
     );
     pdfPath = path.join(outDir, 'contrato-recanto-primavera-teste.pdf');
     fs.writeFileSync(pdfPath, pdf);
@@ -253,10 +352,19 @@ async function writeSampleArtifacts() {
 
 async function main() {
   testTitleMatchesOriginal();
-  testVendorHeaderComplete();
-  testEnterpriseLocationNotCompanyAddress();
-  testBankDataInPaymentClause();
-  testBuyerBrokerLotAndSignatures();
+  testVendorAndBuyerStructuredBlocks();
+  testSpouseBlockAlwaysPresent();
+  testNoLogoBeforeTitle();
+  testPdfChromeUsesCpfLabel();
+  testDocxClausesPresent();
+  testRemovedMenesesClauses();
+  testSinalNotEntrada();
+  testPaymentTableUsesTotalNotMinusSignal();
+  testObjectClauseFormat();
+  testBankBoletoParagraph();
+  testDueDayParagraph();
+  testSignaturesFormat();
+  testNoBodyFooter();
   testNoUndefinedNullNaN();
   testMenesesUnchanged();
   testStoredContractUnchanged();
