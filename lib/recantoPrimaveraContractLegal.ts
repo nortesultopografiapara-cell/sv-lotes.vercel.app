@@ -93,6 +93,8 @@ export function buildRecantoPrimaveraBuyerClauseHtml(
 export function buildRecantoPrimaveraSpouseClauseHtml(
   ctx: RecantoPrimaveraContractContext,
 ): string {
+  if (!ctx.hasConjuge) return '';
+
   const rgLine =
     ctx.conjugeRg && ctx.conjugeRgIssuer
       ? `${ctx.conjugeRg} — ${ctx.conjugeRgIssuer}`
@@ -134,9 +136,16 @@ export function buildRecantoPrimaveraSignaturesHtml(
   ].filter(Boolean);
   const brokerDocLine = brokerDocParts.join(' / ') || '&nbsp;';
 
-  const conjugeNomeLine = ctx.conjugeNome || '&nbsp;';
-  const conjugeCpfLine = ctx.conjugeCpf || '&nbsp;';
   const brokerNomeLine = ctx.brokerNome || '&nbsp;';
+
+  const conjugeSignatureSlot = ctx.hasConjuge
+    ? `
+      <div class="signature-slot">
+        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
+        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CÔNJUGE ANUENTE: ${ctx.conjugeNome || '&nbsp;'}</p>
+        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${ctx.conjugeCpf || '&nbsp;'}</p>
+      </div>`
+    : '';
 
   return `
     <div class="contract-clause contract-clause--tight">
@@ -162,11 +171,7 @@ export function buildRecantoPrimaveraSignaturesHtml(
         <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${ctx.clienteCpfCnpj || '&nbsp;'}</p>
       </div>
 
-      <div class="signature-slot">
-        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
-        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CÔNJUGE ANUENTE: ${conjugeNomeLine}</p>
-        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${conjugeCpfLine}</p>
-      </div>
+      ${conjugeSignatureSlot}
 
       <div class="signature-slot">
         <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>

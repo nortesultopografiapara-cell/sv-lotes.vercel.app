@@ -2,8 +2,6 @@
  * Campos de cônjuge vinculados à venda (sale_spouse_*).
  */
 
-import { extractSpouseIdentitySource } from '@/lib/contractIdentity';
-
 export const SALE_SPOUSE_DB_FIELDS = [
   'sale_spouse_name',
   'sale_spouse_nationality',
@@ -117,50 +115,30 @@ export function buildSaleSpouseDbPatch(
   };
 }
 
+/** Recanto Primavera: cônjuge só quando a venda tem sale_spouse_name ou sale_spouse_cpf. */
+export function hasSaleSpouseData(
+  sale: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!sale || typeof sale !== 'object') return false;
+  return !!(clean(sale.sale_spouse_name) || clean(sale.sale_spouse_cpf));
+}
+
 export function extractRecantoSpouseSource(
   sale: Record<string, unknown> | null | undefined,
-  customer: Record<string, unknown> | null | undefined,
+  _customer?: Record<string, unknown> | null | undefined,
 ): RecantoSpouseSource | null {
-  const saleName = clean(sale?.sale_spouse_name);
-  if (saleName) {
-    return {
-      name: saleName,
-      nationality: clean(sale?.sale_spouse_nationality),
-      maritalStatus: clean(sale?.sale_spouse_marital_status),
-      profession: clean(sale?.sale_spouse_profession),
-      rg: clean(sale?.sale_spouse_rg),
-      rgIssuer: clean(sale?.sale_spouse_rg_issuer),
-      cpf: clean(sale?.sale_spouse_cpf),
-      phone: clean(sale?.sale_spouse_phone),
-      email: clean(sale?.sale_spouse_email),
-      address: clean(sale?.sale_spouse_address),
-    };
-  }
-
-  const legacy = extractSpouseIdentitySource(customer || {});
-  if (!legacy?.name) return null;
-
-  const record =
-    customer && typeof customer === 'object'
-      ? (customer as Record<string, unknown>)
-      : {};
+  if (!hasSaleSpouseData(sale)) return null;
 
   return {
-    name: String(legacy.name),
-    nationality: clean(record.spouse_nationality || record.conjuge_nationality),
-    maritalStatus: clean(
-      record.spouse_marital_status ||
-        record.spouse_civil_state ||
-        record.conjuge_estado_civil,
-    ),
-    profession: clean(legacy.profession),
-    rg: clean(legacy.rg),
-    rgIssuer: [clean(legacy.issuing_authority), clean(legacy.issuing_state)]
-      .filter(Boolean)
-      .join('/'),
-    cpf: clean(legacy.document),
-    phone: clean(record.spouse_phone || record.conjuge_phone),
-    email: clean(record.spouse_email || record.conjuge_email),
-    address: clean(record.spouse_address || record.conjuge_address),
+    name: clean(sale?.sale_spouse_name),
+    nationality: clean(sale?.sale_spouse_nationality),
+    maritalStatus: clean(sale?.sale_spouse_marital_status),
+    profession: clean(sale?.sale_spouse_profession),
+    rg: clean(sale?.sale_spouse_rg),
+    rgIssuer: clean(sale?.sale_spouse_rg_issuer),
+    cpf: clean(sale?.sale_spouse_cpf),
+    phone: clean(sale?.sale_spouse_phone),
+    email: clean(sale?.sale_spouse_email),
+    address: clean(sale?.sale_spouse_address),
   };
 }

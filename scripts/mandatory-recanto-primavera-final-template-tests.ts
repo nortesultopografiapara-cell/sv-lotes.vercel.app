@@ -96,6 +96,16 @@ const sale = {
   down_payment: 10000,
   first_installment_due_date: '2026-07-15',
   created_at: '2026-06-15',
+  sale_spouse_name: 'Maria Santos',
+  sale_spouse_nationality: 'Brasileira',
+  sale_spouse_marital_status: 'Casada',
+  sale_spouse_profession: 'Do lar',
+  sale_spouse_rg: '9876543',
+  sale_spouse_rg_issuer: 'SSP/PA',
+  sale_spouse_cpf: '11122233344',
+  sale_spouse_phone: '(94) 97777-6666',
+  sale_spouse_email: 'maria@test.com',
+  sale_spouse_address: 'Rua C, 100',
   brokers: {
     name: 'Carlos Corretor',
     cpf: '55566677788',
@@ -137,22 +147,37 @@ function testVendorAndBuyerStructuredBlocks() {
   console.log('OK testVendorAndBuyerStructuredBlocks');
 }
 
-function testSpouseBlockAlwaysPresent() {
+function testSpouseBlockConditional() {
   const html = buildHtml();
-  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge');
+  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge com dados');
   assert(html.includes('Maria Santos'), 'nome cônjuge');
   assert(html.includes('111.222.333-44'), 'cpf cônjuge');
+  assert(html.includes('CÔNJUGE ANUENTE: Maria Santos'), 'assinatura cônjuge com nome');
 
   const htmlNoSpouse = generateContractHTML({
     tenant: ivanildeTenant,
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
     project: recantoProject,
     block,
-    sale,
+    sale: {
+      ...sale,
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+      sale_spouse_nationality: null,
+      sale_spouse_marital_status: null,
+      sale_spouse_profession: null,
+      sale_spouse_rg: null,
+      sale_spouse_rg_issuer: null,
+      sale_spouse_phone: null,
+      sale_spouse_email: null,
+      sale_spouse_address: null,
+    },
     contractDate: '2026-06-17',
   });
-  assert(htmlNoSpouse.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge vazio mantido');
-  console.log('OK testSpouseBlockAlwaysPresent');
+  assertNotIncludes(htmlNoSpouse, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem bloco cônjuge');
+  assertNotIncludes(htmlNoSpouse, 'CÔNJUGE ANUENTE', 'sem assinatura cônjuge');
+  assertNotIncludes(htmlNoSpouse, 'contract-spouse-block', 'sem div cônjuge');
+  console.log('OK testSpouseBlockConditional');
 }
 
 function testNoLogoBeforeTitle() {
@@ -268,13 +293,48 @@ function testContractWithoutSpouse() {
       ...sale,
       sale_spouse_name: null,
       sale_spouse_cpf: null,
+      sale_spouse_nationality: null,
+      sale_spouse_marital_status: null,
+      sale_spouse_profession: null,
+      sale_spouse_rg: null,
+      sale_spouse_rg_issuer: null,
+      sale_spouse_phone: null,
+      sale_spouse_email: null,
+      sale_spouse_address: null,
     },
     contractDate: '2026-06-17',
   });
-  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge vazio mantido');
-  assert(html.includes('CÔNJUGE ANUENTE: &nbsp;'), 'assinatura cônjuge em branco');
+  assertNotIncludes(html, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem bloco cônjuge');
+  assertNotIncludes(html, 'CÔNJUGE ANUENTE', 'sem assinatura cônjuge');
   assertNotIncludes(html, 'Maria Santos', 'sem nome cônjuge');
   console.log('OK testContractWithoutSpouse');
+}
+
+function testContractWithSpouseCpfOnly() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: { ...customer, spouse_name: '', spouse_cpf: '' },
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      sale_spouse_name: null,
+      sale_spouse_cpf: '11122233344',
+      sale_spouse_nationality: null,
+      sale_spouse_marital_status: null,
+      sale_spouse_profession: null,
+      sale_spouse_rg: null,
+      sale_spouse_rg_issuer: null,
+      sale_spouse_phone: null,
+      sale_spouse_email: null,
+      sale_spouse_address: null,
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge só com CPF');
+  assert(html.includes('111.222.333-44'), 'cpf cônjuge');
+  assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
+  console.log('OK testContractWithSpouseCpfOnly');
 }
 
 function testBrokerFilled() {
@@ -569,7 +629,21 @@ async function writeSampleArtifacts() {
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
     project: recantoProject,
     block,
-    sale: { ...sale, brokers: undefined, broker: undefined },
+    sale: {
+      ...sale,
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+      sale_spouse_nationality: null,
+      sale_spouse_marital_status: null,
+      sale_spouse_profession: null,
+      sale_spouse_rg: null,
+      sale_spouse_rg_issuer: null,
+      sale_spouse_phone: null,
+      sale_spouse_email: null,
+      sale_spouse_address: null,
+      brokers: undefined,
+      broker: undefined,
+    },
     contractDate: '2026-06-17',
   });
 
@@ -613,7 +687,7 @@ async function writeSampleArtifacts() {
 async function main() {
   testTitleMatchesOriginal();
   testVendorAndBuyerStructuredBlocks();
-  testSpouseBlockAlwaysPresent();
+  testSpouseBlockConditional();
   testNoLogoBeforeTitle();
   testPdfChromeUsesCpfLabel();
   testLiteralPhrasesNotSummarized();
@@ -624,6 +698,7 @@ async function main() {
   testDateExtenso();
   testContractWithSpouse();
   testContractWithoutSpouse();
+  testContractWithSpouseCpfOnly();
   testBrokerFilled();
   testBrokerEmpty();
   testSinalNotEntrada();

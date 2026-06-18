@@ -60,6 +60,8 @@ export type RecantoPrimaveraContractContext = {
   clienteUf: string;
   clienteCep: string;
   clienteEnderecoCompleto: string;
+  /** true quando sale_spouse_name ou sale_spouse_cpf está preenchido na venda */
+  hasConjuge: boolean;
   conjugeNome: string;
   conjugeNacionalidade: string;
   conjugeEstadoCivil: string;
@@ -491,6 +493,7 @@ export function buildRecantoPrimaveraContractContext(
     clienteUf,
     clienteCep,
     clienteEnderecoCompleto,
+    hasConjuge: !!spouse,
     conjugeNome: spouse ? toTitleCase(String(spouse.name || '')) : '',
     conjugeNacionalidade: spouse
       ? toTitleCase(sanitizeContractField(spouse.nationality) || 'Brasileira')
