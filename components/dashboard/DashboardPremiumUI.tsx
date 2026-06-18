@@ -17,8 +17,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Loader2 } from 'lucide-react';
-import { formatDashboardKpiPrimaryValue } from '@/lib/dashboardKpiFormat';
+import { ArrowDownRight, ArrowUpRight, Loader2 } from 'lucide-react';
+import {
+  coerceDashboardKpiNumber,
+  formatDashboardKpiPrimaryValue,
+  formatDashboardKpiSubtitle,
+} from '@/lib/dashboardKpiFormat';
 
 const CHART_TOOLTIP = {
   backgroundColor: 'rgba(15, 20, 28, 0.95)',
@@ -40,16 +44,21 @@ export function DashboardTopKpi({
   subtitle,
 }: {
   title: string;
-  value: number;
-  total?: number;
+  value: unknown;
+  total?: unknown;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   color: string;
   loading?: boolean;
   isCurrency?: boolean;
-  subtitle?: string;
+  subtitle?: unknown;
 }) {
+  const safeValue = coerceDashboardKpiNumber(value);
+  const safeTotal = coerceDashboardKpiNumber(total);
+  const safeSubtitle = formatDashboardKpiSubtitle(subtitle);
   const percent =
-    total && total > 0 && !isCurrency ? ((value / total) * 100).toFixed(1) : null;
+    safeTotal > 0 && !isCurrency
+      ? ((safeValue / safeTotal) * 100).toFixed(1)
+      : null;
 
   return (
     <div className="dash-kpi-top group">
@@ -66,17 +75,13 @@ export function DashboardTopKpi({
             {loading ? (
               <span className="dash-skeleton inline-block h-8 w-24" />
             ) : isCurrency ? (
-              new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-                maximumFractionDigits: 0,
-              }).format(value)
+              formatDashboardKpiPrimaryValue(safeValue, true)
             ) : (
-              <CountUp end={value} duration={1.2} separator="." />
+              <CountUp end={safeValue} duration={1.2} separator="." decimals={0} />
             )}
           </h3>
           <p className="text-[11px] text-[var(--text-muted)] mt-1 truncate">
-            {subtitle ||
+            {safeSubtitle ||
               (percent ? (
                 <span style={{ color }}>
                   {percent}% <span className="text-[var(--text-muted)]">do total</span>
@@ -106,15 +111,23 @@ export function DashboardMetricKpi({
   isCurrency = false,
 }: {
   title: string;
-  value: number;
+  value: unknown;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   color: string;
   loading?: boolean;
-  trend?: string;
-  subtitle?: string;
+  trend?: unknown;
+  subtitle?: unknown;
   /** Quando true, value é exibido como moeda; quando false, como quantidade inteira. */
   isCurrency?: boolean;
 }) {
+  const safeValue = coerceDashboardKpiNumber(value);
+  const safeSubtitle = formatDashboardKpiSubtitle(subtitle);
+  const safeTrend =
+    trend == null || trend === ''
+      ? ''
+      : typeof trend === 'string'
+        ? trend.trim()
+        : String(trend);
   return (
     <div className="dash-kpi-metric relative overflow-hidden">
       {loading && (
@@ -144,12 +157,12 @@ export function DashboardMetricKpi({
             {loading ? (
               <span className="dash-skeleton inline-block h-6 w-12" />
             ) : isCurrency ? (
-              formatDashboardKpiPrimaryValue(value, true)
+              formatDashboardKpiPrimaryValue(safeValue, true)
             ) : (
-              <CountUp end={value} duration={1.2} separator="." decimals={0} />
+              <CountUp end={safeValue} duration={1.2} separator="." decimals={0} />
             )}
           </p>
-          {(subtitle || trend) && (
+          {(safeSubtitle || safeTrend) && (
             <p
               className={`truncate flex items-center gap-0.5 ${
                 isCurrency
@@ -157,8 +170,8 @@ export function DashboardMetricKpi({
                   : 'text-[11px] text-[var(--text-muted)] opacity-75 font-medium tabular-nums'
               }`}
             >
-              {trend && <ArrowUpRight className="h-3 w-3 text-emerald-500 shrink-0" />}
-              {subtitle || trend}
+              {safeTrend && <ArrowUpRight className="h-3 w-3 text-emerald-500 shrink-0" />}
+              {safeSubtitle || safeTrend}
             </p>
           )}
         </div>

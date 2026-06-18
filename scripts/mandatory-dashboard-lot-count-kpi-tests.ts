@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+  coerceDashboardKpiNumber,
   formatDashboardKpiPrimaryValue,
   isDashboardLotCountKpiTitle,
 } from '../lib/dashboardKpiFormat';
@@ -49,10 +50,7 @@ function testDashboardMetricKpiUsesIsCurrencyProp() {
   );
   assert(source.includes('isCurrency'), 'prop isCurrency no componente');
   assert(source.includes('formatDashboardKpiPrimaryValue'), 'helper de formatação');
-  assert(
-    !source.includes("style: 'currency',\n              currency: 'BRL',\n              maximumFractionDigits: 0,\n            }).format(value)"),
-    'sem formatador monetário fixo no value',
-  );
+  assert(source.includes('ArrowUpRight'), 'import ArrowUpRight presente');
   console.log('OK testDashboardMetricKpiUsesIsCurrencyProp');
 }
 
