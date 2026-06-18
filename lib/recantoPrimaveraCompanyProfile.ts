@@ -20,11 +20,6 @@ export type RecantoPrimaveraCompanyProfile = {
   zip: string;
   logoUrl: string;
   signatureUrl: string;
-  enterpriseName: string;
-  enterpriseLocation: string;
-  enterpriseMunicipality: string;
-  enterpriseUf: string;
-  forumCity: string;
   bankName: string;
   bankBranch: string;
   bankAccount: string;
@@ -104,35 +99,6 @@ export function normalizeRecantoPrimaveraCompanyProfile(
   const documentFmt = documentRaw ? formatCNPJCPF(documentRaw) : '';
   const documentLabel = resolveContractDocumentLabel(documentRaw);
 
-  const enterpriseName = toTitleCase(
-    pickString(
-      c.contract_enterprise_name,
-      c.fantasy_name,
-      c.name,
-    ),
-  );
-
-  const enterpriseMunicipality = toTitleCase(
-    pickString(
-      c.contract_enterprise_municipality,
-      c.city,
-    ),
-  );
-
-  const enterpriseUf = pickString(
-    c.contract_enterprise_uf,
-    c.state,
-    c.uf,
-  ).toUpperCase();
-
-  const forumCity = toTitleCase(
-    pickString(
-      c.contract_forum_city,
-      c.contract_enterprise_municipality,
-      c.city,
-    ),
-  );
-
   return {
     vendorName,
     nationality: pickString(c.contract_legal_nationality, 'Brasileira'),
@@ -153,11 +119,6 @@ export function normalizeRecantoPrimaveraCompanyProfile(
     zip: pickString(c.zip_code, c.cep),
     logoUrl: pickString(c.logo_url),
     signatureUrl: pickString(c.signature_url),
-    enterpriseName,
-    enterpriseLocation: pickString(c.contract_enterprise_location),
-    enterpriseMunicipality,
-    enterpriseUf,
-    forumCity,
     bankName: pickString(c.contract_bank_name),
     bankBranch: pickString(c.contract_bank_branch),
     bankAccount: pickString(c.contract_bank_account),

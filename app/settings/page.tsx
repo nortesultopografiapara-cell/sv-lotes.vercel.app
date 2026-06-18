@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
-import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette, FileText, Landmark, Banknote } from 'lucide-react';
+import { Building2, Save, Upload, Loader2, ImagePlus, HardHat, Palette, FileText, Banknote } from 'lucide-react';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
@@ -227,11 +227,6 @@ export default function SettingsPage() {
        contract_legal_phone: company?.contract_legal_phone || null,
        contract_legal_email: company?.contract_legal_email || null,
        contract_legal_address: company?.contract_legal_address || null,
-       contract_enterprise_name: company?.contract_enterprise_name || null,
-       contract_enterprise_location: company?.contract_enterprise_location || null,
-       contract_enterprise_municipality: company?.contract_enterprise_municipality || null,
-       contract_enterprise_uf: company?.contract_enterprise_uf || null,
-       contract_forum_city: company?.contract_forum_city || null,
        contract_bank_name: company?.contract_bank_name || null,
        contract_bank_branch: company?.contract_bank_branch || null,
        contract_bank_account: company?.contract_bank_account || null,
@@ -533,35 +528,6 @@ export default function SettingsPage() {
                 <div className="md:col-span-2">
                   <label className="sv-theme-label">Endereço Completo (contrato)</label>
                   <input type="text" name="contract_legal_address" value={company?.contract_legal_address || ''} onChange={handleChange} className="sv-theme-field" />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h2 className="sv-theme-heading flex items-center gap-2">
-                <Landmark className="w-5 h-5 sv-theme-section-icon" />
-                Dados do Empreendimento no Contrato
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="sv-theme-label">Nome do Empreendimento para Contrato</label>
-                  <input type="text" name="contract_enterprise_name" value={company?.contract_enterprise_name || ''} onChange={handleChange} className="sv-theme-field" placeholder="CHACREAMENTO RECANTO PRIMAVERA" />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="sv-theme-label">Localização do Empreendimento</label>
-                  <textarea name="contract_enterprise_location" value={company?.contract_enterprise_location || ''} onChange={handleChange} className="sv-theme-field min-h-[80px]" placeholder="Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II" />
-                </div>
-                <div>
-                  <label className="sv-theme-label">Município</label>
-                  <input type="text" name="contract_enterprise_municipality" value={company?.contract_enterprise_municipality || ''} onChange={handleChange} className="sv-theme-field" />
-                </div>
-                <div>
-                  <label className="sv-theme-label">UF</label>
-                  <input type="text" name="contract_enterprise_uf" value={company?.contract_enterprise_uf || ''} onChange={handleChange} className="sv-theme-field" maxLength={2} />
-                </div>
-                <div>
-                  <label className="sv-theme-label">Cidade do Foro</label>
-                  <input type="text" name="contract_forum_city" value={company?.contract_forum_city || ''} onChange={handleChange} className="sv-theme-field" />
                 </div>
               </div>
             </div>

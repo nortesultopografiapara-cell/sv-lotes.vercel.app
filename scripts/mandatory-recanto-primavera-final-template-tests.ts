@@ -37,12 +37,6 @@ const ivanildeTenant = {
   contract_legal_phone: '(94) 99222-3344',
   contract_legal_email: 'ivanilde@recantoprimavera.test',
   contract_legal_address: 'Rua das Acácias, 50, Centro',
-  contract_enterprise_name: 'CHACREAMENTO RECANTO PRIMAVERA',
-  contract_enterprise_location:
-    'Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II',
-  contract_enterprise_municipality: 'Parauapebas',
-  contract_enterprise_uf: 'PA',
-  contract_forum_city: 'Parauapebas',
   contract_bank_name: 'Sicredi',
   contract_bank_branch: '0804',
   contract_bank_account: '91047-5',
@@ -52,6 +46,15 @@ const ivanildeTenant = {
   signature_url: 'https://cdn.test/recanto-signature-final.png',
   city: 'Parauapebas',
   state: 'PA',
+};
+
+const recantoProject = {
+  name: 'CHACREAMENTO RECANTO PRIMAVERA',
+  city: 'Parauapebas',
+  uf: 'PA',
+  neighborhood: 'Zona Rural',
+  address: 'Acesso a Palmares II, entre Palmares I e Palmares II',
+  forum_city: 'Parauapebas',
 };
 
 const customer = {
@@ -100,11 +103,11 @@ const sale = {
   },
 };
 
-function buildHtml() {
+function buildHtml(project = recantoProject) {
   return generateContractHTML({
     tenant: ivanildeTenant,
     customer,
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project,
     block,
     sale,
     contractDate: '2026-06-17',
@@ -143,7 +146,7 @@ function testSpouseBlockAlwaysPresent() {
   const htmlNoSpouse = generateContractHTML({
     tenant: ivanildeTenant,
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale,
     contractDate: '2026-06-17',
@@ -231,7 +234,7 @@ function testContractWithSpouse() {
   const html = generateContractHTML({
     tenant: ivanildeTenant,
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale: {
       ...sale,
@@ -259,7 +262,7 @@ function testContractWithoutSpouse() {
   const html = generateContractHTML({
     tenant: ivanildeTenant,
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale: {
       ...sale,
@@ -286,7 +289,7 @@ function testBrokerEmpty() {
   const html = generateContractHTML({
     tenant: ivanildeTenant,
     customer,
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale: { ...sale, brokers: undefined, broker: undefined, broker_name: '' },
     contractDate: '2026-06-17',
@@ -330,7 +333,7 @@ function testObjectClauseFormat() {
   assert(html.includes('QUADRA nº'), 'quadra no objeto');
   assert(html.includes('Chacreamento Recanto Primavera'), 'empreendimento no objeto');
   assert(html.includes('Parauapebas/PA'), 'município no objeto');
-  assert(html.includes('Acesso a Palmares II'), 'localização empreendimento');
+  assert(html.includes('Acesso a Palmares II'), 'localização do projeto');
   assert(html.includes('300,00 m²'), 'área no objeto');
   assert(html.includes('pelo lado direito'), 'medida lado direito');
   assert(html.includes('pelo lado esquerdo'), 'medida lado esquerdo');
@@ -386,6 +389,100 @@ function testNoUndefinedNullNaN() {
   assertNotIncludes(html, 'null', 'sem null');
   assertNotIncludes(html, 'NaN', 'sem NaN');
   console.log('OK testNoUndefinedNullNaN');
+}
+
+function testProjectEnterpriseFieldsSource() {
+  const html = buildHtml();
+  assert(html.includes('CHACREAMENTO RECANTO PRIMAVERA'), 'nome do empreendimento do projeto');
+  assert(html.includes('Parauapebas/PA'), 'município/UF do projeto');
+  assert(html.includes('Zona Rural'), 'bairro/localidade do projeto');
+  assert(html.includes('Acesso a Palmares II'), 'endereço/referência do projeto');
+  assert(html.includes('Comarca de <strong>Parauapebas/PA</strong>'), 'foro do projeto');
+  console.log('OK testProjectEnterpriseFieldsSource');
+}
+
+function testProjectUpdateReflectsInContract() {
+  const htmlV1 = buildHtml({
+    ...recantoProject,
+    name: 'EMPREENDIMENTO ALPHA',
+    city: 'Marabá',
+    uf: 'PA',
+    forum_city: 'Marabá',
+  });
+  const htmlV2 = buildHtml({
+    ...recantoProject,
+    name: 'EMPREENDIMENTO BETA',
+    city: 'Redenção',
+    uf: 'PA',
+    forum_city: 'Redenção',
+  });
+  assert(htmlV1.includes('EMPREENDIMENTO ALPHA'), 'projeto v1 no contrato');
+  assert(htmlV1.includes('Marabá/PA'), 'município v1');
+  assert(htmlV2.includes('EMPREENDIMENTO BETA'), 'projeto v2 no contrato');
+  assert(htmlV2.includes('Redenção/PA'), 'município v2');
+  assertNotIncludes(htmlV2, 'EMPREENDIMENTO ALPHA', 'v2 sem nome v1');
+  console.log('OK testProjectUpdateReflectsInContract');
+}
+
+function testCompanyEnterpriseFieldsIgnoredWhenProjectPresent() {
+  const tenantWithStaleCompanyFields = {
+    ...ivanildeTenant,
+    contract_enterprise_name: 'NOME ANTIGO DA EMPRESA',
+    contract_enterprise_location: 'LOCALIZAÇÃO ANTIGA DA EMPRESA',
+    contract_enterprise_municipality: 'Cidade Antiga Empresa',
+    contract_enterprise_uf: 'GO',
+    contract_forum_city: 'Cidade Foro Antiga Empresa',
+  };
+  const html = generateContractHTML({
+    tenant: tenantWithStaleCompanyFields,
+    customer,
+    project: recantoProject,
+    block,
+    sale,
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('CHACREAMENTO RECANTO PRIMAVERA'), 'usa projeto, não empresa');
+  assertNotIncludes(html, 'NOME ANTIGO DA EMPRESA', 'ignora contract_enterprise_name');
+  assertNotIncludes(html, 'LOCALIZAÇÃO ANTIGA DA EMPRESA', 'ignora contract_enterprise_location');
+  assertNotIncludes(html, 'Cidade Antiga Empresa', 'ignora contract_enterprise_municipality');
+  assertNotIncludes(html, 'Cidade Foro Antiga Empresa', 'ignora contract_forum_city');
+  console.log('OK testCompanyEnterpriseFieldsIgnoredWhenProjectPresent');
+}
+
+function testCompanyEnterpriseFieldsFallbackWhenProjectEmpty() {
+  const tenantFallback = {
+    ...ivanildeTenant,
+    contract_enterprise_name: 'CHACREAMENTO FALLBACK EMPRESA',
+    contract_enterprise_location: 'Local fallback empresa',
+    contract_enterprise_municipality: 'Parauapebas',
+    contract_enterprise_uf: 'PA',
+    contract_forum_city: 'Parauapebas',
+  };
+  const html = generateContractHTML({
+    tenant: tenantFallback,
+    customer,
+    project: {},
+    block,
+    sale,
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('Chacreamento Fallback Empresa') || html.includes('CHACREAMENTO FALLBACK EMPRESA'), 'fallback nome empresa');
+  assert(html.includes('Local fallback empresa'), 'fallback localização empresa');
+  console.log('OK testCompanyEnterpriseFieldsFallbackWhenProjectEmpty');
+}
+
+function testSettingsPageNoDuplicateEnterpriseFields() {
+  const settingsSource = fs.readFileSync(
+    path.join(process.cwd(), 'app/settings/page.tsx'),
+    'utf8',
+  );
+  assertNotIncludes(settingsSource, 'name="contract_enterprise_name"', 'settings sem input enterprise name');
+  assertNotIncludes(settingsSource, 'name="contract_enterprise_location"', 'settings sem input enterprise location');
+  assertNotIncludes(settingsSource, 'name="contract_enterprise_municipality"', 'settings sem input município');
+  assertNotIncludes(settingsSource, 'name="contract_enterprise_uf"', 'settings sem input UF');
+  assertNotIncludes(settingsSource, 'name="contract_forum_city"', 'settings sem input foro');
+  assertNotIncludes(settingsSource, 'Dados do Empreendimento no Contrato', 'settings sem seção duplicada');
+  console.log('OK testSettingsPageNoDuplicateEnterpriseFields');
 }
 
 function testMenesesUnchanged() {
@@ -461,7 +558,7 @@ async function writeSampleArtifacts() {
   const htmlComConjuge = generateRecantoPrimaveraContract({
     tenant: ivanildeTenant,
     customer,
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale: saleWithSpouse,
     contractDate: '2026-06-17',
@@ -470,7 +567,7 @@ async function writeSampleArtifacts() {
   const htmlSemConjuge = generateRecantoPrimaveraContract({
     tenant: ivanildeTenant,
     customer: { ...customer, spouse_name: '', spouse_cpf: '' },
-    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    project: recantoProject,
     block,
     sale: { ...sale, brokers: undefined, broker: undefined },
     contractDate: '2026-06-17',
@@ -532,6 +629,11 @@ async function main() {
   testSinalNotEntrada();
   testPaymentTableUsesTotalNotMinusSignal();
   testObjectClauseFormat();
+  testProjectEnterpriseFieldsSource();
+  testProjectUpdateReflectsInContract();
+  testCompanyEnterpriseFieldsIgnoredWhenProjectPresent();
+  testCompanyEnterpriseFieldsFallbackWhenProjectEmpty();
+  testSettingsPageNoDuplicateEnterpriseFields();
   testBankBoletoParagraph();
   testDueDayParagraph();
   testSignaturesFormat();

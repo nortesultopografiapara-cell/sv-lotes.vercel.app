@@ -24,6 +24,10 @@ import {
   sanitizeContractField,
   type RecantoPrimaveraCompanyProfile,
 } from '@/lib/recantoPrimaveraCompanyProfile';
+import {
+  resolveRecantoContractProjectRecord,
+  resolveRecantoPrimaveraProjectContractFields,
+} from '@/lib/recantoPrimaveraProjectContext';
 
 export type RecantoPrimaveraContractParams = {
   tenant: Record<string, unknown>;
@@ -295,13 +299,25 @@ export function buildRecantoPrimaveraContractContext(
   const {
     tenant,
     customer,
+    project,
     block,
     sale,
+    contractSnapshot,
     contractDate,
     financeReceipts,
   } = params;
 
   const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
+  const projectRecord = resolveRecantoContractProjectRecord(
+    project,
+    sale,
+    block,
+    contractSnapshot,
+  );
+  const projectFields = resolveRecantoPrimaveraProjectContractFields(
+    projectRecord,
+    tenant,
+  );
 
   const empresaAssinatura = profile.signatureUrl
     ? `<img src="${profile.signatureUrl}" style="max-height: 56px; margin-bottom: 8px;" alt="Assinatura"/>`
@@ -372,13 +388,12 @@ export function buildRecantoPrimaveraContractContext(
   const areaM2 = formatAreaM2(block?.area);
   const lotArea = areaM2 ? `${areaM2} m²` : '';
 
-  const enterpriseName =
-    profile.enterpriseName || 'Chacreamento Recanto Primavera';
-  const enterpriseLocation = profile.enterpriseLocation || '';
-  const municipality = profile.enterpriseMunicipality || 'Parauapebas';
-  const uf = profile.enterpriseUf || 'PA';
-  const forumCity = profile.forumCity || municipality;
-  const forumUf = profile.enterpriseUf || profile.state || 'PA';
+  const enterpriseName = projectFields.enterpriseName;
+  const enterpriseLocation = projectFields.enterpriseLocation;
+  const municipality = projectFields.municipality;
+  const uf = projectFields.uf;
+  const forumCity = projectFields.forumCity;
+  const forumUf = uf || profile.state || 'PA';
 
   const lotObjectText = buildLotObjectText(
     lote,
@@ -390,8 +405,8 @@ export function buildRecantoPrimaveraContractContext(
   );
   const lotMeasuresText = buildLotMeasuresText(lotSidesText, lotBoundariesClause);
 
-  const foroCidade = profile.forumCity || profile.enterpriseMunicipality || profile.city;
-  const foroUf = profile.enterpriseUf || profile.state;
+  const foroCidade = forumCity || municipality || profile.city;
+  const foroUf = uf || profile.state;
   let foroText = 'competente';
   if (foroCidade && foroUf) {
     foroText = `da Comarca de <strong>${foroCidade} - ${foroUf}</strong>`;
@@ -434,7 +449,7 @@ export function buildRecantoPrimaveraContractContext(
     clienteCidade && clienteUf ? `${clienteCidade} - ${clienteUf}` : clienteCidade,
   ]);
 
-  const titleLine2Raw = (profile.enterpriseName || 'CHACREAMENTO RECANTO PRIMAVERA')
+  const titleLine2Raw = (enterpriseName || 'CHACREAMENTO RECANTO PRIMAVERA')
     .toUpperCase()
     .trim();
   const titleLine2 = titleLine2Raw.endsWith('.')
@@ -449,9 +464,8 @@ export function buildRecantoPrimaveraContractContext(
   const dContrato = /^\d{4}-\d{2}-\d{2}$/.test(isoDate)
     ? new Date(`${isoDate}T12:00:00`)
     : new Date(rawContractDate);
-  const dataContratoCidade =
-    profile.forumCity || profile.enterpriseMunicipality || profile.city;
-  const dataContratoUf = profile.enterpriseUf || profile.state;
+  const dataContratoCidade = forumCity || municipality || profile.city;
+  const dataContratoUf = uf || profile.state;
 
   return {
     profile,
