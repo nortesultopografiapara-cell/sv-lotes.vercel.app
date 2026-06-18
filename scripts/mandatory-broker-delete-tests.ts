@@ -4,14 +4,20 @@
  */
 
 import {
+  BrokerDeleteError,
   buildBrokerSoftDeletePatch,
+  canManageBrokerInTenant,
   computeBrokerDashboardStats,
   filterBrokersForActiveList,
   isBrokerActiveForList,
   rankBrokersByMonthlySales,
   removeBrokerFromList,
   resolveBrokerDeleteMode,
+  resolveBrokerRowTenantId,
+  resolveBrokerTenantColumn,
+  resolveEffectiveBrokerTenant,
 } from '../lib/brokerDelete';
+import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -132,6 +138,65 @@ function testSalesHistoryPreservedOnSoftDelete() {
   console.log('OK testSalesHistoryPreservedOnSoftDelete');
 }
 
+function testResolveBrokerRowTenant() {
+  assert(resolveBrokerRowTenantId({ tenant_id: MENESES_COMPANY_ID, company_id: null }) === MENESES_COMPANY_ID, 'tenant_id');
+  assert(
+    resolveBrokerRowTenantId({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === MENESES_COMPANY_ID,
+    'fallback company_id',
+  );
+  assert(resolveBrokerTenantColumn({ tenant_id: MENESES_COMPANY_ID, company_id: 'other' }) === 'tenant_id', 'coluna tenant');
+  assert(resolveBrokerTenantColumn({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === 'company_id', 'coluna company');
+  console.log('OK testResolveBrokerRowTenant');
+}
+
+function testTenantFromBrokerWhenActiveTenantFails() {
+  const broker = {
+    tenant_id: MENESES_COMPANY_ID,
+    company_id: MENESES_COMPANY_ID,
+  };
+
+  const scope = resolveEffectiveBrokerTenant({
+    broker,
+    activeTenantId: null,
+    userRole: 'ADMIN_EMPRESA',
+    userTenantId: MENESES_COMPANY_ID,
+    isSuperAdmin: false,
+  });
+
+  assert(scope.effectiveTenantId === MENESES_COMPANY_ID, 'usa tenant do broker');
+  assert(scope.source === 'user_tenant', 'origem user_tenant');
+  assert(canManageBrokerInTenant({
+    isSuperAdmin: false,
+    userRole: 'ADMIN_EMPRESA',
+    userTenantId: MENESES_COMPANY_ID,
+    brokerTenantId: MENESES_COMPANY_ID,
+  }), 'admin Meneses pode');
+
+  let blocked = false;
+  try {
+    resolveEffectiveBrokerTenant({
+      broker,
+      activeTenantId: 'aaaaaaaa-bbbb-cccc-dddd-000000000001',
+      userRole: 'ADMIN_EMPRESA',
+      userTenantId: 'aaaaaaaa-bbbb-cccc-dddd-000000000002',
+      isSuperAdmin: false,
+    });
+  } catch (e) {
+    blocked = e instanceof BrokerDeleteError;
+  }
+  assert(blocked, 'bloqueia cross-tenant');
+
+  const superScope = resolveEffectiveBrokerTenant({
+    broker,
+    activeTenantId: null,
+    userRole: 'SUPER_ADMIN',
+    userTenantId: null,
+    isSuperAdmin: true,
+  });
+  assert(superScope.effectiveTenantId === MENESES_COMPANY_ID, 'super admin usa tenant do broker');
+  console.log('OK testTenantFromBrokerWhenActiveTenantFails');
+}
+
 function main() {
   testResolveDeleteMode();
   testSoftDeletePatch();
@@ -139,6 +204,8 @@ function main() {
   testRemoveBrokerUpdatesListAndCards();
   testRankingUsesOnlyActiveBrokers();
   testSalesHistoryPreservedOnSoftDelete();
+  testResolveBrokerRowTenant();
+  testTenantFromBrokerWhenActiveTenantFails();
   console.log('\nTodos os testes obrigatórios de exclusão de corretores passaram.');
 }
 

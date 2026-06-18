@@ -34,6 +34,7 @@ import {
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
+  BrokerDeleteError,
   computeBrokerDashboardStats,
   deactivateOrDeleteBroker,
   filterBrokersForActiveList,
@@ -98,7 +99,12 @@ export default function CorretoresPage() {
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   // Modal de confirmação de exclusão
-  const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{
+    id: string;
+    name: string;
+    tenant_id?: string | null;
+    company_id?: string | null;
+  } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const loadBrokers = useCallback(async () => {
@@ -751,26 +757,39 @@ export default function CorretoresPage() {
     try {
       setIsDeleting(true);
       const rlsCtx = await resolveRlsContext(user);
+      const resolvedActiveTenantId =
+        activeTenantId ||
+        rlsCtx.tenantId ||
+        user.tenant_id ||
+        user.company_id ||
+        deleteModal.tenant_id ||
+        deleteModal.company_id ||
+        null;
 
-      const result = await deactivateOrDeleteBroker(supabase, rlsCtx, id, name);
+      const result = await deactivateOrDeleteBroker(supabase, rlsCtx, id, name, {
+        userId: user.id,
+        userRole: user.role,
+        userTenantId: user.tenant_id || user.company_id || null,
+        activeTenantId: resolvedActiveTenantId,
+      });
 
       setCorretores((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
 
-      const tenantId =
-        rlsCtx.tenantId ||
-        user.tenant_id ||
-        (user as { company_id?: string }).company_id ||
-        null;
       await logBrokerDeleteAudit(supabase, {
-        tenantId,
+        tenantId: result.effectiveTenantId,
         userId: user.id,
         result,
       });
 
       await loadBrokers();
     } catch (e: unknown) {
-      console.error(e);
+      if (e instanceof BrokerDeleteError) {
+        console.error('[BROKER_DELETE] blocked', e.diagnostic);
+        alert(e.message);
+        return;
+      }
+      console.error('[BROKER_DELETE] unexpected', e);
       const message = e instanceof Error ? e.message : 'Erro desconhecido';
       alert('Erro ao excluir: ' + message);
     } finally {
@@ -1201,7 +1220,12 @@ export default function CorretoresPage() {
                              <Key className="w-4 h-4" />
                            </button>
                            <button 
-                             onClick={() => setDeleteModal({ id: c.id, name: c.name || 'Corretor' })}
+                             onClick={() => setDeleteModal({
+                               id: c.id,
+                               name: c.name || 'Corretor',
+                               tenant_id: c.tenant_id,
+                               company_id: c.company_id,
+                             })}
                              className="p-1.5 text-red-500 hover:text-[var(--text-primary)] hover:bg-red-500/80 rounded transition-colors" title="Excluir"
                            >
                              <Trash2 className="w-4 h-4" />
