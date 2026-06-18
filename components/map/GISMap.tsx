@@ -39,6 +39,11 @@ import {
 import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
+import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
+import {
+  attachBrokerSnapshotToSale,
+  brokerRowToSnapshot,
+} from "@/lib/saleBrokerSnapshot";
 import {
   computeGisMapOverlayOpen,
 } from "@/lib/gisToolbarOverlay";
@@ -3937,8 +3942,8 @@ export default function GISMap({
   ) => {
     if (!user) return;
 
-    let finalBrokerId = null;
-    if (user?.role === 'BROKER') {
+    let finalBrokerId = customerData.broker_id?.trim() || null;
+    if (!finalBrokerId && user?.role === 'BROKER') {
       const { data: brokerData } = await supabase
         .from('brokers')
         .select('id')
@@ -4081,6 +4086,7 @@ export default function GISMap({
             down_payment: customerData.down_payment || 0,
             installments_count: instCount,
             status: "ACTIVE",
+            ...buildSaleSpouseDbPatch(customerData),
           };
 
           console.log("SALE_CREATED");
@@ -4240,14 +4246,31 @@ export default function GISMap({
           }
 
           const receiptsSum = financeData.reduce((acc: any, curr: any) => acc + Number(curr.amount || 0), 0);
-          const enrichedSaleData = {
-            ...saleData,
-            receipts_sum: receiptsSum,
-            finance_receipts: financeData,
-            down_payment_due_date: customerData.down_payment_due_date || null,
-            first_installment_due_date:
-              customerData.first_installment_due_date || null,
-          };
+
+          let brokerSnapshot = null;
+          if (finalBrokerId) {
+            const { data: brokerRow } = await supabase
+              .from("brokers")
+              .select("name, cpf, document, creci")
+              .eq("id", finalBrokerId)
+              .maybeSingle();
+            brokerSnapshot = brokerRowToSnapshot(
+              (brokerRow as Record<string, unknown>) || null,
+            );
+          }
+
+          const enrichedSaleData = attachBrokerSnapshotToSale(
+            {
+              ...saleData,
+              receipts_sum: receiptsSum,
+              finance_receipts: financeData,
+              down_payment_due_date: customerData.down_payment_due_date || null,
+              first_installment_due_date:
+                customerData.first_installment_due_date || null,
+              ...buildSaleSpouseDbPatch(customerData),
+            },
+            brokerSnapshot,
+          );
 
           const contractPayloadPartial = {
             project_name_snapshot: projDataSnapshot?.name || lot?.projects?.name || null,

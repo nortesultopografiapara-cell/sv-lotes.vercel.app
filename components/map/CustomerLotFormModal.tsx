@@ -21,8 +21,13 @@ import {
 import { useCustomerDocumentAutofill } from '@/hooks/useCustomerDocumentAutofill';
 import { InstallmentsCountCombobox } from '@/components/map/InstallmentsCountCombobox';
 import { validateInstallmentsCount } from '@/lib/installmentsCount';
+import {
+  emptySaleSpouseFormFields,
+  type SaleSpouseFormFields,
+} from '@/lib/saleSpouseFields';
 
-export type LotFormState = CustomerFormValues & {
+export type LotFormState = CustomerFormValues &
+  SaleSpouseFormFields & {
   payment_type: string;
   discount_value: string;
   down_payment: string;
@@ -50,6 +55,7 @@ const GIS_INPUT_READONLY =
 function emptyLotFormState(): LotFormState {
   return {
     ...emptyCustomerFormValues(),
+    ...emptySaleSpouseFormFields(),
     payment_type: 'À vista',
     discount_value: '',
     down_payment: '',
@@ -543,6 +549,140 @@ export function CustomerLotFormModal({
                 </div>
               </div>
             </div>
+
+            {(actionName === 'Vendido' || isEditMode) && (
+              <div className="space-y-4">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-900 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.has_spouse}
+                    onChange={(e) => {
+                      if (!e.target.checked) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          ...emptySaleSpouseFormFields(),
+                        }));
+                      } else {
+                        setField({ has_spouse: true });
+                      }
+                    }}
+                    disabled={submitting || prefillLoading}
+                    className="rounded border-gray-300"
+                  />
+                  Possui Cônjuge
+                </label>
+
+                {formData.has_spouse && (
+                  <div className="space-y-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <h4 className="text-sm font-bold text-gray-900 border-b pb-1">
+                      DADOS DO CÔNJUGE
+                    </h4>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Nome</label>
+                      <input
+                        type="text"
+                        value={formData.sale_spouse_name}
+                        onChange={(e) => setField({ sale_spouse_name: e.target.value })}
+                        className={GIS_INPUT}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Nacionalidade</label>
+                        <input
+                          type="text"
+                          value={formData.sale_spouse_nationality}
+                          onChange={(e) => setField({ sale_spouse_nationality: e.target.value })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label>
+                        <select
+                          value={formData.sale_spouse_marital_status}
+                          onChange={(e) => setField({ sale_spouse_marital_status: e.target.value })}
+                          className={GIS_INPUT}
+                        >
+                          <option value="">Selecione...</option>
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão</label>
+                      <input
+                        type="text"
+                        value={formData.sale_spouse_profession}
+                        onChange={(e) => setField({ sale_spouse_profession: e.target.value })}
+                        className={GIS_INPUT}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">RG</label>
+                        <input
+                          type="text"
+                          value={formData.sale_spouse_rg}
+                          onChange={(e) => setField({ sale_spouse_rg: e.target.value })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Órgão Emissor</label>
+                        <input
+                          type="text"
+                          value={formData.sale_spouse_rg_issuer}
+                          onChange={(e) => setField({ sale_spouse_rg_issuer: e.target.value })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">CPF</label>
+                        <input
+                          type="text"
+                          value={formData.sale_spouse_cpf}
+                          onChange={(e) => setField({ sale_spouse_cpf: e.target.value })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Telefone</label>
+                        <input
+                          type="tel"
+                          value={formData.sale_spouse_phone}
+                          onChange={(e) => setField({ sale_spouse_phone: e.target.value })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">E-mail</label>
+                      <input
+                        type="email"
+                        value={formData.sale_spouse_email}
+                        onChange={(e) => setField({ sale_spouse_email: e.target.value })}
+                        className={GIS_INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço</label>
+                      <input
+                        type="text"
+                        value={formData.sale_spouse_address}
+                        onChange={(e) => setField({ sale_spouse_address: e.target.value })}
+                        className={GIS_INPUT}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {actionName === 'Reservado' && (
               <div className="space-y-4 bg-amber-50 p-4 rounded-lg border border-amber-100">

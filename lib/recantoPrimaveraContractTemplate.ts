@@ -6,6 +6,7 @@ import { CONTRACT_PDF_PRINT_CSS } from '@/lib/contractPdfPostProcess';
 import { buildRecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 import {
   buildRecantoPrimaveraBuyerClauseHtml,
+  buildRecantoPrimaveraElectronicSignatureHtml,
   buildRecantoPrimaveraLegalBodyHtml,
   buildRecantoPrimaveraSignaturesHtml,
   buildRecantoPrimaveraSpouseClauseHtml,
@@ -30,6 +31,7 @@ export function generateRecantoPrimaveraContract(
             ${buildRecantoPrimaveraBuyerClauseHtml(ctx)}
             ${buildRecantoPrimaveraSpouseClauseHtml(ctx)}
             ${buildRecantoPrimaveraLegalBodyHtml(ctx)}
+            ${buildRecantoPrimaveraElectronicSignatureHtml()}
             ${buildRecantoPrimaveraSignaturesHtml(ctx)}
 
         </div>

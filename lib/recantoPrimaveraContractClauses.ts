@@ -16,6 +16,16 @@ export const RECANTO_PRIMAVERA_CLAUSE_MARKERS = [
   'CLÁUSULA OITAVA – DO SANEAMENTO E RECURSOS HÍDRICOS',
   'CLÁUSULA NONA – DA RESCISÃO',
   'CLÁUSULA DÉCIMA PRIMEIRA - DO FORO',
+  'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA',
+] as const;
+
+export const RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES = [
+  'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA',
+  'assinatura eletrônica realizada por meio da plataforma SV LOTES',
+  'Medida Provisória nº 2.200-2/2001',
+  'produzindo todos os efeitos jurídicos de uma assinatura manuscrita',
+  'dispensando reconhecimento de firma, autenticação ou assinatura física adicional',
+  'tiveram acesso integral ao conteúdo deste instrumento antes da assinatura',
 ] as const;
 
 /** Frases literais mínimas do DOCX — usadas em testes de não-resumo. */
@@ -248,6 +258,21 @@ export function buildRecantoPrimaveraClausesHtml(
     <div class="contract-clause" style="padding-bottom: 5px;">
       <p style="margin-bottom: 0;">
         <strong>CLÁUSULA DÉCIMA PRIMEIRA - DO FORO:</strong> Fica eleito o foro da Comarca de <strong>${ctx.forumCity}/${ctx.forumUf}</strong>, com renúncia de qualquer outro, por mais privilegiado que seja.
+      </p>
+    </div>`;
+}
+
+export function buildRecantoPrimaveraElectronicSignatureClauseHtml(): string {
+  return `
+    <div class="contract-clause contract-clause--tight" style="padding-bottom: 5px;">
+      <p style="margin-bottom: 10px;">
+        <strong>CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA</strong>
+      </p>
+      <p style="margin-bottom: 10px;">
+        As partes reconhecem como válida e eficaz a assinatura eletrônica realizada por meio da plataforma SV LOTES, nos termos da Medida Provisória nº 2.200-2/2001 e legislação aplicável, produzindo todos os efeitos jurídicos de uma assinatura manuscrita, dispensando reconhecimento de firma, autenticação ou assinatura física adicional.
+      </p>
+      <p style="margin-bottom: 0;">
+        As partes declaram que tiveram acesso integral ao conteúdo deste instrumento antes da assinatura, concordando expressamente com todas as suas cláusulas e condições.
       </p>
     </div>`;
 }

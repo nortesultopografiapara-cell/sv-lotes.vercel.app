@@ -11,7 +11,7 @@ import {
   RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
-import { RECANTO_PRIMAVERA_CLAUSE_MARKERS, RECANTO_PRIMAVERA_LITERAL_PHRASES } from '../lib/recantoPrimaveraContractClauses';
+import { RECANTO_PRIMAVERA_CLAUSE_MARKERS, RECANTO_PRIMAVERA_LITERAL_PHRASES, RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES } from '../lib/recantoPrimaveraContractClauses';
 import { buildRecantoPrimaveraPdfChrome } from '../lib/recantoPrimaveraContractPdf';
 
 function assert(cond: boolean, msg: string) {
@@ -204,9 +204,95 @@ function testRemovedMenesesClauses() {
   assertNotIncludes(html, 'Da Irretratabilidade', 'sem cláusula Irretratabilidade');
   assertNotIncludes(html, 'Da Escritura', 'sem cláusula Escritura');
   assertNotIncludes(html, 'Dos Honorários', 'sem cláusula Honorários');
-  assertNotIncludes(html, 'Assinatura Eletrônica', 'sem cláusula assinatura eletrônica');
+  assertNotIncludes(html, 'Cláusula Décima Terceira:', 'sem cláusula foro Meneses');
   assertNotIncludes(html, 'multa penal de 2%', 'sem multa genérica 2%');
   console.log('OK testRemovedMenesesClauses');
+}
+
+function testDigitalSignatureClause() {
+  const html = buildHtml();
+  for (const phrase of RECANTO_PRIMAVERA_ELECTRONIC_SIGNATURE_PHRASES) {
+    assert(html.includes(phrase), `cláusula assinatura digital: ${phrase}`);
+  }
+  const clauseIdx = html.indexOf('CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA');
+  const signaturesIdx = html.indexOf('E, por estarem assim justos e contratados');
+  assert(clauseIdx > 0 && signaturesIdx > clauseIdx, 'cláusula 12 antes das assinaturas');
+  console.log('OK testDigitalSignatureClause');
+}
+
+function testDateExtenso() {
+  const html = buildHtml();
+  assert(html.includes('Parauapebas/PA, 17 de junho de 2026.'), 'data por extenso');
+  assertNotIncludes(html, 'Parauapebas - PA, 17/06/2026', 'sem data numérica antiga');
+  console.log('OK testDateExtenso');
+}
+
+function testContractWithSpouse() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: { ...customer, spouse_name: '', spouse_cpf: '' },
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale: {
+      ...sale,
+      sale_spouse_name: 'Maria Santos',
+      sale_spouse_nationality: 'Brasileira',
+      sale_spouse_marital_status: 'Casada',
+      sale_spouse_profession: 'Do lar',
+      sale_spouse_rg: '9876543',
+      sale_spouse_rg_issuer: 'SSP/PA',
+      sale_spouse_cpf: '11122233344',
+      sale_spouse_phone: '(94) 97777-6666',
+      sale_spouse_email: 'maria@test.com',
+      sale_spouse_address: 'Rua C, 100',
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('Maria Santos'), 'nome cônjuge');
+  assert(html.includes('111.222.333-44'), 'cpf cônjuge');
+  assert(html.includes('Brasileira'), 'nacionalidade cônjuge');
+  assert(html.includes('Rua C, 100') || html.includes('Rua C'), 'endereço cônjuge');
+  console.log('OK testContractWithSpouse');
+}
+
+function testContractWithoutSpouse() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: { ...customer, spouse_name: '', spouse_cpf: '' },
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale: {
+      ...sale,
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge vazio mantido');
+  assert(html.includes('CÔNJUGE ANUENTE: &nbsp;'), 'assinatura cônjuge em branco');
+  assertNotIncludes(html, 'Maria Santos', 'sem nome cônjuge');
+  console.log('OK testContractWithoutSpouse');
+}
+
+function testBrokerFilled() {
+  const html = buildHtml();
+  assert(html.includes('Carlos Corretor'), 'nome corretor');
+  assert(html.includes('555.666.777-88'), 'cpf corretor');
+  assert(html.includes('12345-PA'), 'creci');
+  console.log('OK testBrokerFilled');
+}
+
+function testBrokerEmpty() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale: { ...sale, brokers: undefined, broker: undefined, broker_name: '' },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('CORRETOR: &nbsp;'), 'corretor em branco');
+  console.log('OK testBrokerEmpty');
 }
 
 function testSinalNotEntrada() {
@@ -330,9 +416,20 @@ function testMenesesUnchanged() {
     contractDate: '2026-06-01',
   });
   assert(html.includes('Promitente Proprietário Vendedor'), 'modelo Meneses');
+  assert(html.includes('Cláusula Décima Segunda:'), 'cláusula assinatura Meneses preservada');
   assertNotIncludes(html, RECANTO_PRIMAVERA_LEGAL_MARKER, 'sem marcador Recanto');
   assertNotIncludes(html, 'sv-contract-recanto-primavera', 'sem classe Recanto');
+  assertNotIncludes(html, 'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA', 'sem cláusula Recanto');
   console.log('OK testMenesesUnchanged');
+}
+
+function testSaasUnchanged() {
+  const { buildSaasContractDocumentText, menesesSaasContractFixture } = require('../lib/saasContractContent');
+  const text = buildSaasContractDocumentText(menesesSaasContractFixture());
+  assert(typeof text === 'string' && text.length > 100, 'texto SaaS gerado');
+  assertNotIncludes(text, 'CLÁUSULA DÉCIMA SEGUNDA – DA ASSINATURA ELETRÔNICA', 'SaaS sem cláusula Recanto');
+  assertNotIncludes(text, 'CHACREAMENTO RECANTO PRIMAVERA', 'SaaS sem template Recanto');
+  console.log('OK testSaasUnchanged');
 }
 
 function testStoredContractUnchanged() {
@@ -344,36 +441,76 @@ function testStoredContractUnchanged() {
 }
 
 async function writeSampleArtifacts() {
-  const html = generateRecantoPrimaveraContract({
+  const outDir = path.join(process.cwd(), 'tmp');
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const saleWithSpouse = {
+    ...sale,
+    sale_spouse_name: 'Maria Santos',
+    sale_spouse_nationality: 'Brasileira',
+    sale_spouse_marital_status: 'Casada',
+    sale_spouse_profession: 'Do lar',
+    sale_spouse_rg: '9876543',
+    sale_spouse_rg_issuer: 'SSP/PA',
+    sale_spouse_cpf: '11122233344',
+    sale_spouse_phone: '(94) 97777-6666',
+    sale_spouse_email: 'maria@test.com',
+    sale_spouse_address: 'Rua C, 100',
+  };
+
+  const htmlComConjuge = generateRecantoPrimaveraContract({
     tenant: ivanildeTenant,
     customer,
     project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
     block,
-    sale,
+    sale: saleWithSpouse,
     contractDate: '2026-06-17',
   });
 
-  const outDir = path.join(process.cwd(), 'tmp');
-  fs.mkdirSync(outDir, { recursive: true });
-  const htmlPath = path.join(outDir, 'contrato-recanto-primavera-teste.html');
-  fs.writeFileSync(htmlPath, html, 'utf8');
+  const htmlSemConjuge = generateRecantoPrimaveraContract({
+    tenant: ivanildeTenant,
+    customer: { ...customer, spouse_name: '', spouse_cpf: '' },
+    project: { name: 'Recanto Primavera', city: 'Parauapebas', uf: 'PA' },
+    block,
+    sale: { ...sale, brokers: undefined, broker: undefined },
+    contractDate: '2026-06-17',
+  });
 
-  let pdfPath = '';
+  const htmlPathCom = path.join(outDir, 'contrato-recanto-com-conjuge.html');
+  const htmlPathSem = path.join(outDir, 'contrato-recanto-sem-conjuge.html');
+  fs.writeFileSync(htmlPathCom, htmlComConjuge, 'utf8');
+  fs.writeFileSync(htmlPathSem, htmlSemConjuge, 'utf8');
+
+  let pdfPathCom = '';
+  let pdfPathSem = '';
   try {
     const { buildSaleContractPdfFromHtml, wrapSaleContractHtmlDocument } = await import(
       '../lib/saleContractPdf'
     );
-    const pdf = await buildSaleContractPdfFromHtml(
-      wrapSaleContractHtmlDocument(html, 'Contrato Recanto Primavera'),
-      buildRecantoPrimaveraPdfChrome(ivanildeTenant, 'TESTE/2026', null),
+    const chrome = buildRecantoPrimaveraPdfChrome(ivanildeTenant, 'TESTE/2026', null);
+    const pdfCom = await buildSaleContractPdfFromHtml(
+      wrapSaleContractHtmlDocument(htmlComConjuge, 'Contrato Recanto Primavera — com cônjuge'),
+      chrome,
     );
-    pdfPath = path.join(outDir, 'contrato-recanto-primavera-teste.pdf');
-    fs.writeFileSync(pdfPath, pdf);
+    pdfPathCom = path.join(outDir, 'contrato-recanto-com-conjuge.pdf');
+    fs.writeFileSync(pdfPathCom, pdfCom);
+
+    const pdfSem = await buildSaleContractPdfFromHtml(
+      wrapSaleContractHtmlDocument(htmlSemConjuge, 'Contrato Recanto Primavera — sem cônjuge'),
+      chrome,
+    );
+    pdfPathSem = path.join(outDir, 'contrato-recanto-sem-conjuge.pdf');
+    fs.writeFileSync(pdfPathSem, pdfSem);
   } catch (err) {
     console.warn('WARN pdf generation skipped', err instanceof Error ? err.message : err);
   }
 
-  console.log('OK writeSampleArtifacts', { htmlPath, pdfPath: pdfPath || 'n/a' });
+  console.log('OK writeSampleArtifacts', {
+    htmlPathCom,
+    htmlPathSem,
+    pdfPathCom: pdfPathCom || 'n/a',
+    pdfPathSem: pdfPathSem || 'n/a',
+  });
 }
 
 async function main() {
@@ -386,6 +523,12 @@ async function main() {
   testClauseFirstBuyerDeclaration();
   testDocxClausesPresent();
   testRemovedMenesesClauses();
+  testDigitalSignatureClause();
+  testDateExtenso();
+  testContractWithSpouse();
+  testContractWithoutSpouse();
+  testBrokerFilled();
+  testBrokerEmpty();
   testSinalNotEntrada();
   testPaymentTableUsesTotalNotMinusSignal();
   testObjectClauseFormat();
@@ -395,6 +538,7 @@ async function main() {
   testNoBodyFooter();
   testNoUndefinedNullNaN();
   testMenesesUnchanged();
+  testSaasUnchanged();
   testStoredContractUnchanged();
   await writeSampleArtifacts();
   console.log('OK — mandatory-recanto-primavera-final-template-tests passed');

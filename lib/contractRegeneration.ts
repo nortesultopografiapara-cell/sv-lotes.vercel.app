@@ -11,6 +11,10 @@ import {
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import {
+  attachBrokerSnapshotToSale,
+  brokerRowToSnapshot,
+} from '@/lib/saleBrokerSnapshot';
+import {
   ensureValidContractNumber,
   isValidStoredContractNumber,
 } from '@/lib/contractNumber';
@@ -635,6 +639,19 @@ export async function loadFreshRegenerationEntities(
   let sale: Record<string, unknown> = {};
   if (saleId) {
     sale = await fetchScopedEntity(supabase, 'sales', saleId, tenantId, 'Venda');
+  }
+
+  const brokerId = sale.broker_id as string | undefined;
+  if (brokerId) {
+    const { data: brokerRow } = await supabase
+      .from('brokers')
+      .select('name, cpf, document, creci')
+      .eq('id', brokerId)
+      .maybeSingle();
+    sale = attachBrokerSnapshotToSale(
+      sale,
+      brokerRowToSnapshot((brokerRow as Record<string, unknown>) || null),
+    );
   }
 
   let customer: Record<string, unknown> = {};

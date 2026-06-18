@@ -3,6 +3,12 @@
  * Campos de sales_finance_fields*.sql (órfãs) NÃO entram em UPDATE/INSERT pelo app.
  */
 
+import {
+  buildSaleSpouseDbPatch,
+  SALE_SPOUSE_DB_FIELDS,
+  type SaleSpouseFormFields,
+} from '@/lib/saleSpouseFields';
+
 /** Colunas confirmadas em produção (migrations numeradas aplicadas + schema base). */
 export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'customer_id',
@@ -14,6 +20,7 @@ export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'down_payment',
   'installments_count',
   'broker_id',
+  ...SALE_SPOUSE_DB_FIELDS,
 ] as const;
 
 /** Colunas só em migrations órfãs — ausentes em produção tipicamente. */
@@ -41,6 +48,7 @@ export type OfficialSalesUpdateInput = {
   downPayment: number;
   installmentsCount: number;
   brokerId: string | null;
+  spouse?: Partial<SaleSpouseFormFields>;
 };
 
 /** Payload seguro para sales.update — somente colunas oficiais. */
@@ -57,6 +65,7 @@ export function buildOfficialSalesUpdatePatch(
     down_payment: input.downPayment,
     installments_count: input.installmentsCount,
     broker_id: input.brokerId,
+    ...buildSaleSpouseDbPatch(input.spouse || {}),
   };
 }
 

@@ -6,7 +6,10 @@ import {
   buildRecantoVendorFieldLine,
   sanitizeContractField,
 } from '@/lib/recantoPrimaveraCompanyProfile';
-import { buildRecantoPrimaveraClausesHtml } from '@/lib/recantoPrimaveraContractClauses';
+import {
+  buildRecantoPrimaveraClausesHtml,
+  buildRecantoPrimaveraElectronicSignatureClauseHtml,
+} from '@/lib/recantoPrimaveraContractClauses';
 import type { RecantoPrimaveraContractContext } from '@/lib/recantoPrimaveraContractContext';
 
 export const RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1 =
@@ -124,9 +127,6 @@ export function buildRecantoPrimaveraSignaturesHtml(
 ): string {
   const p = ctx.profile;
   const docLabel = p.documentLabel;
-  const locationLine = [ctx.dataContratoCidade, ctx.dataContratoUf]
-    .filter((v) => sanitizeContractField(v))
-    .join(' - ');
 
   const brokerDocParts = [
     ctx.brokerDocumento ? ctx.brokerDocumento : '',
@@ -134,49 +134,57 @@ export function buildRecantoPrimaveraSignaturesHtml(
   ].filter(Boolean);
   const brokerDocLine = brokerDocParts.join(' / ') || '&nbsp;';
 
+  const conjugeNomeLine = ctx.conjugeNome || '&nbsp;';
+  const conjugeCpfLine = ctx.conjugeCpf || '&nbsp;';
+  const brokerNomeLine = ctx.brokerNome || '&nbsp;';
+
   return `
-    <div class="contract-clause">
-      <p style="margin-bottom: 20px;">
+    <div class="contract-clause contract-clause--tight">
+      <p style="margin-bottom: 10px;">
         E, por estarem assim justos e contratados, assinam o presente contrato em 2 (duas) vias de igual teor e forma.
       </p>
-      <div style="text-align: right; margin-bottom: 30px;">
-        <p style="margin: 0;">${locationLine ? `${locationLine}, ` : ''}${ctx.dataContratoFmt}</p>
+      <div style="text-align: right; margin-bottom: 14px;">
+        <p style="margin: 0;">${ctx.dataContratoExtensoFmt || ctx.dataContratoFmt}</p>
       </div>
     </div>
 
-    <div class="contract-signatures">
+    <div class="contract-signatures contract-signatures--recanto">
       <div class="signature-slot">
         ${ctx.empresaAssinatura}
-        <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
+        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
         <p style="margin: 0; font-weight: bold; text-transform: uppercase;">VENDEDOR(A): ${p.vendorName}</p>
         <p style="margin: 0; font-size: 10pt; font-weight: normal;">${docLabel}: ${p.documentFmt || '&nbsp;'}</p>
       </div>
 
       <div class="signature-slot">
-        <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
+        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
         <p style="margin: 0; font-weight: bold; text-transform: uppercase;">COMPRADOR(A): ${ctx.clienteNome || '&nbsp;'}</p>
         <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${ctx.clienteCpfCnpj || '&nbsp;'}</p>
       </div>
 
       <div class="signature-slot">
-        <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
-        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CÔNJUGE ANUENTE: ${ctx.conjugeNome || '&nbsp;'}</p>
-        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${ctx.conjugeCpf || '&nbsp;'}</p>
+        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
+        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CÔNJUGE ANUENTE: ${conjugeNomeLine}</p>
+        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF: ${conjugeCpfLine}</p>
       </div>
 
       <div class="signature-slot">
-        <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
-        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CORRETOR: ${ctx.brokerNome || '&nbsp;'}</p>
+        <div style="border-top: 1px solid #111; margin: 0 auto 4px auto; width: 60%;"></div>
+        <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CORRETOR: ${brokerNomeLine}</p>
         <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF/CRECI: ${brokerDocLine}</p>
       </div>
 
       <div class="signature-slot">
-        <div style="border-top: 1px solid #111; margin: 0 auto 8px auto; width: 60%;"></div>
-        <p style="margin: 0 0 8px 0; font-weight: bold;">Testemunhas:</p>
-        <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
-        <p style="margin: 0 0 12px 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
-        <p style="margin: 0 0 5px 0; font-size: 10pt;">Nome: __________________________________________</p>
+        <div style="border-top: 1px solid #111; margin: 0 auto 6px auto; width: 60%;"></div>
+        <p style="margin: 0 0 4px 0; font-weight: bold;">Testemunhas:</p>
+        <p style="margin: 0 0 4px 0; font-size: 10pt;">Nome: __________________________________________</p>
+        <p style="margin: 0 0 8px 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
+        <p style="margin: 0 0 4px 0; font-size: 10pt;">Nome: __________________________________________</p>
         <p style="margin: 0; font-size: 10pt;">RG/CPF: _______________________________________</p>
       </div>
     </div>`;
+}
+
+export function buildRecantoPrimaveraElectronicSignatureHtml(): string {
+  return buildRecantoPrimaveraElectronicSignatureClauseHtml();
 }

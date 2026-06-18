@@ -8,6 +8,10 @@ import { assertCustomerValidForContract } from "@/lib/validateCustomerForContrac
 import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
+import {
+  attachBrokerSnapshotToSale,
+  brokerRowToSnapshot,
+} from "@/lib/saleBrokerSnapshot";
 
 export async function buildContractViewHtml(
   supabase: SupabaseClient,
@@ -74,6 +78,20 @@ export async function buildContractViewHtml(
       (contract.sales as { finance_receipts?: unknown })?.finance_receipts,
   };
 
+  const brokerId = sale.broker_id as string | undefined;
+  let saleForContract: Record<string, unknown> = sale;
+  if (brokerId) {
+    const { data: brokerRow } = await supabase
+      .from("brokers")
+      .select("name, cpf, document, creci")
+      .eq("id", brokerId)
+      .maybeSingle();
+    saleForContract = attachBrokerSnapshotToSale(
+      sale,
+      brokerRowToSnapshot((brokerRow as Record<string, unknown>) || null),
+    );
+  }
+
   const mergedCustomer = mergeCustomerData(
     params.customer ||
       (contract.customers as Record<string, unknown>) ||
@@ -94,7 +112,7 @@ export async function buildContractViewHtml(
       (block.projects as Record<string, unknown>) ||
       {},
     block,
-    sale,
+    sale: saleForContract,
     contractSnapshot: contract,
     financeReceipts: params.receipts,
     projectBlocks,

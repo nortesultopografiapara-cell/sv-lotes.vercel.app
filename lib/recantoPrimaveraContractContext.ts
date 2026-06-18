@@ -10,8 +10,8 @@ import {
   formatContractLotBoundariesClause,
   resolveContractLotSides,
 } from '@/lib/contractLotBoundaries';
+import { extractRecantoSpouseSource } from '@/lib/saleSpouseFields';
 import {
-  extractSpouseIdentitySource,
   resolveIdentityDocumentFields,
 } from '@/lib/contractIdentity';
 import { isSaleContractCashPayment } from '@/lib/saleContractLegalTemplate';
@@ -104,6 +104,7 @@ export type RecantoPrimaveraContractContext = {
   brokerDocumento: string;
   brokerCreci: string;
   dataContratoFmt: string;
+  dataContratoExtensoFmt: string;
   dataContratoCidade: string;
   dataContratoUf: string;
 };
@@ -248,6 +249,42 @@ function buildLotMeasuresText(sidesText: string, boundariesClause: string): stri
   return 'medindo frente, fundo, lado direito e lado esquerdo conforme memorial descritivo do empreendimento.';
 }
 
+function formatRecantoContractDateExtenso(date: Date): string {
+  if (Number.isNaN(date.getTime())) return '';
+  const months = [
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro',
+  ];
+  const day = date.getDate();
+  const month = months[date.getMonth()] ?? '';
+  return `${day} de ${month} de ${date.getFullYear()}.`;
+}
+
+function formatRecantoContractDateLine(
+  city: string,
+  uf: string,
+  date: Date,
+): string {
+  const cityUf = [sanitizeContractField(city), sanitizeContractField(uf)]
+    .filter(Boolean)
+    .join('/');
+  const dateExtenso = formatRecantoContractDateExtenso(date);
+  if (!cityUf && !dateExtenso) return '';
+  if (!cityUf) return dateExtenso;
+  if (!dateExtenso) return cityUf;
+  return `${cityUf}, ${dateExtenso}`;
+}
+
 function buildFullAddress(parts: string[]): string {
   return parts.filter((p) => sanitizeContractField(p)).join(', ');
 }
@@ -285,36 +322,9 @@ export function buildRecantoPrimaveraContractContext(
     .filter(Boolean)
     .join('/');
 
-  const spouse = extractSpouseIdentitySource(customer);
-  const conjugeRg = spouse
-    ? sanitizeContractField(
-        customer?.spouse_rg ??
-          customer?.conjuge_rg ??
-          (typeof customer?.spouse === 'object'
-            ? (customer.spouse as Record<string, unknown>).rg
-            : ''),
-      )
-    : '';
-  const conjugeRgIssuer = spouse
-    ? [
-        sanitizeContractField(
-          customer?.spouse_rg_issuer ??
-            customer?.conjuge_rg_issuer ??
-            (typeof customer?.spouse === 'object'
-              ? (customer.spouse as Record<string, unknown>).rg_issuer
-              : ''),
-        ),
-        sanitizeContractField(
-          customer?.spouse_rg_issuer_state ??
-            customer?.conjuge_rg_issuer_state ??
-            (typeof customer?.spouse === 'object'
-              ? (customer.spouse as Record<string, unknown>).rg_issuer_state
-              : ''),
-        ),
-      ]
-        .filter(Boolean)
-        .join('/')
-    : '';
+  const spouse = extractRecantoSpouseSource(sale, customer);
+  const conjugeRg = spouse?.rg || '';
+  const conjugeRgIssuer = spouse?.rgIssuer || '';
 
   const quadra =
     sanitizeContractField(block?.block) ||
@@ -431,11 +441,17 @@ export function buildRecantoPrimaveraContractContext(
     ? titleLine2Raw
     : `${titleLine2Raw}.`;
 
-  const dContrato = new Date(
+  const rawContractDate =
     sanitizeContractField(contractDate) ||
-      sanitizeContractField(sale?.created_at) ||
-      new Date().toISOString(),
-  );
+    sanitizeContractField(sale?.created_at) ||
+    new Date().toISOString();
+  const isoDate = String(rawContractDate).trim().split('T')[0];
+  const dContrato = /^\d{4}-\d{2}-\d{2}$/.test(isoDate)
+    ? new Date(`${isoDate}T12:00:00`)
+    : new Date(rawContractDate);
+  const dataContratoCidade =
+    profile.forumCity || profile.enterpriseMunicipality || profile.city;
+  const dataContratoUf = profile.enterpriseUf || profile.state;
 
   return {
     profile,
@@ -462,19 +478,23 @@ export function buildRecantoPrimaveraContractContext(
     clienteCep,
     clienteEnderecoCompleto,
     conjugeNome: spouse ? toTitleCase(String(spouse.name || '')) : '',
-    conjugeNacionalidade: '',
-    conjugeEstadoCivil: '',
+    conjugeNacionalidade: spouse
+      ? toTitleCase(sanitizeContractField(spouse.nationality) || 'Brasileira')
+      : '',
+    conjugeEstadoCivil: spouse
+      ? toTitleCase(sanitizeContractField(spouse.maritalStatus))
+      : '',
     conjugeProfissao: spouse
       ? toTitleCase(sanitizeContractField(spouse.profession))
       : '',
     conjugeRg,
-    conjugeRgIssuer: conjugeRgIssuer,
+    conjugeRgIssuer,
     conjugeCpf: spouse
-      ? formatCNPJCPF(sanitizeContractField(spouse.document))
+      ? formatCNPJCPF(sanitizeContractField(spouse.cpf))
       : '',
-    conjugeTelefone: '',
-    conjugeEmail: '',
-    conjugeEndereco: '',
+    conjugeTelefone: spouse ? sanitizeContractField(spouse.phone) : '',
+    conjugeEmail: spouse ? sanitizeContractField(spouse.email) : '',
+    conjugeEndereco: spouse ? toTitleCase(sanitizeContractField(spouse.address)) : '',
     quadra,
     lote,
     lotArea,
@@ -513,7 +533,12 @@ export function buildRecantoPrimaveraContractContext(
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,
     dataContratoFmt: dContrato.toLocaleDateString('pt-BR'),
-    dataContratoCidade: profile.forumCity || profile.enterpriseMunicipality || profile.city,
-    dataContratoUf: profile.enterpriseUf || profile.state,
+    dataContratoExtensoFmt: formatRecantoContractDateLine(
+      dataContratoCidade,
+      dataContratoUf,
+      dContrato,
+    ),
+    dataContratoCidade,
+    dataContratoUf,
   };
 }

@@ -20,6 +20,7 @@ import {
 } from '@/lib/lotAudit';
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 import { buildOfficialSalesUpdatePatch } from '@/lib/salesWriteSchema';
+import { saleSpouseFormFieldsFromSale } from '@/lib/saleSpouseFields';
 import {
   buildSaleEditFinancePayloads,
   isPaidFinanceReceipt,
@@ -195,6 +196,7 @@ export async function loadSaleEditContext(
 
   const form = {
     ...customerToFormValues(customerMerged),
+    ...saleSpouseFormFieldsFromSale(sale),
     payment_type: paymentType,
     discount_value: discountVal > 0 ? String(discountVal) : '',
     down_payment: String(sale.down_payment ?? entryReceipt?.amount ?? 0),
@@ -278,6 +280,19 @@ export async function updateSaleFromEdit(
         ? Number(data.installments_count) || 1
         : 1,
     brokerId,
+    spouse: {
+      has_spouse: data.has_spouse,
+      sale_spouse_name: data.sale_spouse_name,
+      sale_spouse_nationality: data.sale_spouse_nationality,
+      sale_spouse_marital_status: data.sale_spouse_marital_status,
+      sale_spouse_profession: data.sale_spouse_profession,
+      sale_spouse_rg: data.sale_spouse_rg,
+      sale_spouse_rg_issuer: data.sale_spouse_rg_issuer,
+      sale_spouse_cpf: data.sale_spouse_cpf,
+      sale_spouse_phone: data.sale_spouse_phone,
+      sale_spouse_email: data.sale_spouse_email,
+      sale_spouse_address: data.sale_spouse_address,
+    },
   });
   // notes permanece apenas no formulário; coluna ausente em produção (20260608120000 não aplicada).
 

@@ -60,6 +60,15 @@ export const CONTRACT_PDF_PRINT_CSS = `
   .sv-contract-document .contract-signatures .signature-slot:last-of-type {
     margin-bottom: 8px;
   }
+  .sv-contract-document .contract-signatures--recanto {
+    margin-top: 16px;
+  }
+  .sv-contract-document .contract-signatures--recanto .signature-slot {
+    margin-bottom: 18px;
+  }
+  .sv-contract-document .contract-signatures--recanto .signature-slot:last-of-type {
+    margin-bottom: 4px;
+  }
   .sv-contract-document .contract-footer {
     page-break-before: avoid;
     break-before: avoid-page;
