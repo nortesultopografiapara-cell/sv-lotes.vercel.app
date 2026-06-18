@@ -757,22 +757,14 @@ export default function CorretoresPage() {
     try {
       setIsDeleting(true);
       const rlsCtx = await resolveRlsContext(user);
-      const resolvedActiveTenantId =
-        activeTenantId ||
-        rlsCtx.tenantId ||
-        user.tenant_id ||
-        user.company_id ||
-        deleteModal.tenant_id ||
-        deleteModal.company_id ||
-        null;
 
       const result = await deactivateOrDeleteBroker(supabase, rlsCtx, id, name, {
         userId: user.id,
         userRole: user.role,
         userTenantId: user.tenant_id || user.company_id || null,
-        activeTenantId: resolvedActiveTenantId,
       });
 
+      // 6. Atualizar lista imediatamente e recarregar do banco
       setCorretores((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
 

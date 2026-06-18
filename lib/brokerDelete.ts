@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
-import { applyTenantFilter, type RlsContext } from '@/lib/rls';
+import { isPlatformAdmin, type RlsContext } from '@/lib/rls';
+import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 
 export type BrokerRow = {
   id: string;
@@ -31,7 +31,6 @@ export type BrokerDeleteUserContext = {
   userId: string;
   userRole: string;
   userTenantId: string | null;
-  activeTenantId: string | null;
 };
 
 export type BrokerDashboardStats = {
@@ -39,12 +38,6 @@ export type BrokerDashboardStats = {
   totalVendasMes: number;
   totalComissoesPagas: number;
   totalComissoesPendentes: number;
-};
-
-export type ResolvedBrokerMutationScope = {
-  effectiveTenantId: string;
-  tenantColumn: 'tenant_id' | 'company_id';
-  source: 'active_tenant' | 'broker_tenant' | 'user_tenant';
 };
 
 export class BrokerDeleteError extends Error {
@@ -68,7 +61,6 @@ export function isBrokerActiveForList(broker: Pick<BrokerRow, 'active' | 'status
   return true;
 }
 
-/** Lista padrão do painel: somente corretores ativos e não excluídos. */
 export function filterBrokersForActiveList<T extends BrokerRow>(brokers: T[]): T[] {
   return brokers.filter(isBrokerActiveForList);
 }
@@ -90,88 +82,58 @@ export function resolveBrokerDeleteMode(
   return 'hard';
 }
 
-export function resolveBrokerRowTenantId(
+/** Lê o tenant real do corretor (tenant_id canônico; company_id só como legado). */
+export function readBrokerTenantId(
   broker: Pick<BrokerRow, 'tenant_id' | 'company_id'>,
 ): string | null {
-  const tenant = broker.tenant_id ? String(broker.tenant_id).trim() : '';
-  const company = broker.company_id ? String(broker.company_id).trim() : '';
-  return tenant || company || null;
+  const tenantId = broker.tenant_id ? String(broker.tenant_id).trim() : '';
+  if (tenantId) return tenantId;
+  const companyId = broker.company_id ? String(broker.company_id).trim() : '';
+  return companyId || null;
 }
 
-export function resolveBrokerTenantColumn(
+/** Coluna usada na mutação: tenant_id quando existir no registro. */
+export function resolveBrokerMutationColumn(
   broker: Pick<BrokerRow, 'tenant_id' | 'company_id'>,
 ): 'tenant_id' | 'company_id' {
   if (broker.tenant_id && String(broker.tenant_id).trim()) return 'tenant_id';
-  if (broker.company_id && String(broker.company_id).trim()) return 'company_id';
-  return 'tenant_id';
+  return 'company_id';
 }
 
-export function canManageBrokerInTenant(params: {
-  isSuperAdmin: boolean;
+/** ADMIN da empresa ou SUPER_ADMIN no tenant do corretor. */
+export function canDeleteBrokerInTenant(params: {
   userRole: string;
   userTenantId: string | null;
   brokerTenantId: string;
+  isSuperAdmin: boolean;
 }): boolean {
-  if (params.isSuperAdmin) return true;
-  if (!isTenantAdminRole(params.userRole)) return false;
+  if (params.isSuperAdmin || isPlatformAdmin(params.userRole)) return true;
+  if (!isTenantEnterpriseAdminRole(params.userRole)) return false;
   const userTenant = params.userTenantId ? String(params.userTenantId).trim() : '';
   return !!userTenant && userTenant === params.brokerTenantId;
 }
 
-/**
- * Alinha o tenant da mutação com o registro do corretor (mesma lógica do loadBrokers).
- * Usa activeTenantId quando coincide; senão broker.tenant_id se o usuário for admin da empresa.
- */
-export function resolveEffectiveBrokerTenant(params: {
-  broker: Pick<BrokerRow, 'tenant_id' | 'company_id'>;
-  activeTenantId: string | null;
+export function assertCanDeleteBrokerInTenant(params: {
   userRole: string;
   userTenantId: string | null;
+  brokerTenantId: string;
   isSuperAdmin: boolean;
-}): ResolvedBrokerMutationScope {
-  const brokerTenantId = resolveBrokerRowTenantId(params.broker);
-  if (!brokerTenantId) {
-    throw new BrokerDeleteError('Corretor sem empresa vinculada.', {
-      brokerTenantId: null,
-      broker,
+}): void {
+  if (canDeleteBrokerInTenant(params)) return;
+
+  if (!isTenantEnterpriseAdminRole(params.userRole) && !isPlatformAdmin(params.userRole)) {
+    throw new BrokerDeleteError('Somente administradores podem excluir corretores.', {
+      userRole: params.userRole,
+      brokerTenantId: params.brokerTenantId,
     });
   }
 
-  const activeTenantId = params.activeTenantId ? String(params.activeTenantId).trim() : '';
-  const userTenantId = params.userTenantId ? String(params.userTenantId).trim() : '';
-  const tenantColumn = resolveBrokerTenantColumn(params.broker);
-
-  if (activeTenantId && activeTenantId === brokerTenantId) {
-    return {
-      effectiveTenantId: brokerTenantId,
-      tenantColumn,
-      source: 'active_tenant',
-    };
-  }
-
-  if (canManageBrokerInTenant({
-    isSuperAdmin: params.isSuperAdmin,
+  throw new BrokerDeleteError('Você não tem permissão para excluir corretores desta empresa.', {
     userRole: params.userRole,
     userTenantId: params.userTenantId,
-    brokerTenantId,
-  })) {
-    return {
-      effectiveTenantId: brokerTenantId,
-      tenantColumn,
-      source: userTenantId === brokerTenantId ? 'user_tenant' : 'broker_tenant',
-    };
-  }
-
-  throw new BrokerDeleteError(
-    'Você não tem permissão para excluir corretores desta empresa.',
-    {
-      activeTenantId: activeTenantId || null,
-      brokerTenantId,
-      userTenantId: userTenantId || null,
-      userRole: params.userRole,
-      isSuperAdmin: params.isSuperAdmin,
-    },
-  );
+    brokerTenantId: params.brokerTenantId,
+    isSuperAdmin: params.isSuperAdmin,
+  });
 }
 
 export function computeBrokerDashboardStats(brokers: BrokerRow[]): BrokerDashboardStats {
@@ -195,65 +157,8 @@ export function removeBrokerFromList<T extends BrokerRow>(brokers: T[], brokerId
   return brokers.filter((b) => b.id !== brokerId);
 }
 
-function buildScopedBrokerMutation(
-  supabase: SupabaseClient,
-  brokerId: string,
-  scope: ResolvedBrokerMutationScope,
-  operation: 'update' | 'delete',
-  patch?: Record<string, unknown>,
-) {
-  if (operation === 'update') {
-    return supabase
-      .from('brokers')
-      .update(patch ?? {})
-      .eq('id', brokerId)
-      .eq(scope.tenantColumn, scope.effectiveTenantId);
-  }
-
-  return supabase
-    .from('brokers')
-    .delete()
-    .eq('id', brokerId)
-    .eq(scope.tenantColumn, scope.effectiveTenantId);
-}
-
-/** Verifica vendas/comissões vinculadas ao corretor no tenant do corretor. */
-export async function brokerHasCriticalHistory(
-  supabase: SupabaseClient,
-  ctx: RlsContext,
-  brokerId: string,
-  effectiveTenantId: string,
-): Promise<{ salesCount: number; commissionsCount: number }> {
-  const scopedCtx: RlsContext = {
-    ...ctx,
-    tenantId: effectiveTenantId,
-  };
-
-  let salesQuery = supabase
-    .from('sales')
-    .select('id', { count: 'exact', head: true })
-    .eq('broker_id', brokerId);
-  salesQuery = applyTenantFilter(salesQuery, scopedCtx, 'sales');
-
-  let commQuery = supabase
-    .from('broker_commissions')
-    .select('id', { count: 'exact', head: true })
-    .eq('broker_id', brokerId);
-  commQuery = applyTenantFilter(commQuery, scopedCtx, 'broker_commissions');
-
-  const [{ count: salesCount, error: salesErr }, { count: commissionsCount, error: commErr }] =
-    await Promise.all([salesQuery, commQuery]);
-
-  if (salesErr) throw salesErr;
-  if (commErr) throw commErr;
-
-  return {
-    salesCount: salesCount ?? 0,
-    commissionsCount: commissionsCount ?? 0,
-  };
-}
-
-async function fetchBrokerForDelete(
+/** Passo 1 — busca corretor pelo id (RLS do Supabase aplica isolamento). */
+export async function fetchBrokerById(
   supabase: SupabaseClient,
   brokerId: string,
 ): Promise<BrokerRow> {
@@ -278,6 +183,68 @@ async function fetchBrokerForDelete(
   return data as BrokerRow;
 }
 
+/** Passo 4 — vendas/comissões no tenant real do corretor. */
+export async function brokerHasCriticalHistory(
+  supabase: SupabaseClient,
+  brokerId: string,
+  brokerTenantId: string,
+): Promise<{ salesCount: number; commissionsCount: number }> {
+  const tenantScope = `tenant_id.eq.${brokerTenantId},company_id.eq.${brokerTenantId}`;
+
+  const [{ count: salesCount, error: salesErr }, { count: commissionsCount, error: commErr }] =
+    await Promise.all([
+      supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('broker_id', brokerId)
+        .or(tenantScope),
+      supabase
+        .from('broker_commissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('broker_id', brokerId)
+        .or(tenantScope),
+    ]);
+
+  if (salesErr) throw salesErr;
+  if (commErr) throw commErr;
+
+  return {
+    salesCount: salesCount ?? 0,
+    commissionsCount: commissionsCount ?? 0,
+  };
+}
+
+function buildBrokerMutation(
+  supabase: SupabaseClient,
+  broker: BrokerRow,
+  brokerTenantId: string,
+  operation: 'update' | 'delete',
+  patch?: Record<string, unknown>,
+) {
+  const column = resolveBrokerMutationColumn(broker);
+  if (operation === 'update') {
+    return supabase
+      .from('brokers')
+      .update(patch ?? {})
+      .eq('id', broker.id)
+      .eq(column, brokerTenantId);
+  }
+
+  return supabase
+    .from('brokers')
+    .delete()
+    .eq('id', broker.id)
+    .eq(column, brokerTenantId);
+}
+
+/**
+ * Fluxo completo:
+ * 1. Buscar broker pelo id
+ * 2. Ler broker.tenant_id real
+ * 3. Confirmar ADMIN/SUPER_ADMIN do tenant
+ * 4. Consultar vendas/comissões no tenant do broker
+ * 5. Soft ou hard delete
+ */
 export async function deactivateOrDeleteBroker(
   supabase: SupabaseClient,
   ctx: RlsContext,
@@ -285,54 +252,53 @@ export async function deactivateOrDeleteBroker(
   brokerName: string,
   userCtx: BrokerDeleteUserContext,
 ): Promise<BrokerDeleteResult> {
-  const brokerRow = await fetchBrokerForDelete(supabase, brokerId);
-  const resolvedName = brokerName || brokerRow.name || brokerRow.full_name || 'Corretor';
+  // 1. Buscar broker pelo id
+  const brokerRow = await fetchBrokerById(supabase, brokerId);
 
-  const scope = resolveEffectiveBrokerTenant({
-    broker: brokerRow,
-    activeTenantId: userCtx.activeTenantId,
+  // 2. Ler tenant real do corretor
+  const brokerTenantId = readBrokerTenantId(brokerRow);
+  if (!brokerTenantId) {
+    throw new BrokerDeleteError('Corretor sem empresa vinculada.', { brokerId, broker: brokerRow });
+  }
+
+  // 3. Confirmar permissão ADMIN/SUPER_ADMIN no tenant do broker
+  assertCanDeleteBrokerInTenant({
     userRole: userCtx.userRole,
     userTenantId: userCtx.userTenantId,
+    brokerTenantId,
     isSuperAdmin: ctx.isSuperAdmin,
   });
 
+  const resolvedName = brokerName || brokerRow.name || brokerRow.full_name || 'Corretor';
   const diagnosticBase = {
     brokerId,
-    brokerTenantId: resolveBrokerRowTenantId(brokerRow),
-    activeTenantId: userCtx.activeTenantId,
+    brokerTenantId,
+    brokerTenantColumn: resolveBrokerMutationColumn(brokerRow),
     userTenantId: userCtx.userTenantId,
-    effectiveTenantId: scope.effectiveTenantId,
-    tenantColumn: scope.tenantColumn,
-    tenantSource: scope.source,
     userRole: userCtx.userRole,
     isSuperAdmin: ctx.isSuperAdmin,
   };
 
-  console.info('[BROKER_DELETE] tenant diagnostic', diagnosticBase);
+  console.info('[BROKER_DELETE] start', diagnosticBase);
 
+  // 4. Vendas/comissões no tenant do broker
   const { salesCount, commissionsCount } = await brokerHasCriticalHistory(
     supabase,
-    ctx,
     brokerId,
-    scope.effectiveTenantId,
+    brokerTenantId,
   );
-  const mode = resolveBrokerDeleteMode(salesCount, commissionsCount);
 
-  console.info('[BROKER_DELETE] mode', {
-    ...diagnosticBase,
-    mode,
-    salesCount,
-    commissionsCount,
-  });
+  // 5. Soft ou hard delete
+  const mode = resolveBrokerDeleteMode(salesCount, commissionsCount);
+  console.info('[BROKER_DELETE] mode', { ...diagnosticBase, mode, salesCount, commissionsCount });
 
   if (mode === 'soft') {
-    const patch = buildBrokerSoftDeletePatch();
-    const { data, error } = await buildScopedBrokerMutation(
+    const { data, error } = await buildBrokerMutation(
       supabase,
-      brokerId,
-      scope,
+      brokerRow,
+      brokerTenantId,
       'update',
-      patch,
+      buildBrokerSoftDeletePatch(),
     ).select('id');
 
     if (error) {
@@ -351,10 +317,10 @@ export async function deactivateOrDeleteBroker(
       );
     }
   } else {
-    const { data, error } = await buildScopedBrokerMutation(
+    const { data, error } = await buildBrokerMutation(
       supabase,
-      brokerId,
-      scope,
+      brokerRow,
+      brokerTenantId,
       'delete',
     ).select('id');
 
@@ -379,7 +345,7 @@ export async function deactivateOrDeleteBroker(
     mode,
     brokerId,
     brokerName: resolvedName,
-    effectiveTenantId: scope.effectiveTenantId,
+    effectiveTenantId: brokerTenantId,
   };
 }
 
@@ -409,4 +375,33 @@ export async function logBrokerDeleteAudit(
   } catch {
     // auditoria não deve bloquear exclusão
   }
+}
+
+// Compatibilidade com testes anteriores
+export const resolveBrokerRowTenantId = readBrokerTenantId;
+export const resolveBrokerTenantColumn = resolveBrokerMutationColumn;
+export const canManageBrokerInTenant = canDeleteBrokerInTenant;
+
+export function resolveEffectiveBrokerTenant(params: {
+  broker: Pick<BrokerRow, 'tenant_id' | 'company_id'>;
+  activeTenantId: string | null;
+  userRole: string;
+  userTenantId: string | null;
+  isSuperAdmin: boolean;
+}) {
+  const brokerTenantId = readBrokerTenantId(params.broker);
+  if (!brokerTenantId) {
+    throw new BrokerDeleteError('Corretor sem empresa vinculada.', { broker: params.broker });
+  }
+  assertCanDeleteBrokerInTenant({
+    userRole: params.userRole,
+    userTenantId: params.userTenantId,
+    brokerTenantId,
+    isSuperAdmin: params.isSuperAdmin,
+  });
+  return {
+    effectiveTenantId: brokerTenantId,
+    tenantColumn: resolveBrokerMutationColumn(params.broker),
+    source: 'broker_tenant' as const,
+  };
 }

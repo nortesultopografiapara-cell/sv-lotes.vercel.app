@@ -5,16 +5,17 @@
 
 import {
   BrokerDeleteError,
+  assertCanDeleteBrokerInTenant,
   buildBrokerSoftDeletePatch,
-  canManageBrokerInTenant,
+  canDeleteBrokerInTenant,
   computeBrokerDashboardStats,
   filterBrokersForActiveList,
   isBrokerActiveForList,
   rankBrokersByMonthlySales,
+  readBrokerTenantId,
   removeBrokerFromList,
   resolveBrokerDeleteMode,
-  resolveBrokerRowTenantId,
-  resolveBrokerTenantColumn,
+  resolveBrokerMutationColumn,
   resolveEffectiveBrokerTenant,
 } from '../lib/brokerDelete';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
@@ -139,13 +140,13 @@ function testSalesHistoryPreservedOnSoftDelete() {
 }
 
 function testResolveBrokerRowTenant() {
-  assert(resolveBrokerRowTenantId({ tenant_id: MENESES_COMPANY_ID, company_id: null }) === MENESES_COMPANY_ID, 'tenant_id');
+  assert(readBrokerTenantId({ tenant_id: MENESES_COMPANY_ID, company_id: null }) === MENESES_COMPANY_ID, 'tenant_id');
   assert(
-    resolveBrokerRowTenantId({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === MENESES_COMPANY_ID,
-    'fallback company_id',
+    readBrokerTenantId({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === MENESES_COMPANY_ID,
+    'fallback company_id legado',
   );
-  assert(resolveBrokerTenantColumn({ tenant_id: MENESES_COMPANY_ID, company_id: 'other' }) === 'tenant_id', 'coluna tenant');
-  assert(resolveBrokerTenantColumn({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === 'company_id', 'coluna company');
+  assert(resolveBrokerMutationColumn({ tenant_id: MENESES_COMPANY_ID, company_id: 'other' }) === 'tenant_id', 'coluna tenant');
+  assert(resolveBrokerMutationColumn({ tenant_id: null, company_id: MENESES_COMPANY_ID }) === 'company_id', 'coluna company');
   console.log('OK testResolveBrokerRowTenant');
 }
 
@@ -164,8 +165,8 @@ function testTenantFromBrokerWhenActiveTenantFails() {
   });
 
   assert(scope.effectiveTenantId === MENESES_COMPANY_ID, 'usa tenant do broker');
-  assert(scope.source === 'user_tenant', 'origem user_tenant');
-  assert(canManageBrokerInTenant({
+  assert(scope.source === 'broker_tenant', 'origem broker_tenant');
+  assert(canDeleteBrokerInTenant({
     isSuperAdmin: false,
     userRole: 'ADMIN_EMPRESA',
     userTenantId: MENESES_COMPANY_ID,
@@ -174,11 +175,10 @@ function testTenantFromBrokerWhenActiveTenantFails() {
 
   let blocked = false;
   try {
-    resolveEffectiveBrokerTenant({
-      broker,
-      activeTenantId: 'aaaaaaaa-bbbb-cccc-dddd-000000000001',
+    assertCanDeleteBrokerInTenant({
       userRole: 'ADMIN_EMPRESA',
       userTenantId: 'aaaaaaaa-bbbb-cccc-dddd-000000000002',
+      brokerTenantId: MENESES_COMPANY_ID,
       isSuperAdmin: false,
     });
   } catch (e) {
