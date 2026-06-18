@@ -11,6 +11,7 @@ import {
   Loader2,
   AlertCircle,
   Building2,
+  FileSpreadsheet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -18,6 +19,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   canViewEnterpriseValues,
+  canExportLotReport,
   isBrokerRole,
   isMasterConsoleRole,
   isOwnerRole,
@@ -50,6 +52,17 @@ import {
   DashboardEmptyActivities,
   FinancialSummaryCard,
 } from '@/components/dashboard/DashboardPremiumUI';
+import { LotReportExportModal } from '@/components/dashboard/LotReportExportModal';
+import {
+  buildLotReportFilename,
+  downloadLotReportExcel,
+  downloadLotReportPdf,
+} from '@/lib/lotReportExport';
+import {
+  assertOwnerProjectExportAllowed,
+  fetchLotReportForExport,
+} from '@/lib/lotReportExport/fetchLotReportData';
+import type { LotReportFormat, LotReportOptions } from '@/lib/lotReportExport/types';
 
 function receiptMatchesProject(
   receipt: {
@@ -91,6 +104,7 @@ function OperationalDashboard({ user }: { user: any }) {
   const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
   const showEnterpriseValues =
     canViewEnterpriseValues(user?.role) || isOwnerRole(user?.role);
+  const canExportLots = canExportLotReport(user?.role);
   const [stats, setStats] = useState({
     globalEnterpriseTotal: 0,
     enterpriseTotal: 0,
@@ -113,6 +127,15 @@ function OperationalDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportInitialFormat, setExportInitialFormat] =
+    useState<LotReportFormat>('excel');
+  const [exportLoading, setExportLoading] = useState(false);
+  const [tenantCompany, setTenantCompany] = useState<{
+    name?: string;
+    fantasy_name?: string;
+    logo_url?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (isBrokerRole(user?.role)) {
@@ -134,6 +157,19 @@ function OperationalDashboard({ user }: { user: any }) {
   }, [clearGisSelectedProject]);
   
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    async function loadCompany() {
+      if (!user?.tenant_id) return;
+      const { data } = await supabase
+        .from('companies')
+        .select('name, fantasy_name, logo_url')
+        .eq('id', user.tenant_id)
+        .maybeSingle();
+      if (data) setTenantCompany(data);
+    }
+    if (canExportLots) void loadCompany();
+  }, [user?.tenant_id, canExportLots]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -412,6 +448,74 @@ function OperationalDashboard({ user }: { user: any }) {
   const totalLotes =
     stats.available + stats.reserved + stats.sold + stats.paid;
 
+  const selectedProjectLabel = selectedProjectId
+    ? projects.find((p) => p.id === selectedProjectId)?.name || 'Empreendimento'
+    : 'Todos os empreendimentos';
+
+  const openExportModal = (format: LotReportFormat) => {
+    setExportInitialFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleGenerateLotReport = async (options: LotReportOptions) => {
+    if (!user) return;
+    setExportLoading(true);
+    try {
+      const rlsCtx = await resolveRlsContext(user);
+      const { result, projectLabel, allowedProjectIds } = await fetchLotReportForExport(
+        supabase,
+        user,
+        rlsCtx,
+        {
+          selectedProjectId: selectedProjectId || undefined,
+          options: {
+            groupBy: options.groupBy,
+            sortBy: options.sortBy,
+            filters: options.filters,
+          },
+        },
+      );
+
+      assertOwnerProjectExportAllowed(selectedProjectId || undefined, allowedProjectIds);
+
+      if (result.rows.length === 0) {
+        alert('Nenhum lote encontrado com os filtros selecionados.');
+        return;
+      }
+
+      const issuedAt = new Date();
+      const meta = {
+        companyName:
+          tenantCompany?.fantasy_name ||
+          tenantCompany?.name ||
+          'Empresa',
+        companyLogoUrl: tenantCompany?.logo_url,
+        projectLabel,
+        issuedAt,
+        groupBy: options.groupBy,
+        sortBy: options.sortBy,
+      };
+      const filename = buildLotReportFilename(projectLabel, options.format, issuedAt);
+
+      if (options.format === 'excel') {
+        await downloadLotReportExcel(result, meta, filename);
+      } else {
+        await downloadLotReportPdf(result, meta, filename);
+      }
+
+      setExportModalOpen(false);
+    } catch (err) {
+      console.error('LOT_REPORT_EXPORT_ERROR', err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : 'Erro ao gerar relatório de lotes.',
+      );
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   return (
     <div className="dashboard-premium dashboard-premium--compact sv-page relative flex flex-col overflow-hidden">
       <div className="dash-page-inner p-3 md:p-4 lg:p-5 flex-1 max-w-full w-full mx-auto min-w-0">
@@ -463,8 +567,39 @@ function OperationalDashboard({ user }: { user: any }) {
                 ))}
               </select>
             </div>
+            {canExportLots ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openExportModal('excel')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Exportar Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openExportModal('pdf')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-xs font-semibold hover:bg-red-500/20 transition-colors"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Exportar PDF
+                </button>
+              </div>
+            ) : null}
           </div>
         </header>
+
+        <LotReportExportModal
+          open={exportModalOpen}
+          initialFormat={exportInitialFormat}
+          projectLabel={selectedProjectLabel}
+          loading={exportLoading}
+          onClose={() => {
+            if (!exportLoading) setExportModalOpen(false);
+          }}
+          onGenerate={handleGenerateLotReport}
+        />
 
         {showEnterpriseValues ? (
           <>

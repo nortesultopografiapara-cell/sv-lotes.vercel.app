@@ -78,6 +78,13 @@ export function canViewEnterpriseValues(role?: string | null): boolean {
   return (ENTERPRISE_ADMIN_ROLES as readonly string[]).includes(normalized);
 }
 
+/** Exportação de relatório de lotes — ADMIN/SUPER_ADMIN e OWNER (escopo por projeto). */
+export function canExportLotReport(role?: string | null): boolean {
+  if (isBrokerRole(role)) return false;
+  if (isOwnerRole(role)) return true;
+  return canViewEnterpriseValues(role);
+}
+
 export function canViewGlobalEnterpriseValues(role?: string | null): boolean {
   return canViewEnterpriseValues(role);
 }
