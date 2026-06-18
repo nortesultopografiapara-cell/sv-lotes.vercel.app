@@ -22,7 +22,8 @@
     "test:customer-preservation": "tsx scripts/mandatory-customer-data-preservation-tests.ts",
     "test:lot-audit": "tsx scripts/mandatory-lot-audit-tests.ts",
     "test:assisted-confrontation": "tsx scripts/mandatory-assisted-confrontation-tests.ts",
-    "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts"
+    "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts",
+    "test:broker-delete": "tsx scripts/mandatory-broker-delete-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

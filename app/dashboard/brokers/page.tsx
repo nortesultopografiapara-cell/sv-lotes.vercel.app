@@ -33,6 +33,14 @@ import {
 } from '@/lib/saasPlans';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
+import {
+  computeBrokerDashboardStats,
+  deactivateOrDeleteBroker,
+  filterBrokersForActiveList,
+  logBrokerDeleteAudit,
+  rankBrokersByMonthlySales,
+  removeBrokerFromList,
+} from '@/lib/brokerDelete';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
@@ -90,7 +98,8 @@ export default function CorretoresPage() {
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   // Modal de confirmação de exclusão
-  const [deleteModal, setDeleteModal] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -275,17 +284,17 @@ export default function CorretoresPage() {
         };
       });
 
-      const finalActiveBrokers = enhancedData.filter(b => b.active);
-      setCorretores(finalActiveBrokers);
+      const activeBrokers = filterBrokersForActiveList(enhancedData);
+      setCorretores(enhancedData);
       if (companyForPlan) {
-        logSaasCompanyContext(resolvedTenantId, companyForPlan, undefined, finalActiveBrokers.length);
+        logSaasCompanyContext(resolvedTenantId, companyForPlan, undefined, activeBrokers.length);
       }
-      console.log("BROKERS_FINAL_RENDER_LIST", finalActiveBrokers);
+      console.log("BROKERS_FINAL_RENDER_LIST", activeBrokers);
 
       let rActs: any[] = [];
       salesData.forEach(s => {
           if (s.broker_id) {
-              const b = finalActiveBrokers.find(x => x.id === s.broker_id);
+              const b = activeBrokers.find(x => x.id === s.broker_id);
               if (b) {
                   const lots = formatSaleLotsLabel(s, blockData);
                   const safeSaleValue = s.total_amount ?? s.agreed_price ?? s.lot_price ?? s.price ?? s.total ?? s.value ?? s.sale_value ?? s.valor ?? s.total_value ?? 0;
@@ -302,7 +311,7 @@ export default function CorretoresPage() {
       commData.forEach(c => {
           const pagoStatuses = ['pago', 'paga', 'paid', 'aprovado', 'aprovada'];
           if (pagoStatuses.includes(String(c.status).toLowerCase())) {
-              const b = finalActiveBrokers.find(x => x.id === c.broker_id);
+              const b = activeBrokers.find(x => x.id === c.broker_id);
               if (b) {
                   rActs.push({
                       id: `c-${c.id}`,
@@ -481,7 +490,7 @@ export default function CorretoresPage() {
           doc.setFontSize(10);
           doc.setTextColor(0);
           doc.setFont('helvetica', 'bold');
-          doc.text(`Total de Corretores Ativos: ${corretores.filter(c => c.active).length}`, 14, startY);
+          doc.text(`Total de Corretores Ativos: ${dashboardStats.activeCount}`, 14, startY);
           startY += 6;
           doc.text(`Total de Vendas no Mês: ${totalVendasMes}`, 14, startY);
           startY += 6;
@@ -636,7 +645,7 @@ export default function CorretoresPage() {
         return;
     }
 
-    const activeBrokersCount = corretores.filter(c => c.active).length;
+    const activeBrokersCount = filterBrokersForActiveList(corretores).length;
     if (brokerLimit !== null && activeBrokersCount >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
         setError(`Limite do plano ${companyPlan} atingido. Faça upgrade para cadastrar mais corretores.`);
         return;
@@ -735,54 +744,37 @@ export default function CorretoresPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async () => {
+    if (!deleteModal || !user) return;
+    const { id, name } = deleteModal;
+
     try {
-      setLoading(true);
+      setIsDeleting(true);
+      const rlsCtx = await resolveRlsContext(user);
 
-      if (user?.role !== 'SUPER_ADMIN' && !user?.tenant_id) {
-         throw new Error("Usuário não tem empresa associada.");
-      }
+      const result = await deactivateOrDeleteBroker(supabase, rlsCtx, id, name);
 
-      // Check if there are sales or commissions
-      let hasSalesOrCommissions = false;
-      const { count: salesCount } = await supabase.from('sales').select('id', { count: 'exact', head: true }).eq('broker_id', id);
-      const { count: commCount } = await supabase.from('broker_commissions').select('id', { count: 'exact', head: true }).eq('broker_id', id);
-
-      if ((salesCount && salesCount > 0) || (commCount && commCount > 0)) {
-         hasSalesOrCommissions = true;
-      }
-
-      if (hasSalesOrCommissions) {
-          // Soft delete
-          let upQuery = supabase.from('brokers').update({
-             active: false,
-             status: 'inativo',
-             deleted_at: new Date().toISOString()
-          }).eq('id', id);
-          
-          if (user?.role !== 'SUPER_ADMIN') {
-              upQuery = upQuery.or(`tenant_id.eq.${user?.tenant_id},company_id.eq.${user?.tenant_id}`);
-          }
-          
-          const { error: upErr } = await upQuery;
-          if (upErr) throw upErr;
-      } else {
-          // Hard delete
-          let delQuery = supabase.from('brokers').delete().eq('id', id);
-          if (user?.role !== 'SUPER_ADMIN') {
-              delQuery = delQuery.or(`tenant_id.eq.${user?.tenant_id},company_id.eq.${user?.tenant_id}`);
-          }
-          const { error: delErr } = await delQuery;
-          if (delErr) throw delErr;
-      }
-
+      setCorretores((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
+
+      const tenantId =
+        rlsCtx.tenantId ||
+        user.tenant_id ||
+        (user as { company_id?: string }).company_id ||
+        null;
+      await logBrokerDeleteAudit(supabase, {
+        tenantId,
+        userId: user.id,
+        result,
+      });
+
       await loadBrokers();
-    } catch(e:any) {
+    } catch (e: unknown) {
       console.error(e);
-      alert('Erro ao excluir: ' + e.message);
+      const message = e instanceof Error ? e.message : 'Erro desconhecido';
+      alert('Erro ao excluir: ' + message);
     } finally {
-      setLoading(false);
+      setIsDeleting(false);
     }
   };
 
@@ -795,7 +787,7 @@ export default function CorretoresPage() {
      }
   };
 
-  const [filterActive, setFilterActive] = useState<'all' | 'ativo' | 'inativo'>('all');
+  const [filterActive, setFilterActive] = useState<'all' | 'ativo' | 'inativo'>('ativo');
 
   const filtered = corretores.filter(c => {
      const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
@@ -805,6 +797,8 @@ export default function CorretoresPage() {
      if (filterActive === 'inativo' && c.active) return false;
      return true;
   });
+
+  const dashboardStats = computeBrokerDashboardStats(corretores);
 
   const getRoleBadge = (role: string) => {
      switch (role) {
@@ -941,10 +935,9 @@ export default function CorretoresPage() {
      }
   };
 
-  // Real Metrics
-  const totalVendasMes = corretores.reduce((acc, c) => acc + c.vendas_mes_qtd, 0);
-  const totalComissoesPagas = corretores.reduce((acc, c) => acc + c.comissao_paga, 0);
-  const totalComissoesPendentes = corretores.reduce((acc, c) => acc + c.comissao_pendente, 0);
+  const totalVendasMes = dashboardStats.totalVendasMes;
+  const totalComissoesPagas = dashboardStats.totalComissoesPagas;
+  const totalComissoesPendentes = dashboardStats.totalComissoesPendentes;
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -955,7 +948,7 @@ export default function CorretoresPage() {
     { name: 'Pendentes', value: totalComissoesPendentes, color: '#f59e0b' },
   ];
 
-  const topCorretores = [...corretores].filter(c => c.vendas_mes_valor > 0).sort((a,b) => b.vendas_mes_valor - a.vendas_mes_valor).slice(0, 3);
+  const topCorretores = rankBrokersByMonthlySales(corretores, 3);
   const medalColors = ['#f59e0b', '#94a3b8', '#b45309'];
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
 
@@ -1014,7 +1007,7 @@ export default function CorretoresPage() {
                </div>
                <div>
                   <div className="text-3xl font-bold text-[var(--text-primary)]">
-                    {corretores.filter(c => c.active).length} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
+                    {dashboardStats.activeCount} / {brokerLimit === null ? 'Ilimitado' : brokerLimit}
                   </div>
                   <div className="text-sm font-medium text-[var(--text-secondary)]">Corretores ativos</div>
                </div>
@@ -1024,7 +1017,7 @@ export default function CorretoresPage() {
                  ? 'Carregando limites do plano…'
                  : companyPlan
                    ? `Plano ${companyPlan} — até ${brokerLimit} corretores`
-                   : `${Math.round((corretores.filter(c => c.active).length / brokerLimit) * 100)}% da licença utilizada`}
+                   : `${Math.round((dashboardStats.activeCount / brokerLimit) * 100)}% da licença utilizada`}
              </div>
          </div>
 
@@ -1208,7 +1201,7 @@ export default function CorretoresPage() {
                              <Key className="w-4 h-4" />
                            </button>
                            <button 
-                             onClick={() => setDeleteModal(c.id)}
+                             onClick={() => setDeleteModal({ id: c.id, name: c.name || 'Corretor' })}
                              className="p-1.5 text-red-500 hover:text-[var(--text-primary)] hover:bg-red-500/80 rounded transition-colors" title="Excluir"
                            >
                              <Trash2 className="w-4 h-4" />
@@ -1357,12 +1350,15 @@ export default function CorretoresPage() {
       {deleteModal && (
         <div className="sv-modal-overlay animate-in fade-in duration-200">
            <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-6 w-full max-w-md">
-              <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Excluir Corretor?</h2>
-              <p className="text-[var(--text-secondary)] text-sm mb-6">Esta ação removerá o acesso deste corretor à empresa e o ocultará da lista. O histórico de vendas e comissões do corretor será preservado por motivo de auditoria e relatórios financeiros.</p>
+              <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Excluir corretor?</h2>
+              <p className="text-[var(--text-secondary)] text-sm mb-2">
+                Confirma a exclusão de <strong className="text-[var(--text-primary)]">{deleteModal.name}</strong>?
+              </p>
+              <p className="text-[var(--text-secondary)] text-sm mb-6">O corretor será removido da lista ativa. Se houver vendas ou comissões vinculadas, o histórico será preservado (desativação). Caso contrário, o registro será excluído permanentemente.</p>
               <div className="flex justify-end gap-3">
-                 <button onClick={() => setDeleteModal(null)} className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">Cancelar</button>
-                 <button onClick={() => handleDelete(deleteModal)} disabled={loading} className="px-5 py-2 text-sm bg-red-500 hover:bg-red-600 font-bold text-[var(--text-primary)] rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 min-w-[120px]">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sim, Excluir"}
+                 <button onClick={() => setDeleteModal(null)} disabled={isDeleting} className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50">Cancelar</button>
+                 <button onClick={handleDelete} disabled={isDeleting} className="px-5 py-2 text-sm bg-red-500 hover:bg-red-600 font-bold text-[var(--text-primary)] rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 min-w-[120px]">
+                    {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sim, excluir"}
                  </button>
               </div>
            </div>
@@ -1636,7 +1632,7 @@ export default function CorretoresPage() {
                        >
                          {modalMode === 'view' ? 'Fechar' : 'Cancelar'}
                        </button>
-                       {brokerLimit !== null && corretores.filter(c => c.active).length >= brokerLimit && user?.role !== 'SUPER_ADMIN' && modalMode === 'create' ? (
+                       {brokerLimit !== null && dashboardStats.activeCount >= brokerLimit && user?.role !== 'SUPER_ADMIN' && modalMode === 'create' ? (
                           <div className="flex items-center ml-4 px-4 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
                              <p className="text-red-400 text-xs font-bold uppercase tracking-widest">Plano Atingido</p>
                           </div>
@@ -1668,7 +1664,7 @@ export default function CorretoresPage() {
         initialPendingTotal={manageSaleModal?.pendingTotal ?? 0}
         canManage={canManageBrokerCommission}
         activeTenantId={activeTenantId}
-        brokers={corretores.map((b) => ({
+        brokers={filterBrokersForActiveList(corretores).map((b) => ({
           id: b.id,
           name: b.name,
           commission_percent: b.commission_percent,
