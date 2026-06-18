@@ -960,7 +960,7 @@ export default function CorretoresPage() {
   const canManageBrokerCommission = canManageSaleBrokerCommission(user?.role);
 
   return (
-    <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col h-full bg-[var(--bg-main)] text-[var(--text-primary)]">
+    <div className="sv-page sv-page--scroll-y p-4 md:p-6 lg:p-8 flex flex-col min-h-0 flex-1 bg-[var(--bg-main)] text-[var(--text-primary)]">
       
       {/* Header */}
       <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1355,8 +1355,8 @@ export default function CorretoresPage() {
 
       {/* Modal Delete */}
       {deleteModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <div className="sv-modal-overlay animate-in fade-in duration-200">
+           <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] p-6 w-full max-w-md">
               <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Excluir Corretor?</h2>
               <p className="text-[var(--text-secondary)] text-sm mb-6">Esta ação removerá o acesso deste corretor à empresa e o ocultará da lista. O histórico de vendas e comissões do corretor será preservado por motivo de auditoria e relatórios financeiros.</p>
               <div className="flex justify-end gap-3">
@@ -1371,8 +1371,8 @@ export default function CorretoresPage() {
 
       {/* Modal - Novo Corretor */}
       {isModalOpen && (
-        <div className="sv-modal-overlay animate-in fade-in duration-200">
-          <div className="sv-modal-shell sv-modal-shell--wide bg-[var(--bg-card)] border border-[var(--border-color)]">
+        <div className="sv-modal-overlay sv-modal-overlay--immersive animate-in fade-in duration-200">
+          <div className="sv-modal-shell sv-modal-shell--wide sv-modal-shell--full-mobile bg-[var(--bg-card)] border border-[var(--border-color)]">
             
             <div className="sv-modal-header flex items-center justify-between p-5 border-b border-[var(--border-color)] bg-[var(--bg-card-alt)]">
               <h2 className="text-lg font-bold text-[var(--text-primary)]">
@@ -1417,7 +1417,7 @@ export default function CorretoresPage() {
                    </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
                 <div className="sv-modal-body p-6 space-y-6">
                    {error && (
                      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-500 text-sm flex items-center gap-2">

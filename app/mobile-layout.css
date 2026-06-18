@@ -5,7 +5,10 @@
 :root {
   --sv-mobile-bottom-nav-height: 72px;
   --sv-mobile-content-pad-bottom: calc(
-    var(--sv-mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 16px
+    var(--sv-mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px
+  );
+  --sv-mobile-modal-body-pad-bottom: calc(
+    env(safe-area-inset-bottom, 0px) + 24px
   );
   --sv-mobile-modal-max-height: calc(
     100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px
@@ -15,6 +18,8 @@
 @layer components {
   /* Área rolável dentro do main (mobile) */
   .sv-mobile-scroll-area {
+    overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -34,11 +39,11 @@
     }
   }
 
-  /* Overlay de modal — mobile: sheet; desktop: centralizado */
+  /* Overlay de modal — acima da bottom nav (z-300) e menu mobile (z-350) */
   .sv-modal-overlay {
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: 400;
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -47,6 +52,12 @@
     padding: 0;
     background-color: rgb(0 0 0 / 0.75);
     backdrop-filter: blur(4px);
+  }
+
+  /* Sheet full-screen no mobile — body rola, footer fixo no shell */
+  .sv-modal-overlay--immersive {
+    align-items: stretch;
+    overflow: hidden;
   }
 
   @media (min-width: 640px) {
@@ -80,11 +91,20 @@
 
   .sv-modal-shell--full-mobile {
     max-height: 100dvh;
+    height: 100dvh;
+    min-height: 0;
     border-radius: 0;
+  }
+
+  @media (max-width: 639px) {
+    .sv-modal-shell--full-mobile .sv-modal-body {
+      padding-bottom: var(--sv-mobile-modal-body-pad-bottom);
+    }
   }
 
   @media (min-width: 640px) {
     .sv-modal-shell--full-mobile {
+      height: auto;
       max-height: min(90vh, var(--sv-mobile-modal-max-height));
       border-radius: 1rem;
     }
@@ -108,5 +128,10 @@
     bottom: 0;
     z-index: 10;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    background-color: inherit;
+  }
+
+  .sv-modal-shell--full-mobile .sv-modal-footer {
+    margin-top: auto;
   }
 }

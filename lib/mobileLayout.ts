@@ -24,6 +24,12 @@ export const SV_MODAL_SHELL_CLASS = 'sv-modal-shell';
 export const SV_MODAL_BODY_CLASS = 'sv-modal-body';
 export const SV_MODAL_FOOTER_CLASS = 'sv-modal-footer';
 export const SV_MODAL_HEADER_CLASS = 'sv-modal-header';
+export const SV_MODAL_OVERLAY_IMMERSIVE_CLASS = 'sv-modal-overlay--immersive';
+export const SV_MODAL_SHELL_FULL_MOBILE_CLASS = 'sv-modal-shell--full-mobile';
+
+/** z-index da bottom nav no Layout — modais devem ficar acima. */
+export const MOBILE_BOTTOM_NAV_Z_INDEX = 300;
+export const SV_MODAL_OVERLAY_Z_INDEX = 400;
 
 /** Arquivos que devem usar o padrão de modal mobile. */
 export const MOBILE_MODAL_SOURCE_FILES = [

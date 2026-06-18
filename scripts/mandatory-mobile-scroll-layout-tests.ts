@@ -62,6 +62,10 @@ function testMobileLayoutCss() {
   assert(css.includes('.sv-modal-body'), 'classe body modal');
   assert(css.includes('.sv-modal-footer'), 'classe footer modal');
   assert(css.includes('safe-area-inset-bottom'), 'safe area no footer');
+  assert(
+    css.includes('z-index: 400') || css.includes('z-index:400'),
+    'overlay modal z-index acima bottom nav',
+  );
 }
 
 function testGlobalsImport() {
@@ -140,6 +144,50 @@ function testModalPatterns() {
   assert(lotForm.includes(SV_MODAL_FOOTER_CLASS), 'venda lote com footer fixo');
 }
 
+function testBrokersBrokerFormMobile() {
+  const brokers = read('app/dashboard/brokers/page.tsx');
+  const css = read('app/mobile-layout.css');
+
+  assert(
+    brokers.includes('sv-page--scroll-y') || brokers.includes('sv-mobile-scroll-area'),
+    'corretores: página com scroll mobile',
+  );
+  assert(!brokers.includes('h-screen'), 'corretores: sem h-screen');
+  assert(
+    !brokers.match(/sv-page[^`"']*overflow-hidden/) &&
+      !brokers.includes('flex flex-col h-full bg-[var(--bg-main)]'),
+    'corretores: container principal sem h-full/overflow bloqueante',
+  );
+
+  assert(brokers.includes('sv-modal-overlay'), 'corretores: modal overlay global');
+  assert(
+    brokers.includes('sv-modal-overlay--immersive'),
+    'corretores: modal immersive full-screen mobile',
+  );
+  assert(
+    brokers.includes('sv-modal-shell--full-mobile'),
+    'corretores: shell full-mobile com h-dvh',
+  );
+  assert(brokers.includes(SV_MODAL_BODY_CLASS), 'corretores: sv-modal-body no formulário');
+  assert(brokers.includes(SV_MODAL_FOOTER_CLASS), 'corretores: sv-modal-footer com Salvar');
+  assert(brokers.includes('Salvar Corretor'), 'corretores: botão Salvar Corretor');
+  assert(
+    brokers.includes('Senha de Acesso') && brokers.includes('Confirmar Senha'),
+    'corretores: campos de senha no formulário',
+  );
+
+  assert(
+    css.includes('z-index: 400') || css.includes('z-index:400'),
+    'modal overlay acima da bottom nav (z-400)',
+  );
+  assert(
+    css.includes('--sv-mobile-content-pad-bottom') &&
+      css.includes('--sv-mobile-modal-body-pad-bottom'),
+    'CSS com padding inferior mobile (nav + safe-area + 24px)',
+  );
+  assert(css.includes('100dvh'), 'CSS modal usa dvh');
+}
+
 function testNoProblematicMainOverflowHidden() {
   const layout = read('components/Layout.tsx');
   const mainMatch = layout.match(/<main[\s\S]*?className=\{`([^`]+)`\}/);
@@ -156,6 +204,7 @@ function run() {
     ['Layout scroll', testLayoutMainScroll],
     ['páginas scroll', testPageScrollPatterns],
     ['modais mobile', testModalPatterns],
+    ['corretor cadastro mobile', testBrokersBrokerFormMobile],
     ['main overflow', testNoProblematicMainOverflowHidden],
   ];
 
