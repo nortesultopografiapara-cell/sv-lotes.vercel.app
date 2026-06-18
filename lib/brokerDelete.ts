@@ -74,6 +74,23 @@ export function buildBrokerSoftDeletePatch(now: Date = new Date()): Record<strin
   };
 }
 
+export function buildBrokerActivatePatch(now: Date = new Date()): Record<string, unknown> {
+  return {
+    active: true,
+    status: 'ativo',
+    deleted_at: null,
+    updated_at: now.toISOString(),
+  };
+}
+
+export type BrokerActiveToggleResult = {
+  brokerId: string;
+  brokerName: string;
+  effectiveTenantId: string;
+  active: boolean;
+  status: string;
+};
+
 export function resolveBrokerDeleteMode(
   salesCount: number,
   commissionsCount: number,
@@ -561,5 +578,72 @@ export async function deleteBrokerViaAdmin(
     brokerId,
     brokerName: resolvedName,
     effectiveTenantId: brokerTenantId,
+  };
+}
+
+/** Ativa/desativa corretor via service role — somente tabela brokers; nunca auth.users. */
+export async function setBrokerActiveViaAdmin(
+  admin: SupabaseClient,
+  brokerId: string,
+  active: boolean,
+  userCtx: BrokerDeleteUserContext,
+  isSuperAdmin: boolean,
+): Promise<BrokerActiveToggleResult> {
+  const { data, error } = await admin
+    .from('brokers')
+    .select('id, name, full_name, tenant_id, company_id, active, status, deleted_at')
+    .eq('id', brokerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new BrokerDeleteError('Não foi possível localizar o corretor.', {
+      brokerId,
+      supabaseError: error.message,
+    });
+  }
+  if (!data) {
+    throw new BrokerDeleteError('Corretor não encontrado.', { brokerId });
+  }
+
+  const brokerRow = data as BrokerRow;
+  const brokerTenantId = readBrokerTenantId(brokerRow);
+  if (!brokerTenantId) {
+    throw new BrokerDeleteError('Corretor sem empresa vinculada.', { brokerId });
+  }
+
+  assertCanDeleteBrokerInTenant({
+    userRole: userCtx.userRole,
+    userTenantId: userCtx.userTenantId,
+    brokerTenantId,
+    isSuperAdmin,
+  });
+
+  const resolvedName = brokerRow.name || brokerRow.full_name || 'Corretor';
+  const patch = active ? buildBrokerActivatePatch() : buildBrokerSoftDeletePatch();
+
+  const { data: updated, error: upErr } = await buildBrokerMutation(
+    admin,
+    brokerRow,
+    brokerTenantId,
+    'update',
+    patch,
+  ).select('id, active, status');
+
+  if (upErr || !updated?.length) {
+    throw new BrokerDeleteError(
+      active
+        ? 'Não foi possível reativar o corretor. Verifique permissões ou tenant ativo.'
+        : 'Não foi possível desativar o corretor. Verifique permissões ou tenant ativo.',
+      { brokerId, active },
+    );
+  }
+
+  const row = updated[0] as { active?: boolean; status?: string };
+  return {
+    brokerId,
+    brokerName: resolvedName,
+    effectiveTenantId: brokerTenantId,
+    active: row.active !== false,
+    status: String(row.status || (active ? 'ativo' : 'inativo')),
   };
 }

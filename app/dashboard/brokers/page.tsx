@@ -107,6 +107,7 @@ export default function CorretoresPage() {
     company_id?: string | null;
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [togglingBrokerId, setTogglingBrokerId] = useState<string | null>(null);
 
   const loadBrokers = useCallback(async () => {
     if (!user) return;
@@ -139,7 +140,7 @@ export default function CorretoresPage() {
          return;
       }
 
-      let query = supabase.from('brokers').select('*').is('deleted_at', null).order('created_at', { ascending: false });
+      let query = supabase.from('brokers').select('*').order('created_at', { ascending: false });
       query = applyTenantFilter(query, rlsCtx, 'brokers');
       
       const { data: rawBrokers, error } = await query;
@@ -265,6 +266,7 @@ export default function CorretoresPage() {
         const comissao_paga = bComms.filter(cc => pagoStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
         
         const isActive = isBrokerActiveForList(b);
+        const dbActive = b.active !== false;
 
         return {
           ...b,
@@ -273,6 +275,8 @@ export default function CorretoresPage() {
           role: b.role || 'BROKER',
           commission_percent: readBrokerCommissionPercent(b.commission_percent),
           active: isActive,
+          dbActive,
+          brokerStatus: b.status || (isActive ? 'ativo' : 'inativo'),
           vendas_mes_qtd: vendas_qtd,
           vendas_mes_valor: vendas_valor,
           lotesDoMes,
@@ -806,6 +810,56 @@ export default function CorretoresPage() {
     }
   };
 
+  const handleToggleBrokerActive = async (broker: { id: string; name?: string; dbActive?: boolean }) => {
+    if (!user) return;
+    const nextActive = !broker.dbActive;
+    const actionLabel = nextActive ? 'reativar' : 'desativar';
+    if (
+      !window.confirm(
+        `Deseja ${actionLabel} o corretor ${broker.name || 'selecionado'}?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setTogglingBrokerId(broker.id);
+
+      const resolvedTenantId = await resolveActiveTenantId(user);
+      const params = new URLSearchParams();
+      if (resolvedTenantId) params.set('tenantId', resolvedTenantId);
+      if (typeof window !== 'undefined') {
+        const impersonating = localStorage.getItem('impersonating_tenant_id');
+        if (impersonating) params.set('impersonatingTenantId', impersonating);
+      }
+
+      const response = await fetch(`/api/brokers/${broker.id}?${params.toString()}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new BrokerDeleteError(
+          body.error || `Não foi possível ${actionLabel} o corretor.`,
+          { brokerId: broker.id },
+        );
+      }
+
+      await loadBrokers();
+    } catch (e: unknown) {
+      if (e instanceof BrokerDeleteError) {
+        alert(e.message);
+        return;
+      }
+      const message = e instanceof Error ? e.message : 'Erro desconhecido';
+      alert(`Erro ao ${actionLabel} corretor: ${message}`);
+    } finally {
+      setTogglingBrokerId(null);
+    }
+  };
+
   const handleCloseModal = () => {
      setIsModalOpen(false);
      setModalMode(null);
@@ -1228,6 +1282,33 @@ export default function CorretoresPage() {
                            <button onClick={() => handleOpenResetPassword(c)} className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] rounded transition-colors" title="Redefinir Senha">
                              <Key className="w-4 h-4" />
                            </button>
+                           {c.dbActive ? (
+                             <button
+                               onClick={() => handleToggleBrokerActive(c)}
+                               disabled={togglingBrokerId === c.id}
+                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-500 hover:text-[var(--text-primary)] hover:bg-amber-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
+                               title="Desativar corretor"
+                             >
+                               {togglingBrokerId === c.id ? (
+                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
+                               ) : (
+                                 'Desativar corretor'
+                               )}
+                             </button>
+                           ) : (
+                             <button
+                               onClick={() => handleToggleBrokerActive(c)}
+                               disabled={togglingBrokerId === c.id}
+                               className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-500 hover:text-[var(--text-primary)] hover:bg-emerald-500/20 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
+                               title="Reativar corretor"
+                             >
+                               {togglingBrokerId === c.id ? (
+                                 <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
+                               ) : (
+                                 'Reativar corretor'
+                               )}
+                             </button>
+                           )}
                            <button 
                              onClick={() => setDeleteModal({
                                id: c.id,

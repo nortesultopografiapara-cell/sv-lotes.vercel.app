@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   brokerAdminEmailConflictMessage,
+  buildBrokerActivatePatch,
+  buildBrokerSoftDeletePatch,
   isBrokerActiveForList,
   isBrokerRecordActive,
   resolveBrokerAdminEmailConflict,
@@ -98,6 +100,36 @@ function testBrokersListActiveFilter() {
   assert(brokersPage.includes("filterActive === 'ativo' && !c.active"), 'filtro somente ativos');
   assert(brokersPage.includes('computeBrokerDashboardStats'), 'contador via stats ativos');
   assert(brokersPage.includes('await loadBrokers()'), 'refetch após exclusão');
+  assert(!brokersPage.includes(".is('deleted_at', null)"), 'lista carrega inativos');
+}
+
+function testBrokerActivateDeactivatePatches() {
+  const deactivate = buildBrokerSoftDeletePatch(new Date('2026-06-08T12:00:00.000Z'));
+  assert(deactivate.active === false, 'desativar active=false');
+  assert(deactivate.status === 'inativo', 'desativar status=inativo');
+  assert(deactivate.deleted_at === '2026-06-08T12:00:00.000Z', 'desativar deleted_at=now');
+
+  const activate = buildBrokerActivatePatch(new Date('2026-06-08T12:00:00.000Z'));
+  assert(activate.active === true, 'reativar active=true');
+  assert(activate.status === 'ativo', 'reativar status=ativo');
+  assert(activate.deleted_at === null, 'reativar deleted_at=null');
+}
+
+function testBrokerToggleApiAndUi() {
+  const brokerDelete = read('lib/brokerDelete.ts');
+  assert(brokerDelete.includes('setBrokerActiveViaAdmin'), 'toggle server-side');
+  assert(!brokerDelete.includes('auth.admin.deleteUser'), 'toggle não apaga auth user');
+
+  const apiRoute = read('app/api/brokers/[id]/route.ts');
+  assert(apiRoute.includes('export async function PATCH'), 'API PATCH');
+  assert(apiRoute.includes('setBrokerActiveViaAdmin'), 'API usa setBrokerActiveViaAdmin');
+
+  const brokersPage = read('app/dashboard/brokers/page.tsx');
+  assert(brokersPage.includes("method: 'PATCH'"), 'UI chama PATCH');
+  assert(brokersPage.includes('Desativar corretor'), 'botão desativar');
+  assert(brokersPage.includes('Reativar corretor'), 'botão reativar');
+  assert(brokersPage.includes('handleToggleBrokerActive'), 'handler toggle');
+  assert(brokersPage.includes('dbActive'), 'botão usa broker.active do registro');
 }
 
 function run() {
@@ -108,6 +140,8 @@ function run() {
     ['delete só brokers', testDeleteOnlyBrokersTable],
     ['promoção admin', testCompanyAdminPromotion],
     ['listagem corretores', testBrokersListActiveFilter],
+    ['patches ativar/desativar', testBrokerActivateDeactivatePatches],
+    ['toggle corretor API/UI', testBrokerToggleApiAndUi],
   ];
 
   for (const [name, fn] of tests) {
