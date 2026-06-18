@@ -1,78 +1,215 @@
 /**
- * Interface de gateway de cobrança SaaS — preparada para Fase 2 (Asaas, Mercado Pago, etc.).
+
+ * Interface de gateway de cobrança SaaS — delega para lib/payments/providers.
+
  */
 
+
+
+import {
+
+  getPaymentProvider,
+
+  mapProviderStatusToChargeStatus,
+
+} from '@/lib/payments/providers';
+
+import type { PaymentProvider } from '@/lib/payments/providers/types';
+
+
+
 export type PixChargeInput = {
+
   companyId: string;
+
   invoiceId: string;
+
   invoiceNumber: string;
+
   amount: number;
+
   dueDate: string;
+
   description: string;
+
   payerName?: string;
+
   payerDocument?: string;
+
 };
+
+
 
 export type PixChargeResult = {
+
   externalChargeId: string;
+
   pixCode: string;
+
   pixQrCode: string;
+
   status: 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
+
   provider: string;
+
 };
+
+
 
 export type ChargeStatusResult = {
+
   externalChargeId: string;
+
   status: 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
+
   paidAt?: string | null;
+
 };
 
+
+
 export interface GatewayBillingProvider {
+
   readonly providerName: string;
+
   createPixCharge(input: PixChargeInput): Promise<PixChargeResult>;
+
   cancelCharge(externalChargeId: string): Promise<void>;
+
   getChargeStatus(externalChargeId: string): Promise<ChargeStatusResult>;
+
 }
 
-/** Provider mock — Fase 1 sem integração bancária real. */
+
+
+function adaptProvider(provider: PaymentProvider): GatewayBillingProvider {
+
+  return {
+
+    providerName: provider.providerName,
+
+    async createPixCharge(input: PixChargeInput): Promise<PixChargeResult> {
+
+      const result = await provider.createPixCharge({
+
+        companyId: input.companyId,
+
+        chargeId: input.invoiceId,
+
+        amount: input.amount,
+
+        dueDate: input.dueDate,
+
+        description: input.description,
+
+        payerName: input.payerName,
+
+        payerDocument: input.payerDocument,
+
+      });
+
+      const status = mapProviderStatusToChargeStatus(result.status);
+
+      const legacyStatus =
+
+        status === 'PAID'
+
+          ? 'PAGO'
+
+          : status === 'OVERDUE'
+
+            ? 'VENCIDO'
+
+            : status === 'CANCELLED'
+
+              ? 'CANCELADO'
+
+              : 'PENDENTE';
+
+      return {
+
+        externalChargeId: result.paymentId,
+
+        pixCode: result.pixCopyPaste,
+
+        pixQrCode: result.pixQrCode,
+
+        status: legacyStatus,
+
+        provider: result.provider,
+
+      };
+
+    },
+
+    cancelCharge: (id) => provider.cancelCharge(id),
+
+    async getChargeStatus(externalChargeId: string): Promise<ChargeStatusResult> {
+
+      const result = await provider.getChargeStatus(externalChargeId);
+
+      const status = mapProviderStatusToChargeStatus(result.status);
+
+      const legacyStatus =
+
+        status === 'PAID'
+
+          ? 'PAGO'
+
+          : status === 'OVERDUE'
+
+            ? 'VENCIDO'
+
+            : status === 'CANCELLED'
+
+              ? 'CANCELADO'
+
+              : 'PENDENTE';
+
+      return { externalChargeId, status: legacyStatus, paidAt: result.paidAt ?? null };
+
+    },
+
+  };
+
+}
+
+
+
+/** Provider mock — compatibilidade com testes legados. */
+
 export class MockGatewayBillingProvider implements GatewayBillingProvider {
   readonly providerName = 'mock';
 
-  async createPixCharge(input: PixChargeInput): Promise<PixChargeResult> {
-    const externalChargeId = `mock_${input.invoiceId}_${Date.now()}`;
-    const pixCode = `00020126580014BR.GOV.BCB.PIX0136${externalChargeId}520400005303986540${input.amount.toFixed(2)}5802BR5925SV LOTES SAAS6009PARAUAPEBAS62070503***6304MOCK`;
-    const pixQrCode = `data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" fill="#fff"/><text x="10" y="60" font-size="10">PIX MOCK</text></svg>`,
-    )}`;
-
-    return {
-      externalChargeId,
-      pixCode,
-      pixQrCode,
-      status: 'PENDENTE',
-      provider: this.providerName,
-    };
+  private get inner() {
+    return adaptProvider(getPaymentProvider());
   }
 
-  async cancelCharge(_externalChargeId: string): Promise<void> {
-    /* mock — sem efeito externo */
+  createPixCharge(input: PixChargeInput) {
+    return this.inner.createPixCharge(input);
   }
-
-  async getChargeStatus(externalChargeId: string): Promise<ChargeStatusResult> {
-    return {
-      externalChargeId,
-      status: 'PENDENTE',
-      paidAt: null,
-    };
+  cancelCharge(id: string) {
+    return this.inner.cancelCharge(id);
+  }
+  getChargeStatus(id: string) {
+    return this.inner.getChargeStatus(id);
   }
 }
 
-let defaultProvider: GatewayBillingProvider = new MockGatewayBillingProvider();
+let defaultProvider: GatewayBillingProvider | null = null;
 
 export function getGatewayBillingProvider(): GatewayBillingProvider {
+  if (!defaultProvider) {
+    defaultProvider = adaptProvider(getPaymentProvider());
+  }
   return defaultProvider;
 }
 
+
+
 export function setGatewayBillingProvider(provider: GatewayBillingProvider): void {
+
   defaultProvider = provider;
+
 }
+

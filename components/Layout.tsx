@@ -29,6 +29,7 @@ import {
   RefreshCw,
   BookOpen,
   Handshake,
+  CreditCard,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
@@ -249,6 +250,7 @@ const getMenuItems = (role: string) => {
       { name: 'Clientes', href: '/customers', icon: Users, color: 'text-[var(--color-purple)]' },
       { name: 'Corretores', href: '/dashboard/brokers', icon: Users, color: 'text-[#06b6d4]' },
       { name: 'Financeiro', href: '/finance', icon: Wallet, color: 'text-[var(--color-warning)]' },
+      { name: 'Minha Assinatura', href: '/billing', icon: CreditCard, color: 'text-[#14b8a6]' },
       { name: 'Contratos', href: '/contracts', icon: FileText, color: 'text-[var(--color-info)]' },
       { name: 'Sócios / Proprietários', href: '/owners', icon: Handshake, color: 'text-[#a855f7]' },
       { name: 'Sincronização Offline', href: '/offline-sync', icon: RefreshCw, color: 'text-[#f97316]' },

@@ -24,7 +24,8 @@
     "test:assisted-confrontation": "tsx scripts/mandatory-assisted-confrontation-tests.ts",
     "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts",
     "test:broker-delete": "tsx scripts/mandatory-broker-delete-tests.ts",
-    "test:broker-admin-email-conflict": "tsx scripts/mandatory-broker-admin-email-conflict-tests.ts"
+    "test:broker-admin-email-conflict": "tsx scripts/mandatory-broker-admin-email-conflict-tests.ts",
+    "test:saas-payment": "tsx scripts/mandatory-saas-payment-tests.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
