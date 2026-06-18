@@ -245,6 +245,18 @@ export async function updateSaleFromEdit(
   const finalPrice = data.lot_value;
   const brokerId = data.broker_id?.trim() ? data.broker_id : null;
 
+  const { data: companyRow } = await supabase
+    .from('companies')
+    .select('contract_model')
+    .eq('id', tenantId)
+    .maybeSingle();
+  const contractModel = companyRow?.contract_model;
+  const financeOptions = {
+    contractModel,
+    grossDownPayment: Number(data.down_payment) || 0,
+    paymentType: data.payment_type,
+  };
+
   const customerPatch = mergePreservingCustomerFields(
     customerBefore,
     customerPatchFromForm(data),
@@ -329,6 +341,7 @@ export async function updateSaleFromEdit(
     brokerId,
     lot,
     data,
+    { contractModel },
   );
 
   let financeChanged = false;
@@ -340,6 +353,7 @@ export async function updateSaleFromEdit(
       receiptRows,
       newPayloads,
       data.final_value,
+      financeOptions,
     );
 
     if (plan.needsConfirm) {

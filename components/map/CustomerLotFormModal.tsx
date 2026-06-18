@@ -25,6 +25,11 @@ import {
   emptySaleSpouseFormFields,
   type SaleSpouseFormFields,
 } from '@/lib/saleSpouseFields';
+import {
+  computeInstallmentDisplayValue,
+  downPaymentReducesInstallmentBase,
+} from '@/lib/saleInstallmentCalc';
+import type { SaleContractModel } from '@/lib/contractModel';
 
 export type LotFormState = CustomerFormValues &
   SaleSpouseFormFields & {
@@ -88,6 +93,7 @@ type Props = {
   mode?: 'create' | 'edit';
   initialFormData?: Partial<LotFormState>;
   brokers?: { id: string; name: string }[];
+  contractModel?: SaleContractModel | string | null;
   onClose: () => void;
   onConfirm: (data: LotFormConfirmPayload) => Promise<void>;
   onCustomerValidationFailed?: (validation: CustomerContractValidation) => void;
@@ -103,6 +109,7 @@ export function CustomerLotFormModal({
   mode = 'create',
   initialFormData,
   brokers = [],
+  contractModel = 'PADRAO',
   onClose,
   onConfirm,
   onCustomerValidationFailed,
@@ -225,10 +232,20 @@ export function CustomerLotFormModal({
   const downPayment = Number(downPaymentStr) || 0;
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
+  const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
   const installmentValue =
     installmentsCount > 0
-      ? Math.max(0, (price - downPayment) / installmentsCount)
+      ? computeInstallmentDisplayValue({
+          finalValue,
+          downPayment,
+          installmentsCount,
+          contractModel,
+        })
       : 0;
+  const installmentValueFmt = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(installmentValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,7 +268,11 @@ export function CustomerLotFormModal({
         }
       } else {
         if (downPayment > price) {
-          alert('A entrada não pode ser maior que o valor do lote.');
+          alert(
+            isRecantoSinal
+              ? 'O sinal não pode ser maior que o valor do lote.'
+              : 'A entrada não pode ser maior que o valor do lote.',
+          );
           return;
         }
         const installmentsResult = validateInstallmentsCount(formData.installments_count);
@@ -260,12 +281,18 @@ export function CustomerLotFormModal({
           return;
         }
         confirmedInstallmentsCount = String(installmentsResult.value);
-        confirmedInstallmentValue = Math.max(
-          0,
-          (price - downPayment) / installmentsResult.value,
-        );
+        confirmedInstallmentValue = computeInstallmentDisplayValue({
+          finalValue,
+          downPayment,
+          installmentsCount: installmentsResult.value,
+          contractModel,
+        });
         if (downPayment > 0 && !formData.down_payment_due_date) {
-          alert('Por favor, preencha a data de vencimento da entrada.');
+          alert(
+            isRecantoSinal
+              ? 'Por favor, preencha a data de vencimento do sinal.'
+              : 'Por favor, preencha a data de vencimento da entrada.',
+          );
           return;
         }
         if (!formData.first_installment_due_date) {
@@ -804,7 +831,9 @@ export function CustomerLotFormModal({
                 {paymentType === 'Parcelado' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor da Entrada (R$)</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        {isRecantoSinal ? 'Valor do Sinal (R$)' : 'Valor da Entrada (R$)'}
+                      </label>
                       <input
                         type="number"
                         min="0"
@@ -813,9 +842,16 @@ export function CustomerLotFormModal({
                         onChange={(e) => setField({ down_payment: e.target.value })}
                         className={GIS_INPUT}
                       />
+                      {isRecantoSinal && (
+                        <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+                          O sinal não será abatido do valor da chácara neste modelo de contrato.
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Venc. Entrada</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        {isRecantoSinal ? 'Venc. Sinal' : 'Venc. Entrada'}
+                      </label>
                       <input
                         type="date"
                         required={downPayment > 0}
@@ -831,6 +867,21 @@ export function CustomerLotFormModal({
                       inputClassName={GIS_INPUT}
                       required
                     />
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Valor da Parcela
+                      </label>
+                      <input
+                        readOnly
+                        type="text"
+                        value={
+                          installmentsCount > 0
+                            ? installmentValueFmt
+                            : '—'
+                        }
+                        className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
+                      />
+                    </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Vencimento 1ª Parcela *</label>
                       <input

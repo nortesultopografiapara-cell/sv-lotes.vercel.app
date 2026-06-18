@@ -40,6 +40,8 @@ import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
+import { buildSaleEditFinancePayloads } from "@/lib/saleEditFinanceRecalc";
+import { normalizeSaleContractModel } from "@/lib/contractModel";
 import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
@@ -3405,24 +3407,35 @@ export default function GISMap({
   const [brokersList, setBrokersList] = useState<{ id: string; name: string }[]>(
     [],
   );
+  const [tenantContractModel, setTenantContractModel] = useState<string>("PADRAO");
   const [editSaleLoading, setEditSaleLoading] = useState<string | null>(null);
 
   const userCanEditSale = isPartnerPanelAdmin(user?.role);
 
   useEffect(() => {
-    async function loadBrokers() {
+    async function loadBrokersAndContractModel() {
       if (!user?.tenant_id || !isBrowserOnline()) return;
-      const { data } = await supabase
-        .from("brokers")
-        .select("id, name")
-        .eq("tenant_id", user.tenant_id)
-        .eq("active", true)
-        .order("name");
+      const [{ data: brokers }, { data: company }] = await Promise.all([
+        supabase
+          .from("brokers")
+          .select("id, name")
+          .eq("tenant_id", user.tenant_id)
+          .eq("active", true)
+          .order("name"),
+        supabase
+          .from("companies")
+          .select("contract_model")
+          .eq("id", user.tenant_id)
+          .maybeSingle(),
+      ]);
       setBrokersList(
-        (data || []).map((b) => ({ id: b.id, name: b.name || "Corretor" })),
+        (brokers || []).map((b) => ({ id: b.id, name: b.name || "Corretor" })),
+      );
+      setTenantContractModel(
+        normalizeSaleContractModel(company?.contract_model),
       );
     }
-    if (user) void loadBrokers();
+    if (user) void loadBrokersAndContractModel();
   }, [user?.tenant_id, user?.id]);
 
   const openEditSaleForm = async (lot: any) => {
@@ -4104,100 +4117,31 @@ export default function GISMap({
           newSaleData = saleData;
           const saleId = saleData.id;
 
-          const financePayloads: any[] = [];
-          const grossDownPayment = Number(customerData.down_payment) || 0;
-          let downPayment = grossDownPayment;
-          const fValue = customerData.final_value || finalPrice;
+          const { data: tenantContractRow } = await supabase
+            .from("companies")
+            .select("contract_model")
+            .eq("id", finalTenantId)
+            .maybeSingle();
+          const contractModel = normalizeSaleContractModel(
+            tenantContractRow?.contract_model ?? tenantContractModel,
+          );
 
           if (reservationSignalPaid > 0 && pmtType === "Parcelado") {
-            downPayment = Math.max(0, grossDownPayment - reservationSignalPaid);
             console.log("SIGNAL_APPLIED_TO_DOWN_PAYMENT", {
               reservationSignalPaid,
-              grossDownPayment,
-              netDownPayment: downPayment,
+              grossDownPayment: Number(customerData.down_payment) || 0,
             });
           }
 
-          if (pmtType === "À vista") {
-            financePayloads.push({
-              tenant_id: finalTenantId,
-              company_id: finalTenantId,
-              sale_id: saleId,
-              customer_id: customerId,
-              broker_id: finalBrokerId,
-              project_id: lot.project_id || null,
-              block_id: lot.id,
-              installment_number: 1,
-              amount: fValue,
-              due_date: customerData.down_payment_due_date || new Date().toISOString().split("T")[0],
-              status: "pago",
-              paid_at: new Date().toISOString(),
-            });
-          } else if (pmtType === "Parcelado") {
-            let currentInst = 1;
-            if (reservationSignalPaid > 0) {
-              financePayloads.push({
-                tenant_id: finalTenantId,
-                company_id: finalTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                broker_id: finalBrokerId,
-                project_id: lot.project_id || null,
-                block_id: lot.id,
-                installment_number: -1,
-                amount: reservationSignalPaid,
-                due_date:
-                  customerData.signal_date ||
-                  customerData.down_payment_due_date ||
-                  new Date().toISOString().split("T")[0],
-                status: "pago",
-                paid_at: new Date().toISOString(),
-              });
-            }
-            if (downPayment > 0 && customerData.down_payment_due_date) {
-              financePayloads.push({
-                tenant_id: finalTenantId,
-                company_id: finalTenantId,
-                sale_id: saleId,
-                customer_id: customerId,
-                broker_id: finalBrokerId,
-                project_id: lot.project_id || null,
-                block_id: lot.id,
-                installment_number: 0, // 0 signifies "Entry" (Entrada)
-                amount: downPayment,
-                due_date: customerData.down_payment_due_date,
-                status: "pendente",
-              });
-            }
-
-            if (customerData.first_installment_due_date) {
-              const totalRestante = Math.max(0, fValue - downPayment);
-              const parValue = Math.round((totalRestante / instCount) * 100) / 100;
-              let accumulated = 0;
-              
-              let cDate = new Date(customerData.first_installment_due_date + "T12:00:00Z");
-              for (let i = 0; i < instCount; i++) {
-                const isLast = i === instCount - 1;
-                const currentAmount = isLast ? Number((totalRestante - accumulated).toFixed(2)) : parValue;
-                accumulated += currentAmount;
-
-                financePayloads.push({
-                  tenant_id: finalTenantId,
-                  company_id: finalTenantId,
-                  sale_id: saleId,
-                  customer_id: customerId,
-                  broker_id: finalBrokerId,
-                  project_id: lot.project_id || null,
-                  block_id: lot.id,
-                  installment_number: currentInst++,
-                  amount: currentAmount,
-                  due_date: cDate.toISOString().split("T")[0],
-                  status: "pendente",
-                });
-                cDate.setMonth(cDate.getMonth() + 1);
-              }
-            }
-          }
+          const financePayloads = buildSaleEditFinancePayloads(
+            finalTenantId,
+            saleId,
+            customerId,
+            finalBrokerId,
+            { id: lot.id, project_id: lot.project_id || finalProjectId },
+            customerData,
+            { contractModel, cashInstallmentPaid: pmtType === "À vista" },
+          );
 
           let financeData = [];
           if (financePayloads.length > 0) {
@@ -5323,6 +5267,7 @@ export default function GISMap({
           mode={customerForm.mode}
           initialFormData={customerForm.editContext?.form}
           brokers={brokersList}
+          contractModel={tenantContractModel}
           onClose={() => setCustomerForm(null)}
           onCustomerValidationFailed={setCustomerContractValidation}
           onConfirm={async (data) => {

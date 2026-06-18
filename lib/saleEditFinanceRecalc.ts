@@ -5,6 +5,17 @@
 
 import type { LotFormConfirmPayload } from '@/components/map/CustomerLotFormModal';
 import { parseValidatedInstallmentsCount } from '@/lib/installmentsCount';
+import {
+  expectedSaleFinanceTotal,
+  resolveInstallmentPrincipal,
+  splitInstallmentAmounts,
+} from '@/lib/saleInstallmentCalc';
+
+export type SaleFinancePayloadOptions = {
+  contractModel?: unknown;
+  /** Na criação de venda à vista, marcar a parcela única como paga. */
+  cashInstallmentPaid?: boolean;
+};
 
 export type FinanceReceiptRow = {
   id: string;
@@ -50,6 +61,7 @@ export function buildSaleEditFinancePayloads(
   brokerId: string | null,
   lot: { id: string; project_id?: string | null },
   data: LotFormConfirmPayload,
+  options?: SaleFinancePayloadOptions,
 ): FinanceReceiptPayload[] {
   const financePayloads: FinanceReceiptPayload[] = [];
   const pmtType = data.payment_type || 'À vista';
@@ -78,7 +90,10 @@ export function buildSaleEditFinancePayloads(
       installment_number: 1,
       amount: fValue,
       due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
-      status: 'pendente',
+      status: options?.cashInstallmentPaid ? 'pago' : 'pendente',
+      ...(options?.cashInstallmentPaid
+        ? { paid_at: new Date().toISOString() }
+        : {}),
     });
   } else if (pmtType === 'Parcelado') {
     let currentInst = 1;
@@ -117,16 +132,14 @@ export function buildSaleEditFinancePayloads(
       });
     }
     if (data.first_installment_due_date) {
-      const totalRestante = Math.max(0, fValue - downPayment);
-      const parValue = Math.round((totalRestante / instCount) * 100) / 100;
-      let accumulated = 0;
+      const principal = resolveInstallmentPrincipal({
+        totalValue: fValue,
+        downPayment,
+        contractModel: options?.contractModel,
+      });
+      const amounts = splitInstallmentAmounts(principal, instCount);
       let cDate = new Date(data.first_installment_due_date + 'T12:00:00Z');
       for (let i = 0; i < instCount; i++) {
-        const isLast = i === instCount - 1;
-        const currentAmount = isLast
-          ? Number((totalRestante - accumulated).toFixed(2))
-          : parValue;
-        accumulated += currentAmount;
         financePayloads.push({
           tenant_id: tenantId,
           company_id: tenantId,
@@ -136,7 +149,7 @@ export function buildSaleEditFinancePayloads(
           project_id: lot.project_id || null,
           block_id: lot.id,
           installment_number: currentInst++,
-          amount: currentAmount,
+          amount: amounts[i] ?? 0,
           due_date: cDate.toISOString().split('T')[0],
           status: 'pendente',
         });
@@ -162,6 +175,11 @@ export function planPartialFinanceRecalc(
   receipts: FinanceReceiptRow[],
   newPayloads: FinanceReceiptPayload[],
   finalValue: number,
+  options?: {
+    contractModel?: unknown;
+    grossDownPayment?: number;
+    paymentType?: string;
+  },
 ): PartialRecalcPlan {
   const paid = receipts.filter(isPaidFinanceReceipt);
   const pending = receipts.filter(isPendingFinanceReceipt);
@@ -173,7 +191,13 @@ export function planPartialFinanceRecalc(
   const newPendingTotal = newPayloads
     .filter((p) => p.status === 'pendente')
     .reduce((s, p) => s + Number(p.amount || 0), 0);
-  const totalDiff = Math.abs(paidTotal + newPendingTotal - finalValue);
+  const expectedTotal = expectedSaleFinanceTotal({
+    finalValue,
+    grossDownPayment: options?.grossDownPayment,
+    contractModel: options?.contractModel,
+    paymentType: options?.paymentType,
+  });
+  const totalDiff = Math.abs(paidTotal + newPendingTotal - expectedTotal);
   const needsConfirm =
     totalDiff > 0.05 && (pending.length > 0 || newPendingTotal > 0);
 
