@@ -62,9 +62,11 @@ export const CONTRACT_PDF_PRINT_CSS = `
   }
   .sv-contract-document .contract-signatures--recanto {
     margin-top: 16px;
+    text-align: center;
   }
   .sv-contract-document .contract-signatures--recanto .signature-slot {
     margin-bottom: 18px;
+    text-align: center;
   }
   .sv-contract-document .contract-signatures--recanto .signature-slot:last-of-type {
     margin-bottom: 4px;

@@ -28,6 +28,13 @@ import {
   resolveRecantoContractProjectRecord,
   resolveRecantoPrimaveraProjectContractFields,
 } from '@/lib/recantoPrimaveraProjectContext';
+import {
+  buildRecantoFullAddress,
+  formatRecantoDocument,
+  formatRecantoPhone,
+  formatRecantoCep,
+  resolveRecantoSignatureCity,
+} from '@/lib/recantoPrimaveraContractFormat';
 
 export type RecantoPrimaveraContractParams = {
   tenant: Record<string, unknown>;
@@ -109,6 +116,8 @@ export type RecantoPrimaveraContractContext = {
   brokerNome: string;
   brokerDocumento: string;
   brokerCreci: string;
+  /** true quando sale.broker_id está preenchido */
+  hasBroker: boolean;
   dataContratoFmt: string;
   dataContratoExtensoFmt: string;
   dataContratoCidade: string;
@@ -132,19 +141,7 @@ function toTitleCase(str: string): string {
 }
 
 function formatCNPJCPF(val: string): string {
-  const clean = sanitizeContractField(val);
-  if (!clean) return '';
-  const numeric = clean.replace(/\D/g, '');
-  if (numeric.length === 14) {
-    return numeric.replace(
-      /(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,
-      '$1.$2.$3/$4-$5',
-    );
-  }
-  if (numeric.length === 11) {
-    return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-  }
-  return clean;
+  return formatRecantoDocument(val);
 }
 
 function formatSideMeasure(val: unknown): string {
@@ -183,6 +180,11 @@ function extractDueDay(raw: string | null | undefined): string {
 }
 
 function resolveBroker(sale: Record<string, unknown>) {
+  const hasBroker = Boolean(sanitizeContractField(sale.broker_id));
+  if (!hasBroker) {
+    return { hasBroker: false, nome: '', documento: '', creci: '' };
+  }
+
   const brokers =
     sale.brokers && typeof sale.brokers === 'object'
       ? (sale.brokers as Record<string, unknown>)
@@ -210,7 +212,7 @@ function resolveBroker(sale: Record<string, unknown>) {
     brokers?.creci ?? broker?.creci ?? sale.broker_creci,
   );
 
-  return { nome, documento, creci };
+  return { hasBroker: true, nome, documento, creci };
 }
 
 function buildBankBoletoText(profile: RecantoPrimaveraCompanyProfile): string {
@@ -289,10 +291,6 @@ function formatRecantoContractDateLine(
   if (!cityUf) return dateExtenso;
   if (!dateExtenso) return cityUf;
   return `${cityUf}, ${dateExtenso}`;
-}
-
-function buildFullAddress(parts: string[]): string {
-  return parts.filter((p) => sanitizeContractField(p)).join(', ');
 }
 
 export function buildRecantoPrimaveraContractContext(
@@ -443,13 +441,15 @@ export function buildRecantoPrimaveraContractContext(
   const clienteBairro = toTitleCase(sanitizeContractField(customer?.neighborhood));
   const clienteCidade = toTitleCase(sanitizeContractField(customer?.city));
   const clienteUf = sanitizeContractField(customer?.state_uf || customer?.state).toUpperCase();
-  const clienteCep = sanitizeContractField(customer?.zip_code || customer?.cep);
-  const clienteEnderecoCompleto = buildFullAddress([
-    clienteEndereco,
-    clienteBairro ? `Bairro ${clienteBairro}` : '',
-    clienteCep ? `CEP ${clienteCep}` : '',
-    clienteCidade && clienteUf ? `${clienteCidade} - ${clienteUf}` : clienteCidade,
-  ]);
+  const clienteCep = formatRecantoCep(customer?.zip_code || customer?.cep);
+  const clienteEnderecoCompleto = buildRecantoFullAddress({
+    street: clienteEndereco,
+    neighborhood: clienteBairro,
+    cep: clienteCep,
+    city: clienteCidade,
+    uf: clienteUf,
+    toTitleCase,
+  });
 
   const titleLine2Raw = (enterpriseName || 'CHACREAMENTO RECANTO PRIMAVERA')
     .toUpperCase()
@@ -466,8 +466,13 @@ export function buildRecantoPrimaveraContractContext(
   const dContrato = /^\d{4}-\d{2}-\d{2}$/.test(isoDate)
     ? new Date(`${isoDate}T12:00:00`)
     : new Date(rawContractDate);
-  const dataContratoCidade = forumCity || municipality || profile.city;
-  const dataContratoUf = uf || profile.state;
+  const signaturePlace = resolveRecantoSignatureCity({
+    project: projectRecord,
+    companyCity: profile.city,
+    companyUf: profile.state,
+  });
+  const dataContratoCidade = signaturePlace.city;
+  const dataContratoUf = signaturePlace.uf || uf || profile.state;
 
   return {
     profile,
@@ -485,7 +490,7 @@ export function buildRecantoPrimaveraContractContext(
     clienteNacionalidade: toTitleCase(
       sanitizeContractField(customer?.nationality) || 'Brasileira',
     ),
-    clienteTelefone: sanitizeContractField(customer?.phone),
+    clienteTelefone: formatRecantoPhone(customer?.phone),
     clienteEmail: sanitizeContractField(customer?.email),
     clienteEndereco,
     clienteBairro,
@@ -509,9 +514,14 @@ export function buildRecantoPrimaveraContractContext(
     conjugeCpf: spouse
       ? formatCNPJCPF(sanitizeContractField(spouse.cpf))
       : '',
-    conjugeTelefone: spouse ? sanitizeContractField(spouse.phone) : '',
+    conjugeTelefone: spouse ? formatRecantoPhone(spouse.phone) : '',
     conjugeEmail: spouse ? sanitizeContractField(spouse.email) : '',
-    conjugeEndereco: spouse ? toTitleCase(sanitizeContractField(spouse.address)) : '',
+    conjugeEndereco: spouse
+      ? buildRecantoFullAddress({
+          street: spouse.address,
+          toTitleCase,
+        })
+      : '',
     quadra,
     lote,
     lotArea,
@@ -549,6 +559,7 @@ export function buildRecantoPrimaveraContractContext(
     brokerNome: broker.nome,
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,
+    hasBroker: broker.hasBroker,
     dataContratoFmt: dContrato.toLocaleDateString('pt-BR'),
     dataContratoExtensoFmt: formatRecantoContractDateLine(
       dataContratoCidade,

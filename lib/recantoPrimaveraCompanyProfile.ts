@@ -2,6 +2,8 @@
  * Perfil cadastral do contrato Recanto Primavera — somente Configurações → Empresa.
  */
 
+import { formatRecantoPhone, formatRecantoCep } from '@/lib/recantoPrimaveraContractFormat';
+
 export type RecantoPrimaveraCompanyProfile = {
   vendorName: string;
   nationality: string;
@@ -109,14 +111,14 @@ export function normalizeRecantoPrimaveraCompanyProfile(
     documentRaw,
     documentFmt,
     documentLabel,
-    phone: pickString(c.contract_legal_phone, c.phone),
+    phone: formatRecantoPhone(pickString(c.contract_legal_phone, c.phone)),
     email: pickString(c.contract_legal_email, c.email),
     address: toTitleCase(
       pickString(c.contract_legal_address, c.address, c.endereco),
     ),
     city: toTitleCase(pickString(c.city, c.cidade)),
     state: pickString(c.state, c.uf).toUpperCase(),
-    zip: pickString(c.zip_code, c.cep),
+    zip: formatRecantoCep(pickString(c.zip_code, c.cep)),
     logoUrl: pickString(c.logo_url),
     signatureUrl: pickString(c.signature_url),
     bankName: pickString(c.contract_bank_name),

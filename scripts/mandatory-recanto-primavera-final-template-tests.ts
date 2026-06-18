@@ -96,6 +96,7 @@ const sale = {
   down_payment: 10000,
   first_installment_due_date: '2026-07-15',
   created_at: '2026-06-15',
+  broker_id: 'broker-test-1',
   sale_spouse_name: 'Maria Santos',
   sale_spouse_nationality: 'Brasileira',
   sale_spouse_marital_status: 'Casada',
@@ -152,7 +153,8 @@ function testSpouseBlockConditional() {
   assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge com dados');
   assert(html.includes('Maria Santos'), 'nome cônjuge');
   assert(html.includes('111.222.333-44'), 'cpf cônjuge');
-  assert(html.includes('CÔNJUGE ANUENTE: Maria Santos'), 'assinatura cônjuge com nome');
+  assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
+  assert(html.includes('Maria Santos'), 'nome cônjuge na assinatura');
 
   const htmlNoSpouse = generateContractHTML({
     tenant: ivanildeTenant,
@@ -331,9 +333,9 @@ function testContractWithSpouseCpfOnly() {
     },
     contractDate: '2026-06-17',
   });
-  assert(html.includes('<strong>Esposo(A)/Cônjuge:</strong>'), 'bloco cônjuge só com CPF');
   assert(html.includes('111.222.333-44'), 'cpf cônjuge');
   assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
+  assertNotIncludes(html, '<strong>Esposo(A)/Cônjuge:</strong>', 'sem label sem nome');
   console.log('OK testContractWithSpouseCpfOnly');
 }
 
@@ -351,10 +353,17 @@ function testBrokerEmpty() {
     customer,
     project: recantoProject,
     block,
-    sale: { ...sale, brokers: undefined, broker: undefined, broker_name: '' },
+    sale: {
+      ...sale,
+      broker_id: null,
+      brokers: undefined,
+      broker: undefined,
+      broker_name: '',
+    },
     contractDate: '2026-06-17',
   });
-  assert(html.includes('CORRETOR: &nbsp;'), 'corretor em branco');
+  assertNotIncludes(html, 'CORRETOR', 'sem bloco corretor');
+  assertNotIncludes(html, 'CPF/CRECI', 'sem linha cpf/creci corretor');
   console.log('OK testBrokerEmpty');
 }
 
@@ -426,14 +435,14 @@ function testDueDayParagraph() {
 function testSignaturesFormat() {
   const html = buildHtml();
   assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
-  assert(html.includes('CORRETOR:'), 'assinatura corretor');
-  assert(html.includes('CPF/CRECI:'), 'cpf/creci corretor');
-  assert(html.includes('Testemunhas:'), 'testemunhas');
+  assert(html.includes('CORRETOR'), 'assinatura corretor');
+  assert(html.includes('CRECI:'), 'creci corretor');
+  assert(html.includes('Testemunhas'), 'testemunhas');
   assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
   assert(html.includes('Carlos Corretor'), 'nome corretor');
   assert(html.includes('555.666.777-88'), 'cpf corretor');
   assert(html.includes('12345-PA'), 'creci');
-  assertNotIncludes(html, 'Carlos Corretor — CPF', 'sem nome duplicado na linha CPF/CRECI');
+  assertNotIncludes(html, 'CPF/CRECI:', 'sem linha combinada cpf/creci');
   console.log('OK testSignaturesFormat');
 }
 
@@ -597,6 +606,131 @@ function testStoredContractUnchanged() {
   console.log('OK testStoredContractUnchanged');
 }
 
+function testFinalScenarioNoBrokerNoSpouse() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      broker_id: null,
+      brokers: undefined,
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+    },
+    contractDate: '2026-06-17',
+  });
+  assertNotIncludes(html, 'CORRETOR', 'cenário 1 sem corretor');
+  assertNotIncludes(html, 'Esposo(A)/Cônjuge', 'cenário 1 sem cônjuge');
+  assertNotIncludes(html, 'CÔNJUGE ANUENTE', 'cenário 1 sem assinatura cônjuge');
+  console.log('OK testFinalScenarioNoBrokerNoSpouse');
+}
+
+function testFinalScenarioBrokerNoSpouse() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      broker_id: 'broker-1',
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('CORRETOR'), 'cenário 2 corretor');
+  assert(html.includes('Carlos Corretor'), 'cenário 2 nome corretor');
+  assertNotIncludes(html, 'Esposo(A)/Cônjuge', 'cenário 2 sem cônjuge');
+  console.log('OK testFinalScenarioBrokerNoSpouse');
+}
+
+function testFinalScenarioBrokerAndSpouse() {
+  const html = buildHtml();
+  assert(html.includes('CORRETOR'), 'cenário 3 corretor');
+  assert(html.includes('CÔNJUGE ANUENTE'), 'cenário 3 cônjuge');
+  assert(html.includes('Maria Santos'), 'cenário 3 nome cônjuge');
+  console.log('OK testFinalScenarioBrokerAndSpouse');
+}
+
+function testFormatMasksApplied() {
+  const html = buildHtml();
+  assert(html.includes('326.412.811-04'), 'cpf vendedor mascarado');
+  assert(html.includes('987.654.321-00'), 'cpf comprador mascarado');
+  assert(html.includes('111.222.333-44'), 'cpf cônjuge mascarado');
+  assert(html.includes('(94) 99222-3344') || html.includes('(94) 9922-2334'), 'telefone vendedor');
+  assert(html.includes('68.515-000') || html.includes('68515'), 'cep comprador');
+  console.log('OK testFormatMasksApplied');
+}
+
+function testAddressDedup() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: {
+      ...customer,
+      address: 'Rua B, 200',
+      neighborhood: 'Cidade Nova',
+      city: 'Parauapebas',
+      state: 'PA',
+      zip_code: '68515000',
+    },
+    project: recantoProject,
+    block,
+    sale,
+    contractDate: '2026-06-17',
+  });
+  const dupCity = (html.match(/Parauapebas\s*-\s*PA/gi) || []).length;
+  assert(dupCity <= 2, 'cidade não duplicada excessivamente no endereço');
+  assertNotIncludes(html, 'Bairro Cidade Nova, Bairro Cidade Nova', 'bairro não duplicado');
+  console.log('OK testAddressDedup');
+}
+
+function testSignatureCityPriority() {
+  const html = generateContractHTML({
+    tenant: { ...ivanildeTenant, city: 'Belém', state: 'PA' },
+    customer,
+    project: {
+      ...recantoProject,
+      forum_city: 'Parauapebas',
+      city: 'Marabá',
+    },
+    block,
+    sale,
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('Parauapebas/PA'), 'forum_city priorizado na data');
+  assertNotIncludes(html, 'Marabá/PA,', 'city do projeto não usada se forum_city existe');
+  console.log('OK testSignatureCityPriority');
+}
+
+function testNoEmptyFieldLabels() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer: {
+      ...customer,
+      phone: '',
+      email: '',
+      rg: '',
+    },
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      broker_id: null,
+      brokers: undefined,
+      sale_spouse_name: null,
+      sale_spouse_cpf: null,
+    },
+    contractDate: '2026-06-17',
+  });
+  assertNotIncludes(html, '<strong>Telefone:</strong> &nbsp;', 'sem telefone vazio');
+  assertNotIncludes(html, '<strong>E-mail:</strong> &nbsp;', 'sem email vazio');
+  assertNotIncludes(html, '<strong>RG:</strong> &nbsp;', 'sem rg vazio');
+  console.log('OK testNoEmptyFieldLabels');
+}
+
 async function writeSampleArtifacts() {
   const outDir = path.join(process.cwd(), 'tmp');
   fs.mkdirSync(outDir, { recursive: true });
@@ -714,6 +848,13 @@ async function main() {
   testSignaturesFormat();
   testNoBodyFooter();
   testNoUndefinedNullNaN();
+  testFinalScenarioNoBrokerNoSpouse();
+  testFinalScenarioBrokerNoSpouse();
+  testFinalScenarioBrokerAndSpouse();
+  testFormatMasksApplied();
+  testAddressDedup();
+  testSignatureCityPriority();
+  testNoEmptyFieldLabels();
   testMenesesUnchanged();
   testSaasUnchanged();
   testStoredContractUnchanged();
