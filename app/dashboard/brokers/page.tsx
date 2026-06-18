@@ -35,9 +35,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } 
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
   BrokerDeleteError,
+  BrokerDeleteResult,
   computeBrokerDashboardStats,
-  deactivateOrDeleteBroker,
   filterBrokersForActiveList,
+  isBrokerActiveForList,
   logBrokerDeleteAudit,
   rankBrokersByMonthlySales,
   removeBrokerFromList,
@@ -263,15 +264,7 @@ export default function CorretoresPage() {
         const comissao_pendente = brokerDashboardPendingTotal(bComms);
         const comissao_paga = bComms.filter(cc => pagoStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
         
-        let isActive = true;
-        if (b.status) {
-           const st = String(b.status).toLowerCase();
-           if (!['ativo', 'active'].includes(st)) {
-               isActive = false;
-           }
-        } else if (b.active === false) {
-           isActive = false;
-        }
+        const isActive = isBrokerActiveForList(b);
 
         return {
           ...b,
@@ -756,15 +749,39 @@ export default function CorretoresPage() {
 
     try {
       setIsDeleting(true);
-      const rlsCtx = await resolveRlsContext(user);
 
-      const result = await deactivateOrDeleteBroker(supabase, rlsCtx, id, name, {
-        userId: user.id,
-        userRole: user.role,
-        userTenantId: user.tenant_id || user.company_id || null,
+      const resolvedTenantId = await resolveActiveTenantId(user);
+      if (user.role !== 'SUPER_ADMIN' && !resolvedTenantId) {
+        throw new BrokerDeleteError('Usuário não tem empresa associada.', {});
+      }
+
+      const params = new URLSearchParams();
+      if (resolvedTenantId) params.set('tenantId', resolvedTenantId);
+      if (typeof window !== 'undefined') {
+        const impersonating = localStorage.getItem('impersonating_tenant_id');
+        if (impersonating) params.set('impersonatingTenantId', impersonating);
+      }
+
+      const response = await fetch(`/api/brokers/${id}?${params.toString()}`, {
+        method: 'DELETE',
+        credentials: 'include',
       });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new BrokerDeleteError(
+          body.error ||
+            'Não foi possível excluir o corretor. Verifique permissões ou tenant ativo.',
+          { brokerId: id },
+        );
+      }
 
-      // 6. Atualizar lista imediatamente e recarregar do banco
+      const result: BrokerDeleteResult = {
+        mode: body.mode,
+        brokerId: body.brokerId || id,
+        brokerName: body.brokerName || name,
+        effectiveTenantId: body.effectiveTenantId || resolvedTenantId || '',
+      };
+
       setCorretores((prev) => removeBrokerFromList(prev, id));
       setDeleteModal(null);
 

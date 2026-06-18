@@ -405,3 +405,161 @@ export function resolveEffectiveBrokerTenant(params: {
     source: 'broker_tenant' as const,
   };
 }
+
+function resolveUsersTenantId(row?: { tenant_id?: string | null; company_id?: string | null } | null): string | null {
+  const tenantId = row?.tenant_id || row?.company_id;
+  return tenantId ? String(tenantId).trim() : null;
+}
+
+/** Corretor operacional — bloqueia promoção a administrador. */
+export function isBrokerRecordActive(
+  broker: Pick<BrokerRow, 'active' | 'status' | 'deleted_at'> | null | undefined,
+): boolean {
+  if (!broker) return false;
+  return isBrokerActiveForList(broker);
+}
+
+export async function findBrokerForUserInTenant(
+  admin: SupabaseClient,
+  userId: string,
+  tenantId: string,
+): Promise<BrokerRow | null> {
+  const { data, error } = await admin
+    .from('brokers')
+    .select('id, tenant_id, company_id, email, active, status, deleted_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const brokerTenantId = readBrokerTenantId(data as BrokerRow);
+  if (brokerTenantId !== tenantId) return null;
+  return data as BrokerRow;
+}
+
+export type BrokerAdminEmailConflictState =
+  | 'available'
+  | 'same_tenant_admin'
+  | 'same_tenant_active_broker'
+  | 'same_tenant_inactive_broker_promotable'
+  | 'other_tenant';
+
+export function resolveBrokerAdminEmailConflict(params: {
+  existingUser: Record<string, unknown> | null;
+  brokerRecord: BrokerRow | null;
+  tenantId: string;
+  isAdminRole: (role: string) => boolean;
+}): BrokerAdminEmailConflictState {
+  const { existingUser, brokerRecord, tenantId, isAdminRole } = params;
+  if (!existingUser) return 'available';
+
+  const existingTenant = resolveUsersTenantId(existingUser);
+  if (existingTenant && existingTenant !== tenantId) return 'other_tenant';
+  if (existingTenant !== tenantId) return 'available';
+
+  const role = String(existingUser.role || '').toUpperCase();
+  if (isAdminRole(role)) return 'same_tenant_admin';
+
+  if (brokerRecord && isBrokerRecordActive(brokerRecord)) {
+    return 'same_tenant_active_broker';
+  }
+
+  return 'same_tenant_inactive_broker_promotable';
+}
+
+export function brokerAdminEmailConflictMessage(state: BrokerAdminEmailConflictState): string | null {
+  switch (state) {
+    case 'other_tenant':
+      return 'Este e-mail já está vinculado a outra empresa.';
+    case 'same_tenant_active_broker':
+      return 'Este e-mail pertence a um corretor ativo. Desative ou exclua o corretor antes de cadastrar como administrador.';
+    case 'same_tenant_admin':
+      return 'Este e-mail já pertence a um administrador desta empresa.';
+    default:
+      return null;
+  }
+}
+
+/** Exclusão via service role — somente tabela brokers; nunca auth.users/users admin. */
+export async function deleteBrokerViaAdmin(
+  admin: SupabaseClient,
+  brokerId: string,
+  userCtx: BrokerDeleteUserContext,
+  isSuperAdmin: boolean,
+): Promise<BrokerDeleteResult> {
+  const { data, error } = await admin
+    .from('brokers')
+    .select('id, name, full_name, tenant_id, company_id, active, status, deleted_at')
+    .eq('id', brokerId)
+    .maybeSingle();
+
+  if (error) {
+    throw new BrokerDeleteError('Não foi possível localizar o corretor.', {
+      brokerId,
+      supabaseError: error.message,
+    });
+  }
+  if (!data) {
+    throw new BrokerDeleteError('Corretor não encontrado.', { brokerId });
+  }
+
+  const brokerRow = data as BrokerRow;
+  const brokerTenantId = readBrokerTenantId(brokerRow);
+  if (!brokerTenantId) {
+    throw new BrokerDeleteError('Corretor sem empresa vinculada.', { brokerId });
+  }
+
+  assertCanDeleteBrokerInTenant({
+    userRole: userCtx.userRole,
+    userTenantId: userCtx.userTenantId,
+    brokerTenantId,
+    isSuperAdmin,
+  });
+
+  const resolvedName = brokerRow.name || brokerRow.full_name || 'Corretor';
+  const { salesCount, commissionsCount } = await brokerHasCriticalHistory(
+    admin,
+    brokerId,
+    brokerTenantId,
+  );
+  const mode = resolveBrokerDeleteMode(salesCount, commissionsCount);
+
+  if (mode === 'soft') {
+    const { data: updated, error: upErr } = await buildBrokerMutation(
+      admin,
+      brokerRow,
+      brokerTenantId,
+      'update',
+      buildBrokerSoftDeletePatch(),
+    ).select('id');
+
+    if (upErr || !updated?.length) {
+      throw new BrokerDeleteError(
+        'Não foi possível desativar o corretor. Verifique permissões ou tenant ativo.',
+        { brokerId, mode },
+      );
+    }
+  } else {
+    const { data: deleted, error: delErr } = await buildBrokerMutation(
+      admin,
+      brokerRow,
+      brokerTenantId,
+      'delete',
+    ).select('id');
+
+    if (delErr || !deleted?.length) {
+      throw new BrokerDeleteError(
+        'Não foi possível excluir o corretor. Verifique permissões ou tenant ativo.',
+        { brokerId, mode },
+      );
+    }
+  }
+
+  return {
+    mode,
+    brokerId,
+    brokerName: resolvedName,
+    effectiveTenantId: brokerTenantId,
+  };
+}

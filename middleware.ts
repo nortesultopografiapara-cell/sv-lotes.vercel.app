@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -62,23 +63,11 @@ export async function middleware(request: NextRequest) {
   if (isPublicRoute) {
     if (user || isDemoMode) {
       if (isLanding) {
-        const loginRole = String(userData?.role || '').toUpperCase();
-        url.pathname =
-          loginRole === 'BROKER' || loginRole === 'CORRETOR'
-            ? '/map'
-            : loginRole === 'OWNER'
-              ? '/dashboard'
-              : '/dashboard';
+        url.pathname = resolveLoginRedirectPath(userData?.role);
         return NextResponse.redirect(url);
       }
       if (url.pathname === '/login') {
-        const loginRole = String(userData?.role || '').toUpperCase();
-        url.pathname =
-          loginRole === 'BROKER' || loginRole === 'CORRETOR'
-            ? '/map'
-            : loginRole === 'OWNER'
-              ? '/dashboard'
-              : '/dashboard';
+        url.pathname = resolveLoginRedirectPath(userData?.role);
         return NextResponse.redirect(url);
       }
     }

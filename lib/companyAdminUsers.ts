@@ -4,6 +4,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  findBrokerForUserInTenant,
+  resolveBrokerAdminEmailConflict,
+  brokerAdminEmailConflictMessage,
+} from '@/lib/brokerDelete';
+import {
   generateTempPassword,
   resolveOwnersAdminContextFromRequest,
   resolveUsersTenantId,
@@ -226,20 +231,27 @@ export async function createCompanyAdminUser(
     throw new Error(quota.error || 'Limite de administradores atingido.');
   }
 
-  const existing = await findUserByEmailGlobal(admin, email);
-  if (existing) {
-    const existingTenant = resolveUsersTenantId(existing);
-    if (existingTenant && existingTenant !== tenantId) {
-      throw new Error('Este e-mail já está vinculado a outra empresa.');
-    }
-    if (existingTenant === tenantId && !isCompanyAdminUserRole(String(existing.role))) {
-      throw new Error('Este e-mail já pertence a outro perfil nesta empresa.');
-    }
-  }
-
   const temporaryPassword = params.password?.trim() || generateTempPassword(10);
   let authUserId: string | null = null;
   let isExisting = false;
+
+  const existing = await findUserByEmailGlobal(admin, email);
+  if (existing) {
+    const brokerRecord = await findBrokerForUserInTenant(admin, String(existing.id), tenantId);
+    const conflict = resolveBrokerAdminEmailConflict({
+      existingUser: existing,
+      brokerRecord,
+      tenantId,
+      isAdminRole: isCompanyAdminUserRole,
+    });
+    const conflictMessage = brokerAdminEmailConflictMessage(conflict);
+    if (conflictMessage) {
+      throw new Error(conflictMessage);
+    }
+    if (conflict === 'same_tenant_inactive_broker_promotable') {
+      isExisting = true;
+    }
+  }
 
   const { data: authUser, error: authError } = await admin.auth.admin.createUser({
     email,

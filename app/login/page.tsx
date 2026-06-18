@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -115,13 +116,7 @@ export default function LoginPage() {
             }
           });
 
-        if (userData?.role === 'BROKER' || userData?.role === 'CORRETOR') {
-           window.location.href = '/map';
-        } else if (userData?.role === 'OWNER') {
-           window.location.href = '/dashboard';
-        } else {
-           window.location.href = '/dashboard';
-        }
+        window.location.href = resolveLoginRedirectPath(userData?.role);
       }
     } catch (err: any) {
       console.error('LOGIN EXCEPTION:', err);
