@@ -70,11 +70,21 @@ export type RecantoPrimaveraContractContext = {
   lote: string;
   lotArea: string;
   areaM2: string;
+  enterpriseName: string;
+  enterpriseLocation: string;
+  municipality: string;
+  uf: string;
+  frontMeasure: string;
+  backMeasure: string;
+  rightMeasure: string;
+  leftMeasure: string;
   lotSidesText: string;
   lotMeasuresText: string;
   lotObjectText: string;
   lotBoundariesClause: string;
   curvaClause: string;
+  forumCity: string;
+  forumUf: string;
   foroText: string;
   valorTotalFmt: string;
   valorTotalExtenso: string;
@@ -128,6 +138,15 @@ function formatCNPJCPF(val: string): string {
     return numeric.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   }
   return clean;
+}
+
+function formatSideMeasure(val: unknown): string {
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return num.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatAreaM2(val: unknown): string {
@@ -318,6 +337,11 @@ export function buildRecantoPrimaveraContractContext(
     curvaInfo && curvaInfo.totalLength > 0 ? formatCurveClause(curvaInfo) : '';
 
   const sides = resolveContractLotSides(block);
+  const frontMeasure = formatSideMeasure(sides.frente);
+  const backMeasure = formatSideMeasure(sides.fundo);
+  const rightMeasure = formatSideMeasure(sides.ladoDireito);
+  const leftMeasure = formatSideMeasure(sides.ladoEsquerdo);
+
   const lotSidesText = [
     sides.frente
       ? `frente ${Number(sides.frente).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`
@@ -340,8 +364,11 @@ export function buildRecantoPrimaveraContractContext(
 
   const enterpriseName =
     profile.enterpriseName || 'Chacreamento Recanto Primavera';
+  const enterpriseLocation = profile.enterpriseLocation || '';
   const municipality = profile.enterpriseMunicipality || 'Parauapebas';
   const uf = profile.enterpriseUf || 'PA';
+  const forumCity = profile.forumCity || municipality;
+  const forumUf = profile.enterpriseUf || profile.state || 'PA';
 
   const lotObjectText = buildLotObjectText(
     lote,
@@ -452,11 +479,21 @@ export function buildRecantoPrimaveraContractContext(
     lote,
     lotArea,
     areaM2,
+    enterpriseName,
+    enterpriseLocation,
+    municipality,
+    uf,
+    frontMeasure,
+    backMeasure,
+    rightMeasure,
+    leftMeasure,
     lotSidesText,
     lotMeasuresText,
     lotObjectText,
     lotBoundariesClause,
     curvaClause,
+    forumCity,
+    forumUf,
     foroText,
     valorTotalFmt: formatBRL(valTotal),
     valorTotalExtenso: formatExtensoCurrency(valTotal),

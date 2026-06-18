@@ -128,13 +128,11 @@ export function buildRecantoPrimaveraSignaturesHtml(
     .filter((v) => sanitizeContractField(v))
     .join(' - ');
 
-  const brokerLine = [
-    ctx.brokerNome,
-    ctx.brokerDocumento ? `CPF ${ctx.brokerDocumento}` : '',
-    ctx.brokerCreci ? `CRECI ${ctx.brokerCreci}` : '',
-  ]
-    .filter(Boolean)
-    .join(' — ');
+  const brokerDocParts = [
+    ctx.brokerDocumento ? ctx.brokerDocumento : '',
+    ctx.brokerCreci ? ctx.brokerCreci : '',
+  ].filter(Boolean);
+  const brokerDocLine = brokerDocParts.join(' / ') || '&nbsp;';
 
   return `
     <div class="contract-clause">
@@ -169,7 +167,7 @@ export function buildRecantoPrimaveraSignaturesHtml(
       <div class="signature-slot">
         <div style="border-top: 1px solid #111; margin: 0 auto 5px auto; width: 60%;"></div>
         <p style="margin: 0; font-weight: bold; text-transform: uppercase;">CORRETOR: ${ctx.brokerNome || '&nbsp;'}</p>
-        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF/CRECI: ${brokerLine || '&nbsp;'}</p>
+        <p style="margin: 0; font-size: 10pt; font-weight: normal;">CPF/CRECI: ${brokerDocLine}</p>
       </div>
 
       <div class="signature-slot">

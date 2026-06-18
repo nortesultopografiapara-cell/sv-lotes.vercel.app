@@ -11,7 +11,7 @@ import {
   RECANTO_PRIMAVERA_CONTRACT_TITLE_LINE1,
   RECANTO_PRIMAVERA_LEGAL_MARKER,
 } from '../lib/recantoPrimaveraContractLegal';
-import { RECANTO_PRIMAVERA_CLAUSE_MARKERS } from '../lib/recantoPrimaveraContractClauses';
+import { RECANTO_PRIMAVERA_CLAUSE_MARKERS, RECANTO_PRIMAVERA_LITERAL_PHRASES } from '../lib/recantoPrimaveraContractClauses';
 import { buildRecantoPrimaveraPdfChrome } from '../lib/recantoPrimaveraContractPdf';
 
 function assert(cond: boolean, msg: string) {
@@ -169,6 +169,25 @@ function testPdfChromeUsesCpfLabel() {
   console.log('OK testPdfChromeUsesCpfLabel');
 }
 
+function testLiteralPhrasesNotSummarized() {
+  const html = buildHtml();
+  for (const phrase of RECANTO_PRIMAVERA_LITERAL_PHRASES) {
+    assert(html.includes(phrase), `frase literal DOCX: ${phrase}`);
+  }
+  console.log('OK testLiteralPhrasesNotSummarized');
+}
+
+function testClauseFirstBuyerDeclaration() {
+  const html = buildHtml();
+  assert(
+    html.includes(
+      'O(A) COMPRADOR(A) declara, sob as penas da lei civil e criminal',
+    ),
+    'cláusula primeira literal comprador',
+  );
+  console.log('OK testClauseFirstBuyerDeclaration');
+}
+
 function testDocxClausesPresent() {
   const html = buildHtml();
   for (const marker of RECANTO_PRIMAVERA_CLAUSE_MARKERS) {
@@ -222,17 +241,21 @@ function testPaymentTableUsesTotalNotMinusSignal() {
 function testObjectClauseFormat() {
   const html = buildHtml();
   assert(html.includes('LOTE DE TERRAS CHÁCARAS'), 'objeto chácaras');
-  assert(html.includes('QUADRA'), 'quadra no objeto');
+  assert(html.includes('QUADRA nº'), 'quadra no objeto');
   assert(html.includes('Chacreamento Recanto Primavera'), 'empreendimento no objeto');
   assert(html.includes('Parauapebas/PA'), 'município no objeto');
+  assert(html.includes('Acesso a Palmares II'), 'localização empreendimento');
   assert(html.includes('300,00 m²'), 'área no objeto');
-  assert(html.includes('frente'), 'medidas no objeto');
+  assert(html.includes('pelo lado direito'), 'medida lado direito');
+  assert(html.includes('pelo lado esquerdo'), 'medida lado esquerdo');
+  assert(html.includes('12,00m</strong> de frente'), 'medida frente');
   console.log('OK testObjectClauseFormat');
 }
 
 function testBankBoletoParagraph() {
   const html = buildHtml();
-  assert(html.includes('boleto bancário'), 'pagamento por boleto');
+  assert(html.includes('exclusivamente por <strong>boleto bancário</strong>'), 'pagamento por boleto');
+  assert(html.includes('A falta de recebimento do boleto bancário não isenta'), 'parágrafo quarto boleto');
   assert(html.includes('Sicredi'), 'banco');
   assert(html.includes('0804'), 'agência');
   assert(html.includes('91047-5'), 'conta');
@@ -254,11 +277,14 @@ function testDueDayParagraph() {
 function testSignaturesFormat() {
   const html = buildHtml();
   assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
-  assert(html.includes('CORRETOR'), 'assinatura corretor');
+  assert(html.includes('CORRETOR:'), 'assinatura corretor');
+  assert(html.includes('CPF/CRECI:'), 'cpf/creci corretor');
   assert(html.includes('Testemunhas:'), 'testemunhas');
   assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
   assert(html.includes('Carlos Corretor'), 'nome corretor');
+  assert(html.includes('555.666.777-88'), 'cpf corretor');
   assert(html.includes('12345-PA'), 'creci');
+  assertNotIncludes(html, 'Carlos Corretor — CPF', 'sem nome duplicado na linha CPF/CRECI');
   console.log('OK testSignaturesFormat');
 }
 
@@ -356,6 +382,8 @@ async function main() {
   testSpouseBlockAlwaysPresent();
   testNoLogoBeforeTitle();
   testPdfChromeUsesCpfLabel();
+  testLiteralPhrasesNotSummarized();
+  testClauseFirstBuyerDeclaration();
   testDocxClausesPresent();
   testRemovedMenesesClauses();
   testSinalNotEntrada();
