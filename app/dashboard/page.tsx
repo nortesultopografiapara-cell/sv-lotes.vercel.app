@@ -552,6 +552,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 icon={TrendingUp}
                 color="#10b981"
                 loading={loading}
+                isCurrency
                 subtitle="Mês corrente"
               />
               <DashboardMetricKpi
@@ -560,6 +561,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 icon={FileText}
                 color="#3b82f6"
                 loading={loading}
+                isCurrency
                 subtitle="Parcelas pendentes"
               />
               <DashboardMetricKpi
@@ -568,6 +570,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 icon={AlertCircle}
                 color="#ef4444"
                 loading={loading}
+                isCurrency
                 subtitle="Valor em atraso"
               />
             </div>

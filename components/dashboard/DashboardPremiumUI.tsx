@@ -17,7 +17,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ArrowDownRight, ArrowUpRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { formatDashboardKpiPrimaryValue } from '@/lib/dashboardKpiFormat';
 
 const CHART_TOOLTIP = {
   backgroundColor: 'rgba(15, 20, 28, 0.95)',
@@ -102,6 +103,7 @@ export function DashboardMetricKpi({
   loading,
   trend,
   subtitle,
+  isCurrency = false,
 }: {
   title: string;
   value: number;
@@ -110,6 +112,8 @@ export function DashboardMetricKpi({
   loading?: boolean;
   trend?: string;
   subtitle?: string;
+  /** Quando true, value é exibido como moeda; quando false, como quantidade inteira. */
+  isCurrency?: boolean;
 }) {
   return (
     <div className="dash-kpi-metric relative overflow-hidden">
@@ -129,17 +133,34 @@ export function DashboardMetricKpi({
           <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] truncate">
             {title}
           </p>
-          <p className="text-base font-bold text-[var(--text-primary)] tabular-nums truncate mt-0.5">
-            {new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-              maximumFractionDigits: 0,
-            }).format(value)}
+          <p
+            className={`tabular-nums truncate mt-0.5 ${
+              isCurrency
+                ? 'text-base font-bold text-[var(--text-primary)]'
+                : 'text-xl font-bold text-[var(--text-primary)]'
+            }`}
+            style={isCurrency ? undefined : { fontWeight: 700 }}
+          >
+            {loading ? (
+              <span className="dash-skeleton inline-block h-6 w-12" />
+            ) : isCurrency ? (
+              formatDashboardKpiPrimaryValue(value, true)
+            ) : (
+              <CountUp end={value} duration={1.2} separator="." decimals={0} />
+            )}
           </p>
-          <p className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-0.5">
-            {trend && <ArrowUpRight className="h-3 w-3 text-emerald-500 shrink-0" />}
-            {subtitle || trend}
-          </p>
+          {(subtitle || trend) && (
+            <p
+              className={`truncate flex items-center gap-0.5 ${
+                isCurrency
+                  ? 'text-[10px] text-[var(--text-muted)]'
+                  : 'text-[11px] text-[var(--text-muted)] opacity-75 font-medium tabular-nums'
+              }`}
+            >
+              {trend && <ArrowUpRight className="h-3 w-3 text-emerald-500 shrink-0" />}
+              {subtitle || trend}
+            </p>
+          )}
         </div>
       </div>
     </div>
