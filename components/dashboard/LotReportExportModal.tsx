@@ -59,9 +59,9 @@ export function LotReportExportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white text-gray-900 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+    <div className="sv-modal-overlay z-[1200]">
+      <div className="sv-modal-shell bg-white text-gray-900 shadow-2xl">
+        <div className="sv-modal-header flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Exportar Relatório de Lotes</h2>
             <p className="text-xs text-gray-500 mt-0.5">{projectLabel}</p>
@@ -76,7 +76,8 @@ export function LotReportExportModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="sv-modal-body p-5 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Formato</label>
             <div className="grid grid-cols-2 gap-2">
@@ -162,7 +163,9 @@ export function LotReportExportModal({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          </div>
+
+          <div className="sv-modal-footer border-t border-gray-200 bg-white px-5 py-4 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}

@@ -517,7 +517,7 @@ function OperationalDashboard({ user }: { user: any }) {
   };
 
   return (
-    <div className="dashboard-premium dashboard-premium--compact sv-page relative flex flex-col overflow-hidden">
+    <div className="dashboard-premium dashboard-premium--compact sv-page sv-page--scroll-y relative flex flex-col min-h-0">
       <div className="dash-page-inner p-3 md:p-4 lg:p-5 flex-1 max-w-full w-full mx-auto min-w-0">
         <header className="dash-header">
           <div>

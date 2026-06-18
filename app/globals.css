@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./theme-tokens.css";
+@import "./mobile-layout.css";
 
 @theme {
   --font-sans: var(--font-inter);
@@ -85,6 +86,11 @@
 
   .sv-page--scroll-y {
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sv-page--mobile-pad {
+    padding-bottom: var(--sv-mobile-content-pad-bottom);
   }
 
   .sv-table-panel {

@@ -106,11 +106,11 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
   if (!activeModal) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[300] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-[#121318] border border-gray-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className="sv-modal-overlay z-[300]">
+      <div className="sv-modal-shell bg-[#121318] border border-gray-800 animate-in fade-in zoom-in duration-200">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-[#151a23]">
+        <div className="sv-modal-header px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-[#151a23]">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             {activeModal === 'profile' && <><User className="w-5 h-5 text-[var(--color-primary)]"/> Meu Perfil</>}
             {activeModal === 'password' && <><Lock className="w-5 h-5 text-[var(--color-primary)]"/> Alterar Senha</>}
@@ -122,7 +122,7 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="sv-modal-body p-6">
           
           {activeModal === 'profile' && (
             <div className="space-y-4">

@@ -1,0 +1,170 @@
+/**
+ * Testes obrigatórios — layout mobile (rolagem vertical + bottom nav + modais).
+ * npx tsx scripts/mandatory-mobile-scroll-layout-tests.ts
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  MOBILE_BOTTOM_NAV_HEIGHT_PX,
+  MOBILE_CONTENT_PAD_BOTTOM_CLASS,
+  MOBILE_LAYOUT_CSS_VAR_BOTTOM_NAV,
+  MOBILE_LAYOUT_CSS_VAR_CONTENT_PAD,
+  MOBILE_MODAL_SOURCE_FILES,
+  MOBILE_PAGE_SOURCE_FILES,
+  MOBILE_SCROLL_AREA_CLASS,
+  SV_MODAL_BODY_CLASS,
+  SV_MODAL_FOOTER_CLASS,
+  SV_MODAL_OVERLAY_CLASS,
+  SV_MODAL_SHELL_CLASS,
+} from '../lib/mobileLayout';
+
+const ROOT = process.cwd();
+
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(msg);
+}
+
+function read(relPath: string): string {
+  const full = path.join(ROOT, relPath);
+  assert(fs.existsSync(full), `arquivo ausente: ${relPath}`);
+  return fs.readFileSync(full, 'utf8');
+}
+
+function testMobileLayoutLib() {
+  assert(MOBILE_BOTTOM_NAV_HEIGHT_PX === 72, 'altura bottom nav = 72px');
+  assert(
+    MOBILE_LAYOUT_CSS_VAR_BOTTOM_NAV === '--sv-mobile-bottom-nav-height',
+    'CSS var bottom nav',
+  );
+  assert(
+    MOBILE_LAYOUT_CSS_VAR_CONTENT_PAD === '--sv-mobile-content-pad-bottom',
+    'CSS var content pad',
+  );
+  assert(
+    MOBILE_CONTENT_PAD_BOTTOM_CLASS.includes('--sv-mobile-content-pad-bottom'),
+    'classe padding inferior',
+  );
+  assert(
+    MOBILE_SCROLL_AREA_CLASS.includes('overflow-y-auto'),
+    'área scroll mobile',
+  );
+}
+
+function testMobileLayoutCss() {
+  const css = read('app/mobile-layout.css');
+  assert(css.includes('--sv-mobile-bottom-nav-height: 72px'), 'CSS define altura nav');
+  assert(css.includes('--sv-mobile-content-pad-bottom'), 'CSS define padding conteúdo');
+  assert(css.includes('--sv-mobile-modal-max-height'), 'CSS define max-height modal');
+  assert(css.includes('100dvh'), 'CSS usa dvh');
+  assert(css.includes('.sv-modal-overlay'), 'classe overlay modal');
+  assert(css.includes('.sv-modal-shell'), 'classe shell modal');
+  assert(css.includes('.sv-modal-body'), 'classe body modal');
+  assert(css.includes('.sv-modal-footer'), 'classe footer modal');
+  assert(css.includes('safe-area-inset-bottom'), 'safe area no footer');
+}
+
+function testGlobalsImport() {
+  const globals = read('app/globals.css');
+  assert(globals.includes('@import "./mobile-layout.css"'), 'globals importa mobile-layout');
+  assert(globals.includes('.sv-page--scroll-y'), 'globals mantém sv-page--scroll-y');
+}
+
+function testLayoutMainScroll() {
+  const layout = read('components/Layout.tsx');
+  assert(layout.includes('h-dvh'), 'root usa h-dvh');
+  assert(layout.includes('sv-mobile-scroll-area'), 'wrapper scroll mobile');
+  assert(!layout.includes('pb-20'), 'remove pb-20 fixo insuficiente');
+  assert(!layout.match(/isMobile[^]*pb-20/), 'sem pb-20 condicional mobile');
+  assert(layout.includes('h-[72px]'), 'bottom nav 72px');
+  assert(layout.includes('fixed bottom-0'), 'bottom nav fixa');
+}
+
+function testPageScrollPatterns() {
+  const dashboard = read('app/dashboard/page.tsx');
+  assert(
+    dashboard.includes('sv-page--scroll-y'),
+    'dashboard permite scroll vertical',
+  );
+  assert(
+    !dashboard.includes('overflow-hidden'),
+    'dashboard sem overflow-hidden bloqueando scroll',
+  );
+
+  for (const file of MOBILE_PAGE_SOURCE_FILES) {
+    const source = read(file);
+    if (file === 'app/contracts/page.tsx') {
+      assert(
+        source.includes('contracts-mobile.css') || source.includes('contracts-mobile'),
+        'contratos usa CSS mobile dedicado',
+      );
+      continue;
+    }
+    if (file === 'app/finance/page.tsx') {
+      assert(
+        source.includes('sv-page--mobile-pad') || source.includes('overflow-y-auto'),
+        'financeiro com scroll/padding mobile',
+      );
+      continue;
+    }
+    assert(
+      source.includes('sv-page--scroll-y') ||
+        source.includes('sv-mobile-scroll-area') ||
+        source.includes('sv-page--mobile-pad'),
+      `${file} com padrão scroll mobile`,
+    );
+  }
+}
+
+function testModalPatterns() {
+  for (const file of MOBILE_MODAL_SOURCE_FILES) {
+    const source = read(file);
+    assert(source.includes(SV_MODAL_OVERLAY_CLASS), `${file} usa ${SV_MODAL_OVERLAY_CLASS}`);
+    assert(source.includes(SV_MODAL_SHELL_CLASS), `${file} usa ${SV_MODAL_SHELL_CLASS}`);
+    assert(source.includes(SV_MODAL_BODY_CLASS), `${file} usa ${SV_MODAL_BODY_CLASS}`);
+  }
+
+  const brokers = read('app/dashboard/brokers/page.tsx');
+  assert(brokers.includes(SV_MODAL_FOOTER_CLASS), 'modal corretor com footer fixo');
+  assert(
+    brokers.includes('Salvar Corretor') || brokers.includes('Salvar Alterações'),
+    'botão salvar corretor presente',
+  );
+
+  const customers = read('app/customers/page.tsx');
+  assert(customers.includes(SV_MODAL_FOOTER_CLASS), 'modal cliente com footer fixo');
+  assert(customers.includes('Confirmar'), 'botão confirmar cliente presente');
+
+  const lotForm = read('components/map/CustomerLotFormModal.tsx');
+  assert(lotForm.includes('Confirmar Venda'), 'botão confirmar venda GIS');
+  assert(lotForm.includes(SV_MODAL_FOOTER_CLASS), 'venda lote com footer fixo');
+}
+
+function testNoProblematicMainOverflowHidden() {
+  const layout = read('components/Layout.tsx');
+  const mainMatch = layout.match(/<main[\s\S]*?className=\{`([^`]+)`\}/);
+  assert(!!mainMatch, 'main encontrado');
+  const mainClasses = mainMatch![1];
+  assert(mainClasses.includes('min-h-0'), 'main com min-h-0 para flex scroll');
+}
+
+function run() {
+  const tests: Array<[string, () => void]> = [
+    ['mobileLayout lib', testMobileLayoutLib],
+    ['mobile-layout.css', testMobileLayoutCss],
+    ['globals import', testGlobalsImport],
+    ['Layout scroll', testLayoutMainScroll],
+    ['páginas scroll', testPageScrollPatterns],
+    ['modais mobile', testModalPatterns],
+    ['main overflow', testNoProblematicMainOverflowHidden],
+  ];
+
+  for (const [name, fn] of tests) {
+    fn();
+    console.log(`✓ ${name}`);
+  }
+
+  console.log(`\n${tests.length} grupos de testes mobile scroll/layout OK.`);
+}
+
+run();

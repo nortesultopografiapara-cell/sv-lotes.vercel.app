@@ -498,7 +498,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   return (
     <GisSelectedProjectProvider>
-    <div className="flex h-screen w-full overflow-hidden bg-[var(--color-background)]">
+    <div className="flex h-dvh w-full overflow-hidden bg-[var(--color-background)]">
       {/* Mobile Header */}
       {isMobile && (
         <div className="fixed top-0 left-0 right-0 h-14 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-white/5 z-[300] flex items-center px-4 justify-between">
@@ -644,8 +644,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
       {/* Main Content Area */}
       <main
-        className={`flex-1 flex flex-col relative overflow-hidden bg-[var(--color-background)] ${
-          isMobile ? (isMasterConsole ? 'pt-14' : 'pt-16 pb-20') : ''
+        className={`flex-1 flex flex-col relative min-h-0 overflow-hidden bg-[var(--color-background)] ${
+          isMobile ? (isMasterConsole ? 'pt-14' : 'pt-16') : ''
         }`}
       >
         
@@ -776,7 +776,13 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Page Content */}
-        {children}
+        <div
+          className={`flex-1 flex flex-col min-h-0 ${
+            isMobile ? 'sv-mobile-scroll-area' : 'overflow-hidden'
+          }`}
+        >
+          {children}
+        </div>
 
       </main>
 

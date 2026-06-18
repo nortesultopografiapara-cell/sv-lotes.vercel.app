@@ -144,9 +144,9 @@ export function ManageSaleBrokerCommissionModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
-        <div className="flex items-center justify-between p-5 border-b border-[var(--border-color)] bg-[var(--bg-card-alt)]">
+    <div className="sv-modal-overlay z-[70]">
+      <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)]">
+        <div className="sv-modal-header flex items-center justify-between p-5 border-b border-[var(--border-color)] bg-[var(--bg-card-alt)]">
           <div className="flex items-center gap-2">
             <UserCog className="w-5 h-5 text-amber-500" />
             <h2 className="text-lg font-bold text-[var(--text-primary)]">Gerenciar corretor/comissão</h2>
@@ -156,7 +156,7 @@ export function ManageSaleBrokerCommissionModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+        <div className="sv-modal-body p-6 space-y-5">
           <div className="text-sm text-[var(--text-secondary)] space-y-1">
             <p><span className="font-semibold text-[var(--text-primary)]">Lote:</span> {lotLabel || '—'}</p>
             <p><span className="font-semibold text-[var(--text-primary)]">Contrato:</span> {contractLabel || '—'}</p>
@@ -261,7 +261,7 @@ export function ManageSaleBrokerCommissionModal({
           ) : null}
         </div>
 
-        <div className="p-5 border-t border-[var(--border-color)] flex justify-end gap-3">
+        <div className="sv-modal-footer border-t border-[var(--border-color)] bg-[var(--bg-card)] p-5 flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

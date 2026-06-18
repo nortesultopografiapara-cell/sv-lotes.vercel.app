@@ -2755,7 +2755,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="finance-premium flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-7 h-full font-sans">
+    <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-7 h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -3200,15 +3200,15 @@ export default function FinancePage() {
       )}
 
       {selectedFlowItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="sv-modal-overlay">
+          <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center">
               <h3 className="text-lg font-bold text-[var(--text-primary)]">Detalhes da Movimentação</h3>
               <button onClick={() => setSelectedFlowItem(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-3 text-sm text-[var(--text-secondary)]">
+            <div className="sv-modal-body p-6 space-y-3 text-sm text-[var(--text-secondary)]">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="text-xs text-[var(--text-muted)] block">Data</span>
@@ -3286,15 +3286,15 @@ export default function FinancePage() {
       )}
 
       {selectedPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center">
+        <div className="sv-modal-overlay">
+          <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] animate-in fade-in zoom-in-95 duration-200">
+            <div className="sv-modal-header p-6 border-b border-[var(--border-color)] flex justify-between items-center">
               <h3 className="text-lg font-bold text-[var(--text-primary)]">Detalhes do Recebimento</h3>
               <button onClick={() => setSelectedPayment(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4 text-sm text-[var(--text-secondary)]">
+            <div className="sv-modal-body p-6 space-y-4 text-sm text-[var(--text-secondary)]">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Cliente</span>
@@ -3351,10 +3351,10 @@ export default function FinancePage() {
       )}
 
       {showSaidaModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <form onSubmit={handleRegistrarSaida}>
-              <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center sticky top-0 bg-[var(--bg-card)] z-10">
+        <div className="sv-modal-overlay">
+          <div className="sv-modal-shell sv-modal-shell--wide bg-[var(--bg-card)] border border-[var(--border-color)] animate-in fade-in zoom-in-95 duration-200">
+            <form onSubmit={handleRegistrarSaida} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="sv-modal-header p-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-card)]">
                 <h3 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   {editingCashMovementId ? 'Editar Saída' : 'Registrar Saída'}
@@ -3371,7 +3371,7 @@ export default function FinancePage() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-6 space-y-4 text-sm text-[var(--text-secondary)]">
+              <div className="sv-modal-body p-6 space-y-4 text-sm text-[var(--text-secondary)]">
                 {loadingSaidaLookups && (
                   <div className="flex items-center gap-2 text-[var(--text-muted)] text-xs">
                     <Loader2 className="w-3 h-3 animate-spin" /> Carregando projetos, contratos e corretores…
@@ -3647,7 +3647,7 @@ export default function FinancePage() {
                   />
                 </div>
               </div>
-              <div className="p-6 border-t border-[var(--border-color)] flex justify-end gap-3">
+              <div className="sv-modal-footer border-t border-[var(--border-color)] bg-[var(--bg-card)] p-6 flex justify-end gap-3">
                  <button type="button" onClick={() => setShowSaidaModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                    Cancelar
                  </button>
@@ -3661,9 +3661,9 @@ export default function FinancePage() {
       )}
 
       {showProjectReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl w-full max-w-lg shadow-2xl flex flex-col mx-4 overflow-hidden">
-            <div className="px-6 border-b border-[var(--border-color)] h-16 flex items-center justify-between bg-[var(--bg-card-alt)]/50">
+        <div className="sv-modal-overlay">
+          <div className="sv-modal-shell bg-[var(--bg-card)] border border-[var(--border-color)] shadow-2xl">
+            <div className="sv-modal-header px-6 border-b border-[var(--border-color)] h-16 flex items-center justify-between bg-[var(--bg-card-alt)]/50">
               <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
                 <PieChart className="w-5 h-5 text-indigo-500" />
                 Relatório de Fluxo de Caixa
@@ -3673,7 +3673,7 @@ export default function FinancePage() {
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
+            <div className="sv-modal-body p-6 custom-scrollbar space-y-5">
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Projeto/Loteamento</label>
                 <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
@@ -3713,7 +3713,7 @@ export default function FinancePage() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-[var(--border-color)] flex justify-end gap-3">
+            <div className="sv-modal-footer border-t border-[var(--border-color)] bg-[var(--bg-card)] p-6 flex justify-end gap-3">
                <button disabled={isGeneratingPr} type="button" onClick={() => setShowProjectReportModal(false)} className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                  Cancelar
                </button>

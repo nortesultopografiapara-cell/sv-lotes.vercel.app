@@ -1371,10 +1371,10 @@ export default function CorretoresPage() {
 
       {/* Modal - Novo Corretor */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+        <div className="sv-modal-overlay animate-in fade-in duration-200">
+          <div className="sv-modal-shell sv-modal-shell--wide bg-[var(--bg-card)] border border-[var(--border-color)]">
             
-            <div className="flex items-center justify-between p-5 border-b border-[var(--border-color)] bg-[var(--bg-card-alt)]">
+            <div className="sv-modal-header flex items-center justify-between p-5 border-b border-[var(--border-color)] bg-[var(--bg-card-alt)]">
               <h2 className="text-lg font-bold text-[var(--text-primary)]">
                 {modalMode === 'edit' ? 'Editar Corretor' : modalMode === 'view' ? 'Visualizar Corretor' : modalMode === 'reset' ? 'Redefinir Senha' : 'Cadastrar Novo Corretor'}
               </h2>
@@ -1383,9 +1383,8 @@ export default function CorretoresPage() {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[85vh]">
-               {successData ? (
-                 <div className="text-center animate-in zoom-in duration-300 py-6">
+            {successData ? (
+              <div className="sv-modal-body p-6 text-center animate-in zoom-in duration-300">
                    <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
                      <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                    </div>
@@ -1416,9 +1415,10 @@ export default function CorretoresPage() {
                    >
                      Concluir e Voltar
                    </button>
-                 </div>
-               ) : (
-                 <form onSubmit={handleSubmit} className="space-y-6">
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="sv-modal-body p-6 space-y-6">
                    {error && (
                      <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-500 text-sm flex items-center gap-2">
                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>
@@ -1626,7 +1626,9 @@ export default function CorretoresPage() {
                      </div>
                    )}
 
-                   <div className="pt-4 flex justify-end gap-3">
+                </div>
+
+                <div className="sv-modal-footer border-t border-[var(--border-color)] bg-[var(--bg-card)] px-6 py-4 flex justify-end gap-3">
                        <button 
                          type="button"
                          onClick={handleCloseModal}
@@ -1647,10 +1649,9 @@ export default function CorretoresPage() {
                            {isSubmitting ? 'Salvando...' : modalMode === 'edit' ? 'Salvar Alterações' : modalMode === 'reset' ? 'Redefinir Senha' : 'Salvar Corretor'}
                          </button>
                        )}
-                   </div>
-                 </form>
-               )}
-            </div>
+                </div>
+              </form>
+            )}
             
           </div>
         </div>

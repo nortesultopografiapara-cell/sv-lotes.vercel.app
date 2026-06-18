@@ -1,0 +1,112 @@
+/**
+ * Layout mobile global — rolagem vertical e espaço para bottom navigation.
+ */
+
+:root {
+  --sv-mobile-bottom-nav-height: 72px;
+  --sv-mobile-content-pad-bottom: calc(
+    var(--sv-mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 16px
+  );
+  --sv-mobile-modal-max-height: calc(
+    100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px
+  );
+}
+
+@layer components {
+  /* Área rolável dentro do main (mobile) */
+  .sv-mobile-scroll-area {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @media (max-width: 767px) {
+    .sv-page {
+      min-height: 0;
+    }
+
+    .sv-page.sv-page--scroll-y {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: var(--sv-mobile-content-pad-bottom);
+    }
+
+    .sv-page--mobile-pad {
+      padding-bottom: var(--sv-mobile-content-pad-bottom);
+    }
+  }
+
+  /* Overlay de modal — mobile: sheet; desktop: centralizado */
+  .sv-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0;
+    background-color: rgb(0 0 0 / 0.75);
+    backdrop-filter: blur(4px);
+  }
+
+  @media (min-width: 640px) {
+    .sv-modal-overlay {
+      align-items: center;
+      padding: 1rem;
+    }
+  }
+
+  .sv-modal-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 42rem;
+    max-height: var(--sv-mobile-modal-max-height);
+    overflow: hidden;
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+  }
+
+  @media (min-width: 640px) {
+    .sv-modal-shell {
+      border-radius: 1rem;
+      max-height: min(90vh, var(--sv-mobile-modal-max-height));
+    }
+  }
+
+  .sv-modal-shell--wide {
+    max-width: 56rem;
+  }
+
+  .sv-modal-shell--full-mobile {
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  @media (min-width: 640px) {
+    .sv-modal-shell--full-mobile {
+      max-height: min(90vh, var(--sv-mobile-modal-max-height));
+      border-radius: 1rem;
+    }
+  }
+
+  .sv-modal-header {
+    flex-shrink: 0;
+  }
+
+  .sv-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .sv-modal-footer {
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}

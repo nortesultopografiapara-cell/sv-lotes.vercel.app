@@ -374,9 +374,9 @@ export function CustomerLotFormModal({
       : `Novo Cliente${actionName === 'Vendido' ? ' - Venda de Lote' : ''}`;
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto sm:p-4 font-sans">
-      <div className="bg-white w-full max-w-2xl overflow-hidden animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl">
-        <div className="sticky top-0 z-20 p-4 border-b border-gray-100 flex items-center justify-between bg-white flex-none shadow-sm">
+    <div className="sv-modal-overlay z-[1000] pointer-events-auto font-sans">
+      <div className="sv-modal-shell sv-modal-shell--full-mobile bg-white animate-in fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in duration-200">
+        <div className="sv-modal-header sticky top-0 z-20 p-4 border-b border-gray-100 flex items-center justify-between bg-white shadow-sm">
           <div>
             <h3 className="font-bold text-lg text-gray-900">{title}</h3>
             <p className="text-xs text-gray-500">
@@ -392,7 +392,7 @@ export function CustomerLotFormModal({
           </button>
         </div>
 
-        <div className="gis-commercial-modal flex-1 overflow-y-auto p-5 text-slate-900">
+        <div className="gis-commercial-modal sv-modal-body flex-1 p-5 text-slate-900">
           {prefillLoading && (
             <div className="mb-4 flex items-center gap-2 text-sm text-blue-700">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -926,7 +926,7 @@ export function CustomerLotFormModal({
           </form>
         </div>
 
-        <div className="sticky bottom-0 z-20 p-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white">
+        <div className="sv-modal-footer sticky bottom-0 z-20 p-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3 bg-white">
           <button
             type="button"
             onClick={onClose}

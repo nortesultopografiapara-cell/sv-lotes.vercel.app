@@ -458,15 +458,16 @@ export default function CustomersPage() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
+        <div className="sv-modal-overlay z-[1000]">
+          <div className="sv-modal-shell sv-modal-shell--wide bg-[var(--color-surface)] border border-[var(--color-border)] animate-in fade-in zoom-in duration-200">
+            <div className="sv-modal-header p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
               <h3 className="font-bold text-lg text-[var(--text-primary)]">{formData.id ? 'Editar Cliente' : 'Novo Cliente'}</h3>
               <button disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleSaveCustomer} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleSaveCustomer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="sv-modal-body p-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[var(--color-text-muted)] mb-1">Nome Completo *</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--color-primary)]" placeholder="Ex: João da Silva" />
@@ -561,7 +562,8 @@ export default function CustomersPage() {
                     </select>
                   </div>
               )}
-              <div className="pt-4 flex gap-3">
+              </div>
+              <div className="sv-modal-footer border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 flex gap-3">
                  <button type="button" disabled={submitting} onClick={() => { setIsModalOpen(false); setFormData({ name: '', cpf_cnpj: '', rg: '', phone: '', email: '', profession: '', marital_status: '', address: '', neighborhood: '', city: '', state: '', cep: '', status: 'ativo' }); }} className="flex-1 px-4 py-2 bg-[var(--color-surface-bright)] text-[var(--text-primary)] hover:bg-[var(--color-border)] font-semibold rounded-lg transition-colors text-sm">
                    Cancelar
                  </button>
@@ -575,15 +577,15 @@ export default function CustomersPage() {
       )}
 
       {isViewModalOpen && selectedCustomer && (
-         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-             <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
+         <div className="sv-modal-overlay z-[1000]">
+           <div className="sv-modal-shell bg-[var(--color-surface)] border border-[var(--color-border)] animate-in fade-in zoom-in duration-200">
+             <div className="sv-modal-header p-4 border-b border-[var(--color-border)] flex items-center justify-between bg-[var(--color-surface)]">
                <h3 className="font-bold text-lg text-[var(--text-primary)]">Visualizar Cliente</h3>
                <button onClick={() => setIsViewModalOpen(false)} className="p-2 text-[var(--color-text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-[var(--color-surface-bright)] transition-colors">
                  <X className="w-5 h-5" />
                </button>
              </div>
-             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+             <div className="sv-modal-body p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                    <div><span className="text-[var(--color-text-muted)] block text-xs">Nome</span><span className="text-[var(--text-primary)]">{selectedCustomer.name || '-'}</span></div>
                    <div><span className="text-[var(--color-text-muted)] block text-xs">Documento (CPF/CNPJ)</span><span className="text-[var(--text-primary)] font-mono">{selectedCustomer.cpf_cnpj || selectedCustomer.document || '-'}</span></div>
