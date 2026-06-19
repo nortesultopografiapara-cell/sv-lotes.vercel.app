@@ -20,6 +20,9 @@ type Props = {
   getCompanyPhone: (companyId: string) => string | null | undefined;
   getCompanyEmail: (companyId: string) => string | null | undefined;
   onViewCharge: (row: SaasInvoiceChargeRow) => void;
+  onCopyPix: (row: SaasInvoiceChargeRow) => void;
+  onOpenInvoice: (row: SaasInvoiceChargeRow) => void;
+  onOpenBankSlip: (row: SaasInvoiceChargeRow) => void;
   onWhatsApp: (row: SaasInvoiceChargeRow, phone?: string | null) => void;
   onEmail: (row: SaasInvoiceChargeRow, email?: string | null) => void;
   onSyncStatus: (row: SaasInvoiceChargeRow) => void;
@@ -40,6 +43,9 @@ export function SaasChargesTable({
   getCompanyPhone,
   getCompanyEmail,
   onViewCharge,
+  onCopyPix,
+  onOpenInvoice,
+  onOpenBankSlip,
   onWhatsApp,
   onEmail,
   onSyncStatus,
@@ -65,7 +71,7 @@ export function SaasChargesTable({
       <div className="p-5 border-b border-white/5 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
         <div>
           <h3 className="text-[16px] font-bold text-white">Cobranças</h3>
-          <p className="text-[12px] text-gray-400">PIX Asaas — ações centralizadas no menu.</p>
+          <p className="text-[12px] text-gray-400">PIX e Boleto Asaas — ações centralizadas no menu.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {onFilterCompany ? (
@@ -101,15 +107,17 @@ export function SaasChargesTable({
       </div>
 
       <div className="sv-table-scroll">
-        <table className="w-full text-left min-w-[900px]">
+        <table className="w-full text-left min-w-[1020px]">
           <thead>
             <tr className="border-b border-white/5 text-[12px] text-gray-400">
               <th className="p-4 font-medium">Empresa</th>
+              <th className="p-4 font-medium">Competência</th>
               <th className="p-4 font-medium">Valor</th>
               <th className="p-4 font-medium">Vencimento</th>
-              <th className="p-4 font-medium">Status</th>
               <th className="p-4 font-medium">Forma</th>
+              <th className="p-4 font-medium">Status</th>
               <th className="p-4 font-medium">Payment ID</th>
+              <th className="p-4 font-medium">Link Asaas</th>
               <th className="p-4 font-medium w-[120px]">Ações</th>
             </tr>
           </thead>
@@ -120,9 +128,28 @@ export function SaasChargesTable({
               const email = getCompanyEmail(row.companyId);
               const isPaid = displayStatus === 'PAGA';
               const isCancelled = displayStatus === 'CANCELADA';
+              const asaasLink = row.invoiceUrl || row.paymentUrl || row.bankSlipUrl;
 
               const actions: SaasActionItem[] = [
                 { id: 'view', label: 'Ver cobrança', onClick: () => onViewCharge(row) },
+                {
+                  id: 'copy_pix',
+                  label: 'Copiar PIX',
+                  onClick: () => onCopyPix(row),
+                  disabled: !row.pixCopyPaste,
+                },
+                {
+                  id: 'open_invoice',
+                  label: 'Abrir fatura',
+                  onClick: () => onOpenInvoice(row),
+                  disabled: !row.invoiceUrl && !row.paymentUrl,
+                },
+                {
+                  id: 'open_boleto',
+                  label: 'Abrir boleto',
+                  onClick: () => onOpenBankSlip(row),
+                  disabled: !row.bankSlipUrl,
+                },
                 {
                   id: 'whatsapp',
                   label: 'Enviar WhatsApp',
@@ -160,12 +187,13 @@ export function SaasChargesTable({
                 <tr key={row.invoiceId} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="p-4">
                     <p className="text-[13px] font-medium text-white">{row.companyName}</p>
-                    <p className="text-[11px] text-gray-500">{row.referenceMonth}</p>
                   </td>
+                  <td className="p-4 text-[12px] text-gray-400">{row.referenceMonth}</td>
                   <td className="p-4 text-[13px] text-emerald-300 font-semibold tabular-nums">
                     {formatSaasCurrency(row.amount)}
                   </td>
                   <td className="p-4 text-[12px] text-gray-300">{formatDateBr(row.dueDate)}</td>
+                  <td className="p-4 text-[12px] text-gray-300">{row.billingType}</td>
                   <td className="p-4">
                     <span
                       className={`inline-flex px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${saasChargeDisplayStatusTone(displayStatus)}`}
@@ -173,9 +201,22 @@ export function SaasChargesTable({
                       {saasChargeDisplayStatusLabel(displayStatus)}
                     </span>
                   </td>
-                  <td className="p-4 text-[12px] text-gray-400">PIX</td>
                   <td className="p-4 text-[11px] font-mono text-gray-500">
                     {truncatePaymentId(row.paymentId)}
+                  </td>
+                  <td className="p-4">
+                    {asaasLink ? (
+                      <a
+                        href={asaasLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-blue-400 hover:underline"
+                      >
+                        Abrir
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-gray-600">—</span>
+                    )}
                   </td>
                   <td className="p-4">
                     <SaasActionsDropdown items={actions} />
@@ -185,7 +226,7 @@ export function SaasChargesTable({
             })}
             {!loading && filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8">
+                <td colSpan={9} className="p-8">
                   <MasterEmptyState
                     title="Nenhuma cobrança"
                     description="Gere cobranças pelo menu Empresas ou use Gerar cobranças do mês."

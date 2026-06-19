@@ -1,6 +1,8 @@
 /**
- * Interface desacoplada de providers de pagamento SaaS (PIX).
+ * Interface desacoplada de providers de pagamento SaaS (PIX / Boleto).
  */
+
+import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
 export type SaasChargeProviderStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 
@@ -13,6 +15,8 @@ export type CreatePixChargeInput = {
   payerName?: string;
   payerDocument?: string;
   payerEmail?: string;
+  /** Default PIX — Asaas não combina PIX+BOLETO no mesmo payment. */
+  billingType?: SaasMasterBillingType;
 };
 
 export type PixChargeProviderResult = {
@@ -22,12 +26,18 @@ export type PixChargeProviderResult = {
   paymentUrl?: string | null;
   status: SaasChargeProviderStatus;
   provider: string;
+  billingType?: SaasMasterBillingType;
+  bankSlipUrl?: string | null;
+  invoiceUrl?: string | null;
+  bankSlipIdentification?: string | null;
 };
 
 export type ChargeStatusProviderResult = {
   paymentId: string;
   status: SaasChargeProviderStatus;
   paidAt?: string | null;
+  bankSlipUrl?: string | null;
+  invoiceUrl?: string | null;
 };
 
 export interface PaymentProvider {
@@ -43,6 +53,12 @@ export function mapProviderStatusToChargeStatus(
   const key = String(status || '').toUpperCase();
   if (key === 'PAID' || key === 'PAGO' || key === 'RECEIVED' || key === 'CONFIRMED') return 'PAID';
   if (key === 'OVERDUE' || key === 'VENCIDO') return 'OVERDUE';
-  if (key === 'CANCELLED' || key === 'CANCELADO' || key === 'CANCELED') return 'CANCELLED';
+  if (key === 'CANCELLED' || key === 'CANCELADO' || key === 'CANCELED' || key === 'DELETED' || key === 'REFUNDED') {
+    return 'CANCELLED';
+  }
   return 'PENDING';
+}
+
+export function normalizeSaasBillingType(value?: string | null): SaasMasterBillingType {
+  return String(value || '').toUpperCase() === 'BOLETO' ? 'BOLETO' : 'PIX';
 }

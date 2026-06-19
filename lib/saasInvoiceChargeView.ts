@@ -14,9 +14,13 @@ export type SaasInvoiceChargeRow = {
   asaasStatus: string;
   paymentId: string | null;
   paymentProvider: string | null;
+  billingType: 'PIX' | 'BOLETO';
   pixCopyPaste: string | null;
   pixQrCode: string | null;
   paymentUrl: string | null;
+  invoiceUrl: string | null;
+  bankSlipUrl: string | null;
+  bankSlipIdentification: string | null;
   chargeId: string | null;
   hasCharge: boolean;
 };
@@ -94,6 +98,10 @@ export function buildSaasInvoiceChargeRows(
     const pixCopyPaste = ch?.pix_copy_paste || inv.pix_code || null;
     const pixQrCode = ch?.pix_qr_code || inv.pix_qrcode || null;
     const paymentId = ch?.payment_id || inv.external_charge_id || null;
+    const billingType =
+      ch?.billing_type === 'BOLETO' || String(inv.payment_method || '').toLowerCase() === 'boleto'
+        ? 'BOLETO'
+        : 'PIX';
 
     return {
       invoiceId: inv.id,
@@ -108,9 +116,13 @@ export function buildSaasInvoiceChargeRows(
       asaasStatus: mapAsaasStatusLabel(ch, inv),
       paymentId,
       paymentProvider: ch?.payment_provider || (paymentId?.startsWith('pay_') ? 'asaas' : null),
+      billingType,
       pixCopyPaste,
       pixQrCode,
-      paymentUrl: ch?.payment_url || null,
+      paymentUrl: ch?.payment_url || ch?.invoice_url || null,
+      invoiceUrl: ch?.invoice_url || ch?.payment_url || null,
+      bankSlipUrl: ch?.bank_slip_url || null,
+      bankSlipIdentification: ch?.bank_slip_identification || null,
       chargeId: ch?.id || null,
       hasCharge: !!ch?.id,
     };

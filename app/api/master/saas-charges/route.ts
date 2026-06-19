@@ -136,6 +136,7 @@ export async function POST(request: Request) {
       dueDate: body.dueDate || undefined,
       notes: body.notes || null,
       actorUserId: body.userId,
+      billingType: String(body.billingType || 'PIX').toUpperCase() === 'BOLETO' ? 'BOLETO' : 'PIX',
     });
 
     if (!result.created && result.skipped) {

@@ -171,7 +171,9 @@ function testWebhookRouteStructure() {
   const webhook = read('app/api/payments/webhook/route.ts');
   assert(webhook.includes('handleAsaasPaymentWebhook'), 'webhook delega ao handler');
   const handler = read('lib/saasAsaasWebhook.ts');
-  assert(handler.includes('ignored: true'), 'handler retorna ignored');
+  assert(handler.includes('processOverdue'), 'handler processa overdue');
+  assert(handler.includes('processCancelled'), 'handler processa cancelled');
+  assert(handler.includes('INFORMATIVE_EVENTS'), 'eventos informativos');
   assert(!handler.includes('status: 500'), 'handler não retorna 500 ao Asaas');
 }
 
@@ -189,12 +191,18 @@ function makeWebhookRequest(
   });
 }
 
-function mockWebhookDeps(processPaidImpl: AsaasWebhookDeps['processPaid']): AsaasWebhookDeps {
+function mockWebhookDeps(
+  processPaidImpl: AsaasWebhookDeps['processPaid'],
+  overrides?: Partial<AsaasWebhookDeps>,
+): AsaasWebhookDeps {
   return {
     createSupabase: () => ({
       client: {} as never,
     }),
     processPaid: processPaidImpl,
+    processOverdue: overrides?.processOverdue ?? (async () => ({ charge: { id: 'ch-1' } as never })),
+    processCancelled:
+      overrides?.processCancelled ?? (async () => ({ charge: { id: 'ch-1' } as never })),
   };
 }
 
@@ -225,11 +233,27 @@ async function testWebhookResponses() {
       'motivo cobrança ausente',
     );
 
-    const unknownRes = await handleAsaasPaymentWebhook(
+    const deletedRes = await handleAsaasPaymentWebhook(
       makeWebhookRequest(
         {
           event: 'PAYMENT_DELETED',
-          payment: { id: 'pay_1', status: 'DELETED' },
+          payment: { id: 'pay_1', status: 'DELETED', externalReference: 'ch-1' },
+        },
+        { 'asaas-access-token': 'webhook-test-token' },
+      ),
+      mockWebhookDeps(async () => {
+        throw new Error('should not call paid');
+      }),
+    );
+    assert(deletedRes.status === 200, 'PAYMENT_DELETED → HTTP 200');
+    const deletedBody = await deletedRes.json();
+    assert(deletedBody.ok === true && !deletedBody.ignored, 'PAYMENT_DELETED processado');
+
+    const unknownRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        {
+          event: 'UNKNOWN_EVENT_X',
+          payment: { id: 'pay_1', status: 'PENDING' },
         },
         { 'asaas-access-token': 'webhook-test-token' },
       ),
@@ -733,9 +757,88 @@ function testBillingPage() {
 
 function testChargeStatusMapping() {
   assert(mapProviderStatusToChargeStatus('RECEIVED') === 'PAID', 'RECEIVED → PAID');
+  assert(mapProviderStatusToChargeStatus('DELETED') === 'CANCELLED', 'DELETED → CANCELLED');
   assert(saasChargeStatusLabel('PAID') === 'Pago', 'label pago');
   const status = getSaasPaymentGatewayStatus();
   assert(typeof status.configured === 'boolean', 'status gateway objeto');
+}
+
+function testBoletoSupport() {
+  const asaas = read('lib/payments/providers/asaas.ts');
+  assert(asaas.includes("billingType === 'BOLETO' ? 'BOLETO' : 'PIX'"), 'Asaas billingType BOLETO');
+  assert(asaas.includes('bankSlipUrl'), 'Asaas bankSlipUrl');
+  assert(asaas.includes('invoiceUrl'), 'Asaas invoiceUrl');
+  assert(asaas.includes('bankSlipIdentification'), 'Asaas identification boleto');
+
+  const migration = read('supabase/migrations/20260808120000_saas_charges_boleto.sql');
+  assert(migration.includes('billing_type'), 'migration billing_type');
+  assert(migration.includes('bank_slip_url'), 'migration bank_slip_url');
+
+  const charges = read('lib/saasCharges.ts');
+  assert(charges.includes('billingType'), 'create charge billingType');
+  assert(charges.includes('processSaasChargeOverdue'), 'process overdue');
+  assert(charges.includes('processSaasChargeCancelled'), 'process cancelled');
+  assert(charges.includes('autoSuspendCompanyIfEligible'), 'auto suspend');
+
+  const mock = read('lib/payments/providers/mock.ts');
+  assert(mock.includes("billingType === 'BOLETO'"), 'mock boleto');
+}
+
+async function testWebhookOverdueEvent() {
+  const origToken = process.env.ASAAS_WEBHOOK_TOKEN;
+  process.env.ASAAS_WEBHOOK_TOKEN = 'webhook-test-token';
+  let overdueCalls = 0;
+
+  try {
+    const res = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        {
+          event: 'PAYMENT_OVERDUE',
+          payment: { id: 'pay_od', status: 'OVERDUE', externalReference: 'ch-od' },
+        },
+        { 'asaas-access-token': 'webhook-test-token' },
+      ),
+      mockWebhookDeps(async () => ({ charge: { id: 'x' } as never, paymentId: 'p' }), {
+        processOverdue: async () => {
+          overdueCalls += 1;
+          return { charge: { id: 'ch-od' } as never };
+        },
+      }),
+    );
+    assert(res.status === 200, 'PAYMENT_OVERDUE HTTP 200');
+    const body = await res.json();
+    assert(body.ok === true && body.status === 'OVERDUE', 'overdue processado');
+    assert(overdueCalls === 1, 'processOverdue chamado');
+  } finally {
+    if (origToken === undefined) delete process.env.ASAAS_WEBHOOK_TOKEN;
+    else process.env.ASAAS_WEBHOOK_TOKEN = origToken;
+  }
+}
+
+function testAutoSuspendConfig() {
+  const config = read('lib/saasMasterConfig.ts');
+  assert(config.includes('SAAS_AUTO_SUSPEND_AFTER_DAYS = 10'), 'suspend 10 dias');
+  assert(config.includes('ASAAS_SUPPORTS_COMBINED_PIX_BOLETO = false'), 'PIX+BOLETO doc');
+
+  const billing = read('lib/saasBilling.ts');
+  assert(billing.includes('SAAS_AUTO_SUSPEND_AFTER_DAYS'), 'billing usa constante suspend');
+  assert(billing.includes('SAAS_COMPANY_AUTO_REACTIVATED'), 'audit reativação');
+
+  const automations = read('lib/masterSaasPanel.ts');
+  assert(automations.includes("id: 'auto_suspend'"), 'regra auto_suspend');
+  assert(automations.includes('enabled: true'), 'auto_suspend ativo');
+}
+
+function testChargesUiBoleto() {
+  const table = read('components/master/saas/SaasChargesTable.tsx');
+  assert(table.includes('billingType'), 'UI forma cobrança');
+  assert(table.includes('onCopyPix'), 'UI copiar PIX');
+  assert(table.includes('onOpenBankSlip'), 'UI abrir boleto');
+  assert(table.includes('Link Asaas'), 'UI link Asaas');
+
+  const modal = read('components/master/SaasChargeViewModal.tsx');
+  assert(modal.includes('Abrir boleto'), 'modal boleto');
+  assert(modal.includes('bankSlipIdentification'), 'modal identificação boleto');
 }
 
 async function run() {
@@ -764,6 +867,10 @@ async function run() {
     ['view faturas + PIX', testSaasInvoiceChargeView],
     ['próximo vencimento pagamento', testAdvanceSubscriptionDueDate],
     ['webhook PAYMENT_RECEIVED idempotente', testWebhookPaymentIdempotency],
+    ['webhook PAYMENT_OVERDUE', testWebhookOverdueEvent],
+    ['boleto Asaas + migration', testBoletoSupport],
+    ['auto-suspend 10 dias', testAutoSuspendConfig],
+    ['UI cobrança boleto', testChargesUiBoleto],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['mapeamento status charge', testChargeStatusMapping],

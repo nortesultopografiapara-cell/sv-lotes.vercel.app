@@ -45,6 +45,9 @@ type Props = {
   onRegisterPayment: () => void;
   chargeHandlers: {
     onViewCharge: (row: SaasInvoiceChargeRow) => void;
+    onCopyPix: (row: SaasInvoiceChargeRow) => void;
+    onOpenInvoice: (row: SaasInvoiceChargeRow) => void;
+    onOpenBankSlip: (row: SaasInvoiceChargeRow) => void;
     onWhatsApp: (row: SaasInvoiceChargeRow, phone?: string | null) => void;
     onEmail: (row: SaasInvoiceChargeRow, email?: string | null) => void;
     onSyncStatus: (row: SaasInvoiceChargeRow) => void;
@@ -182,6 +185,9 @@ export function SaasCompanyWorkspace({
           getCompanyPhone={() => String(company.phone || '')}
           getCompanyEmail={() => String(company.email || '')}
           onViewCharge={chargeHandlers.onViewCharge}
+          onCopyPix={chargeHandlers.onCopyPix}
+          onOpenInvoice={chargeHandlers.onOpenInvoice}
+          onOpenBankSlip={chargeHandlers.onOpenBankSlip}
           onWhatsApp={chargeHandlers.onWhatsApp}
           onEmail={chargeHandlers.onEmail}
           onSyncStatus={chargeHandlers.onSyncStatus}

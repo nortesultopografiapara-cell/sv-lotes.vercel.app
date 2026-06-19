@@ -23,12 +23,14 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
         ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(row.pixQrCode)))}`
         : null;
 
+  const title = row.billingType === 'BOLETO' ? 'Cobrança Boleto' : 'Cobrança PIX';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#11161d] shadow-xl">
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#11161d] shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
-            <h3 className="text-[16px] font-bold text-white">Cobrança PIX</h3>
+            <h3 className="text-[16px] font-bold text-white">{title}</h3>
             <p className="text-[12px] text-gray-400">{row.companyName}</p>
           </div>
           <button
@@ -52,6 +54,14 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
               <p className="text-white">{formatDateBr(row.dueDate)}</p>
             </div>
             <div>
+              <p className="text-gray-500">Forma</p>
+              <p className="text-white">{row.billingType}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Competência</p>
+              <p className="text-white">{row.referenceMonth}</p>
+            </div>
+            <div>
               <p className="text-gray-500">Status interno</p>
               <p className="text-amber-300">{row.chargeStatus || row.invoiceStatus}</p>
             </div>
@@ -61,14 +71,14 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
             </div>
           </div>
 
-          {qrSrc && (
+          {qrSrc && row.billingType === 'PIX' && (
             <div className="flex justify-center rounded-xl border border-white/10 bg-white p-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrSrc} alt="QR Code PIX" className="h-44 w-44 object-contain" />
             </div>
           )}
 
-          {pix && (
+          {pix && row.billingType === 'PIX' && (
             <div>
               <p className="mb-1 text-[12px] text-gray-400">Pix Copia e Cola</p>
               <textarea
@@ -87,6 +97,13 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
             </div>
           )}
 
+          {row.bankSlipIdentification && (
+            <div className="rounded-lg border border-white/10 bg-[#0B0E14] px-3 py-2 text-[12px]">
+              <p className="text-gray-500">Identificação boleto</p>
+              <p className="font-mono text-gray-200 break-all">{row.bankSlipIdentification}</p>
+            </div>
+          )}
+
           <div className="rounded-lg border border-white/10 bg-[#0B0E14] px-3 py-2 text-[12px]">
             <p className="text-gray-500">Payment ID</p>
             <p className="font-mono text-gray-200">{row.paymentId || '—'}</p>
@@ -95,16 +112,28 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
             )}
           </div>
 
-          {row.paymentUrl && (
-            <a
-              href={row.paymentUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 px-3 py-2 text-[12px] text-blue-300 hover:bg-blue-500/10"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Abrir link de pagamento Asaas
-            </a>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {(row.invoiceUrl || row.paymentUrl) && (
+              <a
+                href={row.invoiceUrl || row.paymentUrl || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 px-3 py-2 text-[12px] text-blue-300 hover:bg-blue-500/10"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Abrir fatura Asaas
+              </a>
+            )}
+            {row.bankSlipUrl && (
+              <a
+                href={row.bankSlipUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 px-3 py-2 text-[12px] text-amber-300 hover:bg-amber-500/10"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Abrir boleto
+              </a>
+            )}
+          </div>
         </div>
       </div>
     </div>

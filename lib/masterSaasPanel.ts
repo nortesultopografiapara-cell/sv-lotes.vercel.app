@@ -4,6 +4,7 @@
 
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
 import { normalizeWhatsAppPhone } from '@/lib/saasContractSignatureShare';
+import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 
 export type SaasPanelView = 'dashboard' | 'empresas' | 'cobrancas' | 'automacoes';
 
@@ -75,8 +76,8 @@ export const SAAS_AUTOMATION_RULES: SaasAutomationRule[] = [
   {
     id: 'auto_suspend',
     label: 'Suspensão automática',
-    description: 'Suspende tenant após prazo configurado de inadimplência.',
-    enabled: false,
+    description: `Suspende tenant após ${SAAS_AUTO_SUSPEND_AFTER_DAYS} dias de inadimplência SaaS sem pagamento da competência.`,
+    enabled: true,
     phase: 'overdue',
   },
   {

@@ -16,6 +16,7 @@ import {
   resolveInvoiceDueDate,
   type MasterSaasInvoice,
 } from '../lib/saasBilling';
+import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '../lib/saasMasterConfig';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 
 function assert(cond: boolean, msg: string) {
@@ -234,17 +235,22 @@ function testBillingAlerts() {
 }
 
 function testOverdueMarkingLogic() {
+  assert(SAAS_AUTO_SUSPEND_AFTER_DAYS === 10, 'grace padrão 10 dias');
   assert(
-    isInvoiceEligibleForSuspension('2026-06-01', '2026-06-15', 30) === false,
-    'menos de 30 dias não suspende',
+    isInvoiceEligibleForSuspension('2026-06-06', '2026-06-15', 10) === false,
+    'menos de 10 dias não suspende',
+  );
+  assert(
+    isInvoiceEligibleForSuspension('2026-06-06', '2026-06-15', SAAS_AUTO_SUSPEND_AFTER_DAYS) === false,
+    'menos de grace padrão não suspende',
   );
   assert(
     isInvoiceEligibleForSuspension('2026-04-27', '2026-06-15', 15) === true,
     'mais de 15 dias suspende com grace 15',
   );
   assert(
-    isInvoiceEligibleForSuspension('2026-04-27', '2026-06-15', 30) === true,
-    'mais de 30 dias suspende',
+    isInvoiceEligibleForSuspension('2026-06-05', '2026-06-15', 10) === true,
+    'exatamente 10 dias suspende',
   );
   console.log('OK testOverdueMarkingLogic');
 }

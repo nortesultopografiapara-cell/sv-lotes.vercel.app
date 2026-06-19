@@ -4,13 +4,15 @@ import type {
   PaymentProvider,
   PixChargeProviderResult,
 } from './types';
-import { mapProviderStatusToChargeStatus } from './types';
+import { mapProviderStatusToChargeStatus, normalizeSaasBillingType } from './types';
 
 type AsaasPayment = {
   id?: string;
   status?: string;
   invoiceUrl?: string;
   bankSlipUrl?: string;
+  identificationField?: string;
+  nossoNumero?: string;
   paymentDate?: string;
   clientPaymentDate?: string;
 };
@@ -63,6 +65,21 @@ function normalizePixQrImage(encodedImage?: string | null): string {
   return `data:image/png;base64,${raw}`;
 }
 
+function mapAsaasStatus(status?: string): ChargeStatusProviderResult['status'] {
+  const key = String(status || '').toUpperCase();
+  if (['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(key)) return 'PAID';
+  if (['OVERDUE'].includes(key)) return 'OVERDUE';
+  if (['CANCELED', 'DELETED', 'REFUNDED'].includes(key)) return 'CANCELLED';
+  return 'PENDING';
+}
+
+function extractBankSlipIdentification(payment: AsaasPayment): string | null {
+  const idField = String(payment.identificationField || '').trim();
+  if (idField) return idField;
+  const nosso = String(payment.nossoNumero || '').trim();
+  return nosso || null;
+}
+
 /** GET /payments/{id}/pixQrCode com retry — QR dinâmico pode demorar após POST. */
 export async function fetchAsaasPixQrCode(
   paymentId: string,
@@ -94,16 +111,36 @@ export async function fetchAsaasPaymentPixData(paymentId: string): Promise<{
   pixQrCode: string;
   pixCopyPaste: string;
   paymentUrl: string | null;
+  invoiceUrl: string | null;
+  bankSlipUrl: string | null;
+  bankSlipIdentification: string | null;
   status: PixChargeProviderResult['status'];
 }> {
   const payment = await asaasFetch<AsaasPayment>(`/payments/${paymentId}`);
-  const pix = await fetchAsaasPixQrCode(paymentId);
+  const billingType = normalizeSaasBillingType(
+    payment.bankSlipUrl && !payment.invoiceUrl ? 'BOLETO' : 'PIX',
+  );
+
+  let pixQrCode = '';
+  let pixCopyPaste = '';
+  if (billingType === 'PIX') {
+    try {
+      const pix = await fetchAsaasPixQrCode(paymentId);
+      pixQrCode = normalizePixQrImage(pix.encodedImage);
+      pixCopyPaste = String(pix.payload || '').trim();
+    } catch {
+      /* boleto-only ou QR ainda indisponível */
+    }
+  }
 
   return {
     paymentId,
-    pixQrCode: normalizePixQrImage(pix.encodedImage),
-    pixCopyPaste: String(pix.payload || '').trim(),
+    pixQrCode,
+    pixCopyPaste,
     paymentUrl: payment.invoiceUrl || payment.bankSlipUrl || null,
+    invoiceUrl: payment.invoiceUrl || null,
+    bankSlipUrl: payment.bankSlipUrl || null,
+    bankSlipIdentification: extractBankSlipIdentification(payment),
     status: mapProviderStatusToChargeStatus(mapAsaasStatus(payment.status)),
   };
 }
@@ -129,26 +166,19 @@ async function findOrCreateCustomer(input: CreatePixChargeInput): Promise<string
   return created.id;
 }
 
-function mapAsaasStatus(status?: string): ChargeStatusProviderResult['status'] {
-  const key = String(status || '').toUpperCase();
-  if (['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(key)) return 'PAID';
-  if (['OVERDUE'].includes(key)) return 'OVERDUE';
-  if (['CANCELED', 'DELETED', 'REFUNDED'].includes(key)) return 'CANCELLED';
-  return 'PENDING';
-}
-
-/** Provider Asaas — PIX real via API v3. */
+/** Provider Asaas — PIX e Boleto via API v3 (billingType mutuamente exclusivo). */
 export class AsaasPaymentProvider implements PaymentProvider {
   readonly providerName = 'asaas';
 
   async createPixCharge(input: CreatePixChargeInput): Promise<PixChargeProviderResult> {
+    const billingType = normalizeSaasBillingType(input.billingType);
     const customerId = await findOrCreateCustomer(input);
 
     const payment = await asaasFetch<AsaasPayment>('/payments', {
       method: 'POST',
       body: JSON.stringify({
         customer: customerId,
-        billingType: 'PIX',
+        billingType: billingType === 'BOLETO' ? 'BOLETO' : 'PIX',
         value: Number(input.amount.toFixed(2)),
         dueDate: input.dueDate,
         description: input.description.slice(0, 500),
@@ -159,6 +189,28 @@ export class AsaasPaymentProvider implements PaymentProvider {
     if (!payment.id) throw new Error('Asaas não retornou ID da cobrança.');
 
     const paymentFull = await asaasFetch<AsaasPayment>(`/payments/${payment.id}`);
+    const invoiceUrl = paymentFull.invoiceUrl || payment.invoiceUrl || null;
+    const bankSlipUrl = paymentFull.bankSlipUrl || payment.bankSlipUrl || null;
+    const bankSlipIdentification = extractBankSlipIdentification(paymentFull);
+
+    if (billingType === 'BOLETO') {
+      if (!bankSlipUrl && !invoiceUrl) {
+        throw new Error('Asaas não retornou URL do boleto/fatura.');
+      }
+      return {
+        paymentId: payment.id,
+        pixQrCode: '',
+        pixCopyPaste: '',
+        paymentUrl: invoiceUrl || bankSlipUrl,
+        invoiceUrl,
+        bankSlipUrl,
+        bankSlipIdentification,
+        billingType: 'BOLETO',
+        status: mapProviderStatusToChargeStatus(mapAsaasStatus(paymentFull.status || payment.status)),
+        provider: this.providerName,
+      };
+    }
+
     const pix = await fetchAsaasPixQrCode(payment.id);
     const pixCopyPaste = String(pix.payload || '').trim();
 
@@ -170,7 +222,11 @@ export class AsaasPaymentProvider implements PaymentProvider {
       paymentId: payment.id,
       pixQrCode: normalizePixQrImage(pix.encodedImage),
       pixCopyPaste,
-      paymentUrl: paymentFull.invoiceUrl || paymentFull.bankSlipUrl || payment.invoiceUrl || null,
+      paymentUrl: invoiceUrl || bankSlipUrl,
+      invoiceUrl,
+      bankSlipUrl,
+      bankSlipIdentification,
+      billingType: 'PIX',
       status: mapProviderStatusToChargeStatus(mapAsaasStatus(paymentFull.status || payment.status)),
       provider: this.providerName,
     };
@@ -180,7 +236,13 @@ export class AsaasPaymentProvider implements PaymentProvider {
     const payment = await asaasFetch<AsaasPayment>(`/payments/${paymentId}`);
     const status = mapAsaasStatus(payment.status);
     const paidAt = payment.paymentDate || payment.clientPaymentDate || null;
-    return { paymentId, status, paidAt };
+    return {
+      paymentId,
+      status,
+      paidAt,
+      invoiceUrl: payment.invoiceUrl || null,
+      bankSlipUrl: payment.bankSlipUrl || null,
+    };
   }
 
   async cancelCharge(paymentId: string): Promise<void> {

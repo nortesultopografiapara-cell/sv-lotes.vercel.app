@@ -21,6 +21,7 @@ import {
   referenceMonthFromDate,
 } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
+import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 
 export type SaasInvoiceStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
@@ -443,31 +444,39 @@ function daysBetweenIso(start: string, end: string): number {
 export function isInvoiceEligibleForSuspension(
   dueDate: string,
   today: string,
-  graceDays = 30,
+  graceDays = SAAS_AUTO_SUSPEND_AFTER_DAYS,
 ): boolean {
   const due = toIsoDateOnly(dueDate);
   if (!due) return false;
-  return daysBetweenIso(due, today) > graceDays;
+  return daysBetweenIso(due, today) >= graceDays;
 }
 
-/** Suspende empresas com fatura VENCIDA há mais de 30 dias. */
+/** Suspende empresas com fatura VENCIDA há mais de SAAS_AUTO_SUSPEND_AFTER_DAYS dias. */
 export async function suspendOverdueCompanies(
   supabaseAdmin: SupabaseClient,
   today = todayIsoDate(),
-  graceDays = 30,
+  graceDays = SAAS_AUTO_SUSPEND_AFTER_DAYS,
 ): Promise<string[]> {
   const { data: overdueInvoices } = await supabaseAdmin
     .from('master_saas_invoices')
-    .select('company_id, due_date')
+    .select('company_id, due_date, reference_month')
     .eq('status', 'VENCIDO');
 
   const companyIds = new Set<string>();
   for (const inv of overdueInvoices || []) {
     const due = toIsoDateOnly(inv.due_date);
     if (!due) continue;
-    if (isInvoiceEligibleForSuspension(due, today, graceDays)) {
-      companyIds.add(inv.company_id);
-    }
+    if (!isInvoiceEligibleForSuspension(due, today, graceDays)) continue;
+
+    const ref = String(inv.reference_month || referenceMonthFromDate(due));
+    const existing = await findExistingSaasPaymentForReference(
+      supabaseAdmin,
+      inv.company_id,
+      ref,
+    );
+    if (existing) continue;
+
+    companyIds.add(inv.company_id);
   }
 
   const suspended: string[] = [];
@@ -478,7 +487,10 @@ export async function suspendOverdueCompanies(
       .eq('id', companyId)
       .maybeSingle();
 
-    if ((company?.status_operacional || '').toLowerCase() === 'suspensa') continue;
+    const op = (company?.status_operacional || '').toLowerCase();
+    if (op === 'suspensa') continue;
+    if (company?.active === false && op === 'suspensa') continue;
+    if (op === 'inativo' || op === 'inativa') continue;
 
     await supabaseAdmin
       .from('companies')
@@ -505,6 +517,15 @@ export async function suspendOverdueCompanies(
         })
         .eq('id', sub.id);
     }
+
+    await supabaseAdmin.from('audit_logs').insert({
+      tenant_id: companyId,
+      company_id: companyId,
+      module: 'SAAS_BILLING',
+      action: 'SAAS_COMPANY_AUTO_SUSPENDED',
+      description: `Empresa suspensa após ${graceDays} dias de inadimplência (fatura vencida)`,
+      reference_id: companyId,
+    });
 
     suspended.push(companyId);
   }
@@ -647,6 +668,15 @@ export async function reactivateCompanyOnPayment(
 
     await supabaseAdmin.from('company_subscriptions').update(subUpdate).eq('id', sub.id);
   }
+
+  await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: companyId,
+    company_id: companyId,
+    module: 'SAAS_BILLING',
+    action: 'SAAS_COMPANY_AUTO_REACTIVATED',
+    description: 'Empresa reativada automaticamente após confirmação de pagamento SaaS',
+    reference_id: companyId,
+  });
 }
 
 export type MarkInvoicePaidInput = {
@@ -962,11 +992,19 @@ export async function runSaasBillingMaintenance(
   supabaseAdmin: SupabaseClient,
 ): Promise<{
   overdueMarked: number;
+  chargesOverdueMarked: number;
   suspended: string[];
 }> {
   const overdueMarked = await markOverdueInvoices(supabaseAdmin);
-  const suspended = await suspendOverdueCompanies(supabaseAdmin);
-  return { overdueMarked, suspended };
+  let chargesOverdueMarked = 0;
+  try {
+    const { markOverdueSaasCharges } = await import('@/lib/saasCharges');
+    chargesOverdueMarked = await markOverdueSaasCharges(supabaseAdmin);
+  } catch {
+    chargesOverdueMarked = 0;
+  }
+  const suspended = await suspendOverdueCompanies(supabaseAdmin, todayIsoDate(), SAAS_AUTO_SUSPEND_AFTER_DAYS);
+  return { overdueMarked, chargesOverdueMarked, suspended };
 }
 
 export { referenceMonthFromDate, formatReferenceMonthLabel };

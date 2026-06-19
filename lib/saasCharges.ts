@@ -20,6 +20,8 @@ import { isBillableCompany } from '@/lib/companyPricing';
 import { todayIsoDate } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
+import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
+import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import type { CompanyPricingSource } from '@/lib/companyPricing';
 
@@ -39,6 +41,10 @@ export type SaasCharge = {
   pix_qr_code?: string | null;
   pix_copy_paste?: string | null;
   payment_url?: string | null;
+  billing_type?: SaasMasterBillingType;
+  bank_slip_url?: string | null;
+  invoice_url?: string | null;
+  bank_slip_identification?: string | null;
   paid_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -61,6 +67,14 @@ function parseChargeRow(row: Record<string, unknown>): SaasCharge {
     pix_qr_code: row.pix_qr_code ? String(row.pix_qr_code) : null,
     pix_copy_paste: row.pix_copy_paste ? String(row.pix_copy_paste) : null,
     payment_url: row.payment_url ? String(row.payment_url) : null,
+    billing_type: (String(row.billing_type || 'PIX').toUpperCase() === 'BOLETO'
+      ? 'BOLETO'
+      : 'PIX') as SaasMasterBillingType,
+    bank_slip_url: row.bank_slip_url ? String(row.bank_slip_url) : null,
+    invoice_url: row.invoice_url ? String(row.invoice_url) : null,
+    bank_slip_identification: row.bank_slip_identification
+      ? String(row.bank_slip_identification)
+      : null,
     paid_at: row.paid_at ? String(row.paid_at) : null,
     created_at: row.created_at ? String(row.created_at) : null,
     updated_at: row.updated_at ? String(row.updated_at) : null,
@@ -129,6 +143,8 @@ export type CreateSaasPixChargeOptions = {
   dueDate?: string;
   notes?: string | null;
   actorUserId?: string | null;
+  /** PIX (default) ou BOLETO — Asaas não combina ambos no mesmo payment. */
+  billingType?: SaasMasterBillingType;
 };
 
 export type SaasPixChargeOutcome = 'created' | 'completed' | 'skipped';
@@ -417,6 +433,7 @@ export async function createSaasPixCharge(
   }
 
   const asaasDueDate = resolveAsaasDueDate(invoice.due_date);
+  const billingType = options?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
 
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('saas_charges')
@@ -428,6 +445,7 @@ export async function createSaasPixCharge(
       due_date: asaasDueDate,
       status: 'PENDING',
       payment_provider: 'pending',
+      billing_type: billingType,
       updated_at: now,
     })
     .select('*')
@@ -449,6 +467,7 @@ export async function createSaasPixCharge(
     payerName: company.name || undefined,
     payerDocument: company.cnpj || undefined,
     payerEmail: company.email || undefined,
+    billingType,
   });
 
   const { data: withPix, error: pixErr } = await supabaseAdmin
@@ -456,9 +475,13 @@ export async function createSaasPixCharge(
     .update({
       payment_provider: pix.provider,
       payment_id: pix.paymentId,
-      pix_qr_code: pix.pixQrCode,
-      pix_copy_paste: pix.pixCopyPaste,
-      payment_url: pix.paymentUrl,
+      pix_qr_code: pix.pixQrCode || null,
+      pix_copy_paste: pix.pixCopyPaste || null,
+      payment_url: pix.paymentUrl ?? pix.invoiceUrl ?? pix.bankSlipUrl ?? null,
+      invoice_url: pix.invoiceUrl ?? null,
+      bank_slip_url: pix.bankSlipUrl ?? null,
+      bank_slip_identification: pix.bankSlipIdentification ?? null,
+      billing_type: pix.billingType || billingType,
       status: mapProviderStatusToChargeStatus(pix.status),
       updated_at: new Date().toISOString(),
     })
@@ -467,11 +490,18 @@ export async function createSaasPixCharge(
     .single();
 
   if (pixErr || !withPix) {
-    throw new Error(pixErr?.message || 'Falha ao anexar PIX à cobrança');
+    throw new Error(pixErr?.message || 'Falha ao anexar cobrança ao gateway');
   }
 
-  if (!String(pix.pixCopyPaste || '').trim()) {
+  if (billingType === 'PIX' && !String(pix.pixCopyPaste || '').trim()) {
     throw new Error('Asaas não retornou Pix Copia e Cola — cobrança não concluída.');
+  }
+
+  if (
+    billingType === 'BOLETO' &&
+    !String(pix.bankSlipUrl || pix.invoiceUrl || pix.paymentUrl || '').trim()
+  ) {
+    throw new Error('Asaas não retornou URL do boleto — cobrança não concluída.');
   }
 
   charge = parseChargeRow(withPix as Record<string, unknown>);
@@ -482,7 +512,7 @@ export async function createSaasPixCharge(
       pix_code: charge.pix_copy_paste,
       pix_qrcode: charge.pix_qr_code,
       external_charge_id: charge.payment_id,
-      payment_method: 'pix',
+      payment_method: billingType === 'BOLETO' ? 'boleto' : 'pix',
       updated_at: new Date().toISOString(),
     })
     .eq('id', invoice.id);
@@ -494,7 +524,7 @@ export async function createSaasPixCharge(
       user_id: options.actorUserId,
       module: 'SAAS_BILLING',
       action: 'SAAS_CHARGE_CREATED',
-      description: `Cobrança PIX ${charge.id.slice(0, 8)} — ${invoice.invoice_number}`,
+      description: `Cobrança ${billingType} ${charge.id.slice(0, 8)} — ${invoice.invoice_number}`,
       reference_id: charge.id,
     });
   }
@@ -585,8 +615,8 @@ export async function processSaasChargePaid(
     const paid = await markInvoicePaid(supabaseAdmin, {
       invoiceId: charge.invoice_id,
       paidAt,
-      paymentMethod: 'pix',
-      notes: `PIX webhook — charge ${charge.id}`,
+      paymentMethod: charge.billing_type === 'BOLETO' ? 'boleto' : 'pix',
+      notes: `${charge.billing_type || 'PIX'} webhook — charge ${charge.id}`,
       createdBy: input.actorUserId ?? null,
     });
     masterPaymentId = paid.paymentId;
@@ -672,6 +702,227 @@ export async function processSaasChargePaid(
   };
 }
 
+export type ProcessChargeStatusInput = {
+  chargeId?: string;
+  paymentId?: string;
+  actorUserId?: string | null;
+  source?: string;
+};
+
+async function updateChargeAndInvoiceStatus(
+  supabaseAdmin: SupabaseClient,
+  charge: SaasCharge,
+  mapped: SaasChargeStatus,
+  invoiceStatus: 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO',
+): Promise<SaasCharge> {
+  const now = new Date().toISOString();
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('saas_charges')
+    .update({ status: mapped, updated_at: now })
+    .eq('id', charge.id)
+    .select('*')
+    .single();
+
+  if (updErr || !updated) {
+    throw new Error(updErr?.message || 'Falha ao atualizar cobrança');
+  }
+
+  if (charge.invoice_id) {
+    await supabaseAdmin
+      .from('master_saas_invoices')
+      .update({ status: invoiceStatus, updated_at: now })
+      .eq('id', charge.invoice_id);
+  }
+
+  await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
+  return parseChargeRow(updated as Record<string, unknown>);
+}
+
+/** Webhook/sync — cobrança vencida no Asaas. */
+export async function processSaasChargeOverdue(
+  supabaseAdmin: SupabaseClient,
+  input: ProcessChargeStatusInput,
+): Promise<{ charge: SaasCharge }> {
+  const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
+  if (!row) throw new Error('Cobrança não encontrada.');
+
+  const charge = parseChargeRow(row as Record<string, unknown>);
+  if (charge.status === 'PAID') return { charge };
+
+  const updated = await updateChargeAndInvoiceStatus(
+    supabaseAdmin,
+    charge,
+    'OVERDUE',
+    'VENCIDO',
+  );
+
+  await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: charge.company_id,
+    company_id: charge.company_id,
+    user_id: input.actorUserId ?? null,
+    module: 'SAAS_BILLING',
+    action: 'SAAS_CHARGE_OVERDUE',
+    description: `Cobrança vencida — ${input.source || 'asaas'}`,
+    reference_id: charge.id,
+  });
+
+  await autoSuspendCompanyIfEligible(supabaseAdmin, charge.company_id);
+
+  return { charge: updated };
+}
+
+/** Webhook/sync — cobrança cancelada ou excluída no Asaas. */
+export async function processSaasChargeCancelled(
+  supabaseAdmin: SupabaseClient,
+  input: ProcessChargeStatusInput,
+): Promise<{ charge: SaasCharge }> {
+  const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
+  if (!row) throw new Error('Cobrança não encontrada.');
+
+  const charge = parseChargeRow(row as Record<string, unknown>);
+  if (charge.status === 'PAID') return { charge };
+
+  const updated = await updateChargeAndInvoiceStatus(
+    supabaseAdmin,
+    charge,
+    'CANCELLED',
+    'CANCELADO',
+  );
+
+  await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: charge.company_id,
+    company_id: charge.company_id,
+    user_id: input.actorUserId ?? null,
+    module: 'SAAS_BILLING',
+    action: 'SAAS_CHARGE_CANCELLED',
+    description: `Cobrança cancelada — ${input.source || 'asaas'}`,
+    reference_id: charge.id,
+  });
+
+  return { charge: updated };
+}
+
+/** Suspende empresa se inadimplente há SAAS_AUTO_SUSPEND_AFTER_DAYS+ dias sem pagamento da competência. */
+export async function autoSuspendCompanyIfEligible(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  today = todayIsoDate(),
+  graceDays = SAAS_AUTO_SUSPEND_AFTER_DAYS,
+): Promise<boolean> {
+  const { data: company } = await supabaseAdmin
+    .from('companies')
+    .select('id, name, status_operacional, active')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  if (!company) return false;
+  const opStatus = (company.status_operacional || '').toLowerCase();
+  if (opStatus === 'suspensa' || company.active === false) return false;
+  if (opStatus === 'inativo' || opStatus === 'inativa') return false;
+
+  const { data: overdueCharges } = await supabaseAdmin
+    .from('saas_charges')
+    .select('id, due_date, invoice_id, status')
+    .eq('company_id', companyId)
+    .in('status', ['OVERDUE', 'PENDING'])
+    .not('payment_id', 'is', null);
+
+  let eligible = false;
+  for (const ch of overdueCharges || []) {
+    const due = String(ch.due_date || '').split('T')[0];
+    if (!due) continue;
+    const daysLate = Math.floor(
+      (new Date(`${today}T12:00:00`).getTime() - new Date(`${due}T12:00:00`).getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+    if (daysLate < graceDays) continue;
+
+    let referenceMonth: string | null = null;
+    if (ch.invoice_id) {
+      const { data: inv } = await supabaseAdmin
+        .from('master_saas_invoices')
+        .select('reference_month')
+        .eq('id', ch.invoice_id)
+        .maybeSingle();
+      referenceMonth = inv?.reference_month ? String(inv.reference_month) : null;
+    }
+    if (!referenceMonth) referenceMonth = referenceMonthFromDate(due);
+
+    const existing = await findExistingSaasPaymentForReference(
+      supabaseAdmin,
+      companyId,
+      referenceMonth,
+    );
+    if (existing) continue;
+
+    eligible = true;
+    break;
+  }
+
+  if (!eligible) {
+    const { data: overdueInvoices } = await supabaseAdmin
+      .from('master_saas_invoices')
+      .select('due_date, reference_month')
+      .eq('company_id', companyId)
+      .eq('status', 'VENCIDO');
+
+    for (const inv of overdueInvoices || []) {
+      const due = String(inv.due_date || '').split('T')[0];
+      if (!due) continue;
+      const daysLate = Math.floor(
+        (new Date(`${today}T12:00:00`).getTime() - new Date(`${due}T12:00:00`).getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+      if (daysLate < graceDays) continue;
+      const ref = String(inv.reference_month || referenceMonthFromDate(due));
+      const existing = await findExistingSaasPaymentForReference(supabaseAdmin, companyId, ref);
+      if (!existing) {
+        eligible = true;
+        break;
+      }
+    }
+  }
+
+  if (!eligible) return false;
+
+  await supabaseAdmin
+    .from('companies')
+    .update({
+      status_operacional: 'Suspensa',
+      active: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', companyId);
+
+  const { data: sub } = await supabaseAdmin
+    .from('company_subscriptions')
+    .select('id')
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (sub?.id) {
+    await supabaseAdmin
+      .from('company_subscriptions')
+      .update({
+        contract_status: 'suspended',
+        payment_status: 'overdue',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', sub.id);
+  }
+
+  await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: companyId,
+    company_id: companyId,
+    module: 'SAAS_BILLING',
+    action: 'SAAS_COMPANY_AUTO_SUSPENDED',
+    description: `Empresa suspensa automaticamente após ${graceDays} dias de inadimplência SaaS`,
+    reference_id: companyId,
+  });
+
+  return true;
+}
+
 export async function cancelSaasCharge(
   supabaseAdmin: SupabaseClient,
   chargeId: string,
@@ -723,6 +974,67 @@ export async function cancelSaasCharge(
   return parseChargeRow(updated as Record<string, unknown>);
 }
 
+async function persistSaasChargeGatewayFields(
+  supabaseAdmin: SupabaseClient,
+  chargeId: string,
+  invoiceId: string | null | undefined,
+  gateway: {
+    paymentId: string;
+    pixQrCode: string;
+    pixCopyPaste: string;
+    paymentUrl?: string | null;
+    invoiceUrl?: string | null;
+    bankSlipUrl?: string | null;
+    bankSlipIdentification?: string | null;
+    billingType?: SaasMasterBillingType;
+    provider: string;
+    status: SaasChargeStatus;
+  },
+): Promise<SaasCharge> {
+  const now = new Date().toISOString();
+  const billingType = gateway.billingType || 'PIX';
+  const { data: updated, error } = await supabaseAdmin
+    .from('saas_charges')
+    .update({
+      payment_provider: gateway.provider,
+      payment_id: gateway.paymentId,
+      pix_qr_code: gateway.pixQrCode || null,
+      pix_copy_paste: gateway.pixCopyPaste || null,
+      payment_url: gateway.paymentUrl ?? gateway.invoiceUrl ?? gateway.bankSlipUrl ?? null,
+      invoice_url: gateway.invoiceUrl ?? null,
+      bank_slip_url: gateway.bankSlipUrl ?? null,
+      bank_slip_identification: gateway.bankSlipIdentification ?? null,
+      billing_type: billingType,
+      status: gateway.status,
+      updated_at: now,
+    })
+    .eq('id', chargeId)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error(error?.message || 'Falha ao persistir cobrança do gateway');
+  }
+
+  const charge = parseChargeRow(updated as Record<string, unknown>);
+
+  if (invoiceId) {
+    await supabaseAdmin
+      .from('master_saas_invoices')
+      .update({
+        pix_code: charge.pix_copy_paste,
+        pix_qrcode: charge.pix_qr_code,
+        external_charge_id: charge.payment_id,
+        payment_method: billingType === 'BOLETO' ? 'boleto' : 'pix',
+        updated_at: now,
+      })
+      .eq('id', invoiceId);
+  }
+
+  return charge;
+}
+
+/** @deprecated use persistSaasChargeGatewayFields */
 async function persistSaasChargePixFields(
   supabaseAdmin: SupabaseClient,
   chargeId: string,
@@ -736,42 +1048,10 @@ async function persistSaasChargePixFields(
     status: SaasChargeStatus;
   },
 ): Promise<SaasCharge> {
-  const now = new Date().toISOString();
-  const { data: updated, error } = await supabaseAdmin
-    .from('saas_charges')
-    .update({
-      payment_provider: pix.provider,
-      payment_id: pix.paymentId,
-      pix_qr_code: pix.pixQrCode,
-      pix_copy_paste: pix.pixCopyPaste,
-      payment_url: pix.paymentUrl ?? null,
-      status: pix.status,
-      updated_at: now,
-    })
-    .eq('id', chargeId)
-    .select('*')
-    .single();
-
-  if (error || !updated) {
-    throw new Error(error?.message || 'Falha ao persistir PIX da cobrança');
-  }
-
-  const charge = parseChargeRow(updated as Record<string, unknown>);
-
-  if (invoiceId) {
-    await supabaseAdmin
-      .from('master_saas_invoices')
-      .update({
-        pix_code: charge.pix_copy_paste,
-        pix_qrcode: charge.pix_qr_code,
-        external_charge_id: charge.payment_id,
-        payment_method: 'pix',
-        updated_at: now,
-      })
-      .eq('id', invoiceId);
-  }
-
-  return charge;
+  return persistSaasChargeGatewayFields(supabaseAdmin, chargeId, invoiceId, {
+    ...pix,
+    billingType: 'PIX',
+  });
 }
 
 /** Backfill PIX/link Asaas quando payment_id existe mas campos PIX estão vazios. */
@@ -801,11 +1081,16 @@ export async function refreshSaasChargePixFromAsaas(
   }
 
   const pix = await fetchAsaasPaymentPixData(charge.payment_id);
-  return persistSaasChargePixFields(supabaseAdmin, charge.id, charge.invoice_id, {
+  return persistSaasChargeGatewayFields(supabaseAdmin, charge.id, charge.invoice_id, {
     paymentId: pix.paymentId,
     pixQrCode: pix.pixQrCode,
     pixCopyPaste: pix.pixCopyPaste,
     paymentUrl: pix.paymentUrl,
+    invoiceUrl: pix.invoiceUrl,
+    bankSlipUrl: pix.bankSlipUrl,
+    bankSlipIdentification: pix.bankSlipIdentification,
+    billingType:
+      pix.bankSlipUrl && !pix.pixCopyPaste ? 'BOLETO' : charge.billing_type || 'PIX',
     provider: 'asaas',
     status: mapProviderStatusToChargeStatus(pix.status),
   });
@@ -866,6 +1151,26 @@ export async function syncSaasChargeStatusFromAsaas(
       source: 'sync:asaas',
     });
     return { charge: result.charge, paid: true, statusSynced: 'PAID' };
+  }
+
+  if (mapped === 'OVERDUE') {
+    const result = await processSaasChargeOverdue(supabaseAdmin, {
+      chargeId: charge.id,
+      paymentId: charge.payment_id,
+      actorUserId,
+      source: 'sync:asaas',
+    });
+    return { charge: result.charge, paid: false, statusSynced: 'OVERDUE' };
+  }
+
+  if (mapped === 'CANCELLED') {
+    const result = await processSaasChargeCancelled(supabaseAdmin, {
+      chargeId: charge.id,
+      paymentId: charge.payment_id,
+      actorUserId,
+      source: 'sync:asaas',
+    });
+    return { charge: result.charge, paid: false, statusSynced: 'CANCELLED' };
   }
 
   const now = new Date().toISOString();

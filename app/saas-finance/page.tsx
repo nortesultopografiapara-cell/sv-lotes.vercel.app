@@ -423,6 +423,23 @@ function SaaSFinancePageContent() {
     alert('PIX copiado para a área de transferência.');
   }, []);
 
+  const handleCopyPixRow = useCallback(
+    (row: SaasInvoiceChargeRow) => {
+      if (!row.pixCopyPaste) return;
+      void handleCopyPix(row.pixCopyPaste);
+    },
+    [handleCopyPix],
+  );
+
+  const handleOpenInvoice = useCallback((row: SaasInvoiceChargeRow) => {
+    const url = row.invoiceUrl || row.paymentUrl;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleOpenBankSlip = useCallback((row: SaasInvoiceChargeRow) => {
+    if (row.bankSlipUrl) window.open(row.bankSlipUrl, '_blank', 'noopener,noreferrer');
+  }, []);
+
   const handleSyncChargeStatus = useCallback(
     async (row: SaasInvoiceChargeRow) => {
       if (!user?.id || !row.chargeId) {
@@ -482,6 +499,9 @@ function SaaSFinancePageContent() {
           }).then(() => loadData());
         }
       },
+      onCopyPix: handleCopyPixRow,
+      onOpenInvoice: handleOpenInvoice,
+      onOpenBankSlip: handleOpenBankSlip,
       onWhatsApp: handleWhatsAppCharge,
       onEmail: handleEmailCharge,
       onSyncStatus: handleSyncChargeStatus,
@@ -492,6 +512,9 @@ function SaaSFinancePageContent() {
       },
     }),
     [
+      handleCopyPixRow,
+      handleOpenInvoice,
+      handleOpenBankSlip,
       handleWhatsAppCharge,
       handleEmailCharge,
       handleSyncChargeStatus,

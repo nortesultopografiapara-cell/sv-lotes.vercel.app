@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServiceSupabase } from '@/lib/apiSuperAdmin';
-import { processSaasChargePaid } from '@/lib/saasCharges';
+import {
+  processSaasChargeCancelled,
+  processSaasChargeOverdue,
+  processSaasChargePaid,
+} from '@/lib/saasCharges';
 import { mapProviderStatusToChargeStatus } from '@/lib/payments/providers';
 
 export type AsaasWebhookEvent = {
@@ -21,14 +25,28 @@ const PAID_EVENTS = new Set([
   'PAYMENT_RECEIVED_IN_CASH',
 ]);
 
+const OVERDUE_EVENTS = new Set(['PAYMENT_OVERDUE']);
+
+const CANCELLED_EVENTS = new Set(['PAYMENT_DELETED', 'PAYMENT_REFUNDED']);
+
+const INFORMATIVE_EVENTS = new Set([
+  'PAYMENT_CREATED',
+  'PAYMENT_UPDATED',
+  'PAYMENT_RESTORED',
+]);
+
 export type AsaasWebhookDeps = {
   createSupabase: () => { client: SupabaseClient | null; error?: string };
   processPaid: typeof processSaasChargePaid;
+  processOverdue: typeof processSaasChargeOverdue;
+  processCancelled: typeof processSaasChargeCancelled;
 };
 
 const defaultDeps: AsaasWebhookDeps = {
   createSupabase: createServiceSupabase,
   processPaid: processSaasChargePaid,
+  processOverdue: processSaasChargeOverdue,
+  processCancelled: processSaasChargeCancelled,
 };
 
 export function verifyAsaasWebhookToken(request: Request): boolean {
@@ -44,6 +62,10 @@ export function verifyAsaasWebhookToken(request: Request): boolean {
 
 function ignoredResponse(reason: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: true, ignored: true, reason, ...extra });
+}
+
+function okResponse(extra?: Record<string, unknown>) {
+  return NextResponse.json({ ok: true, ...extra });
 }
 
 export async function handleAsaasPaymentWebhook(
@@ -74,29 +96,45 @@ export async function handleAsaasPaymentWebhook(
     return ignoredResponse('payment.id ausente.');
   }
 
-  const mapped = mapProviderStatusToChargeStatus(payment.status || '');
-  const isPaidEvent = PAID_EVENTS.has(event) || mapped === 'PAID';
-
-  if (!isPaidEvent) {
-    return ignoredResponse('Evento não tratado.', { event: event || null });
+  if (INFORMATIVE_EVENTS.has(event)) {
+    return okResponse({ informative: true, event });
   }
 
+  const mapped = mapProviderStatusToChargeStatus(payment.status || '');
+  const paymentRef = {
+    paymentId: payment.id,
+    chargeId: payment.externalReference || undefined,
+    source: `webhook:asaas:${event || 'unknown'}`,
+  };
+
   try {
-    const paidAt =
-      payment.paymentDate || payment.clientPaymentDate || new Date().toISOString().split('T')[0];
+    if (PAID_EVENTS.has(event) || mapped === 'PAID') {
+      const paidAt =
+        payment.paymentDate || payment.clientPaymentDate || new Date().toISOString().split('T')[0];
 
-    const result = await deps.processPaid(supabaseAdmin, {
-      paymentId: payment.id,
-      chargeId: payment.externalReference || undefined,
-      paidAt,
-      source: 'webhook:asaas',
-    });
+      const result = await deps.processPaid(supabaseAdmin, {
+        ...paymentRef,
+        paidAt,
+      });
 
-    return NextResponse.json({
-      ok: true,
-      chargeId: result.charge.id,
-      masterPaymentId: result.paymentId,
-    });
+      return okResponse({
+        chargeId: result.charge.id,
+        masterPaymentId: result.paymentId,
+        event,
+      });
+    }
+
+    if (OVERDUE_EVENTS.has(event) || mapped === 'OVERDUE') {
+      const result = await deps.processOverdue(supabaseAdmin, paymentRef);
+      return okResponse({ chargeId: result.charge.id, event, status: 'OVERDUE' });
+    }
+
+    if (CANCELLED_EVENTS.has(event) || mapped === 'CANCELLED') {
+      const result = await deps.processCancelled(supabaseAdmin, paymentRef);
+      return okResponse({ chargeId: result.charge.id, event, status: 'CANCELLED' });
+    }
+
+    return ignoredResponse('Evento não tratado.', { event: event || null });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao processar webhook';
     console.error('[asaas-webhook] Falha ao processar pagamento:', {
