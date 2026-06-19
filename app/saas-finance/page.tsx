@@ -441,7 +441,15 @@ function SaaSFinancePageContent() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Falha na geração mensal');
-      alert(`Cobranças criadas: ${json.created || 0}. Ignoradas: ${json.skipped || 0}.`);
+      const parts = [
+        `Criadas no Asaas: ${json.created ?? 0}`,
+        `Faturas completadas com PIX: ${json.completed ?? 0}`,
+        `Ignoradas: ${json.skipped ?? 0}`,
+      ];
+      if (Array.isArray(json.errors) && json.errors.length > 0) {
+        parts.push(`Erros: ${json.errors.length} (${json.errors.slice(0, 2).join('; ')})`);
+      }
+      alert(`${parts.join('. ')}.`);
       await loadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro na geração mensal');

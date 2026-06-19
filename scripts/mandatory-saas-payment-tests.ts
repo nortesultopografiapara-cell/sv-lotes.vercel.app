@@ -15,7 +15,7 @@ import {
   isSaasPaymentGatewayConfigured,
   SAAS_PAYMENT_GATEWAY_NOT_CONFIGURED_MESSAGE,
 } from '../lib/saasPaymentGateway';
-import { saasChargeStatusLabel } from '../lib/saasCharges';
+import { resolveSaasPixChargeSkipReason, saasChargeStatusLabel } from '../lib/saasCharges';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
 import {
@@ -255,6 +255,57 @@ function testFinancialStatusRules() {
   assert(emDia.situation === 'EM DIA', 'EM DIA');
 }
 
+function testMonthlyAsaasChargeFlow() {
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('generateMonthlySaasCharges'), 'geração mensal via saas_charges');
+  assert(saasCharges.includes('resolveSaasPixChargeSkipReason'), 'regra anti-duplicidade');
+  assert(saasCharges.includes("outcome: invoiceCreated ? 'created' : 'completed'"), 'backfill fatura existente');
+  assert(saasCharges.includes('chargeId: charge.id'), 'externalReference = saas_charges.id');
+
+  const api = read('app/api/master/saas-invoices/route.ts');
+  assert(api.includes('generateMonthlySaasCharges'), 'API mensal usa fluxo real');
+  assert(api.includes('assertSaasPaymentGatewayConfigured'), 'API mensal exige gateway');
+  assert(api.includes('...result'), 'resposta repassa created/completed/skipped/errors');
+
+  const page = read('app/saas-finance/page.tsx');
+  assert(page.includes('Faturas completadas com PIX'), 'alerta mensal detalhado');
+}
+
+function testSaasPixChargeSkipRules() {
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: 'pay_123' }, null) ===
+      'Fatura já possui cobrança Asaas',
+    'external_charge_id bloqueia duplicata',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PENDING' }) ===
+      'Cobrança PIX já existe para esta fatura',
+    'saas_charges PENDING bloqueia duplicata',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PAID' }) ===
+      'Cobrança PIX já existe para esta fatura',
+    'saas_charges PAID bloqueia duplicata',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, null) === null,
+    'fatura sem PIX permite criar cobrança',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: '  ' }, { status: 'CANCELLED' as never }) ===
+      null,
+    'charge cancelada não bloqueia nova cobrança',
+  );
+}
+
+function testWebhookExternalReference() {
+  const asaas = read('lib/payments/providers/asaas.ts');
+  assert(asaas.includes('externalReference: input.chargeId'), 'Asaas usa chargeId como externalReference');
+  const webhook = read('lib/saasAsaasWebhook.ts');
+  assert(webhook.includes('chargeId: payment.externalReference'), 'webhook busca por externalReference');
+  assert(webhook.includes('paymentId: payment.id'), 'webhook busca por payment_id');
+}
+
 function testReactivationAndHistory() {
   const saasCharges = read('lib/saasCharges.ts');
   assert(saasCharges.includes('reactivateCompanyOnPayment'), 'reativação automática');
@@ -286,6 +337,9 @@ async function run() {
     ['arquitetura providers', testProviderArchitecture],
     ['webhook estrutura', testWebhookRouteStructure],
     ['webhook respostas Asaas', testWebhookResponses],
+    ['fluxo mensal Asaas', testMonthlyAsaasChargeFlow],
+    ['regras skip cobrança', testSaasPixChargeSkipRules],
+    ['webhook externalReference', testWebhookExternalReference],
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
     ['migration saas_charges', testDatabaseMigration],

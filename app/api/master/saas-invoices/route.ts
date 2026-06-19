@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   generateInvoiceForCompany,
-  generateMonthlyInvoices,
   listMasterSaasInvoices,
   runSaasBillingMaintenance,
 } from '@/lib/saasBilling';
+import { generateMonthlySaasCharges } from '@/lib/saasCharges';
+import { assertSaasPaymentGatewayConfigured } from '@/lib/saasPaymentGateway';
 
 export const runtime = 'nodejs';
 
@@ -51,8 +52,16 @@ export async function POST(request: Request) {
     const action = String(body.action || 'generate_company').trim();
 
     if (action === 'generate_monthly') {
-      const result = await generateMonthlyInvoices(supabaseAdmin, {
+      try {
+        assertSaasPaymentGatewayConfigured();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Gateway não configurado.';
+        return NextResponse.json({ error: message }, { status: 503 });
+      }
+
+      const result = await generateMonthlySaasCharges(supabaseAdmin, {
         referenceMonth: body.referenceMonth || undefined,
+        actorUserId: body.userId,
       });
       return NextResponse.json({ success: true, ...result });
     }

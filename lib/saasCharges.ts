@@ -6,11 +6,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPaymentProvider, mapProviderStatusToChargeStatus } from '@/lib/payments/providers';
 import { assertSaasPaymentGatewayConfigured } from '@/lib/saasPaymentGateway';
 import {
+  currentReferenceMonth,
   generateInvoiceForCompany,
   markInvoicePaid,
   reactivateCompanyOnPayment,
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
+import { isBillableCompany } from '@/lib/companyPricing';
 import { todayIsoDate } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
@@ -124,12 +126,119 @@ export type CreateSaasPixChargeOptions = {
   actorUserId?: string | null;
 };
 
+export type SaasPixChargeOutcome = 'created' | 'completed' | 'skipped';
+
 export type CreateSaasPixChargeResult = {
   charge: SaasCharge;
   invoice: MasterSaasInvoice | null;
   created: boolean;
   skipped?: string;
+  outcome?: SaasPixChargeOutcome;
+  invoiceCreated?: boolean;
 };
+
+const ACTIVE_SAAS_CHARGE_STATUSES = ['PENDING', 'OVERDUE', 'PAID'] as const;
+
+/** Evita duplicar cobrança Asaas para a mesma fatura. */
+export function resolveSaasPixChargeSkipReason(
+  invoice: Pick<MasterSaasInvoice, 'external_charge_id'>,
+  existingCharge: Pick<SaasCharge, 'status'> | null,
+): string | null {
+  if (String(invoice.external_charge_id || '').trim()) {
+    return 'Fatura já possui cobrança Asaas';
+  }
+  if (
+    existingCharge &&
+    ACTIVE_SAAS_CHARGE_STATUSES.includes(
+      String(existingCharge.status).toUpperCase() as (typeof ACTIVE_SAAS_CHARGE_STATUSES)[number],
+    )
+  ) {
+    return 'Cobrança PIX já existe para esta fatura';
+  }
+  return null;
+}
+
+export type GenerateMonthlySaasChargesResult = {
+  created: number;
+  completed: number;
+  skipped: number;
+  errors: string[];
+  charges: SaasCharge[];
+  invoices: MasterSaasInvoice[];
+};
+
+/** Gera cobranças mensais reais (Asaas) para empresas faturáveis. */
+export async function generateMonthlySaasCharges(
+  supabaseAdmin: SupabaseClient,
+  options?: { referenceMonth?: string; actorUserId?: string | null },
+): Promise<GenerateMonthlySaasChargesResult> {
+  assertSaasPaymentGatewayConfigured();
+
+  const referenceMonth = options?.referenceMonth || currentReferenceMonth();
+  const result: GenerateMonthlySaasChargesResult = {
+    created: 0,
+    completed: 0,
+    skipped: 0,
+    errors: [],
+    charges: [],
+    invoices: [],
+  };
+
+  const { data: companies, error: companiesErr } = await supabaseAdmin
+    .from('companies')
+    .select('*')
+    .order('name');
+
+  if (companiesErr) {
+    result.errors.push(companiesErr.message);
+    return result;
+  }
+
+  const { data: subscriptions } = await supabaseAdmin.from('company_subscriptions').select('*');
+  const subMap = new Map(
+    (subscriptions || []).map((s) => [s.company_id, s as CompanySubscription]),
+  );
+
+  for (const company of companies || []) {
+    if (!isBillableCompany(company)) continue;
+
+    const subscription = subMap.get(company.id) ?? null;
+    try {
+      const gen = await createSaasPixCharge(
+        supabaseAdmin,
+        company as CompanyPricingSource & {
+          id: string;
+          name?: string | null;
+          cnpj?: string | null;
+          email?: string | null;
+        },
+        subscription,
+        {
+          referenceMonth,
+          actorUserId: options?.actorUserId ?? null,
+        },
+      );
+
+      if (gen.invoice) result.invoices.push(gen.invoice);
+
+      if (gen.outcome === 'created') {
+        result.created += 1;
+        if (gen.charge?.id) result.charges.push(gen.charge);
+      } else if (gen.outcome === 'completed') {
+        result.completed += 1;
+        if (gen.charge?.id) result.charges.push(gen.charge);
+      } else {
+        result.skipped += 1;
+      }
+    } catch (err) {
+      result.errors.push(
+        `${company.name || company.id}: ${err instanceof Error ? err.message : 'erro'}`,
+      );
+    }
+  }
+
+  return result;
+}
 
 /** Gera fatura (se necessário) + cobrança PIX em saas_charges. */
 export async function createSaasPixCharge(
@@ -157,6 +266,7 @@ export async function createSaasPixCharge(
     },
   );
 
+  const invoiceCreated = invoiceResult.created;
   const invoice = invoiceResult.invoice;
   if (!invoice) {
     return {
@@ -164,6 +274,8 @@ export async function createSaasPixCharge(
       invoice: null,
       created: false,
       skipped: invoiceResult.skipped || 'Não foi possível gerar fatura',
+      outcome: 'skipped',
+      invoiceCreated: false,
     };
   }
 
@@ -171,15 +283,23 @@ export async function createSaasPixCharge(
     .from('saas_charges')
     .select('*')
     .eq('invoice_id', invoice.id)
-    .in('status', ['PENDING', 'OVERDUE'])
+    .in('status', [...ACTIVE_SAAS_CHARGE_STATUSES])
     .maybeSingle();
 
-  if (existingCharge) {
+  const skipReason = resolveSaasPixChargeSkipReason(
+    invoice,
+    existingCharge ? parseChargeRow(existingCharge as Record<string, unknown>) : null,
+  );
+  if (skipReason) {
     return {
-      charge: parseChargeRow(existingCharge as Record<string, unknown>),
+      charge: existingCharge
+        ? parseChargeRow(existingCharge as Record<string, unknown>)
+        : (null as unknown as SaasCharge),
       invoice,
       created: false,
-      skipped: 'Cobrança PIX já existe para esta fatura',
+      skipped: skipReason,
+      outcome: 'skipped',
+      invoiceCreated,
     };
   }
 
@@ -263,7 +383,13 @@ export async function createSaasPixCharge(
 
   await updateCompanyFinancialStatus(supabaseAdmin, company.id);
 
-  return { charge, invoice, created: true };
+  return {
+    charge,
+    invoice,
+    created: true,
+    outcome: invoiceCreated ? 'created' : 'completed',
+    invoiceCreated,
+  };
 }
 
 export type ProcessChargePaidInput = {
