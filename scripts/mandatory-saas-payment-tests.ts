@@ -23,6 +23,7 @@ import {
   resolveSaasPixChargeSkipReasonAsync,
   saasChargeStatusLabel,
 } from '../lib/saasCharges';
+import { isPhantomSaasInvoice } from '../lib/saasBilling';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
 import {
@@ -332,7 +333,19 @@ function testSaasPixChargeSkipRules() {
       null,
     'charge órfã PENDING sem payment_id não bloqueia',
   );
-  assert(isOrphanSaasCharge({ status: 'PENDING', payment_id: null }), 'detecta órfã');
+  assert(isOrphanSaasCharge({ status: 'PENDING', payment_id: null }), 'detecta órfã PENDING');
+  const orphanOverdue = {
+    status: 'OVERDUE' as const,
+    payment_id: null,
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+  };
+  assert(isOrphanSaasCharge(orphanOverdue), 'detecta órfã OVERDUE sem payment_id');
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, orphanOverdue) === null,
+    'OVERDUE órfã não bloqueia cobrança',
+  );
   assert(
     resolveSaasPixChargeSkipReason(
       { external_charge_id: null },
@@ -468,7 +481,13 @@ function testAdvanceSubscriptionDueDate() {
 }
 
 function testDuplicateChargeProtection() {
-  const menesesCharge = { status: 'PENDING' as const, payment_id: 'pay_meneses_abc' };
+  const menesesCharge = {
+    status: 'PENDING' as const,
+    payment_id: 'pay_meneses_abc',
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+  };
   assert(
     resolveSaasPixChargeSkipReason({ external_charge_id: null }, menesesCharge) ===
       'Cobrança PIX já existe para esta fatura',
@@ -477,25 +496,78 @@ function testDuplicateChargeProtection() {
   assert(isProtectedSaasCharge(menesesCharge), 'charge protegida com payment_id');
 
   assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PAID', payment_id: 'pay_1' }) !==
-      null,
+    resolveSaasPixChargeSkipReason(
+      { external_charge_id: null },
+      { status: 'PAID', payment_id: 'pay_1', pix_copy_paste: null, payment_url: null, master_payment_id: 'mp-1' },
+    ) !== null,
     'PAID bloqueia nova cobrança',
   );
+
+  const orphanOverdue = {
+    status: 'OVERDUE' as const,
+    payment_id: null,
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+  };
   assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'OVERDUE', payment_id: null }) !==
-      null,
-    'OVERDUE bloqueia nova cobrança',
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, orphanOverdue) === null,
+    'OVERDUE sem payment_id/PIX não bloqueia',
+  );
+
+  const protectedOverdue = {
+    status: 'OVERDUE' as const,
+    payment_id: 'pay_overdue_real',
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+  };
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, protectedOverdue) !== null,
+    'OVERDUE com payment_id bloqueia nova cobrança',
   );
 
   const saasCharges = read('lib/saasCharges.ts');
   assert(saasCharges.includes('findExistingSaasPaymentForReference'), 'pagamento confirmado bloqueia create');
   assert(saasCharges.includes('generateMonthlySaasCharges'), 'mensal usa createSaasPixCharge');
   assert(saasCharges.includes('createSaasPixCharge'), 'individual usa createSaasPixCharge');
+  assert(saasCharges.includes("status: 'CANCELLED'"), 'órfãs canceladas antes do backfill');
 
   const monthlyApi = read('app/api/master/saas-invoices/route.ts');
   const individualApi = read('app/api/master/saas-charges/route.ts');
   assert(monthlyApi.includes('generateMonthlySaasCharges'), 'API mensal centralizada');
   assert(individualApi.includes('createSaasPixCharge'), 'API individual centralizada');
+}
+
+function testPhantomInvoiceAndDiagnoseEndpoint() {
+  assert(
+    isPhantomSaasInvoice({
+      final_amount: 0,
+      amount: 0,
+      status: 'PAGO',
+      external_charge_id: 'mock_abc',
+    }),
+    'fatura mock PAGO valor 0 é fantasma',
+  );
+  assert(
+    !isPhantomSaasInvoice({
+      final_amount: 10,
+      amount: 10,
+      status: 'PENDENTE',
+      external_charge_id: null,
+    }),
+    'fatura real não é fantasma',
+  );
+
+  const billing = read('lib/saasBilling.ts');
+  assert(billing.includes('isPhantomSaasInvoice'), 'detecção fatura fantasma');
+  assert(billing.includes('repairPhantomSaasInvoiceIfNeeded'), 'reparo fatura fantasma');
+  assert(billing.includes('Number(data.amount || 0) <= 0'), 'pagamento mock amount 0 ignorado');
+
+  assert(
+    !fs.existsSync(path.join(ROOT, 'app/api/setup/diagnose-saas-charge/route.ts')),
+    'endpoint diagnóstico público removido',
+  );
 }
 
 function testPaymentRegistrationIdempotency() {
@@ -591,6 +663,7 @@ async function run() {
     ['fluxo mensal Asaas', testMonthlyAsaasChargeFlow],
     ['regras skip cobrança', testSaasPixChargeSkipRules],
     ['duplicidade mensal e individual', testDuplicateChargeProtection],
+    ['fatura fantasma e endpoint diagnóstico', testPhantomInvoiceAndDiagnoseEndpoint],
     ['pagamento registrado não duplica', testPaymentRegistrationIdempotency],
     ['sync status Asaas', testAsaasSyncStatus],
     ['patch vencimento empresa', testCompanyNextPaymentPatch],

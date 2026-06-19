@@ -115,6 +115,7 @@ export async function markOverdueSaasCharges(
     .from('saas_charges')
     .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
     .eq('status', 'PENDING')
+    .not('payment_id', 'is', null)
     .lt('due_date', today)
     .select('id');
 
@@ -155,30 +156,46 @@ export function classifyExternalChargeId(id: string | null | undefined): Externa
   return 'other';
 }
 
-export function isOrphanSaasCharge(
-  charge: Pick<SaasCharge, 'status' | 'payment_id'> | null,
+export type SaasChargeSkipInput = Pick<
+  SaasCharge,
+  'status' | 'payment_id' | 'pix_copy_paste' | 'payment_url' | 'master_payment_id'
+>;
+
+/** Cobrança com payment_id ou PIX/link válido no gateway. */
+export function hasSaasChargeRealPixData(
+  charge: Pick<SaasCharge, 'payment_id' | 'pix_copy_paste' | 'payment_url'> | null,
 ): boolean {
   if (!charge) return false;
-  return (
-    String(charge.status).toUpperCase() === 'PENDING' &&
-    !String(charge.payment_id || '').trim()
-  );
+  if (String(charge.payment_id || '').trim()) return true;
+  if (String(charge.pix_copy_paste || '').trim()) return true;
+  if (String(charge.payment_url || '').trim()) return true;
+  return false;
 }
 
-/** Cobrança real/protegida — órfãs PENDING sem payment_id não contam. */
-export function isProtectedSaasCharge(
-  charge: Pick<SaasCharge, 'status' | 'payment_id'> | null,
-): boolean {
+/** Sem payment_id/PIX/link — órfã (inclui OVERDUE fantasma). */
+export function isOrphanSaasCharge(charge: SaasChargeSkipInput | null): boolean {
+  if (!charge) return false;
+  if (hasSaasChargeRealPixData(charge)) return false;
+  const status = String(charge.status || '').toUpperCase();
+  if (status === 'PAID' && charge.master_payment_id) return false;
+  return true;
+}
+
+/** Cobrança real/protegida — órfãs nunca bloqueiam backfill Asaas. */
+export function isProtectedSaasCharge(charge: SaasChargeSkipInput | null): boolean {
   if (!charge || isOrphanSaasCharge(charge)) return false;
-  const status = String(charge.status).toUpperCase();
   if (String(charge.payment_id || '').trim()) return true;
-  return status === 'OVERDUE' || status === 'PAID';
+  if (String(charge.pix_copy_paste || '').trim() || String(charge.payment_url || '').trim()) {
+    return true;
+  }
+  const status = String(charge.status || '').toUpperCase();
+  return status === 'PAID' && !!charge.master_payment_id;
 }
 
 /** Bloqueio síncrono — apenas saas_charges protegida. */
 export function resolveSaasPixChargeSkipReason(
   invoice: Pick<MasterSaasInvoice, 'external_charge_id'>,
-  existingCharge: Pick<SaasCharge, 'status' | 'payment_id'> | null,
+  existingCharge: SaasChargeSkipInput | null,
 ): string | null {
   void invoice;
   if (isProtectedSaasCharge(existingCharge)) {
@@ -190,7 +207,7 @@ export function resolveSaasPixChargeSkipReason(
 /** Bloqueio completo — inclui external_charge_id pay_ válido no Asaas. */
 export async function resolveSaasPixChargeSkipReasonAsync(
   invoice: Pick<MasterSaasInvoice, 'external_charge_id'>,
-  existingCharge: Pick<SaasCharge, 'status' | 'payment_id'> | null,
+  existingCharge: SaasChargeSkipInput | null,
   verifyAsaasPayment?: AsaasPaymentVerifier,
 ): Promise<string | null> {
   const syncReason = resolveSaasPixChargeSkipReason(invoice, existingCharge);
@@ -349,14 +366,21 @@ export async function createSaasPixCharge(
     .eq('invoice_id', invoice.id)
     .order('created_at', { ascending: false });
 
-  let existingCharge = chargeRows?.[0]
-    ? parseChargeRow(chargeRows[0] as Record<string, unknown>)
-    : null;
-
-  if (existingCharge && isOrphanSaasCharge(existingCharge)) {
-    await supabaseAdmin.from('saas_charges').delete().eq('id', existingCharge.id);
-    existingCharge = null;
+  const now = new Date().toISOString();
+  for (const row of chargeRows || []) {
+    const parsed = parseChargeRow(row as Record<string, unknown>);
+    if (isOrphanSaasCharge(parsed)) {
+      await supabaseAdmin
+        .from('saas_charges')
+        .update({ status: 'CANCELLED', updated_at: now })
+        .eq('id', parsed.id);
+    }
   }
+
+  let existingCharge =
+    (chargeRows || [])
+      .map((row) => parseChargeRow(row as Record<string, unknown>))
+      .find((ch) => !isOrphanSaasCharge(ch)) ?? null;
 
   const skipReason = await resolveSaasPixChargeSkipReasonAsync(invoice, existingCharge);
   if (skipReason) {
@@ -393,7 +417,6 @@ export async function createSaasPixCharge(
 
   const asaasDueDate = resolveAsaasDueDate(invoice.due_date);
 
-  const now = new Date().toISOString();
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('saas_charges')
     .insert({
