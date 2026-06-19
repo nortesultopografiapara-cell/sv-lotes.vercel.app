@@ -676,6 +676,15 @@ function SaaSFinancePageContent() {
     [companyListRows, selectedCompanyId],
   );
 
+  const workspaceCompany = useMemo((): SaasCompanyRow | null => {
+    if (selectedCompanyRow) return selectedCompanyRow;
+    if (!selectedCompany) return null;
+    return {
+      ...(selectedCompany as SaasCompanyRow),
+      id: (selectedCompany as { id?: string }).id || '',
+    };
+  }, [selectedCompanyRow, selectedCompany]);
+
   const loadCompanyContracts = useCallback(
     async (companyId: string): Promise<CompanyContractRow[]> => {
       if (!user?.id) return [];
@@ -929,9 +938,9 @@ function SaaSFinancePageContent() {
       ) : null}
 
       {panelView === 'empresas' ? (
-        selectedCompanyRow && selectedCompany ? (
+        workspaceCompany && selectedCompany ? (
           <SaasCompanyWorkspace
-            company={selectedCompanyRow}
+            company={workspaceCompany}
             tab={companyTab}
             onTabChange={setCompanyTab}
             onBack={() => setSelectedCompanyId(null)}

@@ -156,6 +156,8 @@ function testSaasFinanceGatewayUi() {
   assert(chargesTable.includes('Enviar E-mail'), 'ação e-mail');
   assert(chargeModal.includes('Copiar PIX'), 'copiar PIX no modal');
   assert(workspace.includes('SaasContractPanel'), 'contrato no workspace');
+  assert(workspace.includes('showGenerateButton'), 'workspace flag gerar cobrança');
+  assert(workspace.includes('Gerar Cobrança'), 'workspace botão gerar cobrança');
   assert(saasFinance.includes('buildSaasInvoiceChargeRows'), 'merge faturas + charges');
   assert(saasFinance.includes('SaasChargeViewModal'), 'modal cobrança');
 }
@@ -835,7 +837,8 @@ function testChargesUiBoleto() {
   assert(table.includes('onCopyPix'), 'UI copiar PIX');
   assert(table.includes('onOpenBankSlip'), 'UI abrir boleto');
   assert(table.includes('Link Asaas'), 'UI link Asaas');
-  assert(table.includes('overflow-visible'), 'tabela overflow visible');
+  assert(table.includes('showGenerateButton'), 'flag explícita gerar cobrança');
+  assert(table.includes('Gerar Cobrança'), 'label botão gerar cobrança');
 
   const dropdown = read('components/master/saas/SaasActionsDropdown.tsx');
   assert(dropdown.includes('createPortal'), 'dropdown portal');

@@ -10,7 +10,6 @@ import {
   saasChargeDisplayStatusTone,
 } from '@/lib/masterSaasPanel';
 import { SaasActionsDropdown, type SaasActionItem } from './SaasActionsDropdown';
-import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 
 type Props = {
   rows: SaasInvoiceChargeRow[];
@@ -30,6 +29,7 @@ type Props = {
   onRegisterPayment: (row: SaasInvoiceChargeRow) => void;
   onGenerateCharge?: () => void;
   generatingCharge?: boolean;
+  showGenerateButton?: boolean;
   compact?: boolean;
   filterCompany?: string;
   onFilterCompany?: (v: string) => void;
@@ -56,6 +56,7 @@ export function SaasChargesTable({
   onRegisterPayment,
   onGenerateCharge,
   generatingCharge,
+  showGenerateButton = false,
   compact = false,
   filterCompany = 'all',
   onFilterCompany,
@@ -72,6 +73,24 @@ export function SaasChargesTable({
     return true;
   });
 
+  const canGenerate = showGenerateButton || !!onGenerateCharge;
+
+  const generateButton = canGenerate ? (
+    <button
+      type="button"
+      disabled={generatingCharge || !gatewayReady}
+      title={
+        !gatewayReady
+          ? 'Configure ASAAS_API_KEY para gerar cobranças.'
+          : undefined
+      }
+      onClick={() => onGenerateCharge?.()}
+      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-[12px] font-semibold text-white shrink-0"
+    >
+      {generatingCharge ? 'Gerando…' : 'Gerar Cobrança'}
+    </button>
+  ) : null;
+
   return (
     <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-visible w-full">
       <div className="p-5 border-b border-white/5 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
@@ -83,17 +102,8 @@ export function SaasChargesTable({
               : 'PIX e Boleto Asaas — ações centralizadas no menu.'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          {onGenerateCharge ? (
-            <button
-              type="button"
-              disabled={generatingCharge || !gatewayReady}
-              onClick={onGenerateCharge}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-[12px] font-semibold text-white"
-            >
-              {generatingCharge ? 'Gerando…' : 'Gerar cobrança'}
-            </button>
-          ) : null}
+        <div className="flex flex-wrap gap-2 items-center min-w-0">
+          {generateButton}
           {onFilterCompany ? (
             <select
               value={filterCompany}
@@ -247,14 +257,17 @@ export function SaasChargesTable({
             {!loading && filtered.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-8">
-                  <MasterEmptyState
-                    title="Nenhuma cobrança"
-                    description={
-                      onGenerateCharge
-                        ? 'Clique em Gerar cobrança para emitir PIX ou Boleto via Asaas.'
-                        : 'Gere cobranças pelo workspace da empresa ou use Gerar cobranças do mês.'
-                    }
-                  />
+                  <div className="rounded-xl border border-dashed border-white/10 bg-[#0B0E14]/40 px-6 py-10 text-center">
+                    <h4 className="text-base font-bold text-white mb-2">Nenhuma cobrança</h4>
+                    <p className="text-sm text-gray-400 max-w-md mx-auto mb-5">
+                      {canGenerate
+                        ? 'Emita PIX ou Boleto via Asaas para esta empresa.'
+                        : 'Gere cobranças pelo workspace da empresa ou use Gerar cobranças do mês.'}
+                    </p>
+                    {generateButton ? (
+                      <div className="flex justify-center">{generateButton}</div>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ) : null}
