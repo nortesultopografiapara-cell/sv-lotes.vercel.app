@@ -132,6 +132,7 @@ export async function middleware(request: NextRequest) {
       '/logs',
       '/plans',
       '/saas-finance',
+      '/billing',
       '/offline-sync',
       '/reports',
       '/master',

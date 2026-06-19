@@ -82,13 +82,16 @@ export async function getRequestAuthUser(request: Request) {
 }
 
 /** Perfil em public.users (tenant_id, role) para APIs de empresa parceira. */
+export const CALLER_PROFILE_SELECT =
+  'id, role, tenant_id, email, full_name, status';
+
 export async function resolveCallerProfile(
   supabase: SupabaseClient,
   authUserId: string,
 ) {
   const { data, error } = await supabase
     .from('users')
-    .select('id, role, tenant_id, company_id, name, email')
+    .select(CALLER_PROFILE_SELECT)
     .eq('id', authUserId)
     .maybeSingle();
   if (error) {

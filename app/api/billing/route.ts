@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServiceSupabase } from '@/lib/apiSuperAdmin';
-import { listSaasCharges } from '@/lib/saasCharges';
+import { listSaasCharges, syncSaasChargeStatusFromAsaas } from '@/lib/saasCharges';
 import { listMasterSaasInvoices } from '@/lib/saasBilling';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { resolveCompanyPricing } from '@/lib/companyPricing';
@@ -9,53 +8,29 @@ import {
   buildPaidReferenceMonthsByCompany,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
+import { buildSaasInvoiceChargeRows } from '@/lib/saasInvoiceChargeView';
+import { authorizeTenantBilling } from '@/lib/tenantBillingAuth';
 import {
-  createAdminSupabase,
-  getRequestAuthUser,
-  resolveCallerProfile,
-} from '@/lib/supabase/server';
-import { isPlatformAdmin } from '@/lib/rls';
-import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
-import { normalizeUserRole } from '@/lib/rolePermissions';
+  assertSaasPaymentGatewayConfigured,
+  getSaasPaymentGatewayStatus,
+} from '@/lib/saasPaymentGateway';
 
 export const runtime = 'nodejs';
 
-async function authorizeTenantBilling(request: Request) {
-  const { user, configError } = await getRequestAuthUser(request);
-  if (configError || !user) {
-    return { error: NextResponse.json({ error: configError || 'Não autenticado.' }, { status: 401 }) };
-  }
-
-  const { client: admin, configError: adminError } = createAdminSupabase();
-  if (!admin || adminError) {
-    return { error: NextResponse.json({ error: adminError || 'Service role indisponível.' }, { status: 503 }) };
-  }
-
-  const profile = await resolveCallerProfile(admin, user.id);
-  const role = normalizeUserRole(profile?.role);
-  const tenantId = profile?.tenant_id || profile?.company_id || null;
-
-  if (!isPlatformAdmin(role) && !isTenantAdminRole(role)) {
-    return { error: NextResponse.json({ error: 'Permissão negada.' }, { status: 403 }) };
-  }
-
-  if (!tenantId && !isPlatformAdmin(role)) {
-    return { error: NextResponse.json({ error: 'Empresa não identificada.' }, { status: 400 }) };
-  }
-
-  return { admin, user, role, tenantId: tenantId as string };
-}
-
 export async function GET(request: Request) {
   const auth = await authorizeTenantBilling(request);
-  if ('error' in auth && auth.error) return auth.error;
+  if ('error' in auth) return auth.error;
 
-  const { admin, tenantId } = auth as { admin: NonNullable<Awaited<ReturnType<typeof createAdminSupabase>>['client']>; tenantId: string };
+  const { admin, tenantId } = auth;
 
   try {
     await updateCompanyFinancialStatus(admin, tenantId);
 
-    const { data: company } = await admin.from('companies').select('*').eq('id', tenantId).single();
+    const { data: company } = await admin
+      .from('companies')
+      .select('*')
+      .eq('id', tenantId)
+      .single();
     const { data: subscription } = await admin
       .from('company_subscriptions')
       .select('*')
@@ -80,12 +55,16 @@ export async function GET(request: Request) {
       payments: (payments || []) as MasterSaasPayment[],
     });
 
-    const charges = await listSaasCharges(admin, { companyId: tenantId, limit: 24 });
-    const invoices = await listMasterSaasInvoices(admin, { companyId: tenantId, limit: 24 });
+    const charges = await listSaasCharges(admin, { companyId: tenantId, limit: 36 });
+    const invoices = await listMasterSaasInvoices(admin, { companyId: tenantId, limit: 36 });
+    const rows = buildSaasInvoiceChargeRows(invoices, charges);
     const currentCharge =
-      charges.find((c) => c.status === 'PENDING' || c.status === 'OVERDUE') || charges[0] || null;
+      charges.find((c) => c.status === 'PENDING' || c.status === 'OVERDUE') ||
+      charges[0] ||
+      null;
 
     const pricing = company ? resolveCompanyPricing(company) : null;
+    const lastPayment = (payments || [])[0] ?? null;
 
     return NextResponse.json({
       company: company
@@ -104,9 +83,56 @@ export async function GET(request: Request) {
       charges,
       payments: payments || [],
       invoices,
+      rows,
+      lastPayment,
+      gateway: getSaasPaymentGatewayStatus(),
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao carregar billing';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  const auth = await authorizeTenantBilling(request);
+  if ('error' in auth) return auth.error;
+
+  const { admin, tenantId, userId } = auth;
+
+  try {
+    const body = await request.json();
+    const action = String(body.action || '').trim();
+    const chargeId = String(body.chargeId || '').trim();
+
+    if (action !== 'sync_status') {
+      return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
+    }
+
+    if (!chargeId) {
+      return NextResponse.json({ error: 'chargeId obrigatório.' }, { status: 400 });
+    }
+
+    const { data: chargeRow } = await admin
+      .from('saas_charges')
+      .select('id, company_id')
+      .eq('id', chargeId)
+      .maybeSingle();
+
+    if (!chargeRow || String(chargeRow.company_id) !== tenantId) {
+      return NextResponse.json({ error: 'Cobrança não encontrada.' }, { status: 404 });
+    }
+
+    try {
+      assertSaasPaymentGatewayConfigured();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Gateway não configurado.';
+      return NextResponse.json({ error: message }, { status: 503 });
+    }
+
+    const result = await syncSaasChargeStatusFromAsaas(admin, chargeId, userId);
+    return NextResponse.json({ success: true, charge: result.charge, paid: result.paid });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Erro ao atualizar cobrança';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

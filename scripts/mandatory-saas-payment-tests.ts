@@ -755,6 +755,26 @@ function testDatabaseMigration() {
 
 function testBillingPage() {
   assert(fs.existsSync(path.join(ROOT, 'app/billing/page.tsx')), 'página /billing');
+  assert(fs.existsSync(path.join(ROOT, 'app/minha-assinatura/page.tsx')), 'alias /minha-assinatura');
+  assert(
+    fs.existsSync(path.join(ROOT, 'components/billing/CompanyBillingPortal.tsx')),
+    'portal billing empresa',
+  );
+}
+
+function testTenantBillingAuth() {
+  const server = read('lib/supabase/server.ts');
+  assert(server.includes('CALLER_PROFILE_SELECT'), 'select perfil sem company_id');
+  assert(!server.includes('company_id, name'), 'resolveCallerProfile sem colunas inválidas');
+
+  const auth = read('lib/tenantBillingAuth.ts');
+  assert(auth.includes('isTenantEnterpriseAdminRole'), 'auth usa admin empresa');
+  assert(auth.includes('resolveUsersTenantId'), 'auth usa tenant_id');
+
+  const route = read('app/api/billing/route.ts');
+  assert(route.includes('buildSaasInvoiceChargeRows'), 'api retorna rows');
+  assert(route.includes('syncSaasChargeStatusFromAsaas'), 'api sync status tenant');
+  assert(route.includes('authorizeTenantBilling'), 'api usa auth centralizada');
 }
 
 function testChargeStatusMapping() {
@@ -891,6 +911,7 @@ async function run() {
     ['UI cobrança boleto', testChargesUiBoleto],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
+    ['auth tenant billing', testTenantBillingAuth],
     ['mapeamento status charge', testChargeStatusMapping],
   ];
 
