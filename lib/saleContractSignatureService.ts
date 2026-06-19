@@ -745,9 +745,11 @@ export async function loadSaleContractPdfForSign(
   const signature = options?.signature;
   if (signature?.signature_status === 'SIGNED') {
     const ctx = options?.signContext;
-    const { buildSaleContractSignatureCertificateHtml } = await import(
-      '@/lib/saleContractSignatureCertificateHtml'
-    );
+    const {
+      buildSaleContractElectronicSignaturesPageHtml,
+      buildSaleContractSignatureCertificateHtml,
+      replaceContractSignaturesBlock,
+    } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
 
     const block = ctx?.block as Record<string, unknown> | null;
@@ -767,6 +769,25 @@ export async function loadSaleContractPdfForSign(
         '—',
     );
 
+    const seller = normalizeSellerFromCompany(tenant);
+    const companyName = getCompanyDisplayName(company || tenant);
+    const buyerName = String(signature.signer_name || customer?.name || '');
+    const buyerDocument = String(signature.signer_document || '');
+
+    html = replaceContractSignaturesBlock(
+      html,
+      buildSaleContractElectronicSignaturesPageHtml({
+        vendorName: companyName,
+        vendorRepresentative: seller.representative,
+        vendorDocument: seller.representativeCpf || seller.cnpj,
+        vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
+        buyerName,
+        buyerDocument,
+        signedAt: signature.signed_at,
+        signatureStatus: 'ASSINADO ELETRONICAMENTE',
+      }),
+    );
+
     html += buildSaleContractSignatureCertificateHtml({
       contractNumber,
       projectName: String(
@@ -774,12 +795,13 @@ export async function loadSaleContractPdfForSign(
       ),
       quadra,
       lote,
-      buyerName: String(signature.signer_name || customer?.name || ''),
-      buyerDocument: String(signature.signer_document || ''),
+      buyerName,
+      buyerDocument,
       signerEmail: signature.signer_email,
-      companyName: getCompanyDisplayName(company || tenant),
+      companyName,
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
-      representativeName: normalizeSellerFromCompany(tenant).representative,
+      representativeName: seller.representative,
+      representativeCpf: seller.representativeCpf,
       signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,

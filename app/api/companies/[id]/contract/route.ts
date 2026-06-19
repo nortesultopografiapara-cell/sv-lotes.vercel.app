@@ -111,44 +111,43 @@ export async function GET(
       let pdfBytes: Uint8Array | null = null;
       let source: 'pdf_signed_url' | 'regenerated_signed' = 'regenerated_signed';
 
-      const signedUrl = contractRecord.pdf_signed_url?.trim();
-      if (signedUrl) {
-        const storedSigned = await fetchPdfBytesFromUrl(signedUrl);
-        if (storedSigned) {
-          pdfBytes = storedSigned;
-          source = 'pdf_signed_url';
-        }
-      }
-
-      if (!pdfBytes) {
+      try {
+        pdfBytes = await buildFullySignedSaasContractPdfBytes(
+          supabaseAdmin,
+          companyId,
+          contractRecord,
+          signature,
+        );
+        source = 'regenerated_signed';
         try {
-          pdfBytes = await buildFullySignedSaasContractPdfBytes(
+          const refreshedUrl = await persistSignedSaasContractPdfUrl(
             supabaseAdmin,
             companyId,
             contractRecord,
-            signature,
+            pdfBytes,
           );
-          source = 'regenerated_signed';
-          try {
-            const refreshedUrl = await persistSignedSaasContractPdfUrl(
-              supabaseAdmin,
-              companyId,
-              contractRecord,
-              pdfBytes,
-            );
-            if (refreshedUrl) {
-              await supabaseAdmin
-                .from('company_contracts')
-                .update({ pdf_signed_url: refreshedUrl, updated_at: new Date().toISOString() })
-                .eq('id', contractRecord.id);
-            }
-          } catch (persistErr) {
-            console.warn('SAAS_CONTRACT_SIGNED_PDF_PERSIST_FAILED', {
-              contract_id: contractRecord.id,
-              message: persistErr instanceof Error ? persistErr.message : String(persistErr),
-            });
+          if (refreshedUrl) {
+            await supabaseAdmin
+              .from('company_contracts')
+              .update({ pdf_signed_url: refreshedUrl, updated_at: new Date().toISOString() })
+              .eq('id', contractRecord.id);
           }
-        } catch (err) {
+        } catch (persistErr) {
+          console.warn('SAAS_CONTRACT_SIGNED_PDF_PERSIST_FAILED', {
+            contract_id: contractRecord.id,
+            message: persistErr instanceof Error ? persistErr.message : String(persistErr),
+          });
+        }
+      } catch (err) {
+        const signedUrl = contractRecord.pdf_signed_url?.trim();
+        if (signedUrl) {
+          const storedSigned = await fetchPdfBytesFromUrl(signedUrl);
+          if (storedSigned) {
+            pdfBytes = storedSigned;
+            source = 'pdf_signed_url';
+          }
+        }
+        if (!pdfBytes) {
           const message = err instanceof Error ? err.message : 'Falha ao gerar PDF assinado.';
           return jsonError(message, 500, {
             companyId,

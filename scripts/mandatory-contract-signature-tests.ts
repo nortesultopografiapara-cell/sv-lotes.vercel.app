@@ -395,13 +395,19 @@ function testBilateralFinalPdf() {
   assert(pdfContainsText(bilateral.pdf, 'CONTRATANTE'), 'PDF contém bloco CONTRATANTE');
   assert(pdfContainsText(bilateral.pdf, 'CONTRATADA'), 'PDF contém bloco CONTRATADA');
   assert(
-    pdfContainsText(bilateral.pdf, 'CERTIFICADO DE ASSINATURA BILATERAL'),
+    pdfContainsText(bilateral.pdf, 'CERTIFICADO DE ASSINATURA ELETR'),
     'PDF contém certificado bilateral',
   );
   assert(
-    pdfContainsText(bilateral.pdf, 'Assinatura eletr'),
+    pdfContainsText(bilateral.pdf, 'ASSINADO ELETRONICAMENTE'),
     'PDF contém assinatura eletrônica executada',
   );
+
+  const saasRoutePath = join(process.cwd(), 'app/api/companies/[id]/contract/route.ts');
+  const saasRoute = readFileSync(saasRoutePath, 'utf8');
+  const saasRegenIdx = saasRoute.indexOf('buildFullySignedSaasContractPdfBytes');
+  const saasStoredIdx = saasRoute.indexOf('fetchPdfBytesFromUrl');
+  assert(saasRegenIdx > 0 && saasStoredIdx > saasRegenIdx, 'SaaS signed PDF regenera antes do cache');
 
   const doc = new jsPDF();
   appendBilateralSignatureCertificateToPdf(

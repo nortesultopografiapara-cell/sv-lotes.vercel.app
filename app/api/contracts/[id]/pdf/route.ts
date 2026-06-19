@@ -73,6 +73,26 @@ export async function GET(
 
     const contractRow = contract as Record<string, unknown>;
 
+    const signContext = await loadSaleSignPageContext(supabase, signature);
+
+    try {
+      const { pdf, contractNumber } = await loadSaleContractPdfForSign(
+        supabase,
+        contractId,
+        { signature, signContext },
+      );
+
+      if (pdf.byteLength >= 5) {
+        return createSaleContractPdfResponse(
+          pdf,
+          download ? 'attachment' : 'inline',
+          contractNumber || String(contract.contract_number || ''),
+        );
+      }
+    } catch (regenErr) {
+      console.warn('[CONTRACT_SIGNED_PDF] regeneration failed', regenErr);
+    }
+
     const storedSignedUrl = String(contractRow.pdf_signed_url || '').trim();
     if (storedSignedUrl) {
       try {
@@ -92,17 +112,9 @@ export async function GET(
       }
     }
 
-    const signContext = await loadSaleSignPageContext(supabase, signature);
-    const { pdf, contractNumber } = await loadSaleContractPdfForSign(
-      supabase,
-      contractId,
-      { signature, signContext },
-    );
-
-    return createSaleContractPdfResponse(
-      pdf,
-      download ? 'attachment' : 'inline',
-      contractNumber || String(contract.contract_number || ''),
+    return NextResponse.json(
+      { error: 'Falha ao gerar PDF assinado.' },
+      { status: 500 },
     );
   } catch (err) {
     const message =

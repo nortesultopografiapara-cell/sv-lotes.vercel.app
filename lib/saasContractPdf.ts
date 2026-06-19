@@ -314,6 +314,62 @@ function estimateSignatureBlockHeight(writer: PdfWriter, executed?: boolean): nu
   return 14 + 7 + introLines * CONTENT_LINE_H + 6 + block + 10 + noteLines * CONTENT_LINE_H + 8;
 }
 
+function renderExecutedSignatureCard(
+  writer: PdfWriter,
+  x: number,
+  y: number,
+  width: number,
+  params: {
+    badge: string;
+    role: string;
+    name: string;
+    documentLine: string;
+    roleLine?: string;
+    signedDate: string;
+  },
+): number {
+  const w = writer;
+  const cardH = 58;
+  w.doc.setDrawColor(197, 208, 220);
+  w.doc.setFillColor(247, 250, 252);
+  w.doc.roundedRect(x, y, width, cardH, 2, 2, 'FD');
+
+  w.doc.setFont('helvetica', 'bold');
+  w.doc.setFontSize(7.5);
+  w.doc.setTextColor(22, 120, 72);
+  w.doc.text(params.badge, x + 6, y + 8);
+
+  w.doc.setFont('helvetica', 'bold');
+  w.doc.setFontSize(8);
+  w.doc.setTextColor(74, 85, 104);
+  w.doc.text(params.role, x + 6, y + 16);
+
+  w.doc.setFont('helvetica', 'bold');
+  w.doc.setFontSize(9.5);
+  w.doc.setTextColor(26, 32, 44);
+  const nameLines = w.doc.splitTextToSize(params.name, width - 12);
+  w.doc.text(nameLines, x + 6, y + 24);
+
+  let lineY = y + 24 + nameLines.length * 4.5;
+  w.doc.setFont('helvetica', 'normal');
+  w.doc.setFontSize(8);
+  w.doc.setTextColor(45, 55, 72);
+  w.doc.text(params.documentLine, x + 6, lineY);
+  lineY += 5;
+  if (params.roleLine) {
+    w.doc.text(params.roleLine, x + 6, lineY);
+    lineY += 5;
+  }
+  w.doc.text(`Assinado em ${params.signedDate}`, x + 6, lineY);
+  lineY += 5;
+  w.doc.setFont('helvetica', 'bold');
+  w.doc.setFontSize(7.5);
+  w.doc.setTextColor(22, 120, 72);
+  w.doc.text('ASSINADO ELETRONICAMENTE', x + 6, lineY);
+
+  return cardH;
+}
+
 function renderSignaturePage(
   writer: PdfWriter,
   ctx: ReturnType<typeof resolveSaasContractContext>,
@@ -332,7 +388,34 @@ function renderSignaturePage(
 
   const signDate = new Date().toLocaleDateString('pt-BR');
   const colW = (w.contentW - 12) / 2;
-  const blockH = executed?.client && executed?.provider ? 68 : 52;
+
+  if (executed?.client && executed?.provider) {
+    const cardH = 58;
+    w.ensureSpace(cardH + 8);
+    renderExecutedSignatureCard(w, w.margin, w.y, colW, {
+      badge: '✓ ASSINADO ELETRONICAMENTE',
+      role: 'CONTRATANTE',
+      name: executed.client.name,
+      documentLine: `${ctx.contractor.documentLabel} ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
+      roleLine:
+        executed.client.role && ctx.contractor.showRepresentative
+          ? executed.client.role
+          : undefined,
+      signedDate: executed.client.signedDate,
+    });
+    renderExecutedSignatureCard(w, w.margin + colW + 12, w.y, colW, {
+      badge: '✓ ASSINADO ELETRONICAMENTE',
+      role: 'CONTRATADA',
+      name: executed.provider.name,
+      documentLine: `CPF ${formatCpfCnpj(executed.provider.document) || executed.provider.document}`,
+      roleLine: executed.provider.role || ctx.provider.tradeName,
+      signedDate: executed.provider.signedDate,
+    });
+    w.y += cardH + 8;
+    return;
+  }
+
+  const blockH = 52;
 
   w.ensureSpace(blockH);
   w.doc.setDrawColor(160);
@@ -350,36 +433,7 @@ function renderSignaturePage(
 
   w.doc.setFont('helvetica', 'normal');
   w.doc.setFontSize(8.5);
-  if (executed?.client && executed?.provider) {
-    w.doc.text(executed.client.name, w.margin, w.y);
-    w.doc.text(executed.provider.name, providerColX, w.y);
-    w.y += 5;
-    w.doc.text(
-      `${ctx.contractor.documentLabel} ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
-      w.margin,
-      w.y,
-    );
-    w.doc.text(
-      `CPF ${formatCpfCnpj(executed.provider.document) || executed.provider.document}`,
-      providerColX,
-      w.y,
-    );
-    w.y += 5;
-    if (executed.client.role && ctx.contractor.showRepresentative) {
-      w.doc.text(executed.client.role, w.margin, w.y);
-    }
-    w.doc.text(executed.provider.role || ctx.provider.tradeName, providerColX, w.y);
-    w.y += 5;
-    w.doc.text(`Assinado em ${executed.client.signedDate}`, w.margin, w.y);
-    w.doc.text(`Assinado em ${executed.provider.signedDate}`, providerColX, w.y);
-    w.y += 5;
-    w.doc.setFont('helvetica', 'bold');
-    w.doc.setFontSize(8);
-    w.doc.setTextColor(16, 120, 72);
-    w.doc.text('Assinatura eletrônica válida', w.margin, w.y);
-    w.doc.text('Assinatura eletrônica válida', providerColX, w.y);
-    w.y += 8;
-  } else {
+  {
     let clientY = w.y;
     let providerY = w.y;
 

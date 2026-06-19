@@ -17,6 +17,7 @@ export type SignatureCertificateData = {
   signedDate: string;
   signedTime: string;
   signatureHash: string;
+  signatureToken?: string | null;
   partyLabel?: 'CONTRATANTE' | 'CONTRATADA';
 };
 
@@ -65,7 +66,7 @@ export function appendBilateralSignatureCertificateToPdf(
 ): void {
   doc.addPage();
   const contentW = pageW - margin * 2;
-  drawCertificateHeader(doc, margin, pageW, 'CERTIFICADO DE ASSINATURA BILATERAL');
+  drawCertificateHeader(doc, margin, pageW, 'CERTIFICADO DE ASSINATURA ELETRÔNICA');
 
   let y = 40;
   doc.setTextColor(30, 30, 30);
@@ -77,7 +78,19 @@ export function appendBilateralSignatureCertificateToPdf(
     'a Lei nº 14.063/2020 e a legislação aplicável, incluindo hash de integridade (SHA-256) para cada signatário.';
   const introLines = doc.splitTextToSize(intro, contentW);
   doc.text(introLines, margin, y);
-  y += introLines.length * CONTENT_LINE_H + 8;
+  y += introLines.length * CONTENT_LINE_H + 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(22, 120, 72);
+  doc.text('✓ Contratante          ✓ Contratada', pageW / 2, y, { align: 'center' });
+  y += 10;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(45, 55, 72);
+  doc.text('Dados da assinatura', margin, y);
+  y += 8;
 
   y = renderPartyCertificateSection(
     doc,
@@ -85,17 +98,32 @@ export function appendBilateralSignatureCertificateToPdf(
     margin,
     pageW,
     y,
-    'CONTRATANTE',
+    '✓ CONTRATANTE',
   );
   y += 8;
-  renderPartyCertificateSection(
+  y = renderPartyCertificateSection(
     doc,
     bilateral.provider,
     margin,
     pageW,
     y,
-    'CONTRATADA',
+    '✓ CONTRATADA',
   );
+
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(45, 55, 72);
+  doc.text('Declaração jurídica', margin, y);
+  y += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(45, 55, 72);
+  const declaration =
+    'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
+    'como prova de aceite eletrônico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovação de manifestação de vontade.';
+  const declarationLines = doc.splitTextToSize(declaration, contentW);
+  doc.text(declarationLines, margin, y);
 }
 
 function drawCertificateHeader(doc: jsPDF, margin: number, pageW: number, title: string) {
@@ -193,9 +221,19 @@ function renderPartyCertificateSection(
   row('Endereço IP', cert.ipAddress || '—');
   row('Data da assinatura', cert.signedDate);
   row('Hora da assinatura', cert.signedTime);
+  if (cert.signatureToken) {
+    row('Token', maskToken(cert.signatureToken));
+  }
   row('Hash de integridade (SHA-256)', cert.signatureHash);
 
   return y + 6;
+}
+
+function maskToken(token?: string | null): string {
+  const t = String(token || '').trim();
+  if (!t) return '—';
+  if (t.length <= 12) return t;
+  return `${t.slice(0, 6)}…${t.slice(-6)}`;
 }
 
 export function buildProviderCertificateDefaults(): {

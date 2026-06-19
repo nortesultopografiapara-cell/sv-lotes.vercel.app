@@ -219,6 +219,7 @@ export async function buildFullySignedSaasContractPdfBytes(
       signedDate: formatSignatureDateBr(clientSignedAt),
       signedTime: formatSignatureTimeBr(clientSignedAt),
       signatureHash: clientHash,
+      signatureToken: signatureRow.signature_token,
       partyLabel: 'CONTRATANTE',
     },
     provider: {
@@ -231,6 +232,7 @@ export async function buildFullySignedSaasContractPdfBytes(
       signedDate: formatSignatureDateBr(providerSignedAt),
       signedTime: formatSignatureTimeBr(providerSignedAt),
       signatureHash: providerHash,
+      signatureToken: signatureRow.signature_token,
       partyLabel: 'CONTRATADA',
     },
   };

@@ -3,7 +3,13 @@
  * npx tsx scripts/mandatory-sale-sign-email-certificate-tests.ts
  */
 
-import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  buildSaleContractElectronicSignaturesPageHtml,
+  buildSaleContractSignatureCertificateHtml,
+  replaceContractSignaturesBlock,
+} from '../lib/saleContractSignatureCertificateHtml';
 import {
   isValidSignerEmail,
   normalizeSignerEmail,
@@ -70,6 +76,8 @@ function testCertificateWithEmail() {
   });
 
   assert(cert.includes('Certificado de Assinatura Eletrônica'), 'título certificado');
+  assert(cert.includes('Promitente Vendedor'), 'cert vendedor');
+  assert(cert.includes('Promissário Comprador'), 'cert comprador');
   assert(cert.includes('000000022/2026'), 'número contrato');
   assert(cert.includes('Residencial Meneses'), 'empreendimento');
   assert(cert.includes('QD 04'), 'quadra');
@@ -97,7 +105,7 @@ function testCertificateWithoutEmailLegacy() {
     signedAt: '2025-12-01T10:00:00.000Z',
   });
   assert(cert.includes('Cliente Antigo'), 'contrato legado mantém comprador');
-  assert(cert.includes('E-MAIL'), 'campo e-mail presente');
+  assert(cert.includes('E-mail'), 'campo e-mail presente');
   assert(cert.includes('—'), 'e-mail ausente exibe traço');
   console.log('OK testCertificateWithoutEmailLegacy');
 }
@@ -154,10 +162,48 @@ function testContractsPdfApiPath() {
   console.log('OK testContractsPdfApiPath');
 }
 
+function testElectronicSignaturesPage() {
+  const page = buildSaleContractElectronicSignaturesPageHtml({
+    vendorName: 'MENESES IMOBILIÁRIA LTDA',
+    vendorRepresentative: 'Carlos Daniel Araújo Meneses',
+    vendorDocument: '12345678901',
+    vendorDocumentLabel: 'CPF',
+    buyerName: 'Comprador Teste',
+    buyerDocument: '98765432100',
+    signedAt: '2026-06-08T15:30:00.000Z',
+    signatureStatus: 'ASSINADO ELETRONICAMENTE',
+  });
+  assert(page.includes('PROMITENTE VENDEDOR'), 'card vendedor');
+  assert(page.includes('PROMISSÁRIO COMPRADOR'), 'card comprador');
+  assert(page.includes('✓ ASSINADO ELETRONICAMENTE'), 'selo assinatura');
+  assert(page.includes('MENESES IMOBILIÁRIA LTDA'), 'nome empresa');
+
+  const html = replaceContractSignaturesBlock(
+    '<div class="contract-signatures"><div class="signature-slot">old</div></div><footer/>',
+    page,
+  );
+  assert(!html.includes('signature-slot'), 'bloco antigo removido');
+  assert(html.includes('e-sign-card'), 'cards inseridos');
+  console.log('OK testElectronicSignaturesPage');
+}
+
+function testSignedPdfApiRegeneratesBeforeStoredUrl() {
+  const routePath = join(process.cwd(), 'app/api/contracts/[id]/pdf/route.ts');
+  const source = readFileSync(routePath, 'utf8');
+  const regenIdx = source.indexOf('loadSaleContractPdfForSign');
+  const storedIdx = source.indexOf('storedSignedUrl');
+  assert(regenIdx > 0, 'API usa loadSaleContractPdfForSign');
+  assert(storedIdx > 0, 'API mantém fallback pdf_signed_url');
+  assert(regenIdx < storedIdx, 'PDF assinado regenera antes do cache armazenado');
+  console.log('OK testSignedPdfApiRegeneratesBeforeStoredUrl');
+}
+
 function main() {
   testEmailValidation();
   testCertificateWithEmail();
   testCertificateWithoutEmailLegacy();
+  testElectronicSignaturesPage();
+  testSignedPdfApiRegeneratesBeforeStoredUrl();
   testSignatureHashIncludesEmail();
   testAuditHistoryEvent();
   testContractsPdfApiPath();

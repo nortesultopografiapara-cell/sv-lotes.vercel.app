@@ -191,7 +191,9 @@ function testSignatureCertificateHtml() {
   assert(cert.includes('Residencial Meneses'), 'cert empreendimento');
   assert(cert.includes('QD 04'), 'cert quadra');
   assert(cert.includes('LT 22'), 'cert lote');
-  assert(cert.includes('Comprador Teste'), 'cert comprador');
+  assert(cert.includes('MENESES IMOBILIARIA LTDA'), 'cert empresa');
+  assert(cert.includes('Promitente Vendedor'), 'cert bloco vendedor');
+  assert(cert.includes('Promissário Comprador'), 'cert bloco comprador');
   assert(cert.includes('comprador@test.com'), 'cert email');
   assert(cert.includes('Hash de integridade'), 'cert hash');
   assert(cert.includes('ASSINADO ELETRONICAMENTE'), 'cert status');
