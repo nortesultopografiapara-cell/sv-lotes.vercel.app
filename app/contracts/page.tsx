@@ -1737,7 +1737,7 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 contracts-list-scroll">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 contracts-list-scroll sv-scrollbar sv-scrollbar-dark">
             {loading ? (
               <div className="flex justify-center p-8">
                 <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
@@ -1833,7 +1833,7 @@ export default function ContractsPage() {
         >
           {selectedContract ? (
             <>
-              <div className="p-6 border-b border-[var(--border-color)]">
+              <div className="p-6 border-b border-[var(--border-color)] shrink-0">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/20 flex items-center justify-center">
@@ -1994,7 +1994,7 @@ export default function ContractsPage() {
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[var(--border-color)] overflow-x-auto min-w-0">
+              <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-6 border-b border-[var(--border-color)] overflow-x-auto min-w-0 shrink-0 sv-scrollbar sv-scrollbar-dark">
                 {[
                   "Visualização",
                   "Dados do Contrato",
@@ -2013,10 +2013,10 @@ export default function ContractsPage() {
               </div>
 
               {/* Body Content */}
-              <div className="flex-1 overflow-hidden flex bg-[var(--bg-main)] min-w-0">
+              <div className="flex-1 overflow-hidden flex bg-[var(--bg-main)] min-w-0 min-h-0">
                 {activeTab === "Visualização" && (
                   <>
-                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad">
+                    <div className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto overflow-x-hidden max-md:contracts-detail-mobile-pad contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                       {(!selectedContract.generated_html ||
                         selectedContract.generated_html.length < 500) && (
                         <div className="max-w-[800px] mx-auto mb-4 bg-blue-900/40 border border-blue-500/50 p-4 rounded-lg flex items-center justify-between">
@@ -2063,7 +2063,7 @@ export default function ContractsPage() {
                     </div>
 
                     {/* Timeline Sidebar inside preview */}
-                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[var(--border-color)] bg-[var(--bg-card)] p-4 sm:p-6 overflow-y-auto shrink-0">
+                    <div className="hidden 2xl:block flex-none w-[min(100%,260px)] border-l border-[var(--border-color)] bg-[var(--bg-card)] p-4 sm:p-6 overflow-y-auto sv-scrollbar sv-scrollbar-dark shrink-0">
                       <h3 className="text-sm font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
                         <History className="w-4 h-4 text-[var(--text-secondary)]" />
                         Histórico de versões
@@ -2167,7 +2167,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Dados do Contrato" && (
-                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Dados Principais do Contrato
@@ -2303,7 +2303,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Parcelas" && (
-                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Parcelas do Contrato
@@ -2388,7 +2388,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Arquivos" && (
-                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                     <div className="max-w-[800px] mx-auto bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                       <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">
                         Arquivos Anexados
@@ -2436,7 +2436,7 @@ export default function ContractsPage() {
                 )}
 
                 {activeTab === "Histórico" && (
-                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad">
+                  <div className="flex-1 p-6 overflow-y-auto contracts-detail-mobile-pad sv-scrollbar sv-scrollbar-dark">
                     <div className="max-w-[800px] mx-auto space-y-6">
                       <div className="bg-[var(--bg-elevated)] p-6 rounded-lg border border-[var(--border-color)]">
                         <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">

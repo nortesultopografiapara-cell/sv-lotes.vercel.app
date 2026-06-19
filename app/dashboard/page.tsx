@@ -739,7 +739,7 @@ function OperationalDashboard({ user }: { user: any }) {
                 Ver todas
               </Link>
             </div>
-            <div className="dash-compact-scroll custom-scrollbar">
+            <div className="dash-compact-scroll sv-scrollbar sv-scrollbar-dark">
               {loading ? (
                 <div className="flex items-center justify-center h-24">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-400" />

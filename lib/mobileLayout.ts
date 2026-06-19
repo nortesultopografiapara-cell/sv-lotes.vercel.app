@@ -15,7 +15,11 @@ export const MOBILE_CONTENT_PAD_BOTTOM_CLASS =
   'pb-[var(--sv-mobile-content-pad-bottom)]';
 
 export const MOBILE_SCROLL_AREA_CLASS =
-  'sv-mobile-scroll-area overflow-y-auto overscroll-y-contain min-h-0';
+  'sv-mobile-scroll-area sv-scrollbar sv-scrollbar-dark overflow-y-auto overscroll-y-contain min-h-0';
+
+export const SV_SCROLLBAR_CLASS = 'sv-scrollbar';
+export const SV_SCROLLBAR_DARK_CLASS = 'sv-scrollbar sv-scrollbar-dark';
+export const SV_SCROLLBAR_LIGHT_CLASS = 'sv-scrollbar sv-scrollbar-light';
 
 export const SV_PAGE_MOBILE_CLASS = 'sv-page sv-page--scroll-y';
 

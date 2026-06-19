@@ -2755,7 +2755,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-7 h-full font-sans">
+    <div className="finance-premium sv-page--mobile-pad flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto sv-scrollbar sv-scrollbar-dark p-4 md:p-6 lg:p-7 h-full font-sans">
       {financeToast && (
         <div
           role="status"
@@ -3673,7 +3673,7 @@ export default function FinancePage() {
               </button>
             </div>
             
-            <div className="sv-modal-body p-6 custom-scrollbar space-y-5">
+            <div className="sv-modal-body p-6 sv-scrollbar sv-scrollbar-dark space-y-5">
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Projeto/Loteamento</label>
                 <select value={prFilterProject} onChange={e => setPrFilterProject(e.target.value)} className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">

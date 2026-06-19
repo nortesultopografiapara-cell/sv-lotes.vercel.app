@@ -392,7 +392,7 @@ export function CustomerLotFormModal({
           </button>
         </div>
 
-        <div className="gis-commercial-modal sv-modal-body flex-1 p-5 text-slate-900">
+        <div className="gis-commercial-modal sv-modal-body flex-1 p-5 pr-4 text-slate-900">
           {prefillLoading && (
             <div className="mb-4 flex items-center gap-2 text-sm text-blue-700">
               <Loader2 className="w-4 h-4 animate-spin" />

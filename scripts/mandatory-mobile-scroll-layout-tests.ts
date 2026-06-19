@@ -13,6 +13,8 @@ import {
   MOBILE_MODAL_SOURCE_FILES,
   MOBILE_PAGE_SOURCE_FILES,
   MOBILE_SCROLL_AREA_CLASS,
+  SV_SCROLLBAR_DARK_CLASS,
+  SV_SCROLLBAR_LIGHT_CLASS,
   SV_MODAL_BODY_CLASS,
   SV_MODAL_FOOTER_CLASS,
   SV_MODAL_OVERLAY_CLASS,
@@ -49,6 +51,12 @@ function testMobileLayoutLib() {
     MOBILE_SCROLL_AREA_CLASS.includes('overflow-y-auto'),
     'área scroll mobile',
   );
+  assert(
+    MOBILE_SCROLL_AREA_CLASS.includes('sv-scrollbar-dark'),
+    'área scroll mobile com scrollbar visível',
+  );
+  assert(SV_SCROLLBAR_DARK_CLASS.includes('sv-scrollbar'), 'classe scrollbar dark');
+  assert(SV_SCROLLBAR_LIGHT_CLASS.includes('sv-scrollbar-light'), 'classe scrollbar light');
 }
 
 function testMobileLayoutCss() {
@@ -61,6 +69,11 @@ function testMobileLayoutCss() {
   assert(css.includes('.sv-modal-shell'), 'classe shell modal');
   assert(css.includes('.sv-modal-body'), 'classe body modal');
   assert(css.includes('.sv-modal-footer'), 'classe footer modal');
+  assert(css.includes('.sv-scrollbar-dark'), 'classe scrollbar dark');
+  assert(css.includes('.sv-scrollbar-light'), 'classe scrollbar light');
+  assert(css.includes('scrollbar-color'), 'Firefox scrollbar-color');
+  assert(css.includes('rgba(249, 115, 22'), 'thumb laranja visível');
+  assert(css.includes('.sv-modal-shell.bg-white .sv-modal-body'), 'modal claro com scrollbar');
   assert(css.includes('safe-area-inset-bottom'), 'safe area no footer');
   assert(
     css.includes('z-index: 400') || css.includes('z-index:400'),
@@ -142,6 +155,7 @@ function testModalPatterns() {
   const lotForm = read('components/map/CustomerLotFormModal.tsx');
   assert(lotForm.includes('Confirmar Venda'), 'botão confirmar venda GIS');
   assert(lotForm.includes(SV_MODAL_FOOTER_CLASS), 'venda lote com footer fixo');
+  assert(lotForm.includes('sv-modal-shell--full-mobile bg-white'), 'modal venda fundo claro');
 }
 
 function testBrokersBrokerFormMobile() {
@@ -196,6 +210,13 @@ function testNoProblematicMainOverflowHidden() {
   assert(mainClasses.includes('min-h-0'), 'main com min-h-0 para flex scroll');
 }
 
+function testContractsScrollbars() {
+  const contracts = read('app/contracts/page.tsx');
+  assert(contracts.includes('sv-scrollbar-dark'), 'contratos usa scrollbar dark');
+  assert(contracts.includes('contracts-list-scroll'), 'lista lateral de contratos');
+  assert(contracts.includes('contracts-detail-mobile-pad'), 'área de detalhe rolável');
+}
+
 function run() {
   const tests: Array<[string, () => void]> = [
     ['mobileLayout lib', testMobileLayoutLib],
@@ -206,6 +227,7 @@ function run() {
     ['modais mobile', testModalPatterns],
     ['corretor cadastro mobile', testBrokersBrokerFormMobile],
     ['main overflow', testNoProblematicMainOverflowHidden],
+    ['contratos scrollbar', testContractsScrollbars],
   ];
 
   for (const [name, fn] of tests) {

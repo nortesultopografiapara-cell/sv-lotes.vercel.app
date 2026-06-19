@@ -565,7 +565,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
           </div>
 
-          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-1">
+          <div className="flex-1 overflow-y-auto py-2 px-3 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark">
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
@@ -608,7 +608,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                   <SvLotesLogo size={36} showText subtitle={company?.fantasy_name || company?.name || undefined} />
               )}
           </div>
-          <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
+          <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark">
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
