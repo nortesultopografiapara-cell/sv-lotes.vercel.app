@@ -3,6 +3,8 @@
  * npx tsx scripts/mandatory-contract-signature-tests.ts
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { jsPDF } from 'jspdf';
 import { buildSaasContractPdfWithMeta } from '../lib/saasContractPdf';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
@@ -29,6 +31,10 @@ import {
   signatureExpiresAt,
   type CompanyContractSignatureRow,
 } from '../lib/saasContractSignatureService';
+import {
+  hasSaasSignedDocumentAccess,
+  resolveSaasSignedContractRecord,
+} from '../lib/saasContractSignedAccess';
 import {
   canProviderSignContract,
   canPublicClientSign,
@@ -273,6 +279,53 @@ function testBilateralSignatureFlow() {
   assert(!canShowProviderSignButton('SIGNED'), 'botão SV oculto após bilateral');
 
   console.log('OK testBilateralSignatureFlow');
+}
+
+function testSignedDocumentAccessUi() {
+  const signedContract = {
+    id: 'c1',
+    company_id: 'co1',
+    subscription_id: null,
+    contract_url: 'https://example.com/draft.pdf',
+    pdf_signed_url: null,
+    contract_number: '00001/2026',
+    version: 2,
+    generated_at: '2026-06-01',
+    status: 'signed',
+  };
+  const signature = {
+    signature_status: 'SIGNED',
+    contract_id: 'c1',
+  } as CompanyContractSignatureRow;
+
+  assert(
+    hasSaasSignedDocumentAccess(signedContract, signature),
+    'acesso PDF assinado com status signed',
+  );
+  assert(
+    resolveSaasSignedContractRecord([signedContract], signature)?.id === 'c1',
+    'resolve contrato assinado',
+  );
+
+  const root = join(process.cwd());
+  const panel = readFileSync(join(root, 'components/saas/SaasContractPanel.tsx'), 'utf8');
+  assert(panel.includes('Abrir PDF Assinado'), 'UI abrir PDF assinado');
+  assert(panel.includes('Baixar PDF Assinado'), 'UI baixar PDF assinado');
+  assert(panel.includes('signed: true'), 'URL API signed=1');
+
+  const saleSection = readFileSync(
+    join(root, 'components/contracts/SaleContractSignatureSection.tsx'),
+    'utf8',
+  );
+  assert(saleSection.includes('Baixar PDF Assinado'), 'venda baixar PDF assinado');
+
+  const contractRoute = readFileSync(
+    join(root, 'app/api/companies/[id]/contract/route.ts'),
+    'utf8',
+  );
+  assert(contractRoute.includes("signedOnly"), 'API signedOnly');
+
+  console.log('OK testSignedDocumentAccessUi');
 }
 
 function testBilateralFinalPdf() {
@@ -527,6 +580,7 @@ async function main() {
   testCertificateAndFinalPdf();
   testHistory();
   testBilateralSignatureFlow();
+  testSignedDocumentAccessUi();
   testBilateralFinalPdf();
   testSendReturnsSignatureUrl();
   testWhatsAppUrl();

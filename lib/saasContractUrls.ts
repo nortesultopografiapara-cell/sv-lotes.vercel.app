@@ -11,6 +11,7 @@ export function buildSaasContractPdfUrl(
   userId: string,
   mode: SaasContractPdfMode = 'inline',
   contractRecordId?: string | null,
+  options?: { signed?: boolean },
 ): string {
   const params = new URLSearchParams({ userId });
   if (mode === 'download') {
@@ -20,6 +21,9 @@ export function buildSaasContractPdfUrl(
   }
   if (contractRecordId) {
     params.set('contractId', contractRecordId);
+  }
+  if (options?.signed) {
+    params.set('signed', '1');
   }
   return `/api/companies/${companyId}/contract?${params.toString()}`;
 }

@@ -71,6 +71,27 @@ export async function GET(
       );
     }
 
+    const contractRow = contract as Record<string, unknown>;
+
+    const storedSignedUrl = String(contractRow.pdf_signed_url || '').trim();
+    if (storedSignedUrl) {
+      try {
+        const storedRes = await fetch(storedSignedUrl, { cache: 'no-store' });
+        if (storedRes.ok) {
+          const storedBytes = new Uint8Array(await storedRes.arrayBuffer());
+          if (storedBytes.byteLength >= 5) {
+            return createSaleContractPdfResponse(
+              storedBytes,
+              download ? 'attachment' : 'inline',
+              String(contract.contract_number || contractId),
+            );
+          }
+        }
+      } catch (storedErr) {
+        console.warn('[CONTRACT_SIGNED_PDF] stored url fetch failed', storedErr);
+      }
+    }
+
     const signContext = await loadSaleSignPageContext(supabase, signature);
     const { pdf, contractNumber } = await loadSaleContractPdfForSign(
       supabase,

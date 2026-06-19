@@ -14,10 +14,17 @@ import {
   refreshCompanyContractDraftPdf,
   type CompanyContractRow,
 } from '@/lib/saasContractService';
+import {
+  buildFullySignedSaasContractPdfBytes,
+  getLatestFullySignedSignature,
+  hasSaasSignedDocumentAccess,
+  persistSignedSaasContractPdfUrl,
+} from '@/lib/saasContractSignatureService';
 import { findActiveVisibleSaasContract } from '@/lib/saasContractArchive';
 import { formatCompanyContractNumber } from '@/lib/companyContractNumber';
 import {
   createSaasContractPdfResponse,
+  fetchPdfBytesFromUrl,
   fetchStoredSaasContractPdf,
   isPdfBytes,
 } from '@/lib/saasContractPdfHttp';
@@ -65,6 +72,7 @@ export async function GET(
     const inline = url.searchParams.get('inline') === '1' || !download;
     const contractId = url.searchParams.get('contractId');
     const metaOnly = url.searchParams.get('meta') === '1';
+    const signedOnly = url.searchParams.get('signed') === '1';
 
     const auth = await assertSuperAdmin(supabaseAdmin, userId);
     if (!auth.ok) {
@@ -77,6 +85,124 @@ export async function GET(
 
     if (contractId && !contractRecord) {
       return jsonError('Contrato não encontrado.', 404, { contractId });
+    }
+
+    if (signedOnly) {
+      if (!contractRecord) {
+        return jsonError('Contrato assinado não encontrado.', 404, { companyId });
+      }
+
+      const signature = await getLatestFullySignedSignature(
+        supabaseAdmin,
+        companyId,
+        contractRecord.id,
+      );
+
+      if (
+        !hasSaasSignedDocumentAccess(contractRecord, signature) ||
+        !signature
+      ) {
+        return jsonError('Contrato sem documento assinado disponível.', 404, {
+          companyId,
+          contractId: contractRecord.id,
+        });
+      }
+
+      let pdfBytes: Uint8Array | null = null;
+      let source: 'pdf_signed_url' | 'regenerated_signed' = 'regenerated_signed';
+
+      const signedUrl = contractRecord.pdf_signed_url?.trim();
+      if (signedUrl) {
+        const storedSigned = await fetchPdfBytesFromUrl(signedUrl);
+        if (storedSigned) {
+          pdfBytes = storedSigned;
+          source = 'pdf_signed_url';
+        }
+      }
+
+      if (!pdfBytes) {
+        try {
+          pdfBytes = await buildFullySignedSaasContractPdfBytes(
+            supabaseAdmin,
+            companyId,
+            contractRecord,
+            signature,
+          );
+          source = 'regenerated_signed';
+          try {
+            const refreshedUrl = await persistSignedSaasContractPdfUrl(
+              supabaseAdmin,
+              companyId,
+              contractRecord,
+              pdfBytes,
+            );
+            if (refreshedUrl) {
+              await supabaseAdmin
+                .from('company_contracts')
+                .update({ pdf_signed_url: refreshedUrl, updated_at: new Date().toISOString() })
+                .eq('id', contractRecord.id);
+            }
+          } catch (persistErr) {
+            console.warn('SAAS_CONTRACT_SIGNED_PDF_PERSIST_FAILED', {
+              contract_id: contractRecord.id,
+              message: persistErr instanceof Error ? persistErr.message : String(persistErr),
+            });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Falha ao gerar PDF assinado.';
+          return jsonError(message, 500, {
+            companyId,
+            contractId: contractRecord.id,
+            step: 'signed_pdf_generation',
+          });
+        }
+      }
+
+      if (!pdfBytes?.length || !isPdfBytes(pdfBytes)) {
+        return jsonError('PDF assinado inválido ou vazio.', 500, {
+          companyId,
+          contractId: contractRecord.id,
+          source,
+        });
+      }
+
+      const contractNumber = contractRecord.contract_number;
+      const contentVersion = resolveStoredSaasContractContentVersion(contractRecord);
+      const pageCount = countPdfPages(pdfBytes);
+
+      console.log('SAAS_CONTRACT_SIGNED_PDF_SERVE', {
+        company_id: companyId,
+        contract_id: contractRecord.id,
+        source,
+        bytes: pdfBytes.byteLength,
+        page_count: pageCount,
+        content_version: contentVersion,
+      });
+
+      if (metaOnly) {
+        return NextResponse.json({
+          success: true,
+          company_id: companyId,
+          contract_id: contractRecord.id,
+          contract_number: contractNumber,
+          content_version: contentVersion,
+          page_count: pageCount,
+          source,
+          pdf_signed_url: contractRecord.pdf_signed_url ?? null,
+        });
+      }
+
+      return createSaasContractPdfResponse(
+        pdfBytes,
+        download ? 'attachment' : 'inline',
+        {
+          contractId: contractRecord.id,
+          pageCount,
+          contractNumber,
+          contentVersion,
+          source: source === 'pdf_signed_url' ? 'pdf_signed_url' : 'regenerated',
+        },
+      );
     }
 
     const { company, subscription } = await loadFreshSaasContractContext(

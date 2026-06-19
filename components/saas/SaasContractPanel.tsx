@@ -58,6 +58,10 @@ import {
   canShowProviderSignButton,
   isContractSignatureSendBlocked,
 } from '@/lib/saasContractBilateralSignature';
+import {
+  hasSaasSignedDocumentAccess,
+  resolveSaasSignedContractRecord,
+} from '@/lib/saasContractSignedAccess';
 import { ContractProviderSignModal } from '@/components/saas/ContractProviderSignModal';
 import type { augmentCompanyBilling } from '@/lib/masterBilling';
 import { RegenerateContractModal } from '@/components/contracts/RegenerateContractModal';
@@ -150,6 +154,32 @@ export function SaasContractPanel({
   const activeContract = useMemo(() => {
     return findActiveVisibleSaasContract(contracts);
   }, [contracts]);
+
+  const signedContractRecord = useMemo(
+    () => resolveSaasSignedContractRecord(contracts, signatureInfo.latest),
+    [contracts, signatureInfo.latest],
+  );
+
+  const hasSignedDocument = useMemo(
+    () => hasSaasSignedDocumentAccess(signedContractRecord, signatureInfo.latest),
+    [signedContractRecord, signatureInfo.latest],
+  );
+
+  const signedContractId = signedContractRecord?.id || activeContract?.id || null;
+
+  const signedPdfDownloadUrl =
+    companyId && user?.id && signedContractId
+      ? buildSaasContractPdfUrl(companyId, user.id, 'download', signedContractId, {
+          signed: true,
+        })
+      : '#';
+
+  const signedPdfOpenUrl =
+    companyId && user?.id && signedContractId
+      ? buildSaasContractPdfUrl(companyId, user.id, 'inline', signedContractId, {
+          signed: true,
+        })
+      : '#';
 
   const generatedAtLabel = useMemo(() => {
     if (activeContract?.generated_at) {
@@ -574,16 +604,24 @@ export function SaasContractPanel({
               >
                 <Download className="w-4 h-4" /> Baixar PDF
               </a>
-              {activeContract?.pdf_signed_url && (
-                <a
-                  href={activeContract.pdf_signed_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 ring-2 ring-emerald-400/40"
-                >
-                  <ShieldCheck className="w-4 h-4" /> Baixar PDF Assinado
-                </a>
-              )}
+              {hasSignedDocument && signedContractId ? (
+                <>
+                  <a
+                    href={signedPdfOpenUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-emerald-500/30 text-emerald-200 text-[13px] hover:bg-emerald-500/10"
+                  >
+                    <ExternalLink className="w-4 h-4" /> Abrir PDF Assinado
+                  </a>
+                  <a
+                    href={signedPdfDownloadUrl}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-[13px] hover:bg-emerald-500 ring-2 ring-emerald-400/40"
+                  >
+                    <ShieldCheck className="w-4 h-4" /> Baixar PDF Assinado
+                  </a>
+                </>
+              ) : null}
               {showProviderSignButton && (
                 <button
                   type="button"

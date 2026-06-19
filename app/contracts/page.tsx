@@ -826,7 +826,8 @@ export default function ContractsPage() {
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
     try {
       const isElectronicallySigned =
-        String(selectedContract.signature_status || '').toUpperCase() === 'SIGNED';
+        String(selectedContract.signature_status || '').toUpperCase() === 'SIGNED' ||
+        ['assinado', 'signed'].includes(String(selectedContract.status || '').toLowerCase());
 
       if (isElectronicallySigned) {
         const res = await fetch(
@@ -838,7 +839,7 @@ export default function ContractsPage() {
           const match = disposition.match(/filename="([^"]+)"/);
           const filename =
             match?.[1] ||
-            `contrato_${selectedContract.contract_number || selectedContract.id}.pdf`;
+            `contrato-assinado_${selectedContract.contract_number || selectedContract.id}.pdf`;
           const url = URL.createObjectURL(blob);
           const anchor = document.createElement('a');
           anchor.href = url;
@@ -847,6 +848,8 @@ export default function ContractsPage() {
           URL.revokeObjectURL(url);
           return;
         }
+        alert('Não foi possível baixar o PDF assinado. Tente novamente ou use Abrir PDF Assinado.');
+        return;
       }
 
       const { default: html2pdf } = await import("html2pdf.js");

@@ -123,14 +123,197 @@ function sanitizeContractFileName(contractNumber: string): string {
   return contractNumber.replace(/[^\w-]+/g, '_');
 }
 
-function buildSignedPdfStoragePath(
+export {
+  buildSignedPdfStoragePath,
+  hasSaasSignedDocumentAccess,
+  resolveSaasSignedContractRecord,
+} from '@/lib/saasContractSignedAccess';
+
+export async function getLatestFullySignedSignature(
+  supabaseAdmin: SupabaseClient,
   companyId: string,
-  contractNumber: string,
-  version?: number,
-): string {
-  const safeName = sanitizeContractFileName(contractNumber);
-  const suffix = version && version > 1 ? `_v${version}` : '';
-  return `contracts/saas/${companyId}/${safeName}${suffix}_signed.pdf`;
+  contractId: string,
+): Promise<CompanyContractSignatureRow | null> {
+  const { data } = await supabaseAdmin
+    .from('company_contract_signatures')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('contract_id', contractId)
+    .eq('signature_status', 'SIGNED')
+    .order('provider_signed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as CompanyContractSignatureRow) || null;
+}
+
+export async function buildFullySignedSaasContractPdfBytes(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  contractRow: CompanyContractRow,
+  signatureRow: CompanyContractSignatureRow,
+): Promise<Uint8Array> {
+  if (!isFullySignedContract(signatureRow.signature_status)) {
+    throw new SaasContractStepError(
+      'validation',
+      'Contrato sem assinatura bilateral completa.',
+    );
+  }
+  if (!signatureRow.signed_at || !signatureRow.signer_name) {
+    throw new SaasContractStepError('validation', 'Assinatura do cliente incompleta.');
+  }
+  if (
+    !signatureRow.provider_signed_at ||
+    !signatureRow.provider_signer_name ||
+    !signatureRow.provider_signer_document
+  ) {
+    throw new SaasContractStepError('validation', 'Assinatura da SV incompleta.');
+  }
+
+  const { company, subscription } = await loadFreshSaasContractContext(
+    supabaseAdmin,
+    companyId,
+  );
+  const pdfDates = subscriptionDatesForContractPdf(subscription);
+  const clientSignedAt = signatureRow.signed_at;
+  const providerSignedAt = signatureRow.provider_signed_at;
+  const providerName = signatureRow.provider_signer_name;
+  const providerDocument = signatureRow.provider_signer_document;
+  const providerEmail = signatureRow.provider_signer_email || '';
+
+  const clientHashPayload = buildSignatureHashPayload({
+    contractId: contractRow.id,
+    contractNumber: contractRow.contract_number,
+    signerName: signatureRow.signer_name,
+    signerDocument: signatureRow.signer_document || '',
+    signerEmail: signatureRow.signer_email,
+    signedAt: clientSignedAt,
+    ipAddress: signatureRow.ip_address || '',
+    party: 'CLIENT',
+  });
+  const clientHash =
+    signatureRow.signature_hash || (await computeSignatureHash(clientHashPayload));
+
+  const providerHashPayload = buildSignatureHashPayload({
+    contractId: contractRow.id,
+    contractNumber: contractRow.contract_number,
+    signerName: providerName,
+    signerDocument: providerDocument,
+    signerEmail: providerEmail,
+    signedAt: providerSignedAt,
+    ipAddress: signatureRow.provider_ip_address || '',
+    party: 'PROVIDER',
+  });
+  const providerHash =
+    signatureRow.provider_signature_hash ||
+    (await computeSignatureHash(providerHashPayload));
+
+  const bilateralCertificate: BilateralSignatureCertificateData = {
+    contractNumber: contractRow.contract_number,
+    client: {
+      contractNumber: contractRow.contract_number,
+      signerName: signatureRow.signer_name,
+      signerDocument: signatureRow.signer_document || '',
+      signerEmail: signatureRow.signer_email,
+      signerRole: signatureRow.signer_role,
+      ipAddress: signatureRow.ip_address || '—',
+      signedDate: formatSignatureDateBr(clientSignedAt),
+      signedTime: formatSignatureTimeBr(clientSignedAt),
+      signatureHash: clientHash,
+      partyLabel: 'CONTRATANTE',
+    },
+    provider: {
+      contractNumber: contractRow.contract_number,
+      signerName: providerName,
+      signerDocument: providerDocument,
+      signerEmail: providerEmail,
+      signerRole: signatureRow.provider_signer_role,
+      ipAddress: signatureRow.provider_ip_address || '—',
+      signedDate: formatSignatureDateBr(providerSignedAt),
+      signedTime: formatSignatureTimeBr(providerSignedAt),
+      signatureHash: providerHash,
+      partyLabel: 'CONTRATADA',
+    },
+  };
+
+  const contentVersion = resolveStoredSaasContractContentVersion(contractRow);
+  const built = buildSaasContractPdfWithMeta(
+    {
+      company,
+      subscription: {
+        contract_number: contractRow.contract_number,
+        plan_type: subscription.plan_type,
+        monthly_price: subscription.monthly_price,
+        start_date: pdfDates.start_date,
+        first_payment_date: pdfDates.first_payment_date,
+        next_due_date: pdfDates.next_due_date,
+      },
+    },
+    {
+      contentVersion,
+      bilateralCertificate,
+      executedSignatures: {
+        client: {
+          name: signatureRow.signer_name,
+          document: signatureRow.signer_document || '',
+          role: signatureRow.signer_role,
+          signedDate: formatSignatureDateBr(clientSignedAt),
+        },
+        provider: {
+          name: providerName,
+          document: providerDocument,
+          role: signatureRow.provider_signer_role,
+          signedDate: formatSignatureDateBr(providerSignedAt),
+        },
+      },
+    },
+  );
+
+  const validation = validateSaasContractPdfInput(
+    {
+      company,
+      subscription: {
+        contract_number: contractRow.contract_number,
+        plan_type: subscription.plan_type,
+        monthly_price: subscription.monthly_price,
+        start_date: pdfDates.start_date,
+        first_payment_date: pdfDates.first_payment_date,
+        next_due_date: pdfDates.next_due_date,
+      },
+    },
+    built.pdf,
+    contentVersion,
+  );
+
+  if (!validation.ok) {
+    throw new SaasContractStepError(
+      'pdf_generation',
+      `PDF assinado inválido: ${validation.errors.join('; ')}`,
+    );
+  }
+
+  return built.pdf;
+}
+
+export async function persistSignedSaasContractPdfUrl(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  contractRow: CompanyContractRow,
+  pdfBytes: Uint8Array,
+): Promise<string> {
+  const pdfSignedUrl = await uploadSignedContractPdf(
+    supabaseAdmin,
+    companyId,
+    contractRow.contract_number,
+    pdfBytes,
+    contractRow.version,
+  );
+
+  await supabaseAdmin
+    .from('company_contracts')
+    .update({ pdf_signed_url: pdfSignedUrl, updated_at: new Date().toISOString() })
+    .eq('id', contractRow.id);
+
+  return pdfSignedUrl;
 }
 
 async function uploadSignedContractPdf(
@@ -681,13 +864,7 @@ export async function signContractByProvider(
     throw new SaasContractStepError('validation', 'Este contrato já possui PDF assinado final.');
   }
 
-  const { company, subscription } = await loadFreshSaasContractContext(
-    supabaseAdmin,
-    companyId,
-  );
-
-  const pdfDates = subscriptionDatesForContractPdf(subscription);
-  const clientSignedAt = signatureRow.signed_at;
+  const clientSignedAt = signatureRow.signed_at!;
   const providerSignedAt = new Date().toISOString();
 
   const clientHashPayload = buildSignatureHashPayload({
@@ -714,96 +891,32 @@ export async function signContractByProvider(
   });
   const providerHash = await computeSignatureHash(providerHashPayload);
 
-  const bilateralCertificate: BilateralSignatureCertificateData = {
-    contractNumber: contractRow.contract_number,
-    client: {
-      contractNumber: contractRow.contract_number,
-      signerName: signatureRow.signer_name!,
-      signerDocument: signatureRow.signer_document || '',
-      signerEmail: signatureRow.signer_email,
-      signerRole: signatureRow.signer_role,
-      ipAddress: signatureRow.ip_address || '—',
-      signedDate: formatSignatureDateBr(clientSignedAt),
-      signedTime: formatSignatureTimeBr(clientSignedAt),
-      signatureHash: clientHash,
-      partyLabel: 'CONTRATANTE',
-    },
-    provider: {
-      contractNumber: contractRow.contract_number,
-      signerName: providerName,
-      signerDocument: providerDocument,
-      signerEmail: providerEmail,
-      signerRole: input.providerRole || null,
-      ipAddress: input.ipAddress || '—',
-      signedDate: formatSignatureDateBr(providerSignedAt),
-      signedTime: formatSignatureTimeBr(providerSignedAt),
-      signatureHash: providerHash,
-      partyLabel: 'CONTRATADA',
-    },
+  const previewSignature: CompanyContractSignatureRow = {
+    ...signatureRow,
+    provider_signer_name: providerName,
+    provider_signer_email: providerEmail,
+    provider_signer_document: providerDocument,
+    provider_signer_role: input.providerRole || null,
+    provider_signed_at: providerSignedAt,
+    provider_signature_hash: providerHash,
+    provider_ip_address: input.ipAddress || null,
+    provider_user_agent: input.userAgent || null,
+    signature_status: 'SIGNED',
+    signature_hash: clientHash,
   };
 
-  const contentVersion = resolveStoredSaasContractContentVersion(contractRow);
-
-  const built = buildSaasContractPdfWithMeta(
-    {
-      company,
-      subscription: {
-        contract_number: contractRow.contract_number,
-        plan_type: subscription.plan_type,
-        monthly_price: subscription.monthly_price,
-        start_date: pdfDates.start_date,
-        first_payment_date: pdfDates.first_payment_date,
-        next_due_date: pdfDates.next_due_date,
-      },
-    },
-    {
-      contentVersion,
-      bilateralCertificate,
-      executedSignatures: {
-        client: {
-          name: signatureRow.signer_name!,
-          document: signatureRow.signer_document || '',
-          role: signatureRow.signer_role,
-          signedDate: formatSignatureDateBr(clientSignedAt),
-        },
-        provider: {
-          name: providerName,
-          document: providerDocument,
-          role: input.providerRole || null,
-          signedDate: formatSignatureDateBr(providerSignedAt),
-        },
-      },
-    },
+  const pdfBytes = await buildFullySignedSaasContractPdfBytes(
+    supabaseAdmin,
+    companyId,
+    contractRow,
+    previewSignature,
   );
-
-  const validation = validateSaasContractPdfInput(
-    {
-      company,
-      subscription: {
-        contract_number: contractRow.contract_number,
-        plan_type: subscription.plan_type,
-        monthly_price: subscription.monthly_price,
-        start_date: pdfDates.start_date,
-        first_payment_date: pdfDates.first_payment_date,
-        next_due_date: pdfDates.next_due_date,
-      },
-    },
-    built.pdf,
-    contentVersion,
-  );
-
-  if (!validation.ok) {
-    throw new SaasContractStepError(
-      'pdf_generation',
-      `PDF assinado inválido: ${validation.errors.join('; ')}`,
-    );
-  }
 
   const pdfSignedUrl = await uploadSignedContractPdf(
     supabaseAdmin,
     companyId,
     contractRow.contract_number,
-    built.pdf,
+    pdfBytes,
     contractRow.version,
   );
 

@@ -33,6 +33,7 @@ type SelectedContract = {
   contract_number?: string | null;
   status?: string | null;
   signature_status?: string | null;
+  pdf_signed_url?: string | null;
   customer_name?: string | null;
   customers?: { name?: string; phone?: string | null; email?: string | null } | null;
   project_name?: string | null;
@@ -188,6 +189,12 @@ export function SaleContractSignatureSection({
 
   const status = latest?.signature_status || contract.signature_status;
   const statusLabel = saleSignatureStatusLabel(status);
+  const isElectronicallySigned =
+    String(status || '').toUpperCase() === 'SIGNED' ||
+    ['assinado', 'signed'].includes(String(contract.status || '').toLowerCase());
+
+  const signedPdfDownloadUrl = `/api/contracts/${contract.id}/pdf?download=1`;
+  const signedPdfOpenUrl = `/api/contracts/${contract.id}/pdf?inline=1`;
 
   return (
     <div className={`rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] ${compact ? 'p-3' : 'p-4'} space-y-3`}>
@@ -242,6 +249,23 @@ export function SaleContractSignatureSection({
             <ActionChip icon={Share2} label="Compartilhar" onClick={() => setShareOpen(true)} />
           </>
         )}
+        {isElectronicallySigned ? (
+          <>
+            <ActionChip
+              icon={ExternalLink}
+              label="Abrir PDF Assinado"
+              onClick={() => window.open(signedPdfOpenUrl, '_blank', 'noopener,noreferrer')}
+            />
+            <ActionChip
+              icon={ShieldCheck}
+              label="Baixar PDF Assinado"
+              primary
+              onClick={() => {
+                window.location.href = signedPdfDownloadUrl;
+              }}
+            />
+          </>
+        ) : null}
       </div>
 
       {copyFeedback && <p className="text-[11px] text-emerald-400">{copyFeedback}</p>}
