@@ -8,8 +8,11 @@ import path from 'node:path';
 import {
   formatCurrencyBRL,
   formatLotAuditDescription,
+  maskCurrencyBRL,
   parseCurrencyBRL,
+  parseCurrencyBRLNumber,
   parseCurrencyBR,
+  serializeCurrencyBRL,
 } from '../lib/currencyBrl';
 import {
   GIS_LOT_POPUP_CONTAINER_CLASS,
@@ -132,6 +135,37 @@ function testImportAuditCurrency() {
   assert(importLine.includes('80,00/m²'), 'import line preço m²');
 }
 
+function testMaskCurrencyBRL() {
+  assert(
+    maskCurrencyBRL('5000').replace(/\u00a0/g, ' ').includes('R$ 5.000,00'),
+    'mask 5000',
+  );
+  assert(
+    maskCurrencyBRL('1000').replace(/\u00a0/g, ' ').includes('R$ 1.000,00'),
+    'mask 1000',
+  );
+  assert(
+    maskCurrencyBRL('125000').replace(/\u00a0/g, ' ').includes('R$ 125.000,00'),
+    'mask 125000',
+  );
+  assert(
+    maskCurrencyBRL('1500,50').replace(/\u00a0/g, ' ').includes('R$ 1.500,50'),
+    'mask 1500,50',
+  );
+  assertEq(parseCurrencyBRLNumber('R$ 5.000,00'), 5000, 'parse masked 5000');
+  assertEq(serializeCurrencyBRL('R$ 5.000,00'), '5000', 'serialize masked');
+}
+
+function testCustomerLotFormUsesCurrencyInput() {
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'components/map/CustomerLotFormModal.tsx'),
+    'utf8',
+  );
+  assert(source.includes('CurrencyInput'), 'modal venda usa CurrencyInput');
+  assert(source.includes('parseCurrencyBRLNumber'), 'modal venda parse unificado');
+  assert(!source.includes('type="number"'), 'modal venda sem input number monetário');
+}
+
 function testPopupResponsiveClasses() {
   assert(
     GIS_LOT_POPUP_CONTAINER_CLASS.includes('w-[min(92vw,360px)]'),
@@ -171,6 +205,8 @@ function main() {
   testOwnerCannotEditPrice();
   testAuditHistoryFormatting();
   testImportAuditCurrency();
+  testMaskCurrencyBRL();
+  testCustomerLotFormUsesCurrencyInput();
   testPopupResponsiveClasses();
   console.log('OK — mandatory-gis-lot-popup-currency-responsive-tests passed');
 }

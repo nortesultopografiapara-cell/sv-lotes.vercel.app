@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import {
   clampDueDay,
   computeNextPaymentDate,
@@ -121,7 +122,7 @@ export function mapCompanyForEditForm(
     custom_price_enabled: company.custom_price_enabled === true,
     custom_monthly_price:
       company.custom_monthly_price != null
-        ? String(company.custom_monthly_price)
+        ? formatCurrencyBRL(Number(company.custom_monthly_price))
         : '',
     custom_price_badge: String(company.custom_price_badge ?? 'desconto_especial'),
     subscription_start_date,

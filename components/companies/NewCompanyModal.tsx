@@ -18,6 +18,7 @@ import {
 } from '@/lib/companySubscriptionDates';
 import { loadCompanyForEdit, mapCompanyForEditForm, type CompanyForEditMerged } from '@/lib/loadCompanyForEdit';
 import { formatDateBr } from '@/lib/saasSubscription';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 interface NewCompanyModalProps {
   isOpen: boolean;
@@ -793,14 +794,12 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                       <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
                         Valor personalizado (R$/mês)
                       </label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
+                      <CurrencyInput
                         value={formData.custom_monthly_price}
-                        onChange={(e) =>
-                          setFormData({ ...formData, custom_monthly_price: e.target.value })
+                        onChange={(next) =>
+                          setFormData({ ...formData, custom_monthly_price: next })
                         }
-                        placeholder="549,99"
+                        placeholder="R$ 549,99"
                         className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-purple-500"
                       />
                     </div>

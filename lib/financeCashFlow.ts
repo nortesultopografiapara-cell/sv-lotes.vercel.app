@@ -2,6 +2,7 @@ import {
   displayContractNumber,
   formatReceiptContractNumber,
 } from "@/lib/contractNumber";
+import { parseCurrencyBRL } from "@/lib/currencyBrl";
 
 export type CashFlowItem = {
   id: string;
@@ -201,19 +202,13 @@ export function buildSaidaCashMovementMetadata(input: {
   return hasValues ? meta : null;
 }
 
-/** Converte "5685,37" / "5.685,37" / "5685.37" para número. */
+/** Converte "5685,37" / "5.685,37" / "5685.37" / "R$ 5.000,00" para número. */
 export function parseMoneyAmount(raw: string | number | null | undefined): number | null {
   if (typeof raw === "number") {
     return Number.isFinite(raw) && raw > 0 ? raw : null;
   }
-  let s = String(raw ?? "").trim();
-  if (!s) return null;
-  s = s.replace(/[R$\s]/gi, "");
-  if (s.includes(",")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  }
-  const n = Number(s);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const parsed = parseCurrencyBRL(raw);
+  return parsed != null && parsed > 0 ? parsed : null;
 }
 
 export function emptyUuidToNull(value: unknown): string | null {

@@ -10,6 +10,67 @@ export function formatCurrencyBRL(value: number | null | undefined): string {
   }).format(value);
 }
 
+/** Exibe valor monetário em inputs read-only ou ao carregar dados numéricos crus. */
+export function formatCurrencyFieldValue(
+  value: string | number | null | undefined,
+): string {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return '';
+    return formatCurrencyBRL(value);
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('R$')) return trimmed;
+  const parsed = parseCurrencyBRL(trimmed);
+  return parsed != null ? formatCurrencyBRL(parsed) : trimmed;
+}
+
+/**
+ * Máscara para digitação — padrão de reais inteiros (5000 → R$ 5.000,00).
+ * Com vírgula, aceita centavos (1500,50 → R$ 1.500,50).
+ */
+export function maskCurrencyBRL(input: string): string {
+  const trimmed = String(input ?? '').trim();
+  if (!trimmed) return '';
+
+  let cleaned = trimmed.replace(/[R$\s]/gi, '');
+  if (!cleaned) return '';
+
+  if (cleaned.includes(',')) {
+    const commaIndex = cleaned.indexOf(',');
+    const intPart = cleaned.slice(0, commaIndex).replace(/\D/g, '') || '0';
+    const decPart = cleaned.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2);
+    const numeric = Number(`${intPart}.${decPart.padEnd(2, '0')}`);
+    if (!Number.isFinite(numeric) || numeric < 0) return '';
+    return formatCurrencyBRL(numeric);
+  }
+
+  const digits = cleaned.replace(/\D/g, '');
+  if (!digits) return '';
+  const numeric = Number(digits);
+  if (!Number.isFinite(numeric) || numeric < 0) return '';
+  return formatCurrencyBRL(numeric);
+}
+
+/** Parse para cálculos — vazio/ inválido retorna 0. */
+export function parseCurrencyBRLNumber(
+  input: string | number | null | undefined,
+): number {
+  if (typeof input === 'number') {
+    if (!Number.isFinite(input) || input < 0) return 0;
+    return Math.round(input * 100) / 100;
+  }
+  return parseCurrencyBRL(input) ?? 0;
+}
+
+/** Número limpo para persistência (sem máscara). */
+export function serializeCurrencyBRL(
+  input: string | number | null | undefined,
+): string {
+  const n = parseCurrencyBRLNumber(input);
+  return String(n);
+}
 
 /** Converte entrada do usuário para número decimal ou null se vazio/inválido. */
 export function parseCurrencyBRL(

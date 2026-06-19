@@ -30,6 +30,12 @@ import {
   downPaymentReducesInstallmentBase,
 } from '@/lib/saleInstallmentCalc';
 import type { SaleContractModel } from '@/lib/contractModel';
+import {
+  formatCurrencyBRL,
+  parseCurrencyBRLNumber,
+  serializeCurrencyBRL,
+} from '@/lib/currencyBrl';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 
 export type LotFormState = CustomerFormValues &
   SaleSpouseFormFields & {
@@ -41,6 +47,11 @@ export type LotFormState = CustomerFormValues &
   first_installment_due_date: string;
   broker_id: string;
   notes: string;
+  signal_amount?: string;
+  signal_date?: string;
+  signal_payment_method?: string;
+  signal_notes?: string;
+  reservation_signal_paid?: number;
 };
 
 export type LotFormConfirmPayload = LotFormState & {
@@ -186,7 +197,7 @@ export function CustomerLotFormModal({
         const next: LotFormState = {
           ...emptyLotFormState(),
           ...customerToFormValues(customer),
-          signal_amount: paidSignal > 0 ? String(paidSignal) : '',
+          signal_amount: paidSignal > 0 ? formatCurrencyBRL(paidSignal) : '',
           signal_date: signalDate ? String(signalDate).split('T')[0] : '',
           signal_payment_method: signalMethod || '',
           signal_notes: signalNotes || '',
@@ -194,7 +205,7 @@ export function CustomerLotFormModal({
         };
 
         if (actionName === 'Vendido' && paidSignal > 0) {
-          next.down_payment = String(paidSignal);
+          next.down_payment = formatCurrencyBRL(paidSignal);
           next.payment_type = 'Parcelado';
         }
 
@@ -219,7 +230,7 @@ export function CustomerLotFormModal({
     };
   }, [lot.id, lot.customerId, lot.signal_amount, prefillFromReservation, actionName, isEditMode]);
 
-  const discountValue = Number(formData.discount_value) || 0;
+  const discountValue = parseCurrencyBRLNumber(formData.discount_value);
   const paymentType = formData.payment_type || 'À vista';
   const downPaymentStr = formData.down_payment || '';
   const installmentsCountStr = formData.installments_count ?? '';
@@ -229,7 +240,7 @@ export function CustomerLotFormModal({
       : null;
 
   const finalValue = Math.max(0, price - discountValue);
-  const downPayment = Number(downPaymentStr) || 0;
+  const downPayment = parseCurrencyBRLNumber(downPaymentStr);
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
   const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
@@ -242,10 +253,7 @@ export function CustomerLotFormModal({
           contractModel,
         })
       : 0;
-  const installmentValueFmt = new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(installmentValue);
+  const installmentValueFmt = formatCurrencyBRL(installmentValue);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,7 +328,8 @@ export function CustomerLotFormModal({
       await onConfirm({
         ...formData,
         payment_type: paymentType,
-        down_payment: downPaymentStr,
+        discount_value: serializeCurrencyBRL(formData.discount_value),
+        down_payment: serializeCurrencyBRL(downPaymentStr),
         installments_count: confirmedInstallmentsCount,
         lot_value: price,
         final_value: finalValue,
@@ -717,12 +726,9 @@ export function CustomerLotFormModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Valor do sinal (R$)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <CurrencyInput
                       value={formData.signal_amount || ''}
-                      onChange={(e) => setField({ signal_amount: e.target.value })}
+                      onChange={(next) => setField({ signal_amount: next })}
                       className={GIS_INPUT}
                     />
                   </div>
@@ -762,17 +768,17 @@ export function CustomerLotFormModal({
                 <h4 className="text-sm font-bold text-gray-900 border-b pb-1">DADOS DA VENDA</h4>
                 {(formData.reservation_signal_paid || 0) > 0 && (
                   <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
-                    Sinal da reserva: R$ {Number(formData.reservation_signal_paid).toFixed(2)} — será
+                    Sinal da reserva: {formatCurrencyBRL(Number(formData.reservation_signal_paid) || 0)} — será
                     descontado da entrada na venda.
                   </p>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Valor do Lote</label>
-                    <input
+                    <CurrencyInput
                       readOnly
-                      type="text"
-                      value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price)}
+                      value={String(price)}
+                      onChange={() => {}}
                       className={`${GIS_INPUT_READONLY} font-medium`}
                     />
                   </div>
@@ -798,21 +804,18 @@ export function CustomerLotFormModal({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Desconto (R$)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <CurrencyInput
                         value={formData.discount_value}
-                        onChange={(e) => setField({ discount_value: e.target.value })}
+                        onChange={(next) => setField({ discount_value: next })}
                         className={GIS_INPUT}
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Valor Final</label>
-                      <input
+                      <CurrencyInput
                         readOnly
-                        type="text"
-                        value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(finalValue)}
+                        value={String(finalValue)}
+                        onChange={() => {}}
                         className={`${GIS_INPUT_READONLY} font-bold text-green-700`}
                       />
                     </div>
@@ -834,12 +837,9 @@ export function CustomerLotFormModal({
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
                         {isRecantoSinal ? 'Valor do Sinal (R$)' : 'Valor da Entrada (R$)'}
                       </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                      <CurrencyInput
                         value={downPaymentStr}
-                        onChange={(e) => setField({ down_payment: e.target.value })}
+                        onChange={(next) => setField({ down_payment: next })}
                         className={GIS_INPUT}
                       />
                       {isRecantoSinal && (
@@ -871,14 +871,11 @@ export function CustomerLotFormModal({
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Valor da Parcela
                       </label>
-                      <input
+                      <CurrencyInput
                         readOnly
-                        type="text"
-                        value={
-                          installmentsCount > 0
-                            ? installmentValueFmt
-                            : '—'
-                        }
+                        value={installmentsCount > 0 ? String(installmentValue) : ''}
+                        onChange={() => {}}
+                        placeholder="—"
                         className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
                       />
                     </div>

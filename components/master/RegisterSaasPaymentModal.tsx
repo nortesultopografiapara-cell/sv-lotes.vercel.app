@@ -1,6 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import {
+  formatCurrencyBRL,
+  parseCurrencyBRLNumber,
+} from '@/lib/currencyBrl';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
 
 export type SaasPaymentCompanyOption = {
@@ -27,7 +32,10 @@ function buildDefaultForm(
   const company = companies.find((c) => c.id === (initialCompanyId || ''));
   return {
     companyId: initialCompanyId || '',
-    amount: company?.defaultAmount != null ? String(company.defaultAmount) : '',
+    amount:
+      company?.defaultAmount != null
+        ? formatCurrencyBRL(company.defaultAmount)
+        : '',
     paidAt: today,
     paymentMethod: 'manual',
     referenceMonth: referenceMonthFromDate(today),
@@ -71,15 +79,17 @@ export function RegisterSaasPaymentModal({
         ...prev,
         companyId,
         amount:
-          company?.defaultAmount != null ? String(company.defaultAmount) : prev.amount,
+          company?.defaultAmount != null
+            ? formatCurrencyBRL(company.defaultAmount)
+            : prev.amount,
       }));
     },
     [companies],
   );
 
   const handleSubmit = useCallback(async () => {
-    const amount = Number(form.amount);
-    if (!form.companyId || !form.paidAt || !Number.isFinite(amount) || amount <= 0) {
+    const amount = parseCurrencyBRLNumber(form.amount);
+    if (!form.companyId || !form.paidAt || amount <= 0) {
       alert('Preencha empresa, valor e data de pagamento.');
       return;
     }
@@ -138,12 +148,9 @@ export function RegisterSaasPaymentModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Valor pago (R$)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <CurrencyInput
                 value={form.amount}
-                onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))}
+                onChange={(next) => setForm((p) => ({ ...p, amount: next }))}
                 className="w-full bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
               />
             </div>

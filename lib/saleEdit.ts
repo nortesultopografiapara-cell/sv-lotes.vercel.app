@@ -27,6 +27,7 @@ import {
   planFullFinanceRecalc,
   planPartialFinanceRecalc,
 } from '@/lib/saleEditFinanceRecalc';
+import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
@@ -198,8 +199,10 @@ export async function loadSaleEditContext(
     ...customerToFormValues(customerMerged),
     ...saleSpouseFormFieldsFromSale(sale),
     payment_type: paymentType,
-    discount_value: discountVal > 0 ? String(discountVal) : '',
-    down_payment: String(sale.down_payment ?? entryReceipt?.amount ?? 0),
+    discount_value: discountVal > 0 ? formatCurrencyBRL(discountVal) : '',
+    down_payment: formatCurrencyBRL(
+      Number(sale.down_payment ?? entryReceipt?.amount ?? 0) || 0,
+    ),
     down_payment_due_date: downPaymentDue ? String(downPaymentDue) : '',
     installments_count: String(sale.installments_count ?? 1),
     first_installment_due_date: firstInstDue ? String(firstInstDue) : '',
@@ -253,7 +256,7 @@ export async function updateSaleFromEdit(
   const contractModel = companyRow?.contract_model;
   const financeOptions = {
     contractModel,
-    grossDownPayment: Number(data.down_payment) || 0,
+    grossDownPayment: parseCurrencyBRLNumber(data.down_payment),
     paymentType: data.payment_type,
   };
 
@@ -283,10 +286,10 @@ export async function updateSaleFromEdit(
     customerId,
     agreedPrice: data.final_value,
     lotPrice: finalPrice,
-    discount: Number(data.discount_value) || 0,
+    discount: parseCurrencyBRLNumber(data.discount_value),
     totalValue: data.final_value,
     paymentType: data.payment_type,
-    downPayment: Number(data.down_payment) || 0,
+    downPayment: parseCurrencyBRLNumber(data.down_payment),
     installmentsCount:
       data.payment_type === 'Parcelado'
         ? Number(data.installments_count) || 1

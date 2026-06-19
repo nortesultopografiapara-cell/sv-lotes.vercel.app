@@ -10,6 +10,7 @@ import {
   resolveInstallmentPrincipal,
   splitInstallmentAmounts,
 } from '@/lib/saleInstallmentCalc';
+import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
@@ -65,7 +66,7 @@ export function buildSaleEditFinancePayloads(
 ): FinanceReceiptPayload[] {
   const financePayloads: FinanceReceiptPayload[] = [];
   const pmtType = data.payment_type || 'À vista';
-  const grossDownPayment = Number(data.down_payment) || 0;
+  const grossDownPayment = parseCurrencyBRLNumber(data.down_payment);
   const reservationSignalPaid = Number(data.reservation_signal_paid) || 0;
   let downPayment = grossDownPayment;
   const instCount =

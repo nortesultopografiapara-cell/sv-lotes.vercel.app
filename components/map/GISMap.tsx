@@ -77,7 +77,9 @@ import {
 import {
   formatCurrencyBRL as formatBRL,
   formatLotAuditDescription,
+  maskCurrencyBRL,
   parseCurrencyBRL,
+  parseCurrencyBRLNumber,
 } from "@/lib/currencyBrl";
 import {
   GIS_LOT_POPUP_ACTION_BTN_CLASS,
@@ -2244,7 +2246,7 @@ function LotPopupContent({
                 type="text"
                 inputMode="decimal"
                 value={priceDraft}
-                onChange={(e) => setPriceDraft(e.target.value)}
+                onChange={(e) => setPriceDraft(maskCurrencyBRL(e.target.value))}
                 onFocus={() => {
                   if (currentPrice != null) {
                     setPriceDraft(
@@ -4045,7 +4047,7 @@ export default function GISMap({
       const reservationSignalPaid = Number(customerData.reservation_signal_paid) || 0;
       const signalAmount =
         customerData.signal_amount != null && customerData.signal_amount !== ""
-          ? Number(customerData.signal_amount)
+          ? parseCurrencyBRLNumber(customerData.signal_amount) || null
           : null;
 
       let newSaleData: any = null;
@@ -4094,9 +4096,9 @@ export default function GISMap({
             lot_price: finalPrice,
             broker_id: finalBrokerId,
             payment_type: pmtType,
-            discount: customerData.discount_value || 0,
+            discount: parseCurrencyBRLNumber(customerData.discount_value),
             total_value: customerData.final_value || finalPrice,
-            down_payment: customerData.down_payment || 0,
+            down_payment: parseCurrencyBRLNumber(customerData.down_payment),
             installments_count: instCount,
             status: "ACTIVE",
             ...buildSaleSpouseDbPatch(customerData),
@@ -4129,7 +4131,7 @@ export default function GISMap({
           if (reservationSignalPaid > 0 && pmtType === "Parcelado") {
             console.log("SIGNAL_APPLIED_TO_DOWN_PAYMENT", {
               reservationSignalPaid,
-              grossDownPayment: Number(customerData.down_payment) || 0,
+              grossDownPayment: parseCurrencyBRLNumber(customerData.down_payment),
             });
           }
 
@@ -4224,7 +4226,7 @@ export default function GISMap({
           };
 
           const saleValue = Number(customerData.final_value || finalPrice) || 0;
-          const downPaymentVal = Number(customerData.down_payment || 0) || 0;
+          const downPaymentVal = parseCurrencyBRLNumber(customerData.down_payment);
           const installmentsVal = instCount;
           // Contrato em try/catch isolado — falha aqui NÃO reverte venda/financeiro
           try {

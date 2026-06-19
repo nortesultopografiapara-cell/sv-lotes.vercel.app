@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, UserCog, X } from 'lucide-react';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { formatCurrencyBRL, parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 
 type BrokerOption = {
   id: string;
@@ -48,7 +50,7 @@ export function ManageSaleBrokerCommissionModal({
   const [mode, setMode] = useState<CommissionMode>('transfer');
   const [targetBrokerId, setTargetBrokerId] = useState('');
   const [commissionPercent, setCommissionPercent] = useState(0);
-  const [fixedAmount, setFixedAmount] = useState(0);
+  const [fixedAmount, setFixedAmount] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -56,6 +58,7 @@ export function ManageSaleBrokerCommissionModal({
     setError('');
     setMode('transfer');
     setTargetBrokerId('');
+    setFixedAmount('');
   }, [open, initialPendingTotal, saleId]);
 
   const tenantQuery = activeTenantId
@@ -93,8 +96,7 @@ export function ManageSaleBrokerCommissionModal({
     };
   }, [open, saleId, canManage, tenantQuery]);
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const formatCurrency = (val: number) => formatCurrencyBRL(val);
 
   async function submitAction() {
     if (!canManage) return;
@@ -117,7 +119,7 @@ export function ManageSaleBrokerCommissionModal({
     } else if (mode === 'percent') {
       payload = { action: 'update_commission', commission_percent: commissionPercent };
     } else if (mode === 'fixed') {
-      payload = { action: 'update_commission', fixed_amount: fixedAmount };
+      payload = { action: 'update_commission', fixed_amount: parseCurrencyBRLNumber(fixedAmount) };
     }
 
     if (activeTenantId) {
@@ -240,12 +242,9 @@ export function ManageSaleBrokerCommissionModal({
               {mode === 'fixed' && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">Valor fixo (R$)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                  <CurrencyInput
                     value={fixedAmount}
-                    onChange={(e) => setFixedAmount(e.target.value === '' ? 0 : Number(e.target.value))}
+                    onChange={setFixedAmount}
                     className="w-full bg-[var(--bg-main)] border border-[var(--border-color)] rounded-lg py-2.5 px-3 text-sm"
                   />
                 </div>

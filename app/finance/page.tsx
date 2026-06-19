@@ -32,10 +32,9 @@ import {
   shouldApplyOwnerFinanceScope,
 } from '@/lib/ownerProjectAccess';
 import { supabase } from '@/lib/supabase';
-import {
-  formatCurrencyBRL,
-  logLotAuditEvent,
-} from '@/lib/lotAudit';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { formatCurrencyBRL } from '@/lib/currencyBrl';
+import { logLotAuditEvent } from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
   calculateEnterpriseValueSummary,
@@ -1500,7 +1499,7 @@ export default function FinancePage() {
     setSaidaForm({
       category: cm.category || 'Outros',
       description: text,
-      amount: String(cm.amount ?? ''),
+      amount: formatCurrencyBRL(Number(cm.amount) || 0),
       project_id: cm.project_id || cm.contracts?.project_id || '',
       contract_id: cm.contract_id || '',
       broker_id: md.broker_id || '',
@@ -3417,14 +3416,12 @@ export default function FinancePage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Valor (R$) *</label>
-                  <input
+                  <CurrencyInput
                     required
-                    type="text"
-                    inputMode="decimal"
                     value={saidaForm.amount}
-                    onChange={(e) => setSaidaForm({ ...saidaForm, amount: e.target.value })}
-                    placeholder="5685,37 ou 5685.37"
-                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors font-mono"
+                    onChange={(next) => setSaidaForm({ ...saidaForm, amount: next })}
+                    placeholder="R$ 0,00"
+                    className="w-full bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-2 focus:outline-none focus:border-teal-500 transition-colors"
                   />
                 </div>
 

@@ -3,6 +3,7 @@
  * O plano define limites (projetos/corretores); o preço é independente.
  */
 
+import { parseCurrencyBRL } from '@/lib/currencyBrl';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
 
 export const PLAN_MRR: Record<string, number> = {
@@ -43,9 +44,11 @@ export function getStandardPlanMonthlyPrice(company: CompanySaasSource): number 
 
 export function parseCustomMonthlyPrice(raw: unknown): number | null {
   if (raw == null || raw === '') return null;
-  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100) / 100;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    return Math.round(raw * 100) / 100;
+  }
+  return parseCurrencyBRL(String(raw));
 }
 
 /** Aceita boolean Postgres, string ou número vindos do Supabase/API */
