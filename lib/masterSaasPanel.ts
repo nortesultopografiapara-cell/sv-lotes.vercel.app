@@ -114,6 +114,27 @@ export function saasChargeDisplayStatusTone(status: SaasChargeDisplayStatus): st
   return CHARGE_STATUS_TONE[status];
 }
 
+/** Mapeia status Asaas (API ou rótulo interno) → status visual do painel. */
+export function mapAsaasStatusToDisplayStatus(
+  raw: string | null | undefined,
+): SaasChargeDisplayStatus | null {
+  const s = String(raw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  if (!s) return null;
+  if (s.includes('DELETED') || s.includes('CANCEL')) return 'CANCELADA';
+  if (s.includes('RECEIVED') || s.includes('CONFIRM') || s === 'PAID' || s.includes('PAGO'))
+    return 'PAGA';
+  if (s.includes('OVERDUE') || s.includes('VENCID')) return 'VENCIDA';
+  if (s.includes('VIEWED') || s.includes('VISUALIZ')) return 'VISUALIZADA';
+  if (s.includes('LINK') && s.includes('ENVIAD')) return 'ENVIADA';
+  if (s.includes('ENVIAD') && !s.includes('RECEB')) return 'ENVIADA';
+  if (s.includes('PENDING') || s.includes('PENDENTE') || s.includes('AWAITING')) return 'GERADA';
+  return null;
+}
+
 /** Mapeia charge/fatura interna → status operacional do painel. */
 export function resolveSaasChargeDisplayStatus(
   row: SaasInvoiceChargeRow,
@@ -125,8 +146,16 @@ export function resolveSaasChargeDisplayStatus(
   if (chargeStatus === 'CANCELLED' || invoiceStatus === 'CANCELADO') return 'CANCELADA';
   if (chargeStatus === 'PAID' || invoiceStatus === 'PAGO') return 'PAGA';
   if (chargeStatus === 'OVERDUE' || invoiceStatus === 'VENCIDO') return 'VENCIDA';
+
   if (hints?.viewed) return 'VISUALIZADA';
   if (hints?.sentWhatsApp || hints?.sentEmail) return 'ENVIADA';
+
+  const fromAsaasLabel = mapAsaasStatusToDisplayStatus(row.asaasStatus);
+  if (fromAsaasLabel && fromAsaasLabel !== 'GERADA') return fromAsaasLabel;
+
+  const fromCharge = mapAsaasStatusToDisplayStatus(chargeStatus);
+  if (fromCharge) return fromCharge;
+
   if (row.paymentId || row.pixCopyPaste || row.paymentUrl) return 'GERADA';
   return 'GERADA';
 }

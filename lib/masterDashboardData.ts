@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { calculateMrrFromCompanies, getCompanyMonthlyPrice } from '@/lib/companyPricing';
+import { calculateMrrFromCompanies, getCompanyMonthlyPrice, isBillableCompany } from '@/lib/companyPricing';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { buildCompanyUserCounts } from '@/lib/masterCompanyUsers';
-import { buildPaidReferenceMonthsByCompany } from '@/lib/masterSaasPayments';
+import { buildPaidReferenceMonthsByCompany, sumReceivedRevenue } from '@/lib/masterSaasPayments';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
+import { computeSaasBillingMetrics } from '@/lib/saasBilling';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
@@ -38,7 +39,11 @@ export type MasterDashboardData = {
     activeCompanies: number;
     suspendedCompanies: number;
     inactiveCompanies: number;
+    activeSubscriptions: number;
     mrr: number;
+    receivedRevenue: number;
+    revenueToReceive: number;
+    delinquencyAmount: number;
     totalUsers: number;
     totalBrokers: number;
     totalProjects: number;
@@ -145,6 +150,7 @@ export async function loadMasterDashboardData(
     brokersListRes,
     subscriptionsRes,
     paymentsRes,
+    invoicesRes,
   ] = await Promise.all([
     supabase.from('companies').select('*'),
     supabase.from('users').select('*', { count: 'exact', head: true }),
@@ -167,6 +173,7 @@ export async function loadMasterDashboardData(
       .select('company_id, reference_month, paid_at, amount, status, payment_method')
       .order('paid_at', { ascending: false })
       .limit(500),
+    supabase.from('master_saas_invoices').select('final_amount, amount, due_date, status, paid_at'),
   ]);
 
   if (companiesRes.error) errors.push(`companies: ${companiesRes.error.message}`);
@@ -180,11 +187,13 @@ export async function loadMasterDashboardData(
   if (usersListRes.error) errors.push(`users_list: ${usersListRes.error.message}`);
   if (subscriptionsRes.error) errors.push(`subscriptions: ${subscriptionsRes.error.message}`);
   if (paymentsRes.error) errors.push(`master_saas_payments: ${paymentsRes.error.message}`);
+  if (invoicesRes.error) errors.push(`master_saas_invoices: ${invoicesRes.error.message}`);
 
   const companies = companiesRes.data ?? [];
   const subscriptions = (subscriptionsRes.data ?? []) as CompanySubscription[];
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
   const payments = (paymentsRes.data ?? []) as MasterSaasPayment[];
+  const invoices = invoicesRes.data ?? [];
   const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
   const activeCompanies = companies.filter((c) => c.active === true).length;
@@ -194,6 +203,16 @@ export async function loadMasterDashboardData(
   const inactiveCompanies = companies.filter((c) => c.active === false).length;
 
   const mrr = calculateMrrFromCompanies(companies);
+  let activeSubscriptions = 0;
+  companies.forEach((c) => {
+    if (isBillableCompany(c)) activeSubscriptions++;
+  });
+  const paymentsReceived = sumReceivedRevenue(payments);
+  const billingMetrics = computeSaasBillingMetrics(
+    invoices as Parameters<typeof computeSaasBillingMetrics>[0],
+    mrr,
+    paymentsReceived,
+  );
 
   let totalLots = blocksRes.count ?? 0;
   if (blocksRes.error && lotsRes.count != null) {
@@ -345,7 +364,11 @@ export async function loadMasterDashboardData(
       activeCompanies,
       suspendedCompanies,
       inactiveCompanies,
+      activeSubscriptions,
       mrr,
+      receivedRevenue: billingMetrics.receivedRevenue,
+      revenueToReceive: billingMetrics.revenueToReceive,
+      delinquencyAmount: billingMetrics.delinquencyAmount,
       totalUsers: usersRes.count ?? 0,
       totalBrokers: brokersRes.count ?? 0,
       totalProjects: projectsRes.count ?? 0,

@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
-  Building2,
-  CreditCard,
   Download,
   FileText,
   Loader2,
@@ -29,6 +27,7 @@ import {
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
+import type { MasterSaasInvoice } from '@/lib/saasBilling';
 
 function KpiCard({
   title,
@@ -101,17 +100,23 @@ function MasterReportsContent() {
 
       let paidReferenceMonths = new Map<string, Set<string>>();
       let payments: MasterSaasPayment[] = [];
+      let invoices: MasterSaasInvoice[] = [];
       if (user.id) {
-        const payRes = await fetch(
-          `/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`,
-        );
+        const [payRes, invRes] = await Promise.all([
+          fetch(`/api/master/saas-payments?userId=${encodeURIComponent(user.id)}`),
+          fetch(`/api/master/saas-invoices?userId=${encodeURIComponent(user.id)}`),
+        ]);
         const payJson = await payRes.json().catch(() => ({}));
+        const invJson = await invRes.json().catch(() => ({}));
         if (payRes.ok) {
           payments = (payJson.payments || []) as MasterSaasPayment[];
           paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
           setReceivedRevenue(sumReceivedRevenue(payments));
         } else {
           setReceivedRevenue(0);
+        }
+        if (invRes.ok) {
+          invoices = (invJson.invoices || []) as MasterSaasInvoice[];
         }
       }
 
@@ -121,6 +126,7 @@ function MasterReportsContent() {
           subscriptions,
           paidReferenceMonths,
           payments,
+          invoices,
         ),
       );
     } catch (err) {
@@ -250,18 +256,6 @@ function MasterReportsContent() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
             <KpiCard
-              title="Empresas cadastradas"
-              value={String(metrics.registeredCompanies)}
-              icon={Building2}
-              accent="bg-blue-500/15 text-blue-400"
-            />
-            <KpiCard
-              title="Assinaturas ativas"
-              value={String(metrics.activeSubscriptions)}
-              icon={CreditCard}
-              accent="bg-emerald-500/15 text-emerald-400"
-            />
-            <KpiCard
               title="Receita mensal"
               value={formatMasterCurrency(metrics.monthlyRevenue)}
               icon={Wallet}
@@ -272,6 +266,12 @@ function MasterReportsContent() {
               value={formatMasterCurrency(metrics.annualRevenue)}
               icon={TrendingUp}
               accent="bg-violet-500/15 text-violet-400"
+            />
+            <KpiCard
+              title="Receita prevista (30 dias)"
+              value={formatMasterCurrency(metrics.projectedRevenue30Days)}
+              icon={TrendingUp}
+              accent="bg-cyan-500/15 text-cyan-400"
             />
             <KpiCard
               title="Inadimplência"

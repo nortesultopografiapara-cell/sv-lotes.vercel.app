@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Building2,
   Edit,
   Eye,
+  ExternalLink,
   LogIn,
   Map as MapIcon,
   MoreVertical,
@@ -173,6 +175,18 @@ export function CompanyCard({
                       type="button"
                       onClick={() => {
                         setMenuOpen(false);
+                        onImpersonate();
+                      }}
+                      className="w-full px-3 py-2 text-left text-slate-300 hover:bg-white/5 flex items-center gap-2"
+                    >
+                      <LogIn className="w-3.5 h-3.5" /> Entrar como empresa
+                    </button>
+                  )}
+                  {!protectedCompany && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
                         onDelete();
                       }}
                       className="w-full px-3 py-2 text-left text-red-400 hover:bg-white/5 flex items-center gap-2"
@@ -233,14 +247,13 @@ export function CompanyCard({
       </div>
 
       {!isMaster && (
-        <button
-          type="button"
-          onClick={onImpersonate}
+        <Link
+          href={`/saas-finance?company=${company.id}`}
           className="w-full h-10 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors shadow-[0_4px_14px_rgba(249,115,22,0.25)]"
         >
-          <LogIn className="w-4 h-4" />
-          Entrar
-        </button>
+          <ExternalLink className="w-4 h-4" />
+          Gerenciar Empresa
+        </Link>
       )}
       {isMaster && (
         <p className="text-center text-[11px] text-slate-500 py-2">Tenant master protegido</p>

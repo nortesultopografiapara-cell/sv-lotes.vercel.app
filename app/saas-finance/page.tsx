@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
+import { Suspense, useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import {
@@ -76,13 +77,16 @@ function enrichCompany(
 export default function SaaSFinancePage() {
   return (
     <MasterSuperAdminGuard>
-      <SaaSFinancePageContent />
+      <Suspense fallback={null}>
+        <SaaSFinancePageContent />
+      </Suspense>
     </MasterSuperAdminGuard>
   );
 }
 
 function SaaSFinancePageContent() {
   const { user, loading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [companies, setCompanies] = useState<EnrichedCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -616,6 +620,16 @@ function SaaSFinancePageContent() {
     },
     [user?.id],
   );
+
+  useEffect(() => {
+    const companyId = searchParams.get('company');
+    if (!companyId || loading || companies.length === 0) return;
+    const exists = companies.some((c) => (c as { id?: string }).id === companyId);
+    if (!exists) return;
+    setSelectedCompanyId(companyId);
+    setPanelView('empresas');
+    void loadCompanyContracts(companyId);
+  }, [searchParams, loading, companies, loadCompanyContracts]);
 
   const handleGenerateSaasContract = useCallback(
     async (

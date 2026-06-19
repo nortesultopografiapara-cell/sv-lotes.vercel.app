@@ -6,10 +6,14 @@ import {
   CreditCard,
   Globe,
   Loader2,
+  Mail,
+  MessageCircle,
+  Plug,
   RefreshCw,
   Server,
   Settings,
   Shield,
+  Webhook,
 } from 'lucide-react';
 import { MasterSuperAdminGuard } from '@/components/admin/MasterSuperAdminGuard';
 import { supabase } from '@/lib/supabase';
@@ -148,6 +152,41 @@ function MasterSettingsContent() {
         />
       </div>
 
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">
+          Integrações
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <IntegrationStatusCard
+            icon={CreditCard}
+            name="Asaas"
+            status="Conectado"
+            statusTone="connected"
+          />
+          <IntegrationStatusCard
+            icon={Mail}
+            name="SMTP"
+            status="Desconectado"
+            statusTone="disconnected"
+          />
+          <IntegrationStatusCard
+            icon={MessageCircle}
+            name="WhatsApp"
+            status="Desconectado"
+            statusTone="disconnected"
+          />
+          <IntegrationStatusCard
+            icon={Webhook}
+            name="Webhooks"
+            status="Inativo"
+            statusTone="inactive"
+          />
+        </div>
+        <p className="text-xs text-slate-500 mt-3">
+          Status preparatório — configuração e validação em desenvolvimento.
+        </p>
+      </section>
+
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">
           Em breve
@@ -167,6 +206,39 @@ function MasterSettingsContent() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function IntegrationStatusCard({
+  icon: Icon,
+  name,
+  status,
+  statusTone,
+}: {
+  icon: typeof Plug;
+  name: string;
+  status: string;
+  statusTone: 'connected' | 'disconnected' | 'inactive';
+}) {
+  const toneClass =
+    statusTone === 'connected'
+      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+      : statusTone === 'inactive'
+        ? 'text-amber-400 bg-amber-500/10 border-amber-500/25'
+        : 'text-slate-400 bg-slate-500/10 border-slate-500/25';
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-[var(--color-surface)]/60 p-5">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Icon className="w-5 h-5 text-[var(--color-primary)]" />
+          <h3 className="text-sm font-semibold text-white">{name}</h3>
+        </div>
+      </div>
+      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase border ${toneClass}`}>
+        {status}
+      </span>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { 
    Users, Shield, UserPlus, Filter, X, Search, 
    Edit2, Lock, Unlock, MoreHorizontal, Download, 
-   Calendar, CheckCircle2, AlertCircle, Loader2, Activity 
+   Calendar, CheckCircle2, AlertCircle, Loader2, Activity, Building2
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -91,7 +91,20 @@ export default function UsersPage() {
          return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
       }).length;
 
-      return { total, active: act, admins: adms, news };
+      const tenantsWithActiveUsers = new Set<string>();
+      users.forEach((u) => {
+        if ((u.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') return;
+        const tenantId = u.tenant_id || u.companies?.id;
+        if (tenantId) tenantsWithActiveUsers.add(String(tenantId));
+      });
+
+      return {
+        total,
+        active: act,
+        admins: adms,
+        news,
+        companiesWithActiveUsers: tenantsWithActiveUsers.size,
+      };
    }, [users]);
 
    const formatRole = (role: string) => {
@@ -138,7 +151,7 @@ export default function UsersPage() {
          </div>
 
          {/* STATS */}
-         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             <div className="bg-[#11161d] border border-purple-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)] transition-all">
                <div className="w-14 h-14 rounded-full bg-purple-500/10 flex items-center justify-center">
                   <Users className="w-7 h-7 text-purple-400" />
@@ -148,7 +161,6 @@ export default function UsersPage() {
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.total}</span>
                   </div>
-                  <span className="text-[11px] text-green-400 font-bold">↑ 20% <span className="text-gray-500 font-normal">este mês</span></span>
                </div>
             </div>
             
@@ -161,7 +173,18 @@ export default function UsersPage() {
                   <div className="flex items-baseline gap-2">
                      <span className="text-3xl font-bold text-white">{stats.active}</span>
                   </div>
-                  <span className="text-[11px] text-green-400 font-bold">↑ 12% <span className="text-gray-500 font-normal">este mês</span></span>
+               </div>
+            </div>
+
+            <div className="bg-[#11161d] border border-cyan-500/20 rounded-xl p-5 flex items-center gap-4 hover:shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all">
+               <div className="w-14 h-14 rounded-full bg-cyan-500/10 flex items-center justify-center">
+                  <Building2 className="w-7 h-7 text-cyan-400" />
+               </div>
+               <div>
+                  <p className="text-[13px] text-gray-400 font-medium">Empresas com Usuários Ativos</p>
+                  <div className="flex items-baseline gap-2">
+                     <span className="text-3xl font-bold text-white">{stats.companiesWithActiveUsers}</span>
+                  </div>
                </div>
             </div>
 

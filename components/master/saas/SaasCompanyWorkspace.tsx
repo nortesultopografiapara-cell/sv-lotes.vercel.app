@@ -88,6 +88,9 @@ export function SaasCompanyWorkspace({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
+            <p className="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-0.5">
+              Workspace da Empresa
+            </p>
             <h2 className="text-xl font-bold text-white">{company.name}</h2>
             <p className="text-sm text-gray-500">{company.email || '—'}</p>
           </div>

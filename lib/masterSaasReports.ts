@@ -17,6 +17,7 @@ export type MasterReportsMetrics = {
   annualRevenue: number;
   delinquencyAmount: number;
   delinquentCompanies: number;
+  projectedRevenue30Days: number;
   rows: MasterReportRow[];
 };
 
@@ -33,6 +34,38 @@ export type MasterReportRow = {
   daysLate: number;
 };
 
+type InvoiceForProjection = {
+  final_amount?: number | null;
+  amount?: number | null;
+  due_date?: string | null;
+  status?: string | null;
+};
+
+/** Receita prevista: cobranças abertas com vencimento nos próximos 30 dias. */
+export function computeProjectedRevenueNext30Days(
+  invoices: InvoiceForProjection[],
+  today = new Date(),
+): number {
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 30);
+
+  return invoices.reduce((sum, inv) => {
+    const status = String(inv.status || '').toUpperCase();
+    if (['PAGO', 'PAID', 'CANCELADO', 'CANCELLED', 'CANCELADA'].includes(status)) return sum;
+
+    const dueRaw = String(inv.due_date || '').split('T')[0];
+    if (!dueRaw) return sum;
+    const due = new Date(`${dueRaw}T12:00:00`);
+    if (Number.isNaN(due.getTime())) return sum;
+    if (due < start || due > end) return sum;
+
+    const amount = Number(inv.final_amount ?? inv.amount ?? 0);
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
 export function computeDaysLate(nextDueDate?: string | null): number {
   if (!nextDueDate) return 0;
   const due = new Date(`${nextDueDate.split('T')[0]}T12:00:00`);
@@ -48,6 +81,7 @@ export function buildMasterReportsMetrics(
   subscriptions: CompanySubscription[] = [],
   paidReferenceMonths: Map<string, Set<string>> = new Map(),
   payments: MasterSaasPayment[] = [],
+  invoices: InvoiceForProjection[] = [],
 ): MasterReportsMetrics {
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
   let activeSubscriptions = 0;
@@ -101,6 +135,7 @@ export function buildMasterReportsMetrics(
     annualRevenue: monthlyRevenue * 12,
     delinquencyAmount,
     delinquentCompanies,
+    projectedRevenue30Days: computeProjectedRevenueNext30Days(invoices),
     rows,
   };
 }

@@ -234,14 +234,7 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4 min-w-0">
-        <KpiCard
-          title="Total de Empresas"
-          value={stats.totalCompanies}
-          sub={stats.totalCompanies === 0 ? 'Nenhum tenant' : 'Contagem real'}
-          icon={<Building2 className="w-5 h-5" />}
-          iconClass="bg-blue-500/10 text-blue-400"
-        />
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6 min-w-0">
         <KpiCard
           title="Empresas Ativas"
           value={stats.activeCompanies}
@@ -258,29 +251,45 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
           borderClass="border-orange-500/20"
         />
         <KpiCard
-          title="Empresas Inativas"
-          value={stats.inactiveCompanies}
-          sub={pct(stats.inactiveCompanies, stats.totalCompanies)}
-          icon={<Minus className="w-5 h-5" />}
-          iconClass="bg-red-500/10 text-red-500"
-          borderClass="border-red-500/20"
+          title="Assinaturas Ativas"
+          value={stats.activeSubscriptions}
+          sub="Tenants faturáveis"
+          icon={<Tag className="w-5 h-5" />}
+          iconClass="bg-cyan-500/10 text-cyan-400"
         />
         <KpiCard
           title="Receita Mensal (MRR)"
           value={formatCurrency(stats.mrr)}
-          sub={stats.mrr === 0 ? 'Sem assinaturas ativas' : 'Planos ativos (companies)'}
+          sub={stats.mrr === 0 ? 'Sem assinaturas ativas' : 'Recorrente mensal'}
           icon={<DollarSign className="w-5 h-5" />}
           iconClass="bg-purple-500/10 text-purple-400"
           isCurrency
         />
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 min-w-0">
-        <OpCard label="Total de Usuários" value={stats.totalUsers} icon={Users} color="text-blue-500/50" />
-        <OpCard label="Total de Corretores" value={stats.totalBrokers} icon={UserPlus} color="text-purple-500/50" />
-        <OpCard label="Total de Empreendimentos" value={stats.totalProjects} icon={MapIcon} color="text-blue-300/50" />
-        <OpCard label="Total de Contratos" value={stats.totalContracts} icon={FileText} color="text-green-500/50" />
-        <OpCard label="Lotes Cadastrados" value={stats.totalLots} icon={Crosshair} color="text-orange-500/50" />
+        <KpiCard
+          title="Receita Recebida"
+          value={formatCurrency(stats.receivedRevenue)}
+          sub="Pagamentos confirmados"
+          icon={<Banknote className="w-5 h-5" />}
+          iconClass="bg-emerald-500/10 text-emerald-400"
+          isCurrency
+        />
+        <KpiCard
+          title="Receita a Receber"
+          value={formatCurrency(stats.revenueToReceive)}
+          sub="Dentro do prazo"
+          icon={<Wallet className="w-5 h-5" />}
+          iconClass="bg-blue-500/10 text-blue-400"
+          isCurrency
+        />
+        <KpiCard
+          title="Inadimplência"
+          value={formatCurrency(stats.delinquencyAmount)}
+          sub="Valores vencidos"
+          icon={<Lock className="w-5 h-5" />}
+          iconClass="bg-rose-500/10 text-rose-400"
+          isCurrency
+          borderClass="border-rose-500/20"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
