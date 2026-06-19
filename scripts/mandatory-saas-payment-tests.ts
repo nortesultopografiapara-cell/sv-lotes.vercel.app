@@ -15,7 +15,14 @@ import {
   isSaasPaymentGatewayConfigured,
   SAAS_PAYMENT_GATEWAY_NOT_CONFIGURED_MESSAGE,
 } from '../lib/saasPaymentGateway';
-import { resolveSaasPixChargeSkipReason, saasChargeStatusLabel } from '../lib/saasCharges';
+import {
+  classifyExternalChargeId,
+  isOrphanSaasCharge,
+  isProtectedSaasCharge,
+  resolveSaasPixChargeSkipReason,
+  resolveSaasPixChargeSkipReasonAsync,
+  saasChargeStatusLabel,
+} from '../lib/saasCharges';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
 import {
@@ -258,7 +265,8 @@ function testFinancialStatusRules() {
 function testMonthlyAsaasChargeFlow() {
   const saasCharges = read('lib/saasCharges.ts');
   assert(saasCharges.includes('generateMonthlySaasCharges'), 'geração mensal via saas_charges');
-  assert(saasCharges.includes('resolveSaasPixChargeSkipReason'), 'regra anti-duplicidade');
+  assert(saasCharges.includes('resolveSaasPixChargeSkipReasonAsync'), 'skip async asaas');
+  assert(saasCharges.includes('isOrphanSaasCharge'), 'remove charge órfã');
   assert(saasCharges.includes("outcome: invoiceCreated ? 'created' : 'completed'"), 'backfill fatura existente');
   assert(saasCharges.includes('chargeId: charge.id'), 'externalReference = saas_charges.id');
 
@@ -272,18 +280,43 @@ function testMonthlyAsaasChargeFlow() {
 }
 
 function testSaasPixChargeSkipRules() {
+  assert(classifyExternalChargeId('mock_abc_123') === 'mock', 'mock classificado');
+  assert(classifyExternalChargeId('pay_abc123') === 'pay_asaas', 'pay classificado');
   assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: 'pay_123' }, null) ===
-      'Fatura já possui cobrança Asaas',
-    'external_charge_id bloqueia duplicata',
+    classifyExternalChargeId('59d38b25-61bb-4114-a8c1-8e34d9c78c2c') === 'legacy_uuid',
+    'uuid legado classificado',
+  );
+
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: 'mock_abc' }, null) === null,
+    'mock_* não bloqueia',
   );
   assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PENDING' }) ===
-      'Cobrança PIX já existe para esta fatura',
-    'saas_charges PENDING bloqueia duplicata',
+    resolveSaasPixChargeSkipReason(
+      { external_charge_id: '59d38b25-61bb-4114-a8c1-8e34d9c78c2c' },
+      null,
+    ) === null,
+    'external_charge_id legado (uuid) não bloqueia',
   );
   assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PAID' }) ===
+    resolveSaasPixChargeSkipReason({ external_charge_id: 'pay_123' }, null) === null,
+    'pay_ sozinho não bloqueia sync',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PENDING', payment_id: null }) ===
+      null,
+    'charge órfã PENDING sem payment_id não bloqueia',
+  );
+  assert(isOrphanSaasCharge({ status: 'PENDING', payment_id: null }), 'detecta órfã');
+  assert(
+    resolveSaasPixChargeSkipReason(
+      { external_charge_id: null },
+      { status: 'PENDING', payment_id: 'pay_real' },
+    ) === 'Cobrança PIX já existe para esta fatura',
+    'PENDING com payment_id bloqueia',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PAID', payment_id: 'pay_1' }) ===
       'Cobrança PIX já existe para esta fatura',
     'saas_charges PAID bloqueia duplicata',
   );
@@ -291,11 +324,24 @@ function testSaasPixChargeSkipRules() {
     resolveSaasPixChargeSkipReason({ external_charge_id: null }, null) === null,
     'fatura sem PIX permite criar cobrança',
   );
-  assert(
-    resolveSaasPixChargeSkipReason({ external_charge_id: '  ' }, { status: 'CANCELLED' as never }) ===
-      null,
-    'charge cancelada não bloqueia nova cobrança',
+}
+
+async function testSaasPixChargeSkipAsyncRules() {
+  const blocked = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_valid' },
+    null,
+    async () => true,
   );
+  assert(blocked === 'Fatura já possui cobrança Asaas', 'pay_ existente no Asaas bloqueia');
+
+  const allowed = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_missing' },
+    null,
+    async () => {
+      throw new Error('not found');
+    },
+  );
+  assert(allowed === null, 'pay_ inexistente no Asaas permite backfill');
 }
 
 function testWebhookExternalReference() {
@@ -339,6 +385,7 @@ async function run() {
     ['webhook respostas Asaas', testWebhookResponses],
     ['fluxo mensal Asaas', testMonthlyAsaasChargeFlow],
     ['regras skip cobrança', testSaasPixChargeSkipRules],
+    ['regras skip async Asaas', testSaasPixChargeSkipAsyncRules],
     ['webhook externalReference', testWebhookExternalReference],
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
