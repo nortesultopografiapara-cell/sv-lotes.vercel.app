@@ -77,10 +77,10 @@ import {
 import {
   formatCurrencyBRL as formatBRL,
   formatLotAuditDescription,
-  maskCurrencyBRL,
   parseCurrencyBRL,
   parseCurrencyBRLNumber,
 } from "@/lib/currencyBrl";
+import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import {
   GIS_LOT_POPUP_ACTION_BTN_CLASS,
   GIS_LOT_POPUP_CONTAINER_CLASS,
@@ -2242,30 +2242,9 @@ function LotPopupContent({
               </span>
             ) : (
             <div className="flex items-center gap-1.5">
-              <input
-                type="text"
-                inputMode="decimal"
+              <CurrencyInput
                 value={priceDraft}
-                onChange={(e) => setPriceDraft(maskCurrencyBRL(e.target.value))}
-                onFocus={() => {
-                  if (currentPrice != null) {
-                    setPriceDraft(
-                      currentPrice.toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }),
-                    );
-                  }
-                }}
-                onBlur={() => {
-                  const parsed = parseCurrencyBRL(priceDraft);
-                  if (priceDraft.trim() && parsed == null) {
-                    const saved = normalizeSavedLotPrice(lot.price);
-                    setPriceDraft(saved != null ? formatBRL(saved) : "");
-                    return;
-                  }
-                  setPriceDraft(parsed != null ? formatBRL(parsed) : "");
-                }}
+                onChange={setPriceDraft}
                 placeholder="R$ 0,00"
                 className={GIS_LOT_POPUP_PRICE_INPUT_CLASS}
               />

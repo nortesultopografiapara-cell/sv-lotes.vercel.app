@@ -6,6 +6,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  commitCurrencyDraft,
+  currencyDraftToParseable,
+  extractCurrencyDraft,
+  formatCurrencyDraftDisplay,
   formatCurrencyBRL,
   formatLotAuditDescription,
   maskCurrencyBRL,
@@ -13,6 +17,7 @@ import {
   parseCurrencyBRLNumber,
   parseCurrencyBR,
   serializeCurrencyBRL,
+  valueToCurrencyDraft,
 } from '../lib/currencyBrl';
 import {
   GIS_LOT_POPUP_CONTAINER_CLASS,
@@ -156,6 +161,42 @@ function testMaskCurrencyBRL() {
   assertEq(serializeCurrencyBRL('R$ 5.000,00'), '5000', 'serialize masked');
 }
 
+function testContinuousTypingDoesNotLock() {
+  let draft = '';
+  for (const ch of '3500') {
+    draft = extractCurrencyDraft(formatCurrencyDraftDisplay(draft) + ch);
+  }
+  assert(
+    formatCurrencyDraftDisplay(draft).replace(/\u00a0/g, ' ').includes('R$ 3.500'),
+    'digitar 3500 não trava em R$ 3,00',
+  );
+  assertEq(parseCurrencyBRLNumber(currencyDraftToParseable(draft)), 3500, 'parse 3500 durante digitação');
+  const committed = commitCurrencyDraft(draft).replace(/\u00a0/g, ' ');
+  assert(committed.includes('R$ 3.500,00'), 'blur 3500 → R$ 3.500,00');
+
+  draft = extractCurrencyDraft('7');
+  assert(
+    formatCurrencyDraftDisplay(draft).replace(/\u00a0/g, ' ').includes('R$ 7'),
+    '7 não vira R$ 7,00 durante digitação',
+  );
+  draft = extractCurrencyDraft(formatCurrencyDraftDisplay(draft) + '500');
+  assertEq(parseCurrencyBRLNumber(currencyDraftToParseable(draft)), 7500, '7 + 500 → 7500');
+
+  draft = extractCurrencyDraft('15830,48');
+  assert(
+    commitCurrencyDraft(draft).replace(/\u00a0/g, ' ').includes('R$ 15.830,48'),
+    '15830,48',
+  );
+
+  draft = extractCurrencyDraft('1500.50');
+  assert(
+    commitCurrencyDraft(draft).replace(/\u00a0/g, ' ').includes('R$ 1.500,50'),
+    '1500.50',
+  );
+
+  assertEq(valueToCurrencyDraft('R$ 5.500,00'), '5500', 'valueToCurrencyDraft inteiro');
+}
+
 function testCustomerLotFormUsesCurrencyInput() {
   const source = fs.readFileSync(
     path.join(process.cwd(), 'components/map/CustomerLotFormModal.tsx'),
@@ -164,6 +205,10 @@ function testCustomerLotFormUsesCurrencyInput() {
   assert(source.includes('CurrencyInput'), 'modal venda usa CurrencyInput');
   assert(source.includes('parseCurrencyBRLNumber'), 'modal venda parse unificado');
   assert(!source.includes('type="number"'), 'modal venda sem input number monetário');
+  assert(
+    fs.readFileSync(path.join(process.cwd(), 'components/ui/CurrencyInput.tsx'), 'utf8').includes('formatCurrencyDraftDisplay'),
+    'CurrencyInput usa draft durante digitação',
+  );
 }
 
 function testPopupResponsiveClasses() {
@@ -191,7 +236,8 @@ function testPopupResponsiveClasses() {
   assert(source.includes('handleLotPriceSaved'), 'GISMap atualiza estado local');
   assert(!source.includes('onAction(lot, lot.status, parsed'), 'save preço não chama onAction');
   assert(source.includes('canEditLotPrice'), 'GISMap restringe edição de preço');
-  assert(source.includes('type="text"'), 'input texto moeda');
+  assert(source.includes('CurrencyInput'), 'GISMap usa CurrencyInput preço');
+  assert(!source.includes('maskCurrencyBRL(e.target.value)'), 'GISMap não mascara a cada tecla');
   assert(GIS_LOT_POPUP_PRICE_INPUT_CLASS.includes('lg:w-40'), 'input desktop wider');
 }
 
@@ -206,6 +252,7 @@ function main() {
   testAuditHistoryFormatting();
   testImportAuditCurrency();
   testMaskCurrencyBRL();
+  testContinuousTypingDoesNotLock();
   testCustomerLotFormUsesCurrencyInput();
   testPopupResponsiveClasses();
   console.log('OK — mandatory-gis-lot-popup-currency-responsive-tests passed');

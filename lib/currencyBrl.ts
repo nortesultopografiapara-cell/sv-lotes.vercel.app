@@ -27,6 +27,94 @@ export function formatCurrencyFieldValue(
 }
 
 /**
+ * Extrai rascunho digitável (dígitos + vírgula opcional) sem formatação final.
+ * Usado durante digitação para não travar após o primeiro número.
+ */
+export function extractCurrencyDraft(input: string): string {
+  let cleaned = String(input ?? '').replace(/[R$\s\u00a0]/gi, '');
+  if (!cleaned) return '';
+
+  if (cleaned.includes(',')) {
+    const commaIndex = cleaned.indexOf(',');
+    const intPart = cleaned.slice(0, commaIndex).replace(/\./g, '').replace(/\D/g, '');
+    const afterComma = cleaned.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2);
+    if (cleaned.endsWith(',') && !afterComma) {
+      return `${intPart || '0'},`;
+    }
+    return `${intPart || '0'},${afterComma}`;
+  }
+
+  const lastDot = cleaned.lastIndexOf('.');
+  if (lastDot >= 0) {
+    const after = cleaned.slice(lastDot + 1);
+    if (/^\d{1,2}$/.test(after) && cleaned.indexOf('.') === lastDot) {
+      const intPart = cleaned.slice(0, lastDot).replace(/\./g, '').replace(/\D/g, '');
+      return `${intPart || '0'},${after}`;
+    }
+  }
+
+  return cleaned.replace(/\./g, '').replace(/\D/g, '');
+}
+
+/** Converte valor armazenado para rascunho editável. */
+export function valueToCurrencyDraft(
+  value: string | number | null | undefined,
+): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+
+  if (!trimmed.includes('R$')) {
+    const fromRaw = extractCurrencyDraft(trimmed);
+    if (fromRaw) return fromRaw;
+  }
+
+  const parsed = parseCurrencyBRL(value);
+  if (parsed == null) return extractCurrencyDraft(trimmed);
+
+  const [intPart, dec] = parsed.toFixed(2).split('.');
+  if (dec === '00') return intPart;
+  return `${intPart},${dec}`;
+}
+
+/** Formata rascunho para exibição durante digitação (sem forçar ,00). */
+export function formatCurrencyDraftDisplay(draft: string): string {
+  if (!draft) return '';
+
+  if (draft.endsWith(',')) {
+    const intPart = draft.slice(0, -1).replace(/\D/g, '') || '0';
+    return `R$ ${Number(intPart).toLocaleString('pt-BR')},`;
+  }
+
+  if (draft.includes(',')) {
+    const [intPart, decPart = ''] = draft.split(',');
+    const intNum = intPart.replace(/\D/g, '') || '0';
+    return `R$ ${Number(intNum).toLocaleString('pt-BR')},${decPart}`;
+  }
+
+  const digits = draft.replace(/\D/g, '');
+  if (!digits) return '';
+  return `R$ ${Number(digits).toLocaleString('pt-BR')}`;
+}
+
+/** Valor parseável para o pai durante digitação (cálculos em tempo real). */
+export function currencyDraftToParseable(draft: string): string {
+  if (!draft) return '';
+  if (draft.includes(',')) {
+    if (draft.endsWith(',')) {
+      return draft.slice(0, -1).replace(/\D/g, '') || '0';
+    }
+    return maskCurrencyBRL(draft);
+  }
+  return draft.replace(/\D/g, '');
+}
+
+/** Formatação final ao sair do campo. */
+export function commitCurrencyDraft(draft: string): string {
+  if (!draft || draft === ',') return '';
+  return maskCurrencyBRL(draft);
+}
+
+/**
  * Máscara para digitação — padrão de reais inteiros (5000 → R$ 5.000,00).
  * Com vírgula, aceita centavos (1500,50 → R$ 1.500,50).
  */
