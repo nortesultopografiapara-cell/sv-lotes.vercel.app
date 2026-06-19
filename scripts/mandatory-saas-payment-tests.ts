@@ -24,6 +24,12 @@ import {
   saasChargeStatusLabel,
 } from '../lib/saasCharges';
 import { isPhantomSaasInvoice } from '../lib/saasBilling';
+import {
+  buildSaasInvoiceChargeRows,
+  pickBestChargeForInvoice,
+  truncatePaymentId,
+} from '../lib/saasInvoiceChargeView';
+import { addOneMonthToIsoDate, companyNextPaymentPatch } from '../lib/companySubscriptionDates';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
 import {
@@ -34,11 +40,6 @@ import {
   validateCompanyDocumentForAsaas,
   resolveAsaasDueDate,
 } from '../lib/saasPixValidation';
-import {
-  buildSaasInvoiceChargeRows,
-  truncatePaymentId,
-} from '../lib/saasInvoiceChargeView';
-import { addOneMonthToIsoDate, companyNextPaymentPatch } from '../lib/companySubscriptionDates';
 
 const ROOT = process.cwd();
 
@@ -455,6 +456,30 @@ function testSaasInvoiceChargeView() {
   assert(truncatePaymentId('pay_abc123456789').includes('…'), 'payment id truncado');
   assert(truncatePaymentId(null) === '—', 'payment id vazio');
 
+  const picked = pickBestChargeForInvoice(
+    [
+      {
+        id: 'ch-orphan',
+        invoice_id: 'inv-topo',
+        status: 'CANCELLED',
+        payment_id: null,
+        created_at: '2026-06-20T10:00:00Z',
+      } as never,
+      {
+        id: 'ch-real',
+        invoice_id: 'inv-topo',
+        status: 'PENDING',
+        payment_id: 'pay_topo_real',
+        pix_copy_paste: '000201PIXREAL',
+        pix_qr_code: 'data:image/png;base64,abc',
+        payment_url: 'https://www.asaas.com/i/topo',
+        created_at: '2026-06-20T09:00:00Z',
+      } as never,
+    ],
+    'inv-topo',
+  );
+  assert(picked?.id === 'ch-real', 'UI prefere charge real com PIX sobre órfã');
+
   const fallback = buildSaasInvoiceChargeRows(
     [
       {
@@ -473,6 +498,20 @@ function testSaasInvoiceChargeView() {
   );
   assert(fallback[0].pixCopyPaste?.includes('PIX'), 'fallback invoice pix_code');
   assert(fallback[0].paymentId === 'pay_legacy', 'fallback external_charge_id');
+}
+
+function testAsaasPixProviderAndRefresh() {
+  const asaas = read('lib/payments/providers/asaas.ts');
+  assert(asaas.includes('fetchAsaasPixQrCode'), 'retry pixQrCode Asaas');
+  assert(asaas.includes('/payments/${paymentId}/pixQrCode'), 'GET pixQrCode');
+  assert(asaas.includes('`/payments/${payment.id}`'), 'GET payment após POST');
+  assert(asaas.includes('fetchAsaasPaymentPixData'), 'backfill PIX existente');
+
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('refreshSaasChargePixFromAsaas'), 'refresh PIX backfill');
+
+  const api = read('app/api/master/saas-charges/route.ts');
+  assert(api.includes("action === 'refresh_pix'"), 'endpoint refresh_pix');
 }
 
 function testAdvanceSubscriptionDueDate() {
@@ -712,6 +751,7 @@ async function run() {
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
     ['validação PIX Asaas', testSaasPixValidation],
+    ['provider Asaas PIX + refresh', testAsaasPixProviderAndRefresh],
     ['view faturas + PIX', testSaasInvoiceChargeView],
     ['próximo vencimento pagamento', testAdvanceSubscriptionDueDate],
     ['webhook PAYMENT_RECEIVED idempotente', testWebhookPaymentIdempotency],

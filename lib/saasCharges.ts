@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPaymentProvider, mapProviderStatusToChargeStatus } from '@/lib/payments/providers';
+import { fetchAsaasPaymentPixData } from '@/lib/payments/providers/asaas';
 import { assertSaasPaymentGatewayConfigured } from '@/lib/saasPaymentGateway';
 import {
   currentReferenceMonth,
@@ -469,6 +470,10 @@ export async function createSaasPixCharge(
     throw new Error(pixErr?.message || 'Falha ao anexar PIX à cobrança');
   }
 
+  if (!String(pix.pixCopyPaste || '').trim()) {
+    throw new Error('Asaas não retornou Pix Copia e Cola — cobrança não concluída.');
+  }
+
   charge = parseChargeRow(withPix as Record<string, unknown>);
 
   await supabaseAdmin
@@ -718,6 +723,94 @@ export async function cancelSaasCharge(
   return parseChargeRow(updated as Record<string, unknown>);
 }
 
+async function persistSaasChargePixFields(
+  supabaseAdmin: SupabaseClient,
+  chargeId: string,
+  invoiceId: string | null | undefined,
+  pix: {
+    paymentId: string;
+    pixQrCode: string;
+    pixCopyPaste: string;
+    paymentUrl?: string | null;
+    provider: string;
+    status: SaasChargeStatus;
+  },
+): Promise<SaasCharge> {
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabaseAdmin
+    .from('saas_charges')
+    .update({
+      payment_provider: pix.provider,
+      payment_id: pix.paymentId,
+      pix_qr_code: pix.pixQrCode,
+      pix_copy_paste: pix.pixCopyPaste,
+      payment_url: pix.paymentUrl ?? null,
+      status: pix.status,
+      updated_at: now,
+    })
+    .eq('id', chargeId)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error(error?.message || 'Falha ao persistir PIX da cobrança');
+  }
+
+  const charge = parseChargeRow(updated as Record<string, unknown>);
+
+  if (invoiceId) {
+    await supabaseAdmin
+      .from('master_saas_invoices')
+      .update({
+        pix_code: charge.pix_copy_paste,
+        pix_qrcode: charge.pix_qr_code,
+        external_charge_id: charge.payment_id,
+        payment_method: 'pix',
+        updated_at: now,
+      })
+      .eq('id', invoiceId);
+  }
+
+  return charge;
+}
+
+/** Backfill PIX/link Asaas quando payment_id existe mas campos PIX estão vazios. */
+export async function refreshSaasChargePixFromAsaas(
+  supabaseAdmin: SupabaseClient,
+  chargeId: string,
+): Promise<SaasCharge> {
+  const { data: row, error } = await supabaseAdmin
+    .from('saas_charges')
+    .select('*')
+    .eq('id', chargeId)
+    .single();
+
+  if (error || !row) throw new Error('Cobrança não encontrada.');
+
+  const charge = parseChargeRow(row as Record<string, unknown>);
+  if (!charge.payment_id) {
+    throw new Error('Cobrança sem payment_id no Asaas.');
+  }
+
+  if (
+    String(charge.pix_copy_paste || '').trim() &&
+    String(charge.pix_qr_code || '').trim() &&
+    String(charge.payment_url || '').trim()
+  ) {
+    return charge;
+  }
+
+  const pix = await fetchAsaasPaymentPixData(charge.payment_id);
+  return persistSaasChargePixFields(supabaseAdmin, charge.id, charge.invoice_id, {
+    paymentId: pix.paymentId,
+    pixQrCode: pix.pixQrCode,
+    pixCopyPaste: pix.pixCopyPaste,
+    paymentUrl: pix.paymentUrl,
+    provider: 'asaas',
+    status: mapProviderStatusToChargeStatus(pix.status),
+  });
+}
+
 export type SyncSaasChargeResult = {
   charge: SaasCharge;
   paid: boolean;
@@ -741,6 +834,19 @@ export async function syncSaasChargeStatusFromAsaas(
   const charge = parseChargeRow(row as Record<string, unknown>);
   if (!charge.payment_id) {
     throw new Error('Cobrança sem payment_id no Asaas.');
+  }
+
+  if (!String(charge.pix_copy_paste || '').trim() || !String(charge.pix_qr_code || '').trim()) {
+    try {
+      const refreshed = await refreshSaasChargePixFromAsaas(supabaseAdmin, charge.id);
+      Object.assign(charge, refreshed);
+    } catch (err) {
+      console.warn('[SAAS_CHARGE_PIX_REFRESH_FAIL]', {
+        chargeId: charge.id,
+        paymentId: charge.payment_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   if (charge.status === 'PAID' && charge.master_payment_id) {

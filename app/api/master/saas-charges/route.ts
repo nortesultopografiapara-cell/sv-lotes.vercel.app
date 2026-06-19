@@ -4,6 +4,7 @@ import {
   cancelSaasCharge,
   createSaasPixCharge,
   listSaasCharges,
+  refreshSaasChargePixFromAsaas,
   syncSaasChargeStatusFromAsaas,
 } from '@/lib/saasCharges';
 import {
@@ -86,6 +87,20 @@ export async function POST(request: Request) {
         paid: result.paid,
         statusSynced: result.statusSynced,
       });
+    }
+
+    if (action === 'refresh_pix') {
+      if (!chargeId) {
+        return NextResponse.json({ error: 'chargeId obrigatório.' }, { status: 400 });
+      }
+      try {
+        assertSaasPaymentGatewayConfigured();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Gateway não configurado.';
+        return NextResponse.json({ error: message }, { status: 503 });
+      }
+      const charge = await refreshSaasChargePixFromAsaas(supabaseAdmin, chargeId);
+      return NextResponse.json({ success: true, charge });
     }
 
     try {

@@ -54,15 +54,39 @@ export function mapInternalChargeStatus(
   return String(invoice?.status || 'PENDENTE').toUpperCase();
 }
 
+function chargeDisplayScore(charge: SaasCharge): number {
+  let score = 0;
+  if (String(charge.status || '').toUpperCase() !== 'CANCELLED') score += 100;
+  if (String(charge.payment_id || '').trim()) score += 50;
+  if (String(charge.pix_copy_paste || '').trim()) score += 30;
+  if (String(charge.pix_qr_code || '').trim()) score += 20;
+  if (String(charge.payment_url || '').trim()) score += 10;
+  return score;
+}
+
+/** Prefer charge real (payment_id + PIX) sobre órfãs/canceladas na mesma fatura. */
+export function pickBestChargeForInvoice(
+  charges: SaasCharge[],
+  invoiceId: string,
+): SaasCharge | null {
+  const candidates = charges.filter((c) => c.invoice_id === invoiceId);
+  if (!candidates.length) return null;
+
+  return [...candidates].sort((a, b) => {
+    const scoreDiff = chargeDisplayScore(b) - chargeDisplayScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  })[0];
+}
+
 export function buildSaasInvoiceChargeRows(
   invoices: MasterSaasInvoice[],
   charges: SaasCharge[],
 ): SaasInvoiceChargeRow[] {
   const chargeByInvoice = new Map<string, SaasCharge>();
-  for (const ch of charges) {
-    if (ch.invoice_id && !chargeByInvoice.has(ch.invoice_id)) {
-      chargeByInvoice.set(ch.invoice_id, ch);
-    }
+  for (const inv of invoices) {
+    const best = pickBestChargeForInvoice(charges, inv.id);
+    if (best) chargeByInvoice.set(inv.id, best);
   }
 
   return invoices.map((inv) => {
