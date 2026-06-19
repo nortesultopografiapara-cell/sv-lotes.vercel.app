@@ -5,6 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   addOneMonthToIsoDate,
+  companyNextPaymentPatch,
   dueDayFromDate,
   toIsoDateOnly,
   todayIsoDate,
@@ -440,10 +441,81 @@ export async function suspendOverdueCompanies(
   return suspended;
 }
 
+/** Pagamento confirmado para company + competência (idempotência). */
+export async function findExistingSaasPaymentForReference(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  referenceMonth: string,
+): Promise<{ id: string } | null> {
+  const { data } = await supabaseAdmin
+    .from('master_saas_payments')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('reference_month', referenceMonth)
+    .eq('status', 'paid')
+    .maybeSingle();
+
+  return data?.id ? { id: String(data.id) } : null;
+}
+
+/** Avança próximo vencimento após pagamento confirmado da competência. */
+export async function advanceSubscriptionAfterSaasPayment(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  referenceMonth: string,
+): Promise<void> {
+  const { data: sub } = await supabaseAdmin
+    .from('company_subscriptions')
+    .select('id')
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (!sub?.id) return;
+
+  const { data: company } = await supabaseAdmin
+    .from('companies')
+    .select('subscription_due_day')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  const [yRaw, mRaw] = referenceMonth.split('-').map(Number);
+  const y = yRaw || new Date().getFullYear();
+  const m = mRaw || new Date().getMonth() + 1;
+  const dueDayRaw = Number(company?.subscription_due_day);
+  const dueDay =
+    Number.isFinite(dueDayRaw) && dueDayRaw >= 1 && dueDayRaw <= 31
+      ? dueDayRaw
+      : new Date(`${referenceMonth}-15T12:00:00`).getDate();
+  const lastDay = new Date(y, m, 0).getDate();
+  const day = Math.min(Math.max(dueDay, 1), lastDay);
+  const referenceDue = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const nextDue = addOneMonthToIsoDate(referenceDue);
+  const now = new Date().toISOString();
+
+  await supabaseAdmin
+    .from('company_subscriptions')
+    .update({
+      payment_status: 'paid',
+      contract_status: 'active',
+      next_due_date: nextDue,
+      updated_at: now,
+    })
+    .eq('id', sub.id);
+
+  await supabaseAdmin
+    .from('companies')
+    .update({
+      ...companyNextPaymentPatch(nextDue),
+      updated_at: now,
+    })
+    .eq('id', companyId);
+}
+
 /** Reativa empresa após pagamento de fatura. */
 export async function reactivateCompanyOnPayment(
   supabaseAdmin: SupabaseClient,
   companyId: string,
+  options?: { skipSubscriptionDates?: boolean },
 ): Promise<void> {
   const { data: company } = await supabaseAdmin
     .from('companies')
@@ -479,28 +551,28 @@ export async function reactivateCompanyOnPayment(
     .maybeSingle();
 
   if (sub?.id) {
-    const nextDue = sub.next_due_date
-      ? addOneMonthToIsoDate(String(sub.next_due_date).split('T')[0])
-      : addOneMonthToIsoDate(todayIsoDate());
+    const subUpdate: Record<string, unknown> = {
+      contract_status: 'active',
+      payment_status: 'paid',
+      updated_at: new Date().toISOString(),
+    };
 
-    await supabaseAdmin
-      .from('company_subscriptions')
-      .update({
-        contract_status: 'active',
-        payment_status: 'paid',
-        next_due_date: nextDue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', sub.id);
+    if (!options?.skipSubscriptionDates) {
+      const nextDue = sub.next_due_date
+        ? addOneMonthToIsoDate(String(sub.next_due_date).split('T')[0])
+        : addOneMonthToIsoDate(todayIsoDate());
+      subUpdate.next_due_date = nextDue;
 
-    await supabaseAdmin
-      .from('companies')
-      .update({
-        next_payment_date: nextDue,
-        vencimento_plano: nextDue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', companyId);
+      await supabaseAdmin
+        .from('companies')
+        .update({
+          ...companyNextPaymentPatch(nextDue),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', companyId);
+    }
+
+    await supabaseAdmin.from('company_subscriptions').update(subUpdate).eq('id', sub.id);
   }
 }
 
@@ -528,6 +600,57 @@ export async function markInvoicePaid(
 
   if (invErr || !invoice) {
     throw new Error(invErr?.message || 'Fatura não encontrada');
+  }
+
+  const existing = await findExistingSaasPaymentForReference(
+    supabaseAdmin,
+    String(invoice.company_id),
+    String(invoice.reference_month),
+  );
+
+  if (existing) {
+    const invoiceStatus = String(invoice.status || '').toUpperCase();
+    let parsed = parseInvoiceRow(invoice);
+
+    if (invoiceStatus !== 'PAGO') {
+      const { data: updated, error: updErr } = await supabaseAdmin
+        .from('master_saas_invoices')
+        .update({
+          status: 'PAGO',
+          paid_at: `${paidAt}T12:00:00.000Z`,
+          payment_method: input.paymentMethod || invoice.payment_method || 'manual',
+          updated_at: now,
+        })
+        .eq('id', input.invoiceId)
+        .select('*')
+        .single();
+
+      if (updErr || !updated) {
+        throw new Error(updErr?.message || 'Falha ao atualizar fatura');
+      }
+      parsed = parseInvoiceRow(updated);
+    }
+
+    if (invoice.subscription_id) {
+      await supabaseAdmin
+        .from('company_subscriptions')
+        .update({
+          payment_status: 'paid',
+          updated_at: now,
+        })
+        .eq('id', invoice.subscription_id);
+    }
+
+    await advanceSubscriptionAfterSaasPayment(
+      supabaseAdmin,
+      String(invoice.company_id),
+      String(invoice.reference_month),
+    );
+    await reactivateCompanyOnPayment(supabaseAdmin, String(invoice.company_id), {
+      skipSubscriptionDates: true,
+    });
+
+    return { invoice: parsed, paymentId: existing.id };
   }
 
   const { data: payment, error: payErr } = await supabaseAdmin
@@ -576,7 +699,14 @@ export async function markInvoicePaid(
       .eq('id', invoice.subscription_id);
   }
 
-  await reactivateCompanyOnPayment(supabaseAdmin, invoice.company_id);
+  await advanceSubscriptionAfterSaasPayment(
+    supabaseAdmin,
+    String(invoice.company_id),
+    String(invoice.reference_month),
+  );
+  await reactivateCompanyOnPayment(supabaseAdmin, invoice.company_id, {
+    skipSubscriptionDates: true,
+  });
 
   return {
     invoice: parseInvoiceRow(updated),

@@ -78,6 +78,13 @@ import {
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
 import { formatPaymentHistoryDetails } from '@/lib/masterSaasFinancialStatus';
+import {
+  buildSaasInvoiceChargeRows,
+  truncatePaymentId,
+  type SaasInvoiceChargeRow,
+} from '@/lib/saasInvoiceChargeView';
+import { SaasChargeViewModal } from '@/components/master/SaasChargeViewModal';
+import type { SaasCharge } from '@/lib/saasCharges';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { buildSaasContractPdfUrl } from '@/lib/saasContractUrls';
 import type { PendingSignatureAlert } from '@/lib/saasContractSignatureService';
@@ -143,19 +150,9 @@ function SaaSFinancePageContent() {
   >([]);
   const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
   const [saasInvoices, setSaasInvoices] = useState<MasterSaasInvoice[]>([]);
-  const [saasCharges, setSaasCharges] = useState<
-    Array<{
-      id: string;
-      company_id: string;
-      amount: number;
-      due_date: string;
-      status: string;
-      pix_copy_paste?: string | null;
-      pix_qr_code?: string | null;
-      payment_url?: string | null;
-      company_name?: string;
-    }>
-  >([]);
+  const [saasCharges, setSaasCharges] = useState<SaasCharge[]>([]);
+  const [chargeViewRow, setChargeViewRow] = useState<SaasInvoiceChargeRow | null>(null);
+  const [syncingChargeId, setSyncingChargeId] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
   const [paymentInitialInvoiceId, setPaymentInitialInvoiceId] = useState<string | undefined>();
@@ -366,6 +363,11 @@ function SaaSFinancePageContent() {
     });
   }, [saasInvoices, filterInvoiceCompany, filterInvoiceMonth, filterInvoiceStatus]);
 
+  const invoiceChargeRows = useMemo(
+    () => buildSaasInvoiceChargeRows(filteredInvoices, saasCharges),
+    [filteredInvoices, saasCharges],
+  );
+
   const revenueByMonth = useMemo(
     () => buildReceivedRevenueByMonth(saasPayments),
     [saasPayments],
@@ -384,6 +386,55 @@ function SaaSFinancePageContent() {
         };
       }),
     [companies],
+  );
+
+  const handleCopyPix = useCallback(async (pix: string) => {
+    if (!pix) return;
+    await navigator.clipboard.writeText(pix);
+    alert('PIX copiado para a área de transferência.');
+  }, []);
+
+  const handleOpenAsaasCharge = useCallback((row: SaasInvoiceChargeRow) => {
+    const url = row.paymentUrl || null;
+    if (!url) {
+      alert('Link de pagamento Asaas indisponível para esta cobrança.');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleSyncChargeStatus = useCallback(
+    async (row: SaasInvoiceChargeRow) => {
+      if (!user?.id || !row.chargeId) {
+        alert('Cobrança sem registro em saas_charges para sincronizar.');
+        return;
+      }
+      setSyncingChargeId(row.chargeId);
+      try {
+        const res = await fetch('/api/master/saas-charges', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            action: 'sync_status',
+            chargeId: row.chargeId,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Falha ao sincronizar status');
+        alert(
+          json.paid
+            ? 'Pagamento confirmado no Asaas e registrado no sistema.'
+            : `Status atualizado: ${json.statusSynced || json.charge?.status || 'OK'}`,
+        );
+        await loadData();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Erro ao atualizar status');
+      } finally {
+        setSyncingChargeId(null);
+      }
+    },
+    [user?.id, loadData],
   );
 
   const openPaymentModal = useCallback(
@@ -441,15 +492,23 @@ function SaaSFinancePageContent() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Falha na geração mensal');
+      const created = Number(json.created ?? 0);
+      const completed = Number(json.completed ?? 0);
       const parts = [
-        `Criadas no Asaas: ${json.created ?? 0}`,
-        `Faturas completadas com PIX: ${json.completed ?? 0}`,
+        `Criadas no Asaas: ${created}`,
+        `Faturas completadas com PIX: ${completed}`,
         `Ignoradas: ${json.skipped ?? 0}`,
       ];
       if (Array.isArray(json.errors) && json.errors.length > 0) {
-        parts.push(`Erros: ${json.errors.length} (${json.errors.slice(0, 2).join('; ')})`);
+        parts.push('', 'Erros por empresa:');
+        for (const err of json.errors) {
+          parts.push(`• ${err}`);
+        }
       }
-      alert(`${parts.join('. ')}.`);
+      alert(parts.join('\n'));
+      if (created + completed > 0) {
+        setMainTab('faturas');
+      }
       await loadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro na geração mensal');
@@ -1051,73 +1110,13 @@ function SaaSFinancePageContent() {
 
       {mainTab === 'faturas' && (
         <>
-        <div className="mb-6 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-white/5">
-            <h3 className="text-[16px] font-bold text-white">Cobranças PIX (saas_charges)</h3>
-            <p className="text-[12px] text-gray-400">QR Code, copia e cola e link de pagamento via gateway.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-white/5">
-                  <th className="p-4 text-[12px] text-gray-400">Empresa</th>
-                  <th className="p-4 text-[12px] text-gray-400">Valor</th>
-                  <th className="p-4 text-[12px] text-gray-400">Vencimento</th>
-                  <th className="p-4 text-[12px] text-gray-400">Status</th>
-                  <th className="p-4 text-[12px] text-gray-400">Provider</th>
-                  <th className="p-4 text-[12px] text-gray-400">PIX / Link</th>
-                </tr>
-              </thead>
-              <tbody>
-                {saasCharges.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="p-6 text-center text-gray-500 text-sm">
-                      Nenhuma cobrança PIX registrada. Use &quot;Gerar Cobrança&quot; na aba Assinaturas.
-                    </td>
-                  </tr>
-                ) : (
-                  saasCharges.slice(0, 50).map((ch) => (
-                    <tr key={ch.id} className="border-b border-white/5 hover:bg-white/[0.02]">
-                      <td className="p-4 text-[13px] text-white">{ch.company_name || ch.company_id}</td>
-                      <td className="p-4 text-[13px] text-emerald-300 tabular-nums">{formatSaasCurrency(ch.amount)}</td>
-                      <td className="p-4 text-[12px] text-gray-300">{formatDateBr(ch.due_date)}</td>
-                      <td className="p-4 text-[12px] text-amber-300">{ch.status}</td>
-                      <td className="p-4 text-[12px] text-gray-400">{(ch as { payment_provider?: string }).payment_provider || '—'}</td>
-                      <td className="p-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {ch.pix_copy_paste && (
-                            <button
-                              type="button"
-                              onClick={() => navigator.clipboard.writeText(ch.pix_copy_paste || '')}
-                              className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
-                            >
-                              Copiar PIX
-                            </button>
-                          )}
-                          {ch.payment_url && (
-                            <a
-                              href={ch.payment_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1.5 rounded-lg border border-blue-500/30 text-[11px] text-blue-300"
-                            >
-                              Link pagamento
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
         <div className="mb-8 bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
           <div className="p-5 border-b border-white/5 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
             <div>
-              <h3 className="text-[16px] font-bold text-white">Faturas SaaS</h3>
-              <p className="text-[12px] text-gray-400">Competência, vencimento, status e ações de cobrança.</p>
+              <h3 className="text-[16px] font-bold text-white">Faturas e cobranças PIX</h3>
+              <p className="text-[12px] text-gray-400">
+                Prioriza saas_charges; exibe faturas legadas quando não houver cobrança PIX.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <select
@@ -1152,63 +1151,93 @@ function SaaSFinancePageContent() {
             </div>
           </div>
           <div className="sv-table-scroll">
-            <table className="w-full text-left min-w-[960px]">
+            <table className="w-full text-left min-w-[1200px]">
               <thead>
                 <tr className="border-b border-white/5">
                   <th className="p-4 text-[12px] text-gray-400">Competência</th>
                   <th className="p-4 text-[12px] text-gray-400">Empresa</th>
-                  <th className="p-4 text-[12px] text-gray-400">Plano</th>
                   <th className="p-4 text-[12px] text-gray-400">Valor</th>
                   <th className="p-4 text-[12px] text-gray-400">Vencimento</th>
-                  <th className="p-4 text-[12px] text-gray-400">Status</th>
+                  <th className="p-4 text-[12px] text-gray-400">Status interno</th>
+                  <th className="p-4 text-[12px] text-gray-400">Status Asaas</th>
+                  <th className="p-4 text-[12px] text-gray-400">Payment ID</th>
                   <th className="p-4 text-[12px] text-gray-400">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredInvoices.length === 0 ? (
+                {invoiceChargeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-gray-500 text-sm">
+                    <td colSpan={8} className="p-8 text-center text-gray-500 text-sm">
                       Nenhuma fatura encontrada.
                     </td>
                   </tr>
                 ) : (
-                  filteredInvoices.map((inv) => (
-                    <tr key={inv.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                  invoiceChargeRows.map((row) => (
+                    <tr key={row.invoiceId} className="border-b border-white/5 hover:bg-white/[0.02]">
                       <td className="p-4 text-[12px] text-gray-300">
-                        {formatInvoiceCompetenceLabel(inv.reference_month)}
+                        {formatInvoiceCompetenceLabel(row.referenceMonth)}
                       </td>
-                      <td className="p-4 text-[13px] text-white">{inv.company_name}</td>
-                      <td className="p-4 text-[12px] text-gray-400">{inv.plan_label || '—'}</td>
+                      <td className="p-4 text-[13px] text-white">{row.companyName}</td>
                       <td className="p-4 text-[13px] text-emerald-300 tabular-nums">
-                        {formatCurrency(inv.final_amount)}
+                        {formatCurrency(row.amount)}
                       </td>
-                      <td className="p-4 text-[12px] text-gray-300">{formatDateBr(inv.due_date)}</td>
-                      <td className="p-4 text-[12px]">
-                        <InvoiceStatusBadge invoice={inv} />
+                      <td className="p-4 text-[12px] text-gray-300">{formatDateBr(row.dueDate)}</td>
+                      <td className="p-4 text-[12px] text-amber-300">
+                        {row.chargeStatus || row.invoiceStatus}
+                      </td>
+                      <td className="p-4 text-[12px] text-blue-300">{row.asaasStatus}</td>
+                      <td className="p-4 text-[11px] font-mono text-gray-400">
+                        {truncatePaymentId(row.paymentId)}
                       </td>
                       <td className="p-4">
                         <div className="flex flex-wrap gap-1.5">
-                          {inv.status !== 'PAGO' && (
+                          <button
+                            type="button"
+                            onClick={() => setChargeViewRow(row)}
+                            className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-200 hover:bg-white/5"
+                          >
+                            Ver cobrança
+                          </button>
+                          {row.pixCopyPaste && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPix(row.pixCopyPaste || '')}
+                              className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
+                            >
+                              Copiar PIX
+                            </button>
+                          )}
+                          {row.paymentUrl && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAsaasCharge(row)}
+                              className="px-2.5 py-1.5 rounded-lg border border-blue-500/30 text-[11px] text-blue-300 hover:bg-blue-500/10"
+                            >
+                              Abrir Asaas
+                            </button>
+                          )}
+                          {row.chargeId && row.invoiceStatus !== 'PAGO' && (
+                            <button
+                              type="button"
+                              disabled={syncingChargeId === row.chargeId}
+                              onClick={() => handleSyncChargeStatus(row)}
+                              className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                            >
+                              {syncingChargeId === row.chargeId ? 'Atualizando…' : 'Atualizar status'}
+                            </button>
+                          )}
+                          {row.invoiceStatus !== 'PAGO' && (
                             <button
                               type="button"
                               onClick={() => {
                                 const company = companies.find(
-                                  (c) => (c as { id?: string }).id === inv.company_id,
+                                  (c) => (c as { id?: string }).id === row.companyId,
                                 );
-                                openPaymentModal(company, inv);
+                                openPaymentModal(company, saasInvoices.find((i) => i.id === row.invoiceId));
                               }}
                               className="px-2.5 py-1.5 rounded-lg border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10"
                             >
                               Registrar pagamento
-                            </button>
-                          )}
-                          {inv.pix_code && (
-                            <button
-                              type="button"
-                              onClick={() => navigator.clipboard.writeText(inv.pix_code || '')}
-                              className="px-2.5 py-1.5 rounded-lg border border-white/10 text-[11px] text-gray-300 hover:bg-white/5"
-                            >
-                              Copiar PIX
                             </button>
                           )}
                         </div>
@@ -1220,6 +1249,11 @@ function SaaSFinancePageContent() {
             </table>
           </div>
         </div>
+        <SaasChargeViewModal
+          row={chargeViewRow}
+          onClose={() => setChargeViewRow(null)}
+          onCopyPix={handleCopyPix}
+        />
         </>
       )}
 

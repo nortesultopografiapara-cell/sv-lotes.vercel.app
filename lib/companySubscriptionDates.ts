@@ -156,6 +156,14 @@ export function companyBillingFromResolved(
   };
 }
 
+/** Espelha next_payment_date em vencimento_plano (compatibilidade legada). */
+export function companyNextPaymentPatch(
+  nextPaymentDate: string,
+): Pick<CompanySubscriptionDatesSource, 'next_payment_date' | 'vencimento_plano'> {
+  const iso = toIsoDateOnly(nextPaymentDate) || todayIsoDate();
+  return { next_payment_date: iso, vencimento_plano: iso };
+}
+
 /** Primeira cobrança = data de início (ativação). */
 export function calculateFirstPaymentDate(startDate: string): string {
   return toIsoDateOnly(startDate) || todayIsoDate();

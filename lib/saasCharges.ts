@@ -10,8 +10,11 @@ import {
   generateInvoiceForCompany,
   markInvoicePaid,
   reactivateCompanyOnPayment,
+  findExistingSaasPaymentForReference,
+  advanceSubscriptionAfterSaasPayment,
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
+import { validateCompanyDocumentForAsaas, resolveAsaasDueDate } from '@/lib/saasPixValidation';
 import { isBillableCompany } from '@/lib/companyPricing';
 import { todayIsoDate } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
@@ -367,6 +370,29 @@ export async function createSaasPixCharge(
     };
   }
 
+  const existingPayment = await findExistingSaasPaymentForReference(
+    supabaseAdmin,
+    company.id,
+    invoice.reference_month,
+  );
+  if (existingPayment) {
+    return {
+      charge: existingCharge ?? (null as unknown as SaasCharge),
+      invoice,
+      created: false,
+      skipped: 'Pagamento já confirmado para esta competência',
+      outcome: 'skipped',
+      invoiceCreated,
+    };
+  }
+
+  const docError = validateCompanyDocumentForAsaas(company.name, company.cnpj);
+  if (docError) {
+    throw new Error(docError);
+  }
+
+  const asaasDueDate = resolveAsaasDueDate(invoice.due_date);
+
   const now = new Date().toISOString();
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('saas_charges')
@@ -375,7 +401,7 @@ export async function createSaasPixCharge(
       subscription_id: subscription?.id ?? invoice.subscription_id ?? null,
       invoice_id: invoice.id,
       amount: invoice.final_amount,
-      due_date: invoice.due_date,
+      due_date: asaasDueDate,
       status: 'PENDING',
       payment_provider: 'pending',
       updated_at: now,
@@ -394,7 +420,7 @@ export async function createSaasPixCharge(
     companyId: company.id,
     chargeId: charge.id,
     amount: charge.amount,
-    dueDate: charge.due_date,
+    dueDate: asaasDueDate,
     description: `SV LOTES — Assinatura ${invoice.reference_month}`,
     payerName: company.name || undefined,
     payerDocument: company.cnpj || undefined,
@@ -464,18 +490,59 @@ export type ProcessChargePaidInput = {
   source?: string;
 };
 
+async function findSaasChargeRowForPayment(
+  supabaseAdmin: SupabaseClient,
+  input: ProcessChargePaidInput,
+): Promise<Record<string, unknown> | null> {
+  if (input.chargeId) {
+    const { data } = await supabaseAdmin
+      .from('saas_charges')
+      .select('*')
+      .eq('id', input.chargeId)
+      .maybeSingle();
+    if (data) return data as Record<string, unknown>;
+  }
+
+  if (input.paymentId) {
+    const { data: byPayment } = await supabaseAdmin
+      .from('saas_charges')
+      .select('*')
+      .eq('payment_id', input.paymentId)
+      .maybeSingle();
+    if (byPayment) return byPayment as Record<string, unknown>;
+
+    const { data: invoice } = await supabaseAdmin
+      .from('master_saas_invoices')
+      .select('id')
+      .eq('external_charge_id', input.paymentId)
+      .maybeSingle();
+
+    if (invoice?.id) {
+      const { data: byInvoice } = await supabaseAdmin
+        .from('saas_charges')
+        .select('*')
+        .eq('invoice_id', invoice.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (byInvoice) return byInvoice as Record<string, unknown>;
+    }
+  }
+
+  return null;
+}
+
 /** Confirma pagamento PIX — registra master_saas_payments e reativa empresa. */
 export async function processSaasChargePaid(
   supabaseAdmin: SupabaseClient,
   input: ProcessChargePaidInput,
 ): Promise<{ charge: SaasCharge; paymentId: string }> {
-  let query = supabaseAdmin.from('saas_charges').select('*');
-  if (input.chargeId) query = query.eq('id', input.chargeId);
-  else if (input.paymentId) query = query.eq('payment_id', input.paymentId);
-  else throw new Error('chargeId ou paymentId obrigatório.');
+  if (!input.chargeId && !input.paymentId) {
+    throw new Error('chargeId ou paymentId obrigatório.');
+  }
 
-  const { data: row, error } = await query.maybeSingle();
-  if (error || !row) throw new Error('Cobrança não encontrada.');
+  const row = await findSaasChargeRowForPayment(supabaseAdmin, input);
+  if (!row) throw new Error('Cobrança não encontrada.');
 
   const charge = parseChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID' && charge.master_payment_id) {
@@ -506,31 +573,42 @@ export async function processSaasChargePaid(
       if (inv?.reference_month) referenceMonth = String(inv.reference_month);
     }
 
-    const { data: payment, error: payErr } = await supabaseAdmin
-      .from('master_saas_payments')
-      .insert({
-        company_id: charge.company_id,
-        subscription_id: charge.subscription_id,
-        amount: charge.amount,
-        paid_at: paidAt,
-        payment_method: 'pix',
-        reference_month: referenceMonth,
-        status: 'paid',
-        notes: `PIX confirmado (${input.source || charge.payment_provider}) — charge ${charge.id}`,
-        created_by: input.actorUserId ?? null,
-      })
-      .select('id')
-      .single();
+    const existing = await findExistingSaasPaymentForReference(
+      supabaseAdmin,
+      charge.company_id,
+      referenceMonth,
+    );
+    if (existing) {
+      masterPaymentId = existing.id;
+    } else {
+      const { data: payment, error: payErr } = await supabaseAdmin
+        .from('master_saas_payments')
+        .insert({
+          company_id: charge.company_id,
+          subscription_id: charge.subscription_id,
+          amount: charge.amount,
+          paid_at: paidAt,
+          payment_method: 'pix',
+          reference_month: referenceMonth,
+          status: 'paid',
+          notes: `PIX confirmado (${input.source || charge.payment_provider}) — charge ${charge.id}`,
+          created_by: input.actorUserId ?? null,
+        })
+        .select('id')
+        .single();
 
-    if (payErr || !payment) {
-      throw new Error(payErr?.message || 'Falha ao registrar pagamento SaaS');
+      if (payErr || !payment) {
+        throw new Error(payErr?.message || 'Falha ao registrar pagamento SaaS');
+      }
+      masterPaymentId = payment.id;
     }
-    masterPaymentId = payment.id;
+
+    await advanceSubscriptionAfterSaasPayment(supabaseAdmin, charge.company_id, referenceMonth);
   }
 
-  if (!charge.invoice_id) {
-    await reactivateCompanyOnPayment(supabaseAdmin, charge.company_id);
-  }
+  await reactivateCompanyOnPayment(supabaseAdmin, charge.company_id, {
+    skipSubscriptionDates: true,
+  });
 
   const { data: updated, error: updErr } = await supabaseAdmin
     .from('saas_charges')
@@ -615,4 +693,76 @@ export async function cancelSaasCharge(
   }
 
   return parseChargeRow(updated as Record<string, unknown>);
+}
+
+export type SyncSaasChargeResult = {
+  charge: SaasCharge;
+  paid: boolean;
+  statusSynced: SaasChargeStatus;
+};
+
+/** Consulta status no Asaas e sincroniza saas_charges / fatura / pagamento. */
+export async function syncSaasChargeStatusFromAsaas(
+  supabaseAdmin: SupabaseClient,
+  chargeId: string,
+  actorUserId?: string | null,
+): Promise<SyncSaasChargeResult> {
+  const { data: row, error } = await supabaseAdmin
+    .from('saas_charges')
+    .select('*')
+    .eq('id', chargeId)
+    .single();
+
+  if (error || !row) throw new Error('Cobrança não encontrada.');
+
+  const charge = parseChargeRow(row as Record<string, unknown>);
+  if (!charge.payment_id) {
+    throw new Error('Cobrança sem payment_id no Asaas.');
+  }
+
+  if (charge.status === 'PAID' && charge.master_payment_id) {
+    return { charge, paid: true, statusSynced: 'PAID' };
+  }
+
+  const provider = getPaymentProvider();
+  const remote = await provider.getChargeStatus(charge.payment_id);
+  const mapped = mapProviderStatusToChargeStatus(remote.status);
+
+  if (mapped === 'PAID') {
+    const result = await processSaasChargePaid(supabaseAdmin, {
+      chargeId: charge.id,
+      paymentId: charge.payment_id,
+      paidAt: remote.paidAt || todayIsoDate(),
+      actorUserId,
+      source: 'sync:asaas',
+    });
+    return { charge: result.charge, paid: true, statusSynced: 'PAID' };
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('saas_charges')
+    .update({ status: mapped, updated_at: now })
+    .eq('id', charge.id)
+    .select('*')
+    .single();
+
+  if (updErr || !updated) {
+    throw new Error(updErr?.message || 'Falha ao sincronizar cobrança');
+  }
+
+  const synced = parseChargeRow(updated as Record<string, unknown>);
+
+  if (charge.invoice_id) {
+    const invoiceStatus =
+      mapped === 'OVERDUE' ? 'VENCIDO' : mapped === 'CANCELLED' ? 'CANCELADO' : 'PENDENTE';
+    await supabaseAdmin
+      .from('master_saas_invoices')
+      .update({ status: invoiceStatus, updated_at: now })
+      .eq('id', charge.invoice_id);
+  }
+
+  await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
+
+  return { charge: synced, paid: false, statusSynced: mapped };
 }

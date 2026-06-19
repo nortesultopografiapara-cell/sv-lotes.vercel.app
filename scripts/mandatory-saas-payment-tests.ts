@@ -29,6 +29,15 @@ import {
   handleAsaasPaymentWebhook,
   type AsaasWebhookDeps,
 } from '../lib/saasAsaasWebhook';
+import {
+  validateCompanyDocumentForAsaas,
+  resolveAsaasDueDate,
+} from '../lib/saasPixValidation';
+import {
+  buildSaasInvoiceChargeRows,
+  truncatePaymentId,
+} from '../lib/saasInvoiceChargeView';
+import { addOneMonthToIsoDate, companyNextPaymentPatch } from '../lib/companySubscriptionDates';
 
 const ROOT = process.cwd();
 
@@ -132,6 +141,12 @@ function testSaasFinanceGatewayUi() {
   assert(saasFinance.includes('Gateway PIX não configurado'), 'banner gateway');
   assert(saasFinance.includes('!gatewayReady'), 'botão desabilitado sem gateway');
   assert(saasFinance.includes('/api/master/saas-charges'), 'consulta status gateway');
+  assert(saasFinance.includes('Ver cobrança'), 'botão ver cobrança');
+  assert(saasFinance.includes('Copiar PIX'), 'botão copiar PIX');
+  assert(saasFinance.includes('Abrir Asaas'), 'botão abrir Asaas');
+  assert(saasFinance.includes('Atualizar status'), 'botão atualizar status');
+  assert(saasFinance.includes('buildSaasInvoiceChargeRows'), 'merge faturas + charges');
+  assert(saasFinance.includes('SaasChargeViewModal'), 'modal cobrança');
 }
 
 function testProviderArchitecture() {
@@ -269,14 +284,24 @@ function testMonthlyAsaasChargeFlow() {
   assert(saasCharges.includes('isOrphanSaasCharge'), 'remove charge órfã');
   assert(saasCharges.includes("outcome: invoiceCreated ? 'created' : 'completed'"), 'backfill fatura existente');
   assert(saasCharges.includes('chargeId: charge.id'), 'externalReference = saas_charges.id');
+  assert(saasCharges.includes('validateCompanyDocumentForAsaas'), 'valida CPF/CNPJ');
+  assert(saasCharges.includes('resolveAsaasDueDate'), 'corrige dueDate');
+  assert(saasCharges.includes('findExistingSaasPaymentForReference'), 'anti-duplicidade pagamento');
+  assert(saasCharges.includes('syncSaasChargeStatusFromAsaas'), 'sync status Asaas');
+  assert(saasCharges.includes('findSaasChargeRowForPayment'), 'localiza cobrança webhook');
 
   const api = read('app/api/master/saas-invoices/route.ts');
   assert(api.includes('generateMonthlySaasCharges'), 'API mensal usa fluxo real');
   assert(api.includes('assertSaasPaymentGatewayConfigured'), 'API mensal exige gateway');
   assert(api.includes('...result'), 'resposta repassa created/completed/skipped/errors');
 
+  const chargesApi = read('app/api/master/saas-charges/route.ts');
+  assert(chargesApi.includes("action === 'sync_status'"), 'API sync status');
+
   const page = read('app/saas-finance/page.tsx');
   assert(page.includes('Faturas completadas com PIX'), 'alerta mensal detalhado');
+  assert(page.includes('Erros por empresa'), 'erros por empresa no alerta');
+  assert(page.includes("setMainTab('faturas')"), 'link aba faturas após cobrança');
 }
 
 function testSaasPixChargeSkipRules() {
@@ -356,6 +381,186 @@ function testReactivationAndHistory() {
   const saasCharges = read('lib/saasCharges.ts');
   assert(saasCharges.includes('reactivateCompanyOnPayment'), 'reativação automática');
   assert(saasCharges.includes("from('master_saas_payments')"), 'histórico');
+  assert(saasCharges.includes('advanceSubscriptionAfterSaasPayment'), 'próximo vencimento');
+
+  const billing = read('lib/saasBilling.ts');
+  assert(billing.includes('findExistingSaasPaymentForReference'), 'idempotência pagamento');
+  assert(billing.includes('advanceSubscriptionAfterSaasPayment'), 'avanço vencimento billing');
+}
+
+function testSaasPixValidation() {
+  const invalid = validateCompanyDocumentForAsaas('Empresa Teste LTDA', '123');
+  assert(!!invalid && invalid.includes('Empresa Teste LTDA'), 'CPF/CNPJ inválido com nome');
+  assert(invalid!.includes('inválido'), 'mensagem inválido');
+
+  const empty = validateCompanyDocumentForAsaas('Meneses', '');
+  assert(!!empty && empty.includes('Meneses'), 'documento ausente com nome');
+
+  assert(validateCompanyDocumentForAsaas('Ok', '12345678901') === null, 'CPF 11 dígitos ok');
+  assert(validateCompanyDocumentForAsaas('Ok', '12345678000195') === null, 'CNPJ 14 dígitos ok');
+
+  const today = new Date().toISOString().split('T')[0];
+  assert(resolveAsaasDueDate('2020-01-01') === today, 'dueDate passado → hoje');
+  assert(resolveAsaasDueDate('2099-12-31') === '2099-12-31', 'dueDate futuro mantido');
+}
+
+function testSaasInvoiceChargeView() {
+  const rows = buildSaasInvoiceChargeRows(
+    [
+      {
+        id: 'inv-1',
+        company_id: 'co-1',
+        company_name: 'Meneses',
+        reference_month: '2026-06',
+        final_amount: 549.99,
+        due_date: '2026-06-27',
+        status: 'PENDENTE',
+        external_charge_id: null,
+      } as never,
+    ],
+    [
+      {
+        id: 'ch-1',
+        company_id: 'co-1',
+        invoice_id: 'inv-1',
+        amount: 549.99,
+        due_date: '2026-06-27',
+        status: 'PENDING',
+        payment_provider: 'asaas',
+        payment_id: 'pay_abc123456789',
+        pix_copy_paste: '00020126580014BR.GOV.BCB.PIX',
+        payment_url: 'https://sandbox.asaas.com/i/abc',
+        pix_qr_code: '<svg></svg>',
+      } as never,
+    ],
+  );
+
+  assert(rows.length === 1, 'uma linha merged');
+  assert(rows[0].pixCopyPaste?.includes('BR.GOV.BCB.PIX'), 'PIX na linha');
+  assert(rows[0].paymentUrl?.includes('asaas.com'), 'link Asaas');
+  assert(rows[0].hasCharge === true, 'tem charge');
+  assert(truncatePaymentId('pay_abc123456789').includes('…'), 'payment id truncado');
+  assert(truncatePaymentId(null) === '—', 'payment id vazio');
+
+  const fallback = buildSaasInvoiceChargeRows(
+    [
+      {
+        id: 'inv-2',
+        company_id: 'co-2',
+        company_name: 'Legado',
+        reference_month: '2026-05',
+        final_amount: 100,
+        due_date: '2026-05-10',
+        status: 'PENDENTE',
+        pix_code: '00020126580014BR.GOV.BCB.PIX',
+        external_charge_id: 'pay_legacy',
+      } as never,
+    ],
+    [],
+  );
+  assert(fallback[0].pixCopyPaste?.includes('PIX'), 'fallback invoice pix_code');
+  assert(fallback[0].paymentId === 'pay_legacy', 'fallback external_charge_id');
+}
+
+function testAdvanceSubscriptionDueDate() {
+  const next = addOneMonthToIsoDate('2026-06-27');
+  assert(next === '2026-07-27', 'próximo vencimento +1 mês');
+}
+
+function testDuplicateChargeProtection() {
+  const menesesCharge = { status: 'PENDING' as const, payment_id: 'pay_meneses_abc' };
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, menesesCharge) ===
+      'Cobrança PIX já existe para esta fatura',
+    'Meneses: saas_charges PENDING+payment_id bloqueia 2ª cobrança',
+  );
+  assert(isProtectedSaasCharge(menesesCharge), 'charge protegida com payment_id');
+
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'PAID', payment_id: 'pay_1' }) !==
+      null,
+    'PAID bloqueia nova cobrança',
+  );
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: null }, { status: 'OVERDUE', payment_id: null }) !==
+      null,
+    'OVERDUE bloqueia nova cobrança',
+  );
+
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('findExistingSaasPaymentForReference'), 'pagamento confirmado bloqueia create');
+  assert(saasCharges.includes('generateMonthlySaasCharges'), 'mensal usa createSaasPixCharge');
+  assert(saasCharges.includes('createSaasPixCharge'), 'individual usa createSaasPixCharge');
+
+  const monthlyApi = read('app/api/master/saas-invoices/route.ts');
+  const individualApi = read('app/api/master/saas-charges/route.ts');
+  assert(monthlyApi.includes('generateMonthlySaasCharges'), 'API mensal centralizada');
+  assert(individualApi.includes('createSaasPixCharge'), 'API individual centralizada');
+}
+
+function testPaymentRegistrationIdempotency() {
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(
+    saasCharges.includes("charge.status === 'PAID' && charge.master_payment_id"),
+    'processSaasChargePaid retorno idempotente',
+  );
+  assert(saasCharges.includes('findExistingSaasPaymentForReference'), 'charge paid checa pagamento existente');
+
+  const billing = read('lib/saasBilling.ts');
+  assert(billing.includes('findExistingSaasPaymentForReference'), 'markInvoicePaid idempotente');
+  assert(!billing.includes('vencimento_plano: nextDue'), 'vencimento_plano via companyNextPaymentPatch');
+  assert(billing.includes('companyNextPaymentPatch'), 'patch centralizado de vencimento');
+}
+
+function testAsaasSyncStatus() {
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('syncSaasChargeStatusFromAsaas'), 'sync status Asaas');
+  assert(saasCharges.includes('getChargeStatus'), 'consulta provider');
+  assert(saasCharges.includes('processSaasChargePaid'), 'sync PAID registra pagamento');
+
+  const api = read('app/api/master/saas-charges/route.ts');
+  assert(api.includes("action === 'sync_status'"), 'endpoint sync_status');
+
+  const page = read('app/saas-finance/page.tsx');
+  assert(page.includes('sync_status'), 'UI chama sync_status');
+}
+
+function testCompanyNextPaymentPatch() {
+  const patch = companyNextPaymentPatch('2026-07-27');
+  assert(patch.next_payment_date === '2026-07-27', 'next_payment_date');
+  assert(patch.vencimento_plano === '2026-07-27', 'vencimento_plano espelhado');
+}
+
+async function testWebhookPaymentIdempotency() {
+  const origToken = process.env.ASAAS_WEBHOOK_TOKEN;
+  process.env.ASAAS_WEBHOOK_TOKEN = 'webhook-test-token';
+
+  let calls = 0;
+  const deps = mockWebhookDeps(async () => {
+    calls += 1;
+    return {
+      charge: { id: 'ch-1' } as never,
+      paymentId: 'pay-master-1',
+    };
+  });
+
+  try {
+    const payload = {
+      event: 'PAYMENT_RECEIVED',
+      payment: { id: 'pay_same', status: 'RECEIVED', externalReference: 'ch-1' },
+    };
+    const req1 = makeWebhookRequest(payload, { 'asaas-access-token': 'webhook-test-token' });
+    const req2 = makeWebhookRequest(payload, { 'asaas-access-token': 'webhook-test-token' });
+    const res1 = await handleAsaasPaymentWebhook(req1, deps);
+    const res2 = await handleAsaasPaymentWebhook(req2, deps);
+    assert(res1.status === 200 && res2.status === 200, 'webhook idempotente HTTP 200');
+    assert(calls === 2, 'handler delega processPaid (idempotência no lib)');
+    const body1 = await res1.json();
+    assert(body1.ok === true, 'webhook ok');
+  } finally {
+    if (origToken === undefined) delete process.env.ASAAS_WEBHOOK_TOKEN;
+    else process.env.ASAAS_WEBHOOK_TOKEN = origToken;
+  }
 }
 
 function testDatabaseMigration() {
@@ -385,10 +590,18 @@ async function run() {
     ['webhook respostas Asaas', testWebhookResponses],
     ['fluxo mensal Asaas', testMonthlyAsaasChargeFlow],
     ['regras skip cobrança', testSaasPixChargeSkipRules],
+    ['duplicidade mensal e individual', testDuplicateChargeProtection],
+    ['pagamento registrado não duplica', testPaymentRegistrationIdempotency],
+    ['sync status Asaas', testAsaasSyncStatus],
+    ['patch vencimento empresa', testCompanyNextPaymentPatch],
     ['regras skip async Asaas', testSaasPixChargeSkipAsyncRules],
     ['webhook externalReference', testWebhookExternalReference],
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
+    ['validação PIX Asaas', testSaasPixValidation],
+    ['view faturas + PIX', testSaasInvoiceChargeView],
+    ['próximo vencimento pagamento', testAdvanceSubscriptionDueDate],
+    ['webhook PAYMENT_RECEIVED idempotente', testWebhookPaymentIdempotency],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['mapeamento status charge', testChargeStatusMapping],
