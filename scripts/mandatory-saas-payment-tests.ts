@@ -18,6 +18,10 @@ import {
 import { saasChargeStatusLabel } from '../lib/saasCharges';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
+import {
+  handleAsaasPaymentWebhook,
+  type AsaasWebhookDeps,
+} from '../lib/saasAsaasWebhook';
 
 const ROOT = process.cwd();
 
@@ -130,9 +134,109 @@ function testProviderArchitecture() {
   assert(fs.existsSync(path.join(ROOT, 'lib/payments/providers/efi.ts')), 'stub efi');
 }
 
-function testWebhookRoute() {
+function testWebhookRouteStructure() {
   const webhook = read('app/api/payments/webhook/route.ts');
-  assert(webhook.includes('processSaasChargePaid'), 'webhook confirma pagamento');
+  assert(webhook.includes('handleAsaasPaymentWebhook'), 'webhook delega ao handler');
+  const handler = read('lib/saasAsaasWebhook.ts');
+  assert(handler.includes('ignored: true'), 'handler retorna ignored');
+  assert(!handler.includes('status: 500'), 'handler não retorna 500 ao Asaas');
+}
+
+function makeWebhookRequest(
+  body: unknown,
+  headers: Record<string, string> = {},
+): Request {
+  return new Request('http://localhost/api/payments/webhook', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers,
+    },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+function mockWebhookDeps(processPaidImpl: AsaasWebhookDeps['processPaid']): AsaasWebhookDeps {
+  return {
+    createSupabase: () => ({
+      client: {} as never,
+    }),
+    processPaid: processPaidImpl,
+  };
+}
+
+async function testWebhookResponses() {
+  const origToken = process.env.ASAAS_WEBHOOK_TOKEN;
+  process.env.ASAAS_WEBHOOK_TOKEN = 'webhook-test-token';
+
+  try {
+    const deps = mockWebhookDeps(async () => {
+      throw new Error('Cobrança não encontrada.');
+    });
+
+    const paidRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        {
+          event: 'PAYMENT_RECEIVED',
+          payment: { id: 'pay_unknown', status: 'RECEIVED' },
+        },
+        { 'asaas-access-token': 'webhook-test-token' },
+      ),
+      deps,
+    );
+    assert(paidRes.status === 200, 'PAYMENT_RECEIVED sem cobrança → HTTP 200');
+    const paidBody = await paidRes.json();
+    assert(paidBody.ok === true && paidBody.ignored === true, 'PAYMENT_RECEIVED ignored=true');
+    assert(
+      String(paidBody.reason).includes('Cobrança não encontrada'),
+      'motivo cobrança ausente',
+    );
+
+    const unknownRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        {
+          event: 'PAYMENT_DELETED',
+          payment: { id: 'pay_1', status: 'DELETED' },
+        },
+        { 'asaas-access-token': 'webhook-test-token' },
+      ),
+      deps,
+    );
+    assert(unknownRes.status === 200, 'evento desconhecido → HTTP 200');
+    const unknownBody = await unknownRes.json();
+    assert(unknownBody.ignored === true, 'evento desconhecido ignored=true');
+    assert(String(unknownBody.reason).includes('Evento não tratado'), 'motivo evento desconhecido');
+
+    const noIdRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        { event: 'PAYMENT_RECEIVED', payment: { status: 'RECEIVED' } },
+        { 'asaas-access-token': 'webhook-test-token' },
+      ),
+      deps,
+    );
+    assert(noIdRes.status === 200, 'sem payment.id → HTTP 200');
+    const noIdBody = await noIdRes.json();
+    assert(noIdBody.ignored === true, 'sem payment.id ignored=true');
+    assert(String(noIdBody.reason).includes('payment.id ausente'), 'motivo payment.id ausente');
+
+    const invalidTokenRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest(
+        { event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1' } },
+        { 'asaas-access-token': 'token-errado' },
+      ),
+      deps,
+    );
+    assert(invalidTokenRes.status === 401, 'token inválido → HTTP 401');
+
+    const invalidJsonRes = await handleAsaasPaymentWebhook(
+      makeWebhookRequest('{ invalid json', { 'asaas-access-token': 'webhook-test-token' }),
+      deps,
+    );
+    assert(invalidJsonRes.status === 400, 'JSON inválido → HTTP 400');
+  } finally {
+    if (origToken === undefined) delete process.env.ASAAS_WEBHOOK_TOKEN;
+    else process.env.ASAAS_WEBHOOK_TOKEN = origToken;
+  }
 }
 
 function testFinancialStatusRules() {
@@ -180,7 +284,8 @@ async function run() {
     ['produção sem mock', testProductionGatewayRules],
     ['UI gateway saas-finance', testSaasFinanceGatewayUi],
     ['arquitetura providers', testProviderArchitecture],
-    ['webhook pago', testWebhookRoute],
+    ['webhook estrutura', testWebhookRouteStructure],
+    ['webhook respostas Asaas', testWebhookResponses],
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
     ['migration saas_charges', testDatabaseMigration],
