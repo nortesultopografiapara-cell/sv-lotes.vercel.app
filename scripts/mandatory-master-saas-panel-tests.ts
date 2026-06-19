@@ -72,6 +72,12 @@ import {
   buildProjectUpdatePayloads,
   formatProjectUpdateDbError,
 } from '../lib/projects-update';
+import {
+  buildSaasTimelineFromHistory,
+  countSuspendedCompanies,
+  resolveSaasChargeDisplayStatus,
+  SAAS_AUTOMATION_RULES,
+} from '../lib/masterSaasPanel';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -599,6 +605,84 @@ function testProjectUpdatePayloads() {
   console.log('OK testProjectUpdatePayloads');
 }
 
+function testMasterSaasPanelHelpers() {
+  const paid = resolveSaasChargeDisplayStatus({
+    invoiceId: 'i1',
+    companyId: 'c1',
+    companyName: 'Test',
+    referenceMonth: '2026-06',
+    amount: 10,
+    dueDate: '2026-06-10',
+    invoiceStatus: 'PAGO',
+    chargeStatus: 'PAID',
+    asaasStatus: 'RECEIVED',
+    paymentId: 'pay_1',
+    chargeId: 'ch_1',
+    pixCopyPaste: null,
+    paymentUrl: null,
+  });
+  assert(paid === 'PAGA', 'status paga');
+
+  const overdue = resolveSaasChargeDisplayStatus({
+    invoiceId: 'i2',
+    companyId: 'c1',
+    companyName: 'Test',
+    referenceMonth: '2026-05',
+    amount: 10,
+    dueDate: '2026-05-01',
+    invoiceStatus: 'VENCIDO',
+    chargeStatus: 'OVERDUE',
+    asaasStatus: 'OVERDUE',
+    paymentId: 'pay_2',
+    chargeId: 'ch_2',
+    pixCopyPaste: 'pix',
+    paymentUrl: 'https://asaas.com',
+  });
+  assert(overdue === 'VENCIDA', 'status vencida');
+
+  const sent = resolveSaasChargeDisplayStatus(
+    {
+      invoiceId: 'i3',
+      companyId: 'c1',
+      companyName: 'Test',
+      referenceMonth: '2026-06',
+      amount: 10,
+      dueDate: '2026-06-20',
+      invoiceStatus: 'PENDENTE',
+      chargeStatus: 'PENDING',
+      asaasStatus: 'PENDING',
+      paymentId: 'pay_3',
+      chargeId: 'ch_3',
+      pixCopyPaste: 'pix',
+      paymentUrl: null,
+    },
+    { sentWhatsApp: true },
+  );
+  assert(sent === 'ENVIADA', 'status enviada');
+
+  const timeline = buildSaasTimelineFromHistory([
+    {
+      id: '1',
+      created_at: '2026-06-01T10:00:00Z',
+      action: 'Pagamento registrado',
+      company_name: 'Empresa A',
+      description: 'PIX',
+    },
+    {
+      id: '2',
+      created_at: '2026-06-02T10:00:00Z',
+      action: 'WhatsApp enviado',
+      company_name: 'Empresa A',
+    },
+  ]);
+  assert(timeline[0].type === 'whatsapp_sent', 'timeline whatsapp first (newer)');
+  assert(timeline[1].type === 'payment_confirmed', 'timeline payment');
+
+  assert(countSuspendedCompanies([{ financial_situation: 'SUSPENSO' }]) === 1, 'suspended count');
+  assert(SAAS_AUTOMATION_RULES.length >= 6, 'automation rules prepared');
+  console.log('OK testMasterSaasPanelHelpers');
+}
+
 function main() {
   testReportsMetrics();
   testAuditHelpers();
@@ -615,6 +699,7 @@ function main() {
   testSaasContractProfessional();
   testProjectEditAccess();
   testProjectUpdatePayloads();
+  testMasterSaasPanelHelpers();
   console.log('mandatory-master-saas-panel-tests: all passed');
 }
 

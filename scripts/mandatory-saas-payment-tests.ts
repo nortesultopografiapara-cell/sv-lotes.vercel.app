@@ -139,14 +139,23 @@ function testProductionGatewayRules() {
 
 function testSaasFinanceGatewayUi() {
   const saasFinance = read('app/saas-finance/page.tsx');
+  const chargesTable = read('components/master/saas/SaasChargesTable.tsx');
+  const chargeModal = read('components/master/SaasChargeViewModal.tsx');
+  const workspace = read('components/master/saas/SaasCompanyWorkspace.tsx');
+
   assert(saasFinance.includes('paymentGateway'), 'estado gateway');
   assert(saasFinance.includes('Gateway PIX não configurado'), 'banner gateway');
   assert(saasFinance.includes('!gatewayReady'), 'botão desabilitado sem gateway');
   assert(saasFinance.includes('/api/master/saas-charges'), 'consulta status gateway');
-  assert(saasFinance.includes('Ver cobrança'), 'botão ver cobrança');
-  assert(saasFinance.includes('Copiar PIX'), 'botão copiar PIX');
-  assert(saasFinance.includes('Abrir Asaas'), 'botão abrir Asaas');
-  assert(saasFinance.includes('Atualizar status'), 'botão atualizar status');
+  assert(saasFinance.includes('SaasChargesTable'), 'tabela cobranças refatorada');
+  assert(saasFinance.includes('SaasCompanyWorkspace'), 'workspace empresa');
+  assert(saasFinance.includes('chargeActionHandlers'), 'handlers centralizados');
+  assert(chargesTable.includes('Ver cobrança'), 'ação ver cobrança no dropdown');
+  assert(chargesTable.includes('Atualizar status'), 'ação sync no dropdown');
+  assert(chargesTable.includes('Enviar WhatsApp'), 'ação whatsapp');
+  assert(chargesTable.includes('Enviar E-mail'), 'ação e-mail');
+  assert(chargeModal.includes('Copiar PIX'), 'copiar PIX no modal');
+  assert(workspace.includes('SaasContractPanel'), 'contrato no workspace');
   assert(saasFinance.includes('buildSaasInvoiceChargeRows'), 'merge faturas + charges');
   assert(saasFinance.includes('SaasChargeViewModal'), 'modal cobrança');
 }
@@ -303,7 +312,7 @@ function testMonthlyAsaasChargeFlow() {
   const page = read('app/saas-finance/page.tsx');
   assert(page.includes('Faturas completadas com PIX'), 'alerta mensal detalhado');
   assert(page.includes('Erros por empresa'), 'erros por empresa no alerta');
-  assert(page.includes("setMainTab('faturas')"), 'link aba faturas após cobrança');
+  assert(page.includes("setPanelView('cobrancas')"), 'view cobranças após geração mensal');
 }
 
 function testSaasPixChargeSkipRules() {
