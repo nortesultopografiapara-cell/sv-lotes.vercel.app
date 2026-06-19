@@ -28,6 +28,9 @@ type Props = {
   onSyncStatus: (row: SaasInvoiceChargeRow) => void;
   onCancelCharge: (row: SaasInvoiceChargeRow) => void;
   onRegisterPayment: (row: SaasInvoiceChargeRow) => void;
+  onGenerateCharge?: () => void;
+  generatingCharge?: boolean;
+  compact?: boolean;
   filterCompany?: string;
   onFilterCompany?: (v: string) => void;
   filterStatus?: string;
@@ -51,6 +54,9 @@ export function SaasChargesTable({
   onSyncStatus,
   onCancelCharge,
   onRegisterPayment,
+  onGenerateCharge,
+  generatingCharge,
+  compact = false,
   filterCompany = 'all',
   onFilterCompany,
   filterStatus = 'all',
@@ -67,13 +73,27 @@ export function SaasChargesTable({
   });
 
   return (
-    <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-hidden">
+    <div className="bg-[#11161d] border border-white/5 rounded-2xl overflow-visible w-full">
       <div className="p-5 border-b border-white/5 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
         <div>
           <h3 className="text-[16px] font-bold text-white">Cobranças</h3>
-          <p className="text-[12px] text-gray-400">PIX e Boleto Asaas — ações centralizadas no menu.</p>
+          <p className="text-[12px] text-gray-400">
+            {compact
+              ? 'Cobranças desta empresa — PIX ou Boleto.'
+              : 'PIX e Boleto Asaas — ações centralizadas no menu.'}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {onGenerateCharge ? (
+            <button
+              type="button"
+              disabled={generatingCharge || !gatewayReady}
+              onClick={onGenerateCharge}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-[12px] font-semibold text-white"
+            >
+              {generatingCharge ? 'Gerando…' : 'Gerar cobrança'}
+            </button>
+          ) : null}
           {onFilterCompany ? (
             <select
               value={filterCompany}
@@ -106,7 +126,7 @@ export function SaasChargesTable({
         </div>
       </div>
 
-      <div className="sv-table-scroll">
+      <div className="sv-table-scroll overflow-x-auto overflow-y-visible pb-2">
         <table className="w-full text-left min-w-[1020px]">
           <thead>
             <tr className="border-b border-white/5 text-[12px] text-gray-400">
@@ -229,7 +249,11 @@ export function SaasChargesTable({
                 <td colSpan={9} className="p-8">
                   <MasterEmptyState
                     title="Nenhuma cobrança"
-                    description="Gere cobranças pelo menu Empresas ou use Gerar cobranças do mês."
+                    description={
+                      onGenerateCharge
+                        ? 'Clique em Gerar cobrança para emitir PIX ou Boleto via Asaas.'
+                        : 'Gere cobranças pelo workspace da empresa ou use Gerar cobranças do mês.'
+                    }
                   />
                 </td>
               </tr>

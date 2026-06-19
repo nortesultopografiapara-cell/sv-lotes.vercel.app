@@ -53,7 +53,12 @@ import {
   type SaasCompanyRow,
 } from '@/components/master/saas/SaasCompaniesList';
 import { SaasCompanyWorkspace } from '@/components/master/saas/SaasCompanyWorkspace';
+import {
+  SaasGenerateChargeModal,
+  type SaasGenerateChargeCompany,
+} from '@/components/master/saas/SaasGenerateChargeModal';
 import { SaasAutomationsPanel } from '@/components/master/saas/SaasAutomationsPanel';
+import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 import {
   buildSaasChargeEmailUrl,
   buildSaasChargeWhatsAppUrl,
@@ -72,6 +77,37 @@ function enrichCompany(
   payments?: MasterSaasPayment[],
 ): EnrichedCompany {
   return augmentCompanyBilling(raw, subscription, { paidReferenceMonths, payments });
+}
+
+function normalizeChargeSkipMessage(skipped: string): string {
+  const lower = skipped.toLowerCase();
+  if (
+    lower.includes('já existe') ||
+    lower.includes('ja existe') ||
+    lower.includes('competência') ||
+    lower.includes('competencia') ||
+    lower.includes('faturada') ||
+    lower.includes('confirmado')
+  ) {
+    return 'Cobrança já existe para esta competência.';
+  }
+  return skipped;
+}
+
+function toGenerateChargeCompany(
+  company: EnrichedCompany | SaasCompanyRow,
+): SaasGenerateChargeCompany {
+  return {
+    id: String((company as { id?: string }).id || ''),
+    name: company.name || '—',
+    next_payment_date: (company as { next_payment_date?: string | null }).next_payment_date,
+    next_due_date: (company as { next_due_date?: string | null }).next_due_date,
+    subscription_due_day: (company as { subscription_due_day?: number | null }).subscription_due_day,
+    plan: (company as { plan?: string | null }).plan,
+    plan_type: (company as { plan_type?: string | null }).plan_type,
+    custom_price: (company as { custom_price?: number | null }).custom_price,
+    price: (company as { price?: number | null }).price,
+  };
 }
 
 export default function SaaSFinancePage() {
@@ -116,6 +152,8 @@ function SaaSFinancePageContent() {
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
   const [paymentInitialInvoiceId, setPaymentInitialInvoiceId] = useState<string | undefined>();
   const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
+  const [generateChargeCompany, setGenerateChargeCompany] =
+    useState<SaasGenerateChargeCompany | null>(null);
   const [paymentGateway, setPaymentGateway] = useState<{
     configured: boolean;
     message?: string | null;
@@ -527,9 +565,19 @@ function SaaSFinancePageContent() {
     ],
   );
 
-  const handleGenerateInvoice = useCallback(
-    async (company?: EnrichedCompany) => {
-      const companyId = (company as { id?: string } | undefined)?.id;
+  const openGenerateChargeModal = useCallback((company: EnrichedCompany | SaasCompanyRow) => {
+    const id = (company as { id?: string }).id;
+    if (!id) return;
+    setGenerateChargeCompany(toGenerateChargeCompany(company));
+  }, []);
+
+  const submitGenerateCharge = useCallback(
+    async (payload: {
+      billingType: SaasMasterBillingType;
+      referenceMonth: string;
+      dueDate: string;
+    }) => {
+      const companyId = generateChargeCompany?.id;
       if (!companyId || !user?.id) return;
       setGeneratingInvoiceId(companyId);
       try {
@@ -540,15 +588,21 @@ function SaaSFinancePageContent() {
             userId: user.id,
             companyId,
             action: 'generate',
+            billingType: payload.billingType,
+            referenceMonth: payload.referenceMonth,
+            dueDate: payload.dueDate,
           }),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança PIX');
+        if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança');
         if (json.skipped) {
-          alert(json.skipped);
-        } else if (json.charge?.pix_copy_paste) {
+          alert(normalizeChargeSkipMessage(String(json.skipped)));
+        } else if (payload.billingType === 'BOLETO') {
+          alert('Boleto gerado com sucesso.');
+        } else {
           alert('Cobrança PIX gerada com sucesso.');
         }
+        setGenerateChargeCompany(null);
         await loadData();
       } catch (err) {
         alert(err instanceof Error ? err.message : 'Erro ao gerar cobrança');
@@ -556,7 +610,7 @@ function SaaSFinancePageContent() {
         setGeneratingInvoiceId(null);
       }
     },
-    [user?.id, loadData],
+    [generateChargeCompany?.id, user?.id, loadData],
   );
 
   const handleGenerateMonthlyInvoices = useCallback(async () => {
@@ -901,7 +955,7 @@ function SaaSFinancePageContent() {
                 regenerate: opts?.regenerate,
               })
             }
-            onGenerateCharge={() => void handleGenerateInvoice(selectedCompany)}
+            onGenerateCharge={() => openGenerateChargeModal(selectedCompany)}
             onRegisterPayment={() => openPaymentModal(selectedCompany)}
             chargeHandlers={chargeActionHandlers}
           />
@@ -1014,6 +1068,20 @@ function SaaSFinancePageContent() {
           onSuccess={loadData}
         />
       ) : null}
+
+      <SaasGenerateChargeModal
+        open={!!generateChargeCompany}
+        company={generateChargeCompany}
+        loading={
+          !!generateChargeCompany && generatingInvoiceId === generateChargeCompany.id
+        }
+        onClose={() => {
+          if (generatingInvoiceId !== generateChargeCompany?.id) {
+            setGenerateChargeCompany(null);
+          }
+        }}
+        onSubmit={submitGenerateCharge}
+      />
     </div>
   );
 }

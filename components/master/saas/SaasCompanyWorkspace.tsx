@@ -180,8 +180,11 @@ export function SaasCompanyWorkspace({
       {tab === 'cobrancas' ? (
         <SaasChargesTable
           rows={companyCharges}
+          compact
           gatewayReady={gatewayReady}
           syncingChargeId={syncingChargeId}
+          generatingCharge={generatingInvoice}
+          onGenerateCharge={onGenerateCharge}
           getCompanyPhone={() => String(company.phone || '')}
           getCompanyEmail={() => String(company.email || '')}
           onViewCharge={chargeHandlers.onViewCharge}

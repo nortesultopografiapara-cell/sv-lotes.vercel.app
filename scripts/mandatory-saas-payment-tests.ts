@@ -835,6 +835,21 @@ function testChargesUiBoleto() {
   assert(table.includes('onCopyPix'), 'UI copiar PIX');
   assert(table.includes('onOpenBankSlip'), 'UI abrir boleto');
   assert(table.includes('Link Asaas'), 'UI link Asaas');
+  assert(table.includes('overflow-visible'), 'tabela overflow visible');
+
+  const dropdown = read('components/master/saas/SaasActionsDropdown.tsx');
+  assert(dropdown.includes('createPortal'), 'dropdown portal');
+  assert(dropdown.includes('z-[9999]'), 'dropdown z-index alto');
+
+  const generateModal = read('components/master/saas/SaasGenerateChargeModal.tsx');
+  assert(generateModal.includes('Forma de cobrança'), 'modal forma cobrança');
+  assert(generateModal.includes("'PIX'"), 'modal opção PIX');
+  assert(generateModal.includes("'BOLETO'"), 'modal opção BOLETO');
+  assert(generateModal.includes('max-w-3xl'), 'modal largura desktop');
+
+  const page = read('app/saas-finance/page.tsx');
+  assert(page.includes('SaasGenerateChargeModal'), 'page usa modal gerar cobrança');
+  assert(page.includes('billingType: payload.billingType'), 'page envia billingType');
 
   const modal = read('components/master/SaasChargeViewModal.tsx');
   assert(modal.includes('Abrir boleto'), 'modal boleto');
