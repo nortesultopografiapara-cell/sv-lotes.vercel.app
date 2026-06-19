@@ -124,6 +124,16 @@ function testPageScrollPatterns() {
       );
       continue;
     }
+    if (file === 'components/billing/CompanyBillingPortal.tsx') {
+      assert(source.includes('overflow-y-auto'), 'billing overflow-y-auto');
+      assert(source.includes('min-h-0'), 'billing min-h-0');
+      assert(
+        source.includes('SV_SCROLLBAR_DARK_CLASS') || source.includes('sv-scrollbar-dark'),
+        'billing scrollbar visível',
+      );
+      assert(source.includes('sv-page--mobile-pad'), 'billing padding mobile');
+      continue;
+    }
     assert(
       source.includes('sv-page--scroll-y') ||
         source.includes('sv-mobile-scroll-area') ||

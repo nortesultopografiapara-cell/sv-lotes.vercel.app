@@ -16,6 +16,10 @@ import type { SaasCharge } from '@/lib/saasCharges';
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
 import { truncatePaymentId } from '@/lib/saasInvoiceChargeView';
 import { formatReferenceMonthLabel } from '@/lib/masterSaasPayments';
+import {
+  MOBILE_CONTENT_PAD_BOTTOM_CLASS,
+  SV_SCROLLBAR_DARK_CLASS,
+} from '@/lib/mobileLayout';
 
 type BillingPayload = {
   company?: {
@@ -156,7 +160,10 @@ export function CompanyBillingPortal() {
     '—';
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6">
+    <div
+      className={`flex-1 flex flex-col min-h-0 min-w-0 h-full max-w-full overflow-x-hidden overflow-y-auto ${SV_SCROLLBAR_DARK_CLASS} sv-page--mobile-pad`}
+    >
+      <div className={`max-w-6xl mx-auto w-full p-4 md:p-8 pb-10 space-y-6 ${MOBILE_CONTENT_PAD_BOTTOM_CLASS}`}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Minha Assinatura</h1>
@@ -516,6 +523,7 @@ export function CompanyBillingPortal() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }
