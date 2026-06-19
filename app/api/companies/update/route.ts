@@ -115,7 +115,6 @@ export async function PATCH(request: Request) {
       updatePayload.subscription_start_date = explicitBilling.subscription_start_date;
       updatePayload.subscription_due_day = explicitBilling.subscription_due_day;
       updatePayload.next_payment_date = explicitBilling.next_payment_date;
-      updatePayload.vencimento_plano = explicitBilling.next_payment_date;
     }
 
     console.log('SAVE_COMPANY_SUBSCRIPTION_PAYLOAD', {
@@ -250,7 +249,6 @@ export async function PATCH(request: Request) {
           subscription_start_date: finalCompany.subscription_start_date,
           subscription_due_day: finalCompany.subscription_due_day,
           next_payment_date: finalCompany.next_payment_date,
-          vencimento_plano: finalCompany.vencimento_plano,
           subscription_next_due_date: finalSubscription?.next_due_date ?? null,
         }
       : null;

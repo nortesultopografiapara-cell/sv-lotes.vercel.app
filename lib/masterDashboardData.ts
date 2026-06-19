@@ -110,11 +110,11 @@ function receiptMonthKey(row: { paid_at?: string | null; due_date?: string | nul
 }
 
 function isSubscriptionExpired(company: {
-  vencimento_plano?: string | null;
+  next_payment_date?: string | null;
   due_date?: string | null;
   active?: boolean | null;
 }): boolean {
-  const raw = company.vencimento_plano || company.due_date;
+  const raw = company.next_payment_date || company.due_date;
   if (!raw || company.active === false) return false;
   const due = new Date(raw);
   if (Number.isNaN(due.getTime())) return false;

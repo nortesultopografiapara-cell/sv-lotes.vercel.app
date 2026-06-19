@@ -61,7 +61,10 @@ export async function PATCH(
     if (data?.company_id && data.next_due_date) {
       await supabaseAdmin
         .from('companies')
-        .update({ vencimento_plano: data.next_due_date, updated_at: new Date().toISOString() })
+        .update({
+          next_payment_date: data.next_due_date,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', data.company_id);
     }
 

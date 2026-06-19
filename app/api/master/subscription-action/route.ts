@@ -81,7 +81,7 @@ export async function POST(request: Request) {
         .update({
           status_operacional: companyStatus,
           active: companyStatus === 'Ativa',
-          vencimento_plano: subscription?.next_due_date || null,
+          next_payment_date: subscription?.next_due_date || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', companyId);

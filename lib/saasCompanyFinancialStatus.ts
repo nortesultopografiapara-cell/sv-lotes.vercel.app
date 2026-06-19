@@ -79,7 +79,7 @@ export async function updateCompanyFinancialStatus(
 
   const { data: company, error: companyErr } = await supabaseAdmin
     .from('companies')
-    .select('id, active, status_operacional, next_payment_date, vencimento_plano')
+    .select('id, active, status_operacional, next_payment_date')
     .eq('id', companyId)
     .single();
 

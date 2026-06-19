@@ -195,10 +195,9 @@ export async function ensureSaasSubscription(
   await supabaseAdmin
     .from('companies')
     .update({
-      vencimento_plano: billing.next_due_date,
       subscription_start_date: billing.start_date,
-      subscription_due_day: syncedDates.subscription_due_day,
       next_payment_date: billing.next_due_date,
+      subscription_due_day: syncedDates.subscription_due_day,
       updated_at: new Date().toISOString(),
     })
     .eq('id', company.id);

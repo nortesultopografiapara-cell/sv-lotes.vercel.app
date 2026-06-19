@@ -92,7 +92,7 @@ function testEnsureUsesExplicitBillingNotCreatedAt() {
 
   const companyPatch = companyBillingFromResolved(explicit);
   assertEq(companyPatch.subscription_due_day, 15, 'company patch due day');
-  assertEq(companyPatch.vencimento_plano, '2026-07-15', 'company patch vencimento');
+  assertEq(companyPatch.next_payment_date, '2026-07-15', 'company patch next payment');
 }
 
 function testApiResponseShapeAfterSave() {
@@ -118,7 +118,6 @@ function testApiResponseShapeAfterSave() {
     subscription_start_date: companyAfterSave.subscription_start_date,
     subscription_due_day: companyAfterSave.subscription_due_day,
     next_payment_date: companyAfterSave.next_payment_date,
-    vencimento_plano: companyAfterSave.vencimento_plano,
     subscription_next_due_date: subscriptionAfterSave.next_due_date,
   };
 

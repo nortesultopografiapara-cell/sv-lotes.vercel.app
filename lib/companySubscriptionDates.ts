@@ -146,22 +146,21 @@ export function companyBillingFromResolved(
   billing: ResolvedSubscriptionDates,
 ): Pick<
   CompanySubscriptionDatesSource,
-  'subscription_start_date' | 'subscription_due_day' | 'next_payment_date' | 'vencimento_plano'
+  'subscription_start_date' | 'subscription_due_day' | 'next_payment_date'
 > {
   return {
     subscription_start_date: billing.subscription_start_date,
     subscription_due_day: billing.subscription_due_day,
     next_payment_date: billing.next_payment_date,
-    vencimento_plano: billing.next_payment_date,
   };
 }
 
-/** Espelha next_payment_date em vencimento_plano (compatibilidade legada). */
+/** Atualiza next_payment_date em companies (campo canônico — sem vencimento_plano legado). */
 export function companyNextPaymentPatch(
   nextPaymentDate: string,
-): Pick<CompanySubscriptionDatesSource, 'next_payment_date' | 'vencimento_plano'> {
+): Pick<CompanySubscriptionDatesSource, 'next_payment_date'> {
   const iso = toIsoDateOnly(nextPaymentDate) || todayIsoDate();
-  return { next_payment_date: iso, vencimento_plano: iso };
+  return { next_payment_date: iso };
 }
 
 /** Primeira cobrança = data de início (ativação). */
@@ -233,7 +232,7 @@ export function normalizeSubscriptionDates(
 
   const explicitNext =
     toIsoDateOnly(company?.next_payment_date) ||
-    toIsoDateOnly(company?.vencimento_plano);
+    toIsoDateOnly(subscription?.next_due_date);
 
   const next_due_date =
     explicitNext || calculateNextDueDateWithDueDay(start_date, dueDay);

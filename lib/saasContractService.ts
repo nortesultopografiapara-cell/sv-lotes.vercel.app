@@ -543,7 +543,6 @@ export async function generateAndStoreSaasContract(
     .update({
       subscription_start_date: pdfDates.start_date,
       next_payment_date: pdfDates.next_due_date,
-      vencimento_plano: pdfDates.next_due_date,
       subscription_due_day: clampDueDay(
         Number(company.subscription_due_day) || dueDayFromDate(pdfDates.next_due_date),
       ),

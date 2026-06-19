@@ -545,8 +545,8 @@ export default function PlansPage() {
                    });
                    const vDate = subscription?.next_due_date
                       ? new Date(subscription.next_due_date).toLocaleDateString('pt-BR')
-                      : company.vencimento_plano
-                      ? new Date(company.vencimento_plano).toLocaleDateString('pt-BR')
+                      : company.next_payment_date
+                      ? new Date(company.next_payment_date).toLocaleDateString('pt-BR')
                       : '—';
                    const financeStatus = enriched.financial_situation;
                    const daysLate = enriched.days_late;

@@ -68,7 +68,6 @@ function testIvanildeDueDayChangePersists() {
     ...ivanildeCompanyBeforeSave(),
     subscription_due_day: savePayload.subscription_due_day,
     next_payment_date: savePayload.next_payment_date,
-    vencimento_plano: savePayload.next_payment_date,
   };
 
   const billing = normalizeSubscriptionDates(companyAfterSave, ivanildeSubscriptionBeforeSave());
@@ -95,7 +94,6 @@ function testEnsureSubscriptionDatesAfterSave() {
     ...ivanildeCompanyBeforeSave(),
     subscription_due_day: 15,
     next_payment_date: '2026-07-15',
-    vencimento_plano: '2026-07-15',
   };
 
   const billing = normalizeSubscriptionDates(company, ivanildeSubscriptionBeforeSave());

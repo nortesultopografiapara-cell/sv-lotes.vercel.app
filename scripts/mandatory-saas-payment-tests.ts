@@ -582,6 +582,45 @@ function testPaymentRegistrationIdempotency() {
   assert(billing.includes('findExistingSaasPaymentForReference'), 'markInvoicePaid idempotente');
   assert(!billing.includes('vencimento_plano: nextDue'), 'vencimento_plano via companyNextPaymentPatch');
   assert(billing.includes('companyNextPaymentPatch'), 'patch centralizado de vencimento');
+  assert(!billing.includes('vencimento_plano'), 'billing não grava vencimento_plano');
+}
+
+function testTopografiaChargeWithoutVencimentoPlano() {
+  const TOPOGRAFIA_ID = '5ebfe934-e1ae-4252-b3dd-808390c32551';
+  const TOPOGRAFIA_CNPJ = '12631238000102';
+
+  const financialStatus = read('lib/saasCompanyFinancialStatus.ts');
+  assert(!financialStatus.includes('vencimento_plano'), 'status financeiro não consulta vencimento_plano');
+
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('updateCompanyFinancialStatus'), 'create charge atualiza status financeiro');
+
+  for (const rel of [
+    'lib/saasBilling.ts',
+    'lib/saasSubscriptionService.ts',
+    'lib/saasContractService.ts',
+    'lib/saasCompanyFinancialStatus.ts',
+    'app/api/companies/update/route.ts',
+    'app/api/company-subscriptions/[id]/route.ts',
+    'app/api/master/subscription-action/route.ts',
+  ]) {
+    assert(!read(rel).includes('vencimento_plano'), `${rel} sem vencimento_plano`);
+  }
+
+  assert(
+    validateCompanyDocumentForAsaas('SV TOPOGRAFIA E PROJETOS LTDA', TOPOGRAFIA_CNPJ) === null,
+    'Topografia CNPJ válido para Asaas',
+  );
+
+  const patch = companyNextPaymentPatch('2026-07-20');
+  assert(patch.next_payment_date === '2026-07-20', 'patch next_payment_date Topografia');
+  assert(!('vencimento_plano' in patch), 'patch sem vencimento_plano legado');
+
+  const dates = read('lib/companySubscriptionDates.ts');
+  assert(dates.includes('subscription?.next_due_date'), 'normalize usa subscription.next_due_date');
+  assert(!dates.includes('company?.vencimento_plano'), 'normalize não lê vencimento_plano');
+
+  void TOPOGRAFIA_ID;
 }
 
 function testAsaasSyncStatus() {
@@ -600,7 +639,7 @@ function testAsaasSyncStatus() {
 function testCompanyNextPaymentPatch() {
   const patch = companyNextPaymentPatch('2026-07-27');
   assert(patch.next_payment_date === '2026-07-27', 'next_payment_date');
-  assert(patch.vencimento_plano === '2026-07-27', 'vencimento_plano espelhado');
+  assert(!('vencimento_plano' in patch), 'sem vencimento_plano legado');
 }
 
 async function testWebhookPaymentIdempotency() {
@@ -665,6 +704,7 @@ async function run() {
     ['duplicidade mensal e individual', testDuplicateChargeProtection],
     ['fatura fantasma e endpoint diagnóstico', testPhantomInvoiceAndDiagnoseEndpoint],
     ['pagamento registrado não duplica', testPaymentRegistrationIdempotency],
+    ['Topografia sem vencimento_plano', testTopografiaChargeWithoutVencimentoPlano],
     ['sync status Asaas', testAsaasSyncStatus],
     ['patch vencimento empresa', testCompanyNextPaymentPatch],
     ['regras skip async Asaas', testSaasPixChargeSkipAsyncRules],
