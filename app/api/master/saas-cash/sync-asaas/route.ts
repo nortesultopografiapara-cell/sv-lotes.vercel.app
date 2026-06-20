@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
+import { getSaasCashStartAt } from '@/lib/saasFinanceSettings';
 import {
-  getSaasCashSummary,
-  listSaasCashMovements,
+  loadSaasCashView,
   syncAsaasCashMovements,
 } from '@/lib/saasCashMovements';
 
@@ -36,25 +36,22 @@ export async function POST(request: Request) {
       createdBy: body.userId,
     });
 
-    const [movements, summary] = await Promise.all([
-      listSaasCashMovements(supabaseAdmin, {
+    const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
+    const view = await loadSaasCashView(
+      supabaseAdmin,
+      {
         companyId: body.companyId || undefined,
         type: body.type || 'all',
         fromDate,
         toDate,
-      }),
-      getSaasCashSummary(supabaseAdmin, {
-        companyId: body.companyId || undefined,
-        fromDate,
-        toDate,
-      }),
-    ]);
+      },
+      cashStartAt,
+    );
 
     return NextResponse.json({
       success: true,
       sync: syncResult,
-      movements,
-      summary,
+      ...view,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao sincronizar Asaas';

@@ -10,6 +10,10 @@ import {
   type MappedAsaasCashMovement,
 } from '@/lib/asaasFinancialTransactions';
 import {
+  effectiveSaasCashFromDate,
+  filterMovementsByCashStartAt,
+} from '@/lib/saasFinanceSettings';
+import {
   isAsaasConfigured,
   listAsaasFinancialTransactions,
   type AsaasFinancialTransaction,
@@ -54,6 +58,7 @@ export type ListSaasCashMovementsOptions = {
   fromDate?: string;
   toDate?: string;
   limit?: number;
+  cashStartAt?: string | null;
 };
 
 export type CreateSaasCashIncomeInput = {
@@ -282,20 +287,25 @@ export async function listSaasCashMovements(
   supabaseAdmin: SupabaseClient,
   options: ListSaasCashMovementsOptions = {},
 ): Promise<SaasCashMovement[]> {
+  const fromDate = effectiveSaasCashFromDate(options.fromDate, options.cashStartAt);
+
   let query = supabaseAdmin
     .from('saas_cash_movements')
     .select('*')
     .order('movement_date', { ascending: false })
     .order('created_at', { ascending: false });
 
+  if (options.cashStartAt) {
+    query = query.gte('created_at', options.cashStartAt);
+  }
   if (options.companyId) {
     query = query.eq('company_id', options.companyId);
   }
   if (options.type && options.type !== 'all') {
     query = query.eq('type', options.type);
   }
-  if (options.fromDate) {
-    query = query.gte('movement_date', options.fromDate);
+  if (fromDate) {
+    query = query.gte('movement_date', fromDate);
   }
   if (options.toDate) {
     query = query.lte('movement_date', options.toDate);
@@ -309,7 +319,16 @@ export async function listSaasCashMovements(
     throw new Error(error.message || 'Falha ao listar movimentações do caixa SaaS');
   }
 
-  const rows = (data || []) as Record<string, unknown>[];
+  let rows = (data || []) as Record<string, unknown>[];
+  rows = filterMovementsByCashStartAt(
+    rows.map((row) => ({
+      ...row,
+      movement_date: String(row.movement_date || '').split('T')[0],
+      created_at: row.created_at ? String(row.created_at) : null,
+    })),
+    options.cashStartAt,
+  ) as Record<string, unknown>[];
+
   if (rows.length === 0) return [];
 
   const companyIds = [
@@ -347,13 +366,30 @@ export async function listSaasCashMovements(
 
 export async function getSaasCashSummary(
   supabaseAdmin: SupabaseClient,
-  options: Pick<ListSaasCashMovementsOptions, 'companyId' | 'fromDate' | 'toDate'> = {},
+  options: Pick<ListSaasCashMovementsOptions, 'companyId' | 'fromDate' | 'toDate' | 'cashStartAt'> = {},
 ): Promise<SaasCashSummary> {
   const movements = await listSaasCashMovements(supabaseAdmin, {
     ...options,
     type: 'all',
   });
   return computeSaasCashSummaryFromRows(movements);
+}
+
+export async function loadSaasCashView(
+  supabaseAdmin: SupabaseClient,
+  options: ListSaasCashMovementsOptions,
+  cashStartAt: string | null,
+): Promise<{
+  movements: SaasCashMovement[];
+  summary: SaasCashSummary;
+  cashStartAt: string | null;
+}> {
+  const queryOptions = { ...options, cashStartAt };
+  const [movements, summary] = await Promise.all([
+    listSaasCashMovements(supabaseAdmin, queryOptions),
+    getSaasCashSummary(supabaseAdmin, queryOptions),
+  ]);
+  return { movements, summary, cashStartAt };
 }
 
 async function findExistingByAsaasMovementId(

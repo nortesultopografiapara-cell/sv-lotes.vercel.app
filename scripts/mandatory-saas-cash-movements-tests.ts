@@ -16,6 +16,14 @@ import {
   mapAsaasFinancialTransaction,
   isAsaasCashSyncExpenseMapping,
 } from '../lib/asaasFinancialTransactions';
+import {
+  buildSaasCashExportFilename,
+  mapMovementsToExportRows,
+} from '../lib/saasCashExport';
+import {
+  filterMovementsByCashStartAt,
+  effectiveSaasCashFromDate,
+} from '../lib/saasFinanceSettings';
 
 const ROOT = process.cwd();
 
@@ -267,6 +275,10 @@ function testMigrationStructure() {
     syncMigration.includes('idx_saas_cash_movements_asaas_movement_id_unique'),
     'unique asaas_movement_id',
   );
+
+  const settingsMigration = read('supabase/migrations/20260812120000_saas_finance_settings.sql');
+  assert(settingsMigration.includes('saas_finance_settings'), 'settings table');
+  assert(settingsMigration.includes('is_super_admin()'), 'settings RLS');
   console.log('OK testMigrationStructure');
 }
 
@@ -392,15 +404,117 @@ function testWebhookIntegration() {
   console.log('OK testWebhookIntegration');
 }
 
+function testExportRespectsFilteredMovements() {
+  const movements = [
+    {
+      id: '1',
+      company_id: 'c1',
+      saas_charge_id: null,
+      asaas_payment_id: null,
+      type: 'income' as const,
+      category: 'Assinatura SaaS',
+      description: 'Entrada',
+      amount: 10,
+      movement_date: '2026-06-20',
+      source: 'asaas_webhook' as const,
+      metadata: {},
+      created_at: '2026-06-20T10:00:00Z',
+      created_by: null,
+      company_name: 'Empresa A',
+    },
+    {
+      id: '2',
+      company_id: 'c2',
+      saas_charge_id: null,
+      asaas_payment_id: null,
+      type: 'expense' as const,
+      category: 'Saque',
+      description: 'Saque',
+      amount: 5,
+      movement_date: '2026-06-20',
+      source: 'asaas_transfer' as const,
+      metadata: {},
+      created_at: '2026-06-20T11:00:00Z',
+      created_by: null,
+      company_name: 'Empresa B',
+    },
+  ];
+
+  const rows = mapMovementsToExportRows(movements);
+  assert(rows.length === 2, 'exporta movimentos filtrados');
+  assert(rows[0].company === 'Empresa A', 'empresa A');
+  assert(rows[1].amount === -5, 'saída negativa no excel');
+  assert(
+    buildSaasCashExportFilename('xlsx', new Date('2026-06-20T12:00:00Z')) ===
+      'caixa-saas-2026-06-20.xlsx',
+    'nome arquivo excel',
+  );
+  assert(
+    buildSaasCashExportFilename('pdf', new Date('2026-06-20T12:00:00Z')) ===
+      'caixa-saas-2026-06-20.pdf',
+    'nome arquivo pdf',
+  );
+
+  const exportLib = read('lib/saasCashExport.ts');
+  assert(exportLib.includes('Livro Caixa SaaS'), 'cabeçalho export');
+  assert(exportLib.includes('Entradas'), 'pdf resumo entradas');
+  console.log('OK testExportRespectsFilteredMovements');
+}
+
+function testCashStartAtFiltersWithoutDeleting() {
+  const all = [
+    {
+      id: 'old',
+      movement_date: '2026-01-01',
+      created_at: '2026-01-01T10:00:00Z',
+      type: 'expense' as const,
+      amount: 100,
+    },
+    {
+      id: 'new',
+      movement_date: '2026-06-20',
+      created_at: '2026-06-20T10:00:00Z',
+      type: 'income' as const,
+      amount: 10,
+    },
+  ];
+
+  const startAt = '2026-06-20T09:00:00.000Z';
+  const filtered = filterMovementsByCashStartAt(all, startAt);
+  assert(filtered.length === 1, 'remove antigos dos KPIs');
+  assert(filtered[0].id === 'new', 'mantém novos');
+  assert(all.length === 2, 'não apaga registros originais');
+
+  const summary = computeSaasCashSummaryFromRows(filtered);
+  assert(summary.periodIncome === 10, 'KPI entrada após marco');
+  assert(summary.periodExpense === 0, 'KPI saída após marco');
+  assert(summary.netResult === 10, 'saldo após marco');
+
+  assert(
+    effectiveSaasCashFromDate('2026-01-01', startAt) === '2026-06-20',
+    'fromDate efetivo respeita marco',
+  );
+  console.log('OK testCashStartAtFiltersWithoutDeleting');
+}
+
 function testApiAndSecurity() {
   const api = read('app/api/master/saas-cash/route.ts');
   assert(api.includes('assertSuperAdmin'), 'API super admin');
-  assert(api.includes('listSaasCashMovements'), 'lista movimentos');
-  assert(api.includes('getSaasCashSummary'), 'resumo');
+  assert(api.includes('loadSaasCashView'), 'lista movimentos via view');
+  assert(api.includes('getSaasCashStartAt'), 'GET respeita marco');
 
   const syncApi = read('app/api/master/saas-cash/sync-asaas/route.ts');
   assert(syncApi.includes('assertSuperAdmin'), 'sync API super admin');
   assert(syncApi.includes('syncAsaasCashMovements'), 'sync handler');
+  assert(syncApi.includes('getSaasCashStartAt'), 'sync respeita marco');
+
+  const startAtApi = read('app/api/master/saas-cash/start-at/route.ts');
+  assert(startAtApi.includes('assertSuperAdmin'), 'start-at super admin');
+  assert(startAtApi.includes('setSaasCashStartAt'), 'start-at salva marco');
+
+  const exportLib = read('lib/saasCashExport.ts');
+  assert(exportLib.includes('exportSaasCashExcel'), 'export excel');
+  assert(exportLib.includes('exportSaasCashPdf'), 'export pdf');
 
   const guard = read('components/admin/SuperAdminOnlyGuard.tsx');
   assert(guard.includes('SUPER_ADMIN'), 'guard super admin');
@@ -416,6 +530,10 @@ function testUiLoadsWithoutMovements() {
   assert(panel.includes('Nenhuma movimentação no período selecionado'), 'estado vazio');
   assert(panel.includes('saasCashSourceLabel'), 'badge origem');
   assert(panel.includes('Sincronizar Asaas'), 'botão sync');
+  assert(panel.includes('Exportar Excel'), 'botão excel');
+  assert(panel.includes('Exportar PDF'), 'botão pdf');
+  assert(panel.includes('Zerar caixa a partir de agora'), 'botão marco');
+  assert(panel.includes('Caixa contabilizado a partir de'), 'aviso marco');
   assert(panel.includes('isSuperAdmin'), 'botão restrito super admin');
   assert(saasCashSourceLabel('asaas_webhook') === 'Asaas', 'label Asaas');
   assert(saasCashSourceLabel('asaas_fee') === 'Tarifa', 'label Tarifa');
@@ -437,6 +555,8 @@ async function main() {
   await testSyncAsaasCreatesExpenses();
   await testSyncAsaasDoesNotDuplicate();
   testKpisAfterWithdrawalScenario();
+  testExportRespectsFilteredMovements();
+  testCashStartAtFiltersWithoutDeleting();
   testApiAndSecurity();
   testUiLoadsWithoutMovements();
   console.log('mandatory-saas-cash-movements-tests: all passed');
