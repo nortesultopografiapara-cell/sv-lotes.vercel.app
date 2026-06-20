@@ -58,6 +58,8 @@ import {
   type SaasGenerateChargeCompany,
 } from '@/components/master/saas/SaasGenerateChargeModal';
 import { SaasAutomationsPanel } from '@/components/master/saas/SaasAutomationsPanel';
+import { SaasCashPanel } from '@/components/master/saas/SaasCashPanel';
+import { SuperAdminOnlyGuard } from '@/components/admin/SuperAdminOnlyGuard';
 import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 import {
   buildSaasChargeEmailUrl,
@@ -874,6 +876,15 @@ function SaaSFinancePageContent() {
   );
 
   const formatCurrency = (val: number) => formatSaasCurrency(val);
+  const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
+  const cashCompanyOptions = useMemo(
+    () =>
+      companies.map((company) => ({
+        id: String((company as { id?: string }).id || ''),
+        name: String(company.name || company.fantasy_name || '—'),
+      })),
+    [companies],
+  );
   const gatewayReady = paymentGateway.configured;
   const gatewayDisabledTitle =
     paymentGateway.message ||
@@ -936,6 +947,7 @@ function SaaSFinancePageContent() {
 
       <SaasMainNav
         active={panelView}
+        isSuperAdmin={isSuperAdmin}
         onChange={(view) => {
           setPanelView(view);
           if (view !== 'empresas') setSelectedCompanyId(null);
@@ -1090,6 +1102,12 @@ function SaaSFinancePageContent() {
       ) : null}
 
       {panelView === 'automacoes' ? <SaasAutomationsPanel /> : null}
+
+      {panelView === 'caixa' ? (
+        <SuperAdminOnlyGuard>
+          <SaasCashPanel companies={cashCompanyOptions} />
+        </SuperAdminOnlyGuard>
+      ) : null}
 
       <SaasChargeViewModal
         row={chargeViewRow}

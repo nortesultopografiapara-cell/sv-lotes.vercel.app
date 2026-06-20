@@ -6,7 +6,7 @@ import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
 import { normalizeWhatsAppPhone } from '@/lib/saasContractSignatureShare';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 
-export type SaasPanelView = 'dashboard' | 'empresas' | 'cobrancas' | 'automacoes';
+export type SaasPanelView = 'dashboard' | 'empresas' | 'cobrancas' | 'automacoes' | 'caixa';
 
 export type SaasCompanyTab = 'dados' | 'contrato' | 'assinatura' | 'cobrancas' | 'historico';
 

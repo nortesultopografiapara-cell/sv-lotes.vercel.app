@@ -24,6 +24,7 @@ import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import type { CompanyPricingSource } from '@/lib/companyPricing';
+import { createSaasCashIncomeFromChargePaid } from '@/lib/saasCashMovements';
 
 export type SaasChargeStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 
@@ -642,6 +643,11 @@ export async function processSaasChargePaid(
 
   const charge = parseChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID' && charge.master_payment_id) {
+    await createSaasCashIncomeFromChargePaid(supabaseAdmin, {
+      charge,
+      paidAt: input.paidAt,
+      createdBy: input.actorUserId ?? null,
+    });
     return { charge, paymentId: charge.master_payment_id };
   }
 
@@ -734,8 +740,15 @@ export async function processSaasChargePaid(
     reference_id: charge.id,
   });
 
+  const updatedCharge = parseChargeRow(updated as Record<string, unknown>);
+  await createSaasCashIncomeFromChargePaid(supabaseAdmin, {
+    charge: updatedCharge,
+    paidAt,
+    createdBy: input.actorUserId ?? null,
+  });
+
   return {
-    charge: parseChargeRow(updated as Record<string, unknown>),
+    charge: updatedCharge,
     paymentId: masterPaymentId!,
   };
 }

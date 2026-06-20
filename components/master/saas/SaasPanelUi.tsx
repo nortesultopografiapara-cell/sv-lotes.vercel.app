@@ -7,24 +7,28 @@ import {
   Building2,
   Receipt,
   Zap,
+  Wallet,
 } from 'lucide-react';
 
-const NAV: { id: SaasPanelView; label: string; icon: ReactNode }[] = [
+const NAV: { id: SaasPanelView; label: string; icon: ReactNode; superAdminOnly?: boolean }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: 'empresas', label: 'Empresas', icon: <Building2 className="w-4 h-4" /> },
   { id: 'cobrancas', label: 'Cobranças', icon: <Receipt className="w-4 h-4" /> },
+  { id: 'caixa', label: 'Caixa', icon: <Wallet className="w-4 h-4" />, superAdminOnly: true },
   { id: 'automacoes', label: 'Automações', icon: <Zap className="w-4 h-4" /> },
 ];
 
 type Props = {
   active: SaasPanelView;
   onChange: (view: SaasPanelView) => void;
+  isSuperAdmin?: boolean;
 };
 
-export function SaasMainNav({ active, onChange }: Props) {
+export function SaasMainNav({ active, onChange, isSuperAdmin = false }: Props) {
+  const items = NAV.filter((item) => !item.superAdminOnly || isSuperAdmin);
   return (
     <nav className="flex flex-wrap gap-2 mb-6 p-1 rounded-xl bg-[#11161d] border border-white/5 w-fit">
-      {NAV.map((item) => (
+      {items.map((item) => (
         <button
           key={item.id}
           type="button"
