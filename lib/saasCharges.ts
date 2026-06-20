@@ -334,6 +334,19 @@ export function isLocalAsaasPaymentInactive(
   return linked.every((c) => !isSaasChargeBlockingDuplicate(c));
 }
 
+/**
+ * Sem cobrança ativa local — não bloquear por external_charge_id legado no Asaas.
+ * Cobre fatura com pay_ antigo sem saas_charge correspondente (ex.: após cancelar/excluir).
+ */
+export function shouldIgnoreInvoiceExternalChargeForRegeneration(
+  existingCharge: SaasChargeSkipInput | null,
+  invoiceCharges: SaasChargeSkipInput[],
+): boolean {
+  if (existingCharge && isSaasChargeBlockingDuplicate(existingCharge)) return false;
+  if (!invoiceCharges.length) return true;
+  return invoiceCharges.every((c) => !isSaasChargeBlockingDuplicate(c));
+}
+
 export type ResolveSaasPixChargeSkipAsyncOptions = {
   /** Todas as cobranças da fatura (inclui soft-deleted) para auditoria local. */
   invoiceCharges?: SaasChargeSkipInput[];
@@ -358,6 +371,13 @@ export async function resolveSaasPixChargeSkipReasonAsync(
   if (kind === 'mock' || kind === 'legacy_uuid' || kind === 'other') return null;
 
   if (options?.invoiceCharges?.length && isLocalAsaasPaymentInactive(extId, options.invoiceCharges)) {
+    return null;
+  }
+
+  if (
+    options?.invoiceCharges &&
+    shouldIgnoreInvoiceExternalChargeForRegeneration(existingCharge, options.invoiceCharges)
+  ) {
     return null;
   }
 
@@ -402,7 +422,27 @@ export async function reconcileSaasChargesBeforeRegeneration(
     if (!isSaasChargeBlockingDuplicate(parsed)) continue;
 
     const paymentId = String(parsed.payment_id || '').trim();
-    if (!paymentId || classifyExternalChargeId(paymentId) !== 'pay_asaas') continue;
+    const paymentKind = paymentId ? classifyExternalChargeId(paymentId) : 'empty';
+
+    if (!paymentId || paymentKind !== 'pay_asaas') {
+      const statusKey = String(parsed.status || '').toUpperCase();
+      if (['PENDING', 'OVERDUE'].includes(statusKey)) {
+        await supabaseAdmin
+          .from('saas_charges')
+          .update({
+            status: 'CANCELLED',
+            deleted_at: now,
+            delete_reason: paymentId
+              ? 'stale_charge_without_asaas_payment_id'
+              : 'stale_charge_missing_payment_id',
+            asaas_delete_status: 'skipped',
+            updated_at: now,
+          })
+          .eq('id', parsed.id)
+          .is('deleted_at', null);
+      }
+      continue;
+    }
 
     const asaasState = await verifyAsaasPaymentBlockingState(paymentId, verifyAsaasPayment);
     if (!shouldReconcileSaasChargeFromAsaasVerify(asaasState)) continue;
@@ -588,8 +628,27 @@ export async function createSaasPixCharge(
       .map((row) => parseChargeRow(row as Record<string, unknown>))
       .find((ch) => isSaasChargeBlockingDuplicate(ch)) ?? null;
 
+  const invoiceChargeInputs: SaasChargeSkipInput[] = invoiceCharges.map((ch) => ({
+    status: ch.status,
+    payment_id: ch.payment_id,
+    pix_copy_paste: ch.pix_copy_paste,
+    payment_url: ch.payment_url,
+    master_payment_id: ch.master_payment_id,
+    deleted_at: ch.deleted_at,
+  }));
+
+  if (
+    shouldIgnoreInvoiceExternalChargeForRegeneration(existingCharge, invoiceChargeInputs) &&
+    String(invoice.external_charge_id || '').trim()
+  ) {
+    const reopenDue = options?.dueDate || invoice.due_date;
+    invoice = await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, {
+      dueDate: resolveAsaasDueDate(reopenDue),
+    });
+  }
+
   const skipReason = await resolveSaasPixChargeSkipReasonAsync(invoice, existingCharge, undefined, {
-    invoiceCharges,
+    invoiceCharges: invoiceChargeInputs,
   });
   if (skipReason) {
     return {

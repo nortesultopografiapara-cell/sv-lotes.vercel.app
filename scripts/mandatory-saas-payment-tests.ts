@@ -25,6 +25,7 @@ import {
   resolveSaasPixChargeSkipReason,
   resolveSaasPixChargeSkipReasonAsync,
   saasChargeStatusLabel,
+  shouldIgnoreInvoiceExternalChargeForRegeneration,
   shouldReconcileSaasChargeFromAsaasVerify,
 } from '../lib/saasCharges';
 import { isPhantomSaasInvoice } from '../lib/saasBilling';
@@ -491,6 +492,49 @@ async function testSaasPixChargeSkipAsyncRules() {
     },
   );
   assert(allowedLocalDelete === null, 'excluir (soft delete) permite regenerar na mesma competência');
+
+  const menesesInactiveCharges = [
+    {
+      status: 'CANCELLED' as const,
+      payment_id: 'pay_meneses_old',
+      pix_copy_paste: null,
+      payment_url: 'https://asaas.com/boleto/old',
+      master_payment_id: null,
+      deleted_at: '2026-07-08T12:00:00.000Z',
+    },
+  ];
+  assert(
+    shouldIgnoreInvoiceExternalChargeForRegeneration(null, menesesInactiveCharges),
+    'Meneses: sem cobrança ativa local',
+  );
+  const menesesOrphanPay = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_meneses_orphan', status: 'PENDENTE' },
+    null,
+    async () => 'blocking',
+    { invoiceCharges: menesesInactiveCharges },
+  );
+  assert(
+    menesesOrphanPay === null,
+    'Meneses: pay_ legado na fatura não bloqueia após cancelar/excluir cobranças',
+  );
+
+  const menesesStillActive = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_meneses_active', status: 'PENDENTE' },
+    {
+      status: 'PENDING',
+      payment_id: 'pay_meneses_active',
+      pix_copy_paste: null,
+      payment_url: null,
+      master_payment_id: null,
+      deleted_at: null,
+    },
+    async () => 'blocking',
+    { invoiceCharges: [] },
+  );
+  assert(
+    menesesStillActive === 'Cobrança PIX já existe para esta fatura',
+    'Meneses: cobrança ativa continua bloqueando',
+  );
 }
 
 function testWebhookExternalReference() {
@@ -736,6 +780,7 @@ function testDuplicateChargeProtection() {
   assert(saasCharges.includes("status: 'CANCELLED'"), 'órfãs canceladas antes do backfill');
   assert(saasCharges.includes('isSaasChargeBlockingDuplicate'), 'bloqueio só cobranças ativas');
   assert(saasCharges.includes('reconcileSaasChargesBeforeRegeneration'), 'reconcilia pay_ ausente no Asaas');
+  assert(saasCharges.includes('shouldIgnoreInvoiceExternalChargeForRegeneration'), 'ignora pay_ legado na fatura');
   assert(saasCharges.includes('detachSaasInvoiceFromGateway'), 'cancel/excluir limpa gateway da fatura');
 
   const billing = read('lib/saasBilling.ts');
