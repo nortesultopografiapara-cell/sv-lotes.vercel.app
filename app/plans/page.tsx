@@ -13,7 +13,6 @@ import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing'
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import {
   buildPaidReferenceMonthsByCompany,
-  sumReceivedRevenue,
   type MasterSaasPayment,
 } from '@/lib/masterSaasPayments';
 import { computeSaasBillingMetrics, type MasterSaasInvoice } from '@/lib/saasBilling';
@@ -23,7 +22,7 @@ import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { calculateMrrFromCompanies } from '@/lib/companyPricing';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
 import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
-import { applySaasFinanceStartAtFilter } from '@/lib/saasFinanceSettings';
+import { sumSaasReceivedRevenue } from '@/lib/saasFinanceSettings';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -136,8 +135,6 @@ export default function PlansPage() {
       setCashStartAt(financeStartAt);
 
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
-      const filteredPayments = applySaasFinanceStartAtFilter(payments, financeStartAt);
-      const paymentsReceived = sumReceivedRevenue(filteredPayments);
       const enriched = finalCompanies.map((c) =>
         augmentCompanyBilling(c, subsMap[c.id], { paidReferenceMonths, payments }),
       );
@@ -148,7 +145,7 @@ export default function PlansPage() {
       const billingMetrics = computeSaasBillingMetrics(
         (invoicesData || []) as MasterSaasInvoice[],
         calculatedMrr,
-        paymentsReceived,
+        sumSaasReceivedRevenue(payments, financeStartAt),
       );
 
       setStats({
@@ -156,7 +153,7 @@ export default function PlansPage() {
         arr: calculatedMrr * 12,
         activeSubscriptions,
         suspendedSubscriptions,
-        receivedRevenue: billingMetrics.receivedRevenue,
+        receivedRevenue: sumSaasReceivedRevenue(payments, financeStartAt),
         openRevenue: billingMetrics.revenueToReceive,
       });
     } catch (error) {

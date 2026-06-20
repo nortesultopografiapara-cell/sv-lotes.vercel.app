@@ -2,6 +2,7 @@
  * Exportação do Livro Caixa SaaS (Excel e PDF) — client-side.
  */
 
+import { SV_LOTES_BRAND, SV_LOTES_LOGO_PATH } from '@/lib/brand';
 import {
   saasCashSourceLabel,
   saasCashTypeLabel,
@@ -9,6 +10,7 @@ import {
   type SaasCashSummary,
 } from '@/lib/saasCashMovements';
 import { formatSaasCurrency } from '@/lib/companyPricing';
+import { formatSaasCashStartAtLabel } from '@/lib/saasFinanceSettings';
 
 export type SaasCashExportParams = {
   movements: SaasCashMovement[];
@@ -16,6 +18,8 @@ export type SaasCashExportParams = {
   fromDate: string;
   toDate: string;
   exportedAt?: Date;
+  cashStartAt?: string | null;
+  issuedBy?: string | null;
 };
 
 export type SaasCashExportRow = {
@@ -60,6 +64,24 @@ export function mapMovementsToExportRows(movements: SaasCashMovement[]): SaasCas
   });
 }
 
+async function loadSvLotesLogoDataUrlClient(): Promise<string | null> {
+  try {
+    const res = await fetch(SV_LOTES_LOGO_PATH);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(typeof reader.result === 'string' ? reader.result : null);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 function downloadBlob(buffer: ArrayBuffer | Blob, filename: string, mime: string) {
   const blob = buffer instanceof Blob ? buffer : new Blob([buffer], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -70,36 +92,61 @@ function downloadBlob(buffer: ArrayBuffer | Blob, filename: string, mime: string
   URL.revokeObjectURL(url);
 }
 
+function exportMetaLines(params: SaasCashExportParams, exportedAt: Date) {
+  const startLabel = formatSaasCashStartAtLabel(params.cashStartAt);
+  return {
+    period: formatPeriod(params.fromDate, params.toDate),
+    exportedAtLabel: exportedAt.toLocaleString('pt-BR'),
+    issuedBy: params.issuedBy?.trim() || 'Super Admin',
+    startLabel,
+  };
+}
+
 export async function exportSaasCashExcel(params: SaasCashExportParams): Promise<void> {
   const exportedAt = params.exportedAt ?? new Date();
   const rows = mapMovementsToExportRows(params.movements);
+  const meta = exportMetaLines(params, exportedAt);
   const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'SV LOTES';
+  workbook.creator = SV_LOTES_BRAND.name;
   workbook.created = exportedAt;
 
   const ws = workbook.addWorksheet('Livro Caixa', {
-    views: [{ state: 'frozen', ySplit: 7 }],
+    views: [{ state: 'frozen', ySplit: 10 }],
   });
 
-  ws.mergeCells('A1:G1');
-  ws.getCell('A1').value = 'SV LOTES';
-  ws.getCell('A1').font = { size: 16, bold: true };
-  ws.getCell('A1').alignment = { horizontal: 'center' };
+  let rowIdx = 1;
+  const titleRow = (text: string, size = 14, bold = true) => {
+    ws.mergeCells(`A${rowIdx}:G${rowIdx}`);
+    const cell = ws.getCell(`A${rowIdx}`);
+    cell.value = text;
+    cell.font = { size, bold };
+    cell.alignment = { horizontal: 'center' };
+    rowIdx += 1;
+  };
 
-  ws.mergeCells('A2:G2');
-  ws.getCell('A2').value = 'Livro Caixa SaaS';
-  ws.getCell('A2').font = { size: 13, bold: true };
-  ws.getCell('A2').alignment = { horizontal: 'center' };
+  titleRow(SV_LOTES_BRAND.name, 16);
+  titleRow(SV_LOTES_BRAND.tagline, 11, false);
+  titleRow('Livro Caixa SaaS', 13);
+  titleRow(`Período: ${meta.period}`, 10, false);
+  titleRow(`Emitido por: ${meta.issuedBy}`, 10, false);
+  titleRow(`Exportado em: ${meta.exportedAtLabel}`, 10, false);
+  if (meta.startLabel) {
+    titleRow(`Financeiro contabilizado a partir de ${meta.startLabel}`, 10, false);
+  }
 
-  ws.mergeCells('A3:G3');
-  ws.getCell('A3').value = `Período: ${formatPeriod(params.fromDate, params.toDate)}`;
-  ws.getCell('A3').alignment = { horizontal: 'center' };
+  ws.addRow([]);
+  rowIdx += 1;
 
-  ws.mergeCells('A4:G4');
-  ws.getCell('A4').value = `Exportado em: ${exportedAt.toLocaleString('pt-BR')}`;
-  ws.getCell('A4').font = { size: 10, italic: true };
-  ws.getCell('A4').alignment = { horizontal: 'center' };
+  ws.addRow([
+    'Entradas',
+    formatSaasCurrency(params.summary.periodIncome),
+    'Saídas',
+    formatSaasCurrency(params.summary.periodExpense),
+    'Saldo',
+    formatSaasCurrency(params.summary.netResult),
+    `${params.summary.movementCount} mov.`,
+  ]).font = { bold: true };
 
   ws.addRow([]);
 
@@ -112,27 +159,33 @@ export async function exportSaasCashExcel(params: SaasCashExportParams): Promise
     'Origem',
     'Valor',
   ]);
-  header.font = { bold: true };
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   header.fill = {
     type: 'pattern',
     pattern: 'solid',
     fgColor: { argb: 'FF1E3A5F' },
   };
-  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
 
-  for (const row of rows) {
-    const dataRow = ws.addRow([
-      row.date,
-      row.company,
-      row.type,
-      row.category,
-      row.description,
-      row.source,
-      row.amount,
-    ]);
-    dataRow.getCell(7).numFmt = 'R$ #,##0.00';
-    if (row.amount < 0) {
-      dataRow.getCell(7).font = { color: { argb: 'FFB91C1C' } };
+  if (rows.length === 0) {
+    const emptyRow = ws.addRow(['Nenhuma movimentação no período selecionado.']);
+    ws.mergeCells(`A${emptyRow.number}:G${emptyRow.number}`);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    for (const row of rows) {
+      const dataRow = ws.addRow([
+        row.date,
+        row.company,
+        row.type,
+        row.category,
+        row.description,
+        row.source,
+        row.amount,
+      ]);
+      dataRow.getCell(7).numFmt = 'R$ #,##0.00';
+      if (row.amount < 0) {
+        dataRow.getCell(7).font = { color: { argb: 'FFB91C1C' } };
+      }
     }
   }
 
@@ -157,39 +210,78 @@ export async function exportSaasCashExcel(params: SaasCashExportParams): Promise
 export async function exportSaasCashPdf(params: SaasCashExportParams): Promise<void> {
   const exportedAt = params.exportedAt ?? new Date();
   const rows = mapMovementsToExportRows(params.movements);
+  const meta = exportMetaLines(params, exportedAt);
+  const logo = await loadSvLotesLogoDataUrlClient();
   const { default: jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 40;
-  let y = margin;
+  const footerY = pageH - 28;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text('SV LOTES', pageW / 2, y, { align: 'center' });
-  y += 22;
+  const drawFooter = (pageNum: number, pageCount: number) => {
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${SV_LOTES_BRAND.name} — Relatório gerado automaticamente`, margin, footerY);
+    doc.text(`Página ${pageNum} de ${pageCount}`, pageW - margin, footerY, { align: 'right' });
+  };
 
-  doc.setFontSize(14);
-  doc.text('Livro Caixa SaaS', pageW / 2, y, { align: 'center' });
-  y += 20;
+  const drawHeader = (startY: number): number => {
+    let y = startY;
+    if (logo) {
+      try {
+        doc.addImage(logo, 'PNG', margin, y - 4, 48, 48);
+      } catch {
+        // segue sem logo se falhar decode
+      }
+    }
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(`Período: ${formatPeriod(params.fromDate, params.toDate)}`, margin, y);
-  y += 16;
+    const textX = logo ? margin + 58 : margin;
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(SV_LOTES_BRAND.name, textX, y + 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(SV_LOTES_BRAND.tagline, textX, y + 26);
+    doc.text('Livro Caixa SaaS', textX, y + 40);
+    y += logo ? 58 : 48;
 
-  doc.text(`Entradas: ${formatSaasCurrency(params.summary.periodIncome)}`, margin, y);
-  doc.text(`Saídas: ${formatSaasCurrency(params.summary.periodExpense)}`, margin + 180, y);
-  doc.text(`Saldo: ${formatSaasCurrency(params.summary.netResult)}`, margin + 340, y);
-  y += 22;
+    doc.setFontSize(9);
+    doc.text(`Emitido por: ${meta.issuedBy}`, margin, y);
+    y += 13;
+    doc.text(`Data/hora da emissão: ${meta.exportedAtLabel}`, margin, y);
+    y += 13;
+    doc.text(`Período do relatório: ${meta.period}`, margin, y);
+    y += 13;
+    if (meta.startLabel) {
+      doc.setTextColor(180, 120, 0);
+      doc.text(`Financeiro contabilizado a partir de ${meta.startLabel}`, margin, y);
+      doc.setTextColor(0, 0, 0);
+      y += 13;
+    }
+
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`Entradas: ${formatSaasCurrency(params.summary.periodIncome)}`, margin, y);
+    doc.text(`Saídas: ${formatSaasCurrency(params.summary.periodExpense)}`, margin + 170, y);
+    doc.text(`Saldo: ${formatSaasCurrency(params.summary.netResult)}`, margin + 320, y);
+    doc.text(`Movimentações: ${params.summary.movementCount}`, margin + 470, y);
+    y += 20;
+    return y;
+  };
+
+  let y = drawHeader(margin);
 
   const colWidths = [70, 120, 55, 90, 180, 70, 80];
   const headers = ['Data', 'Empresa', 'Tipo', 'Categoria', 'Descrição', 'Origem', 'Valor'];
+  const tableWidth = colWidths.reduce((a, b) => a + b, 0);
 
   const drawTableHeader = () => {
     doc.setFillColor(30, 58, 95);
-    doc.rect(margin, y, colWidths.reduce((a, b) => a + b, 0), 18, 'F');
+    doc.rect(margin, y, tableWidth, 18, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
@@ -203,48 +295,54 @@ export async function exportSaasCashPdf(params: SaasCashExportParams): Promise<v
     doc.setFont('helvetica', 'normal');
   };
 
-  drawTableHeader();
-
-  for (const row of rows) {
-    if (y > pageH - 60) {
-      doc.addPage();
-      y = margin;
-      drawTableHeader();
-    }
-
-    const cells = [
-      row.date,
-      row.company.slice(0, 24),
-      row.type,
-      row.category.slice(0, 18),
-      row.description.slice(0, 40),
-      row.source,
-      row.amountLabel.replace('+', '').replace('−', '-'),
-    ];
-
-    let x = margin + 4;
-    doc.setFontSize(8);
-    cells.forEach((cell, i) => {
-      if (i === 6 && row.amount < 0) {
-        doc.setTextColor(185, 28, 28);
-      } else {
-        doc.setTextColor(0, 0, 0);
-      }
-      doc.text(String(cell), x, y + 10);
-      x += colWidths[i];
+  if (rows.length === 0) {
+    drawTableHeader();
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Nenhuma movimentação no período selecionado.', pageW / 2, y + 20, {
+      align: 'center',
     });
-    y += 16;
+    doc.setTextColor(0, 0, 0);
+  } else {
+    drawTableHeader();
+
+    for (const row of rows) {
+      if (y > pageH - 70) {
+        doc.addPage();
+        y = drawHeader(margin);
+        drawTableHeader();
+      }
+
+      const cells = [
+        row.date,
+        row.company.slice(0, 24),
+        row.type,
+        row.category.slice(0, 18),
+        row.description.slice(0, 40),
+        row.source,
+        row.amountLabel.replace('+', '').replace('−', '-'),
+      ];
+
+      let x = margin + 4;
+      doc.setFontSize(8);
+      cells.forEach((cell, i) => {
+        if (i === 6 && row.amount < 0) {
+          doc.setTextColor(185, 28, 28);
+        } else {
+          doc.setTextColor(0, 0, 0);
+        }
+        doc.text(String(cell), x, y + 10);
+        x += colWidths[i];
+      });
+      y += 16;
+    }
   }
 
-  const footerY = pageH - 24;
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(
-    `Emitido em ${exportedAt.toLocaleString('pt-BR')} — SV LOTES`,
-    pageW / 2,
-    footerY,
-    { align: 'center' },
-  );
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    drawFooter(page, pageCount);
+  }
 
   doc.save(buildSaasCashExportFilename('pdf', exportedAt));
 }

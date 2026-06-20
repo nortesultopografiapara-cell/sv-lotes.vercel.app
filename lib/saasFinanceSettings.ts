@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sumReceivedRevenue, type MasterSaasPayment } from '@/lib/masterSaasPayments';
 
 export const SAAS_CASH_START_AT_KEY = 'saas_cash_start_at';
 
@@ -156,6 +157,14 @@ export function applySaasFinanceStartAtFilter<T extends SaasFinancialRecord>(
 ): T[] {
   if (!startAt) return records;
   return records.filter((record) => isSaasFinancialRecordAfterStartAt(record, startAt));
+}
+
+/** Receita recebida SaaS — somente pagamentos confirmados após o marco (sem fallback em faturas). */
+export function sumSaasReceivedRevenue(
+  payments: MasterSaasPayment[],
+  startAt?: string | null,
+): number {
+  return sumReceivedRevenue(applySaasFinanceStartAtFilter(payments, startAt));
 }
 
 /** Filtra movimentações anteriores ao marco inicial (não apaga dados). */

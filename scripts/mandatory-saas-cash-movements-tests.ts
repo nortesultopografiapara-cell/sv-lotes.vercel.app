@@ -25,6 +25,7 @@ import {
   filterMovementsByCashStartAt,
   effectiveSaasCashFromDate,
   isSaasFinancialRecordAfterStartAt,
+  sumSaasReceivedRevenue,
 } from '../lib/saasFinanceSettings';
 import { computeSaasBillingMetrics } from '../lib/saasBilling';
 import { sumReceivedRevenue } from '../lib/masterSaasPayments';
@@ -463,6 +464,11 @@ function testExportRespectsFilteredMovements() {
   const exportLib = read('lib/saasCashExport.ts');
   assert(exportLib.includes('Livro Caixa SaaS'), 'cabeçalho export');
   assert(exportLib.includes('Entradas'), 'pdf resumo entradas');
+  assert(exportLib.includes('SV_LOTES_BRAND'), 'marca SV LOTES no export');
+  assert(exportLib.includes('loadSvLotesLogoDataUrlClient'), 'pdf tenta carregar logo');
+  assert(exportLib.includes('Financeiro contabilizado a partir de'), 'marco no export');
+  assert(exportLib.includes('Nenhuma movimentação no período selecionado'), 'pdf vazio');
+  assert(exportLib.includes('Relatório gerado automaticamente'), 'rodapé pdf');
   console.log('OK testExportRespectsFilteredMovements');
 }
 
@@ -558,9 +564,9 @@ function testDashboardFinanceStartAtFilters() {
 
   assert(filteredPayments.length === 1, 'pagamento antigo excluído');
   assert(filteredPayments[0].id === 'p-new', 'pagamento novo mantido');
-  assert(sumReceivedRevenue(filteredPayments) === 200, 'receita recebida após marco');
+  assert(sumSaasReceivedRevenue(payments, startAt) === 200, 'receita recebida após marco');
 
-  const metrics = computeSaasBillingMetrics(filteredInvoices, 0, sumReceivedRevenue(filteredPayments));
+  const metrics = computeSaasBillingMetrics(filteredInvoices, 0, sumSaasReceivedRevenue(payments, startAt));
   assert(metrics.receivedRevenue === 200, 'dashboard receita recebida');
   assert(metrics.revenueToReceive === 300, 'fatura pendente após marco');
   assert(metrics.pendingCount === 1, 'contagem faturas pendentes');
@@ -571,10 +577,12 @@ function testDashboardFinanceStartAtFilters() {
   const dashboard = read('lib/masterDashboardData.ts');
   assert(dashboard.includes('applySaasFinanceStartAtFilter'), 'master dashboard filtra');
   assert(dashboard.includes('getSaasCashStartAt'), 'master dashboard lê marco');
+  assert(dashboard.includes('sumSaasReceivedRevenue'), 'master dashboard receita central');
 
   const financePage = read('app/saas-finance/page.tsx');
   assert(financePage.includes('applySaasFinanceStartAtFilter'), 'financeiro SaaS filtra');
   assert(financePage.includes('SaasFinanceStartAtBanner'), 'financeiro SaaS aviso marco');
+  assert(financePage.includes('sumSaasReceivedRevenue'), 'financeiro receita central');
 
   console.log('OK testDashboardFinanceStartAtFilters');
 }
@@ -627,8 +635,7 @@ function testSubscriptionsReceivedRevenueRespectsStartAt() {
     },
   ];
 
-  const filteredPayments = applySaasFinanceStartAtFilter(payments, startAt);
-  const paymentsReceived = sumReceivedRevenue(filteredPayments);
+  const paymentsReceived = sumSaasReceivedRevenue(payments, startAt);
   assert(paymentsReceived === 150, 'assinaturas ignora pagamento anterior ao marco');
 
   const mrr = calculateMrrFromCompanies(companies);
@@ -636,13 +643,46 @@ function testSubscriptionsReceivedRevenueRespectsStartAt() {
   assert(mrr * 12 === 10200, 'ARR inalterado');
 
   const metrics = computeSaasBillingMetrics(invoices, mrr, paymentsReceived);
-  assert(metrics.receivedRevenue === 150, 'receita recebida após marco');
   assert(metrics.revenueToReceive === 849.99, 'receita em aberto inalterada');
 
+  const oldOnlyPayments = [
+    {
+      id: 'p-old-only',
+      company_id: 'c1',
+      amount: 340,
+      paid_at: '2026-05-10T12:00:00Z',
+      payment_method: 'pix',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+  ];
+  const oldInvoices = [
+    {
+      id: 'i-paid-old',
+      company_id: 'c1',
+      invoice_number: 'F-0',
+      reference_month: '2026-05',
+      amount: 340,
+      discount_amount: 0,
+      final_amount: 340,
+      due_date: '2026-05-15',
+      issued_at: '2026-05-01',
+      paid_at: '2026-05-10T12:00:00Z',
+      status: 'PAGO' as const,
+    },
+  ];
+  assert(sumSaasReceivedRevenue(oldOnlyPayments, startAt) === 0, 'marco zera receita recebida');
+  const legacyMetrics = computeSaasBillingMetrics(oldInvoices, mrr, 0);
+  assert(legacyMetrics.receivedRevenue === 340, 'fallback legado usaria fatura paga');
+
   const plansPage = read('app/plans/page.tsx');
-  assert(plansPage.includes('applySaasFinanceStartAtFilter'), 'assinaturas filtra pagamentos');
+  assert(plansPage.includes('sumSaasReceivedRevenue'), 'assinaturas usa receita central');
   assert(plansPage.includes('SaasFinanceStartAtBanner'), 'assinaturas banner marco');
-  assert(plansPage.includes('sumReceivedRevenue(filteredPayments)'), 'receita recebida usa filtro');
+  assert(!plansPage.includes('billingMetrics.receivedRevenue'), 'assinaturas não usa fallback de fatura');
+
+  const cashPanel = read('components/master/saas/SaasCashPanel.tsx');
+  assert(cashPanel.includes('cashStartAt'), 'export pdf recebe marco');
+  assert(cashPanel.includes('issuedBy'), 'export pdf recebe emissor');
 
   console.log('OK testSubscriptionsReceivedRevenueRespectsStartAt');
 }

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateMrrFromCompanies, getCompanyMonthlyPrice, isBillableCompany } from '@/lib/companyPricing';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { buildCompanyUserCounts } from '@/lib/masterCompanyUsers';
-import { buildPaidReferenceMonthsByCompany, sumReceivedRevenue } from '@/lib/masterSaasPayments';
+import { buildPaidReferenceMonthsByCompany } from '@/lib/masterSaasPayments';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
@@ -11,6 +11,7 @@ import {
   applySaasFinanceStartAtFilter,
   getSaasCashStartAt,
   isSaasFinancialRecordAfterStartAt,
+  sumSaasReceivedRevenue,
 } from '@/lib/saasFinanceSettings';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
@@ -220,7 +221,7 @@ export async function loadMasterDashboardData(
   companies.forEach((c) => {
     if (isBillableCompany(c)) activeSubscriptions++;
   });
-  const paymentsReceived = sumReceivedRevenue(payments);
+  const paymentsReceived = sumSaasReceivedRevenue(payments, cashStartAt);
   const billingMetrics = computeSaasBillingMetrics(
     invoices as Parameters<typeof computeSaasBillingMetrics>[0],
     mrr,
@@ -388,7 +389,7 @@ export async function loadMasterDashboardData(
       inactiveCompanies,
       activeSubscriptions,
       mrr,
-      receivedRevenue: billingMetrics.receivedRevenue,
+      receivedRevenue: paymentsReceived,
       revenueToReceive: billingMetrics.revenueToReceive,
       delinquencyAmount: billingMetrics.delinquencyAmount,
       totalUsers: usersRes.count ?? 0,

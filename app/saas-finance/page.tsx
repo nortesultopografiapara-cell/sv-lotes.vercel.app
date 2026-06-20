@@ -62,6 +62,7 @@ import { SaasCashPanel } from '@/components/master/saas/SaasCashPanel';
 import { SuperAdminOnlyGuard } from '@/components/admin/SuperAdminOnlyGuard';
 import {
   applySaasFinanceStartAtFilter,
+  sumSaasReceivedRevenue,
 } from '@/lib/saasFinanceSettings';
 import {
   buildSaasChargeEmailUrl,
@@ -325,16 +326,15 @@ function SaaSFinancePageContent() {
       }
     });
 
-    const filteredPayments = applySaasFinanceStartAtFilter(saasPayments, cashStartAt);
     const filteredInvoices = applySaasFinanceStartAtFilter(saasInvoices, cashStartAt);
-    const paymentsReceived = sumReceivedRevenue(filteredPayments);
+    const paymentsReceived = sumSaasReceivedRevenue(saasPayments, cashStartAt);
     const invoiceMetrics = computeSaasBillingMetrics(filteredInvoices, mrr, paymentsReceived);
 
     return {
       mrr,
       arr: mrr * 12,
       projectedRevenue: invoiceMetrics.projectedRevenue,
-      receivedRevenue: invoiceMetrics.receivedRevenue,
+      receivedRevenue: paymentsReceived,
       revenueToReceive: invoiceMetrics.revenueToReceive,
       overdueRevenue: invoiceMetrics.overdueRevenue,
       activeClients,

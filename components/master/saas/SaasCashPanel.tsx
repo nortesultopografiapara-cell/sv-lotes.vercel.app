@@ -197,13 +197,15 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         summary,
         fromDate,
         toDate,
+        cashStartAt,
+        issuedBy: user?.name || user?.email || 'Super Admin',
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Falha ao exportar Excel');
     } finally {
       setExporting(null);
     }
-  }, [isSuperAdmin, movements, summary, fromDate, toDate]);
+  }, [isSuperAdmin, movements, summary, fromDate, toDate, cashStartAt, user?.name, user?.email]);
 
   const handleExportPdf = useCallback(async () => {
     if (!isSuperAdmin) return;
@@ -215,13 +217,15 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         summary,
         fromDate,
         toDate,
+        cashStartAt,
+        issuedBy: user?.name || user?.email || 'Super Admin',
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Falha ao exportar PDF');
     } finally {
       setExporting(null);
     }
-  }, [isSuperAdmin, movements, summary, fromDate, toDate]);
+  }, [isSuperAdmin, movements, summary, fromDate, toDate, cashStartAt, user?.name, user?.email]);
 
   const handleSetCashStartAt = useCallback(async () => {
     if (!user?.id || !isSuperAdmin) return;
