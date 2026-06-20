@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, RefreshCw, RotateCcw, Wallet } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, RefreshCw, RotateCcw, Wallet, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
   exportSaasCashExcel,
   exportSaasCashPdf,
 } from '@/lib/saasCashExport';
-import { formatSaasCashStartAtLabel } from '@/lib/saasFinanceSettings';
 import {
   saasCashSourceLabel,
   saasCashTypeLabel,
   type SaasCashMovement,
   type SaasCashSummary,
 } from '@/lib/saasCashMovements';
-import { SaasMetricCard } from './SaasPanelUi';
+import { SaasFinanceStartAtBanner, SaasMetricCard } from './SaasPanelUi';
+
+const FINANCE_START_CONFIRMATION = 'ZERAR CAIXA';
 
 type CompanyOption = { id: string; name: string };
 
@@ -80,6 +81,8 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
   const [cashStartAt, setCashStartAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [startAtModalOpen, setStartAtModalOpen] = useState(false);
+  const [startAtConfirmText, setStartAtConfirmText] = useState('');
 
   const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
@@ -222,10 +225,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
 
   const handleSetCashStartAt = useCallback(async () => {
     if (!user?.id || !isSuperAdmin) return;
-    const confirmed = window.confirm(
-      'Isso não apaga dados antigos. Apenas define que o Caixa SaaS será contabilizado a partir de agora. Deseja continuar?',
-    );
-    if (!confirmed) return;
+    if (startAtConfirmText.trim() !== FINANCE_START_CONFIRMATION) return;
 
     setSettingStartAt(true);
     setError(null);
@@ -244,21 +244,39 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       });
       const body = await res.json();
       if (!res.ok) {
-        throw new Error(body.error || 'Falha ao definir marco inicial');
+        throw new Error(body.error || 'Falha ao definir marco financeiro');
       }
       setMovements(Array.isArray(body.movements) ? body.movements : []);
       setSummary(body.summary || summary);
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
-      setSyncMessage('Marco inicial do caixa atualizado.');
+      setSyncMessage('Marco financeiro atualizado. Dashboards e Caixa passam a contar a partir de agora.');
+      setStartAtModalOpen(false);
+      setStartAtConfirmText('');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao definir marco inicial');
+      setError(e instanceof Error ? e.message : 'Erro ao definir marco financeiro');
     } finally {
       setSettingStartAt(false);
     }
-  }, [user?.id, isSuperAdmin, fromDate, toDate, companyFilter, typeFilter, summary]);
+  }, [
+    user?.id,
+    isSuperAdmin,
+    fromDate,
+    toDate,
+    companyFilter,
+    typeFilter,
+    summary,
+    startAtConfirmText,
+  ]);
+
+  const openStartAtModal = useCallback(() => {
+    if (!isSuperAdmin) return;
+    setStartAtConfirmText('');
+    setStartAtModalOpen(true);
+  }, [isSuperAdmin]);
+
+  const canConfirmStartAt = startAtConfirmText.trim() === FINANCE_START_CONFIRMATION;
 
   const formatCurrency = (value: number) => formatSaasCurrency(value);
-  const cashStartLabel = formatSaasCashStartAtLabel(cashStartAt);
 
   return (
     <div className="space-y-6">
@@ -303,12 +321,12 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSetCashStartAt()}
+                onClick={openStartAtModal}
                 disabled={loading || syncing || !!exporting || settingStartAt}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-amber-500/30 bg-amber-600/15 text-sm text-amber-100 hover:bg-amber-600/25 disabled:opacity-50"
               >
                 <RotateCcw className={`w-4 h-4 ${settingStartAt ? 'animate-spin' : ''}`} />
-                {settingStartAt ? 'Aplicando…' : 'Zerar caixa a partir de agora'}
+                {settingStartAt ? 'Aplicando…' : 'Definir marco financeiro'}
               </button>
               <button
                 type="button"
@@ -333,11 +351,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         </div>
       </div>
 
-      {cashStartLabel ? (
-        <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-100/90 text-sm">
-          Caixa contabilizado a partir de {cashStartLabel}
-        </div>
-      ) : null}
+      <SaasFinanceStartAtBanner cashStartAt={cashStartAt} />
 
       {syncMessage ? (
         <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-100 text-sm">
@@ -510,6 +524,72 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
           </table>
         </div>
       </div>
+
+      {startAtModalOpen ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#11161d] shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Definir marco financeiro</h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Caixa e dashboards financeiros SaaS
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setStartAtModalOpen(false);
+                  setStartAtConfirmText('');
+                }}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-gray-300 leading-relaxed">
+                Isso não apaga dados antigos. Apenas define que os dashboards financeiros SaaS
+                e o Caixa passarão a contar a partir de agora.
+              </p>
+              <p className="text-xs text-amber-200/90">
+                Empresas ativas, usuários, corretores e projetos não são afetados.
+              </p>
+              <label className="block text-sm text-gray-400">
+                Digite <strong className="text-white">{FINANCE_START_CONFIRMATION}</strong> para confirmar
+                <input
+                  type="text"
+                  value={startAtConfirmText}
+                  onChange={(e) => setStartAtConfirmText(e.target.value)}
+                  placeholder={FINANCE_START_CONFIRMATION}
+                  className="mt-2 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-white/10 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setStartAtModalOpen(false);
+                  setStartAtConfirmText('');
+                }}
+                className="px-4 py-2.5 rounded-lg border border-white/10 text-sm text-gray-300 hover:bg-white/5"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSetCashStartAt()}
+                disabled={!canConfirmStartAt || settingStartAt}
+                className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-sm font-semibold text-white"
+              >
+                {settingStartAt ? 'Aplicando…' : 'Confirmar marco financeiro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -48,6 +48,7 @@ import {
   type MasterDashboardAlert,
   type MasterDashboardData,
 } from '@/lib/masterDashboardData';
+import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 
 function pct(part: number, total: number): string {
   if (total <= 0) return '—';
@@ -233,6 +234,8 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
           Algumas fontes retornaram aviso: {loadError}
         </div>
       ) : null}
+
+      <SaasFinanceStartAtBanner cashStartAt={dashboard.cashStartAt} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6 min-w-0">
         <KpiCard

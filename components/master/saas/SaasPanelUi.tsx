@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { SaasPanelView } from '@/lib/masterSaasPanel';
+import { formatSaasCashStartAtLabel } from '@/lib/saasFinanceSettings';
 import {
   LayoutDashboard,
   Building2,
@@ -124,6 +125,16 @@ export function SaasMetricCard({
         </div>
         <div className={`p-2.5 rounded-xl ${s.iconBg} ${s.icon} shrink-0`}>{icon}</div>
       </div>
+    </div>
+  );
+}
+
+export function SaasFinanceStartAtBanner({ cashStartAt }: { cashStartAt?: string | null }) {
+  const label = formatSaasCashStartAtLabel(cashStartAt);
+  if (!label) return null;
+  return (
+    <div className="mb-6 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-100/90 text-sm">
+      Financeiro contabilizado a partir de {label}
     </div>
   );
 }

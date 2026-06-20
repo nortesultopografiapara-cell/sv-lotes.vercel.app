@@ -44,7 +44,7 @@ import {
 import { SaasChargeViewModal } from '@/components/master/SaasChargeViewModal';
 import type { SaasCharge } from '@/lib/saasCharges';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
-import { SaasMainNav } from '@/components/master/saas/SaasPanelUi';
+import { SaasMainNav, SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
 import { SaasDashboardKpis } from '@/components/master/saas/SaasDashboardKpis';
 import { SaasChargesTable } from '@/components/master/saas/SaasChargesTable';
 import {
@@ -60,7 +60,9 @@ import {
 import { SaasAutomationsPanel } from '@/components/master/saas/SaasAutomationsPanel';
 import { SaasCashPanel } from '@/components/master/saas/SaasCashPanel';
 import { SuperAdminOnlyGuard } from '@/components/admin/SuperAdminOnlyGuard';
-import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
+import {
+  applySaasFinanceStartAtFilter,
+} from '@/lib/saasFinanceSettings';
 import {
   buildSaasChargeEmailUrl,
   buildSaasChargeWhatsAppUrl,
@@ -69,6 +71,7 @@ import {
   type SaasCompanyTab,
   type SaasPanelView,
 } from '@/lib/masterSaasPanel';
+import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
@@ -162,6 +165,7 @@ function SaaSFinancePageContent() {
     message?: string | null;
     provider?: string | null;
   }>({ configured: true });
+  const [cashStartAt, setCashStartAt] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -221,7 +225,6 @@ function SaaSFinancePageContent() {
       const payJson = await payRes.json().catch(() => ({}));
       const payments = (payRes.ok ? payJson.payments : []) as MasterSaasPayment[];
       setSaasPayments(payments);
-      const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
       const invRes = await fetch(
         `/api/master/saas-invoices?userId=${encodeURIComponent(user.id)}`,
@@ -243,8 +246,21 @@ function SaaSFinancePageContent() {
         });
       }
 
+      const startRes = await fetch(
+        `/api/master/saas-cash/start-at?userId=${encodeURIComponent(user.id)}`,
+        { credentials: 'include' },
+      );
+      const startJson = await startRes.json().catch(() => ({}));
+      const financeStartAt =
+        startRes.ok && startJson.cashStartAt ? String(startJson.cashStartAt) : null;
+      setCashStartAt(financeStartAt);
+
+      const filteredPayments = applySaasFinanceStartAtFilter(payments, financeStartAt);
+      const filteredInvoices = applySaasFinanceStartAtFilter(invoices, financeStartAt);
+      const paidReferenceMonths = buildPaidReferenceMonthsByCompany(filteredPayments);
+
       setCompanies(
-        rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths, payments)),
+        rows.map((c) => enrichCompany(c, subMap.get(c.id), paidReferenceMonths, filteredPayments)),
       );
 
       const { data: billingLogs } = await supabase
@@ -309,8 +325,10 @@ function SaaSFinancePageContent() {
       }
     });
 
-    const paymentsReceived = sumReceivedRevenue(saasPayments);
-    const invoiceMetrics = computeSaasBillingMetrics(saasInvoices, mrr, paymentsReceived);
+    const filteredPayments = applySaasFinanceStartAtFilter(saasPayments, cashStartAt);
+    const filteredInvoices = applySaasFinanceStartAtFilter(saasInvoices, cashStartAt);
+    const paymentsReceived = sumReceivedRevenue(filteredPayments);
+    const invoiceMetrics = computeSaasBillingMetrics(filteredInvoices, mrr, paymentsReceived);
 
     return {
       mrr,
@@ -325,7 +343,7 @@ function SaaSFinancePageContent() {
       overdueInvoices: invoiceMetrics.overdueCount,
       dueSoonInvoices: invoiceMetrics.dueSoonCount,
     };
-  }, [companies, saasPayments, saasInvoices]);
+  }, [companies, saasPayments, saasInvoices, cashStartAt]);
 
   const allChargeRows = useMemo(
     () => buildSaasInvoiceChargeRows(saasInvoices, saasCharges),
@@ -953,6 +971,8 @@ function SaaSFinancePageContent() {
           if (view !== 'empresas') setSelectedCompanyId(null);
         }}
       />
+
+      <SaasFinanceStartAtBanner cashStartAt={cashStartAt} />
 
       {contractToast && panelView === 'empresas' ? (
         <div

@@ -92,6 +92,72 @@ export function formatSaasCashStartAtLabel(iso: string | null | undefined): stri
   });
 }
 
+/** Alias semântico — marco financeiro SaaS (Caixa + dashboards). */
+export const getSaasFinanceStartAt = getSaasCashStartAt;
+
+export type SaasFinancialRecord = {
+  created_at?: string | null;
+  paid_at?: string | null;
+  due_date?: string | null;
+  reference_month?: string | null;
+  issued_at?: string | null;
+  movement_date?: string | null;
+};
+
+function parseFinancialInstant(raw: string): number | null {
+  const normalized = String(raw || '').trim();
+  if (!normalized) return null;
+  const iso = normalized.includes('T')
+    ? normalized
+    : `${normalized.split('T')[0]}T12:00:00`;
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Data financeira principal do registro (pagamento, fatura, receita). */
+export function resolveSaasFinancialRecordDate(
+  record: SaasFinancialRecord,
+): string | null {
+  if (record.paid_at) return record.paid_at;
+  if (record.due_date) return record.due_date;
+  if (record.movement_date) return record.movement_date;
+  if (record.issued_at) return record.issued_at;
+  if (record.reference_month) {
+    const [year, month] = record.reference_month.split('-');
+    if (year && month) {
+      const lastDay = new Date(Number(year), Number(month), 0).getDate();
+      return `${year}-${month}-${String(lastDay).padStart(2, '0')}T23:59:59.999`;
+    }
+  }
+  if (record.created_at) return record.created_at;
+  return null;
+}
+
+/** Registro entra nos KPIs financeiros SaaS somente se a data financeira >= marco. */
+export function isSaasFinancialRecordAfterStartAt(
+  record: SaasFinancialRecord,
+  startAt?: string | null,
+): boolean {
+  if (!startAt) return true;
+  const startMs = parseFinancialInstant(startAt);
+  if (startMs == null) return true;
+
+  const recordDate = resolveSaasFinancialRecordDate(record);
+  if (!recordDate) return false;
+  const recordMs = parseFinancialInstant(recordDate);
+  if (recordMs == null) return false;
+  return recordMs >= startMs;
+}
+
+/** Filtra registros financeiros anteriores ao marco (não apaga dados). */
+export function applySaasFinanceStartAtFilter<T extends SaasFinancialRecord>(
+  records: T[],
+  startAt?: string | null,
+): T[] {
+  if (!startAt) return records;
+  return records.filter((record) => isSaasFinancialRecordAfterStartAt(record, startAt));
+}
+
 /** Filtra movimentações anteriores ao marco inicial (não apaga dados). */
 export function filterMovementsByCashStartAt<T extends {
   created_at?: string | null;

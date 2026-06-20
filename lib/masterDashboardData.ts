@@ -7,6 +7,11 @@ import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
 import { computeSaasBillingMetrics } from '@/lib/saasBilling';
+import {
+  applySaasFinanceStartAtFilter,
+  getSaasCashStartAt,
+  isSaasFinancialRecordAfterStartAt,
+} from '@/lib/saasFinanceSettings';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
@@ -59,6 +64,7 @@ export type MasterDashboardData = {
   }[];
   alerts: MasterDashboardAlert[];
   recentCompanies: MasterRecentCompany[];
+  cashStartAt: string | null;
   errors: string[];
 };
 
@@ -135,6 +141,7 @@ export async function loadMasterDashboardData(
   const errors: string[] = [];
   const monthTemplate = lastSixMonthKeys();
   const revenueMap = new Map(monthTemplate.map((m) => [m.key, 0]));
+  const cashStartAt = await getSaasCashStartAt(supabase);
 
   const [
     companiesRes,
@@ -192,8 +199,14 @@ export async function loadMasterDashboardData(
   const companies = companiesRes.data ?? [];
   const subscriptions = (subscriptionsRes.data ?? []) as CompanySubscription[];
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
-  const payments = (paymentsRes.data ?? []) as MasterSaasPayment[];
-  const invoices = invoicesRes.data ?? [];
+  const payments = applySaasFinanceStartAtFilter(
+    (paymentsRes.data ?? []) as MasterSaasPayment[],
+    cashStartAt,
+  );
+  const invoices = applySaasFinanceStartAtFilter(
+    invoicesRes.data ?? [],
+    cashStartAt,
+  );
   const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
 
   const activeCompanies = companies.filter((c) => c.active === true).length;
@@ -224,6 +237,15 @@ export async function loadMasterDashboardData(
   if (receiptsRes.data) {
     for (const row of receiptsRes.data) {
       if (!isPaidReceipt(row.status)) continue;
+      if (
+        cashStartAt &&
+        !isSaasFinancialRecordAfterStartAt(
+          { paid_at: row.paid_at, due_date: row.due_date },
+          cashStartAt,
+        )
+      ) {
+        continue;
+      }
       const key = receiptMonthKey(row);
       if (!key || !revenueMap.has(key)) continue;
       const amount = Number(row.paid_amount ?? row.amount ?? 0);
@@ -379,6 +401,7 @@ export async function loadMasterDashboardData(
     planDistribution,
     alerts,
     recentCompanies,
+    cashStartAt,
     errors,
   };
 

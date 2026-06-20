@@ -21,9 +21,13 @@ import {
   mapMovementsToExportRows,
 } from '../lib/saasCashExport';
 import {
+  applySaasFinanceStartAtFilter,
   filterMovementsByCashStartAt,
   effectiveSaasCashFromDate,
+  isSaasFinancialRecordAfterStartAt,
 } from '../lib/saasFinanceSettings';
+import { computeSaasBillingMetrics } from '../lib/saasBilling';
+import { sumReceivedRevenue } from '../lib/masterSaasPayments';
 
 const ROOT = process.cwd();
 
@@ -497,6 +501,83 @@ function testCashStartAtFiltersWithoutDeleting() {
   console.log('OK testCashStartAtFiltersWithoutDeleting');
 }
 
+function testDashboardFinanceStartAtFilters() {
+  const startAt = '2026-06-20T16:01:00.000Z';
+
+  const payments = [
+    {
+      id: 'p-old',
+      company_id: 'c1',
+      amount: 500,
+      paid_at: '2026-05-10T12:00:00Z',
+      payment_method: 'pix',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+    {
+      id: 'p-new',
+      company_id: 'c1',
+      amount: 200,
+      paid_at: '2026-06-21T10:00:00Z',
+      payment_method: 'pix',
+      reference_month: '2026-06',
+      status: 'paid',
+    },
+  ];
+
+  const invoices = [
+    {
+      id: 'i-old',
+      company_id: 'c1',
+      invoice_number: 'F-1',
+      reference_month: '2026-05',
+      amount: 500,
+      discount_amount: 0,
+      final_amount: 500,
+      due_date: '2026-05-15',
+      issued_at: '2026-05-01',
+      status: 'PENDENTE' as const,
+    },
+    {
+      id: 'i-new',
+      company_id: 'c1',
+      invoice_number: 'F-2',
+      reference_month: '2026-06',
+      amount: 300,
+      discount_amount: 0,
+      final_amount: 300,
+      due_date: '2026-06-25',
+      issued_at: '2026-06-01',
+      status: 'PENDENTE' as const,
+    },
+  ];
+
+  const filteredPayments = applySaasFinanceStartAtFilter(payments, startAt);
+  const filteredInvoices = applySaasFinanceStartAtFilter(invoices, startAt);
+
+  assert(filteredPayments.length === 1, 'pagamento antigo excluído');
+  assert(filteredPayments[0].id === 'p-new', 'pagamento novo mantido');
+  assert(sumReceivedRevenue(filteredPayments) === 200, 'receita recebida após marco');
+
+  const metrics = computeSaasBillingMetrics(filteredInvoices, 0, sumReceivedRevenue(filteredPayments));
+  assert(metrics.receivedRevenue === 200, 'dashboard receita recebida');
+  assert(metrics.revenueToReceive === 300, 'fatura pendente após marco');
+  assert(metrics.pendingCount === 1, 'contagem faturas pendentes');
+
+  assert(!isSaasFinancialRecordAfterStartAt({ paid_at: '2026-01-01' }, startAt), 'registro antigo');
+  assert(isSaasFinancialRecordAfterStartAt({ paid_at: '2026-06-21' }, startAt), 'registro novo');
+
+  const dashboard = read('lib/masterDashboardData.ts');
+  assert(dashboard.includes('applySaasFinanceStartAtFilter'), 'master dashboard filtra');
+  assert(dashboard.includes('getSaasCashStartAt'), 'master dashboard lê marco');
+
+  const financePage = read('app/saas-finance/page.tsx');
+  assert(financePage.includes('applySaasFinanceStartAtFilter'), 'financeiro SaaS filtra');
+  assert(financePage.includes('SaasFinanceStartAtBanner'), 'financeiro SaaS aviso marco');
+
+  console.log('OK testDashboardFinanceStartAtFilters');
+}
+
 function testApiAndSecurity() {
   const api = read('app/api/master/saas-cash/route.ts');
   assert(api.includes('assertSuperAdmin'), 'API super admin');
@@ -532,8 +613,11 @@ function testUiLoadsWithoutMovements() {
   assert(panel.includes('Sincronizar Asaas'), 'botão sync');
   assert(panel.includes('Exportar Excel'), 'botão excel');
   assert(panel.includes('Exportar PDF'), 'botão pdf');
-  assert(panel.includes('Zerar caixa a partir de agora'), 'botão marco');
-  assert(panel.includes('Caixa contabilizado a partir de'), 'aviso marco');
+  assert(panel.includes('Definir marco financeiro'), 'botão marco');
+  assert(panel.includes('ZERAR CAIXA'), 'confirmação digitada');
+  assert(panel.includes('startAtConfirmText'), 'campo confirmação');
+  assert(panel.includes('canConfirmStartAt'), 'botão confirmar condicional');
+  assert(panel.includes('SaasFinanceStartAtBanner'), 'aviso marco');
   assert(panel.includes('isSuperAdmin'), 'botão restrito super admin');
   assert(saasCashSourceLabel('asaas_webhook') === 'Asaas', 'label Asaas');
   assert(saasCashSourceLabel('asaas_fee') === 'Tarifa', 'label Tarifa');
@@ -541,6 +625,7 @@ function testUiLoadsWithoutMovements() {
   const nav = read('components/master/saas/SaasPanelUi.tsx');
   assert(nav.includes("'caixa'"), 'aba caixa');
   assert(nav.includes('superAdminOnly'), 'aba restrita');
+  assert(nav.includes('SaasFinanceStartAtBanner'), 'banner compartilhado');
   console.log('OK testUiLoadsWithoutMovements');
 }
 
@@ -557,6 +642,7 @@ async function main() {
   testKpisAfterWithdrawalScenario();
   testExportRespectsFilteredMovements();
   testCashStartAtFiltersWithoutDeleting();
+  testDashboardFinanceStartAtFilters();
   testApiAndSecurity();
   testUiLoadsWithoutMovements();
   console.log('mandatory-saas-cash-movements-tests: all passed');
