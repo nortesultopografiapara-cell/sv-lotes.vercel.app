@@ -151,6 +151,38 @@ async function repairPhantomSaasInvoiceIfNeeded(
   return parseInvoiceRow(updated);
 }
 
+/** Reabre fatura após cancelamento/exclusão da cobrança — limpa gateway legado. */
+export async function reopenSaasInvoiceForNewCharge(
+  supabaseAdmin: SupabaseClient,
+  invoiceId: string,
+  options?: { dueDate?: string },
+): Promise<MasterSaasInvoice> {
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    status: 'PENDENTE',
+    external_charge_id: null,
+    pix_code: null,
+    pix_qrcode: null,
+    payment_method: null,
+    paid_at: null,
+    updated_at: now,
+  };
+  if (options?.dueDate) patch.due_date = options.dueDate;
+
+  const { data: updated, error } = await supabaseAdmin
+    .from('master_saas_invoices')
+    .update(patch)
+    .eq('id', invoiceId)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    throw new Error(error?.message || 'Falha ao reabrir fatura para nova cobrança');
+  }
+
+  return parseInvoiceRow(updated);
+}
+
 export function resolveInvoiceDueDate(
   company: CompanyPricingSource,
   subscription: CompanySubscription | null | undefined,

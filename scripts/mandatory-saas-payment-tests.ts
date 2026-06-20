@@ -17,11 +17,15 @@ import {
 } from '../lib/saasPaymentGateway';
 import {
   classifyExternalChargeId,
+  isLocalAsaasPaymentInactive,
   isOrphanSaasCharge,
   isProtectedSaasCharge,
+  isSaasChargeBlockingDuplicate,
+  isSaasInvoiceCancelled,
   resolveSaasPixChargeSkipReason,
   resolveSaasPixChargeSkipReasonAsync,
   saasChargeStatusLabel,
+  shouldReconcileSaasChargeFromAsaasVerify,
 } from '../lib/saasCharges';
 import { isPhantomSaasInvoice } from '../lib/saasBilling';
 import {
@@ -418,20 +422,75 @@ function testSaasPixChargeSkipRules() {
 
 async function testSaasPixChargeSkipAsyncRules() {
   const blocked = await resolveSaasPixChargeSkipReasonAsync(
-    { external_charge_id: 'pay_valid' },
+    { external_charge_id: 'pay_valid', status: 'PENDENTE' },
     null,
-    async () => true,
+    async () => 'blocking',
   );
-  assert(blocked === 'Fatura já possui cobrança Asaas', 'pay_ existente no Asaas bloqueia');
+  assert(blocked === 'Fatura já possui cobrança Asaas', 'pay_ ativo no Asaas bloqueia');
 
-  const allowed = await resolveSaasPixChargeSkipReasonAsync(
-    { external_charge_id: 'pay_missing' },
+  const allowedMissing = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_missing', status: 'PENDENTE' },
     null,
     async () => {
       throw new Error('not found');
     },
   );
-  assert(allowed === null, 'pay_ inexistente no Asaas permite backfill');
+  assert(allowedMissing === null, 'pay_ inexistente no Asaas permite nova cobrança');
+
+  const allowedCancelledInvoice = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_old', status: 'CANCELADO' },
+    null,
+    async () => 'blocking',
+  );
+  assert(allowedCancelledInvoice === null, 'fatura cancelada ignora external_charge_id legado');
+
+  const allowedInactiveAsaas = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_cancelled', status: 'PENDENTE' },
+    null,
+    async () => 'inactive',
+  );
+  assert(allowedInactiveAsaas === null, 'pay_ cancelado/inativo no Asaas permite nova cobrança');
+
+  const allowedLocalCancel = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_local_cancel', status: 'PENDENTE' },
+    null,
+    async () => 'blocking',
+    {
+      invoiceCharges: [
+        {
+          status: 'CANCELLED',
+          payment_id: 'pay_local_cancel',
+          pix_copy_paste: null,
+          payment_url: null,
+          master_payment_id: null,
+          deleted_at: null,
+        },
+      ],
+    },
+  );
+  assert(
+    allowedLocalCancel === null,
+    'cancelar localmente permite regenerar mesmo se Asaas ainda responder',
+  );
+
+  const allowedLocalDelete = await resolveSaasPixChargeSkipReasonAsync(
+    { external_charge_id: 'pay_local_delete', status: 'PENDENTE' },
+    null,
+    async () => 'blocking',
+    {
+      invoiceCharges: [
+        {
+          status: 'CANCELLED',
+          payment_id: 'pay_local_delete',
+          pix_copy_paste: null,
+          payment_url: null,
+          master_payment_id: null,
+          deleted_at: '2026-06-20T12:00:00.000Z',
+        },
+      ],
+    },
+  );
+  assert(allowedLocalDelete === null, 'excluir (soft delete) permite regenerar na mesma competência');
 }
 
 function testWebhookExternalReference() {
@@ -617,11 +676,73 @@ function testDuplicateChargeProtection() {
     'OVERDUE com payment_id bloqueia nova cobrança',
   );
 
+  const cancelledCharge = {
+    status: 'CANCELLED' as const,
+    payment_id: 'pay_cancelled_old',
+    pix_copy_paste: 'pix-old',
+    payment_url: 'https://asaas.com/old',
+    master_payment_id: null,
+    deleted_at: null,
+  };
+  assert(!isSaasChargeBlockingDuplicate(cancelledCharge), 'CANCELLED não bloqueia nova cobrança');
+  assert(
+    resolveSaasPixChargeSkipReason({ external_charge_id: 'pay_cancelled_old', status: 'PENDENTE' }, cancelledCharge) ===
+      null,
+    'CANCELLED permite nova cobrança na mesma competência',
+  );
+
+  const softDeletedCharge = {
+    status: 'PENDING' as const,
+    payment_id: 'pay_soft_deleted',
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+    deleted_at: '2026-06-20T12:00:00.000Z',
+  };
+  assert(!isSaasChargeBlockingDuplicate(softDeletedCharge), 'soft-deleted não bloqueia');
+
+  assert(isSaasInvoiceCancelled({ status: 'CANCELADO' }), 'fatura cancelada detectada');
+
+  assert(
+    isLocalAsaasPaymentInactive('pay_x', [
+      { status: 'CANCELLED', payment_id: 'pay_x', deleted_at: null },
+    ]),
+    'cancelar → payment_id inativo localmente',
+  );
+  assert(
+    isLocalAsaasPaymentInactive('pay_y', [
+      {
+        status: 'PENDING',
+        payment_id: 'pay_y',
+        deleted_at: '2026-06-01T00:00:00.000Z',
+      },
+    ]),
+    'excluir → payment_id inativo localmente',
+  );
+  assert(
+    !isLocalAsaasPaymentInactive('pay_z', [
+      { status: 'PENDING', payment_id: 'pay_z', deleted_at: null },
+    ]),
+    'cobrança ativa continua bloqueando',
+  );
+  assert(shouldReconcileSaasChargeFromAsaasVerify('missing'), 'pay_ ausente no Asaas reconcilia');
+  assert(shouldReconcileSaasChargeFromAsaasVerify('inactive'), 'pay_ inativo no Asaas reconcilia');
+  assert(!shouldReconcileSaasChargeFromAsaasVerify('blocking'), 'pay_ ativo no Asaas não reconcilia');
+
   const saasCharges = read('lib/saasCharges.ts');
   assert(saasCharges.includes('findExistingSaasPaymentForReference'), 'pagamento confirmado bloqueia create');
   assert(saasCharges.includes('generateMonthlySaasCharges'), 'mensal usa createSaasPixCharge');
   assert(saasCharges.includes('createSaasPixCharge'), 'individual usa createSaasPixCharge');
   assert(saasCharges.includes("status: 'CANCELLED'"), 'órfãs canceladas antes do backfill');
+  assert(saasCharges.includes('isSaasChargeBlockingDuplicate'), 'bloqueio só cobranças ativas');
+  assert(saasCharges.includes('reconcileSaasChargesBeforeRegeneration'), 'reconcilia pay_ ausente no Asaas');
+  assert(saasCharges.includes('detachSaasInvoiceFromGateway'), 'cancel/excluir limpa gateway da fatura');
+
+  const billing = read('lib/saasBilling.ts');
+  assert(billing.includes('reopenSaasInvoiceForNewCharge'), 'reabre fatura ao emitir nova cobrança');
+
+  const migration = read('supabase/migrations/20260815120000_saas_charges_active_invoice_unique.sql');
+  assert(migration.includes('idx_saas_charges_active_invoice_unique'), 'índice parcial cobrança ativa');
 
   const monthlyApi = read('app/api/master/saas-invoices/route.ts');
   const individualApi = read('app/api/master/saas-charges/route.ts');
