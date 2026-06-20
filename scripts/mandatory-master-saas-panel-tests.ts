@@ -684,7 +684,7 @@ function testMasterSaasPanelHelpers() {
   assert(countSuspendedCompanies([{ financial_situation: 'SUSPENSO' }]) === 1, 'suspended count');
   assert(SAAS_AUTOMATION_RULES.find((r) => r.id === 'auto_reactivate')?.enabled === true, 'auto reactivate ativo');
   assert(SAAS_AUTOMATION_RULES.find((r) => r.id === 'auto_suspend')?.enabled === true, 'auto suspend ativo');
-  assert(SAAS_AUTOMATION_RULES.find((r) => r.id === 'reminder_7d')?.enabled === false, 'lembretes preparado');
+  assert(SAAS_AUTOMATION_RULES.find((r) => r.id === 'reminder_7d')?.enabled === true, 'lembrete email ativo');
   console.log('OK testMasterSaasPanelHelpers');
 }
 

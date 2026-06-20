@@ -1,8 +1,17 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/saas-billing-reminders",
+      "schedule": "0 11 * * *"
+    }
+  ],
   "functions": {
     "app/api/sign/sale/[token]/route.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "app/api/cron/saas-billing-reminders/route.ts": {
+      "maxDuration": 60
     }
   }
 }

@@ -41,6 +41,13 @@ import {
   resolveAsaasDueDate,
 } from '../lib/saasPixValidation';
 import {
+  isSaasChargeStatusBlockedForReminder,
+  isSaasChargeStatusEligibleForReminder,
+  resolveReminderTypesForCharge,
+} from '../lib/saasBillingReminderTypes';
+import { isCronSecretValid, resolveCronSecret } from '../lib/saasCronAuth';
+import { buildSaasBillingReminderEmailHtml } from '../lib/saasBillingReminderEmail';
+import {
   DEFAULT_FINE_PERCENT,
   DEFAULT_INTEREST_PERCENT,
   hasAsaasLateFeesConfigured,
@@ -949,6 +956,104 @@ function testSaasLateFees() {
   assert(lateFees.includes('already_configured'), 'não duplica no Asaas');
 }
 
+function testSaasBillingReminders() {
+  assert(
+    resolveReminderTypesForCharge('2026-06-27', 'PENDING', '2026-06-20').includes('reminder_7_days'),
+    '7 dias antes gera reminder_7_days',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-23', 'PENDING', '2026-06-20').includes('reminder_3_days'),
+    '3 dias antes gera reminder_3_days',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-20', 'PENDING', '2026-06-20').includes('due_today'),
+    'vencimento hoje gera due_today',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-19', 'OVERDUE', '2026-06-20').includes('overdue_friendly'),
+    'vencida gera overdue_friendly',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-27', 'PAID', '2026-06-20').length === 0,
+    'cobrança paga não envia',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-27', 'CANCELLED', '2026-06-20').length === 0,
+    'cobrança cancelada não envia',
+  );
+  assert(isSaasChargeStatusEligibleForReminder('PENDING'), 'PENDING elegível');
+  assert(isSaasChargeStatusEligibleForReminder('OVERDUE'), 'OVERDUE elegível');
+  assert(!isSaasChargeStatusEligibleForReminder('PAID'), 'PAID não elegível');
+  assert(isSaasChargeStatusBlockedForReminder('RECEIVED'), 'RECEIVED bloqueado');
+  assert(isSaasChargeStatusBlockedForReminder('CONFIRMED'), 'CONFIRMED bloqueado');
+  assert(isSaasChargeStatusBlockedForReminder('REFUNDED'), 'REFUNDED bloqueado');
+  assert(isSaasChargeStatusBlockedForReminder('DELETED'), 'DELETED bloqueado');
+
+  const email = buildSaasBillingReminderEmailHtml({
+    to: 'empresa@teste.com',
+    companyName: 'Empresa Teste',
+    amount: 549.99,
+    dueDate: '2026-06-27',
+    referenceMonth: '2026-06',
+    paymentUrl: 'https://sandbox.asaas.com/i/abc',
+    reminderType: 'reminder_7_days',
+  });
+  assert(email.subject.includes('7 dias'), 'assunto 7 dias');
+  assert(email.html.includes('Multa'), 'html multa');
+  assert(email.html.includes('0.033'), 'html juros');
+  assert(email.text.includes('Empresa Teste'), 'texto empresa');
+
+  const cronRoute = read('app/api/cron/saas-billing-reminders/route.ts');
+  assert(cronRoute.includes('isCronSecretValid'), 'cron valida segredo');
+  assert(cronRoute.includes('401'), 'cron retorna 401');
+
+  const migration = read('supabase/migrations/20260814120000_saas_billing_reminder_logs.sql');
+  assert(migration.includes('saas_billing_reminder_logs'), 'tabela logs');
+  assert(migration.includes('idx_saas_billing_reminder_logs_unique_sent'), 'índice único');
+
+  const reminders = read('lib/saasBillingReminders.ts');
+  assert(reminders.includes('runSaasBillingReminders'), 'runner cron');
+  assert(reminders.includes('wasSaasBillingReminderSent'), 'evita duplicidade');
+  assert(reminders.includes('SAAS_BILLING_REMINDER_EMAIL'), 'auditoria envio');
+
+  const vercel = read('vercel.json');
+  assert(vercel.includes('/api/cron/saas-billing-reminders'), 'vercel cron path');
+  assert(vercel.includes('0 11 * * *'), 'cron 08h BRT');
+
+  const panel = read('components/master/saas/SaasAutomationsPanel.tsx');
+  assert(panel.includes('E-mail · Ativo'), 'UI email ativo');
+  assert(panel.includes('WhatsApp · Em breve'), 'UI whatsapp em breve');
+
+  const origSecret = process.env.CRON_SECRET;
+  try {
+    process.env.CRON_SECRET = 'test-cron-secret';
+    assert(resolveCronSecret() === 'test-cron-secret', 'resolve cron secret');
+    assert(
+      !isCronSecretValid(
+        new Request('http://localhost/api/cron/saas-billing-reminders'),
+      ),
+      'cron sem segredo retorna inválido',
+    );
+    assert(
+      isCronSecretValid(
+        new Request('http://localhost/api/cron/saas-billing-reminders', {
+          headers: { 'x-cron-secret': 'test-cron-secret' },
+        }),
+      ),
+      'cron com segredo correto',
+    );
+    assert(
+      isCronSecretValid(
+        new Request('http://localhost/api/cron/saas-billing-reminders?secret=test-cron-secret'),
+      ),
+      'cron query secret',
+    );
+  } finally {
+    if (origSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = origSecret;
+  }
+}
+
 async function run() {
   const tests: Array<[string, () => void | Promise<void>]> = [
     ['geração cobrança PIX', testPixChargeGeneration],
@@ -980,6 +1085,7 @@ async function run() {
     ['auto-suspend 10 dias', testAutoSuspendConfig],
     ['UI cobrança boleto', testChargesUiBoleto],
     ['multa e juros automáticos SaaS', testSaasLateFees],
+    ['automações lembretes SaaS', testSaasBillingReminders],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['auth tenant billing', testTenantBillingAuth],

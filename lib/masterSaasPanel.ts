@@ -43,34 +43,34 @@ export type SaasAutomationRule = {
   phase: 'pre_due' | 'due' | 'overdue' | 'lifecycle';
 };
 
-/** Regras preparadas — execução via cron/API futura. */
+/** Regras de automação SaaS — lembretes por e-mail ativos via cron diário. */
 export const SAAS_AUTOMATION_RULES: SaasAutomationRule[] = [
   {
     id: 'reminder_7d',
     label: 'Lembrete 7 dias antes',
-    description: 'Envia cobrança por e-mail e WhatsApp 7 dias antes do vencimento.',
-    enabled: false,
+    description: 'Envia e-mail 7 dias antes do vencimento com link Asaas. WhatsApp em breve.',
+    enabled: true,
     phase: 'pre_due',
   },
   {
     id: 'reminder_3d',
     label: 'Reenvio 3 dias antes',
-    description: 'Reenvia PIX/link 3 dias antes do vencimento.',
-    enabled: false,
+    description: 'Envia e-mail 3 dias antes do vencimento. WhatsApp em breve.',
+    enabled: true,
     phase: 'pre_due',
   },
   {
     id: 'reminder_due',
     label: 'Reenvio no vencimento',
-    description: 'Reenvia cobrança no dia do vencimento.',
-    enabled: false,
+    description: 'Envia e-mail no dia do vencimento. WhatsApp em breve.',
+    enabled: true,
     phase: 'due',
   },
   {
     id: 'friendly_overdue',
     label: 'Cobrança amigável',
-    description: 'Mensagem amigável após vencimento (sem suspender).',
-    enabled: false,
+    description: 'Envia e-mail após vencimento (sem suspender). WhatsApp em breve.',
+    enabled: true,
     phase: 'overdue',
   },
   {
