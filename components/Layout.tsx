@@ -213,8 +213,12 @@ function NotificationBell({ user }: { user: any }) {
                      <FileText className="w-4 h-4" />
                    </div>
                    <div>
-                     <p className="text-sm font-medium text-gray-200">{stats.qtyNoPaymentContracts} contratos sem base</p>
-                     <p className="text-xs text-gray-500">Sem pagamentos recebidos</p>
+                     <p className="text-sm font-medium text-gray-200">
+                       {stats.qtyNoPaymentContracts === 1
+                         ? '1 contrato sem pagamento recebido'
+                         : `${stats.qtyNoPaymentContracts} contratos sem pagamento recebido`}
+                     </p>
+                     <p className="text-xs text-gray-500">Nenhuma parcela paga registrada</p>
                    </div>
                 </div>
               )}
