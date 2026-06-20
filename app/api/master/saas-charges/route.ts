@@ -3,6 +3,7 @@ import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import {
   cancelSaasCharge,
   createSaasPixCharge,
+  deleteCancelledSaasCharge,
   listSaasCharges,
   refreshSaasChargePixFromAsaas,
   syncSaasChargeStatusFromAsaas,
@@ -64,6 +65,18 @@ export async function POST(request: Request) {
       }
       const charge = await cancelSaasCharge(supabaseAdmin, chargeId, body.userId);
       return NextResponse.json({ success: true, charge });
+    }
+
+    if (action === 'delete_cancelled') {
+      if (!chargeId) {
+        return NextResponse.json({ error: 'chargeId obrigatório.' }, { status: 400 });
+      }
+      const result = await deleteCancelledSaasCharge(
+        supabaseAdmin,
+        chargeId,
+        body.userId,
+      );
+      return NextResponse.json({ success: true, ...result });
     }
 
     if (action === 'sync_status') {

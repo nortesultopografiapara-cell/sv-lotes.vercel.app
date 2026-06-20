@@ -1,5 +1,6 @@
 import type { MasterSaasInvoice } from '@/lib/saasBilling';
 import type { SaasCharge } from '@/lib/saasCharges';
+import { isSaasChargeSoftDeleted } from '@/lib/saasCharges';
 
 export type SaasInvoiceChargeRow = {
   invoiceId: string;
@@ -73,7 +74,9 @@ export function pickBestChargeForInvoice(
   charges: SaasCharge[],
   invoiceId: string,
 ): SaasCharge | null {
-  const candidates = charges.filter((c) => c.invoice_id === invoiceId);
+  const candidates = charges.filter(
+    (c) => c.invoice_id === invoiceId && !isSaasChargeSoftDeleted(c),
+  );
   if (!candidates.length) return null;
 
   return [...candidates].sort((a, b) => {
@@ -93,7 +96,8 @@ export function buildSaasInvoiceChargeRows(
     if (best) chargeByInvoice.set(inv.id, best);
   }
 
-  return invoices.map((inv) => {
+  return invoices
+    .map((inv) => {
     const ch = chargeByInvoice.get(inv.id) ?? null;
     const pixCopyPaste = ch?.pix_copy_paste || inv.pix_code || null;
     const pixQrCode = ch?.pix_qr_code || inv.pix_qrcode || null;
@@ -126,5 +130,10 @@ export function buildSaasInvoiceChargeRows(
       chargeId: ch?.id || null,
       hasCharge: !!ch?.id,
     };
-  });
+  })
+    .filter((row) => {
+      if (row.hasCharge) return true;
+      const st = row.invoiceStatus.toUpperCase();
+      return st !== 'CANCELADO' && st !== 'CANCELLED';
+    });
 }

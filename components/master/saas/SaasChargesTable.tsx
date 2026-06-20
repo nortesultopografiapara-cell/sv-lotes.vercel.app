@@ -26,6 +26,8 @@ type Props = {
   onEmail: (row: SaasInvoiceChargeRow, email?: string | null) => void;
   onSyncStatus: (row: SaasInvoiceChargeRow) => void;
   onCancelCharge: (row: SaasInvoiceChargeRow) => void;
+  onDeleteCancelledCharge?: (row: SaasInvoiceChargeRow) => void;
+  deletingChargeId?: string | null;
   onRegisterPayment: (row: SaasInvoiceChargeRow) => void;
   onGenerateCharge?: () => void;
   generatingCharge?: boolean;
@@ -53,6 +55,8 @@ export function SaasChargesTable({
   onEmail,
   onSyncStatus,
   onCancelCharge,
+  onDeleteCancelledCharge,
+  deletingChargeId,
   onRegisterPayment,
   onGenerateCharge,
   generatingCharge,
@@ -212,6 +216,19 @@ export function SaasChargesTable({
                   tone: 'danger',
                 },
               ];
+
+              if (isCancelled && row.chargeId && onDeleteCancelledCharge) {
+                actions.push({
+                  id: 'delete_cancelled',
+                  label:
+                    deletingChargeId === row.chargeId
+                      ? 'Excluindo…'
+                      : 'Excluir cobrança cancelada',
+                  onClick: () => onDeleteCancelledCharge(row),
+                  disabled: deletingChargeId === row.chargeId,
+                  tone: 'danger',
+                });
+              }
 
               return (
                 <tr key={row.invoiceId} className="border-b border-white/5 hover:bg-white/[0.02]">

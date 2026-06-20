@@ -48,6 +48,10 @@ export type SaasCharge = {
   paid_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
+  asaas_delete_status?: string | null;
   company_name?: string;
   plan_label?: string;
 };
@@ -78,7 +82,35 @@ function parseChargeRow(row: Record<string, unknown>): SaasCharge {
     paid_at: row.paid_at ? String(row.paid_at) : null,
     created_at: row.created_at ? String(row.created_at) : null,
     updated_at: row.updated_at ? String(row.updated_at) : null,
+    deleted_at: row.deleted_at ? String(row.deleted_at) : null,
+    deleted_by: row.deleted_by ? String(row.deleted_by) : null,
+    delete_reason: row.delete_reason ? String(row.delete_reason) : null,
+    asaas_delete_status: row.asaas_delete_status ? String(row.asaas_delete_status) : null,
   };
+}
+
+export function isSaasChargeSoftDeleted(
+  charge: Pick<SaasCharge, 'deleted_at'> | null | undefined,
+): boolean {
+  return !!String(charge?.deleted_at || '').trim();
+}
+
+export function canDeleteCancelledSaasCharge(status: string | null | undefined): boolean {
+  const key = String(status || '').toUpperCase();
+  return key === 'CANCELLED' || key === 'CANCELADA' || key === 'CANCELED';
+}
+
+export function assertCanDeleteCancelledSaasCharge(
+  charge: Pick<SaasCharge, 'status' | 'deleted_at'>,
+): void {
+  if (isSaasChargeSoftDeleted(charge)) {
+    throw new Error('Cobrança já foi excluída.');
+  }
+  if (!canDeleteCancelledSaasCharge(charge.status)) {
+    throw new Error(
+      'Somente cobranças canceladas podem ser excluídas. Cobranças ativas, pendentes, vencidas ou pagas não podem ser removidas.',
+    );
+  }
 }
 
 export function saasChargeStatusLabel(status: SaasChargeStatus | string): string {
@@ -96,6 +128,7 @@ export async function listSaasCharges(
   let query = supabaseAdmin
     .from('saas_charges')
     .select('*')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(filters?.limit ?? 200);
 
@@ -130,6 +163,7 @@ export async function markOverdueSaasCharges(
     .from('saas_charges')
     .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
     .eq('status', 'PENDING')
+    .is('deleted_at', null)
     .not('payment_id', 'is', null)
     .lt('due_date', today)
     .select('id');
@@ -381,6 +415,7 @@ export async function createSaasPixCharge(
     .from('saas_charges')
     .select('*')
     .eq('invoice_id', invoice.id)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   const now = new Date().toISOString();
@@ -557,6 +592,7 @@ async function findSaasChargeRowForPayment(
       .from('saas_charges')
       .select('*')
       .eq('id', input.chargeId)
+      .is('deleted_at', null)
       .maybeSingle();
     if (data) return data as Record<string, unknown>;
   }
@@ -566,6 +602,7 @@ async function findSaasChargeRowForPayment(
       .from('saas_charges')
       .select('*')
       .eq('payment_id', input.paymentId)
+      .is('deleted_at', null)
       .maybeSingle();
     if (byPayment) return byPayment as Record<string, unknown>;
 
@@ -580,6 +617,7 @@ async function findSaasChargeRowForPayment(
         .from('saas_charges')
         .select('*')
         .eq('invoice_id', invoice.id)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -824,6 +862,7 @@ export async function autoSuspendCompanyIfEligible(
     .from('saas_charges')
     .select('id, due_date, invoice_id, status')
     .eq('company_id', companyId)
+    .is('deleted_at', null)
     .in('status', ['OVERDUE', 'PENDING'])
     .not('payment_id', 'is', null);
 
@@ -972,6 +1011,128 @@ export async function cancelSaasCharge(
   }
 
   return parseChargeRow(updated as Record<string, unknown>);
+}
+
+export type DeleteCancelledSaasChargeResult = {
+  chargeId: string;
+  companyId: string;
+  paymentId: string | null;
+  asaasDelete: {
+    status: string;
+    httpStatus: number;
+    message?: string;
+  };
+};
+
+/**
+ * Soft delete de cobrança cancelada — oculta Master e Minha Assinatura.
+ * Tenta DELETE no Asaas quando houver payment_id.
+ */
+export async function deleteCancelledSaasCharge(
+  supabaseAdmin: SupabaseClient,
+  chargeId: string,
+  actorUserId?: string | null,
+  deleteReason = 'master_delete_cancelled',
+): Promise<DeleteCancelledSaasChargeResult> {
+  const { data: row, error } = await supabaseAdmin
+    .from('saas_charges')
+    .select('*')
+    .eq('id', chargeId)
+    .single();
+
+  if (error || !row) throw new Error('Cobrança não encontrada.');
+
+  const charge = parseChargeRow(row as Record<string, unknown>);
+  assertCanDeleteCancelledSaasCharge(charge);
+
+  let asaasResult: DeleteCancelledSaasChargeResult['asaasDelete'] = {
+    status: 'skipped',
+    httpStatus: 0,
+    message: 'Sem payment_id',
+  };
+
+  const paymentId = String(charge.payment_id || '').trim();
+  if (paymentId) {
+    const provider = getPaymentProvider();
+    if (provider.deleteCharge) {
+      const result = await provider.deleteCharge(paymentId);
+      asaasResult = {
+        status: result.status,
+        httpStatus: result.httpStatus,
+        message: result.message,
+      };
+      if (result.blocking) {
+        throw new Error(
+          result.message ||
+            'Não foi possível excluir a cobrança no Asaas. A cobrança permanece no painel.',
+        );
+      }
+    } else if (provider.providerName === charge.payment_provider) {
+      try {
+        await provider.cancelCharge(paymentId);
+        asaasResult = {
+          status: 'deleted',
+          httpStatus: 200,
+          message: 'Excluída via cancelCharge',
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/404|not found|não encontrad/i.test(msg)) {
+          asaasResult = {
+            status: 'not_found',
+            httpStatus: 404,
+            message: msg,
+          };
+        } else if (/paga|paid|received|confirmad|recebida|não pode|nao pode/i.test(msg)) {
+          throw new Error(
+            `Não foi possível excluir no Asaas: ${msg}. A cobrança permanece no painel.`,
+          );
+        } else {
+          throw new Error(
+            `Erro ao excluir no Asaas: ${msg}. A cobrança permanece no painel.`,
+          );
+        }
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updErr } = await supabaseAdmin
+    .from('saas_charges')
+    .update({
+      deleted_at: now,
+      deleted_by: actorUserId || null,
+      delete_reason: deleteReason,
+      asaas_delete_status: asaasResult.status,
+      updated_at: now,
+    })
+    .eq('id', chargeId)
+    .is('deleted_at', null)
+    .select('*')
+    .single();
+
+  if (updErr || !updated) {
+    throw new Error(updErr?.message || 'Falha ao excluir cobrança localmente.');
+  }
+
+  await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
+
+  await supabaseAdmin.from('audit_logs').insert({
+    tenant_id: charge.company_id,
+    company_id: charge.company_id,
+    user_id: actorUserId || null,
+    module: 'SAAS_BILLING',
+    action: 'SAAS_CHARGE_DELETED',
+    description: `Cobrança cancelada excluída — ${chargeId} | payment_id=${paymentId || '—'} | asaas=${asaasResult.status} (${asaasResult.httpStatus})${asaasResult.message ? ` — ${asaasResult.message}` : ''}`,
+    reference_id: chargeId,
+  });
+
+  return {
+    chargeId,
+    companyId: charge.company_id,
+    paymentId: paymentId || null,
+    asaasDelete: asaasResult,
+  };
 }
 
 async function persistSaasChargeGatewayFields(

@@ -52,8 +52,10 @@ type Props = {
     onEmail: (row: SaasInvoiceChargeRow, email?: string | null) => void;
     onSyncStatus: (row: SaasInvoiceChargeRow) => void;
     onCancelCharge: (row: SaasInvoiceChargeRow) => void;
+    onDeleteCancelledCharge?: (row: SaasInvoiceChargeRow) => void;
     onRegisterPayment: (row: SaasInvoiceChargeRow) => void;
   };
+  deletingChargeId?: string | null;
 };
 
 export function SaasCompanyWorkspace({
@@ -67,6 +69,7 @@ export function SaasCompanyWorkspace({
   timelineEvents,
   gatewayReady,
   syncingChargeId,
+  deletingChargeId,
   generatingInvoice,
   loadingContract,
   onRefresh,
@@ -204,6 +207,7 @@ export function SaasCompanyWorkspace({
             showGenerateButton
             gatewayReady={gatewayReady}
             syncingChargeId={syncingChargeId}
+            deletingChargeId={deletingChargeId}
             generatingCharge={generatingInvoice}
             onGenerateCharge={onGenerateCharge}
             getCompanyPhone={() => String(company.phone || '')}
@@ -216,6 +220,7 @@ export function SaasCompanyWorkspace({
             onEmail={chargeHandlers.onEmail}
             onSyncStatus={chargeHandlers.onSyncStatus}
             onCancelCharge={chargeHandlers.onCancelCharge}
+            onDeleteCancelledCharge={chargeHandlers.onDeleteCancelledCharge}
             onRegisterPayment={chargeHandlers.onRegisterPayment}
           />
         </div>

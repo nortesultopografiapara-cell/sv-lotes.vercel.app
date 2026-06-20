@@ -34,6 +34,8 @@ export type AugmentCompanyBillingOptions = {
   paidReferenceMonths?: Map<string, Set<string>>;
   referenceMonth?: string;
   payments?: MasterSaasPayment[];
+  /** Referência fixa para testes e relatórios determinísticos. */
+  today?: Date;
 };
 
 export function augmentCompanyBilling<T extends CompanyLike>(
@@ -61,6 +63,7 @@ export function augmentCompanyBilling<T extends CompanyLike>(
     nextDueDate: subscription?.next_due_date ?? billing.next_due_date,
     paidReferenceMonths: paidMonths,
     payments: options?.payments,
+    today: options?.today,
   });
 
   const subscription_status =

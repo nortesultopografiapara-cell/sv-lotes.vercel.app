@@ -82,6 +82,7 @@ export function buildMasterReportsMetrics(
   paidReferenceMonths: Map<string, Set<string>> = new Map(),
   payments: MasterSaasPayment[] = [],
   invoices: InvoiceForProjection[] = [],
+  today?: Date,
 ): MasterReportsMetrics {
   const subMap = new Map(subscriptions.map((s) => [s.company_id, s]));
   let activeSubscriptions = 0;
@@ -94,6 +95,7 @@ export function buildMasterReportsMetrics(
     const enriched = augmentCompanyBilling(company, subscription, {
       paidReferenceMonths,
       payments,
+      today,
     });
     const monthlyPrice = getCompanyMonthlyPrice(company);
     const isActive = isBillableCompany(company);

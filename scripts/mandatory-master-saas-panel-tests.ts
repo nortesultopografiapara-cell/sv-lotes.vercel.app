@@ -204,6 +204,7 @@ function testAuditLoadShape() {
 
 function testMenesesFinancialSituation() {
   const menesesId = '59d38b25-61bb-4114-a8c1-8e34d9c78c2c';
+  const fixedToday = new Date('2026-06-13T12:00:00');
   const payments = [
     {
       id: 'p-meneses',
@@ -232,7 +233,7 @@ function testMenesesFinancialSituation() {
     },
     paidReferenceMonths: paidMonths,
     payments,
-    today: new Date('2026-06-13T12:00:00'),
+    today: fixedToday,
   });
   assert(situation.situation === 'EM DIA', 'meneses em dia');
   assert(situation.situation !== 'Pago', 'not general pago status');
@@ -269,6 +270,8 @@ function testMenesesFinancialSituation() {
     ],
     paidMonths,
     payments,
+    [],
+    fixedToday,
   );
   assert(reports.rows[0].financialSituation === 'EM DIA', 'reports em dia');
   const finance = augmentCompanyBilling(
@@ -291,7 +294,7 @@ function testMenesesFinancialSituation() {
       contract_status: 'active',
       next_due_date: '2026-06-27',
     },
-    { paidReferenceMonths: paidMonths, payments },
+    { paidReferenceMonths: paidMonths, payments, today: fixedToday },
   );
   assert(finance.financial_situation === 'EM DIA', 'finance em dia');
   console.log('OK testMenesesFinancialSituation');

@@ -1,6 +1,7 @@
 import type {
   ChargeStatusProviderResult,
   CreatePixChargeInput,
+  PaymentDeleteResult,
   PaymentProvider,
   PixChargeProviderResult,
 } from './types';
@@ -56,6 +57,87 @@ async function asaasFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isBlockingAsaasDeleteError(status: number, message: string): boolean {
+  if (status === 404) return false;
+  if (status >= 200 && status < 300) return false;
+  const msg = message.toLowerCase();
+  if (
+    msg.includes('paga') ||
+    msg.includes('paid') ||
+    msg.includes('received') ||
+    msg.includes('confirmad') ||
+    msg.includes('recebida') ||
+    msg.includes('não pode ser exclu') ||
+    msg.includes('nao pode ser exclu') ||
+    msg.includes('cannot be deleted') ||
+    msg.includes('not allowed')
+  ) {
+    return true;
+  }
+  return status === 400 || status === 403 || status === 409;
+}
+
+/** DELETE /payments/{id} com resultado estruturado para soft delete local. */
+export async function deleteAsaasPayment(paymentId: string): Promise<PaymentDeleteResult> {
+  const id = String(paymentId || '').trim();
+  if (!id) {
+    return {
+      ok: true,
+      httpStatus: 0,
+      blocking: false,
+      status: 'skipped',
+      message: 'Sem payment_id',
+    };
+  }
+
+  try {
+    const res = await fetch(`${asaasBaseUrl()}/payments/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: asaasHeaders(),
+    });
+    if (res.status === 404) {
+      return {
+        ok: true,
+        httpStatus: 404,
+        blocking: false,
+        status: 'not_found',
+        message: 'Cobrança não encontrada no Asaas (404)',
+      };
+    }
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      return {
+        ok: true,
+        httpStatus: res.status,
+        blocking: false,
+        status: 'deleted',
+        message: 'Excluída no Asaas',
+      };
+    }
+    const msg =
+      (json as { errors?: Array<{ description?: string }> })?.errors?.[0]?.description ||
+      (json as { message?: string })?.message ||
+      `Asaas HTTP ${res.status}`;
+    const blocking = isBlockingAsaasDeleteError(res.status, msg);
+    return {
+      ok: false,
+      httpStatus: res.status,
+      blocking,
+      status: blocking ? 'blocked' : 'error',
+      message: msg,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      httpStatus: 0,
+      blocking: true,
+      status: 'error',
+      message: msg,
+    };
+  }
 }
 
 function normalizePixQrImage(encodedImage?: string | null): string {
@@ -247,6 +329,10 @@ export class AsaasPaymentProvider implements PaymentProvider {
 
   async cancelCharge(paymentId: string): Promise<void> {
     await asaasFetch(`/payments/${paymentId}`, { method: 'DELETE' });
+  }
+
+  async deleteCharge(paymentId: string): Promise<PaymentDeleteResult> {
+    return deleteAsaasPayment(paymentId);
   }
 }
 

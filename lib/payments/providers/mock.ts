@@ -1,6 +1,7 @@
 import type {
   ChargeStatusProviderResult,
   CreatePixChargeInput,
+  PaymentDeleteResult,
   PaymentProvider,
   PixChargeProviderResult,
 } from './types';
@@ -52,5 +53,15 @@ export class MockPaymentProvider implements PaymentProvider {
 
   async cancelCharge(_paymentId: string): Promise<void> {
     /* mock — sem efeito externo */
+  }
+
+  async deleteCharge(_paymentId: string): Promise<PaymentDeleteResult> {
+    return {
+      ok: true,
+      httpStatus: 200,
+      blocking: false,
+      status: 'deleted',
+      message: 'Mock delete ok',
+    };
   }
 }

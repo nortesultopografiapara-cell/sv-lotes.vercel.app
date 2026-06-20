@@ -40,11 +40,21 @@ export type ChargeStatusProviderResult = {
   invoiceUrl?: string | null;
 };
 
+/** Resultado estruturado do DELETE /payments/{id} no Asaas. */
+export type PaymentDeleteResult = {
+  ok: boolean;
+  httpStatus: number;
+  blocking: boolean;
+  status: 'deleted' | 'not_found' | 'skipped' | 'blocked' | 'error';
+  message?: string;
+};
+
 export interface PaymentProvider {
   readonly providerName: string;
   createPixCharge(input: CreatePixChargeInput): Promise<PixChargeProviderResult>;
   getChargeStatus(paymentId: string): Promise<ChargeStatusProviderResult>;
   cancelCharge(paymentId: string): Promise<void>;
+  deleteCharge?(paymentId: string): Promise<PaymentDeleteResult>;
 }
 
 export function mapProviderStatusToChargeStatus(

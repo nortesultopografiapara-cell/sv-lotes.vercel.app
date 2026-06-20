@@ -148,6 +148,7 @@ function SaaSFinancePageContent() {
   const [saasCharges, setSaasCharges] = useState<SaasCharge[]>([]);
   const [chargeViewRow, setChargeViewRow] = useState<SaasInvoiceChargeRow | null>(null);
   const [syncingChargeId, setSyncingChargeId] = useState<string | null>(null);
+  const [deletingChargeId, setDeletingChargeId] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
   const [paymentInitialInvoiceId, setPaymentInitialInvoiceId] = useState<string | undefined>();
@@ -437,6 +438,32 @@ function SaaSFinancePageContent() {
     [user?.id, loadData],
   );
 
+  const handleDeleteCancelledCharge = useCallback(
+    async (row: SaasInvoiceChargeRow) => {
+      if (!user?.id || !row.chargeId) return;
+      const confirmed = confirm(
+        'Essa cobrança cancelada será removida do painel Master, do painel do cliente e, se possível, também do Asaas. Deseja continuar?',
+      );
+      if (!confirmed) return;
+      setDeletingChargeId(row.chargeId);
+      try {
+        const res = await fetch(
+          `/api/saas/billing/charges/${encodeURIComponent(row.chargeId)}?userId=${encodeURIComponent(user.id)}`,
+          { method: 'DELETE' },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Falha ao excluir cobrança');
+        alert('Cobrança cancelada excluída com sucesso.');
+        await loadData();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Erro ao excluir cobrança');
+      } finally {
+        setDeletingChargeId(null);
+      }
+    },
+    [user?.id, loadData],
+  );
+
   const getCompanyPhone = useCallback(
     (companyId: string) =>
       String(
@@ -544,6 +571,7 @@ function SaaSFinancePageContent() {
       onEmail: handleEmailCharge,
       onSyncStatus: handleSyncChargeStatus,
       onCancelCharge: handleCancelCharge,
+      onDeleteCancelledCharge: handleDeleteCancelledCharge,
       onRegisterPayment: (row: SaasInvoiceChargeRow) => {
         const company = companies.find((c) => (c as { id?: string }).id === row.companyId);
         openPaymentModal(company, saasInvoices.find((i) => i.id === row.invoiceId));
@@ -557,6 +585,7 @@ function SaaSFinancePageContent() {
       handleEmailCharge,
       handleSyncChargeStatus,
       handleCancelCharge,
+      handleDeleteCancelledCharge,
       user?.id,
       loadData,
       companies,
@@ -950,6 +979,7 @@ function SaaSFinancePageContent() {
             timelineEvents={companyTimeline}
             gatewayReady={gatewayReady}
             syncingChargeId={syncingChargeId}
+            deletingChargeId={deletingChargeId}
             generatingInvoice={generatingInvoiceId === selectedCompanyId}
             loadingContract={
               !!selectedCompanyId &&
@@ -1044,6 +1074,7 @@ function SaaSFinancePageContent() {
           loading={loading}
           gatewayReady={gatewayReady}
           syncingChargeId={syncingChargeId}
+          deletingChargeId={deletingChargeId}
           getCompanyPhone={getCompanyPhone}
           getCompanyEmail={getCompanyEmail}
           filterCompany={filterChargeCompany}

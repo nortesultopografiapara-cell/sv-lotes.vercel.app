@@ -116,6 +116,7 @@ export async function POST(request: Request) {
       .from('saas_charges')
       .select('id, company_id')
       .eq('id', chargeId)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (!chargeRow || String(chargeRow.company_id) !== tenantId) {
