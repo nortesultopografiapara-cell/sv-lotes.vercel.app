@@ -339,3 +339,57 @@ export class AsaasPaymentProvider implements PaymentProvider {
 export function isAsaasConfigured(): boolean {
   return !!process.env.ASAAS_API_KEY?.trim();
 }
+
+export type AsaasFinancialTransaction = {
+  id?: string;
+  value?: number;
+  type?: string;
+  date?: string;
+  description?: string | null;
+  paymentId?: string | null;
+  transferId?: string | null;
+};
+
+export type AsaasFinancialTransactionListResponse = {
+  object?: string;
+  hasMore?: boolean;
+  totalCount?: number;
+  limit?: number;
+  offset?: number;
+  data?: AsaasFinancialTransaction[];
+};
+
+/** GET /financialTransactions — extrato consolidado da conta Asaas (paginado). */
+export async function listAsaasFinancialTransactions(
+  startDate: string,
+  finishDate: string,
+): Promise<AsaasFinancialTransaction[]> {
+  const from = String(startDate || '').split('T')[0];
+  const to = String(finishDate || '').split('T')[0];
+  if (!from || !to) {
+    throw new Error('Período inválido para consulta do extrato Asaas.');
+  }
+
+  const all: AsaasFinancialTransaction[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  for (let page = 0; page < 200; page += 1) {
+    const params = new URLSearchParams({
+      startDate: from,
+      finishDate: to,
+      limit: String(limit),
+      offset: String(offset),
+      order: 'asc',
+    });
+    const response = await asaasFetch<AsaasFinancialTransactionListResponse>(
+      `/financialTransactions?${params.toString()}`,
+    );
+    const batch = response.data || [];
+    all.push(...batch);
+    if (!response.hasMore || batch.length < limit) break;
+    offset += limit;
+  }
+
+  return all;
+}

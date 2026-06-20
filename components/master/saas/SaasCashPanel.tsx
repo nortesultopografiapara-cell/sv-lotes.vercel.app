@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownCircle, ArrowUpCircle, RefreshCw, Wallet } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, CloudDownload, RefreshCw, Wallet } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
@@ -69,7 +69,11 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     movementCount: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
   const loadCash = useCallback(async () => {
     if (!user?.id) return;
@@ -120,6 +124,55 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     void loadCash();
   }, [loadCash]);
 
+  useEffect(() => {
+    if (!syncMessage) return;
+    const timer = setTimeout(() => setSyncMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [syncMessage]);
+
+  const handleSyncAsaas = useCallback(async () => {
+    if (!user?.id || !isSuperAdmin) return;
+    setSyncing(true);
+    setError(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/master/saas-cash/sync-asaas', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          fromDate,
+          toDate,
+          companyId: companyFilter !== 'all' ? companyFilter : undefined,
+          type: typeFilter,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || 'Falha ao sincronizar Asaas');
+      }
+      setMovements(Array.isArray(body.movements) ? body.movements : []);
+      setSummary(
+        body.summary || {
+          periodIncome: 0,
+          periodExpense: 0,
+          netResult: 0,
+          movementCount: 0,
+        },
+      );
+      const sync = body.sync || {};
+      setSyncMessage(
+        `Asaas sincronizado: ${sync.created ?? 0} nova(s), ${sync.skipped ?? 0} ignorada(s).`,
+      );
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Erro ao sincronizar Asaas';
+      setError(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, [user?.id, isSuperAdmin, fromDate, toDate, companyFilter, typeFilter]);
+
   const formatCurrency = (value: number) => formatSaasCurrency(value);
 
   return (
@@ -139,19 +192,38 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
             Caixa SaaS
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            Entradas automáticas de assinaturas pagas via Asaas e movimentações futuras.
+            Entradas via webhook e saídas importadas do extrato Asaas (saques, tarifas, transferências).
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadCash()}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 bg-[#11161d] text-sm text-white hover:bg-white/5 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {isSuperAdmin ? (
+            <button
+              type="button"
+              onClick={() => void handleSyncAsaas()}
+              disabled={loading || syncing}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-emerald-500/30 bg-emerald-600/20 text-sm text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+            >
+              <CloudDownload className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+              {syncing ? 'Sincronizando…' : 'Sincronizar Asaas'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void loadCash()}
+            disabled={loading || syncing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 bg-[#11161d] text-sm text-white hover:bg-white/5 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+        </div>
       </div>
+
+      {syncMessage ? (
+        <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-100 text-sm">
+          {syncMessage}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <SaasMetricCard

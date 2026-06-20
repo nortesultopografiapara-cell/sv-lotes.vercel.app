@@ -5,6 +5,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { todayIsoDate } from '@/lib/companySubscriptionDates';
 import type { SaasCharge } from '@/lib/saasCharges';
+import {
+  mapAsaasFinancialTransaction,
+  type MappedAsaasCashMovement,
+} from '@/lib/asaasFinancialTransactions';
+import {
+  isAsaasConfigured,
+  listAsaasFinancialTransactions,
+  type AsaasFinancialTransaction,
+} from '@/lib/payments/providers/asaas';
 
 export type SaasCashMovementType = 'income' | 'expense';
 
@@ -54,6 +63,28 @@ export type CreateSaasCashIncomeInput = {
   >;
   paidAt?: string;
   createdBy?: string | null;
+};
+
+export type SyncAsaasCashMovementsInput = {
+  fromDate: string;
+  toDate: string;
+  createdBy?: string | null;
+};
+
+export type SyncAsaasCashMovementsResult = {
+  fetched: number;
+  created: number;
+  skipped: number;
+  unknown: number;
+  unknownTypes: string[];
+};
+
+export type SyncAsaasCashMovementsDeps = {
+  fetchTransactions?: (
+    fromDate: string,
+    toDate: string,
+  ) => Promise<AsaasFinancialTransaction[]>;
+  mapTransaction?: typeof mapAsaasFinancialTransaction;
 };
 
 const INCOME_CATEGORY = 'Assinatura SaaS';
@@ -323,4 +354,150 @@ export async function getSaasCashSummary(
     type: 'all',
   });
   return computeSaasCashSummaryFromRows(movements);
+}
+
+async function findExistingByAsaasMovementId(
+  supabaseAdmin: SupabaseClient,
+  asaasMovementId: string,
+): Promise<SaasCashMovement | null> {
+  const { data } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .contains('metadata', { asaas_movement_id: asaasMovementId })
+    .maybeSingle();
+
+  return data ? parseMovementRow(data as Record<string, unknown>) : null;
+}
+
+async function resolveCompanyIdFromAsaasPayment(
+  supabaseAdmin: SupabaseClient,
+  paymentId?: string | null,
+): Promise<string | null> {
+  const id = String(paymentId || '').trim();
+  if (!id) return null;
+
+  const { data } = await supabaseAdmin
+    .from('saas_charges')
+    .select('company_id')
+    .eq('payment_id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  return data?.company_id ? String(data.company_id) : null;
+}
+
+async function insertMappedAsaasCashMovement(
+  supabaseAdmin: SupabaseClient,
+  mapped: MappedAsaasCashMovement,
+  createdBy?: string | null,
+): Promise<{ movement: SaasCashMovement | null; created: boolean }> {
+  const movementId = String(mapped.metadata?.asaas_movement_id || '').trim();
+  if (!movementId || mapped.skip || !mapped.type || !mapped.source || !mapped.amount) {
+    return { movement: null, created: false };
+  }
+
+  const existing = await findExistingByAsaasMovementId(supabaseAdmin, movementId);
+  if (existing) {
+    return { movement: existing, created: false };
+  }
+
+  const companyId = await resolveCompanyIdFromAsaasPayment(
+    supabaseAdmin,
+    mapped.asaas_payment_id,
+  );
+
+  const insertRow = {
+    company_id: companyId,
+    saas_charge_id: null,
+    asaas_payment_id: mapped.asaas_payment_id ?? null,
+    type: mapped.type,
+    category: mapped.category || 'Asaas',
+    description: mapped.description || mapped.category || 'Movimentação Asaas',
+    amount: mapped.amount,
+    movement_date: normalizeMovementDate(mapped.movement_date),
+    source: mapped.source,
+    metadata: mapped.metadata || { asaas_movement_id: movementId },
+    created_by: createdBy ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      const dup = await findExistingByAsaasMovementId(supabaseAdmin, movementId);
+      if (dup) return { movement: dup, created: false };
+    }
+    console.warn('[saas-cash] falha ao registrar movimentação Asaas:', {
+      movementId,
+      message: error.message,
+    });
+    return { movement: null, created: false };
+  }
+
+  return {
+    movement: parseMovementRow(data as Record<string, unknown>),
+    created: true,
+  };
+}
+
+/** Importa saques, tarifas, transferências e estornos do extrato Asaas (idempotente). */
+export async function syncAsaasCashMovements(
+  supabaseAdmin: SupabaseClient,
+  input: SyncAsaasCashMovementsInput,
+  deps: SyncAsaasCashMovementsDeps = {},
+): Promise<SyncAsaasCashMovementsResult> {
+  const fetchTransactions = deps.fetchTransactions ?? listAsaasFinancialTransactions;
+  const mapTransaction = deps.mapTransaction ?? mapAsaasFinancialTransaction;
+
+  if (!deps.fetchTransactions && !isAsaasConfigured()) {
+    throw new Error('ASAAS_API_KEY não configurada.');
+  }
+
+  const transactions = await fetchTransactions(input.fromDate, input.toDate);
+  let created = 0;
+  let skipped = 0;
+  let unknown = 0;
+  const unknownTypes = new Set<string>();
+
+  for (const tx of transactions) {
+    const mapped = mapTransaction(tx);
+    if (mapped.skip) {
+      skipped += 1;
+      if (mapped.skipReason === 'unknown_type') {
+        unknown += 1;
+        const type = String(mapped.metadata?.asaas_type || tx.type || 'UNKNOWN');
+        unknownTypes.add(type);
+        console.info('[saas-cash] tipo Asaas ignorado:', {
+          id: tx.id,
+          type,
+          value: tx.value,
+          description: tx.description,
+        });
+      }
+      continue;
+    }
+
+    const result = await insertMappedAsaasCashMovement(
+      supabaseAdmin,
+      mapped,
+      input.createdBy,
+    );
+    if (result.created) {
+      created += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return {
+    fetched: transactions.length,
+    created,
+    skipped,
+    unknown,
+    unknownTypes: [...unknownTypes].sort(),
+  };
 }
