@@ -28,6 +28,7 @@ import {
 } from '../lib/saasFinanceSettings';
 import { computeSaasBillingMetrics } from '../lib/saasBilling';
 import { sumReceivedRevenue } from '../lib/masterSaasPayments';
+import { calculateMrrFromCompanies } from '../lib/companyPricing';
 
 const ROOT = process.cwd();
 
@@ -578,6 +579,74 @@ function testDashboardFinanceStartAtFilters() {
   console.log('OK testDashboardFinanceStartAtFilters');
 }
 
+function testSubscriptionsReceivedRevenueRespectsStartAt() {
+  const startAt = '2026-06-20T16:01:00.000Z';
+  const payments = [
+    {
+      id: 'p-old',
+      company_id: 'c1',
+      amount: 890,
+      paid_at: '2026-05-10T12:00:00Z',
+      payment_method: 'pix',
+      reference_month: '2026-05',
+      status: 'paid',
+    },
+    {
+      id: 'p-new',
+      company_id: 'c1',
+      amount: 150,
+      paid_at: '2026-06-21T10:00:00Z',
+      payment_method: 'pix',
+      reference_month: '2026-06',
+      status: 'paid',
+    },
+  ];
+  const invoices = [
+    {
+      id: 'i-open',
+      company_id: 'c1',
+      invoice_number: 'F-1',
+      reference_month: '2026-06',
+      amount: 849.99,
+      discount_amount: 0,
+      final_amount: 849.99,
+      due_date: '2026-06-25',
+      issued_at: '2026-06-01',
+      status: 'PENDENTE' as const,
+    },
+  ];
+  const companies = [
+    {
+      id: 'c1',
+      name: 'Empresa Teste',
+      active: true,
+      status_operacional: 'Ativa',
+      plan: 'basic',
+      custom_price_enabled: true,
+      custom_monthly_price: 850,
+    },
+  ];
+
+  const filteredPayments = applySaasFinanceStartAtFilter(payments, startAt);
+  const paymentsReceived = sumReceivedRevenue(filteredPayments);
+  assert(paymentsReceived === 150, 'assinaturas ignora pagamento anterior ao marco');
+
+  const mrr = calculateMrrFromCompanies(companies);
+  assert(mrr === 850, 'MRR inalterado');
+  assert(mrr * 12 === 10200, 'ARR inalterado');
+
+  const metrics = computeSaasBillingMetrics(invoices, mrr, paymentsReceived);
+  assert(metrics.receivedRevenue === 150, 'receita recebida após marco');
+  assert(metrics.revenueToReceive === 849.99, 'receita em aberto inalterada');
+
+  const plansPage = read('app/plans/page.tsx');
+  assert(plansPage.includes('applySaasFinanceStartAtFilter'), 'assinaturas filtra pagamentos');
+  assert(plansPage.includes('SaasFinanceStartAtBanner'), 'assinaturas banner marco');
+  assert(plansPage.includes('sumReceivedRevenue(filteredPayments)'), 'receita recebida usa filtro');
+
+  console.log('OK testSubscriptionsReceivedRevenueRespectsStartAt');
+}
+
 function testApiAndSecurity() {
   const api = read('app/api/master/saas-cash/route.ts');
   assert(api.includes('assertSuperAdmin'), 'API super admin');
@@ -643,6 +712,7 @@ async function main() {
   testExportRespectsFilteredMovements();
   testCashStartAtFiltersWithoutDeleting();
   testDashboardFinanceStartAtFilters();
+  testSubscriptionsReceivedRevenueRespectsStartAt();
   testApiAndSecurity();
   testUiLoadsWithoutMovements();
   console.log('mandatory-saas-cash-movements-tests: all passed');

@@ -22,6 +22,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { MasterEmptyState } from '@/components/master/MasterEmptyState';
 import { calculateMrrFromCompanies } from '@/lib/companyPricing';
 import { RegisterSaasPaymentModal } from '@/components/master/RegisterSaasPaymentModal';
+import { SaasFinanceStartAtBanner } from '@/components/master/saas/SaasPanelUi';
+import { applySaasFinanceStartAtFilter } from '@/lib/saasFinanceSettings';
 import { supabase } from '@/lib/supabase';
 import {
   getCompanySaasPlan,
@@ -73,6 +75,7 @@ export default function PlansPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentInitialCompanyId, setPaymentInitialCompanyId] = useState<string | undefined>();
   const [saasPayments, setSaasPayments] = useState<MasterSaasPayment[]>([]);
+  const [cashStartAt, setCashStartAt] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
     setDataLoading(true);
@@ -120,8 +123,21 @@ export default function PlansPage() {
       }
       setSaasPayments(payments);
 
+      let financeStartAt: string | null = null;
+      if (user?.id) {
+        const startRes = await fetch(
+          `/api/master/saas-cash/start-at?userId=${encodeURIComponent(user.id)}`,
+          { credentials: 'include' },
+        );
+        const startJson = await startRes.json().catch(() => ({}));
+        financeStartAt =
+          startRes.ok && startJson.cashStartAt ? String(startJson.cashStartAt) : null;
+      }
+      setCashStartAt(financeStartAt);
+
       const paidReferenceMonths = buildPaidReferenceMonthsByCompany(payments);
-      const paymentsReceived = sumReceivedRevenue(payments);
+      const filteredPayments = applySaasFinanceStartAtFilter(payments, financeStartAt);
+      const paymentsReceived = sumReceivedRevenue(filteredPayments);
       const enriched = finalCompanies.map((c) =>
         augmentCompanyBilling(c, subsMap[c.id], { paidReferenceMonths, payments }),
       );
@@ -346,6 +362,8 @@ export default function PlansPage() {
             <p className="text-sm">{loadError}</p>
          </div>
       )}
+
+      <SaasFinanceStartAtBanner cashStartAt={cashStartAt} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         <MasterCompactKpi
