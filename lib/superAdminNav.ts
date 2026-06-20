@@ -5,7 +5,6 @@ import {
   CreditCard,
   Users,
   Wallet,
-  BarChart3,
   Settings,
   ShieldCheck,
 } from 'lucide-react';
@@ -38,7 +37,7 @@ export const SUPER_ADMIN_NAV: SuperAdminNavSection[] = [
   {
     label: 'Sistema',
     items: [
-      { name: 'Relatórios', href: '/master/reports', icon: BarChart3 },
+      // Relatórios (/master/reports) oculto temporariamente — KPIs já estão no Dashboard/Financeiro/Assinaturas
       { name: 'Auditoria', href: '/master/audit', icon: ShieldCheck },
       { name: 'Configurações', href: '/master/settings', icon: Settings },
     ],
