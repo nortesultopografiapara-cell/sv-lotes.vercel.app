@@ -107,8 +107,8 @@ const CHANFRE_DEFLECTION_MAX_LENGTH_M = 10;
 const CHANFRE_BACK_MIN_M = 1;
 const CHANFRE_BACK_MAX_M = 5;
 const MAX_SEGMENT_DISTANCE_M = 1000;
-/** Mesmo lado: variação de azimute entre segmentos consecutivos. */
-const COLINEAR_DEFLECTION_MAX_DEG = 10;
+/** Mesmo lado/alinhamento: variação de azimute entre segmentos consecutivos (global). */
+export const COLINEAR_DEFLECTION_MAX_DEG = 30;
 /** Chanfre de esquina (~45°): segmento seguinte à virada. */
 const CHANFRE_DEFLECTION_MIN_DEG = 40;
 const CHANFRE_DEFLECTION_MAX_DEG = 50;
@@ -495,6 +495,15 @@ function isColinearDeflection(deflectionDeg: number): boolean {
   return deflectionDeg <= COLINEAR_DEFLECTION_MAX_DEG;
 }
 
+/** Quanto o azimute do grupo difere do oposto paralelo à frente (frente + 180°). */
+function bearingOppositionDeficit(
+  frontBearing: number,
+  groupBearing: number,
+): number {
+  const idealBack = ((frontBearing + 180) % 360 + 360) % 360;
+  return angularDifferenceDeg(idealBack, groupBearing);
+}
+
 function isChanfreDeflection(deflectionDeg: number): boolean {
   return (
     deflectionDeg >= CHANFRE_DEFLECTION_MIN_DEG &&
@@ -679,6 +688,7 @@ function findBackGroupIdxByRingHalf(
   ordered: OfficialLotSegment[],
   frontSegmentIndex: number,
   frontBearing: number,
+  backSegmentIndex?: number,
 ): number {
   const n = ordered.length;
   const ringPos = new Map(
@@ -689,7 +699,7 @@ function findBackGroupIdxByRingHalf(
 
   let bestGroupIdx = 0;
   let bestScore = Infinity;
-  let bestBearingOpp = -1;
+  let bestBearingDeficit = Infinity;
 
   for (let g = 0; g < groups.length; g++) {
     if (groups[g].segmentIndexes.includes(frontSegmentIndex)) continue;
@@ -705,16 +715,42 @@ function findBackGroupIdxByRingHalf(
     if (!count) continue;
     const avgDist = ringDistSum / count;
     const ringScore = Math.abs(avgDist - half);
-    const bearingOpp = angularDifferenceDeg(
+    const bearingDeficit = bearingOppositionDeficit(
       frontBearing,
       groups[g].averageBearing,
     );
-    if (
-      ringScore < bestScore - 0.01 ||
-      (Math.abs(ringScore - bestScore) <= 0.01 && bearingOpp > bestBearingOpp)
-    ) {
+    const hasBackAnchor =
+      backSegmentIndex != null &&
+      groups[g].segmentIndexes.includes(backSegmentIndex) &&
+      bearingDeficit >= 45;
+    const bestHasBackAnchor =
+      backSegmentIndex != null &&
+      (groups[bestGroupIdx]?.segmentIndexes.includes(backSegmentIndex) ??
+        false) &&
+      bearingOppositionDeficit(
+        frontBearing,
+        groups[bestGroupIdx]?.averageBearing ?? 0,
+      ) >= 45;
+
+    if (ringScore < bestScore - 0.01) {
       bestScore = ringScore;
-      bestBearingOpp = bearingOpp;
+      bestBearingDeficit = bearingDeficit;
+      bestGroupIdx = g;
+      continue;
+    }
+    if (Math.abs(ringScore - bestScore) > 0.01) continue;
+
+    if (hasBackAnchor && !bestHasBackAnchor) {
+      bestScore = ringScore;
+      bestBearingDeficit = bearingDeficit;
+      bestGroupIdx = g;
+      continue;
+    }
+    if (!hasBackAnchor && bestHasBackAnchor) continue;
+
+    if (bearingDeficit < bestBearingDeficit - 0.01) {
+      bestScore = ringScore;
+      bestBearingDeficit = bearingDeficit;
       bestGroupIdx = g;
     }
   }
@@ -804,15 +840,31 @@ function expandColinearFundoOnRing(
   return [...result].sort((a, b) => a - b);
 }
 
+function buildAllowedIndexesForDeflectionGroups(
+  groups: SegmentDeflectionGroup[],
+  seeds: number[],
+): Set<number> | undefined {
+  if (!seeds.length) return undefined;
+  const allowed = new Set<number>();
+  for (const group of groups) {
+    if (group.segmentIndexes.some((idx) => seeds.includes(idx))) {
+      for (const idx of group.segmentIndexes) allowed.add(idx);
+    }
+  }
+  return allowed.size > 0 ? allowed : undefined;
+}
+
 /**
  * Expande apenas vizinhos imediatos no anel, colineares,
  * sem atravessar segmentos proibidos (outros lados / frente / chanfre).
+ * Se allowedOnly for informado, só inclui índices desse conjunto (grupo de deflexão).
  */
 function expandColinearAdjacentWithinBoundary(
   ordered: OfficialLotSegment[],
   seedIndexes: number[],
   forbidden: Set<number>,
   byIdx: Map<number, OfficialLotSegment>,
+  allowedOnly?: Set<number>,
 ): number[] {
   if (!seedIndexes.length) return [];
   const result = new Set(seedIndexes);
@@ -832,6 +884,7 @@ function expandColinearAdjacentWithinBoundary(
         const p = (pos + step + n) % n;
         const idx = ordered[p].segment_index;
         if (forbidden.has(idx) || result.has(idx)) continue;
+        if (allowedOnly && !allowedOnly.has(idx)) continue;
         const s = byIdx.get(idx);
         if (!s || isOfficialCurveSegment(s)) continue;
         if (!isValidSegmentDistance(s.distance)) continue;
@@ -1075,6 +1128,97 @@ function resolveBackGroupLineIndexes(
   chanfreSet: Set<number>,
   byIdx: Map<number, OfficialLotSegment>,
 ): number[] {
+  if (!groups.length) {
+    const expandForbidden = new Set<number>([
+      frontSegmentIndex,
+      ...chanfreSet,
+    ]);
+    const anchorExpanded = expandColinearAdjacentWithinBoundary(
+      ordered,
+      [backSegmentIndex],
+      expandForbidden,
+      byIdx,
+    );
+    return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
+  }
+
+  const halfGroupIdx = findBackGroupIdxByRingHalf(
+    groups,
+    ordered,
+    frontSegmentIndex,
+    frontBearing,
+    backSegmentIndex,
+  );
+  const halfGroup = groups[halfGroupIdx];
+  const halfGroupLines = filterDeflectionGroupLineIndexes(
+    halfGroup?.segmentIndexes ?? [],
+    chanfreSet,
+    byIdx,
+  );
+
+  /** Até 90° — cobre fundo perpendicular (chanfre) e rejeita diagonal ~135° no meio do anel. */
+  const PARALLEL_BACK_MAX_DEFICIT_DEG = 90;
+
+  if (halfGroup && halfGroupLines.length > 0) {
+    const halfDeficit = bearingOppositionDeficit(
+      frontBearing,
+      halfGroup.averageBearing,
+    );
+    const halfHasAnchor = halfGroupLines.includes(backSegmentIndex);
+    if (halfDeficit <= PARALLEL_BACK_MAX_DEFICIT_DEG) {
+      if (halfDeficit >= 45 || (halfHasAnchor && halfDeficit >= 45)) {
+        return halfGroupLines;
+      }
+      const anchorGroupEarly = groups.find((g) =>
+        g.segmentIndexes.includes(backSegmentIndex),
+      );
+      if (anchorGroupEarly) {
+        const anchorEarlyLines = filterDeflectionGroupLineIndexes(
+          anchorGroupEarly.segmentIndexes,
+          chanfreSet,
+          byIdx,
+        );
+        if (anchorEarlyLines.length > 0) return anchorEarlyLines;
+      }
+      return halfGroupLines;
+    }
+  }
+
+  const anchorGroup = groups.find((g) =>
+    g.segmentIndexes.includes(backSegmentIndex),
+  );
+  if (anchorGroup) {
+    const anchorGroupLines = filterDeflectionGroupLineIndexes(
+      anchorGroup.segmentIndexes,
+      chanfreSet,
+      byIdx,
+    );
+    if (anchorGroupLines.length > 0) return anchorGroupLines;
+  }
+
+  let bestLines: number[] = [];
+  let bestDeficit = Infinity;
+  for (const group of groups) {
+    if (group.segmentIndexes.includes(frontSegmentIndex)) continue;
+    const lines = filterDeflectionGroupLineIndexes(
+      group.segmentIndexes,
+      chanfreSet,
+      byIdx,
+    );
+    if (!lines.length) continue;
+    const deficit = bearingOppositionDeficit(
+      frontBearing,
+      group.averageBearing,
+    );
+    if (deficit < bestDeficit - 0.01) {
+      bestDeficit = deficit;
+      bestLines = lines;
+    }
+  }
+
+  if (bestLines.length > 0) return bestLines;
+  if (halfGroupLines.length > 0) return halfGroupLines;
+
   const expandForbidden = new Set<number>([
     frontSegmentIndex,
     ...chanfreSet,
@@ -1084,37 +1228,9 @@ function resolveBackGroupLineIndexes(
     [backSegmentIndex],
     expandForbidden,
     byIdx,
+    buildAllowedIndexesForDeflectionGroups(groups, [backSegmentIndex]),
   );
-  if (!groups.length) {
-    return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
-  }
-
-  const halfGroupIdx = findBackGroupIdxByRingHalf(
-    groups,
-    ordered,
-    frontSegmentIndex,
-    frontBearing,
-  );
-  const halfGroupLines = filterDeflectionGroupLineIndexes(
-    groups[halfGroupIdx]?.segmentIndexes ?? [],
-    chanfreSet,
-    byIdx,
-  );
-  if (!halfGroupLines.length) {
-    return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
-  }
-
-  const anchorSet = new Set(anchorExpanded);
-  const overlap = halfGroupLines.filter((idx) => anchorSet.has(idx));
-  const anchorInHalf = halfGroupLines.includes(backSegmentIndex);
-
-  if (anchorInHalf) {
-    return mergeSortedUniqueIndexes(anchorExpanded, halfGroupLines);
-  }
-  if (overlap.length > 0) {
-    return anchorExpanded.length > 0 ? anchorExpanded : halfGroupLines;
-  }
-  return halfGroupLines;
+  return anchorExpanded.length > 0 ? anchorExpanded : [backSegmentIndex];
 }
 
 /** Caminho frente→fundo: só LINE vira lateral; CURVE ignorada; chanfre separado. */
@@ -1304,6 +1420,10 @@ function classifySidesByFrontAnchor(
     fundoSeed.length ? fundoSeed : [backSegmentIndex],
     fundoExpandForbidden,
     byIdx,
+    buildAllowedIndexesForDeflectionGroups(
+      groups,
+      backGroupLineIndexes.length > 0 ? backGroupLineIndexes : fundoSeed,
+    ),
   );
   fundoIndexes = reclaimFundoChanfreConnectorsFromPaths(
     ordered,
@@ -1346,15 +1466,29 @@ function classifySidesByFrontAnchor(
     ...ladoDireitoIndexes,
     ...ladoEsquerdoIndexes,
   ]);
-  const frontColinear = expandColinearAdjacentWithinBoundary(
-    ordered,
-    [frontSegmentIndex],
-    frontExpandForbidden,
-    byIdx,
+  const frontGroup = groups.find((g) =>
+    g.segmentIndexes.includes(frontSegmentIndex),
   );
-  if (frontColinear.length > 0) {
-    frontIndexes = frontColinear;
-    frenteLen = round2(sumLinePathDistances(frontColinear, byIdx));
+  if (frontGroup) {
+    frontIndexes = frontGroup.segmentIndexes.filter((idx) => {
+      const seg = byIdx.get(idx);
+      return seg && !isOfficialCurveSegment(seg) && !chanfreSet.has(idx);
+    });
+    if (frontIndexes.length > 0) {
+      frenteLen = round2(sumLinePathDistances(frontIndexes, byIdx));
+    }
+  } else {
+    const frontColinear = expandColinearAdjacentWithinBoundary(
+      ordered,
+      [frontSegmentIndex],
+      frontExpandForbidden,
+      byIdx,
+      buildAllowedIndexesForDeflectionGroups(groups, [frontSegmentIndex]),
+    );
+    if (frontColinear.length > 0) {
+      frontIndexes = frontColinear;
+      frenteLen = round2(sumLinePathDistances(frontColinear, byIdx));
+    }
   }
 
   const frontClaimed = new Set<number>(frontIndexes);
@@ -1535,6 +1669,9 @@ export function groupSegmentsByDeflection(
       rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
       current = [];
     } else if (isCornerDeflection(deflection)) {
+      rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
+      current = chanfreSet.has(nextIdx) ? [] : [nextIdx];
+    } else {
       rawGroups.push([...current.filter((idx) => !chanfreSet.has(idx))]);
       current = chanfreSet.has(nextIdx) ? [] : [nextIdx];
     }
@@ -2155,11 +2292,16 @@ export function classifySidesByTxtRingPaths(
     ? resolveSegmentBearing(frontSeg, frontNext)
     : frontGroup.averageBearing;
 
+  const backSegmentIndex = findOppositeBackSegmentIndex(
+    segments,
+    frontSegmentIndex,
+  );
   const backGroupIdx = findBackGroupIdxByRingHalf(
     groups,
     ordered,
     frontSegmentIndex,
     frontBearing,
+    backSegmentIndex,
   );
 
   const withoutChanfre = (indexes: number[]) =>

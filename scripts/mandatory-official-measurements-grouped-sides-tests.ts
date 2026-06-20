@@ -543,7 +543,49 @@ function testLegacyFieldsCompatibility() {
   console.log('OK testLegacyFieldsCompatibility');
 }
 
+/** Regra global <=30° — frente quebrada (14,66 + 9,66 = 24,32 m; Martine QD02 LT04-like). */
+function testMartineQd02Lt04ColinearFrontGroup() {
+  const segs = [
+    lineSeg(0, 0, 0, 0, 14.66, 14.66),
+    lineSeg(1, 0, 14.66, 0.35, 24.32, 9.66),
+    lineSeg(2, 0.35, 24.32, 36.03, 24.32, 35.68),
+    lineSeg(3, 36.03, 24.32, 36.03, 60.03, 35.71),
+    lineSeg(4, 36.03, 60.03, 0, 60.03, 36.03),
+    lineSeg(5, 0, 60.03, 0, 0, 60.03),
+  ];
+  const m = getOfficialLotMeasurements(
+    block(segs, {
+      number: '04',
+      block_name: '02',
+      front_segment_index: 0,
+      front_street_name: 'RUA PRINCIPAL',
+      frente: 24.32,
+      area: 1200,
+    }),
+    'MARTINE-QD02-LT04',
+  );
+
+  assert(near(m.frente, 24.32), `frente 14,66+9,66 m: ${m.frente}`);
+  const frontSegs = m.sides?.front.segmentIndexes ?? [];
+  assert(
+    frontSegs.includes(0) && frontSegs.includes(1),
+    `frente deve agrupar seg. 0 e 1 (equiv. seg. 2+3 TXT): ${frontSegs}`,
+  );
+  assert(
+    !frontSegs.includes(2),
+    `lateral dir. (seg. 2) não pode entrar na frente: ${frontSegs}`,
+  );
+  const frontSum = frontSegs.reduce((acc, idx) => {
+    const row = segs.find((s) => s.segment_index === idx);
+    return acc + Number(row?.distance ?? 0);
+  }, 0);
+  assert(near(m.frente, frontSum), `frente ${m.frente} != soma ${frontSum}`);
+  assertDisjointSideIndexes(m);
+  console.log('OK testMartineQd02Lt04ColinearFrontGroup');
+}
+
 testRectangularSingleSegmentPerSide();
+testMartineQd02Lt04ColinearFrontGroup();
 testQd01Lt15ColinearBackGroup();
 testBrokenBackTwoSegments();
 testBrokenRightSideTwoSegments();

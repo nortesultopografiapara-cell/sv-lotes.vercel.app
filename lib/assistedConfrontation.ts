@@ -32,6 +32,7 @@ import {
 import type { LotSheetSideConfrontants } from '@/lib/lotSheetEnrichment';
 import { wgs84RingEdgeForMergedSegmentIndex } from '@/lib/resolveFrontStreetGuide';
 import {
+  getOfficialLotMeasurements,
   parseOfficialSegmentsFromBlock,
   readManualOfficialSideMap,
   resolveFrontSegmentIndex,
@@ -549,6 +550,13 @@ function stepDistance(ring: number[], fromPos: number, toPos: number): number {
   return (toPos - fromPos + n) % n;
 }
 
+const SIDE_ROLE_TO_MEASURES_KEY = {
+  frente: 'front',
+  fundo: 'back',
+  ladoDireito: 'right',
+  ladoEsquerdo: 'left',
+} as const;
+
 function officialSegmentIndexesFromUtmRing(
   block: Record<string, unknown>,
   side: SideRole,
@@ -556,6 +564,25 @@ function officialSegmentIndexesFromUtmRing(
   streetGuides: StreetGuideConfrontInput[] = [],
 ): number[] {
   const manualMap = readManualOfficialSideMap(block);
+  const txtSegments = parseOfficialSegmentsFromBlock(block);
+  if (txtSegments.length >= 2) {
+    const measures = getOfficialLotMeasurements(
+      block,
+      block.number ?? block.id,
+    );
+    const sideKey = SIDE_ROLE_TO_MEASURES_KEY[side];
+    const fromTxt = measures.sides?.[sideKey]?.segmentIndexes ?? [];
+    if (fromTxt.length > 0) {
+      const myKind = OFFICIAL_KIND_BY_ROLE[side];
+      const excluded = new Set<number>();
+      for (const [idx, kind] of manualMap) {
+        if (kind !== myKind) excluded.add(idx);
+      }
+      const filtered = fromTxt.filter((idx) => !excluded.has(idx));
+      if (filtered.length > 0) return [...new Set(filtered)].sort((a, b) => a - b);
+    }
+  }
+
   const official = getOfficialConfrontationRing(block, project);
   if (!official.ok) return [];
   const { segments, sides } = resolveSideSegmentIndexes(
