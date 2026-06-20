@@ -174,6 +174,8 @@ export async function POST(request: Request) {
         success: true,
         created: false,
         skipped: result.skipped,
+        skipCode: result.skipCode ?? null,
+        skipDiagnostic: result.skipDiagnostic ?? null,
         charge: result.charge,
         invoice: result.invoice,
       });

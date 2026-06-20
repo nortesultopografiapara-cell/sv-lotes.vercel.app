@@ -584,6 +584,78 @@ export async function findExistingSaasPaymentForReference(
   return { id: String(data.id) };
 }
 
+/**
+ * Pagamento manual/gateway que realmente confirma a competência — bloqueia nova cobrança.
+ * Registro órfão (fatura não PAGO e sem cobrança PAID vinculada) não bloqueia regeneração.
+ */
+export async function findConfirmedSaasPaymentForReference(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  referenceMonth: string,
+  invoiceId?: string | null,
+): Promise<{ id: string } | null> {
+  const existing = await findExistingSaasPaymentForReference(
+    supabaseAdmin,
+    companyId,
+    referenceMonth,
+  );
+  if (!existing) return null;
+
+  let invoiceStatus = '';
+  if (invoiceId) {
+    const { data: inv } = await supabaseAdmin
+      .from('master_saas_invoices')
+      .select('status')
+      .eq('id', invoiceId)
+      .maybeSingle();
+    invoiceStatus = String(inv?.status || '').toUpperCase();
+  } else {
+    const { data: inv } = await supabaseAdmin
+      .from('master_saas_invoices')
+      .select('status')
+      .eq('company_id', companyId)
+      .eq('reference_month', referenceMonth)
+      .maybeSingle();
+    invoiceStatus = String(inv?.status || '').toUpperCase();
+  }
+
+  if (invoiceStatus === 'PAGO') return existing;
+
+  const { data: linkedCharge } = await supabaseAdmin
+    .from('saas_charges')
+    .select('status, deleted_at')
+    .eq('company_id', companyId)
+    .eq('master_payment_id', existing.id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (
+    linkedCharge &&
+    String(linkedCharge.status || '').toUpperCase() === 'PAID'
+  ) {
+    return existing;
+  }
+
+  return null;
+}
+
+/** Contagem de pagamentos paid na competência (diagnóstico). */
+export async function countPaidSaasPaymentsForReference(
+  supabaseAdmin: SupabaseClient,
+  companyId: string,
+  referenceMonth: string,
+): Promise<number> {
+  const { count, error } = await supabaseAdmin
+    .from('master_saas_payments')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('reference_month', referenceMonth)
+    .eq('status', 'paid');
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
 /** Avança próximo vencimento após pagamento confirmado da competência. */
 export async function advanceSubscriptionAfterSaasPayment(
   supabaseAdmin: SupabaseClient,

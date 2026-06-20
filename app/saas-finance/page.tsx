@@ -85,19 +85,9 @@ function enrichCompany(
   return augmentCompanyBilling(raw, subscription, { paidReferenceMonths, payments });
 }
 
-function normalizeChargeSkipMessage(skipped: string): string {
-  const lower = skipped.toLowerCase();
-  if (
-    lower.includes('já existe') ||
-    lower.includes('ja existe') ||
-    lower.includes('competência') ||
-    lower.includes('competencia') ||
-    lower.includes('faturada') ||
-    lower.includes('confirmado')
-  ) {
-    return 'Cobrança já existe para esta competência.';
-  }
-  return skipped;
+function formatChargeSkipAlert(skipped: string, skipCode?: string | null): string {
+  const code = skipCode ? `[${skipCode}] ` : '';
+  return `${code}${skipped}`;
 }
 
 function toGenerateChargeCompany(
@@ -645,7 +635,7 @@ function SaaSFinancePageContent() {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança');
         if (json.skipped) {
-          alert(normalizeChargeSkipMessage(String(json.skipped)));
+          alert(formatChargeSkipAlert(String(json.skipped), json.skipCode));
         } else if (payload.billingType === 'BOLETO') {
           alert('Boleto gerado com sucesso.');
         } else {

@@ -550,10 +550,21 @@ function testReactivationAndHistory() {
   assert(saasCharges.includes('reactivateCompanyOnPayment'), 'reativação automática');
   assert(saasCharges.includes("from('master_saas_payments')"), 'histórico');
   assert(saasCharges.includes('advanceSubscriptionAfterSaasPayment'), 'próximo vencimento');
+  assert(saasCharges.includes('[saas-charge-skip]'), 'log diagnóstico skip cobrança');
+  assert(saasCharges.includes('findConfirmedSaasPaymentForReference'), 'pagamento confirmado real');
+  assert(saasCharges.includes('reopenInvoiceWhenSafeForRegeneration'), 'reabre fatura sem cobrança ativa');
 
   const billing = read('lib/saasBilling.ts');
   assert(billing.includes('findExistingSaasPaymentForReference'), 'idempotência pagamento');
+  assert(billing.includes('findConfirmedSaasPaymentForReference'), 'bloqueio só pagamento confirmado');
   assert(billing.includes('advanceSubscriptionAfterSaasPayment'), 'avanço vencimento billing');
+
+  const financePage = read('app/saas-finance/page.tsx');
+  assert(
+    financePage.includes('formatChargeSkipAlert') && !financePage.includes('normalizeChargeSkipMessage'),
+    'UI exibe motivo real do skip',
+  );
+  assert(financePage.includes('json.skipCode'), 'UI repassa skipCode');
 }
 
 function testSaasPixValidation() {

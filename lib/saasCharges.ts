@@ -12,6 +12,8 @@ import {
   markInvoicePaid,
   reactivateCompanyOnPayment,
   findExistingSaasPaymentForReference,
+  findConfirmedSaasPaymentForReference,
+  countPaidSaasPaymentsForReference,
   advanceSubscriptionAfterSaasPayment,
   reopenSaasInvoiceForNewCharge,
   type MasterSaasInvoice,
@@ -197,11 +199,32 @@ export type CreateSaasPixChargeOptions = {
 
 export type SaasPixChargeOutcome = 'created' | 'completed' | 'skipped';
 
+export type SaasChargeSkipCode =
+  | 'invoice_missing'
+  | 'active_local_charge'
+  | 'asaas_external_charge'
+  | 'confirmed_manual_payment';
+
+export type SaasChargeSkipDiagnostic = {
+  reason: SaasChargeSkipCode;
+  message: string;
+  company_id: string;
+  reference_month: string;
+  invoice_id: string | null;
+  external_charge_id: string | null;
+  activeChargesCount: number;
+  paidPaymentsCount: number;
+  invoiceStatus: string | null;
+  paymentMethod: string | null;
+};
+
 export type CreateSaasPixChargeResult = {
   charge: SaasCharge;
   invoice: MasterSaasInvoice | null;
   created: boolean;
   skipped?: string;
+  skipCode?: SaasChargeSkipCode;
+  skipDiagnostic?: SaasChargeSkipDiagnostic;
   outcome?: SaasPixChargeOutcome;
   invoiceCreated?: boolean;
 };
@@ -462,6 +485,167 @@ export async function reconcileSaasChargesBeforeRegeneration(
   }
 }
 
+function logSaasChargeSkipDiagnostic(diag: SaasChargeSkipDiagnostic): void {
+  console.warn('[saas-charge-skip]', JSON.stringify(diag));
+}
+
+function toSaasChargeSkipInput(ch: SaasCharge): SaasChargeSkipInput {
+  return {
+    status: ch.status,
+    payment_id: ch.payment_id,
+    pix_copy_paste: ch.pix_copy_paste,
+    payment_url: ch.payment_url,
+    master_payment_id: ch.master_payment_id,
+    deleted_at: ch.deleted_at,
+  };
+}
+
+async function loadSaasChargeRegenerationContext(
+  supabaseAdmin: SupabaseClient,
+  invoice: MasterSaasInvoice,
+): Promise<{
+  invoiceCharges: SaasChargeSkipInput[];
+  activeCharges: SaasChargeSkipInput[];
+  existingCharge: SaasChargeSkipInput | null;
+}> {
+  const { data: allChargeRows } = await supabaseAdmin
+    .from('saas_charges')
+    .select('*')
+    .eq('invoice_id', invoice.id)
+    .order('created_at', { ascending: false });
+
+  const invoiceCharges = (allChargeRows || []).map((row) =>
+    toSaasChargeSkipInput(parseChargeRow(row as Record<string, unknown>)),
+  );
+
+  const { data: chargeRows } = await supabaseAdmin
+    .from('saas_charges')
+    .select('*')
+    .eq('invoice_id', invoice.id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const activeCharges = (chargeRows || [])
+    .map((row) => toSaasChargeSkipInput(parseChargeRow(row as Record<string, unknown>)))
+    .filter((ch) => isSaasChargeBlockingDuplicate(ch));
+
+  const existingCharge = activeCharges[0] ?? null;
+
+  return { invoiceCharges, activeCharges, existingCharge };
+}
+
+async function reopenInvoiceWhenSafeForRegeneration(
+  supabaseAdmin: SupabaseClient,
+  invoice: MasterSaasInvoice,
+  options?: { dueDate?: string },
+): Promise<MasterSaasInvoice> {
+  const { activeCharges } = await loadSaasChargeRegenerationContext(supabaseAdmin, invoice);
+  if (activeCharges.length > 0) return invoice;
+
+  const confirmedPayment = await findConfirmedSaasPaymentForReference(
+    supabaseAdmin,
+    invoice.company_id,
+    invoice.reference_month,
+    invoice.id,
+  );
+  if (confirmedPayment) return invoice;
+
+  const invoiceStatus = String(invoice.status || '').toUpperCase();
+  const needsReopen =
+    invoiceStatus === 'PAGO' ||
+    invoiceStatus === 'CANCELADO' ||
+    invoiceStatus === 'CANCELLED' ||
+    invoiceStatus === 'CANCELADA' ||
+    String(invoice.external_charge_id || '').trim() !== '';
+
+  if (!needsReopen) return invoice;
+
+  return reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, {
+    dueDate: options?.dueDate ? resolveAsaasDueDate(options.dueDate) : undefined,
+  });
+}
+
+async function buildSaasChargeSkipDiagnostic(
+  supabaseAdmin: SupabaseClient,
+  params: {
+    reason: SaasChargeSkipCode;
+    message: string;
+    companyId: string;
+    referenceMonth: string;
+    invoice: MasterSaasInvoice | null;
+    activeChargesCount: number;
+  },
+): Promise<SaasChargeSkipDiagnostic> {
+  const paidPaymentsCount = await countPaidSaasPaymentsForReference(
+    supabaseAdmin,
+    params.companyId,
+    params.referenceMonth,
+  );
+
+  return {
+    reason: params.reason,
+    message: params.message,
+    company_id: params.companyId,
+    reference_month: params.referenceMonth,
+    invoice_id: params.invoice?.id ?? null,
+    external_charge_id: params.invoice?.external_charge_id
+      ? String(params.invoice.external_charge_id)
+      : null,
+    activeChargesCount: params.activeChargesCount,
+    paidPaymentsCount,
+    invoiceStatus: params.invoice?.status ? String(params.invoice.status) : null,
+    paymentMethod: params.invoice?.payment_method
+      ? String(params.invoice.payment_method)
+      : null,
+  };
+}
+
+async function returnSaasPixChargeSkipped(
+  supabaseAdmin: SupabaseClient,
+  params: {
+    reason: SaasChargeSkipCode;
+    message: string;
+    companyId: string;
+    referenceMonth: string;
+    invoice: MasterSaasInvoice | null;
+    existingCharge: SaasCharge | null;
+    invoiceCreated: boolean;
+    activeChargesCount: number;
+  },
+): Promise<CreateSaasPixChargeResult> {
+  const skipDiagnostic = await buildSaasChargeSkipDiagnostic(supabaseAdmin, params);
+  logSaasChargeSkipDiagnostic(skipDiagnostic);
+
+  return {
+    charge: params.existingCharge ?? (null as unknown as SaasCharge),
+    invoice: params.invoice,
+    created: false,
+    skipped: params.message,
+    skipCode: params.reason,
+    skipDiagnostic,
+    outcome: 'skipped',
+    invoiceCreated: params.invoiceCreated,
+  };
+}
+
+async function reopenInvoiceIfNoActiveCharges(
+  supabaseAdmin: SupabaseClient,
+  invoiceId: string,
+): Promise<void> {
+  const { data: chargeRows } = await supabaseAdmin
+    .from('saas_charges')
+    .select('status, payment_id, pix_copy_paste, payment_url, master_payment_id, deleted_at')
+    .eq('invoice_id', invoiceId)
+    .is('deleted_at', null);
+
+  const hasBlocking = (chargeRows || []).some((row) =>
+    isSaasChargeBlockingDuplicate(row as SaasChargeSkipInput),
+  );
+  if (hasBlocking) return;
+
+  await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoiceId);
+}
+
 async function detachSaasInvoiceFromGateway(
   supabaseAdmin: SupabaseClient,
   invoiceId: string,
@@ -592,53 +776,30 @@ export async function createSaasPixCharge(
   const invoiceCreated = invoiceResult.created;
   let invoice = invoiceResult.invoice;
   if (!invoice) {
-    return {
-      charge: null as unknown as SaasCharge,
+    const referenceMonth = options?.referenceMonth || currentReferenceMonth();
+    return returnSaasPixChargeSkipped(supabaseAdmin, {
+      reason: 'invoice_missing',
+      message: invoiceResult.skipped || 'Não foi possível gerar fatura',
+      companyId: company.id,
+      referenceMonth,
       invoice: null,
-      created: false,
-      skipped: invoiceResult.skipped || 'Não foi possível gerar fatura',
-      outcome: 'skipped',
+      existingCharge: null,
       invoiceCreated: false,
-    };
+      activeChargesCount: 0,
+    });
   }
 
   await reconcileSaasChargesBeforeRegeneration(supabaseAdmin, invoice.id);
 
-  const { data: allChargeRows } = await supabaseAdmin
-    .from('saas_charges')
-    .select('*')
-    .eq('invoice_id', invoice.id)
-    .order('created_at', { ascending: false });
+  let { invoiceCharges, activeCharges, existingCharge } =
+    await loadSaasChargeRegenerationContext(supabaseAdmin, invoice);
 
-  const invoiceCharges = (allChargeRows || []).map((row) =>
-    parseChargeRow(row as Record<string, unknown>),
-  );
-
-  const { data: chargeRows } = await supabaseAdmin
-    .from('saas_charges')
-    .select('*')
-    .eq('invoice_id', invoice.id)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
-
-  const now = new Date().toISOString();
-
-  let existingCharge =
-    (chargeRows || [])
-      .map((row) => parseChargeRow(row as Record<string, unknown>))
-      .find((ch) => isSaasChargeBlockingDuplicate(ch)) ?? null;
-
-  const invoiceChargeInputs: SaasChargeSkipInput[] = invoiceCharges.map((ch) => ({
-    status: ch.status,
-    payment_id: ch.payment_id,
-    pix_copy_paste: ch.pix_copy_paste,
-    payment_url: ch.payment_url,
-    master_payment_id: ch.master_payment_id,
-    deleted_at: ch.deleted_at,
-  }));
+  invoice = await reopenInvoiceWhenSafeForRegeneration(supabaseAdmin, invoice, {
+    dueDate: options?.dueDate || invoice.due_date,
+  });
 
   if (
-    shouldIgnoreInvoiceExternalChargeForRegeneration(existingCharge, invoiceChargeInputs) &&
+    shouldIgnoreInvoiceExternalChargeForRegeneration(existingCharge, invoiceCharges) &&
     String(invoice.external_charge_id || '').trim()
   ) {
     const reopenDue = options?.dueDate || invoice.due_date;
@@ -647,34 +808,46 @@ export async function createSaasPixCharge(
     });
   }
 
+  ({ invoiceCharges, activeCharges, existingCharge } =
+    await loadSaasChargeRegenerationContext(supabaseAdmin, invoice));
+
   const skipReason = await resolveSaasPixChargeSkipReasonAsync(invoice, existingCharge, undefined, {
-    invoiceCharges: invoiceChargeInputs,
+    invoiceCharges,
   });
   if (skipReason) {
-    return {
-      charge: existingCharge ?? (null as unknown as SaasCharge),
+    const reason: SaasChargeSkipCode =
+      skipReason.includes('Asaas') || skipReason.includes('asaas')
+        ? 'asaas_external_charge'
+        : 'active_local_charge';
+    return returnSaasPixChargeSkipped(supabaseAdmin, {
+      reason,
+      message: skipReason,
+      companyId: company.id,
+      referenceMonth: invoice.reference_month,
       invoice,
-      created: false,
-      skipped: skipReason,
-      outcome: 'skipped',
+      existingCharge: null,
       invoiceCreated,
-    };
+      activeChargesCount: activeCharges.length,
+    });
   }
 
-  const existingPayment = await findExistingSaasPaymentForReference(
+  const existingPayment = await findConfirmedSaasPaymentForReference(
     supabaseAdmin,
     company.id,
     invoice.reference_month,
+    invoice.id,
   );
   if (existingPayment) {
-    return {
-      charge: existingCharge ?? (null as unknown as SaasCharge),
+    return returnSaasPixChargeSkipped(supabaseAdmin, {
+      reason: 'confirmed_manual_payment',
+      message: 'Pagamento já confirmado para esta competência',
+      companyId: company.id,
+      referenceMonth: invoice.reference_month,
       invoice,
-      created: false,
-      skipped: 'Pagamento já confirmado para esta competência',
-      outcome: 'skipped',
+      existingCharge: null,
       invoiceCreated,
-    };
+      activeChargesCount: activeCharges.length,
+    });
   }
 
   const docError = validateCompanyDocumentForAsaas(company.name, company.cnpj);
@@ -697,6 +870,7 @@ export async function createSaasPixCharge(
 
   const billingType = options?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
   const lateFee = resolveSaasLateFeePercents();
+  const now = new Date().toISOString();
 
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('saas_charges')
@@ -1245,7 +1419,7 @@ export async function cancelSaasCharge(
   if (updErr || !updated) throw new Error(updErr?.message || 'Falha ao cancelar cobrança');
 
   if (charge.invoice_id) {
-    await detachSaasInvoiceFromGateway(supabaseAdmin, charge.invoice_id, 'CANCELADO');
+    await reopenInvoiceIfNoActiveCharges(supabaseAdmin, charge.invoice_id);
   }
 
   await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
@@ -1368,7 +1542,7 @@ export async function deleteCancelledSaasCharge(
   }
 
   if (charge.invoice_id) {
-    await detachSaasInvoiceFromGateway(supabaseAdmin, charge.invoice_id, 'CANCELADO');
+    await reopenInvoiceIfNoActiveCharges(supabaseAdmin, charge.invoice_id);
   }
 
   await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
