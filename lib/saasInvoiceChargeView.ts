@@ -24,6 +24,9 @@ export type SaasInvoiceChargeRow = {
   bankSlipIdentification: string | null;
   chargeId: string | null;
   hasCharge: boolean;
+  finePercent?: number | null;
+  interestPercent?: number | null;
+  lateFeeEnabled?: boolean | null;
 };
 
 export function truncatePaymentId(paymentId?: string | null, head = 8, tail = 4): string {
@@ -129,6 +132,9 @@ export function buildSaasInvoiceChargeRows(
       bankSlipIdentification: ch?.bank_slip_identification || null,
       chargeId: ch?.id || null,
       hasCharge: !!ch?.id,
+      finePercent: ch?.fine_percent ?? null,
+      interestPercent: ch?.interest_percent ?? null,
+      lateFeeEnabled: ch?.late_fee_enabled ?? null,
     };
   })
     .filter((row) => {

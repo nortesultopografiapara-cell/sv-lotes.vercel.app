@@ -8,6 +8,7 @@ import {
   refreshSaasChargePixFromAsaas,
   syncSaasChargeStatusFromAsaas,
 } from '@/lib/saasCharges';
+import { backfillSaasChargesLateFees } from '@/lib/saasLateFees';
 import {
   assertSaasPaymentGatewayConfigured,
   getSaasPaymentGatewayStatus,
@@ -114,6 +115,22 @@ export async function POST(request: Request) {
       }
       const charge = await refreshSaasChargePixFromAsaas(supabaseAdmin, chargeId);
       return NextResponse.json({ success: true, charge });
+    }
+
+    if (action === 'configure_late_fees') {
+      try {
+        assertSaasPaymentGatewayConfigured();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Gateway não configurado.';
+        return NextResponse.json({ error: message }, { status: 503 });
+      }
+      const result = await backfillSaasChargesLateFees(supabaseAdmin, {
+        chargeId: chargeId || undefined,
+        companyId: String(body.companyId || '').trim() || undefined,
+        limit: body.limit ? Number(body.limit) : undefined,
+        actorUserId: body.userId,
+      });
+      return NextResponse.json({ success: true, ...result });
     }
 
     try {

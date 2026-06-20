@@ -22,6 +22,8 @@ import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
 import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
+import { resolveSaasLateFeePercents } from '@/lib/saasLateFeeConfig';
+import { buildSaasChargeLateFeeDbPatch } from '@/lib/saasLateFees';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import type { CompanyPricingSource } from '@/lib/companyPricing';
 import { createSaasCashIncomeFromChargePaid } from '@/lib/saasCashMovements';
@@ -53,6 +55,10 @@ export type SaasCharge = {
   deleted_by?: string | null;
   delete_reason?: string | null;
   asaas_delete_status?: string | null;
+  fine_percent?: number | null;
+  interest_percent?: number | null;
+  late_fee_enabled?: boolean | null;
+  late_fee_configured_at?: string | null;
   company_name?: string;
   plan_label?: string;
 };
@@ -87,6 +93,12 @@ function parseChargeRow(row: Record<string, unknown>): SaasCharge {
     deleted_by: row.deleted_by ? String(row.deleted_by) : null,
     delete_reason: row.delete_reason ? String(row.delete_reason) : null,
     asaas_delete_status: row.asaas_delete_status ? String(row.asaas_delete_status) : null,
+    fine_percent: row.fine_percent != null ? Number(row.fine_percent) : null,
+    interest_percent: row.interest_percent != null ? Number(row.interest_percent) : null,
+    late_fee_enabled: row.late_fee_enabled === true,
+    late_fee_configured_at: row.late_fee_configured_at
+      ? String(row.late_fee_configured_at)
+      : null,
   };
 }
 
@@ -470,6 +482,7 @@ export async function createSaasPixCharge(
 
   const asaasDueDate = resolveAsaasDueDate(invoice.due_date);
   const billingType = options?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
+  const lateFee = resolveSaasLateFeePercents();
 
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('saas_charges')
@@ -482,6 +495,9 @@ export async function createSaasPixCharge(
       status: 'PENDING',
       payment_provider: 'pending',
       billing_type: billingType,
+      fine_percent: lateFee.finePercent,
+      interest_percent: lateFee.interestPercent,
+      late_fee_enabled: true,
       updated_at: now,
     })
     .select('*')
@@ -504,6 +520,8 @@ export async function createSaasPixCharge(
     payerDocument: company.cnpj || undefined,
     payerEmail: company.email || undefined,
     billingType,
+    finePercent: lateFee.finePercent,
+    interestPercent: lateFee.interestPercent,
   });
 
   const { data: withPix, error: pixErr } = await supabaseAdmin
@@ -519,7 +537,10 @@ export async function createSaasPixCharge(
       bank_slip_identification: pix.bankSlipIdentification ?? null,
       billing_type: pix.billingType || billingType,
       status: mapProviderStatusToChargeStatus(pix.status),
-      updated_at: new Date().toISOString(),
+      ...buildSaasChargeLateFeeDbPatch({
+        finePercent: lateFee.finePercent,
+        interestPercent: lateFee.interestPercent,
+      }),
     })
     .eq('id', charge.id)
     .select('*')

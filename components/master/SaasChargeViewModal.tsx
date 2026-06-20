@@ -4,6 +4,7 @@ import { formatDateBr } from '@/lib/saasSubscription';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
 import { truncatePaymentId } from '@/lib/saasInvoiceChargeView';
+import { SaasLateFeeLabels } from '@/components/master/saas/SaasLateFeeLabels';
 import { X, Copy, ExternalLink } from 'lucide-react';
 
 type Props = {
@@ -52,6 +53,12 @@ export function SaasChargeViewModal({ row, onClose, onCopyPix }: Props) {
             <div>
               <p className="text-gray-500">Vencimento</p>
               <p className="text-white">{formatDateBr(row.dueDate)}</p>
+              <SaasLateFeeLabels
+                status={row.chargeStatus || row.invoiceStatus}
+                finePercent={row.finePercent}
+                interestPercent={row.interestPercent}
+                className="mt-1.5"
+              />
             </div>
             <div>
               <p className="text-gray-500">Forma</p>

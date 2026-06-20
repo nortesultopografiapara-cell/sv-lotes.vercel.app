@@ -17,6 +17,10 @@ export type CreatePixChargeInput = {
   payerEmail?: string;
   /** Default PIX — Asaas não combina PIX+BOLETO no mesmo payment. */
   billingType?: SaasMasterBillingType;
+  /** Multa por atraso (%). Default: DEFAULT_FINE_PERCENT. */
+  finePercent?: number;
+  /** Juros diário (%). Default: DEFAULT_INTEREST_PERCENT. */
+  interestPercent?: number;
 };
 
 export type PixChargeProviderResult = {

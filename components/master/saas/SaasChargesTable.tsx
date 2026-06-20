@@ -10,6 +10,7 @@ import {
   saasChargeDisplayStatusTone,
 } from '@/lib/masterSaasPanel';
 import { SaasActionsDropdown, type SaasActionItem } from './SaasActionsDropdown';
+import { SaasLateFeeLabels } from './SaasLateFeeLabels';
 
 type Props = {
   rows: SaasInvoiceChargeRow[];
@@ -239,7 +240,16 @@ export function SaasChargesTable({
                   <td className="p-4 text-[13px] text-emerald-300 font-semibold tabular-nums">
                     {formatSaasCurrency(row.amount)}
                   </td>
-                  <td className="p-4 text-[12px] text-gray-300">{formatDateBr(row.dueDate)}</td>
+                  <td className="p-4 text-[12px] text-gray-300">
+                    <div>{formatDateBr(row.dueDate)}</div>
+                    <SaasLateFeeLabels
+                      status={row.chargeStatus || row.invoiceStatus}
+                      finePercent={row.finePercent}
+                      interestPercent={row.interestPercent}
+                      compact
+                      className="mt-1"
+                    />
+                  </td>
                   <td className="p-4 text-[12px] text-gray-300">{row.billingType}</td>
                   <td className="p-4">
                     <span

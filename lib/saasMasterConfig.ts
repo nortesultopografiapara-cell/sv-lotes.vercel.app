@@ -13,3 +13,8 @@ export const SAAS_AUTO_SUSPEND_AFTER_DAYS = 10;
 export const ASAAS_SUPPORTS_COMBINED_PIX_BOLETO = false;
 
 export type SaasMasterBillingType = 'PIX' | 'BOLETO';
+
+export {
+  DEFAULT_FINE_PERCENT,
+  DEFAULT_INTEREST_PERCENT,
+} from '@/lib/saasLateFeeConfig';

@@ -16,6 +16,8 @@ import {
 
 import type { PaymentProvider } from '@/lib/payments/providers/types';
 
+import { resolveSaasLateFeePercents } from '@/lib/saasLateFeeConfig';
+
 
 
 export type PixChargeInput = {
@@ -89,6 +91,7 @@ function adaptProvider(provider: PaymentProvider): GatewayBillingProvider {
     providerName: provider.providerName,
 
     async createPixCharge(input: PixChargeInput): Promise<PixChargeResult> {
+      const lateFee = resolveSaasLateFeePercents();
 
       const result = await provider.createPixCharge({
 
@@ -105,6 +108,10 @@ function adaptProvider(provider: PaymentProvider): GatewayBillingProvider {
         payerName: input.payerName,
 
         payerDocument: input.payerDocument,
+
+        finePercent: lateFee.finePercent,
+
+        interestPercent: lateFee.interestPercent,
 
       });
 

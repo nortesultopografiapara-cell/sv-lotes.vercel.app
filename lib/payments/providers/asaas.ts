@@ -6,6 +6,11 @@ import type {
   PixChargeProviderResult,
 } from './types';
 import { mapProviderStatusToChargeStatus, normalizeSaasBillingType } from './types';
+import {
+  buildAsaasFinePayload,
+  buildAsaasInterestPayload,
+  resolveSaasLateFeePercents,
+} from '@/lib/saasLateFeeConfig';
 
 type AsaasPayment = {
   id?: string;
@@ -16,6 +21,8 @@ type AsaasPayment = {
   nossoNumero?: string;
   paymentDate?: string;
   clientPaymentDate?: string;
+  fine?: { value?: number; type?: string } | null;
+  interest?: { value?: number } | null;
 };
 
 type AsaasPixQrCode = {
@@ -248,6 +255,52 @@ async function findOrCreateCustomer(input: CreatePixChargeInput): Promise<string
   return created.id;
 }
 
+function buildAsaasPaymentLateFeeFields(input: CreatePixChargeInput): {
+  fine: ReturnType<typeof buildAsaasFinePayload>;
+  interest: ReturnType<typeof buildAsaasInterestPayload>;
+} {
+  const { finePercent, interestPercent } = resolveSaasLateFeePercents({
+    finePercent: input.finePercent,
+    interestPercent: input.interestPercent,
+  });
+  return {
+    fine: buildAsaasFinePayload(finePercent),
+    interest: buildAsaasInterestPayload(interestPercent),
+  };
+}
+
+/** GET /payments/{id} — detalhes incluindo multa/juros. */
+export async function fetchAsaasPaymentDetails(paymentId: string): Promise<AsaasPayment> {
+  const id = String(paymentId || '').trim();
+  if (!id) throw new Error('paymentId obrigatório.');
+  return asaasFetch<AsaasPayment>(`/payments/${encodeURIComponent(id)}`);
+}
+
+/** PUT /payments/{id} — aplica multa/juros quando ausentes no Asaas. */
+export async function updateAsaasPaymentLateFees(
+  paymentId: string,
+  options?: { finePercent?: number; interestPercent?: number },
+): Promise<AsaasPayment> {
+  const id = String(paymentId || '').trim();
+  if (!id) throw new Error('paymentId obrigatório.');
+  const lateFees = buildAsaasPaymentLateFeeFields({
+    companyId: '',
+    chargeId: '',
+    amount: 0,
+    dueDate: '',
+    description: '',
+    finePercent: options?.finePercent,
+    interestPercent: options?.interestPercent,
+  });
+  return asaasFetch<AsaasPayment>(`/payments/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      fine: lateFees.fine,
+      interest: lateFees.interest,
+    }),
+  });
+}
+
 /** Provider Asaas — PIX e Boleto via API v3 (billingType mutuamente exclusivo). */
 export class AsaasPaymentProvider implements PaymentProvider {
   readonly providerName = 'asaas';
@@ -255,6 +308,7 @@ export class AsaasPaymentProvider implements PaymentProvider {
   async createPixCharge(input: CreatePixChargeInput): Promise<PixChargeProviderResult> {
     const billingType = normalizeSaasBillingType(input.billingType);
     const customerId = await findOrCreateCustomer(input);
+    const lateFees = buildAsaasPaymentLateFeeFields(input);
 
     const payment = await asaasFetch<AsaasPayment>('/payments', {
       method: 'POST',
@@ -265,6 +319,8 @@ export class AsaasPaymentProvider implements PaymentProvider {
         dueDate: input.dueDate,
         description: input.description.slice(0, 500),
         externalReference: input.chargeId,
+        fine: lateFees.fine,
+        interest: lateFees.interest,
       }),
     });
 

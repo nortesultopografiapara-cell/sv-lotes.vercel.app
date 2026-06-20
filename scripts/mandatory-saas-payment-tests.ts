@@ -40,6 +40,15 @@ import {
   validateCompanyDocumentForAsaas,
   resolveAsaasDueDate,
 } from '../lib/saasPixValidation';
+import {
+  DEFAULT_FINE_PERCENT,
+  DEFAULT_INTEREST_PERCENT,
+  hasAsaasLateFeesConfigured,
+  isSaasChargeEligibleForLateFeeUpdate,
+  isSaasChargeOpenForLateFeeDisplay,
+  resolveSaasLateFeePercents,
+} from '../lib/saasLateFeeConfig';
+import { shouldSkipLateFeeForAsaasStatus } from '../lib/saasLateFees';
 
 const ROOT = process.cwd();
 
@@ -877,6 +886,67 @@ function testChargesUiBoleto() {
   const modal = read('components/master/SaasChargeViewModal.tsx');
   assert(modal.includes('Abrir boleto'), 'modal boleto');
   assert(modal.includes('bankSlipIdentification'), 'modal identificação boleto');
+  assert(modal.includes('SaasLateFeeLabels'), 'modal multa/juros');
+}
+
+function testSaasLateFees() {
+  assert(DEFAULT_FINE_PERCENT === 2, 'DEFAULT_FINE_PERCENT = 2');
+  assert(DEFAULT_INTEREST_PERCENT === 0.033, 'DEFAULT_INTEREST_PERCENT = 0.033');
+
+  const resolved = resolveSaasLateFeePercents();
+  assert(resolved.finePercent === 2, 'resolve fine');
+  assert(resolved.interestPercent === 0.033, 'resolve interest');
+
+  assert(isSaasChargeEligibleForLateFeeUpdate('PENDING'), 'PENDING elegível');
+  assert(isSaasChargeEligibleForLateFeeUpdate('OVERDUE'), 'OVERDUE elegível');
+  assert(!isSaasChargeEligibleForLateFeeUpdate('PAID'), 'PAID bloqueado');
+  assert(!isSaasChargeEligibleForLateFeeUpdate('CANCELLED'), 'CANCELLED bloqueado');
+
+  assert(
+    hasAsaasLateFeesConfigured({ fine: { value: 2 }, interest: { value: 0.033 } }),
+    'multa/juros configurados no Asaas',
+  );
+  assert(
+    !hasAsaasLateFeesConfigured({ fine: { value: 0 }, interest: { value: 0.033 } }),
+    'sem multa = não configurado',
+  );
+
+  assert(shouldSkipLateFeeForAsaasStatus('RECEIVED'), 'RECEIVED não altera');
+  assert(shouldSkipLateFeeForAsaasStatus('CONFIRMED'), 'CONFIRMED não altera');
+  assert(shouldSkipLateFeeForAsaasStatus('REFUNDED'), 'REFUNDED não altera');
+  assert(shouldSkipLateFeeForAsaasStatus('CANCELLED'), 'CANCELLED Asaas não altera');
+
+  assert(isSaasChargeOpenForLateFeeDisplay('PENDING'), 'UI aberta PENDING');
+  assert(isSaasChargeOpenForLateFeeDisplay('OVERDUE'), 'UI aberta OVERDUE');
+  assert(!isSaasChargeOpenForLateFeeDisplay('PAID'), 'UI paga oculta encargos');
+
+  const asaas = read('lib/payments/providers/asaas.ts');
+  assert(asaas.includes('fine: lateFees.fine'), 'POST Asaas inclui fine');
+  assert(asaas.includes('interest: lateFees.interest'), 'POST Asaas inclui interest');
+  assert(asaas.includes('updateAsaasPaymentLateFees'), 'PUT multa/juros');
+  assert(asaas.includes('fetchAsaasPaymentDetails'), 'GET detalhes cobrança');
+
+  const charges = read('lib/saasCharges.ts');
+  assert(charges.includes('finePercent: lateFee.finePercent'), 'createSaasPixCharge envia multa');
+  assert(charges.includes('interestPercent: lateFee.interestPercent'), 'createSaasPixCharge envia juros');
+  assert(charges.includes('late_fee_enabled'), 'persiste late_fee_enabled');
+
+  const migration = read('supabase/migrations/20260813120000_saas_charges_late_fee.sql');
+  assert(migration.includes('fine_percent'), 'migration fine_percent');
+  assert(migration.includes('interest_percent'), 'migration interest_percent');
+  assert(migration.includes('late_fee_enabled'), 'migration late_fee_enabled');
+  assert(migration.includes('late_fee_configured_at'), 'migration late_fee_configured_at');
+
+  const api = read('app/api/master/saas-charges/route.ts');
+  assert(api.includes("action === 'configure_late_fees'"), 'API configure_late_fees SUPER_ADMIN');
+  assert(api.includes('backfillSaasChargesLateFees'), 'API backfill importada');
+
+  const table = read('components/master/saas/SaasChargesTable.tsx');
+  assert(table.includes('SaasLateFeeLabels'), 'tabela exibe multa/juros');
+
+  const lateFees = read('lib/saasLateFees.ts');
+  assert(lateFees.includes('configureAsaasPaymentLateFeesIfMissing'), 'rotina idempotente');
+  assert(lateFees.includes('already_configured'), 'não duplica no Asaas');
 }
 
 async function run() {
@@ -909,6 +979,7 @@ async function run() {
     ['boleto Asaas + migration', testBoletoSupport],
     ['auto-suspend 10 dias', testAutoSuspendConfig],
     ['UI cobrança boleto', testChargesUiBoleto],
+    ['multa e juros automáticos SaaS', testSaasLateFees],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['auth tenant billing', testTenantBillingAuth],
