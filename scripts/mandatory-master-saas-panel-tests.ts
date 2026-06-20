@@ -173,7 +173,7 @@ function testSubscriptionHelpers() {
 
 function testSuperAdminNav() {
   const items = flattenSuperAdminNav();
-  assert(items.some((i) => i.href === '/master/reports'), 'reports route');
+  assert(!items.some((i) => i.href === '/master/reports'), 'reports hidden from nav');
   assert(items.some((i) => i.href === '/master/audit'), 'audit route');
   assert(items.some((i) => i.href === '/master/settings'), 'settings route');
   assert(!items.some((i) => i.href === '/settings/global'), 'old settings removed');

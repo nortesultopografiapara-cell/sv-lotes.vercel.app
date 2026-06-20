@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
-import { SUPER_ADMIN_NAV, isSuperAdminNavActive } from '@/lib/superAdminNav';
+import { getVisibleSuperAdminNav, isSuperAdminNavActive } from '@/lib/superAdminNav';
 import './admin-shell.css';
 
 type SuperAdminSidebarProps = {
@@ -26,6 +26,7 @@ export function SuperAdminSidebar({
 }: SuperAdminSidebarProps) {
   const pathname = usePathname();
   const showLabels = isMobile || !collapsed;
+  const navSections = getVisibleSuperAdminNav();
 
   const content = (
     <>
@@ -54,7 +55,7 @@ export function SuperAdminSidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-1.5">
-        {SUPER_ADMIN_NAV.map((section) => (
+        {navSections.map((section) => (
           <div key={section.label} className="mb-5 last:mb-0">
             {showLabels && <p className="sa-nav-section-label">{section.label}</p>}
             <ul className="space-y-0.5">
