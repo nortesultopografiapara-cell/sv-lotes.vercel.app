@@ -27,7 +27,9 @@ import {
   buildSignedPdfStoragePath,
   buildSignatureHistory,
   daysPendingSince,
+  debugPublicSign,
   generateSignatureToken,
+  isSaasSignPublicDebugEnabled,
   isSignatureExpired,
   signatureExpiresAt,
   type CompanyContractSignatureRow,
@@ -605,6 +607,64 @@ function testSignedPdfStoragePathBinding() {
   console.log('OK testSignedPdfStoragePathBinding');
 }
 
+function testPublicSignRouteUsesSafeCompanyLookup() {
+  const routeSrc = readFileSync(
+    join(process.cwd(), 'app/api/sign/[token]/route.ts'),
+    'utf8',
+  );
+  const serviceSrc = readFileSync(
+    join(process.cwd(), 'lib/saasContractSignatureService.ts'),
+    'utf8',
+  );
+
+  assert(!isSaasSignPublicDebugEnabled(), 'SAAS_SIGN_PUBLIC_DEBUG desligado por padrão');
+  assert(
+    serviceSrc.includes('debugPublicSign') &&
+      serviceSrc.includes("process.env.SAAS_SIGN_PUBLIC_DEBUG"),
+    'logs de diagnóstico gated por SAAS_SIGN_PUBLIC_DEBUG=1',
+  );
+
+  let debugCalled = false;
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => {
+    if (String(args[0]) === 'SAAS_SIGN_PUBLIC_DEBUG') debugCalled = true;
+    origLog(...args);
+  };
+  debugPublicSign({ step: 'test' });
+  console.log = origLog;
+  assert(!debugCalled, 'debugPublicSign não emite log sem SAAS_SIGN_PUBLIC_DEBUG=1');
+
+  assert(
+    routeSrc.includes('resolvePublicSignContext'),
+    'rota /api/sign/[token] usa resolvePublicSignContext',
+  );
+  assert(
+    !routeSrc.includes('cpf, document, email'),
+    'rota não faz SELECT de companies com colunas inexistentes (cpf/document)',
+  );
+  assert(
+    routeSrc.includes('resolveSaasContractCompanyProfile'),
+    'resposta pública usa perfil filtrado da empresa',
+  );
+  assert(
+    !routeSrc.includes('contract_bank_name') &&
+      !routeSrc.includes('technical_responsible_cpf'),
+    'resposta JSON não expõe campos internos de companies',
+  );
+  assert(
+    serviceSrc.includes("select('*')") &&
+      serviceSrc.includes('resolvePublicSignContext') &&
+      serviceSrc.includes("from('companies')"),
+    'resolvePublicSignContext carrega companies com select(*) apenas server-side',
+  );
+  assert(
+    serviceSrc.includes("eq('provider_signature_token', trimmed)"),
+    'getSignatureByToken também busca provider_signature_token',
+  );
+
+  console.log('OK testPublicSignRouteUsesSafeCompanyLookup');
+}
+
 async function main() {
   testTokenGeneration();
   testExpiration();
@@ -625,6 +685,7 @@ async function main() {
   testLegacyContractCompatibility();
   testSignUrl();
   testPendingDays();
+  testPublicSignRouteUsesSafeCompanyLookup();
   await testNextBuild();
   console.log('\nTodos os testes de assinatura eletrônica passaram.');
 }

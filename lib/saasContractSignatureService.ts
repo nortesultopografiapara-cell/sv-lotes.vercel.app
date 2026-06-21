@@ -38,6 +38,16 @@ import { onlyDigits } from '@/lib/inputMasks';
 const SAAS_CONTRACT_BUCKET = 'company-assets';
 const SIGNATURE_EXPIRY_DAYS = 30;
 
+/** Logs de diagnóstico /sign/[token] — ativar com SAAS_SIGN_PUBLIC_DEBUG=1 no ambiente. */
+export function isSaasSignPublicDebugEnabled(): boolean {
+  return String(process.env.SAAS_SIGN_PUBLIC_DEBUG || '').trim() === '1';
+}
+
+export function debugPublicSign(payload: Record<string, unknown>): void {
+  if (!isSaasSignPublicDebugEnabled()) return;
+  console.log('SAAS_SIGN_PUBLIC_DEBUG', payload);
+}
+
 export type CompanyContractSignatureRow = {
   id: string;
   contract_id: string;
@@ -454,14 +464,174 @@ export async function getSignatureByToken(
   supabaseAdmin: SupabaseClient,
   token: string,
 ): Promise<CompanyContractSignatureRow | null> {
-  const { data, error } = await supabaseAdmin
+  const trimmed = String(token || '').trim();
+  if (!trimmed) return null;
+
+  const { data: byClient, error: clientErr } = await supabaseAdmin
     .from('company_contract_signatures')
     .select('*')
-    .eq('signature_token', token)
+    .eq('signature_token', trimmed)
     .maybeSingle();
 
-  if (error || !data) return null;
-  return data as CompanyContractSignatureRow;
+  if (clientErr) {
+    console.warn('[SAAS_CONTRACT_SIGN] getByClientToken', clientErr.message);
+  }
+  if (byClient) return byClient as CompanyContractSignatureRow;
+
+  const { data: byProvider, error: providerErr } = await supabaseAdmin
+    .from('company_contract_signatures')
+    .select('*')
+    .eq('provider_signature_token', trimmed)
+    .maybeSingle();
+
+  if (providerErr) {
+    console.warn('[SAAS_CONTRACT_SIGN] getByProviderToken', providerErr.message);
+  }
+  return (byProvider as CompanyContractSignatureRow) || null;
+}
+
+export type PublicSignResolveFailureReason =
+  | 'invalid_token'
+  | 'contract_not_found'
+  | 'company_not_found';
+
+export type PublicSignResolveResult =
+  | {
+      ok: true;
+      signature: CompanyContractSignatureRow;
+      contract: CompanyContractRow & {
+        pdf_signed_url?: string | null;
+        content_version?: string | null;
+      };
+      company: Record<string, unknown>;
+    }
+  | {
+      ok: false;
+      reason: PublicSignResolveFailureReason;
+      detail: string;
+      signature?: CompanyContractSignatureRow | null;
+      contractId?: string | null;
+      companyId?: string | null;
+    };
+
+/** Resolve token → assinatura → contrato → empresa para /sign/[token] (logs temporários de diagnóstico). */
+export async function resolvePublicSignContext(
+  supabaseAdmin: SupabaseClient,
+  token: string,
+): Promise<PublicSignResolveResult> {
+  const trimmed = String(token || '').trim();
+  debugPublicSign({
+    step: 'token_received',
+    tokenPrefix: trimmed.slice(0, 12),
+    tokenLength: trimmed.length,
+  });
+
+  const signature = await getSignatureByToken(supabaseAdmin, trimmed);
+  if (!signature) {
+    debugPublicSign({
+      step: 'signature_lookup',
+      found: false,
+      table: 'company_contract_signatures',
+      columns: ['signature_token', 'provider_signature_token'],
+    });
+    return {
+      ok: false,
+      reason: 'invalid_token',
+      detail: 'Nenhum registro em company_contract_signatures para o token informado.',
+    };
+  }
+
+  debugPublicSign({
+    step: 'signature_lookup',
+    found: true,
+    signatureId: signature.id,
+    contractId: signature.contract_id,
+    companyId: signature.company_id,
+    signatureStatus: signature.signature_status,
+  });
+
+  const { data: contract, error: contractErr } = await supabaseAdmin
+    .from('company_contracts')
+    .select(
+      'id, company_id, contract_number, contract_url, pdf_signed_url, status, version, content_version, archived_at, superseded_by',
+    )
+    .eq('id', signature.contract_id)
+    .maybeSingle();
+
+  if (contractErr || !contract) {
+    debugPublicSign({
+      step: 'contract_lookup',
+      found: false,
+      table: 'company_contracts',
+      contractId: signature.contract_id,
+      error: contractErr?.message || 'no row',
+    });
+    return {
+      ok: false,
+      reason: 'contract_not_found',
+      detail:
+        contractErr?.message ||
+        `contract_id ${signature.contract_id} não encontrado em company_contracts`,
+      signature,
+      contractId: signature.contract_id,
+      companyId: signature.company_id,
+    };
+  }
+
+  debugPublicSign({
+    step: 'contract_lookup',
+    found: true,
+    contractId: contract.id,
+    contractNumber: contract.contract_number,
+    version: contract.version,
+    status: contract.status,
+    contentVersion: contract.content_version,
+    archivedAt: contract.archived_at,
+    supersededBy: contract.superseded_by,
+  });
+
+  const { data: company, error: companyErr } = await supabaseAdmin
+    .from('companies')
+    .select('*')
+    .eq('id', signature.company_id)
+    .maybeSingle();
+
+  if (companyErr || !company) {
+    debugPublicSign({
+      step: 'company_lookup',
+      found: false,
+      table: 'companies',
+      companyId: signature.company_id,
+      error: companyErr?.message || 'no row',
+    });
+    return {
+      ok: false,
+      reason: 'company_not_found',
+      detail:
+        companyErr?.message ||
+        `company_id ${signature.company_id} não encontrado em companies`,
+      signature,
+      contractId: signature.contract_id,
+      companyId: signature.company_id,
+    };
+  }
+
+  debugPublicSign({
+    step: 'company_lookup',
+    found: true,
+    companyId: company.id,
+    companyName: company.name,
+  });
+
+  return {
+    ok: true,
+    signature,
+    contract: contract as CompanyContractRow & {
+      pdf_signed_url?: string | null;
+      content_version?: string | null;
+    },
+    company: company as Record<string, unknown>,
+  };
 }
 
 export function buildSignatureHistory(
@@ -728,6 +898,10 @@ export async function signContractElectronically(
 }> {
   const signature = await getSignatureByToken(supabaseAdmin, token);
   if (!signature) {
+    debugPublicSign({
+      step: 'sign_post_invalid_token',
+      tokenPrefix: String(token || '').slice(0, 12),
+    });
     throw new SaasContractStepError('validation', 'Link de assinatura inválido.');
   }
 
@@ -772,6 +946,12 @@ export async function signContractElectronically(
     .single();
 
   if (contractErr || !contract) {
+    debugPublicSign({
+      step: 'sign_post_contract_lookup',
+      found: false,
+      contractId: signature.contract_id,
+      error: contractErr?.message || 'no row',
+    });
     throw new SaasContractStepError('validation', 'Contrato não encontrado.');
   }
 

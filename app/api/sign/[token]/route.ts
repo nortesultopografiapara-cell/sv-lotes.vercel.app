@@ -4,11 +4,12 @@ import { buildSaasContractPdfWithMeta } from '@/lib/saasContractPdf';
 import { resolveStoredSaasContractContentVersion } from '@/lib/saasContractContent';
 import { subscriptionDatesForContractPdf } from '@/lib/companySubscriptionDates';
 import {
-  getSignatureByToken,
   isSignatureExpired,
   markContractSignatureViewed,
   resolveClientIp,
+  resolvePublicSignContext,
   signContractElectronically,
+  debugPublicSign,
 } from '@/lib/saasContractSignatureService';
 import { SaasContractStepError } from '@/lib/saasContractErrors';
 import { loadFreshSaasContractContext } from '@/lib/saasContractService';
@@ -57,10 +58,26 @@ export async function GET(
   const download = url.searchParams.get('download') === '1';
   const pdf = url.searchParams.get('pdf') === '1';
 
-  let signature = await getSignatureByToken(supabaseAdmin, token);
-  if (!signature) {
-    return NextResponse.json({ error: 'Link inválido ou expirado.' }, { status: 404 });
+  const resolved = await resolvePublicSignContext(supabaseAdmin, token);
+  if (!resolved.ok) {
+    const status = resolved.reason === 'invalid_token' ? 404 : 404;
+    const userMessage =
+      resolved.reason === 'invalid_token'
+        ? 'Link inválido ou expirado.'
+        : 'Contrato não encontrado.';
+    debugPublicSign({
+      step: 'resolve_failed',
+      reason: resolved.reason,
+      detail: resolved.detail,
+      contractId: resolved.contractId ?? null,
+      companyId: resolved.companyId ?? null,
+      signatureId: resolved.signature?.id ?? null,
+      userMessage,
+    });
+    return NextResponse.json({ error: userMessage }, { status });
   }
+
+  let { signature, contract, company } = resolved;
 
   if (isSignatureExpired(signature.expires_at) && !isPublicClientSignBlocked(signature.signature_status)) {
     if (signature.signature_status !== 'EXPIRED') {
@@ -75,24 +92,6 @@ export async function GET(
         .single();
       if (data) signature = data as typeof signature;
     }
-  }
-
-  const { data: contract } = await supabaseAdmin
-    .from('company_contracts')
-    .select('id, contract_number, contract_url, pdf_signed_url, status, version, content_version')
-    .eq('id', signature.contract_id)
-    .single();
-
-  const { data: company } = await supabaseAdmin
-    .from('companies')
-    .select(
-      'id, name, cnpj, cpf, document, email, phone, telefone, address, endereco, logradouro, numero, complemento, bairro, quadra, lote, city, cidade, state, uf, cep, legal_representative, responsible_name',
-    )
-    .eq('id', signature.company_id)
-    .single();
-
-  if (!contract || !company) {
-    return NextResponse.json({ error: 'Contrato não encontrado.' }, { status: 404 });
   }
 
   if (pdf) {
