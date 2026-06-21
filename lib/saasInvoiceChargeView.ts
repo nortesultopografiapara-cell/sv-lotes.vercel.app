@@ -1,6 +1,10 @@
 import type { MasterSaasInvoice } from '@/lib/saasBilling';
 import type { SaasCharge } from '@/lib/saasCharges';
-import { isSaasChargeSoftDeleted } from '@/lib/saasCharges';
+import {
+  canDeleteCancelledSaasCharge,
+  isSaasChargeActiveForDisplay,
+  isSaasChargeSelectableForInvoiceRow,
+} from '@/lib/saasCharges';
 
 export type SaasInvoiceChargeRow = {
   invoiceId: string;
@@ -64,7 +68,8 @@ export function mapInternalChargeStatus(
 
 function chargeDisplayScore(charge: SaasCharge): number {
   let score = 0;
-  if (String(charge.status || '').toUpperCase() !== 'CANCELLED') score += 100;
+  if (isSaasChargeActiveForDisplay(charge)) score += 200;
+  if (canDeleteCancelledSaasCharge(charge.status)) score += 50;
   if (String(charge.payment_id || '').trim()) score += 50;
   if (String(charge.pix_copy_paste || '').trim()) score += 30;
   if (String(charge.pix_qr_code || '').trim()) score += 20;
@@ -78,7 +83,7 @@ export function pickBestChargeForInvoice(
   invoiceId: string,
 ): SaasCharge | null {
   const candidates = charges.filter(
-    (c) => c.invoice_id === invoiceId && !isSaasChargeSoftDeleted(c),
+    (c) => c.invoice_id === invoiceId && isSaasChargeSelectableForInvoiceRow(c),
   );
   if (!candidates.length) return null;
 
@@ -140,6 +145,8 @@ export function buildSaasInvoiceChargeRows(
     .filter((row) => {
       if (row.hasCharge) return true;
       const st = row.invoiceStatus.toUpperCase();
-      return st !== 'CANCELADO' && st !== 'CANCELLED';
+      if (st === 'PAGO' || st === 'VENCIDO') return true;
+      if (String(row.paymentId || '').trim()) return true;
+      return false;
     });
 }

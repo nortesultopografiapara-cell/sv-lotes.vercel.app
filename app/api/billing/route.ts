@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listSaasCharges, syncSaasChargeStatusFromAsaas } from '@/lib/saasCharges';
+import { listSaasCharges, syncSaasChargeStatusFromAsaas, isSaasChargeActiveForDisplay } from '@/lib/saasCharges';
 import { listMasterSaasInvoices } from '@/lib/saasBilling';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { resolveCompanyPricing } from '@/lib/companyPricing';
@@ -58,10 +58,7 @@ export async function GET(request: Request) {
     const charges = await listSaasCharges(admin, { companyId: tenantId, limit: 36 });
     const invoices = await listMasterSaasInvoices(admin, { companyId: tenantId, limit: 36 });
     const rows = buildSaasInvoiceChargeRows(invoices, charges);
-    const currentCharge =
-      charges.find((c) => c.status === 'PENDING' || c.status === 'OVERDUE') ||
-      charges[0] ||
-      null;
+    const currentCharge = charges.find((c) => isSaasChargeActiveForDisplay(c)) ?? null;
 
     const pricing = company ? resolveCompanyPricing(company) : null;
     const lastPayment = (payments || [])[0] ?? null;

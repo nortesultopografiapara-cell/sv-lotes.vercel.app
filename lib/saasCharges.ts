@@ -116,15 +116,78 @@ export function canDeleteCancelledSaasCharge(status: string | null | undefined):
   return key === 'CANCELLED' || key === 'CANCELADA' || key === 'CANCELED';
 }
 
+/** Cobrança visível como ativa (Fatura Atual / GERADA) — exclui órfãs e canceladas. */
+export function isSaasChargeActiveForDisplay(
+  charge: Pick<
+    SaasCharge,
+    | 'status'
+    | 'deleted_at'
+    | 'payment_id'
+    | 'pix_copy_paste'
+    | 'payment_url'
+    | 'master_payment_id'
+  > | null,
+): boolean {
+  if (!charge || isSaasChargeSoftDeleted(charge)) return false;
+  const st = String(charge.status || '').toUpperCase();
+  if (['CANCELLED', 'CANCELADA', 'CANCELED'].includes(st)) return false;
+  if (st === 'PAID') return false;
+  if (isOrphanSaasCharge(charge)) return false;
+  return st === 'PENDING' || st === 'OVERDUE';
+}
+
+/** Linha de cobrança no painel — inclui cancelada aguardando exclusão. */
+export function isSaasChargeSelectableForInvoiceRow(
+  charge: Pick<
+    SaasCharge,
+    | 'status'
+    | 'deleted_at'
+    | 'payment_id'
+    | 'pix_copy_paste'
+    | 'payment_url'
+    | 'master_payment_id'
+  > | null,
+): boolean {
+  if (!charge || isSaasChargeSoftDeleted(charge)) return false;
+  if (canDeleteCancelledSaasCharge(charge.status)) return true;
+  return isSaasChargeActiveForDisplay(charge);
+}
+
+export function canSoftDeleteSaasCharge(
+  charge: Pick<
+    SaasCharge,
+    | 'status'
+    | 'deleted_at'
+    | 'payment_id'
+    | 'pix_copy_paste'
+    | 'payment_url'
+    | 'master_payment_id'
+  >,
+): boolean {
+  if (isSaasChargeSoftDeleted(charge)) return false;
+  if (canDeleteCancelledSaasCharge(charge.status)) return true;
+  if (!isOrphanSaasCharge(charge)) return false;
+  const st = String(charge.status || '').toUpperCase();
+  return ['PENDING', 'OVERDUE', 'CANCELLED', 'CANCELADA', 'CANCELED'].includes(st);
+}
+
 export function assertCanDeleteCancelledSaasCharge(
-  charge: Pick<SaasCharge, 'status' | 'deleted_at'>,
+  charge: Pick<
+    SaasCharge,
+    | 'status'
+    | 'deleted_at'
+    | 'payment_id'
+    | 'pix_copy_paste'
+    | 'payment_url'
+    | 'master_payment_id'
+  >,
 ): void {
   if (isSaasChargeSoftDeleted(charge)) {
     throw new Error('Cobrança já foi excluída.');
   }
-  if (!canDeleteCancelledSaasCharge(charge.status)) {
+  if (!canSoftDeleteSaasCharge(charge)) {
     throw new Error(
-      'Somente cobranças canceladas podem ser excluídas. Cobranças ativas, pendentes, vencidas ou pagas não podem ser removidas.',
+      'Somente cobranças canceladas ou órfãs sem vínculo Asaas podem ser excluídas. Cobranças ativas, vencidas ou pagas não podem ser removidas.',
     );
   }
 }
@@ -651,6 +714,25 @@ async function reopenInvoiceIfNoActiveCharges(
   if (hasBlocking) return;
 
   await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoiceId);
+}
+
+/** Após cancelar/excluir cobranças — oculta fatura fantasma (PENDENTE sem cobrança). */
+async function finalizeSaasInvoiceAfterChargeRemoval(
+  supabaseAdmin: SupabaseClient,
+  invoiceId: string,
+): Promise<void> {
+  const { data: chargeRows } = await supabaseAdmin
+    .from('saas_charges')
+    .select('status, deleted_at')
+    .eq('invoice_id', invoiceId)
+    .is('deleted_at', null);
+
+  const hasSelectableCharge = (chargeRows || []).some((row) =>
+    isSaasChargeSelectableForInvoiceRow(row as SaasCharge),
+  );
+  if (hasSelectableCharge) return;
+
+  await detachSaasInvoiceFromGateway(supabaseAdmin, invoiceId, 'CANCELADO');
 }
 
 async function detachSaasInvoiceFromGateway(
@@ -1451,7 +1533,7 @@ export async function cancelSaasCharge(
   if (updErr || !updated) throw new Error(updErr?.message || 'Falha ao cancelar cobrança');
 
   if (charge.invoice_id) {
-    await reopenInvoiceIfNoActiveCharges(supabaseAdmin, charge.invoice_id);
+    await finalizeSaasInvoiceAfterChargeRemoval(supabaseAdmin, charge.invoice_id);
   }
 
   await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);
@@ -1558,6 +1640,7 @@ export async function deleteCancelledSaasCharge(
   const { data: updated, error: updErr } = await supabaseAdmin
     .from('saas_charges')
     .update({
+      status: 'CANCELLED',
       deleted_at: now,
       deleted_by: actorUserId || null,
       delete_reason: deleteReason,
@@ -1574,7 +1657,7 @@ export async function deleteCancelledSaasCharge(
   }
 
   if (charge.invoice_id) {
-    await reopenInvoiceIfNoActiveCharges(supabaseAdmin, charge.invoice_id);
+    await finalizeSaasInvoiceAfterChargeRemoval(supabaseAdmin, charge.invoice_id);
   }
 
   await updateCompanyFinancialStatus(supabaseAdmin, charge.company_id);

@@ -40,11 +40,18 @@ function testCanDeleteOnlyCancelled() {
 
   let threw = false;
   try {
-    assertCanDeleteCancelledSaasCharge({ status: 'PENDING', deleted_at: null });
+    assertCanDeleteCancelledSaasCharge({
+      status: 'PENDING',
+      payment_id: 'pay_active',
+      pix_copy_paste: null,
+      payment_url: null,
+      master_payment_id: null,
+      deleted_at: null,
+    });
   } catch {
     threw = true;
   }
-  assert(threw, 'assertCanDeleteCancelled rejeita PENDING');
+  assert(threw, 'assertCanDeleteCancelled rejeita PENDING ativa');
 
   threw = false;
   try {
@@ -58,6 +65,14 @@ function testCanDeleteOnlyCancelled() {
   assert(threw, 'assertCanDeleteCancelled rejeita já excluída');
 
   assertCanDeleteCancelledSaasCharge({ status: 'CANCELLED', deleted_at: null });
+  assertCanDeleteCancelledSaasCharge({
+    status: 'PENDING',
+    payment_id: null,
+    pix_copy_paste: null,
+    payment_url: null,
+    master_payment_id: null,
+    deleted_at: null,
+  });
   console.log('OK testCanDeleteOnlyCancelled');
 }
 
@@ -81,6 +96,7 @@ function testSoftDeletedHiddenFromLists() {
       status: 'PENDING',
       payment_provider: 'mock',
       invoice_id: 'inv2',
+      payment_id: 'pay_active',
     },
   ];
   assert(isSaasChargeSoftDeleted(charges[0]), 'deleted detectado');
@@ -116,11 +132,115 @@ function testBuildRowsHidesCancelledWithoutCharge() {
       issued_at: '2026-07-01',
       status: 'PENDENTE',
     },
+    {
+      id: 'inv3',
+      company_id: 'co1',
+      invoice_number: '00003/2026-08',
+      reference_month: '2026-08',
+      amount: 100,
+      discount_amount: 0,
+      final_amount: 100,
+      due_date: '2026-08-01',
+      issued_at: '2026-08-01',
+      status: 'PAGO',
+    },
   ];
   const rows = buildSaasInvoiceChargeRows(invoices, []);
-  assert(rows.length === 1, 'cancelada sem cobrança oculta');
-  assert(rows[0].invoiceId === 'inv2', 'pendente permanece');
+  assert(rows.length === 1, 'somente fatura paga sem cobrança permanece');
+  assert(rows[0].invoiceId === 'inv3', 'fatura paga permanece');
   console.log('OK testBuildRowsHidesCancelledWithoutCharge');
+}
+
+function testDeleteCancelSyncFlow() {
+  const {
+    isSaasChargeActiveForDisplay,
+    canSoftDeleteSaasCharge,
+  } = require('../lib/saasCharges') as typeof import('../lib/saasCharges');
+  const { resolveSaasChargeDisplayStatus } = require('../lib/masterSaasPanel') as typeof import('../lib/masterSaasPanel');
+
+  const cancelledCharge = {
+    id: 'ch-cancel',
+    company_id: 'co1',
+    invoice_id: 'inv-jul',
+    amount: 549.99,
+    due_date: '2026-07-27',
+    status: 'CANCELLED' as const,
+    payment_provider: 'asaas',
+    payment_id: null,
+    deleted_at: null,
+  };
+  assert(canSoftDeleteSaasCharge(cancelledCharge), 'cancelada pode excluir');
+  assert(!isSaasChargeActiveForDisplay(cancelledCharge), 'cancelada não é fatura atual');
+
+  const deletedCharge = { ...cancelledCharge, deleted_at: '2026-07-09T12:00:00.000Z' };
+  assert(pickBestChargeForInvoice([deletedCharge as SaasCharge], 'inv-jul') === null, 'soft delete some do pick');
+
+  const pendingRow = buildSaasInvoiceChargeRows(
+    [
+      {
+        id: 'inv-jul',
+        company_id: 'co1',
+        invoice_number: '00001/2026-07',
+        reference_month: '2026-07',
+        amount: 549.99,
+        discount_amount: 0,
+        final_amount: 549.99,
+        due_date: '2026-07-27',
+        issued_at: '2026-07-01',
+        status: 'PENDENTE',
+      },
+    ],
+    [],
+  );
+  assert(pendingRow.length === 0, 'fatura pendente sem cobrança não aparece como GERADA');
+
+  const cancelledVisible = buildSaasInvoiceChargeRows(
+    [
+      {
+        id: 'inv-jul',
+        company_id: 'co1',
+        invoice_number: '00001/2026-07',
+        reference_month: '2026-07',
+        amount: 549.99,
+        discount_amount: 0,
+        final_amount: 549.99,
+        due_date: '2026-07-27',
+        issued_at: '2026-07-01',
+        status: 'PENDENTE',
+      },
+    ],
+    [cancelledCharge as SaasCharge],
+  );
+  assert(cancelledVisible.length === 1, 'cancelada aguardando exclusão permanece no master');
+  assert(
+    resolveSaasChargeDisplayStatus(cancelledVisible[0]) === 'CANCELADA',
+    'status cancelada no master',
+  );
+
+  const afterDelete = buildSaasInvoiceChargeRows(
+    [
+      {
+        id: 'inv-jul',
+        company_id: 'co1',
+        invoice_number: '00001/2026-07',
+        reference_month: '2026-07',
+        amount: 549.99,
+        discount_amount: 0,
+        final_amount: 549.99,
+        due_date: '2026-07-27',
+        issued_at: '2026-07-01',
+        status: 'CANCELADO',
+      },
+    ],
+    [deletedCharge as SaasCharge],
+  );
+  assert(afterDelete.length === 0, 'após excluir some do master');
+
+  const lib = read('lib/saasCharges.ts');
+  assert(lib.includes('finalizeSaasInvoiceAfterChargeRemoval'), 'finaliza fatura após exclusão');
+  assert(lib.includes('isSaasChargeActiveForDisplay'), 'filtro fatura atual');
+
+  console.log('OK testDeleteCancelSyncFlow');
 }
 
 async function testMockProviderDelete() {
@@ -199,6 +319,7 @@ async function testAsaasDelete404Optional() {
 testCanDeleteOnlyCancelled();
 testSoftDeletedHiddenFromLists();
 testBuildRowsHidesCancelledWithoutCharge();
+testDeleteCancelSyncFlow();
 void testMockProviderDelete().then(() => {
   testMigrationAndQueries();
   testApiAndUi();
