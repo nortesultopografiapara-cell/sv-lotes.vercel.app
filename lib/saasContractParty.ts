@@ -3,6 +3,7 @@
  */
 
 import { formatContractCnpj } from '@/lib/saasContractFormat';
+import { resolveSaasContractLegalRepresentative } from '@/lib/saasContractCompanyProfile';
 
 export type SaasContractPartyType = 'PF' | 'PJ';
 
@@ -125,7 +126,5 @@ export function resolveSaasContractRepresentative(
   },
   party: SaasContractorParty,
 ): string {
-  if (party.isNaturalPerson) return '';
-  const rep = String(company.legal_representative || company.responsible_name || '').trim();
-  return rep || 'Representante legal';
+  return resolveSaasContractLegalRepresentative(company, party);
 }

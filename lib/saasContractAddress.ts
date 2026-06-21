@@ -28,11 +28,38 @@ function pick(...values: unknown[]): string {
   return '';
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Remove bairro colado ao final do logradouro quando já existe campo bairro. */
+export function stripAddressNeighborhood(street: string, neighborhood: string): string {
+  const s = String(street ?? '').trim();
+  const n = String(neighborhood ?? '').trim();
+  if (!s || !n) return s;
+
+  let out = s.replace(new RegExp(`,?\\s*Bairro\\s+${escapeRegExp(n)}\\s*$`, 'i'), '');
+  out = out.replace(new RegExp(`,?\\s*${escapeRegExp(n)}\\s*$`, 'i'), '');
+  return out.replace(/,\s*$/, '').trim();
+}
+
+/** Separa complemento S/N do fim da linha de logradouro. */
+export function splitAddressComplement(street: string): { street: string; complement: string } {
+  const s = String(street ?? '').trim();
+  const match = s.match(/^(.*?)(?:,\s*)?(S\s*\/?\s*N\.?)\s*$/i);
+  if (!match) return { street: s, complement: '' };
+  return {
+    street: match[1].replace(/,\s*$/, '').trim(),
+    complement: 'S/N',
+  };
+}
+
 /** Insere separadores quando logradouro/quadra/lote vêm colados (ex.: "Rua 02quadra 123"). */
 export function normalizeContractStreetLine(raw?: string | null): string {
   let s = String(raw ?? '').trim();
   if (!s) return s;
 
+  s = s.replace(/\b(Quadra\s+\d+)\s+(Lote\s+\d+)/gi, '$1, $2');
   s = s.replace(/(\d)(?=(quadra|q\.?\s?\d|lote|lt\.?\s?\d))/gi, '$1, ');
   s = s.replace(/(quadra|q\.?\s?\d*)\s*(?=lote|lt\.?\s?\d)/gi, '$1, ');
   s = s.replace(/\bquadra\b/gi, 'Quadra');
@@ -44,29 +71,49 @@ export function normalizeContractStreetLine(raw?: string | null): string {
   return s.trim();
 }
 
+function addressContainsToken(address: string, token: string): boolean {
+  if (!address || !token) return false;
+  const norm = address.toLowerCase();
+  const digits = token.replace(/\D/g, '');
+  if (/^quadra/i.test(token) && digits) {
+    return norm.includes(`quadra ${digits}`) || norm.includes(`quadra${digits}`);
+  }
+  if (/^lote/i.test(token) && digits) {
+    return norm.includes(`lote ${digits}`) || norm.includes(`lote${digits}`);
+  }
+  return norm.includes(token.toLowerCase());
+}
+
 export function buildContractStreetLine(parts: SaasContractAddressParts): string {
-  const street = normalizeContractStreetLine(parts.street);
+  const streetBase = normalizeContractStreetLine(parts.street);
+  const { street: streetWithoutSn, complement: snComplement } = splitAddressComplement(streetBase);
   const number = pick(parts.number);
-  const complement = pick(parts.complement);
-  const block = pick(parts.block);
-  const lot = pick(parts.lot);
+  const complement = pick(parts.complement) || snComplement;
+  const blockRaw = pick(parts.block);
+  const lotRaw = pick(parts.lot);
 
   const segments: string[] = [];
-  if (street && number) {
-    segments.push(`${street}, ${number}`);
-  } else if (street) {
-    segments.push(street);
+  if (streetWithoutSn && number) {
+    segments.push(`${streetWithoutSn}, ${number}`);
+  } else if (streetWithoutSn) {
+    segments.push(streetWithoutSn);
   } else if (number) {
     segments.push(number);
   }
 
   if (complement) segments.push(complement);
-  if (block) {
-    const blockNorm = /^quadra/i.test(block) ? block : `Quadra ${block.replace(/\D/g, '') || block}`;
+
+  if (blockRaw && !addressContainsToken(streetWithoutSn, blockRaw)) {
+    const blockNorm = /^quadra/i.test(blockRaw)
+      ? normalizeContractStreetLine(blockRaw)
+      : `Quadra ${blockRaw.replace(/\D/g, '') || blockRaw}`;
     segments.push(blockNorm);
   }
-  if (lot) {
-    const lotNorm = /^lote/i.test(lot) ? lot : `Lote ${lot.replace(/\D/g, '') || lot}`;
+
+  if (lotRaw && !addressContainsToken(streetWithoutSn, lotRaw)) {
+    const lotNorm = /^lote/i.test(lotRaw)
+      ? normalizeContractStreetLine(lotRaw)
+      : `Lote ${lotRaw.replace(/\D/g, '') || lotRaw}`;
     segments.push(lotNorm);
   }
 
@@ -87,9 +134,7 @@ export type SaasContractFormattedAddress = {
   neighborhood: string;
   cityStateLine: string;
   cepLine: string;
-  /** Bloco multilinha para certificado */
   multiline: string;
-  /** Linha única para cláusula de qualificação */
   qualificationInline: string;
 };
 
@@ -97,8 +142,9 @@ export function formatSaasContractAddress(
   parts: SaasContractAddressParts,
   options?: { cepRegional?: boolean },
 ): SaasContractFormattedAddress {
-  const streetLine = buildContractStreetLine(parts) || 'Não informado';
   const neighborhood = pick(parts.neighborhood) || '';
+  const streetSource = stripAddressNeighborhood(pick(parts.street), neighborhood);
+  const streetLine = buildContractStreetLine({ ...parts, street: streetSource }) || 'Não informado';
   const cityStateLine = buildContractCityStateLine(parts.city, parts.state);
   const cepRaw = pick(parts.cep);
   const cepFormatted = cepRaw
@@ -109,7 +155,7 @@ export function formatSaasContractAddress(
   const cepLine = cepFormatted ? `CEP ${cepFormatted}` : '';
 
   const lines = [streetLine];
-  if (neighborhood) lines.push(neighborhood);
+  if (neighborhood) lines.push(`Bairro ${neighborhood}`);
   lines.push(cityStateLine);
   if (cepLine) lines.push(cepLine);
 
@@ -129,21 +175,30 @@ export function formatSaasContractAddress(
 export function extractAddressPartsFromCompany(
   company: Record<string, unknown>,
 ): SaasContractAddressParts {
-  const normalizedStreet =
-    pick(company.address, company.endereco) ||
-    buildContractStreetLine({
-      street: pick(company.logradouro, company.address, company.endereco),
-      number: pick(company.numero, company.number),
-      complement: pick(company.complemento, company.complement),
-      block: pick(company.quadra, company.block),
-      lot: pick(company.lote, company.lot),
-    });
+  const neighborhood = pick(company.bairro, company.neighborhood);
+  const rawAddress = pick(company.address, company.endereco);
+  const parsedStreet = rawAddress
+    ? stripAddressNeighborhood(normalizeContractStreetLine(rawAddress), neighborhood)
+    : buildContractStreetLine({
+        street: pick(company.logradouro, company.address, company.endereco),
+        number: pick(company.numero, company.number),
+        complement: pick(company.complemento, company.complement),
+        block: pick(company.quadra, company.block),
+        lot: pick(company.lote, company.lot),
+      });
+
+  const block = pick(company.quadra, company.block);
+  const lot = pick(company.lote, company.lot);
+  const useSeparateBlockLot =
+    Boolean(block || lot) &&
+    !addressContainsToken(parsedStreet, block) &&
+    !addressContainsToken(parsedStreet, lot);
 
   return {
-    street: normalizedStreet,
-    neighborhood: pick(company.bairro, company.neighborhood),
-    block: pick(company.quadra, company.block),
-    lot: pick(company.lote, company.lot),
+    street: parsedStreet,
+    neighborhood,
+    block: useSeparateBlockLot ? block : '',
+    lot: useSeparateBlockLot ? lot : '',
     city: pick(company.city, company.cidade),
     state: pick(company.state, company.uf, company.state_uf),
     cep: pick(company.cep, company.zip_code),

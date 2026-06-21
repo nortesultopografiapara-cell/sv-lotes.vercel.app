@@ -17,7 +17,10 @@ import {
   formatSignerDocumentDisplay,
   resolveSignerDocumentLabel,
 } from '@/lib/saasContractDocumentLabel';
-import { resolveCompanyContractDocument } from '@/lib/saasContractParty';
+import {
+  resolveSaasContractCompanyProfile,
+  normalizeSaasContractCompanyName,
+} from '@/lib/saasContractCompanyProfile';
 import { signatureStatusLabel } from '@/lib/saasContractStatus';
 import {
   canPublicClientSign,
@@ -82,7 +85,9 @@ export async function GET(
 
   const { data: company } = await supabaseAdmin
     .from('companies')
-    .select('id, name, cnpj, email')
+    .select(
+      'id, name, cnpj, cpf, document, email, phone, telefone, address, endereco, logradouro, numero, complemento, bairro, quadra, lote, city, cidade, state, uf, cep, legal_representative, responsible_name',
+    )
     .eq('id', signature.company_id)
     .single();
 
@@ -135,11 +140,9 @@ export async function GET(
 
   const blocked = isPublicClientSignBlocked(signature.signature_status);
 
-  const companyDocumentRaw = resolveCompanyContractDocument(company);
-  const companyDocumentLabel = resolveSignerDocumentLabel(companyDocumentRaw);
-  const companyDocumentFormatted = companyDocumentRaw
-    ? formatSignerDocumentDisplay(companyDocumentRaw)
-    : null;
+  const companyProfile = resolveSaasContractCompanyProfile(company as Record<string, unknown>);
+  const companyDocumentLabel = resolveSignerDocumentLabel(companyProfile.documentRaw);
+  const companyDocumentFormatted = companyProfile.documentFormatted || null;
 
   return NextResponse.json({
     success: true,
@@ -150,10 +153,15 @@ export async function GET(
     },
     company: {
       id: company.id,
-      name: company.name,
-      cnpj: company.cnpj,
+      name: companyProfile.name,
+      cnpj: companyProfile.documentRaw,
       documentLabel: companyDocumentLabel,
       documentFormatted: companyDocumentFormatted,
+      legalRepresentative: companyProfile.legalRepresentative || null,
+      email: companyProfile.email || company.email,
+      phone: companyProfile.phone || null,
+      address: companyProfile.addressStreet,
+      neighborhood: companyProfile.addressNeighborhood || null,
     },
     signature: {
       status: signature.signature_status,

@@ -7,9 +7,10 @@ import {
 import { getCompanySaasPlan } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import {
-  contractPartyDigits,
-  resolveCompanyContractDocument,
-} from '@/lib/saasContractParty';
+  resolveSaasContractCompanyProfile,
+  isSaasContractPlaceholderValue,
+  normalizeSaasContractCompanyName,
+} from '@/lib/saasContractCompanyProfile';
 import {
   extractAddressPartsFromCompany,
   formatSaasContractAddress,
@@ -122,14 +123,25 @@ export function validateSaasContractGeneration(
   };
 
   require('id', 'ID da empresa', company.id);
-  require('name', 'Nome da empresa', company.name);
+  require('name', 'Razão social / nome', company.name);
 
-  const contractDocument = resolveCompanyContractDocument(company);
+  const profile = resolveSaasContractCompanyProfile(company as Record<string, unknown>);
+  const contractDocument = profile.documentRaw;
   require('document', 'CPF/CNPJ', contractDocument);
-  const docDigits = contractPartyDigits(contractDocument);
+  const docDigits = profile.documentDigits;
   if (contractDocument && docDigits.length !== 11 && docDigits.length !== 14) {
     missing.push('document_invalid');
     missingLabels.push('CPF/CNPJ inválido (11 ou 14 dígitos)');
+  }
+
+  if (profile.party.showRepresentative && isBlank(profile.legalRepresentative)) {
+    missing.push('legal_representative');
+    missingLabels.push('Representante legal');
+  }
+
+  if (isSaasContractPlaceholderValue(normalizeSaasContractCompanyName(company.name))) {
+    missing.push('name_invalid');
+    missingLabels.push('Razão social / nome');
   }
 
   const saas = getCompanySaasPlan(company);

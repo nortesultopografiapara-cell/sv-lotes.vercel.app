@@ -18,9 +18,8 @@ import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
 import {
-  extractAddressPartsFromCompany,
-  formatSaasContractAddress,
-} from '@/lib/saasContractAddress';
+  resolveSaasContractCompanyProfile,
+} from '@/lib/saasContractCompanyProfile';
 import {
   formatContractCep,
   formatContractCepRegional,
@@ -30,8 +29,6 @@ import {
 import {
   buildSaasContractorHeaderLine,
   buildSaasContractorQualificationText,
-  resolveSaasContractorParty,
-  resolveSaasContractRepresentative,
   type SaasContractPartyType,
 } from '@/lib/saasContractParty';
 
@@ -66,7 +63,7 @@ export type SaasContractPdfInput = {
 };
 
 export const SAAS_PROVIDER = {
-  legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+  legalName: 'S.V TOPOGRAFIA E PROJETOS LTDA',
   tradeName: 'SV LOTES / SV Topografia & Projetos',
   cnpj: '12.631.238/0001-02',
   address: 'Rua 02, S/N, Quadra 123, Lote 05',
@@ -163,14 +160,13 @@ export type SaasContractContext = {
 
 export function resolveSaasContractContext(input: SaasContractPdfInput): SaasContractContext {
   const { company: rawCompany, subscription } = input;
-  const normalized = normalizeCompanyContractData(rawCompany);
+  const profile = resolveSaasContractCompanyProfile(rawCompany as Record<string, unknown>);
   const company = {
     ...rawCompany,
-    address: normalized.address || rawCompany.address,
-    city: normalized.city || rawCompany.city,
-    state: normalized.state || rawCompany.state,
-    email: normalized.email || rawCompany.email,
-    phone: normalized.phone || rawCompany.phone,
+    name: profile.name,
+    email: profile.email || rawCompany.email,
+    phone: profile.phone || rawCompany.phone,
+    address: profile.addressStreet,
   };
   const pricing = resolveCompanyPricing(company);
   const saas = getCompanySaasPlan(company);
@@ -181,31 +177,28 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
   const dueDay = clampDueDay(
     Number(company.subscription_due_day) || dueDayFromDate(billing.start_date),
   );
-  const party = resolveSaasContractorParty(company);
-  const documentFormatted = party.documentFormatted;
-  const responsible = resolveSaasContractRepresentative(company, party);
-  const addressParts = extractAddressPartsFromCompany(company as Record<string, unknown>);
-  const formattedAddress = formatSaasContractAddress(addressParts);
+  const party = profile.party;
+  const responsible = profile.legalRepresentative;
 
   return {
     contractNumber: subscription.contract_number || '—',
     emissionDate: new Date().toLocaleDateString('pt-BR'),
     provider: SAAS_PROVIDER,
     contractor: {
-      name: displayField(company.name),
+      name: profile.name || 'Não informado',
       partyType: party.partyType,
       documentLabel: party.documentLabel,
-      document: documentFormatted,
-      showRepresentative: party.showRepresentative,
+      document: profile.documentFormatted,
+      showRepresentative: party.showRepresentative && Boolean(responsible),
       nameLabel: party.nameLabel,
-      responsible: party.showRepresentative ? displayField(responsible) : '',
-      phone: formatContractPhone(displayField(company.phone)),
-      email: displayField(company.email),
-      address: displayField(formattedAddress.streetLine),
-      neighborhood: formattedAddress.neighborhood || undefined,
-      cityState: formattedAddress.cityStateLine,
-      cep: company.cep ? formatContractCep(String(company.cep).trim()) : undefined,
-      cnpj: documentFormatted,
+      responsible,
+      phone: formatContractPhone(profile.phone || 'Não informado'),
+      email: profile.email || 'Não informado',
+      address: profile.addressStreet || 'Não informado',
+      neighborhood: profile.addressNeighborhood || undefined,
+      cityState: profile.addressCityState,
+      cep: profile.addressCep ? formatContractCep(String(profile.addressCep).trim()) : undefined,
+      cnpj: profile.documentFormatted,
     },
     plan: {
       name: billingUi.ui_plan,
@@ -298,7 +291,7 @@ export function buildSaasContractSections(
             nameLabel: c.nameLabel,
           },
           responsible: c.responsible,
-          address: c.address,
+          address: c.neighborhood ? `${c.address}, Bairro ${c.neighborhood}` : c.address,
           cityState: c.cityState,
           cep: c.cep,
           phone: c.phone,
@@ -427,7 +420,7 @@ export function buildSaasContractSections(
       number: 15,
       title: 'PROPRIEDADE INTELECTUAL DO SV LOTES',
       paragraphs: [
-        'Todos os direitos de propriedade intelectual sobre o SV LOTES — incluindo código-fonte, layout, banco de dados estrutural, algoritmos, mapas-base do sistema, modelos de relatórios, templates de documentos, marcas e documentação — pertencem exclusivamente à S.V TOPOGRAFIA E PROJETO LTDA.',
+        'Todos os direitos de propriedade intelectual sobre o SV LOTES — incluindo código-fonte, layout, banco de dados estrutural, algoritmos, mapas-base do sistema, modelos de relatórios, templates de documentos, marcas e documentação — pertencem exclusivamente à S.V TOPOGRAFIA E PROJETOS LTDA.',
         'O presente contrato não transfere qualquer direito de propriedade à CONTRATANTE. Documentos e relatórios gerados a partir de dados inseridos pela CONTRATANTE podem ser utilizados por ela em sua atividade, sem implicar cessão da tecnologia subjacente.',
         'É vedada qualquer reprodução, engenharia reversa ou exploração comercial da plataforma fora dos limites desta licença SaaS.',
       ],

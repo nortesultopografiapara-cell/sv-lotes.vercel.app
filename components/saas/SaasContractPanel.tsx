@@ -33,6 +33,9 @@ import {
 } from '@/lib/saasSubscription';
 import { formatSignerDocumentLine } from '@/lib/saasContractDocumentLabel';
 import {
+  resolveSaasContractCompanyProfile,
+} from '@/lib/saasContractCompanyProfile';
+import {
   saasContractDocumentStatusLabel,
   isCurrentSaasContractVersion,
   signatureStatusEmoji,
@@ -136,6 +139,13 @@ export function SaasContractPanel({
   const busy = generating;
 
   const pricing = company ? resolveCompanyPricing(company as CompanyPricingSource) : null;
+  const contractProfile = useMemo(
+    () =>
+      company
+        ? resolveSaasContractCompanyProfile(company as Record<string, unknown>)
+        : null,
+    [company],
+  );
   const validation = company
     ? validateSaasContractGeneration(company as CompanyPricingSource, sub)
     : null;
@@ -266,7 +276,6 @@ export function SaasContractPanel({
       name:
         c.legal_representative ||
         c.responsible_name ||
-        company.name ||
         'Responsável',
       phone: c.phone || c.telefone || null,
       email: c.email || null,
@@ -713,7 +722,16 @@ export function SaasContractPanel({
       )}
 
       <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Info label="Empresa" value={company.name || '—'} />
+        <Info label="Empresa" value={contractProfile?.name || company.name || '—'} />
+        {contractProfile?.documentFormatted ? (
+          <Info
+            label={contractProfile.documentLabel}
+            value={contractProfile.documentFormatted}
+          />
+        ) : null}
+        {contractProfile?.legalRepresentative ? (
+          <Info label="Representante legal" value={contractProfile.legalRepresentative} />
+        ) : null}
         <Info label="Plano" value={company.ui_plan} />
         <Info label="Valor contratado" value={pricing ? formatSaasCurrency(pricing.appliedPrice) : '—'} />
         <Info

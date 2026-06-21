@@ -5,6 +5,6 @@ export const SV_LOTES_LOGO_PATH = '/logo-sv-lotes.png';
 export const SV_LOTES_BRAND = {
   name: 'SV LOTES',
   tagline: 'Gestão Imobiliária & GIS',
-  legalName: 'S.V TOPOGRAFIA E PROJETO LTDA',
+  legalName: 'S.V TOPOGRAFIA E PROJETOS LTDA',
   tradeName: 'NORTE & SUL TOPOGRAFIA',
 } as const;

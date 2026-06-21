@@ -8,17 +8,24 @@ import { buildSaasContractPdfWithMeta } from '../lib/saasContractPdf';
 import {
   buildSaasContractDocumentText,
   menesesSaasContractFixture,
+  resolveSaasContractContext,
   SAAS_CONTRACT_CONTENT_VERSION,
   SAAS_CONTRACT_V2_CONTENT_VERSION,
 } from '../lib/saasContractContent';
 import {
   normalizeCompanyContractData,
+  validateSaasContractGeneration,
   type SaasContractCompanyInput,
 } from '../lib/saasContractValidation';
 import {
   formatSaasContractAddress,
   normalizeContractStreetLine,
 } from '../lib/saasContractAddress';
+import {
+  resolveSaasContractCompanyProfile,
+  normalizeSaasContractCompanyName,
+  isSaasContractPlaceholderValue,
+} from '../lib/saasContractCompanyProfile';
 import {
   formatSignerDocumentFieldLabel,
   formatSignerDocumentLine,
@@ -364,6 +371,102 @@ function testSignatureHistoryDocumentLabels() {
   console.log('OK testSignatureHistoryDocumentLabels');
 }
 
+function testLegalRepresentativeNotPlaceholder() {
+  const validation = validateSaasContractGeneration(
+    {
+      id: 'co-test',
+      name: 'Empresa Teste LTDA',
+      cnpj: '64435850000103',
+      email: 'teste@empresa.com',
+      phone: '94999999999',
+      address: 'Rua 1, 100',
+      city: 'Parauapebas',
+      state: 'PA',
+      plan_type: 'business',
+      legal_representative: 'Representante legal',
+    } as SaasContractCompanyInput,
+    {
+      contract_number: '00099/2026',
+      plan_type: 'business',
+      monthly_price: 549.99,
+      start_date: '2026-05-27',
+      first_payment_date: '2026-05-27',
+      next_due_date: '2026-06-27',
+    },
+  );
+  assert(!validation.ok, 'bloqueia representante legal placeholder');
+  assert(validation.missing.includes('legal_representative'), 'missing legal_representative');
+
+  const built = buildSaasContractPdfWithMeta(
+    fixtureInput({
+      legal_representative: 'Carlos Daniel Araujo Meneses',
+    }),
+  );
+  const rough = roughSaasContractPdfText(built.pdf);
+  assert(rough.includes('carlos daniel'), 'representante real no PDF');
+  assert(!rough.includes('representante legal: representante legal'), 'sem label=valor placeholder');
+  console.log('OK testLegalRepresentativeNotPlaceholder');
+}
+
+function testAddressQuadraLoteAndNeighborhood() {
+  const formatted = formatSaasContractAddress({
+    street: 'Rua 02, Quadra 123 Lote 05, S/N Nova Carajás',
+    neighborhood: 'Nova Carajás',
+    city: 'Parauapebas',
+    state: 'PA',
+  });
+  assert(formatted.streetLine.includes('Quadra 123, Lote 05'), 'separador quadra/lote');
+  assert(!formatted.streetLine.toLowerCase().includes('nova carajás'), 'bairro fora da rua');
+  assert(formatted.neighborhood === 'Nova Carajás', 'bairro separado');
+
+  const built = buildSaasContractPdfWithMeta(
+    fixtureInput({
+      address: 'Rua 02, Quadra 123 Lote 05, S/N Nova Carajás',
+      bairro: 'Nova Carajás',
+      city: 'Parauapebas',
+      state: 'PA',
+    }),
+  );
+  const rough = roughSaasContractPdfText(built.pdf);
+  assert(rough.includes('quadra 123, lote 05') || rough.includes('Quadra 123, Lote 05'), 'PDF endereco');
+  console.log('OK testAddressQuadraLoteAndNeighborhood');
+}
+
+function testContractorDataConsistencyAcrossPdf() {
+  const input = fixtureInput();
+  const profile = resolveSaasContractCompanyProfile(input.company as Record<string, unknown>);
+  const ctx = resolveSaasContractContext(input);
+  const built = buildSaasContractPdfWithMeta(input);
+  const rough = roughSaasContractPdfText(built.pdf);
+  const docText = buildSaasContractDocumentText(input, SAAS_CONTRACT_CONTENT_VERSION);
+
+  assert(ctx.contractor.name === profile.name, 'contexto usa nome unificado');
+  assert(ctx.contractor.document === profile.documentFormatted, 'contexto usa documento unificado');
+  assert(rough.includes(profile.name.split(' ')[0].toLowerCase()), 'nome no PDF');
+  assert(
+    rough.includes('64435850000103') || rough.includes('64.435.850/0001-03'),
+    'cnpj consistente no PDF',
+  );
+  assert(docText.includes(profile.name), 'nome no texto integral');
+  assert(docText.includes(profile.documentFormatted), 'documento no texto integral');
+  console.log('OK testContractorDataConsistencyAcrossPdf');
+}
+
+function testNoPeojetosTypo() {
+  assert(
+    normalizeSaasContractCompanyName('SV TOPOGRAFIA E PEOJETOS LTDA') ===
+      'SV TOPOGRAFIA E PROJETOS LTDA',
+    'corrige PEOJETOS',
+  );
+  const built = buildSaasContractPdfWithMeta(
+    fixtureInput({ name: 'SV TOPOGRAFIA E PEOJETOS LTDA' }),
+  );
+  const rough = roughSaasContractPdfText(built.pdf);
+  assert(!rough.toLowerCase().includes('peojetos'), 'PDF sem PEOJETOS');
+  assert(isSaasContractPlaceholderValue('Representante legal'), 'detecta placeholder');
+  console.log('OK testNoPeojetosTypo');
+}
+
 function testHashPayloadIndependentParties() {
   const base = {
     contractId: 'c1',
@@ -392,6 +495,10 @@ async function main() {
   testSlaClausePresent();
   testVersionSuccessionClause();
   testSignatureHistoryDocumentLabels();
+  testLegalRepresentativeNotPlaceholder();
+  testAddressQuadraLoteAndNeighborhood();
+  testContractorDataConsistencyAcrossPdf();
+  testNoPeojetosTypo();
   testHashPayloadIndependentParties();
   console.log('\nTodos os testes SaaS/contratos passaram.');
 }

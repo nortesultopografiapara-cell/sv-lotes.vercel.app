@@ -456,7 +456,7 @@ function renderSignaturePage(
     clientY += 5;
     providerY += 5;
 
-    if (ctx.contractor.showRepresentative) {
+    if (ctx.contractor.showRepresentative && ctx.contractor.responsible) {
       w.doc.text(ctx.contractor.responsible, w.margin, clientY);
       clientY += 4;
       w.doc.setFont('helvetica', 'italic');
@@ -565,7 +565,7 @@ export function buildSaasContractPdfWithMeta(
   writer.dataTableHeader();
   writer.row(ctx.contractor.nameLabel, ctx.contractor.name);
   writer.row(ctx.contractor.documentLabel, ctx.contractor.document);
-  if (ctx.contractor.showRepresentative) {
+  if (ctx.contractor.showRepresentative && ctx.contractor.responsible) {
     writer.row('Representante legal', ctx.contractor.responsible);
   }
   writer.row('Telefone', formatContractPhone(ctx.contractor.phone));
