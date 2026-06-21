@@ -7,8 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  backfillSaasCashForPaidCharges,
   computeSaasCashSummaryFromRows,
   createSaasCashIncomeFromChargePaid,
+  ensureSaasCashIncomeForPaidCharge,
   saasCashSourceLabel,
   syncAsaasCashMovements,
 } from '../lib/saasCashMovements';
@@ -45,10 +47,10 @@ function read(rel: string): string {
 
 type MockRow = Record<string, unknown>;
 
-function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
+function createMockSupabase(initial: { saas_cash_movements?: MockRow[]; saas_charges?: MockRow[] } = {}) {
   const tables: Record<string, MockRow[]> = {
     saas_cash_movements: [...(initial.saas_cash_movements || [])],
-    saas_charges: [],
+    saas_charges: [...(initial.saas_charges || [])],
     companies: [],
   };
 
@@ -57,6 +59,7 @@ function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
     private insertPayload: MockRow | null = null;
     private containsFilter: Record<string, unknown> | null = null;
     private limitCount: number | null = null;
+    private wantsSingle = false;
 
     constructor(private table: string) {}
 
@@ -105,10 +108,12 @@ function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
     }
 
     single() {
+      this.wantsSingle = true;
       return this;
     }
 
     maybeSingle() {
+      this.wantsSingle = true;
       return this;
     }
 
@@ -139,11 +144,20 @@ function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
         );
         const duplicate =
           this.table === 'saas_cash_movements' &&
-          movementId &&
-          tables.saas_cash_movements.some((row) => {
-            const metadata = row.metadata as Record<string, unknown> | undefined;
-            return metadata?.asaas_movement_id === movementId;
-          });
+          (movementId
+            ? tables.saas_cash_movements.some((row) => {
+                const metadata = row.metadata as Record<string, unknown> | undefined;
+                return metadata?.asaas_movement_id === movementId;
+              })
+            : this.insertPayload.asaas_payment_id &&
+              this.insertPayload.source === 'asaas_webhook' &&
+              this.insertPayload.type === 'income' &&
+              tables.saas_cash_movements.some(
+                (row) =>
+                  row.asaas_payment_id === this.insertPayload!.asaas_payment_id &&
+                  row.source === 'asaas_webhook' &&
+                  row.type === 'income',
+              ));
 
         if (duplicate) {
           resolve({
@@ -165,7 +179,13 @@ function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
       }
 
       const rows = this.runSelect();
-      const data = rows.length === 1 ? rows[0] : rows.length > 1 ? rows : null;
+      const data = this.wantsSingle
+        ? rows.length === 1
+          ? rows[0]
+          : rows.length > 1
+            ? rows[0]
+            : null
+        : rows;
       resolve({ data, error: null });
     }
   }
@@ -176,6 +196,62 @@ function createMockSupabase(initial: { saas_cash_movements?: MockRow[] } = {}) {
     },
     _tables: tables,
   } as unknown as import('@supabase/supabase-js').SupabaseClient & { _tables: typeof tables };
+}
+
+async function testEnsureSaasCashIncomeDiagnostic() {
+  const supabase = createMockSupabase();
+  const result = await ensureSaasCashIncomeForPaidCharge(
+    supabase,
+    {
+      charge: {
+        id: 'ch-diag',
+        company_id: 'co-1',
+        amount: 10,
+        payment_id: 'pay_jyjn_zsfg',
+        paid_at: '2026-11-05',
+      },
+      paidAt: '2026-11-05',
+    },
+    { cashStartAt: '2026-12-01T00:00:00.000Z' },
+  );
+
+  assert(result.created, 'movimento criado');
+  assert(result.diagnostic.payment_id === 'pay_jyjn_zsfg', 'payment_id no diagnóstico');
+  assert(result.diagnostic.charge_id === 'ch-diag', 'charge_id no diagnóstico');
+  assert(result.diagnostic.paid_at === '2026-11-05', 'paid_at no diagnóstico');
+  assert(result.diagnostic.movement_date === '2026-11-05', 'movement_date no diagnóstico');
+  assert(result.diagnostic.cashStartAt === '2026-12-01T00:00:00.000Z', 'cashStartAt no diagnóstico');
+  assert(result.diagnostic.skip_reason === 'hidden_by_cash_start_at', 'motivo oculto pelo marco');
+  assert(result.diagnostic.visible_in_cash === false, 'não visível no caixa');
+  console.log('OK testEnsureSaasCashIncomeDiagnostic');
+}
+
+async function testBackfillPaidChargeWithoutMovement() {
+  const supabase = createMockSupabase({
+    saas_charges: [
+      {
+        id: 'ch-backfill',
+        company_id: 'co-topo',
+        amount: 10,
+        payment_id: 'pay_jyjn_zsfg_full',
+        paid_at: '2026-11-05T12:00:00.000Z',
+        status: 'PAID',
+        deleted_at: null,
+      },
+    ],
+  });
+
+  const result = await backfillSaasCashForPaidCharges(supabase, {
+    fromDate: '2026-11-01',
+    toDate: '2026-11-30',
+    cashStartAt: null,
+  });
+
+  assert(result.checked === 1, 'uma cobrança verificada');
+  assert(result.backfilled === 1, 'backfill criou entrada');
+  assert(supabase._tables.saas_cash_movements.length === 1, 'movimento persistido');
+  assert(result.diagnostics[0]?.outcome === 'created', 'diagnóstico created');
+  console.log('OK testBackfillPaidChargeWithoutMovement');
 }
 
 async function testPaidChargeCreatesIncome() {
@@ -478,10 +554,27 @@ function testKpisAfterWithdrawalScenario() {
 function testWebhookIntegration() {
   const saasCharges = read('lib/saasCharges.ts');
   assert(
-    saasCharges.includes('createSaasCashIncomeFromChargePaid'),
+    saasCharges.includes('ensureSaasCashIncomeForPaidCharge'),
     'processSaasChargePaid integra caixa',
   );
   assert(saasCharges.includes("charge.status === 'PAID' && charge.master_payment_id"), 'idempotente caixa');
+  assert(
+    saasCharges.includes('if (charge.status === \'PAID\' && charge.master_payment_id)') &&
+      (saasCharges.split('syncSaasChargeStatusFromAsaas')[1] || '').includes(
+        'ensureSaasCashIncomeForPaidCharge',
+      ),
+    'sync PAID faz backfill caixa',
+  );
+
+  const saasBilling = read('lib/saasBilling.ts');
+  assert(saasBilling.includes('ensureSaasCashAfterInvoicePaid'), 'markInvoicePaid integra caixa');
+
+  const paymentsRoute = read('app/api/master/saas-payments/route.ts');
+  assert(paymentsRoute.includes('createSaasCashIncomeFromMasterPayment'), 'pagamento manual integra caixa');
+
+  const cashLib = read('lib/saasCashMovements.ts');
+  assert(cashLib.includes('[saas-cash-income]'), 'logs diagnóstico caixa');
+  assert(cashLib.includes('backfillSaasCashForPaidCharges'), 'backfill cobranças pagas');
   console.log('OK testWebhookIntegration');
 }
 
@@ -825,6 +918,8 @@ async function main() {
   await testPaidChargeCreatesIncome();
   await testDuplicateWebhookDoesNotDuplicate();
   await testChargeWithoutCompanyDoesNotBreak();
+  await testEnsureSaasCashIncomeDiagnostic();
+  await testBackfillPaidChargeWithoutMovement();
   testSummaryCalculatesCorrectly();
   testMigrationStructure();
   testWebhookIntegration();

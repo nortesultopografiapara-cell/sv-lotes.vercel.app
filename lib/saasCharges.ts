@@ -36,7 +36,7 @@ import { resolveSaasLateFeePercents } from '@/lib/saasLateFeeConfig';
 import { buildSaasChargeLateFeeDbPatch } from '@/lib/saasLateFees';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import type { CompanyPricingSource } from '@/lib/companyPricing';
-import { createSaasCashIncomeFromChargePaid } from '@/lib/saasCashMovements';
+import { ensureSaasCashIncomeForPaidCharge } from '@/lib/saasCashMovements';
 
 export type SaasChargeStatus = 'PENDING' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 
@@ -1195,9 +1195,9 @@ export async function processSaasChargePaid(
 
   const charge = parseChargeRow(row as Record<string, unknown>);
   if (charge.status === 'PAID' && charge.master_payment_id) {
-    await createSaasCashIncomeFromChargePaid(supabaseAdmin, {
+    await ensureSaasCashIncomeForPaidCharge(supabaseAdmin, {
       charge,
-      paidAt: input.paidAt,
+      paidAt: input.paidAt || (charge.paid_at ? charge.paid_at.split('T')[0] : undefined),
       createdBy: input.actorUserId ?? null,
     });
     return { charge, paymentId: charge.master_payment_id };
@@ -1293,7 +1293,7 @@ export async function processSaasChargePaid(
   });
 
   const updatedCharge = parseChargeRow(updated as Record<string, unknown>);
-  await createSaasCashIncomeFromChargePaid(supabaseAdmin, {
+  await ensureSaasCashIncomeForPaidCharge(supabaseAdmin, {
     charge: updatedCharge,
     paidAt,
     createdBy: input.actorUserId ?? null,
@@ -1898,6 +1898,11 @@ export async function syncSaasChargeStatusFromAsaas(
   }
 
   if (charge.status === 'PAID' && charge.master_payment_id) {
+    await ensureSaasCashIncomeForPaidCharge(supabaseAdmin, {
+      charge,
+      paidAt: charge.paid_at ? charge.paid_at.split('T')[0] : undefined,
+      createdBy: actorUserId ?? null,
+    });
     return { charge, paid: true, statusSynced: 'PAID' };
   }
 

@@ -23,6 +23,7 @@ import {
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
 import { resolveAsaasDueDate } from '@/lib/saasPixValidation';
+import { ensureSaasCashAfterInvoicePaid } from '@/lib/saasCashMovements';
 
 export type SaasInvoiceStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
@@ -937,6 +938,16 @@ export async function markInvoicePaid(
       skipSubscriptionDates: true,
     });
 
+    await ensureSaasCashAfterInvoicePaid(supabaseAdmin, {
+      invoiceId: input.invoiceId,
+      paymentId: existing.id,
+      paidAt,
+      amount: Number(invoice.final_amount || 0),
+      companyId: String(invoice.company_id),
+      referenceMonth: String(invoice.reference_month),
+      createdBy: input.createdBy ?? null,
+    });
+
     return { invoice: parsed, paymentId: existing.id };
   }
 
@@ -993,6 +1004,16 @@ export async function markInvoicePaid(
   );
   await reactivateCompanyOnPayment(supabaseAdmin, invoice.company_id, {
     skipSubscriptionDates: true,
+  });
+
+  await ensureSaasCashAfterInvoicePaid(supabaseAdmin, {
+    invoiceId: input.invoiceId,
+    paymentId: payment.id,
+    paidAt,
+    amount: Number(invoice.final_amount || 0),
+    companyId: String(invoice.company_id),
+    referenceMonth: String(invoice.reference_month),
+    createdBy: input.createdBy ?? null,
   });
 
   return {

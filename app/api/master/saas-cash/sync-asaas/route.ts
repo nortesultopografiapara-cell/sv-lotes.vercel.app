@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { getSaasCashStartAt } from '@/lib/saasFinanceSettings';
 import {
+  backfillSaasCashForPaidCharges,
   loadSaasCashView,
   syncAsaasCashMovements,
 } from '@/lib/saasCashMovements';
@@ -39,6 +40,14 @@ export async function POST(request: Request) {
       cashStartAt,
     });
 
+    const backfill = await backfillSaasCashForPaidCharges(supabaseAdmin, {
+      fromDate,
+      toDate,
+      companyId: body.companyId || undefined,
+      createdBy: body.userId,
+      cashStartAt,
+    });
+
     const view = await loadSaasCashView(
       supabaseAdmin,
       {
@@ -48,11 +57,13 @@ export async function POST(request: Request) {
         toDate,
       },
       cashStartAt,
+      { enabled: false },
     );
 
     return NextResponse.json({
       success: true,
       sync: syncResult,
+      backfill,
       ...view,
     });
   } catch (e: unknown) {

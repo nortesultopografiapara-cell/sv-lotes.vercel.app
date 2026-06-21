@@ -12,6 +12,7 @@ import {
 import {
   effectiveSaasCashFromDate,
   filterMovementsByCashStartAt,
+  getSaasCashStartAt,
   isSaasFinancialRecordAfterStartAt,
 } from '@/lib/saasFinanceSettings';
 import {
@@ -69,6 +70,45 @@ export type CreateSaasCashIncomeInput = {
   >;
   paidAt?: string;
   createdBy?: string | null;
+};
+
+export type SaasCashIncomeSkipReason =
+  | 'zero_amount'
+  | 'duplicate_asaas_payment'
+  | 'duplicate_charge'
+  | 'movement_exists'
+  | 'insert_failed'
+  | 'hidden_by_cash_start_at';
+
+export type SaasCashIncomeDiagnostic = {
+  payment_id: string | null;
+  charge_id: string;
+  paid_at: string | null;
+  movement_date: string;
+  cashStartAt: string | null;
+  amount: number;
+  outcome: 'created' | 'existing' | 'skipped';
+  skip_reason?: SaasCashIncomeSkipReason;
+  visible_in_cash?: boolean;
+  error_message?: string;
+};
+
+export type CreateSaasCashManualIncomeInput = {
+  masterPaymentId: string;
+  companyId: string;
+  amount: number;
+  paidAt: string;
+  referenceMonth?: string;
+  saasChargeId?: string | null;
+  asaasPaymentId?: string | null;
+  createdBy?: string | null;
+};
+
+export type BackfillSaasCashResult = {
+  checked: number;
+  backfilled: number;
+  alreadyHadMovement: number;
+  diagnostics: SaasCashIncomeDiagnostic[];
 };
 
 export type SyncAsaasCashMovementsInput = {
@@ -212,6 +252,62 @@ async function findExistingChargeWebhookIncome(
   return data ? parseMovementRow(data as Record<string, unknown>) : null;
 }
 
+async function findExistingIncomeByChargeId(
+  supabaseAdmin: SupabaseClient,
+  saasChargeId: string,
+): Promise<SaasCashMovement | null> {
+  const { data } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .eq('saas_charge_id', saasChargeId)
+    .eq('type', 'income')
+    .maybeSingle();
+
+  return data ? parseMovementRow(data as Record<string, unknown>) : null;
+}
+
+async function findExistingManualIncomeByMasterPayment(
+  supabaseAdmin: SupabaseClient,
+  masterPaymentId: string,
+): Promise<SaasCashMovement | null> {
+  const { data } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .eq('type', 'income')
+    .contains('metadata', { master_payment_id: masterPaymentId })
+    .maybeSingle();
+
+  return data ? parseMovementRow(data as Record<string, unknown>) : null;
+}
+
+async function findExistingIncomeForCharge(
+  supabaseAdmin: SupabaseClient,
+  saasChargeId: string,
+  asaasPaymentId?: string | null,
+): Promise<SaasCashMovement | null> {
+  const byCharge = await findExistingIncomeByChargeId(supabaseAdmin, saasChargeId);
+  if (byCharge) return byCharge;
+
+  const paymentId = String(asaasPaymentId || '').trim();
+  if (paymentId) {
+    return findExistingAsaasWebhookIncome(supabaseAdmin, paymentId);
+  }
+
+  return null;
+}
+
+function logSaasCashIncomeDiagnostic(diagnostic: SaasCashIncomeDiagnostic): void {
+  console.warn('[saas-cash-income]', JSON.stringify(diagnostic));
+}
+
+function cashVisibilityAfterStartAt(
+  movementDate: string,
+  cashStartAt: string | null,
+): boolean {
+  if (!cashStartAt) return true;
+  return isSaasFinancialRecordAfterStartAt({ movement_date: movementDate }, cashStartAt);
+}
+
 /** Registra entrada automática quando cobrança SaaS é paga (idempotente por asaas_payment_id). */
 export async function createSaasCashIncomeFromChargePaid(
   supabaseAdmin: SupabaseClient,
@@ -289,6 +385,365 @@ export async function createSaasCashIncomeFromChargePaid(
   return {
     movement: parseMovementRow(data as Record<string, unknown>),
     created: true,
+  };
+}
+
+/** Garante entrada no caixa para cobrança paga — idempotente, com diagnóstico completo. */
+export async function ensureSaasCashIncomeForPaidCharge(
+  supabaseAdmin: SupabaseClient,
+  input: CreateSaasCashIncomeInput,
+  options?: { cashStartAt?: string | null },
+): Promise<{ movement: SaasCashMovement | null; created: boolean; diagnostic: SaasCashIncomeDiagnostic }> {
+  const cashStartAt =
+    options?.cashStartAt !== undefined
+      ? options.cashStartAt
+      : await getSaasCashStartAt(supabaseAdmin);
+
+  const asaasPaymentId = String(input.charge.payment_id || '').trim() || null;
+  const paidAtRaw = input.paidAt || input.charge.paid_at || null;
+  const paidAt = paidAtRaw ? normalizeMovementDate(paidAtRaw) : null;
+  const movementDate = normalizeMovementDate(paidAtRaw || todayIsoDate());
+  const amount = Number(input.charge.amount || 0);
+
+  const diagnostic: SaasCashIncomeDiagnostic = {
+    payment_id: asaasPaymentId,
+    charge_id: input.charge.id,
+    paid_at: paidAt,
+    movement_date: movementDate,
+    cashStartAt,
+    amount,
+    outcome: 'skipped',
+  };
+
+  if (amount <= 0) {
+    diagnostic.skip_reason = 'zero_amount';
+    logSaasCashIncomeDiagnostic(diagnostic);
+    return { movement: null, created: false, diagnostic };
+  }
+
+  if (asaasPaymentId) {
+    const existingByPayment = await findExistingAsaasWebhookIncome(
+      supabaseAdmin,
+      asaasPaymentId,
+    );
+    if (existingByPayment) {
+      diagnostic.outcome = 'existing';
+      diagnostic.skip_reason = 'duplicate_asaas_payment';
+      diagnostic.visible_in_cash = cashVisibilityAfterStartAt(
+        existingByPayment.movement_date,
+        cashStartAt,
+      );
+      logSaasCashIncomeDiagnostic(diagnostic);
+      return { movement: existingByPayment, created: false, diagnostic };
+    }
+  }
+
+  const existingByCharge = await findExistingIncomeByChargeId(
+    supabaseAdmin,
+    input.charge.id,
+  );
+  if (existingByCharge) {
+    diagnostic.outcome = 'existing';
+    diagnostic.skip_reason =
+      existingByCharge.source === 'asaas_webhook'
+        ? 'duplicate_charge'
+        : 'movement_exists';
+    diagnostic.visible_in_cash = cashVisibilityAfterStartAt(
+      existingByCharge.movement_date,
+      cashStartAt,
+    );
+    logSaasCashIncomeDiagnostic(diagnostic);
+    return { movement: existingByCharge, created: false, diagnostic };
+  }
+
+  const result = await createSaasCashIncomeFromChargePaid(supabaseAdmin, input);
+
+  if (result.created && result.movement) {
+    diagnostic.outcome = 'created';
+    diagnostic.visible_in_cash = cashVisibilityAfterStartAt(movementDate, cashStartAt);
+    if (cashStartAt && !diagnostic.visible_in_cash) {
+      diagnostic.skip_reason = 'hidden_by_cash_start_at';
+    }
+  } else if (result.movement) {
+    diagnostic.outcome = 'existing';
+    diagnostic.visible_in_cash = cashVisibilityAfterStartAt(
+      result.movement.movement_date,
+      cashStartAt,
+    );
+  } else {
+    diagnostic.skip_reason = 'insert_failed';
+    diagnostic.error_message = 'Falha ao inserir movimentação no caixa SaaS';
+  }
+
+  logSaasCashIncomeDiagnostic(diagnostic);
+  return { ...result, diagnostic };
+}
+
+/** Entrada manual quando pagamento não tem cobrança Asaas vinculada. */
+export async function createSaasCashIncomeFromMasterPayment(
+  supabaseAdmin: SupabaseClient,
+  input: CreateSaasCashManualIncomeInput,
+  options?: { cashStartAt?: string | null },
+): Promise<{ movement: SaasCashMovement | null; created: boolean; diagnostic: SaasCashIncomeDiagnostic }> {
+  const cashStartAt =
+    options?.cashStartAt !== undefined
+      ? options.cashStartAt
+      : await getSaasCashStartAt(supabaseAdmin);
+
+  const movementDate = normalizeMovementDate(input.paidAt);
+  const amount = Number(input.amount || 0);
+  const asaasPaymentId = String(input.asaasPaymentId || '').trim() || null;
+
+  const diagnostic: SaasCashIncomeDiagnostic = {
+    payment_id: asaasPaymentId,
+    charge_id: String(input.saasChargeId || input.masterPaymentId),
+    paid_at: movementDate,
+    movement_date: movementDate,
+    cashStartAt,
+    amount,
+    outcome: 'skipped',
+  };
+
+  if (amount <= 0) {
+    diagnostic.skip_reason = 'zero_amount';
+    logSaasCashIncomeDiagnostic(diagnostic);
+    return { movement: null, created: false, diagnostic };
+  }
+
+  const existingManual = await findExistingManualIncomeByMasterPayment(
+    supabaseAdmin,
+    input.masterPaymentId,
+  );
+  if (existingManual) {
+    diagnostic.outcome = 'existing';
+    diagnostic.skip_reason = 'movement_exists';
+    diagnostic.visible_in_cash = cashVisibilityAfterStartAt(
+      existingManual.movement_date,
+      cashStartAt,
+    );
+    logSaasCashIncomeDiagnostic(diagnostic);
+    return { movement: existingManual, created: false, diagnostic };
+  }
+
+  if (asaasPaymentId) {
+    const existingByPayment = await findExistingAsaasWebhookIncome(
+      supabaseAdmin,
+      asaasPaymentId,
+    );
+    if (existingByPayment) {
+      diagnostic.outcome = 'existing';
+      diagnostic.skip_reason = 'duplicate_asaas_payment';
+      diagnostic.visible_in_cash = cashVisibilityAfterStartAt(
+        existingByPayment.movement_date,
+        cashStartAt,
+      );
+      logSaasCashIncomeDiagnostic(diagnostic);
+      return { movement: existingByPayment, created: false, diagnostic };
+    }
+  }
+
+  const insertRow = {
+    company_id: resolveCompanyId(input.companyId),
+    saas_charge_id: input.saasChargeId ?? null,
+    asaas_payment_id: asaasPaymentId,
+    type: 'income' as const,
+    category: INCOME_CATEGORY,
+    description: INCOME_DESCRIPTION,
+    amount,
+    movement_date: movementDate,
+    source: 'manual' as const,
+    metadata: {
+      master_payment_id: input.masterPaymentId,
+      reference_month: input.referenceMonth ?? null,
+      auto: true,
+    },
+    created_by: input.createdBy ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      const dup = await findExistingManualIncomeByMasterPayment(
+        supabaseAdmin,
+        input.masterPaymentId,
+      );
+      if (dup) {
+        diagnostic.outcome = 'existing';
+        diagnostic.skip_reason = 'movement_exists';
+        logSaasCashIncomeDiagnostic(diagnostic);
+        return { movement: dup, created: false, diagnostic };
+      }
+    }
+    diagnostic.skip_reason = 'insert_failed';
+    diagnostic.error_message = error.message;
+    logSaasCashIncomeDiagnostic(diagnostic);
+    return { movement: null, created: false, diagnostic };
+  }
+
+  diagnostic.outcome = 'created';
+  diagnostic.visible_in_cash = cashVisibilityAfterStartAt(movementDate, cashStartAt);
+  if (cashStartAt && !diagnostic.visible_in_cash) {
+    diagnostic.skip_reason = 'hidden_by_cash_start_at';
+  }
+  logSaasCashIncomeDiagnostic(diagnostic);
+
+  return {
+    movement: parseMovementRow(data as Record<string, unknown>),
+    created: true,
+    diagnostic,
+  };
+}
+
+/** Após markInvoicePaid — usa cobrança vinculada ou entrada manual. */
+export async function ensureSaasCashAfterInvoicePaid(
+  supabaseAdmin: SupabaseClient,
+  input: {
+    invoiceId: string;
+    paymentId: string;
+    paidAt: string;
+    amount: number;
+    companyId: string;
+    referenceMonth?: string;
+    createdBy?: string | null;
+  },
+): Promise<{ movement: SaasCashMovement | null; created: boolean }> {
+  const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
+
+  const { data: chargeRow } = await supabaseAdmin
+    .from('saas_charges')
+    .select('id, company_id, amount, payment_id, paid_at')
+    .eq('invoice_id', input.invoiceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (chargeRow) {
+    const result = await ensureSaasCashIncomeForPaidCharge(
+      supabaseAdmin,
+      {
+        charge: {
+          id: String(chargeRow.id),
+          company_id: String(chargeRow.company_id),
+          amount: Number(chargeRow.amount || input.amount),
+          payment_id: chargeRow.payment_id ? String(chargeRow.payment_id) : null,
+          paid_at: chargeRow.paid_at ? String(chargeRow.paid_at) : null,
+        },
+        paidAt: input.paidAt,
+        createdBy: input.createdBy ?? null,
+      },
+      { cashStartAt },
+    );
+    return { movement: result.movement, created: result.created };
+  }
+
+  const manual = await createSaasCashIncomeFromMasterPayment(
+    supabaseAdmin,
+    {
+      masterPaymentId: input.paymentId,
+      companyId: input.companyId,
+      amount: input.amount,
+      paidAt: input.paidAt,
+      referenceMonth: input.referenceMonth,
+      createdBy: input.createdBy ?? null,
+    },
+    { cashStartAt },
+  );
+  return { movement: manual.movement, created: manual.created };
+}
+
+/** Repara cobranças PAID sem movimentação no caixa (backfill idempotente). */
+export async function backfillSaasCashForPaidCharges(
+  supabaseAdmin: SupabaseClient,
+  options: {
+    companyId?: string;
+    fromDate?: string;
+    toDate?: string;
+    createdBy?: string | null;
+    cashStartAt?: string | null;
+  } = {},
+): Promise<BackfillSaasCashResult> {
+  const cashStartAt =
+    options.cashStartAt !== undefined
+      ? options.cashStartAt
+      : await getSaasCashStartAt(supabaseAdmin);
+
+  let query = supabaseAdmin
+    .from('saas_charges')
+    .select('id, company_id, amount, payment_id, paid_at')
+    .eq('status', 'PAID')
+    .is('deleted_at', null);
+
+  if (options.companyId) {
+    query = query.eq('company_id', options.companyId);
+  }
+  if (options.fromDate) {
+    query = query.gte('paid_at', `${options.fromDate}T00:00:00.000Z`);
+  }
+  if (options.toDate) {
+    query = query.lte('paid_at', `${options.toDate}T23:59:59.999Z`);
+  }
+
+  const { data: charges, error } = await query;
+  if (error) {
+    throw new Error(error.message || 'Falha ao listar cobranças pagas para backfill');
+  }
+
+  const diagnostics: SaasCashIncomeDiagnostic[] = [];
+  let backfilled = 0;
+  let alreadyHadMovement = 0;
+
+  for (const row of charges || []) {
+    const charge = row as Pick<
+      SaasCharge,
+      'id' | 'company_id' | 'amount' | 'payment_id' | 'paid_at'
+    >;
+
+    const existing = await findExistingIncomeForCharge(
+      supabaseAdmin,
+      charge.id,
+      charge.payment_id,
+    );
+    if (existing) {
+      alreadyHadMovement += 1;
+      continue;
+    }
+
+    const result = await ensureSaasCashIncomeForPaidCharge(
+      supabaseAdmin,
+      {
+        charge,
+        paidAt: charge.paid_at ? String(charge.paid_at).split('T')[0] : undefined,
+        createdBy: options.createdBy ?? null,
+      },
+      { cashStartAt },
+    );
+    diagnostics.push(result.diagnostic);
+    if (result.created) backfilled += 1;
+  }
+
+  if (backfilled > 0 || diagnostics.some((d) => d.skip_reason === 'hidden_by_cash_start_at')) {
+    console.warn(
+      '[saas-cash-backfill]',
+      JSON.stringify({
+        checked: (charges || []).length,
+        backfilled,
+        alreadyHadMovement,
+        cashStartAt,
+        fromDate: options.fromDate ?? null,
+        toDate: options.toDate ?? null,
+      }),
+    );
+  }
+
+  return {
+    checked: (charges || []).length,
+    backfilled,
+    alreadyHadMovement,
+    diagnostics,
   };
 }
 
@@ -391,17 +846,36 @@ export async function loadSaasCashView(
   supabaseAdmin: SupabaseClient,
   options: ListSaasCashMovementsOptions,
   cashStartAt: string | null,
+  backfillOptions?: { enabled?: boolean; createdBy?: string | null },
 ): Promise<{
   movements: SaasCashMovement[];
   summary: SaasCashSummary;
   cashStartAt: string | null;
+  backfill?: BackfillSaasCashResult;
 }> {
+  let backfill: BackfillSaasCashResult | undefined;
+  if (backfillOptions?.enabled !== false) {
+    try {
+      backfill = await backfillSaasCashForPaidCharges(supabaseAdmin, {
+        companyId: options.companyId,
+        fromDate: options.fromDate,
+        toDate: options.toDate,
+        createdBy: backfillOptions?.createdBy ?? null,
+        cashStartAt,
+      });
+    } catch (err) {
+      console.warn('[saas-cash-backfill] falha no backfill automático:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   const queryOptions = { ...options, cashStartAt };
   const [movements, summary] = await Promise.all([
     listSaasCashMovements(supabaseAdmin, queryOptions),
     getSaasCashSummary(supabaseAdmin, queryOptions),
   ]);
-  return { movements, summary, cashStartAt };
+  return { movements, summary, cashStartAt, backfill };
 }
 
 async function findExistingByAsaasMovementId(

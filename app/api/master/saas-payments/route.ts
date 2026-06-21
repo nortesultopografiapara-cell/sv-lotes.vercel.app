@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import { markInvoicePaid, reactivateCompanyOnPayment } from '@/lib/saasBilling';
+import { createSaasCashIncomeFromMasterPayment } from '@/lib/saasCashMovements';
 
 export async function GET(request: Request) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
@@ -134,6 +135,15 @@ export async function POST(request: Request) {
     }
 
     await reactivateCompanyOnPayment(supabaseAdmin, companyId);
+
+    await createSaasCashIncomeFromMasterPayment(supabaseAdmin, {
+      masterPaymentId: payment.id,
+      companyId,
+      amount,
+      paidAt,
+      referenceMonth,
+      createdBy: body.userId,
+    });
 
     await supabaseAdmin.from('audit_logs').insert({
       tenant_id: companyId,
