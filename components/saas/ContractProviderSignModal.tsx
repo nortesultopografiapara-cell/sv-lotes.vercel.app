@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2, ShieldCheck, X } from 'lucide-react';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
+import { resolveSignerDocumentLabel } from '@/lib/saasContractDocumentLabel';
 import { SAAS_PROVIDER } from '@/lib/saasContractContent';
 
 export type ContractProviderSignModalProps = {
@@ -40,8 +41,9 @@ export function ContractProviderSignModal({
   const handleSubmit = async () => {
     setFormError(null);
     const doc = onlyDigits(providerDocument);
+    const docLabel = resolveSignerDocumentLabel(doc);
     if (!providerName.trim() || doc.length < 11 || !providerEmail.includes('@')) {
-      setFormError('Preencha nome, CPF e e-mail válidos.');
+      setFormError(`Preencha nome, ${docLabel} e e-mail válidos.`);
       return;
     }
     if (!accepted) {
@@ -117,7 +119,7 @@ export function ContractProviderSignModal({
             placeholder="Nome do representante da SV"
           />
           <Field
-            label="CPF"
+            label={resolveSignerDocumentLabel(providerDocument) || 'CPF'}
             value={providerDocument}
             onChange={(v) => setProviderDocument(formatCpfCnpj(v))}
             placeholder="000.000.000-00"

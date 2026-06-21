@@ -13,6 +13,11 @@ import {
 import { SaasContractStepError } from '@/lib/saasContractErrors';
 import { loadFreshSaasContractContext } from '@/lib/saasContractService';
 import { formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  formatSignerDocumentDisplay,
+  resolveSignerDocumentLabel,
+} from '@/lib/saasContractDocumentLabel';
+import { resolveCompanyContractDocument } from '@/lib/saasContractParty';
 import { signatureStatusLabel } from '@/lib/saasContractStatus';
 import {
   canPublicClientSign,
@@ -130,6 +135,12 @@ export async function GET(
 
   const blocked = isPublicClientSignBlocked(signature.signature_status);
 
+  const companyDocumentRaw = resolveCompanyContractDocument(company);
+  const companyDocumentLabel = resolveSignerDocumentLabel(companyDocumentRaw);
+  const companyDocumentFormatted = companyDocumentRaw
+    ? formatSignerDocumentDisplay(companyDocumentRaw)
+    : null;
+
   return NextResponse.json({
     success: true,
     contract: {
@@ -141,6 +152,8 @@ export async function GET(
       id: company.id,
       name: company.name,
       cnpj: company.cnpj,
+      documentLabel: companyDocumentLabel,
+      documentFormatted: companyDocumentFormatted,
     },
     signature: {
       status: signature.signature_status,
@@ -181,6 +194,9 @@ export async function POST(
       signerRole: body.signerRole ? String(body.signerRole) : null,
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
+      latitude: body.latitude != null ? Number(body.latitude) : null,
+      longitude: body.longitude != null ? Number(body.longitude) : null,
+      geoCity: body.geoCity ? String(body.geoCity) : null,
     });
 
     return NextResponse.json({

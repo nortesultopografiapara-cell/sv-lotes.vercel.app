@@ -39,6 +39,9 @@ export async function POST(
       providerRole: body.providerRole ? String(body.providerRole) : null,
       ipAddress: resolveClientIp(request),
       userAgent: request.headers.get('user-agent'),
+      latitude: body.latitude != null ? Number(body.latitude) : null,
+      longitude: body.longitude != null ? Number(body.longitude) : null,
+      geoCity: body.geoCity ? String(body.geoCity) : null,
     });
 
     return NextResponse.json({

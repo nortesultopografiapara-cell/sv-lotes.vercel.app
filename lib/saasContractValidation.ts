@@ -10,28 +10,43 @@ import {
   contractPartyDigits,
   resolveCompanyContractDocument,
 } from '@/lib/saasContractParty';
+import {
+  extractAddressPartsFromCompany,
+  formatSaasContractAddress,
+  normalizeContractStreetLine,
+} from '@/lib/saasContractAddress';
 
 export type SaasContractCompanyInput = CompanyPricingSource & {
   id?: string;
   name?: string | null;
   cnpj?: string | null;
+  cpf?: string | null;
+  document?: string | null;
   email?: string | null;
   phone?: string | null;
   telefone?: string | null;
   address?: string | null;
   endereco?: string | null;
   logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  neighborhood?: string | null;
+  quadra?: string | null;
+  lote?: string | null;
   city?: string | null;
   cidade?: string | null;
   state?: string | null;
   uf?: string | null;
   state_uf?: string | null;
+  cep?: string | null;
   plan?: string | null;
   plan_type?: string | null;
 };
 
 export type NormalizedCompanyContractData = {
   address: string;
+  neighborhood: string;
   city: string;
   state: string;
   email: string;
@@ -57,15 +72,23 @@ export function normalizeCompanyContractData(
   company: SaasContractCompanyInput | Record<string, unknown>,
 ): NormalizedCompanyContractData {
   const c = company as Record<string, unknown>;
-  const logradouro = pickString(c.logradouro);
-  const numero = pickString(c.numero);
-  const complemento = pickString(c.complemento);
-  const streetParts = [logradouro, numero, complemento].filter(Boolean);
+  const parts = extractAddressPartsFromCompany(c);
+  const formatted = formatSaasContractAddress(parts);
+
+  const legacyStreet =
+    pickString(c.address, c.endereco) ||
+    [pickString(c.logradouro), pickString(c.numero), pickString(c.complemento)]
+      .filter(Boolean)
+      .join(', ');
+
+  const address =
+    formatted.streetLine !== 'Não informado'
+      ? formatted.streetLine
+      : normalizeContractStreetLine(legacyStreet);
 
   return {
-    address:
-      pickString(c.address, c.endereco) ||
-      (streetParts.length > 0 ? streetParts.join(', ') : ''),
+    address,
+    neighborhood: formatted.neighborhood || pickString(c.bairro, c.neighborhood),
     city: pickString(c.city, c.cidade),
     state: pickString(c.state, c.uf, c.state_uf),
     email: pickString(c.email),

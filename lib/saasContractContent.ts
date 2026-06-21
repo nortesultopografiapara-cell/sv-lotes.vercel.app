@@ -18,6 +18,10 @@ import { augmentCompanyBilling } from '@/lib/masterBilling';
 import { formatDateBr, type CompanySubscription } from '@/lib/saasSubscription';
 import { normalizeCompanyContractData } from '@/lib/saasContractValidation';
 import {
+  extractAddressPartsFromCompany,
+  formatSaasContractAddress,
+} from '@/lib/saasContractAddress';
+import {
   formatContractCep,
   formatContractCepRegional,
   formatContractCity,
@@ -101,8 +105,9 @@ export type SaasContractSection = {
   paragraphs: string[];
 };
 
-/** Versão atual do modelo jurídico (assinatura eletrônica integrada). */
-export const SAAS_CONTRACT_CONTENT_VERSION = 2;
+/** Versão atual do modelo jurídico (SLA, sucessão de versões, assinatura eletrônica). */
+export const SAAS_CONTRACT_CONTENT_VERSION = 3;
+export const SAAS_CONTRACT_V2_CONTENT_VERSION = 2;
 export const SAAS_CONTRACT_LEGACY_CONTENT_VERSION = 1;
 
 /** Versão do modelo de cláusulas gravada no contrato (legado = 1 quando ausente). */
@@ -133,6 +138,7 @@ export type SaasContractContext = {
     phone: string;
     email: string;
     address: string;
+    neighborhood?: string;
     cityState: string;
     cep?: string;
     /** @deprecated use document + documentLabel */
@@ -178,6 +184,8 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
   const party = resolveSaasContractorParty(company);
   const documentFormatted = party.documentFormatted;
   const responsible = resolveSaasContractRepresentative(company, party);
+  const addressParts = extractAddressPartsFromCompany(company as Record<string, unknown>);
+  const formattedAddress = formatSaasContractAddress(addressParts);
 
   return {
     contractNumber: subscription.contract_number || '—',
@@ -193,10 +201,9 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
       responsible: party.showRepresentative ? displayField(responsible) : '',
       phone: formatContractPhone(displayField(company.phone)),
       email: displayField(company.email),
-      address: displayField(normalized.address || company.address),
-      cityState: formatContractCity(
-        `${displayField(normalized.city || company.city)}/${displayField(normalized.state || company.state)}`,
-      ),
+      address: displayField(formattedAddress.streetLine),
+      neighborhood: formattedAddress.neighborhood || undefined,
+      cityState: formattedAddress.cityStateLine,
       cep: company.cep ? formatContractCep(String(company.cep).trim()) : undefined,
       cnpj: documentFormatted,
     },
@@ -226,7 +233,8 @@ export function buildSaasContractSections(
   ctx: SaasContractContext,
   contentVersion: number = SAAS_CONTRACT_CONTENT_VERSION,
 ): SaasContractSection[] {
-  const useElectronicSignatureV2 = contentVersion >= SAAS_CONTRACT_CONTENT_VERSION;
+  const useElectronicSignatureV2 = contentVersion >= SAAS_CONTRACT_V2_CONTENT_VERSION;
+  const useContractContentV3 = contentVersion >= SAAS_CONTRACT_CONTENT_VERSION;
   const p = ctx.provider;
   const c = ctx.contractor;
   const pl = ctx.plan;
@@ -509,6 +517,32 @@ export function buildSaasContractSections(
     };
     const foroIndex = sections.findIndex((s) => s.number === 23);
     sections.splice(foroIndex, 0, clause22A);
+  }
+
+  if (useContractContentV3) {
+    const clause22B: SaasContractSection = {
+      number: 22,
+      suffix: 'B',
+      title: 'NÍVEL DE SERVIÇO (SLA)',
+      paragraphs: [
+        'A CONTRATADA classifica solicitações de suporte e correções conforme criticidade, com prazos estimados de atendimento: Crítico — até 24 (vinte e quatro) horas úteis; Alto — até 48 (quarenta e oito) horas úteis; Médio — até 5 (cinco) dias úteis; Baixo — até 10 (dez) dias úteis.',
+        'Os prazos acima são estimados, dependem da complexidade técnica, da disponibilidade de informações pela CONTRATANTE, de integrações com terceiros e de eventos de força maior, não constituindo garantia absoluta de resolução dentro do intervalo indicado.',
+        'Incidentes que afetem indisponibilidade generalizada da plataforma, segurança de dados ou perda de acesso serão tratados com prioridade máxima, podendo a CONTRATADA adotar medidas temporárias de contenção enquanto a correção definitiva é implementada.',
+      ],
+    };
+    const clause22C: SaasContractSection = {
+      number: 22,
+      suffix: 'C',
+      title: 'SUCESSÃO DE VERSÕES',
+      paragraphs: [
+        'Quando uma nova versão contratual for gerada pela plataforma e assinada eletronicamente pelas partes, substituirá integralmente a versão anterior para fins de execução, preservando o histórico das versões anteriores para auditoria e rastreabilidade.',
+        'Versões anteriores permanecem arquivadas com identificação de número, data, hash e status, podendo ser consultadas para fins probatórios, sem produzir efeitos operacionais sobre o licenciamento vigente após a substituição.',
+        'A regeneração de contrato por alteração cadastral, comercial ou jurídica seguirá o fluxo de assinatura bilateral previsto neste instrumento, mantendo rastreabilidade entre versões consecutivas.',
+      ],
+    };
+    const foroIndex = sections.findIndex((s) => s.number === 23);
+    sections.splice(foroIndex, 0, clause22C);
+    sections.splice(foroIndex, 0, clause22B);
   }
 
   return sections;

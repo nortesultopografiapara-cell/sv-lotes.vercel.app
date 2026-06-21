@@ -31,6 +31,7 @@ import {
   isRealSaasCompany,
   type CompanySubscription,
 } from '@/lib/saasSubscription';
+import { formatSignerDocumentLine } from '@/lib/saasContractDocumentLabel';
 import {
   saasContractDocumentStatusLabel,
   isCurrentSaasContractVersion,
@@ -72,7 +73,6 @@ import {
   findActiveVisibleSaasContract,
   isArchivedSaasContract,
 } from '@/lib/saasContractArchive';
-import { formatCpfCnpj } from '@/lib/inputMasks';
 
 type EnrichedCompany = ReturnType<typeof augmentCompanyBilling>;
 
@@ -789,7 +789,7 @@ export function SaasContractPanel({
           <p className="text-[11px] text-emerald-300 mt-3">
             Cliente: {signatureInfo.latest.signer_name}
             {signatureInfo.latest.signer_document
-              ? ` · CPF ${formatCpfCnpj(signatureInfo.latest.signer_document)}`
+              ? ` · ${formatSignerDocumentLine(signatureInfo.latest.signer_document)}`
               : ''}
             {signatureInfo.latest.provider_signer_name
               ? ` · SV: ${signatureInfo.latest.provider_signer_name}`

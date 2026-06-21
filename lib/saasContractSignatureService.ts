@@ -25,6 +25,9 @@ import {
   formatSignatureTimeBr,
   type BilateralSignatureCertificateData,
 } from '@/lib/saasContractSignaturePdf';
+import { formatSignerDocumentLine } from '@/lib/saasContractDocumentLabel';
+import { formatSaasContractAddress, extractAddressPartsFromCompany } from '@/lib/saasContractAddress';
+import { SAAS_PROVIDER } from '@/lib/saasContractContent';
 import {
   canProviderSignContract,
   isFullySignedContract,
@@ -45,9 +48,16 @@ export type CompanyContractSignatureRow = {
   signer_role: string | null;
   signature_status: SignatureStatus;
   signature_token: string;
+  provider_signature_token?: string | null;
   signature_url: string;
   ip_address: string | null;
   user_agent: string | null;
+  signer_latitude?: number | null;
+  signer_longitude?: number | null;
+  signer_geo_city?: string | null;
+  provider_latitude?: number | null;
+  provider_longitude?: number | null;
+  provider_geo_city?: string | null;
   viewed_at: string | null;
   signed_at: string | null;
   expires_at: string;
@@ -152,6 +162,17 @@ export async function getLatestFullySignedSignature(
   return (data as CompanyContractSignatureRow) || null;
 }
 
+function resolveProviderSignatureToken(
+  signatureRow: CompanyContractSignatureRow,
+): string | null {
+  return signatureRow.provider_signature_token || signatureRow.signature_token || null;
+}
+
+function buildContractorAddressBlock(company: Record<string, unknown>): string {
+  const formatted = formatSaasContractAddress(extractAddressPartsFromCompany(company));
+  return formatted.multiline.replace(/\n/g, ', ');
+}
+
 export async function buildFullySignedSaasContractPdfBytes(
   supabaseAdmin: SupabaseClient,
   companyId: string,
@@ -213,20 +234,37 @@ export async function buildFullySignedSaasContractPdfBytes(
     signatureRow.provider_signature_hash ||
     (await computeSignatureHash(providerHashPayload));
 
+  const contentVersion = resolveStoredSaasContractContentVersion(contractRow);
+  const contractorAddress = buildContractorAddressBlock(company as Record<string, unknown>);
+  const providerAddress = formatSaasContractAddress({
+    street: SAAS_PROVIDER.address,
+    neighborhood: SAAS_PROVIDER.neighborhood,
+    city: SAAS_PROVIDER.city,
+    state: SAAS_PROVIDER.state,
+    cep: SAAS_PROVIDER.cep,
+  }).multiline.replace(/\n/g, ', ');
+
   const bilateralCertificate: BilateralSignatureCertificateData = {
     contractNumber: contractRow.contract_number,
+    contentVersion,
     client: {
       contractNumber: contractRow.contract_number,
       signerName: signatureRow.signer_name,
       signerDocument: signatureRow.signer_document || '',
       signerEmail: signatureRow.signer_email,
       signerRole: signatureRow.signer_role,
+      signerAddress: contractorAddress,
       ipAddress: signatureRow.ip_address || '—',
       signedDate: formatSignatureDateBr(clientSignedAt),
       signedTime: formatSignatureTimeBr(clientSignedAt),
       signatureHash: clientHash,
       signatureToken: signatureRow.signature_token,
+      signatureId: signatureRow.id,
+      contentVersion,
       partyLabel: 'CONTRATANTE',
+      geoCity: signatureRow.signer_geo_city,
+      latitude: signatureRow.signer_latitude,
+      longitude: signatureRow.signer_longitude,
     },
     provider: {
       contractNumber: contractRow.contract_number,
@@ -234,16 +272,20 @@ export async function buildFullySignedSaasContractPdfBytes(
       signerDocument: providerDocument,
       signerEmail: providerEmail,
       signerRole: signatureRow.provider_signer_role,
+      signerAddress: providerAddress,
       ipAddress: signatureRow.provider_ip_address || '—',
       signedDate: formatSignatureDateBr(providerSignedAt),
       signedTime: formatSignatureTimeBr(providerSignedAt),
       signatureHash: providerHash,
-      signatureToken: signatureRow.signature_token,
+      signatureToken: resolveProviderSignatureToken(signatureRow),
+      signatureId: signatureRow.id,
+      contentVersion,
       partyLabel: 'CONTRATADA',
+      geoCity: signatureRow.provider_geo_city,
+      latitude: signatureRow.provider_latitude,
+      longitude: signatureRow.provider_longitude,
     },
   };
-
-  const contentVersion = resolveStoredSaasContractContentVersion(contractRow);
   const built = buildSaasContractPdfWithMeta(
     {
       company,
@@ -452,7 +494,7 @@ export function buildSignatureHistory(
       user: signature.signer_name || 'Signatário',
       ip: signature.ip_address,
       details: signature.signer_document
-        ? `CPF ${signature.signer_document}`
+        ? formatSignerDocumentLine(signature.signer_document)
         : signature.signer_name,
     });
   }
@@ -464,7 +506,7 @@ export function buildSignatureHistory(
       user: signature.provider_signer_name || 'SV LOTES',
       ip: signature.provider_ip_address,
       details: signature.provider_signer_document
-        ? `CPF ${signature.provider_signer_document}`
+        ? formatSignerDocumentLine(signature.provider_signer_document)
         : signature.provider_signer_name,
     });
   }
@@ -671,6 +713,9 @@ export type SignContractInput = {
   signerRole?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  geoCity?: string | null;
 };
 
 export async function signContractElectronically(
@@ -716,7 +761,7 @@ export async function signContractElectronically(
   if (!signerName || signerDocument.length < 11 || !signerEmail.includes('@')) {
     throw new SaasContractStepError(
       'validation',
-      'Informe nome, CPF e e-mail válidos para assinar.',
+      'Informe nome, CPF/CNPJ e e-mail válidos para assinar.',
     );
   }
 
@@ -764,6 +809,9 @@ export async function signContractElectronically(
       signature_hash: signatureHash,
       ip_address: input.ipAddress || null,
       user_agent: input.userAgent || null,
+      signer_latitude: input.latitude ?? null,
+      signer_longitude: input.longitude ?? null,
+      signer_geo_city: input.geoCity?.trim() || null,
       updated_at: signedAt,
     })
     .eq('id', signature.id)
@@ -806,6 +854,9 @@ export type ProviderSignContractInput = {
   providerRole?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  geoCity?: string | null;
 };
 
 export async function signContractByProvider(
@@ -853,9 +904,11 @@ export async function signContractByProvider(
   if (!providerName || providerDocument.length < 11 || !providerEmail.includes('@')) {
     throw new SaasContractStepError(
       'validation',
-      'Informe nome, CPF e e-mail válidos do representante da SV.',
+      'Informe nome, CPF/CNPJ e e-mail válidos do representante da SV.',
     );
   }
+
+  const providerSignatureToken = generateSignatureToken();
 
   const { data: contract, error: contractErr } = await supabaseAdmin
     .from('company_contracts')
@@ -909,6 +962,10 @@ export async function signContractByProvider(
     provider_signature_hash: providerHash,
     provider_ip_address: input.ipAddress || null,
     provider_user_agent: input.userAgent || null,
+    provider_signature_token: providerSignatureToken,
+    provider_latitude: input.latitude ?? null,
+    provider_longitude: input.longitude ?? null,
+    provider_geo_city: input.geoCity?.trim() || null,
     signature_status: 'SIGNED',
     signature_hash: clientHash,
   };
@@ -939,6 +996,10 @@ export async function signContractByProvider(
       provider_signature_hash: providerHash,
       provider_ip_address: input.ipAddress || null,
       provider_user_agent: input.userAgent || null,
+      provider_signature_token: providerSignatureToken,
+      provider_latitude: input.latitude ?? null,
+      provider_longitude: input.longitude ?? null,
+      provider_geo_city: input.geoCity?.trim() || null,
       signature_status: 'SIGNED',
       updated_at: providerSignedAt,
     })

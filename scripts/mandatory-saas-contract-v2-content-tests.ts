@@ -8,6 +8,7 @@ import {
   menesesSaasContractFixture,
   SAAS_CONTRACT_CONTENT_VERSION,
   SAAS_CONTRACT_LEGACY_CONTENT_VERSION,
+  SAAS_CONTRACT_V2_CONTENT_VERSION,
 } from '../lib/saasContractContent';
 import {
   countSaasContractClausesInPdfText,
@@ -20,7 +21,7 @@ import {
 } from '../lib/saasContractPdfContentDetect';
 import {
   SAAS_CONTRACT_LEGACY_CLAUSES_COUNT,
-  SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT,
+  SAAS_CONTRACT_V2_CLAUSES_COUNT,
 } from '../lib/saasContractPdfValidation';
 
 function assert(cond: boolean, msg: string) {
@@ -44,13 +45,13 @@ function fixtureInput() {
 
 function testV2PdfContent() {
   const built = buildSaasContractPdfWithMeta(fixtureInput(), {
-    contentVersion: SAAS_CONTRACT_CONTENT_VERSION,
+    contentVersion: SAAS_CONTRACT_V2_CONTENT_VERSION,
   });
   const rough = roughSaasContractPdfText(built.pdf);
 
-  assert(built.clausesCount === SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT, 'v2 meta: 25 cláusulas');
+  assert(built.clausesCount === SAAS_CONTRACT_V2_CLAUSES_COUNT, 'v2 meta: 25 cláusulas');
   assert(
-    countSaasContractClausesInPdfText(rough) === SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT,
+    countSaasContractClausesInPdfText(rough) === SAAS_CONTRACT_V2_CLAUSES_COUNT,
     'v2 PDF: 25 cláusulas detectadas',
   );
   assert(
@@ -70,11 +71,11 @@ function testV2PdfContent() {
     'v2 PDF não contém "fase posterior"',
   );
   assert(
-    detectSaasContractPdfContentVersion(built.pdf) === SAAS_CONTRACT_CONTENT_VERSION,
+    detectSaasContractPdfContentVersion(built.pdf) === SAAS_CONTRACT_V2_CONTENT_VERSION,
     'detector identifica PDF v2',
   );
   assert(
-    storedPdfMatchesExpectedContentVersion(built.pdf, SAAS_CONTRACT_CONTENT_VERSION),
+    storedPdfMatchesExpectedContentVersion(built.pdf, SAAS_CONTRACT_V2_CONTENT_VERSION),
     'PDF v2 aceito para content_version=2',
   );
 
@@ -119,7 +120,7 @@ function testStaleV1RejectedForV2Expected() {
     contentVersion: SAAS_CONTRACT_LEGACY_CONTENT_VERSION,
   }).pdf;
   assert(
-    !storedPdfMatchesExpectedContentVersion(v1, SAAS_CONTRACT_CONTENT_VERSION),
+    !storedPdfMatchesExpectedContentVersion(v1, SAAS_CONTRACT_V2_CONTENT_VERSION),
     'PDF v1 no storage não serve para content_version=2',
   );
   console.log('OK testStaleV1RejectedForV2Expected');

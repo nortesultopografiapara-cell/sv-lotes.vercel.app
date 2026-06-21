@@ -26,6 +26,11 @@ import {
   type SignatureCertificateData,
 } from '@/lib/saasContractSignaturePdf';
 import { formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  formatSignerDocumentDisplay,
+  formatSignerDocumentFieldLabel,
+} from '@/lib/saasContractDocumentLabel';
+import { ELECTRONIC_SIGNATURE_BADGE } from '@/lib/saasContractSignaturePdf';
 export { SAAS_PROVIDER, type SaasContractPdfInput } from '@/lib/saasContractContent';
 
 const FOOTER_Y = 287;
@@ -393,10 +398,10 @@ function renderSignaturePage(
     const cardH = 58;
     w.ensureSpace(cardH + 8);
     renderExecutedSignatureCard(w, w.margin, w.y, colW, {
-      badge: '✓ ASSINADO ELETRONICAMENTE',
+      badge: ELECTRONIC_SIGNATURE_BADGE,
       role: 'CONTRATANTE',
       name: executed.client.name,
-      documentLine: `${ctx.contractor.documentLabel} ${formatCpfCnpj(executed.client.document) || executed.client.document}`,
+      documentLine: `${ctx.contractor.documentLabel} ${formatSignerDocumentDisplay(executed.client.document)}`,
       roleLine:
         executed.client.role && ctx.contractor.showRepresentative
           ? executed.client.role
@@ -404,10 +409,10 @@ function renderSignaturePage(
       signedDate: executed.client.signedDate,
     });
     renderExecutedSignatureCard(w, w.margin + colW + 12, w.y, colW, {
-      badge: '✓ ASSINADO ELETRONICAMENTE',
+      badge: ELECTRONIC_SIGNATURE_BADGE,
       role: 'CONTRATADA',
       name: executed.provider.name,
-      documentLine: `CPF ${formatCpfCnpj(executed.provider.document) || executed.provider.document}`,
+      documentLine: `${formatSignerDocumentFieldLabel(executed.provider.document)} ${formatSignerDocumentDisplay(executed.provider.document)}`,
       roleLine: executed.provider.role || ctx.provider.tradeName,
       signedDate: executed.provider.signedDate,
     });
@@ -566,6 +571,7 @@ export function buildSaasContractPdfWithMeta(
   writer.row('Telefone', formatContractPhone(ctx.contractor.phone));
   writer.row('E-mail', ctx.contractor.email);
   writer.row('Endereço', ctx.contractor.address);
+  if (ctx.contractor.neighborhood) writer.row('Bairro', ctx.contractor.neighborhood);
   writer.row('Cidade/UF', formatContractCity(ctx.contractor.cityState));
   if (ctx.contractor.cep) writer.row('CEP', formatContractCep(ctx.contractor.cep));
   writer.y += 3;

@@ -5,7 +5,12 @@
 import type { jsPDF } from 'jspdf';
 import { loadSvLotesLogoDataUrl } from '@/lib/brandLogoServer';
 import { SAAS_PROVIDER } from '@/lib/saasContractContent';
-import { formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  formatSignerDocumentDisplay,
+  formatSignerDocumentFieldLabel,
+} from '@/lib/saasContractDocumentLabel';
+
+export const ELECTRONIC_SIGNATURE_BADGE = 'ASSINADO ELETRONICAMENTE';
 
 export type SignatureCertificateData = {
   contractNumber: string;
@@ -13,16 +18,23 @@ export type SignatureCertificateData = {
   signerDocument: string;
   signerEmail?: string | null;
   signerRole?: string | null;
+  signerAddress?: string | null;
   ipAddress: string;
   signedDate: string;
   signedTime: string;
   signatureHash: string;
   signatureToken?: string | null;
+  signatureId?: string | null;
+  contentVersion?: number | null;
   partyLabel?: 'CONTRATANTE' | 'CONTRATADA';
+  geoCity?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type BilateralSignatureCertificateData = {
   contractNumber: string;
+  contentVersion?: number | null;
   client: SignatureCertificateData;
   provider: SignatureCertificateData;
 };
@@ -50,10 +62,10 @@ export function appendSignatureCertificateToPdf(
   pageW: number,
 ): void {
   appendPartyCertificateBlock(doc, cert, margin, pageW, {
-    title: 'CERTIFICADO DE ASSINATURA ELETRÔNICA',
+    title: 'CERTIFICADO DE ASSINATURA ELETRONICA',
     intro:
-      'Este certificado comprova a assinatura eletrônica do contrato de licença SaaS SV LOTES, ' +
-      'registrada digitalmente com validade jurídica conforme a Medida Provisória nº 2.200-2/2001 e a Lei nº 14.063/2020, ' +
+      'Este certificado comprova a assinatura eletronica do contrato de licenca SaaS SV LOTES, ' +
+      'registrada digitalmente com validade juridica conforme a Medida Provisoria no 2.200-2/2001 e a Lei no 14.063/2020, ' +
       'contendo os metadados de autenticidade e integridade indicados abaixo.',
   });
 }
@@ -66,16 +78,16 @@ export function appendBilateralSignatureCertificateToPdf(
 ): void {
   doc.addPage();
   const contentW = pageW - margin * 2;
-  drawCertificateHeader(doc, margin, pageW, 'CERTIFICADO DE ASSINATURA ELETRÔNICA');
+  drawCertificateHeader(doc, margin, pageW, 'CERTIFICADO DE ASSINATURA ELETRONICA');
 
   let y = 40;
   doc.setTextColor(30, 30, 30);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   const intro =
-    'Este certificado registra as assinaturas eletrônicas da CONTRATANTE e da CONTRATADA no contrato ' +
-    `de licença SaaS nº ${bilateral.contractNumber}, com validade jurídica conforme a Medida Provisória nº 2.200-2/2001, ` +
-    'a Lei nº 14.063/2020 e a legislação aplicável, incluindo hash de integridade (SHA-256) para cada signatário.';
+    'Este certificado registra as assinaturas eletronicas da CONTRATANTE e da CONTRATADA no contrato ' +
+    `de licenca SaaS no ${bilateral.contractNumber}, com validade juridica conforme a Medida Provisoria no 2.200-2/2001, ` +
+    'a Lei no 14.063/2020 e a legislacao aplicavel, incluindo hash de integridade (SHA-256) para cada signatario.';
   const introLines = doc.splitTextToSize(intro, contentW);
   doc.text(introLines, margin, y);
   y += introLines.length * CONTENT_LINE_H + 6;
@@ -83,8 +95,18 @@ export function appendBilateralSignatureCertificateToPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9.5);
   doc.setTextColor(22, 120, 72);
-  doc.text('✓ Contratante          ✓ Contratada', pageW / 2, y, { align: 'center' });
+  doc.text(`${ELECTRONIC_SIGNATURE_BADGE} — Contratante e Contratada`, pageW / 2, y, {
+    align: 'center',
+  });
   y += 10;
+
+  if (bilateral.contentVersion) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(80, 90, 105);
+    doc.text(`Versao contratual: v${bilateral.contentVersion}`, margin, y);
+    y += 8;
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -98,7 +120,7 @@ export function appendBilateralSignatureCertificateToPdf(
     margin,
     pageW,
     y,
-    '✓ CONTRATANTE',
+    `CONTRATANTE — ${ELECTRONIC_SIGNATURE_BADGE}`,
   );
   y += 8;
   y = renderPartyCertificateSection(
@@ -107,21 +129,21 @@ export function appendBilateralSignatureCertificateToPdf(
     margin,
     pageW,
     y,
-    '✓ CONTRATADA',
+    `CONTRATADA — ${ELECTRONIC_SIGNATURE_BADGE}`,
   );
 
   y += 6;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(45, 55, 72);
-  doc.text('Declaração jurídica', margin, y);
+  doc.text('Declaracao juridica', margin, y);
   y += 7;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(45, 55, 72);
   const declaration =
     'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
-    'como prova de aceite eletrônico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovação de manifestação de vontade.';
+    'como prova de aceite eletronico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovacao de manifestacao de vontade.';
   const declarationLines = doc.splitTextToSize(declaration, contentW);
   doc.text(declarationLines, margin, y);
 }
@@ -164,18 +186,28 @@ function appendPartyCertificateBlock(
     margin,
     pageW,
     y,
-    cert.partyLabel || 'SIGNATÁRIO',
+    cert.partyLabel ? `${cert.partyLabel} — ${ELECTRONIC_SIGNATURE_BADGE}` : ELECTRONIC_SIGNATURE_BADGE,
   );
 
-  y += 90;
+  y += 110;
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(8);
   doc.setTextColor(100, 110, 120);
   const footer =
     'Este certificado foi gerado automaticamente pelo sistema SV LOTES e integra o documento assinado ' +
-    'como prova de aceite eletrônico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovação de manifestação de vontade.';
+    'como prova de aceite eletronico dos termos contratuais, podendo ser utilizado para fins de auditoria e comprovacao de manifestacao de vontade.';
   const footerLines = doc.splitTextToSize(footer, contentW);
   doc.text(footerLines, margin, y);
+}
+
+function estimateCertificateBlockHeight(doc: jsPDF, cert: SignatureCertificateData, contentW: number): number {
+  let rows = 10;
+  if (cert.signatureToken) rows += 1;
+  if (cert.signatureId) rows += 1;
+  if (cert.contentVersion) rows += 1;
+  if (cert.signerAddress) rows += 1;
+  if (cert.geoCity || (cert.latitude != null && cert.longitude != null)) rows += 3;
+  return 18 + rows * 7;
 }
 
 function renderPartyCertificateSection(
@@ -188,6 +220,7 @@ function renderPartyCertificateSection(
 ): number {
   const contentW = pageW - margin * 2;
   let y = startY;
+  const blockH = estimateCertificateBlockHeight(doc, cert, contentW);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -197,8 +230,11 @@ function renderPartyCertificateSection(
 
   doc.setDrawColor(200, 210, 220);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(margin, y, contentW, 88, 2, 2, 'FD');
+  doc.roundedRect(margin, y, contentW, blockH, 2, 2, 'FD');
   y += 10;
+
+  const docLabel = formatSignerDocumentFieldLabel(cert.signerDocument);
+  const docValue = formatSignerDocumentDisplay(cert.signerDocument);
 
   const row = (label: string, value: string) => {
     doc.setFont('helvetica', 'bold');
@@ -213,18 +249,29 @@ function renderPartyCertificateSection(
     y += Math.max(6, valueLines.length * CONTENT_LINE_H + 2);
   };
 
-  row('Contrato nº', cert.contractNumber);
+  row('Contrato no', cert.contractNumber);
+  if (cert.signatureId) row('ID da assinatura', cert.signatureId);
+  if (cert.contentVersion) row('Versao contratual', `v${cert.contentVersion}`);
   row('Assinado por', cert.signerName);
-  row('CPF', formatCpfCnpj(cert.signerDocument) || cert.signerDocument);
+  row(docLabel, docValue);
   row('E-mail', cert.signerEmail?.trim() || '—');
   row('Cargo', cert.signerRole?.trim() || '—');
-  row('Endereço IP', cert.ipAddress || '—');
+  if (cert.signerAddress?.trim()) row('Endereco', cert.signerAddress.trim());
+  row('Endereco IP', cert.ipAddress || '—');
   row('Data da assinatura', cert.signedDate);
   row('Hora da assinatura', cert.signedTime);
   if (cert.signatureToken) {
     row('Token', maskToken(cert.signatureToken));
   }
   row('Hash de integridade (SHA-256)', cert.signatureHash);
+
+  if (cert.geoCity?.trim()) {
+    row('Local aproximado', cert.geoCity.trim());
+  }
+  if (cert.latitude != null && cert.longitude != null) {
+    row('Latitude', String(cert.latitude));
+    row('Longitude', String(cert.longitude));
+  }
 
   return y + 6;
 }

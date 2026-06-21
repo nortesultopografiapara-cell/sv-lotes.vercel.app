@@ -14,10 +14,21 @@ import {
 } from 'lucide-react';
 import { buildSignApiUrl } from '@/lib/saasContractUrls';
 import { formatCpfCnpj, onlyDigits } from '@/lib/inputMasks';
+import {
+  formatSignerDocumentDisplay,
+  formatSignerDocumentFieldLabel,
+  resolveSignerDocumentLabel,
+} from '@/lib/saasContractDocumentLabel';
 
 type SignPageData = {
   contract: { id: string; number: string; status: string };
-  company: { id: string; name: string; cnpj?: string | null };
+  company: {
+    id: string;
+    name: string;
+    cnpj?: string | null;
+    documentLabel?: string;
+    documentFormatted?: string | null;
+  };
   signature: {
     status: string;
     statusLabel: string;
@@ -63,6 +74,38 @@ export default function SignContractPage() {
     [token],
   );
 
+  const [geo, setGeo] = useState<{
+    latitude?: number;
+    longitude?: number;
+    geoCity?: string | null;
+  }>({});
+
+  const companyDocumentLabel =
+    data?.company.documentLabel ||
+    resolveSignerDocumentLabel(data?.company.cnpj || signerDocument);
+  const companyDocumentDisplay =
+    data?.company.documentFormatted ||
+    (data?.company.cnpj ? formatSignerDocumentDisplay(data.company.cnpj) : '—');
+  const signerFieldLabel = resolveSignerDocumentLabel(
+    signerDocument || data?.company.cnpj,
+  );
+
+  useEffect(() => {
+    if (!data?.signature.canSign || typeof navigator === 'undefined' || !navigator.geolocation) {
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+    );
+  }, [data?.signature.canSign]);
+
   useEffect(() => {
     if (!token) {
       setError('Link inválido.');
@@ -97,7 +140,7 @@ export default function SignContractPage() {
     setFormError(null);
     const doc = onlyDigits(signerDocument);
     if (!signerName.trim() || doc.length < 11 || !signerEmail.includes('@')) {
-      setFormError('Preencha nome, CPF e e-mail válidos.');
+      setFormError(`Preencha nome, ${signerFieldLabel} e e-mail válidos.`);
       return;
     }
     if (!accepted) {
@@ -115,6 +158,9 @@ export default function SignContractPage() {
           signerDocument: doc,
           signerEmail: signerEmail.trim(),
           signerRole: signerRole.trim() || null,
+          latitude: geo.latitude ?? null,
+          longitude: geo.longitude ?? null,
+          geoCity: geo.geoCity ?? null,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -206,10 +252,10 @@ export default function SignContractPage() {
           placeholder="Nome do signatário"
         />
         <Field
-          label="CPF"
+          label={signerFieldLabel}
           value={signerDocument}
           onChange={(v) => setSignerDocument(formatCpfCnpj(v))}
-          placeholder="000.000.000-00"
+          placeholder={signerFieldLabel === 'CNPJ' ? '00.000.000/0000-00' : '000.000.000-00'}
         />
         <Field
           label="E-mail"
@@ -323,7 +369,7 @@ export default function SignContractPage() {
                 </div>
                 <dl className="space-y-2 text-sm">
                   <Row label="Empresa" value={data.company.name} />
-                  <Row label="CNPJ" value={data.company.cnpj || '—'} />
+                  <Row label={companyDocumentLabel} value={companyDocumentDisplay} />
                   <Row label="Status" value={data.signature.statusLabel} />
                   <Row label="Validade do link" value={formatDateTimeBr(data.signature.expiresAt)} />
                 </dl>

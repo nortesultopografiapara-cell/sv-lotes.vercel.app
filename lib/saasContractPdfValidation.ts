@@ -5,10 +5,14 @@
 import {
   buildSaasContractDocumentText,
   SAAS_CONTRACT_CONTENT_VERSION,
+  SAAS_CONTRACT_V2_CONTENT_VERSION,
 } from '@/lib/saasContractContent';
 import type { SaasContractPdfInput } from '@/lib/saasContractContent';
 
-export const SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT = 25;
+export const SAAS_CONTRACT_V3_CLAUSES_COUNT = 27;
+export const SAAS_CONTRACT_V2_CLAUSES_COUNT = 25;
+/** @deprecated use SAAS_CONTRACT_V2_CLAUSES_COUNT */
+export const SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT = SAAS_CONTRACT_V2_CLAUSES_COUNT;
 export const SAAS_CONTRACT_LEGACY_CLAUSES_COUNT = 24;
 export const SAAS_CONTRACT_MIN_PAGE_COUNT = 3;
 /** Faixa esperada para contrato Meneses com paginação natural (sem forçar 8/9 páginas). */
@@ -63,8 +67,10 @@ export function validateSaasContractPdfBytes(
   const errors: string[] = [];
   const expectedClauses =
     contentVersion >= SAAS_CONTRACT_CONTENT_VERSION
-      ? SAAS_CONTRACT_REQUIRED_CLAUSES_COUNT
-      : SAAS_CONTRACT_LEGACY_CLAUSES_COUNT;
+      ? SAAS_CONTRACT_V3_CLAUSES_COUNT
+      : contentVersion >= SAAS_CONTRACT_V2_CONTENT_VERSION
+        ? SAAS_CONTRACT_V2_CLAUSES_COUNT
+        : SAAS_CONTRACT_LEGACY_CLAUSES_COUNT;
 
   const hasTitle =
     rough.includes('contrato de licença de software') ||
