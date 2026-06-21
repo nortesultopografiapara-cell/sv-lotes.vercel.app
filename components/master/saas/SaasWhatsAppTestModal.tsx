@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { SAAS_WHATSAPP_TEST_MESSAGE } from '@/lib/saasWhatsAppTest';
+import type { ZapiConfigStatus } from '@/lib/whatsapp/zapiProvider';
 
 type Props = {
   open: boolean;
@@ -11,19 +12,65 @@ type Props = {
   onClose: () => void;
 };
 
+type ConfigRowProps = {
+  label: string;
+  configured: boolean;
+  hint: string | null;
+};
+
+function ConfigRow({ label, configured, hint }: ConfigRowProps) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-gray-400">{label}</span>
+      <span className="text-right">
+        <span className={configured ? 'text-emerald-300' : 'text-amber-300'}>
+          {configured ? 'sim' : 'não'}
+        </span>
+        {hint ? <span className="ml-2 font-mono text-[11px] text-gray-500">{hint}</span> : null}
+      </span>
+    </div>
+  );
+}
+
 export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClose }: Props) {
   const [phone, setPhone] = useState('');
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const [configStatus, setConfigStatus] = useState<ZapiConfigStatus | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setPhone('');
     setFeedback(null);
     setSending(false);
-  }, [open]);
+    setConfigStatus(null);
+
+    let cancelled = false;
+    setConfigLoading(true);
+    fetch(`/api/master/saas-whatsapp-test?userId=${encodeURIComponent(userId)}`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return res.json() as Promise<{ config?: ZapiConfigStatus }>;
+      })
+      .then((json) => {
+        if (!cancelled && json?.config) setConfigStatus(json.config);
+      })
+      .catch(() => {
+        if (!cancelled) setConfigStatus(null);
+      })
+      .finally(() => {
+        if (!cancelled) setConfigLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, userId]);
 
   if (!open) return null;
+
+  const readyToSend = configStatus?.ready ?? whatsappConfigured;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -35,8 +82,11 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
       return;
     }
 
-    if (!whatsappConfigured) {
-      setFeedback({ type: 'error', text: 'Z-API não configurada no servidor.' });
+    if (!readyToSend) {
+      setFeedback({
+        type: 'error',
+        text: 'Z-API incompleta no servidor — verifique o diagnóstico abaixo.',
+      });
       return;
     }
 
@@ -95,6 +145,33 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div className="rounded-lg border border-white/10 bg-[#0B0E14]/60 px-3 py-3 space-y-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Diagnóstico Z-API</p>
+            {configLoading ? (
+              <p className="text-sm text-gray-500">Carregando…</p>
+            ) : configStatus ? (
+              <>
+                <ConfigRow
+                  label="Instance configurada"
+                  configured={configStatus.instanceConfigured}
+                  hint={configStatus.instanceHint}
+                />
+                <ConfigRow
+                  label="Token configurado"
+                  configured={configStatus.tokenConfigured}
+                  hint={configStatus.tokenHint}
+                />
+                <ConfigRow
+                  label="Client-Token configurado"
+                  configured={configStatus.clientTokenConfigured}
+                  hint={configStatus.clientTokenHint}
+                />
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">Não foi possível carregar o diagnóstico.</p>
+            )}
+          </div>
+
           <div>
             <label htmlFor="saas-whatsapp-test-phone" className="block text-xs font-medium text-gray-400 mb-2">
               Número WhatsApp
@@ -118,9 +195,10 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
             <p className="text-sm text-gray-200 whitespace-pre-wrap">{SAAS_WHATSAPP_TEST_MESSAGE}</p>
           </div>
 
-          {!whatsappConfigured ? (
+          {!readyToSend ? (
             <p className="text-sm text-amber-300">
-              Configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN para habilitar o envio.
+              Configure ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) e ZAPI_CLIENT_TOKEN na
+              Vercel (Production) e redeploy o projeto.
             </p>
           ) : null}
 
@@ -145,7 +223,7 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
             </button>
             <button
               type="submit"
-              disabled={sending || !whatsappConfigured}
+              disabled={sending || !readyToSend}
               className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-semibold text-white"
             >
               {sending ? 'Enviando…' : 'Enviar teste'}

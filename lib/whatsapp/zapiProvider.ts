@@ -4,6 +4,18 @@
 
 export const ZAPI_SEND_TEXT_BASE_URL = 'https://api.z-api.io';
 
+export const ZAPI_CLIENT_TOKEN_MISSING_ERROR = 'ZAPI_CLIENT_TOKEN ausente na Vercel';
+
+export type ZapiConfigStatus = {
+  instanceConfigured: boolean;
+  instanceHint: string | null;
+  tokenConfigured: boolean;
+  tokenHint: string | null;
+  clientTokenConfigured: boolean;
+  clientTokenHint: string | null;
+  ready: boolean;
+};
+
 export type ZapiSendTextInput = {
   phone: string;
   message: string;
@@ -41,6 +53,19 @@ export function maskZapiSecret(value: string, visible = 4): string {
   return `${trimmed.slice(0, visible)}…${trimmed.slice(-visible)}`;
 }
 
+/** Exibe apenas os últimos 4 caracteres (diagnóstico UI). */
+export function maskZapiSuffixOnly(value: string): string | null {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= 4) return '****';
+  return `…${trimmed.slice(-4)}`;
+}
+
+/** Token da instância — aceita ZAPI_INSTANCE_TOKEN ou alias legado ZAPI_TOKEN. */
+export function resolveZapiInstanceToken(): string {
+  return String(process.env.ZAPI_INSTANCE_TOKEN || process.env.ZAPI_TOKEN || '').trim();
+}
+
 export function buildZapiSendTextUrl(instanceId: string, token: string): string {
   return `${ZAPI_SEND_TEXT_BASE_URL}/instances/${encodeURIComponent(instanceId)}/token/${encodeURIComponent(token)}/send-text`;
 }
@@ -54,9 +79,25 @@ export function maskZapiRequestUrl(url: string, token: string): string {
     .replace(encodedToken, maskZapiSecret(trimmedToken));
 }
 
+export function getZapiConfigStatus(): ZapiConfigStatus {
+  const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
+  const token = resolveZapiInstanceToken();
+  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
+
+  return {
+    instanceConfigured: !!instanceId,
+    instanceHint: maskZapiSuffixOnly(instanceId),
+    tokenConfigured: !!token,
+    tokenHint: maskZapiSuffixOnly(token),
+    clientTokenConfigured: !!clientToken,
+    clientTokenHint: maskZapiSuffixOnly(clientToken),
+    ready: !!(instanceId && token && clientToken),
+  };
+}
+
 export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
   const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
-  const token = String(process.env.ZAPI_INSTANCE_TOKEN || '').trim();
+  const token = resolveZapiInstanceToken();
   const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
 
   if (!instanceId || !token) return null;
@@ -80,7 +121,7 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
   }
   if (!clientToken) {
     configWarnings.push(
-      'ZAPI_CLIENT_TOKEN não configurado — a Z-API exige header Client-Token (token de segurança da conta).',
+      `${ZAPI_CLIENT_TOKEN_MISSING_ERROR} — a Z-API exige header Client-Token (token de segurança da conta).`,
     );
   }
 
@@ -95,7 +136,7 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
       requestUrl.includes('/token/') &&
       requestUrl.endsWith(expectedSuffix),
     usesEnvInstanceId: instanceId === String(process.env.ZAPI_INSTANCE_ID || '').trim(),
-    usesEnvInstanceToken: token === String(process.env.ZAPI_INSTANCE_TOKEN || '').trim(),
+    usesEnvInstanceToken: token === resolveZapiInstanceToken(),
     clientTokenConfigured: !!clientToken,
     clientTokenMasked: clientToken ? maskZapiSecret(clientToken) : '(nao configurado)',
     configWarnings,
@@ -103,15 +144,12 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
 }
 
 export function isZapiConfigured(): boolean {
-  return !!(
-    String(process.env.ZAPI_INSTANCE_ID || '').trim() &&
-    String(process.env.ZAPI_INSTANCE_TOKEN || '').trim()
-  );
+  return getZapiConfigStatus().ready;
 }
 
 export function resolveZapiSendTextUrl(): string | null {
   const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
-  const token = String(process.env.ZAPI_INSTANCE_TOKEN || '').trim();
+  const token = resolveZapiInstanceToken();
   if (!instanceId || !token) return null;
 
   return buildZapiSendTextUrl(instanceId, token);
@@ -155,6 +193,24 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
     return { ok: false, error: 'Mensagem vazia.', debug: diagnostics };
   }
 
+  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
+  if (!clientToken) {
+    console.log(
+      '[zapi-send-text:blocked]',
+      JSON.stringify({
+        instanceId: diagnostics.instanceId,
+        tokenMasked: diagnostics.tokenMasked,
+        clientTokenConfigured: false,
+        error: ZAPI_CLIENT_TOKEN_MISSING_ERROR,
+      }),
+    );
+    return {
+      ok: false,
+      error: ZAPI_CLIENT_TOKEN_MISSING_ERROR,
+      debug: diagnostics,
+    };
+  }
+
   logZapiDiagnostics('request', diagnostics, {
     phone,
     messageLength: message.length,
@@ -162,12 +218,8 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Client-Token': clientToken,
   };
-
-  const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
-  if (clientToken) {
-    headers['Client-Token'] = clientToken;
-  }
 
   try {
     const response = await fetch(url, {

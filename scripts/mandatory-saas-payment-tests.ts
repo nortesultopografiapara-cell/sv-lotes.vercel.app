@@ -65,7 +65,11 @@ import {
   isSaasBillingWhatsAppConfigured,
   normalizeBrazilianWhatsAppPhone,
 } from '../lib/saasBillingReminderWhatsApp';
-import { isZapiConfigured, sendText } from '../lib/whatsapp/zapiProvider';
+import {
+  isZapiConfigured,
+  sendText,
+  ZAPI_CLIENT_TOKEN_MISSING_ERROR,
+} from '../lib/whatsapp/zapiProvider';
 import {
   SAAS_WHATSAPP_TEST_MESSAGE,
   sendSaasWhatsAppTest,
@@ -1416,6 +1420,10 @@ function testSaasBillingReminderWhatsApp() {
   const zapi = read('lib/whatsapp/zapiProvider.ts');
   assert(zapi.includes('ZAPI_INSTANCE_ID'), 'provider z-api instance id');
   assert(zapi.includes('ZAPI_INSTANCE_TOKEN'), 'provider z-api instance token');
+  assert(zapi.includes('ZAPI_CLIENT_TOKEN'), 'provider z-api client token');
+  assert(zapi.includes('Client-Token'), 'provider header Client-Token');
+  assert(zapi.includes('ZAPI_CLIENT_TOKEN ausente na Vercel'), 'erro client token ausente');
+  assert(zapi.includes('getZapiConfigStatus'), 'status config z-api');
   assert(zapi.includes('buildZapiSendTextUrl'), 'helper url z-api');
   assert(zapi.includes('buildZapiRequestDiagnostics'), 'diagnostico z-api');
   assert(zapi.includes('zapi-send-text'), 'log request z-api');
@@ -1445,18 +1453,25 @@ function testSaasBillingReminderWhatsApp() {
   const envExample = read('.env.example');
   assert(envExample.includes('ZAPI_INSTANCE_ID='), 'env example z-api instance id');
   assert(envExample.includes('ZAPI_INSTANCE_TOKEN='), 'env example z-api token');
+  assert(envExample.includes('ZAPI_CLIENT_TOKEN='), 'env example z-api client token');
   assert(!envExample.includes('EVOLUTION_API_URL'), 'env example sem evolution');
 
   const origId = process.env.ZAPI_INSTANCE_ID;
   const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+  const origClient = process.env.ZAPI_CLIENT_TOKEN;
   try {
     delete process.env.ZAPI_INSTANCE_ID;
     delete process.env.ZAPI_INSTANCE_TOKEN;
+    delete process.env.ZAPI_CLIENT_TOKEN;
     assert(!isZapiConfigured(), 'z-api não configurada sem envs');
     assert(!isSaasBillingWhatsAppConfigured(), 'whatsapp billing não configurado sem envs');
 
     process.env.ZAPI_INSTANCE_ID = 'inst-test';
     process.env.ZAPI_INSTANCE_TOKEN = 'token-test';
+    assert(!isZapiConfigured(), 'z-api não configurada sem client token');
+    assert(!isSaasBillingWhatsAppConfigured(), 'whatsapp billing sem client token');
+
+    process.env.ZAPI_CLIENT_TOKEN = 'client-test';
     assert(isZapiConfigured(), 'z-api configurada com envs');
     assert(isSaasBillingWhatsAppConfigured(), 'whatsapp billing configurado com envs');
   } finally {
@@ -1464,6 +1479,66 @@ function testSaasBillingReminderWhatsApp() {
     else process.env.ZAPI_INSTANCE_ID = origId;
     if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
     else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+    if (origClient === undefined) delete process.env.ZAPI_CLIENT_TOKEN;
+    else process.env.ZAPI_CLIENT_TOKEN = origClient;
+  }
+}
+
+async function testZapiClientTokenRequired() {
+  const origFetch = globalThis.fetch;
+  const origId = process.env.ZAPI_INSTANCE_ID;
+  const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+  const origClient = process.env.ZAPI_CLIENT_TOKEN;
+
+  try {
+    process.env.ZAPI_INSTANCE_ID = 'inst-test';
+    process.env.ZAPI_INSTANCE_TOKEN = 'token-test';
+    delete process.env.ZAPI_CLIENT_TOKEN;
+
+    let fetchCalled = false;
+    globalThis.fetch = (async () => {
+      fetchCalled = true;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    const blocked = await sendText({ phone: '5594991001988', message: 'teste' });
+    assert(!blocked.ok, 'bloqueia sem client token');
+    assert(blocked.error === ZAPI_CLIENT_TOKEN_MISSING_ERROR, 'erro claro client token ausente');
+    assert(!fetchCalled, 'não chama Z-API sem client token');
+
+    process.env.ZAPI_CLIENT_TOKEN = 'sec-client-token-xyz';
+
+    let capturedHeaders: Record<string, string> = {};
+    globalThis.fetch = (async (_url, init) => {
+      fetchCalled = true;
+      const headers = init?.headers;
+      if (headers instanceof Headers) {
+        headers.forEach((value, key) => {
+          capturedHeaders[key] = value;
+        });
+      } else if (Array.isArray(headers)) {
+        for (const [key, value] of headers) capturedHeaders[key] = value;
+      } else if (headers) {
+        capturedHeaders = { ...(headers as Record<string, string>) };
+      }
+      return new Response(JSON.stringify({ messageId: 'zapi-msg-client' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const sent = await sendText({ phone: '5594991001988', message: 'teste' });
+    assert(sent.ok, 'envia com client token');
+    assert(fetchCalled, 'chama Z-API com client token');
+    assert(capturedHeaders['Client-Token'] === 'sec-client-token-xyz', 'header Client-Token presente');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origId === undefined) delete process.env.ZAPI_INSTANCE_ID;
+    else process.env.ZAPI_INSTANCE_ID = origId;
+    if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
+    else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+    if (origClient === undefined) delete process.env.ZAPI_CLIENT_TOKEN;
+    else process.env.ZAPI_CLIENT_TOKEN = origClient;
   }
 }
 
@@ -1471,16 +1546,29 @@ async function testZapiSendTextMocked() {
   const origFetch = globalThis.fetch;
   const origId = process.env.ZAPI_INSTANCE_ID;
   const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+  const origClient = process.env.ZAPI_CLIENT_TOKEN;
 
   try {
     process.env.ZAPI_INSTANCE_ID = 'inst-mock';
     process.env.ZAPI_INSTANCE_TOKEN = 'token-mock';
+    process.env.ZAPI_CLIENT_TOKEN = 'client-mock';
 
     let capturedUrl = '';
     let capturedBody = '';
+    let capturedHeaders: Record<string, string> = {};
     globalThis.fetch = (async (url, init) => {
       capturedUrl = String(url);
       capturedBody = String(init?.body || '');
+      const headers = init?.headers;
+      if (headers instanceof Headers) {
+        headers.forEach((value, key) => {
+          capturedHeaders[key] = value;
+        });
+      } else if (Array.isArray(headers)) {
+        for (const [key, value] of headers) capturedHeaders[key] = value;
+      } else if (headers) {
+        capturedHeaders = { ...(headers as Record<string, string>) };
+      }
       return new Response(JSON.stringify({ messageId: 'zapi-msg-123' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -1499,6 +1587,7 @@ async function testZapiSendTextMocked() {
         'https://api.z-api.io/instances/inst-mock/token/token-mock/send-text',
       'mock z-api url',
     );
+    assert(capturedHeaders['Client-Token'] === 'client-mock', 'mock z-api Client-Token header');
 
     const payload = JSON.parse(capturedBody) as { phone?: string; message?: string };
     assert(payload.phone === '5594991955918', 'mock z-api payload phone');
@@ -1509,6 +1598,8 @@ async function testZapiSendTextMocked() {
     else process.env.ZAPI_INSTANCE_ID = origId;
     if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
     else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+    if (origClient === undefined) delete process.env.ZAPI_CLIENT_TOKEN;
+    else process.env.ZAPI_CLIENT_TOKEN = origClient;
   }
 }
 
@@ -1521,6 +1612,7 @@ async function testSaasWhatsAppTestButton() {
   const apiRoute = read('app/api/master/saas-whatsapp-test/route.ts');
   assert(apiRoute.includes('assertSuperAdmin'), 'api teste whatsapp super admin');
   assert(apiRoute.includes('sendSaasWhatsAppTest'), 'api usa serviço teste');
+  assert(apiRoute.includes('getZapiConfigStatus'), 'api diagnostico z-api');
 
   const service = read('lib/saasWhatsAppTest.ts');
   assert(service.includes('WHATSAPP_TEST_SENT'), 'auditoria WHATSAPP_TEST_SENT');
@@ -1534,6 +1626,8 @@ async function testSaasWhatsAppTestButton() {
   const modal = read('components/master/saas/SaasWhatsAppTestModal.tsx');
   assert(modal.includes('/api/master/saas-whatsapp-test'), 'modal chama api teste');
   assert(modal.includes('SAAS_WHATSAPP_TEST_MESSAGE'), 'modal exibe mensagem fixa');
+  assert(modal.includes('Client-Token configurado'), 'modal diagnostico client token');
+  assert(modal.includes('Instance configurada'), 'modal diagnostico instance');
 
   const page = read('app/saas-finance/page.tsx');
   assert(page.includes('isSuperAdmin={isSuperAdmin}'), 'page passa isSuperAdmin');
@@ -1541,10 +1635,12 @@ async function testSaasWhatsAppTestButton() {
   const origFetch = globalThis.fetch;
   const origId = process.env.ZAPI_INSTANCE_ID;
   const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+  const origClient = process.env.ZAPI_CLIENT_TOKEN;
 
   try {
     process.env.ZAPI_INSTANCE_ID = 'inst-test';
     process.env.ZAPI_INSTANCE_TOKEN = 'token-test';
+    process.env.ZAPI_CLIENT_TOKEN = 'client-test';
 
     globalThis.fetch = (async (_url, init) => {
       const body = JSON.parse(String(init?.body || '{}')) as { phone?: string; message?: string };
@@ -1594,6 +1690,8 @@ async function testSaasWhatsAppTestButton() {
     else process.env.ZAPI_INSTANCE_ID = origId;
     if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
     else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+    if (origClient === undefined) delete process.env.ZAPI_CLIENT_TOKEN;
+    else process.env.ZAPI_CLIENT_TOKEN = origClient;
   }
 }
 
@@ -1632,6 +1730,7 @@ async function run() {
     ['multa e juros automáticos SaaS', testSaasLateFees],
     ['automações lembretes SaaS', testSaasBillingReminders],
     ['automações WhatsApp Z-API', testSaasBillingReminderWhatsApp],
+    ['Z-API client token obrigatório', testZapiClientTokenRequired],
     ['envio mockado Z-API', testZapiSendTextMocked],
     ['botão testar WhatsApp SaaS', testSaasWhatsAppTestButton],
     ['migration saas_charges', testDatabaseMigration],

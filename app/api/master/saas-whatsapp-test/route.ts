@@ -1,9 +1,28 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { sendSaasWhatsAppTest } from '@/lib/saasWhatsAppTest';
-import { isZapiConfigured } from '@/lib/whatsapp/zapiProvider';
+import { getZapiConfigStatus, isZapiConfigured } from '@/lib/whatsapp/zapiProvider';
 
 export const runtime = 'nodejs';
+
+export async function GET(request: Request) {
+  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: configError }, { status: 500 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const auth = await assertSuperAdmin(supabaseAdmin, searchParams.get('userId'));
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 403 });
+  }
+
+  const config = getZapiConfigStatus();
+  return NextResponse.json({
+    whatsappConfigured: isZapiConfigured(),
+    config,
+  });
+}
 
 export async function POST(request: Request) {
   const { client: supabaseAdmin, error: configError } = createServiceSupabase();
