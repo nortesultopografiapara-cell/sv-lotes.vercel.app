@@ -29,12 +29,14 @@ type UseCompanySettingsFormOptions = {
   user: { tenant_id?: string; company_id?: string; role?: string } | null;
   authLoading: boolean;
   normalizeAddressOnSave?: boolean;
+  syncNameFromFantasy?: boolean;
 };
 
 export function useCompanySettingsForm({
   user,
   authLoading,
   normalizeAddressOnSave = false,
+  syncNameFromFantasy = false,
 }: UseCompanySettingsFormOptions) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -206,7 +208,7 @@ export function useCompanySettingsForm({
 
     const payload = buildCompanySettingsSavePayload(company, technical, {
       normalizeAddress: normalizeAddressOnSave,
-      syncNameFromFantasy: normalizeAddressOnSave,
+      syncNameFromFantasy,
     });
 
     const { data: updateData, error: updateError } = await supabase

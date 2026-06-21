@@ -8,9 +8,8 @@ import {
   IVANILDE_LEGACY_CPF,
   SETTINGS_V2_ROLLOUT_ISO,
   resolveCompanySettingsLayout,
-  resolveCompanySettingsLayoutPolicy,
   isLegacySettingsCompanyDocument,
-  isCompanySettingsV2Enabled,
+  isLegacySettingsCompany,
 } from '../lib/companySettingsLayout';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 import {
@@ -29,6 +28,7 @@ function testMenesesLegacy() {
     resolveCompanySettingsLayout(MENESES_COMPANY_ID) === 'legacy',
     'Meneses usa layout legacy',
   );
+  assert(isLegacySettingsCompany(MENESES_COMPANY_ID), 'Meneses é legacy explícito');
   console.log('OK testMenesesLegacy');
 }
 
@@ -41,21 +41,12 @@ function testIvanildeLegacyByCpf() {
   console.log('OK testIvanildeLegacyByCpf');
 }
 
-function testTopografiaV2Policy() {
+function testTopografiaV2() {
   assert(
-    resolveCompanySettingsLayoutPolicy(TOPOGRAFIA_COMPANY_ID) === 'v2',
-    'SV Topografia usa layout v2 na policy',
+    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID) === 'v2',
+    'SV Topografia usa layout v2',
   );
-  console.log('OK testTopografiaV2Policy');
-}
-
-function testV2FlagOffForcesLegacy() {
-  assert(!isCompanySettingsV2Enabled(), 'flag V2 desligada no hotfix');
-  assert(
-    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID) === 'legacy',
-    'flag off força legacy mesmo na Topografia',
-  );
-  console.log('OK testV2FlagOffForcesLegacy');
+  console.log('OK testTopografiaV2');
 }
 
 function testSettingsColumnsExcludeCompaniesCpf() {
@@ -68,10 +59,10 @@ function testNewCompanyV2() {
   const afterRollout = new Date(SETTINGS_V2_ROLLOUT_ISO);
   afterRollout.setDate(afterRollout.getDate() + 1);
   assert(
-    resolveCompanySettingsLayoutPolicy('new-company-uuid', {
+    resolveCompanySettingsLayout('new-company-uuid', {
       createdAt: afterRollout.toISOString(),
     }) === 'v2',
-    'empresa criada após rollout usa v2 na policy',
+    'empresa criada após rollout usa v2',
   );
   console.log('OK testNewCompanyV2');
 }
@@ -84,6 +75,16 @@ function testExistingOtherCompanyLegacy() {
     'empresa antiga genérica permanece legacy',
   );
   console.log('OK testExistingOtherCompanyLegacy');
+}
+
+function testTopografiaNeverLegacyEvenIfOldCreatedAt() {
+  assert(
+    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID, {
+      createdAt: '2020-01-01T00:00:00.000Z',
+    }) === 'v2',
+    'Topografia sempre v2 pelo ID',
+  );
+  console.log('OK testTopografiaNeverLegacyEvenIfOldCreatedAt');
 }
 
 function testTechnicalDoesNotReplaceLegalWithoutCheckbox() {
@@ -153,6 +154,28 @@ function testLegacySaveDoesNotSyncName() {
   console.log('OK testLegacySaveDoesNotSyncName');
 }
 
+function testV2SaveDoesNotSyncNameByDefault() {
+  const payload = buildCompanySettingsSavePayload(
+    { name: 'RAZÃO ORIGINAL', fantasy_name: 'Fantasia', address: 'Rua 02, Quadra 123' },
+    {
+      name: '',
+      title: '',
+      crea: '',
+      cau: '',
+      cft: '',
+      cpf: '',
+      phone: '',
+      email: '',
+      signature_url: '',
+      stamp_url: '',
+    },
+    { normalizeAddress: true, syncNameFromFantasy: false },
+  );
+  assert(!('name' in payload), 'save v2 não sobrescreve name sem flag');
+  assert(!('cnpj' in payload), 'save não envia cnpj');
+  console.log('OK testV2SaveDoesNotSyncNameByDefault');
+}
+
 function testPlaceholderRejected() {
   const rep = resolveLegalRepresentativeForSave(
     { legal_representative: 'Representante legal', use_technical_as_legal_rep: false },
@@ -177,14 +200,15 @@ function testPlaceholderRejected() {
 function main() {
   testMenesesLegacy();
   testIvanildeLegacyByCpf();
-  testTopografiaV2Policy();
-  testV2FlagOffForcesLegacy();
+  testTopografiaV2();
+  testTopografiaNeverLegacyEvenIfOldCreatedAt();
   testSettingsColumnsExcludeCompaniesCpf();
   testNewCompanyV2();
   testExistingOtherCompanyLegacy();
   testTechnicalDoesNotReplaceLegalWithoutCheckbox();
   testTechnicalAsLegalWhenChecked();
   testLegacySaveDoesNotSyncName();
+  testV2SaveDoesNotSyncNameByDefault();
   testPlaceholderRejected();
   console.log('\nTodos os testes de layout Configurações v2 passaram.');
 }

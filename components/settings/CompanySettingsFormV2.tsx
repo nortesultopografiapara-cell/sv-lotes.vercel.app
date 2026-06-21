@@ -111,7 +111,6 @@ export function CompanySettingsFormV2({
   if (!company) return null;
 
   const contractModel = normalizeSaleContractModel(company.contract_model as string);
-  const isRecantoContract = contractModel === 'RECANTO_PRIMAVERA';
   const documentRaw = String(company.cnpj || '');
   const partyType = resolveSaasContractPartyType(documentRaw);
   const useTechnicalAsLegal = Boolean(company.use_technical_as_legal_rep);
@@ -142,7 +141,7 @@ export function CompanySettingsFormV2({
         legal_representative: legalRepPreview.name,
         responsible_name: legalRepPreview.name,
       },
-      resolveSaasContractorParty({ cnpj: documentRaw, cpf: company.cpf as string }),
+      resolveSaasContractorParty({ cnpj: documentRaw }),
     );
 
   return (
@@ -461,12 +460,9 @@ export function CompanySettingsFormV2({
         </div>
 
         <CollapsibleSection
-          title="Campos avançados do modelo de contrato"
-          subtitle={
-            isRecantoContract
-              ? 'Modelo Recanto Primavera — preencha nacionalidade, RG e demais campos jurídicos.'
-              : 'Opcional — exibido quando o modelo selecionado exige dados jurídicos adicionais.'
-          }
+          id="campos-avancados"
+          title="Campos avançados"
+          subtitle="RG, dados bancários e campos jurídicos opcionais do modelo de contrato."
           defaultOpen={false}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -503,38 +499,37 @@ export function CompanySettingsFormV2({
               <input type="text" name="contract_legal_address" value={String(company.contract_legal_address || '')} onChange={handleChange} className="sv-theme-field" />
             </div>
           </div>
+
+          <div className="mt-6 pt-4 border-t border-[var(--border-color)]">
+            <h3 className="sv-theme-label flex items-center gap-2 mb-4">
+              <Banknote className="w-4 h-4" />
+              Dados bancários
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="sv-theme-label">Banco</label>
+                <input type="text" name="contract_bank_name" value={String(company.contract_bank_name || '')} onChange={handleChange} className="sv-theme-field" />
+              </div>
+              <div>
+                <label className="sv-theme-label">Agência</label>
+                <input type="text" name="contract_bank_branch" value={String(company.contract_bank_branch || '')} onChange={handleChange} className="sv-theme-field" />
+              </div>
+              <div>
+                <label className="sv-theme-label">Conta corrente</label>
+                <input type="text" name="contract_bank_account" value={String(company.contract_bank_account || '')} onChange={handleChange} className="sv-theme-field" />
+              </div>
+              <div>
+                <label className="sv-theme-label">PIX</label>
+                <input type="text" name="contract_bank_pix" value={String(company.contract_bank_pix || '')} onChange={handleChange} className="sv-theme-field" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="sv-theme-label">Favorecido</label>
+                <input type="text" name="contract_bank_beneficiary" value={String(company.contract_bank_beneficiary || '')} onChange={handleChange} className="sv-theme-field" />
+              </div>
+            </div>
+          </div>
         </CollapsibleSection>
       </section>
-
-      <CollapsibleSection
-        id="dados-bancarios"
-        title="Dados bancários"
-        subtitle="Opcional — usado em cláusulas de pagamento do modelo de contrato."
-        defaultOpen={false}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="sv-theme-label">Banco</label>
-            <input type="text" name="contract_bank_name" value={String(company.contract_bank_name || '')} onChange={handleChange} className="sv-theme-field" />
-          </div>
-          <div>
-            <label className="sv-theme-label">Agência</label>
-            <input type="text" name="contract_bank_branch" value={String(company.contract_bank_branch || '')} onChange={handleChange} className="sv-theme-field" />
-          </div>
-          <div>
-            <label className="sv-theme-label">Conta corrente</label>
-            <input type="text" name="contract_bank_account" value={String(company.contract_bank_account || '')} onChange={handleChange} className="sv-theme-field" />
-          </div>
-          <div>
-            <label className="sv-theme-label">PIX</label>
-            <input type="text" name="contract_bank_pix" value={String(company.contract_bank_pix || '')} onChange={handleChange} className="sv-theme-field" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="sv-theme-label">Favorecido</label>
-            <input type="text" name="contract_bank_beneficiary" value={String(company.contract_bank_beneficiary || '')} onChange={handleChange} className="sv-theme-field" />
-          </div>
-        </div>
-      </CollapsibleSection>
 
       <div className="flex justify-end pt-4 border-t border-[var(--border-color)] mt-8">
         <button type="submit" disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 sv-brand-btn-primary font-medium rounded-lg transition-colors disabled:opacity-50">

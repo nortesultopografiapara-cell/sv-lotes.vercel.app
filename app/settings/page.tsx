@@ -9,10 +9,7 @@ import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdm
 import { CompanySettingsFormLegacy } from '@/components/settings/CompanySettingsFormLegacy';
 import { CompanySettingsFormV2 } from '@/components/settings/CompanySettingsFormV2';
 import { useCompanySettingsForm, resolveSettingsCompanyId } from '@/components/settings/useCompanySettingsForm';
-import {
-  resolveCompanySettingsLayout,
-  isCompanySettingsV2Enabled,
-} from '@/lib/companySettingsLayout';
+import { resolveCompanySettingsLayout } from '@/lib/companySettingsLayout';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
@@ -32,6 +29,7 @@ export default function SettingsPage() {
     user,
     authLoading,
     normalizeAddressOnSave: layoutPreview === 'v2',
+    syncNameFromFantasy: false,
   });
 
   const layout = useMemo(() => {
@@ -43,7 +41,7 @@ export default function SettingsPage() {
     });
   }, [form.company, settingsCompanyId, layoutPreview]);
 
-  const v2Active = isCompanySettingsV2Enabled() && layout === 'v2';
+  const v2Active = layout === 'v2';
   const loading = form.loading || authLoading;
 
   if (loading) {

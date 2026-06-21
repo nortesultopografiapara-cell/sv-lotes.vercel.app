@@ -689,6 +689,14 @@ export function SaasContractPanel({
       {validation && !validation.ok && (
         <div className="mx-5 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm whitespace-pre-line">
           {validation.error}
+          {validation.missing.includes('legal_representative') ||
+          validation.missingLabels.some((l) => l.toLowerCase().includes('representante legal')) ? (
+            <p className="mt-2">
+              <a href="/settings#representante-legal" className="underline font-medium text-red-200">
+                Preencher Representante Legal em Configurações
+              </a>
+            </p>
+          ) : null}
         </div>
       )}
 
