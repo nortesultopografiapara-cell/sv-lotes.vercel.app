@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { getSaasBillingReminderStats } from '@/lib/saasBillingReminders';
 import { isSaasBillingEmailConfigured } from '@/lib/saasBillingReminderEmail';
+import { isSaasBillingWhatsAppConfigured } from '@/lib/saasBillingReminderWhatsApp';
 
 export const runtime = 'nodejs';
 
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       stats,
       emailConfigured: isSaasBillingEmailConfigured(),
+      whatsappConfigured: isSaasBillingWhatsAppConfigured(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro ao carregar estatísticas';

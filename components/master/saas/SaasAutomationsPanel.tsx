@@ -19,10 +19,16 @@ const REMINDER_AUTOMATION_IDS = new Set(
   SAAS_BILLING_REMINDER_DEFINITIONS.map((item) => item.automationId),
 );
 
+function formatLastSent(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return formatDateBr(iso.split('T')[0]);
+}
+
 export function SaasAutomationsPanel() {
   const { user } = useAuth();
   const [stats, setStats] = useState<ReminderStat[]>([]);
   const [emailConfigured, setEmailConfigured] = useState(true);
+  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +47,7 @@ export function SaasAutomationsPanel() {
         if (!cancelled && res.ok) {
           setStats(Array.isArray(json.stats) ? json.stats : []);
           setEmailConfigured(json.emailConfigured !== false);
+          setWhatsappConfigured(json.whatsappConfigured === true);
         }
       } catch {
         if (!cancelled) setStats([]);
@@ -55,16 +62,16 @@ export function SaasAutomationsPanel() {
     };
   }, [user?.id]);
 
-  const statsByAutomation = new Map(stats.map((item) => [item.automationId, item]));
+  const statsByKey = new Map(stats.map((item) => [`${item.automationId}:${item.channel}`, item]));
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/5 bg-[#11161d] p-5">
         <h2 className="text-lg font-bold text-white">Automações SaaS</h2>
         <p className="text-sm text-gray-400 mt-1">
-          Lembretes automáticos por e-mail executados diariamente via cron (
+          Lembretes automáticos por e-mail e WhatsApp executados diariamente via cron (
           <code className="text-gray-500">/api/cron/saas-billing-reminders</code>
-          ). WhatsApp preparado para próxima etapa.
+          ).
         </p>
         {!emailConfigured ? (
           <p className="mt-3 text-sm text-amber-300">
@@ -72,11 +79,18 @@ export function SaasAutomationsPanel() {
             o serviço de e-mail.
           </p>
         ) : null}
+        {!whatsappConfigured ? (
+          <p className="mt-3 text-sm text-gray-400">
+            Evolution API não configurada — configure EVOLUTION_API_URL, EVOLUTION_API_KEY e
+            EVOLUTION_INSTANCE_NAME para ativar WhatsApp automático.
+          </p>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {SAAS_AUTOMATION_RULES.map((rule) => {
           const isReminder = REMINDER_AUTOMATION_IDS.has(rule.id);
-          const stat = statsByAutomation.get(rule.id);
+          const emailStat = statsByKey.get(`${rule.id}:email`);
+          const whatsappStat = statsByKey.get(`${rule.id}:whatsapp`);
 
           return (
             <div
@@ -91,35 +105,60 @@ export function SaasAutomationsPanel() {
                 </span>
 
                 {isReminder ? (
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-3">
                     <div className="flex flex-wrap gap-2">
                       <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                         E-mail · Ativo
                       </span>
-                      <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-white/5 text-gray-500 border border-white/10">
-                        WhatsApp · Em breve
+                      <span
+                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
+                          whatsappConfigured
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-white/5 text-gray-500 border-white/10'
+                        }`}
+                      >
+                        WhatsApp · {whatsappConfigured ? 'Ativo' : 'Em breve'}
                       </span>
                     </div>
+
                     <div className="text-[11px] text-gray-400 space-y-1">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">E-mail</p>
                       <p>
                         Envios realizados:{' '}
                         <span className="text-gray-200 font-semibold">
-                          {loading ? '…' : stat?.totalSent ?? 0}
+                          {loading ? '…' : emailStat?.totalSent ?? 0}
                         </span>
                       </p>
                       <p>
                         Último envio:{' '}
                         <span className="text-gray-200">
-                          {loading
-                            ? '…'
-                            : stat?.lastSentAt
-                              ? formatDateBr(stat.lastSentAt.split('T')[0])
-                              : '—'}
+                          {loading ? '…' : formatLastSent(emailStat?.lastSentAt)}
                         </span>
                       </p>
-                      {stat?.lastSentTo ? (
+                      {emailStat?.lastSentTo ? (
                         <p className="truncate">
-                          Destino: <span className="text-gray-300">{stat.lastSentTo}</span>
+                          Destino: <span className="text-gray-300">{emailStat.lastSentTo}</span>
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="text-[11px] text-gray-400 space-y-1">
+                      <p className="text-[10px] uppercase tracking-wide text-gray-500">WhatsApp</p>
+                      <p>
+                        Envios realizados:{' '}
+                        <span className="text-gray-200 font-semibold">
+                          {loading ? '…' : whatsappStat?.totalSent ?? 0}
+                        </span>
+                      </p>
+                      <p>
+                        Último envio:{' '}
+                        <span className="text-gray-200">
+                          {loading ? '…' : formatLastSent(whatsappStat?.lastSentAt)}
+                        </span>
+                      </p>
+                      {whatsappStat?.lastSentTo ? (
+                        <p className="truncate">
+                          Destino: <span className="text-gray-300">{whatsappStat.lastSentTo}</span>
                         </p>
                       ) : null}
                     </div>

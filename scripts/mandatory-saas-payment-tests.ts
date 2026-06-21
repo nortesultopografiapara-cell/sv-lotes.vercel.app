@@ -61,6 +61,12 @@ import {
 import { isCronSecretValid, resolveCronSecret } from '../lib/saasCronAuth';
 import { buildSaasBillingReminderEmailHtml } from '../lib/saasBillingReminderEmail';
 import {
+  buildSaasBillingReminderWhatsAppMessage,
+  isSaasBillingWhatsAppConfigured,
+  normalizeBrazilianWhatsAppPhone,
+} from '../lib/saasBillingReminderWhatsApp';
+import { isEvolutionApiConfigured } from '../lib/whatsapp/evolutionProvider';
+import {
   DEFAULT_FINE_PERCENT,
   DEFAULT_INTEREST_PERCENT,
   hasAsaasLateFeesConfigured,
@@ -1325,7 +1331,10 @@ function testSaasBillingReminders() {
   const reminders = read('lib/saasBillingReminders.ts');
   assert(reminders.includes('runSaasBillingReminders'), 'runner cron');
   assert(reminders.includes('wasSaasBillingReminderSent'), 'evita duplicidade');
-  assert(reminders.includes('SAAS_BILLING_REMINDER_EMAIL'), 'auditoria envio');
+  assert(reminders.includes('SAAS_BILLING_REMINDER_EMAIL'), 'auditoria envio email');
+  assert(reminders.includes('processSaasBillingReminderWhatsAppForCharge'), 'runner whatsapp');
+  assert(reminders.includes('SAAS_BILLING_REMINDER_WHATSAPP'), 'auditoria envio whatsapp');
+  assert(reminders.includes('companyPhone'), 'busca telefone empresa');
 
   const vercel = read('vercel.json');
   assert(vercel.includes('/api/cron/saas-billing-reminders'), 'vercel cron path');
@@ -1333,7 +1342,12 @@ function testSaasBillingReminders() {
 
   const panel = read('components/master/saas/SaasAutomationsPanel.tsx');
   assert(panel.includes('E-mail · Ativo'), 'UI email ativo');
-  assert(panel.includes('WhatsApp · Em breve'), 'UI whatsapp em breve');
+  assert(panel.includes('WhatsApp ·'), 'UI badge whatsapp');
+  assert(panel.includes('whatsappConfigured'), 'UI estado whatsapp');
+  assert(panel.includes("'Ativo' : 'Em breve'"), 'UI alterna whatsapp ativo/em breve');
+
+  const apiRoute = read('app/api/master/saas-billing-reminders/route.ts');
+  assert(apiRoute.includes('whatsappConfigured'), 'API retorna whatsappConfigured');
 
   const origSecret = process.env.CRON_SECRET;
   try {
@@ -1362,6 +1376,90 @@ function testSaasBillingReminders() {
   } finally {
     if (origSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = origSecret;
+  }
+}
+
+function testSaasBillingReminderWhatsApp() {
+  assert(
+    normalizeBrazilianWhatsAppPhone('(94) 99100-1988') === '5594991001988',
+    'telefone brasileiro normalizado com DDI 55',
+  );
+  assert(normalizeBrazilianWhatsAppPhone('') === null, 'telefone vazio retorna null');
+  assert(normalizeBrazilianWhatsAppPhone('123') === null, 'telefone curto inválido');
+
+  const msg7 = buildSaasBillingReminderWhatsAppMessage({
+    phone: '559491001988',
+    companyName: 'Meneses Imobiliária',
+    amount: 549.99,
+    dueDate: '2026-07-27',
+    paymentUrl: 'https://sandbox.asaas.com/i/abc',
+    reminderType: 'reminder_7_days',
+  });
+  assert(msg7.includes('Meneses Imobiliária'), 'mensagem 7 dias empresa');
+  assert(msg7.includes('27/07/2026'), 'mensagem 7 dias vencimento');
+  assert(msg7.includes('https://sandbox.asaas.com/i/abc'), 'mensagem 7 dias link');
+
+  const msgDue = buildSaasBillingReminderWhatsAppMessage({
+    phone: '559491001988',
+    companyName: 'SV Topografia',
+    amount: 100,
+    dueDate: '2026-07-15',
+    paymentUrl: 'https://sandbox.asaas.com/i/due',
+    reminderType: 'due_today',
+  });
+  assert(msgDue.includes('vence hoje'), 'mensagem vencimento hoje');
+
+  const evolution = read('lib/whatsapp/evolutionProvider.ts');
+  assert(evolution.includes('EVOLUTION_API_URL'), 'provider evolution url');
+  assert(evolution.includes('EVOLUTION_API_KEY'), 'provider evolution key');
+  assert(evolution.includes('EVOLUTION_INSTANCE_NAME'), 'provider evolution instance');
+  assert(evolution.includes('/message/sendText/'), 'endpoint sendText');
+
+  const whatsappLib = read('lib/saasBillingReminderWhatsApp.ts');
+  assert(whatsappLib.includes('sendSaasBillingReminderWhatsApp'), 'função envio whatsapp');
+  assert(whatsappLib.includes('Telefone inválido'), 'bloqueia sem telefone');
+  assert(whatsappLib.includes('sem link Asaas'), 'bloqueia sem link');
+
+  const reminders = read('lib/saasBillingReminders.ts');
+  assert(
+    reminders.includes('processSaasBillingReminderForCharge') &&
+      reminders.includes('processSaasBillingReminderWhatsAppForCharge'),
+    'email e whatsapp processados separadamente',
+  );
+  assert(
+    reminders.indexOf('processSaasBillingReminderForCharge') <
+      reminders.indexOf('processSaasBillingReminderWhatsAppForCharge'),
+    'whatsapp após email no runner',
+  );
+  assert(reminders.includes("channel: 'whatsapp'"), 'canal whatsapp nos logs');
+
+  const envExample = read('.env.example');
+  assert(envExample.includes('EVOLUTION_API_URL='), 'env example evolution url');
+  assert(envExample.includes('EVOLUTION_API_KEY='), 'env example evolution key');
+  assert(envExample.includes('EVOLUTION_INSTANCE_NAME='), 'env example evolution instance');
+
+  const origUrl = process.env.EVOLUTION_API_URL;
+  const origKey = process.env.EVOLUTION_API_KEY;
+  const origInstance = process.env.EVOLUTION_INSTANCE_NAME;
+  try {
+    delete process.env.EVOLUTION_API_URL;
+    delete process.env.EVOLUTION_API_KEY;
+    delete process.env.EVOLUTION_INSTANCE_NAME;
+    assert(!isEvolutionApiConfigured(), 'evolution não configurada sem envs');
+    assert(!isSaasBillingWhatsAppConfigured(), 'whatsapp billing não configurado sem envs');
+
+    process.env.EVOLUTION_API_URL = 'https://evolution.example.com';
+    process.env.EVOLUTION_API_KEY = 'test-key';
+    process.env.EVOLUTION_INSTANCE_NAME = 'sv-lotes';
+    assert(isEvolutionApiConfigured(), 'evolution configurada com envs');
+    assert(isSaasBillingWhatsAppConfigured(), 'whatsapp billing configurado com envs');
+  } finally {
+    if (origUrl === undefined) delete process.env.EVOLUTION_API_URL;
+    else process.env.EVOLUTION_API_URL = origUrl;
+    if (origKey === undefined) delete process.env.EVOLUTION_API_KEY;
+    else process.env.EVOLUTION_API_KEY = origKey;
+    if (origInstance === undefined) delete process.env.EVOLUTION_INSTANCE_NAME;
+    else process.env.EVOLUTION_INSTANCE_NAME = origInstance;
   }
 }
 
@@ -1399,6 +1497,7 @@ async function run() {
     ['UI cobrança boleto', testChargesUiBoleto],
     ['multa e juros automáticos SaaS', testSaasLateFees],
     ['automações lembretes SaaS', testSaasBillingReminders],
+    ['automações WhatsApp Evolution', testSaasBillingReminderWhatsApp],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['auth tenant billing', testTenantBillingAuth],
