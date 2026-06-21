@@ -23,3 +23,15 @@ export function resolveAsaasDueDate(dueDate: string, today = todayIsoDate()): st
   if (due >= today) return due;
   return today;
 }
+
+/** Vencimento escolhido no Master prevalece sobre due_date legado da fatura. */
+export function resolveSaasChargeDueDate(
+  requestedDueDate: string | null | undefined,
+  fallbackDueDate: string,
+  today = todayIsoDate(),
+): string {
+  const source = requestedDueDate
+    ? toIsoDateOnly(requestedDueDate)
+    : toIsoDateOnly(fallbackDueDate);
+  return resolveAsaasDueDate(source || fallbackDueDate, today);
+}

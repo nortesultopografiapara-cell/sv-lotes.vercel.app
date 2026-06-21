@@ -40,6 +40,7 @@ export type ChargeStatusProviderResult = {
   paymentId: string;
   status: SaasChargeProviderStatus;
   paidAt?: string | null;
+  dueDate?: string | null;
   bankSlipUrl?: string | null;
   invoiceUrl?: string | null;
 };

@@ -18,9 +18,9 @@ import {
   reopenSaasInvoiceForNewCharge,
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
-import { validateCompanyDocumentForAsaas, resolveAsaasDueDate } from '@/lib/saasPixValidation';
+import { validateCompanyDocumentForAsaas, resolveAsaasDueDate, resolveSaasChargeDueDate } from '@/lib/saasPixValidation';
 import { isBillableCompany } from '@/lib/companyPricing';
-import { todayIsoDate } from '@/lib/companySubscriptionDates';
+import { todayIsoDate, toIsoDateOnly } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
 import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
@@ -550,18 +550,25 @@ async function reopenInvoiceWhenSafeForRegeneration(
   );
   if (confirmedPayment) return invoice;
 
+  if (String(invoice.status || '').toUpperCase() === 'PAGO') return invoice;
+
+  const requestedDue = options?.dueDate
+    ? resolveSaasChargeDueDate(options.dueDate, invoice.due_date)
+    : null;
+
   const invoiceStatus = String(invoice.status || '').toUpperCase();
   const needsReopen =
-    invoiceStatus === 'PAGO' ||
     invoiceStatus === 'CANCELADO' ||
     invoiceStatus === 'CANCELLED' ||
     invoiceStatus === 'CANCELADA' ||
     String(invoice.external_charge_id || '').trim() !== '';
 
-  if (!needsReopen) return invoice;
+  const needsDueDateUpdate = requestedDue != null && requestedDue !== invoice.due_date;
+
+  if (!needsReopen && !needsDueDateUpdate) return invoice;
 
   return reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, {
-    dueDate: options?.dueDate ? resolveAsaasDueDate(options.dueDate) : undefined,
+    dueDate: requestedDue ?? undefined,
   });
 }
 
@@ -802,9 +809,9 @@ export async function createSaasPixCharge(
     shouldIgnoreInvoiceExternalChargeForRegeneration(existingCharge, invoiceCharges) &&
     String(invoice.external_charge_id || '').trim()
   ) {
-    const reopenDue = options?.dueDate || invoice.due_date;
+    const reopenDue = resolveSaasChargeDueDate(options?.dueDate, invoice.due_date);
     invoice = await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, {
-      dueDate: resolveAsaasDueDate(reopenDue),
+      dueDate: reopenDue,
     });
   }
 
@@ -855,8 +862,21 @@ export async function createSaasPixCharge(
     throw new Error(docError);
   }
 
-  const asaasDueDate = resolveAsaasDueDate(invoice.due_date);
-  await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, { dueDate: asaasDueDate });
+  const requestedDueDate = options?.dueDate ? toIsoDateOnly(options.dueDate) : null;
+  const resolvedDueDate = resolveSaasChargeDueDate(options?.dueDate, invoice.due_date);
+  const billingType = options?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
+
+  console.warn(
+    '[saas-charge-create-payload]',
+    JSON.stringify({
+      referenceMonth: invoice.reference_month,
+      requestedDueDate,
+      resolvedDueDate,
+      billingType,
+    }),
+  );
+
+  await reopenSaasInvoiceForNewCharge(supabaseAdmin, invoice.id, { dueDate: resolvedDueDate });
   invoice = {
     ...invoice,
     status: 'PENDENTE',
@@ -865,10 +885,9 @@ export async function createSaasPixCharge(
     pix_qrcode: null,
     payment_method: null,
     paid_at: null,
-    due_date: asaasDueDate,
+    due_date: resolvedDueDate,
   };
 
-  const billingType = options?.billingType === 'BOLETO' ? 'BOLETO' : 'PIX';
   const lateFee = resolveSaasLateFeePercents();
   const now = new Date().toISOString();
 
@@ -879,7 +898,7 @@ export async function createSaasPixCharge(
       subscription_id: subscription?.id ?? invoice.subscription_id ?? null,
       invoice_id: invoice.id,
       amount: invoice.final_amount,
-      due_date: asaasDueDate,
+      due_date: resolvedDueDate,
       status: 'PENDING',
       payment_provider: 'pending',
       billing_type: billingType,
@@ -902,7 +921,7 @@ export async function createSaasPixCharge(
     companyId: company.id,
     chargeId: charge.id,
     amount: charge.amount,
-    dueDate: asaasDueDate,
+    dueDate: resolvedDueDate,
     description: `SV LOTES — Assinatura ${invoice.reference_month}`,
     payerName: company.name || undefined,
     payerDocument: company.cnpj || undefined,
@@ -951,9 +970,20 @@ export async function createSaasPixCharge(
 
   charge = parseChargeRow(withPix as Record<string, unknown>);
 
+  console.warn(
+    '[saas-charge-create-result]',
+    JSON.stringify({
+      asaasPaymentId: charge.payment_id ?? null,
+      asaasDueDate: resolvedDueDate,
+      invoiceDueDate: resolvedDueDate,
+      chargeDueDate: charge.due_date,
+    }),
+  );
+
   await supabaseAdmin
     .from('master_saas_invoices')
     .update({
+      due_date: resolvedDueDate,
       pix_code: charge.pix_copy_paste,
       pix_qrcode: charge.pix_qr_code,
       external_charge_id: charge.payment_id,
@@ -961,6 +991,8 @@ export async function createSaasPixCharge(
       updated_at: new Date().toISOString(),
     })
     .eq('id', invoice.id);
+
+  invoice = { ...invoice, due_date: resolvedDueDate };
 
   if (options?.actorUserId) {
     await supabaseAdmin.from('audit_logs').insert({
@@ -1693,6 +1725,34 @@ export type SyncSaasChargeResult = {
   statusSynced: SaasChargeStatus;
 };
 
+async function syncSaasDueDatesFromAsaas(
+  supabaseAdmin: SupabaseClient,
+  charge: SaasCharge,
+  remoteDueDate: string | null | undefined,
+): Promise<SaasCharge> {
+  const due = remoteDueDate ? toIsoDateOnly(remoteDueDate) : null;
+  if (!due || due === charge.due_date) return charge;
+
+  const now = new Date().toISOString();
+  const { data: updatedCharge, error } = await supabaseAdmin
+    .from('saas_charges')
+    .update({ due_date: due, updated_at: now })
+    .eq('id', charge.id)
+    .select('*')
+    .single();
+
+  if (error || !updatedCharge) return charge;
+
+  if (charge.invoice_id) {
+    await supabaseAdmin
+      .from('master_saas_invoices')
+      .update({ due_date: due, updated_at: now })
+      .eq('id', charge.invoice_id);
+  }
+
+  return parseChargeRow(updatedCharge as Record<string, unknown>);
+}
+
 /** Consulta status no Asaas e sincroniza saas_charges / fatura / pagamento. */
 export async function syncSaasChargeStatusFromAsaas(
   supabaseAdmin: SupabaseClient,
@@ -1707,7 +1767,7 @@ export async function syncSaasChargeStatusFromAsaas(
 
   if (error || !row) throw new Error('Cobrança não encontrada.');
 
-  const charge = parseChargeRow(row as Record<string, unknown>);
+  let charge = parseChargeRow(row as Record<string, unknown>);
   if (!charge.payment_id) {
     throw new Error('Cobrança sem payment_id no Asaas.');
   }
@@ -1731,6 +1791,7 @@ export async function syncSaasChargeStatusFromAsaas(
 
   const provider = getPaymentProvider();
   const remote = await provider.getChargeStatus(charge.payment_id);
+  charge = await syncSaasDueDatesFromAsaas(supabaseAdmin, charge, remote.dueDate);
   const mapped = mapProviderStatusToChargeStatus(remote.status);
 
   if (mapped === 'PAID') {

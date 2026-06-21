@@ -30,12 +30,18 @@ type Props = {
   }) => void | Promise<void>;
 };
 
-function defaultDueDate(company: SaasGenerateChargeCompany | null): string {
+function defaultDueDate(
+  company: SaasGenerateChargeCompany | null,
+  referenceMonth: string = currentReferenceMonth(),
+): string {
+  const ref = referenceMonth || currentReferenceMonth();
   const fromCompany =
     company?.next_payment_date || company?.next_due_date || null;
-  if (fromCompany) return String(fromCompany).split('T')[0];
+  if (fromCompany) {
+    const iso = String(fromCompany).split('T')[0];
+    if (iso.slice(0, 7) === ref) return iso;
+  }
 
-  const ref = currentReferenceMonth();
   const [y, m] = ref.split('-').map(Number);
   const dayRaw = Number(company?.subscription_due_day);
   const day =
@@ -64,9 +70,10 @@ export function SaasGenerateChargeModal({
 
   useEffect(() => {
     if (!open || !company) return;
+    const ref = currentReferenceMonth();
     setBillingType('PIX');
-    setReferenceMonth(currentReferenceMonth());
-    setDueDate(defaultDueDate(company));
+    setReferenceMonth(ref);
+    setDueDate(defaultDueDate(company, ref));
   }, [open, company]);
 
   if (!open || !company) return null;

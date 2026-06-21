@@ -15,6 +15,7 @@ import {
 type AsaasPayment = {
   id?: string;
   status?: string;
+  dueDate?: string;
   invoiceUrl?: string;
   bankSlipUrl?: string;
   identificationField?: string;
@@ -378,6 +379,7 @@ export class AsaasPaymentProvider implements PaymentProvider {
       paymentId,
       status,
       paidAt,
+      dueDate: payment.dueDate ? String(payment.dueDate).split('T')[0] : null,
       invoiceUrl: payment.invoiceUrl || null,
       bankSlipUrl: payment.bankSlipUrl || null,
     };

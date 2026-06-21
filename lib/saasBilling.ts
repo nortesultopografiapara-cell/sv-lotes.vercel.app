@@ -22,6 +22,7 @@ import {
 } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '@/lib/saasMasterConfig';
+import { resolveAsaasDueDate } from '@/lib/saasPixValidation';
 
 export type SaasInvoiceStatus = 'PENDENTE' | 'PAGO' | 'VENCIDO' | 'CANCELADO';
 
@@ -183,6 +184,32 @@ export async function reopenSaasInvoiceForNewCharge(
   return parseInvoiceRow(updated);
 }
 
+/** Atualiza due_date de fatura existente quando o Master informa vencimento explícito. */
+async function applyRequestedDueDateToExistingInvoice(
+  supabaseAdmin: SupabaseClient,
+  invoice: MasterSaasInvoice,
+  requestedDueDate?: string,
+): Promise<MasterSaasInvoice> {
+  if (!requestedDueDate) return invoice;
+  if (String(invoice.status || '').toUpperCase() === 'PAGO') return invoice;
+
+  const resolved = resolveAsaasDueDate(requestedDueDate);
+  if (resolved === invoice.due_date) return invoice;
+
+  const { data: updated, error } = await supabaseAdmin
+    .from('master_saas_invoices')
+    .update({
+      due_date: resolved,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoice.id)
+    .select('*')
+    .single();
+
+  if (error || !updated) return invoice;
+  return parseInvoiceRow(updated);
+}
+
 export function resolveInvoiceDueDate(
   company: CompanyPricingSource,
   subscription: CompanySubscription | null | undefined,
@@ -311,11 +338,18 @@ export async function generateInvoiceForCompany(
       );
       return { invoice: repaired, created: false };
     }
-    return { invoice: parsed, created: false, skipped: 'Competência já faturada' };
+    const withDueDate = await applyRequestedDueDateToExistingInvoice(
+      supabaseAdmin,
+      parsed,
+      options?.dueDate,
+    );
+    return { invoice: withDueDate, created: false, skipped: 'Competência já faturada' };
   }
 
   const amounts = computeInvoiceAmounts(company);
-  const due_date = options?.dueDate || resolveInvoiceDueDate(company, subscription, referenceMonth);
+  const due_date = options?.dueDate
+    ? resolveAsaasDueDate(options.dueDate)
+    : resolveInvoiceDueDate(company, subscription, referenceMonth);
   const invoice_number = await generateNextInvoiceNumber(supabaseAdmin, referenceMonth);
   const contract_id = await getActiveContractId(supabaseAdmin, company.id);
   const now = new Date().toISOString();

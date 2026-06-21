@@ -44,6 +44,7 @@ import {
 import {
   validateCompanyDocumentForAsaas,
   resolveAsaasDueDate,
+  resolveSaasChargeDueDate,
 } from '../lib/saasPixValidation';
 import {
   isSaasChargeStatusBlockedForReminder,
@@ -535,6 +536,44 @@ async function testSaasPixChargeSkipAsyncRules() {
     menesesStillActive === 'Cobrança PIX já existe para esta fatura',
     'Meneses: cobrança ativa continua bloqueando',
   );
+}
+
+function testSaasChargeDueDateFromModal() {
+  assert(
+    resolveSaasChargeDueDate('2026-07-27', '2026-06-27') === '2026-07-27',
+    'Jul/2026 vencimento 27/07 prevalece sobre fatura 27/06',
+  );
+  assert(
+    resolveSaasChargeDueDate(undefined, '2026-06-27') === '2026-06-27',
+    'sem vencimento solicitado mantém due_date da fatura',
+  );
+  assert(
+    resolveSaasChargeDueDate('2026-08-15', '2026-07-27') === '2026-08-15',
+    'competência e vencimento em meses diferentes são preservados',
+  );
+
+  const billing = read('lib/saasBilling.ts');
+  assert(
+    billing.includes('applyRequestedDueDateToExistingInvoice'),
+    'fatura existente recebe due_date solicitado',
+  );
+  assert(
+    billing.includes('resolveAsaasDueDate(options.dueDate)'),
+    'nova fatura usa dueDate do modal',
+  );
+
+  const saasCharges = read('lib/saasCharges.ts');
+  assert(saasCharges.includes('[saas-charge-create-payload]'), 'log payload create');
+  assert(saasCharges.includes('[saas-charge-create-result]'), 'log result create');
+  assert(saasCharges.includes('resolveSaasChargeDueDate'), 'createSaasPixCharge usa dueDate solicitado');
+  assert(saasCharges.includes('dueDate: resolvedDueDate'), 'Asaas recebe resolvedDueDate');
+  assert(saasCharges.includes('syncSaasDueDatesFromAsaas'), 'sync atualiza due_date local');
+
+  const route = read('app/api/master/saas-charges/route.ts');
+  assert(route.includes('dueDate: body.dueDate'), 'API repassa dueDate do modal');
+
+  const modal = read('components/master/saas/SaasGenerateChargeModal.tsx');
+  assert(modal.includes('dueDate') && modal.includes('referenceMonth'), 'modal envia dueDate e competência');
 }
 
 function testWebhookExternalReference() {
@@ -1252,6 +1291,7 @@ async function run() {
     ['webhook externalReference', testWebhookExternalReference],
     ['status financeiro', testFinancialStatusRules],
     ['reativação e histórico', testReactivationAndHistory],
+    ['vencimento modal cobrança', testSaasChargeDueDateFromModal],
     ['validação PIX Asaas', testSaasPixValidation],
     ['provider Asaas PIX + refresh', testAsaasPixProviderAndRefresh],
     ['view faturas + PIX', testSaasInvoiceChargeView],
