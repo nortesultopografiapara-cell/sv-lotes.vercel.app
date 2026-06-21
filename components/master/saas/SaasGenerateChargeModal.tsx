@@ -1,27 +1,29 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { X } from 'lucide-react';
-import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
+import { AlertCircle, X } from 'lucide-react';
+import {
+  formatSaasCurrency,
+  resolveEffectiveSaasPrice,
+  type CompanyPricingSource,
+} from '@/lib/companyPricing';
 import { currentReferenceMonth } from '@/lib/saasBilling';
-import type { SaasMasterBillingType } from '@/lib/saasMasterConfig';
+import { ASAAS_BOLETO_MIN_AMOUNT, type SaasMasterBillingType } from '@/lib/saasMasterConfig';
 
-export type SaasGenerateChargeCompany = {
+export type SaasGenerateChargeCompany = CompanyPricingSource & {
   id: string;
   name: string;
   next_payment_date?: string | null;
   next_due_date?: string | null;
   subscription_due_day?: number | null;
-  plan?: string | null;
-  plan_type?: string | null;
-  custom_price?: number | null;
-  price?: number | null;
+  subscription_monthly_price?: number | null;
 };
 
 type Props = {
   open: boolean;
   company: SaasGenerateChargeCompany | null;
   loading?: boolean;
+  error?: string | null;
   onClose: () => void;
   onSubmit: (payload: {
     billingType: SaasMasterBillingType;
@@ -56,17 +58,27 @@ export function SaasGenerateChargeModal({
   open,
   company,
   loading,
+  error,
   onClose,
   onSubmit,
 }: Props) {
+  const subscription = useMemo(
+    () =>
+      company?.subscription_monthly_price != null
+        ? { monthly_price: company.subscription_monthly_price }
+        : null,
+    [company?.subscription_monthly_price],
+  );
+
   const pricing = useMemo(
-    () => (company ? resolveCompanyPricing(company) : null),
-    [company],
+    () => (company ? resolveEffectiveSaasPrice(company, subscription) : null),
+    [company, subscription],
   );
 
   const [billingType, setBillingType] = useState<SaasMasterBillingType>('PIX');
   const [referenceMonth, setReferenceMonth] = useState(currentReferenceMonth());
   const [dueDate, setDueDate] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !company) return;
@@ -74,7 +86,11 @@ export function SaasGenerateChargeModal({
     setBillingType('PIX');
     setReferenceMonth(ref);
     setDueDate(defaultDueDate(company, ref));
+    setLocalError(null);
   }, [open, company]);
+
+  const displayError = error || localError;
+  const effectiveAmount = pricing?.effective_amount ?? 0;
 
   if (!open || !company) return null;
 
@@ -98,6 +114,13 @@ export function SaasGenerateChargeModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {displayError ? (
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-200">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{displayError}</span>
+            </div>
+          ) : null}
+
           <Field label="Empresa">
             <p className="text-white font-medium">{company.name}</p>
           </Field>
@@ -123,7 +146,10 @@ export function SaasGenerateChargeModal({
 
           <Field label="Valor">
             <p className="text-emerald-300 font-semibold tabular-nums">
-              {formatSaasCurrency(pricing?.appliedPrice ?? 0)}
+              {formatSaasCurrency(effectiveAmount)}
+            </p>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Mesmo valor enviado ao Asaas na geração.
             </p>
           </Field>
 
@@ -143,7 +169,10 @@ export function SaasGenerateChargeModal({
                     name="billingType"
                     value={type}
                     checked={billingType === type}
-                    onChange={() => setBillingType(type)}
+                    onChange={() => {
+                      setBillingType(type);
+                      setLocalError(null);
+                    }}
                     className="sr-only"
                   />
                   {type}
@@ -152,6 +181,9 @@ export function SaasGenerateChargeModal({
             </div>
             <p className="text-[11px] text-gray-500 mt-2">
               O Asaas não combina PIX e Boleto na mesma cobrança. Escolha uma forma por geração.
+              {billingType === 'BOLETO'
+                ? ` Boleto exige valor mínimo de ${formatSaasCurrency(ASAAS_BOLETO_MIN_AMOUNT)}.`
+                : null}
             </p>
           </Field>
         </div>
@@ -168,13 +200,23 @@ export function SaasGenerateChargeModal({
           <button
             type="button"
             disabled={loading || !dueDate || !referenceMonth}
-            onClick={() =>
+            onClick={() => {
+              setLocalError(null);
+              if (
+                billingType === 'BOLETO' &&
+                effectiveAmount < ASAAS_BOLETO_MIN_AMOUNT
+              ) {
+                setLocalError(
+                  `O valor mínimo para cobrança via Boleto Bancário é ${formatSaasCurrency(ASAAS_BOLETO_MIN_AMOUNT)}.`,
+                );
+                return;
+              }
               void onSubmit({
                 billingType,
                 referenceMonth,
                 dueDate,
-              })
-            }
+              });
+            }}
             className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm font-semibold text-white"
           >
             {loading ? 'Gerando…' : 'Gerar cobrança'}

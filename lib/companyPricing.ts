@@ -62,13 +62,80 @@ export function isCustomPriceEnabled(company: CompanyPricingSource): boolean {
   return false;
 }
 
-/** Valor efetivo de cobrança/MRR */
-export function getCompanyMonthlyPrice(company: CompanyPricingSource): number {
-  if (isCustomPriceEnabled(company)) {
-    const custom = parseCustomMonthlyPrice(company.custom_monthly_price);
-    if (custom != null) return custom;
+export type SaasSubscriptionPriceSource = {
+  monthly_price?: number | string | null;
+};
+
+export type SaasEffectivePriceSource = 'custom' | 'subscription' | 'plan';
+
+export type SaasEffectivePriceDiagnostic = {
+  company_id?: string;
+  plan: string | null;
+  custom_price_enabled: boolean;
+  custom_price: number | null;
+  subscription_amount: number | null;
+  plan_price: number;
+  effective_amount: number;
+  billing_type?: string;
+  source: SaasEffectivePriceSource;
+};
+
+function parseSubscriptionMonthlyPrice(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Preço SaaS efetivo — prioridade:
+ * 1. preço personalizado ativo da empresa;
+ * 2. preço da assinatura, se existir;
+ * 3. preço padrão do plano.
+ */
+export function resolveEffectiveSaasPrice(
+  company: CompanyPricingSource,
+  subscription?: SaasSubscriptionPriceSource | null,
+  options?: { companyId?: string; billingType?: string },
+): SaasEffectivePriceDiagnostic {
+  const saas = getCompanySaasPlan(company);
+  const planPrice = getStandardPlanMonthlyPrice(company);
+  const customEnabled = isCustomPriceEnabled(company);
+  const customPrice = customEnabled
+    ? parseCustomMonthlyPrice(company.custom_monthly_price)
+    : null;
+  const subscriptionAmount = parseSubscriptionMonthlyPrice(subscription?.monthly_price);
+
+  let effectiveAmount = planPrice;
+  let source: SaasEffectivePriceSource = 'plan';
+
+  if (customEnabled && customPrice != null) {
+    effectiveAmount = customPrice;
+    source = 'custom';
+  } else if (subscriptionAmount != null) {
+    effectiveAmount = subscriptionAmount;
+    source = 'subscription';
   }
-  return getStandardPlanMonthlyPrice(company);
+
+  return {
+    company_id: options?.companyId,
+    plan: saas.legacyDbPlan || company.plan || company.plan_type || null,
+    custom_price_enabled: customEnabled,
+    custom_price: customPrice,
+    subscription_amount: subscriptionAmount,
+    plan_price: planPrice,
+    effective_amount: effectiveAmount,
+    billing_type: options?.billingType,
+    source,
+  };
+}
+
+/** Valor efetivo de cobrança/MRR */
+export function getCompanyMonthlyPrice(
+  company: CompanyPricingSource,
+  subscription?: SaasSubscriptionPriceSource | null,
+): number {
+  return resolveEffectiveSaasPrice(company, subscription).effective_amount;
 }
 
 export function normalizeCustomPriceBadge(raw?: string | null): CustomPriceBadge {
@@ -84,7 +151,10 @@ export function customPriceBadgeLabel(badge: CustomPriceBadge): string | null {
   return null;
 }
 
-export function resolveCompanyPricing(company: CompanyPricingSource) {
+export function resolveCompanyPricing(
+  company: CompanyPricingSource,
+  subscription?: SaasSubscriptionPriceSource | null,
+) {
   const saas = getCompanySaasPlan(company);
   const planLabel =
     saas.planKey === 'profissional'
@@ -94,7 +164,7 @@ export function resolveCompanyPricing(company: CompanyPricingSource) {
         : 'STARTER';
 
   const standardPrice = getStandardPlanMonthlyPrice(company);
-  const appliedPrice = getCompanyMonthlyPrice(company);
+  const appliedPrice = getCompanyMonthlyPrice(company, subscription);
   const customEnabled = isCustomPriceEnabled(company);
   const badge = normalizeCustomPriceBadge(company.custom_price_badge);
 

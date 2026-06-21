@@ -80,16 +80,56 @@ export function isValidSaasInvoiceNumber(value: string): boolean {
   return INVOICE_NUMBER_PATTERN.test(String(value).trim());
 }
 
-export function computeInvoiceAmounts(company: CompanyPricingSource): {
+export function computeInvoiceAmounts(
+  company: CompanyPricingSource,
+  subscription?: CompanySubscription | null,
+): {
   amount: number;
   discount_amount: number;
   final_amount: number;
 } {
-  const pricing = resolveCompanyPricing(company);
+  const pricing = resolveCompanyPricing(company, subscription);
   const amount = pricing.standardPrice;
   const final_amount = pricing.appliedPrice;
   const discount_amount = Math.max(0, Number((amount - final_amount).toFixed(2)));
   return { amount, discount_amount, final_amount };
+}
+
+const PAID_INVOICE_STATUSES = new Set(['PAGO', 'PAGA', 'PAID']);
+const CANCELLED_INVOICE_STATUSES = new Set(['CANCELADA', 'CANCELLED', 'CANCELED']);
+
+/** Sincroniza valores de fatura pendente com o preço SaaS efetivo atual da empresa. */
+export async function syncPendingInvoiceAmountsFromPricing(
+  supabaseAdmin: SupabaseClient,
+  invoice: MasterSaasInvoice,
+  company: CompanyPricingSource & { id: string },
+  subscription?: CompanySubscription | null,
+): Promise<MasterSaasInvoice> {
+  const status = String(invoice.status || '').toUpperCase();
+  if (PAID_INVOICE_STATUSES.has(status) || CANCELLED_INVOICE_STATUSES.has(status)) {
+    return invoice;
+  }
+
+  const amounts = computeInvoiceAmounts(company, subscription);
+  const current = Number(invoice.final_amount || 0);
+  if (Math.abs(current - amounts.final_amount) < 0.009) {
+    return invoice;
+  }
+
+  const { data: updated, error } = await supabaseAdmin
+    .from('master_saas_invoices')
+    .update({
+      amount: amounts.amount,
+      discount_amount: amounts.discount_amount,
+      final_amount: amounts.final_amount,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoice.id)
+    .select('*')
+    .single();
+
+  if (error || !updated) return invoice;
+  return parseInvoiceRow(updated);
 }
 
 export function isMockSaasExternalChargeId(id: string | null | undefined): boolean {
@@ -114,7 +154,7 @@ async function repairPhantomSaasInvoiceIfNeeded(
 ): Promise<MasterSaasInvoice> {
   if (!isPhantomSaasInvoice(invoice)) return invoice;
 
-  const amounts = computeInvoiceAmounts(company);
+  const amounts = computeInvoiceAmounts(company, subscription);
   const due_date =
     options?.dueDate ||
     invoice.due_date ||
@@ -338,15 +378,21 @@ export async function generateInvoiceForCompany(
       );
       return { invoice: repaired, created: false };
     }
-    const withDueDate = await applyRequestedDueDateToExistingInvoice(
+    let withDueDate = await applyRequestedDueDateToExistingInvoice(
       supabaseAdmin,
       parsed,
       options?.dueDate,
     );
+    withDueDate = await syncPendingInvoiceAmountsFromPricing(
+      supabaseAdmin,
+      withDueDate,
+      company,
+      subscription,
+    );
     return { invoice: withDueDate, created: false, skipped: 'Competência já faturada' };
   }
 
-  const amounts = computeInvoiceAmounts(company);
+  const amounts = computeInvoiceAmounts(company, subscription);
   const due_date = options?.dueDate
     ? resolveAsaasDueDate(options.dueDate)
     : resolveInvoiceDueDate(company, subscription, referenceMonth);

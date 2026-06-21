@@ -93,6 +93,7 @@ function formatChargeSkipAlert(skipped: string, skipCode?: string | null): strin
 function toGenerateChargeCompany(
   company: EnrichedCompany | SaasCompanyRow,
 ): SaasGenerateChargeCompany {
+  const sub = (company as { saas_subscription?: CompanySubscription | null }).saas_subscription;
   return {
     id: String((company as { id?: string }).id || ''),
     name: company.name || '—',
@@ -101,8 +102,10 @@ function toGenerateChargeCompany(
     subscription_due_day: (company as { subscription_due_day?: number | null }).subscription_due_day,
     plan: (company as { plan?: string | null }).plan,
     plan_type: (company as { plan_type?: string | null }).plan_type,
-    custom_price: (company as { custom_price?: number | null }).custom_price,
-    price: (company as { price?: number | null }).price,
+    custom_monthly_price: (company as { custom_monthly_price?: number | string | null })
+      .custom_monthly_price,
+    custom_price_enabled: (company as { custom_price_enabled?: boolean | null }).custom_price_enabled,
+    subscription_monthly_price: sub?.monthly_price ?? null,
   };
 }
 
@@ -151,6 +154,7 @@ function SaaSFinancePageContent() {
   const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null);
   const [generateChargeCompany, setGenerateChargeCompany] =
     useState<SaasGenerateChargeCompany | null>(null);
+  const [generateChargeError, setGenerateChargeError] = useState<string | null>(null);
   const [paymentGateway, setPaymentGateway] = useState<{
     configured: boolean;
     message?: string | null;
@@ -604,11 +608,26 @@ function SaaSFinancePageContent() {
     ],
   );
 
-  const openGenerateChargeModal = useCallback((company: EnrichedCompany | SaasCompanyRow) => {
-    const id = (company as { id?: string }).id;
-    if (!id) return;
-    setGenerateChargeCompany(toGenerateChargeCompany(company));
-  }, []);
+  const openGenerateChargeModal = useCallback(
+    (company: EnrichedCompany | SaasCompanyRow) => {
+      const id = (company as { id?: string }).id;
+      if (!id) return;
+      const fresh =
+        companies.find((row) => (row as { id?: string }).id === id) ?? company;
+      setGenerateChargeError(null);
+      setGenerateChargeCompany(toGenerateChargeCompany(fresh));
+    },
+    [companies],
+  );
+
+  useEffect(() => {
+    if (!generateChargeCompany?.id) return;
+    const fresh = companies.find(
+      (row) => (row as { id?: string }).id === generateChargeCompany.id,
+    );
+    if (!fresh) return;
+    setGenerateChargeCompany(toGenerateChargeCompany(fresh));
+  }, [companies, generateChargeCompany?.id]);
 
   const submitGenerateCharge = useCallback(
     async (payload: {
@@ -618,6 +637,7 @@ function SaaSFinancePageContent() {
     }) => {
       const companyId = generateChargeCompany?.id;
       if (!companyId || !user?.id) return;
+      setGenerateChargeError(null);
       setGeneratingInvoiceId(companyId);
       try {
         const res = await fetch('/api/master/saas-charges', {
@@ -633,18 +653,28 @@ function SaaSFinancePageContent() {
           }),
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || 'Falha ao gerar cobrança');
+        if (!res.ok) {
+          const diag = json.pricingDiagnostic
+            ? `\n\nDiagnóstico: ${JSON.stringify(json.pricingDiagnostic)}`
+            : '';
+          throw new Error(String(json.error || 'Falha ao gerar cobrança') + diag);
+        }
         if (json.skipped) {
-          alert(formatChargeSkipAlert(String(json.skipped), json.skipCode));
-        } else if (payload.billingType === 'BOLETO') {
+          setGenerateChargeError(formatChargeSkipAlert(String(json.skipped), json.skipCode));
+          return;
+        }
+        setGenerateChargeCompany(null);
+        setGenerateChargeError(null);
+        if (payload.billingType === 'BOLETO') {
           alert('Boleto gerado com sucesso.');
         } else {
           alert('Cobrança PIX gerada com sucesso.');
         }
-        setGenerateChargeCompany(null);
         await loadData();
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro ao gerar cobrança');
+        setGenerateChargeError(
+          err instanceof Error ? err.message : 'Erro ao gerar cobrança',
+        );
       } finally {
         setGeneratingInvoiceId(null);
       }
@@ -1140,12 +1170,14 @@ function SaaSFinancePageContent() {
       <SaasGenerateChargeModal
         open={!!generateChargeCompany}
         company={generateChargeCompany}
+        error={generateChargeError}
         loading={
           !!generateChargeCompany && generatingInvoiceId === generateChargeCompany.id
         }
         onClose={() => {
           if (generatingInvoiceId !== generateChargeCompany?.id) {
             setGenerateChargeCompany(null);
+            setGenerateChargeError(null);
           }
         }}
         onSubmit={submitGenerateCharge}

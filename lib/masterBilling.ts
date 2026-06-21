@@ -43,7 +43,7 @@ export function augmentCompanyBilling<T extends CompanyLike>(
   subscription?: CompanySubscription | null,
   options?: AugmentCompanyBillingOptions,
 ) {
-  const resolved = resolveCompanyPricing(company);
+  const resolved = resolveCompanyPricing(company, subscription);
   const uiPlan =
     resolved.planKey === 'profissional'
       ? 'PROFISSIONAL'

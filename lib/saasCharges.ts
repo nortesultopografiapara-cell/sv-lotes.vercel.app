@@ -16,9 +16,16 @@ import {
   countPaidSaasPaymentsForReference,
   advanceSubscriptionAfterSaasPayment,
   reopenSaasInvoiceForNewCharge,
+  syncPendingInvoiceAmountsFromPricing,
   type MasterSaasInvoice,
 } from '@/lib/saasBilling';
-import { validateCompanyDocumentForAsaas, resolveAsaasDueDate, resolveSaasChargeDueDate } from '@/lib/saasPixValidation';
+import {
+  assertSaasBoletoMinimumAmount,
+  buildSaasPriceDiagnostic,
+  validateCompanyDocumentForAsaas,
+  resolveAsaasDueDate,
+  resolveSaasChargeDueDate,
+} from '@/lib/saasPixValidation';
 import { isBillableCompany } from '@/lib/companyPricing';
 import { todayIsoDate, toIsoDateOnly } from '@/lib/companySubscriptionDates';
 import { updateCompanyFinancialStatus } from '@/lib/saasCompanyFinancialStatus';
@@ -970,6 +977,28 @@ export async function createSaasPixCharge(
     due_date: resolvedDueDate,
   };
 
+  invoice = await syncPendingInvoiceAmountsFromPricing(
+    supabaseAdmin,
+    invoice,
+    company,
+    subscription,
+  );
+
+  const priceDiagnostic = buildSaasPriceDiagnostic(company, subscription, { billingType });
+  const chargeAmount = Number(invoice.final_amount || 0);
+
+  console.warn(
+    '[saas-charge-create-amount]',
+    JSON.stringify({
+      ...priceDiagnostic,
+      invoice_final_amount: chargeAmount,
+    }),
+  );
+
+  if (billingType === 'BOLETO') {
+    assertSaasBoletoMinimumAmount(chargeAmount, priceDiagnostic);
+  }
+
   const lateFee = resolveSaasLateFeePercents();
   const now = new Date().toISOString();
 
@@ -979,7 +1008,7 @@ export async function createSaasPixCharge(
       company_id: company.id,
       subscription_id: subscription?.id ?? invoice.subscription_id ?? null,
       invoice_id: invoice.id,
-      amount: invoice.final_amount,
+      amount: chargeAmount,
       due_date: resolvedDueDate,
       status: 'PENDING',
       payment_provider: 'pending',

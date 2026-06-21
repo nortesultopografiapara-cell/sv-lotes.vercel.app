@@ -14,8 +14,18 @@ import {
   isInvoiceEligibleForSuspension,
   isValidSaasInvoiceNumber,
   resolveInvoiceDueDate,
+  syncPendingInvoiceAmountsFromPricing,
   type MasterSaasInvoice,
 } from '../lib/saasBilling';
+import {
+  getStandardPlanMonthlyPrice,
+  resolveEffectiveSaasPrice,
+} from '../lib/companyPricing';
+import { ASAAS_BOLETO_MIN_AMOUNT } from '../lib/saasMasterConfig';
+import {
+  assertSaasBoletoMinimumAmount,
+  SaasBoletoMinimumError,
+} from '../lib/saasPixValidation';
 import { SAAS_AUTO_SUSPEND_AFTER_DAYS } from '../lib/saasMasterConfig';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 
@@ -307,6 +317,131 @@ function testReactivationRule() {
   console.log('OK testReactivationRule');
 }
 
+function testResolveEffectiveSaasPrice() {
+  const customCompany = {
+    id: 'c-custom',
+    plan: 'basic',
+    custom_price_enabled: true,
+    custom_monthly_price: 10,
+  };
+  const custom = resolveEffectiveSaasPrice(customCompany, { monthly_price: 0.01 });
+  assert(custom.effective_amount === 10, 'preço personalizado R$ 10,00');
+  assert(custom.source === 'custom', 'fonte custom');
+
+  const lowCustom = {
+    id: 'c-low',
+    plan: 'basic',
+    custom_price_enabled: true,
+    custom_monthly_price: 0.01,
+  };
+  const low = resolveEffectiveSaasPrice(lowCustom);
+  assert(low.effective_amount === 0.01, 'preço personalizado R$ 0,01');
+
+  const noCustom = {
+    id: 'c-plan',
+    plan: 'basic',
+    custom_price_enabled: false,
+  };
+  const fromPlan = resolveEffectiveSaasPrice(noCustom);
+  assert(
+    fromPlan.effective_amount === getStandardPlanMonthlyPrice(noCustom),
+    'sem custom usa plano',
+  );
+
+  const fromSub = resolveEffectiveSaasPrice(noCustom, { monthly_price: 450 });
+  assert(fromSub.effective_amount === 450, 'sem custom usa assinatura');
+  assert(fromSub.source === 'subscription', 'fonte subscription');
+
+  console.log('OK testResolveEffectiveSaasPrice');
+}
+
+function testBoletoMinimumValidation() {
+  const diag = resolveEffectiveSaasPrice(
+    { id: 'c1', plan: 'basic', custom_price_enabled: true, custom_monthly_price: 10 },
+    null,
+    { billingType: 'BOLETO' },
+  );
+  assertSaasBoletoMinimumAmount(10, diag);
+
+  let blocked = false;
+  try {
+    assertSaasBoletoMinimumAmount(0.01, {
+      ...diag,
+      effective_amount: 0.01,
+      custom_price: 0.01,
+    });
+  } catch (err) {
+    blocked = err instanceof SaasBoletoMinimumError;
+  }
+  assert(blocked, 'boleto bloqueia R$ 0,01');
+  assert(ASAAS_BOLETO_MIN_AMOUNT === 5, 'mínimo boleto R$ 5');
+  console.log('OK testBoletoMinimumValidation');
+}
+
+async function testSyncPendingInvoiceAmountsFromPricing() {
+  const company = {
+    id: 'c-sync',
+    plan: 'basic',
+    custom_price_enabled: true,
+    custom_monthly_price: 10,
+  };
+  const invoice: MasterSaasInvoice = {
+    id: 'inv-1',
+    company_id: company.id,
+    subscription_id: null,
+    contract_id: null,
+    invoice_number: '00001/2026-06',
+    reference_month: '2026-06',
+    amount: 329.99,
+    discount_amount: 329.98,
+    final_amount: 0.01,
+    due_date: '2026-06-10',
+    issued_at: '2026-06-01',
+    paid_at: null,
+    status: 'PENDENTE',
+    payment_method: null,
+    pix_code: null,
+    pix_qrcode: null,
+    external_charge_id: null,
+    notes: null,
+  };
+
+  let updatedPatch: Record<string, unknown> | null = null;
+  const supabaseAdmin = {
+    from() {
+      return {
+        update(patch: Record<string, unknown>) {
+          updatedPatch = patch;
+          return {
+            eq() {
+              return {
+                select() {
+                  return {
+                    single: async () => ({
+                      data: { ...invoice, ...patch },
+                      error: null,
+                    }),
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const synced = await syncPendingInvoiceAmountsFromPricing(
+    supabaseAdmin as never,
+    invoice,
+    company,
+    null,
+  );
+  assert(synced.final_amount === 10, 'fatura pendente sincronizada para R$ 10');
+  assert(updatedPatch != null, 'patch aplicado no banco');
+  console.log('OK testSyncPendingInvoiceAmountsFromPricing');
+}
+
 async function main() {
   testInvoiceNumberFormat();
   testComputeInvoiceAmounts();
@@ -319,6 +454,9 @@ async function main() {
   testOverdueMarkingLogic();
   testNoDuplicateCompetenceRule();
   testReactivationRule();
+  testResolveEffectiveSaasPrice();
+  testBoletoMinimumValidation();
+  await testSyncPendingInvoiceAmountsFromPricing();
   await testMockPixProvider();
   console.log('mandatory-saas-billing-tests: all passed');
 }

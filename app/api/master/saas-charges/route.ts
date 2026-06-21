@@ -13,6 +13,7 @@ import {
   assertSaasPaymentGatewayConfigured,
   getSaasPaymentGatewayStatus,
 } from '@/lib/saasPaymentGateway';
+import { SaasBoletoMinimumError } from '@/lib/saasPixValidation';
 
 export const runtime = 'nodejs';
 
@@ -188,6 +189,16 @@ export async function POST(request: Request) {
       invoice: result.invoice,
     });
   } catch (e: unknown) {
+    if (e instanceof SaasBoletoMinimumError) {
+      console.warn('[saas-charge-boleto-minimum]', JSON.stringify(e.pricingDiagnostic));
+      return NextResponse.json(
+        {
+          error: e.message,
+          pricingDiagnostic: e.pricingDiagnostic,
+        },
+        { status: 400 },
+      );
+    }
     const message = e instanceof Error ? e.message : 'Erro interno';
     return NextResponse.json({ error: message }, { status: 500 });
   }

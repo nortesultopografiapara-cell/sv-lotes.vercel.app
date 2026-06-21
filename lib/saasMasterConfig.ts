@@ -14,6 +14,9 @@ export const ASAAS_SUPPORTS_COMBINED_PIX_BOLETO = false;
 
 export type SaasMasterBillingType = 'PIX' | 'BOLETO';
 
+/** Valor mínimo exigido pelo Asaas para cobrança via Boleto Bancário. */
+export const ASAAS_BOLETO_MIN_AMOUNT = 5;
+
 export {
   DEFAULT_FINE_PERCENT,
   DEFAULT_INTEREST_PERCENT,
