@@ -81,8 +81,8 @@ export function SaasAutomationsPanel() {
         ) : null}
         {!whatsappConfigured ? (
           <p className="mt-3 text-sm text-gray-400">
-            Evolution API não configurada — configure EVOLUTION_API_URL, EVOLUTION_API_KEY e
-            EVOLUTION_INSTANCE_NAME para ativar WhatsApp automático.
+            Z-API não configurada — configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN para
+            ativar WhatsApp automático.
           </p>
         ) : null}
       </div>

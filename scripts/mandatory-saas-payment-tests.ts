@@ -65,7 +65,7 @@ import {
   isSaasBillingWhatsAppConfigured,
   normalizeBrazilianWhatsAppPhone,
 } from '../lib/saasBillingReminderWhatsApp';
-import { isEvolutionApiConfigured } from '../lib/whatsapp/evolutionProvider';
+import { isZapiConfigured, sendText } from '../lib/whatsapp/zapiProvider';
 import {
   DEFAULT_FINE_PERCENT,
   DEFAULT_INTEREST_PERCENT,
@@ -1409,16 +1409,19 @@ function testSaasBillingReminderWhatsApp() {
   });
   assert(msgDue.includes('vence hoje'), 'mensagem vencimento hoje');
 
-  const evolution = read('lib/whatsapp/evolutionProvider.ts');
-  assert(evolution.includes('EVOLUTION_API_URL'), 'provider evolution url');
-  assert(evolution.includes('EVOLUTION_API_KEY'), 'provider evolution key');
-  assert(evolution.includes('EVOLUTION_INSTANCE_NAME'), 'provider evolution instance');
-  assert(evolution.includes('/message/sendText/'), 'endpoint sendText');
+  const zapi = read('lib/whatsapp/zapiProvider.ts');
+  assert(zapi.includes('ZAPI_INSTANCE_ID'), 'provider z-api instance id');
+  assert(zapi.includes('ZAPI_INSTANCE_TOKEN'), 'provider z-api instance token');
+  assert(zapi.includes('/send-text'), 'endpoint send-text z-api');
+  assert(zapi.includes('export async function sendText'), 'função sendText z-api');
+  assert(!fs.existsSync(path.join(ROOT, 'lib/whatsapp/evolutionProvider.ts')), 'evolution removido');
 
   const whatsappLib = read('lib/saasBillingReminderWhatsApp.ts');
   assert(whatsappLib.includes('sendSaasBillingReminderWhatsApp'), 'função envio whatsapp');
+  assert(whatsappLib.includes('zapiProvider'), 'whatsapp usa zapiProvider');
   assert(whatsappLib.includes('Telefone inválido'), 'bloqueia sem telefone');
   assert(whatsappLib.includes('sem link Asaas'), 'bloqueia sem link');
+  assert(!whatsappLib.includes('evolutionProvider'), 'whatsapp sem evolution');
 
   const reminders = read('lib/saasBillingReminders.ts');
   assert(
@@ -1434,32 +1437,72 @@ function testSaasBillingReminderWhatsApp() {
   assert(reminders.includes("channel: 'whatsapp'"), 'canal whatsapp nos logs');
 
   const envExample = read('.env.example');
-  assert(envExample.includes('EVOLUTION_API_URL='), 'env example evolution url');
-  assert(envExample.includes('EVOLUTION_API_KEY='), 'env example evolution key');
-  assert(envExample.includes('EVOLUTION_INSTANCE_NAME='), 'env example evolution instance');
+  assert(envExample.includes('ZAPI_INSTANCE_ID='), 'env example z-api instance id');
+  assert(envExample.includes('ZAPI_INSTANCE_TOKEN='), 'env example z-api token');
+  assert(!envExample.includes('EVOLUTION_API_URL'), 'env example sem evolution');
 
-  const origUrl = process.env.EVOLUTION_API_URL;
-  const origKey = process.env.EVOLUTION_API_KEY;
-  const origInstance = process.env.EVOLUTION_INSTANCE_NAME;
+  const origId = process.env.ZAPI_INSTANCE_ID;
+  const origToken = process.env.ZAPI_INSTANCE_TOKEN;
   try {
-    delete process.env.EVOLUTION_API_URL;
-    delete process.env.EVOLUTION_API_KEY;
-    delete process.env.EVOLUTION_INSTANCE_NAME;
-    assert(!isEvolutionApiConfigured(), 'evolution não configurada sem envs');
+    delete process.env.ZAPI_INSTANCE_ID;
+    delete process.env.ZAPI_INSTANCE_TOKEN;
+    assert(!isZapiConfigured(), 'z-api não configurada sem envs');
     assert(!isSaasBillingWhatsAppConfigured(), 'whatsapp billing não configurado sem envs');
 
-    process.env.EVOLUTION_API_URL = 'https://evolution.example.com';
-    process.env.EVOLUTION_API_KEY = 'test-key';
-    process.env.EVOLUTION_INSTANCE_NAME = 'sv-lotes';
-    assert(isEvolutionApiConfigured(), 'evolution configurada com envs');
+    process.env.ZAPI_INSTANCE_ID = 'inst-test';
+    process.env.ZAPI_INSTANCE_TOKEN = 'token-test';
+    assert(isZapiConfigured(), 'z-api configurada com envs');
     assert(isSaasBillingWhatsAppConfigured(), 'whatsapp billing configurado com envs');
   } finally {
-    if (origUrl === undefined) delete process.env.EVOLUTION_API_URL;
-    else process.env.EVOLUTION_API_URL = origUrl;
-    if (origKey === undefined) delete process.env.EVOLUTION_API_KEY;
-    else process.env.EVOLUTION_API_KEY = origKey;
-    if (origInstance === undefined) delete process.env.EVOLUTION_INSTANCE_NAME;
-    else process.env.EVOLUTION_INSTANCE_NAME = origInstance;
+    if (origId === undefined) delete process.env.ZAPI_INSTANCE_ID;
+    else process.env.ZAPI_INSTANCE_ID = origId;
+    if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
+    else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+  }
+}
+
+async function testZapiSendTextMocked() {
+  const origFetch = globalThis.fetch;
+  const origId = process.env.ZAPI_INSTANCE_ID;
+  const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+
+  try {
+    process.env.ZAPI_INSTANCE_ID = 'inst-mock';
+    process.env.ZAPI_INSTANCE_TOKEN = 'token-mock';
+
+    let capturedUrl = '';
+    let capturedBody = '';
+    globalThis.fetch = (async (url, init) => {
+      capturedUrl = String(url);
+      capturedBody = String(init?.body || '');
+      return new Response(JSON.stringify({ messageId: 'zapi-msg-123' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const result = await sendText({
+      phone: '5594991955918',
+      message: 'Mensagem teste',
+    });
+
+    assert(result.ok, 'mock z-api send ok');
+    assert(result.messageId === 'zapi-msg-123', 'mock z-api messageId');
+    assert(
+      capturedUrl ===
+        'https://api.z-api.io/instances/inst-mock/token/token-mock/send-text',
+      'mock z-api url',
+    );
+
+    const payload = JSON.parse(capturedBody) as { phone?: string; message?: string };
+    assert(payload.phone === '5594991955918', 'mock z-api payload phone');
+    assert(payload.message === 'Mensagem teste', 'mock z-api payload message');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origId === undefined) delete process.env.ZAPI_INSTANCE_ID;
+    else process.env.ZAPI_INSTANCE_ID = origId;
+    if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
+    else process.env.ZAPI_INSTANCE_TOKEN = origToken;
   }
 }
 
@@ -1497,7 +1540,8 @@ async function run() {
     ['UI cobrança boleto', testChargesUiBoleto],
     ['multa e juros automáticos SaaS', testSaasLateFees],
     ['automações lembretes SaaS', testSaasBillingReminders],
-    ['automações WhatsApp Evolution', testSaasBillingReminderWhatsApp],
+    ['automações WhatsApp Z-API', testSaasBillingReminderWhatsApp],
+    ['envio mockado Z-API', testZapiSendTextMocked],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['auth tenant billing', testTenantBillingAuth],

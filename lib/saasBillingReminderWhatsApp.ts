@@ -1,5 +1,5 @@
 /**
- * Lembretes automáticos de cobrança SaaS via WhatsApp (Evolution API).
+ * Lembretes automáticos de cobrança SaaS via WhatsApp (Z-API).
  */
 
 import { normalizeWhatsAppPhone } from '@/lib/saasContractSignatureShare';
@@ -8,10 +8,7 @@ import {
   formatReminderDueDateBr,
   type SaasBillingReminderType,
 } from '@/lib/saasBillingReminderTypes';
-import {
-  isEvolutionApiConfigured,
-  sendEvolutionTextMessage,
-} from '@/lib/whatsapp/evolutionProvider';
+import { isZapiConfigured, sendText } from '@/lib/whatsapp/zapiProvider';
 
 export type SaasBillingReminderWhatsAppInput = {
   phone: string;
@@ -30,7 +27,7 @@ export type SaasBillingReminderWhatsAppResult = {
 };
 
 export function isSaasBillingWhatsAppConfigured(): boolean {
-  return isEvolutionApiConfigured();
+  return isZapiConfigured();
 }
 
 export function normalizeBrazilianWhatsAppPhone(phone?: string | null): string | null {
@@ -93,7 +90,7 @@ export async function sendSaasBillingReminderWhatsApp(
   input: SaasBillingReminderWhatsAppInput,
 ): Promise<SaasBillingReminderWhatsAppResult> {
   if (!isSaasBillingWhatsAppConfigured()) {
-    return { ok: false, error: 'Evolution API não configurada.' };
+    return { ok: false, error: 'Z-API não configurada.' };
   }
 
   const normalizedPhone = normalizeBrazilianWhatsAppPhone(input.phone);
@@ -106,12 +103,12 @@ export async function sendSaasBillingReminderWhatsApp(
     return { ok: false, normalizedPhone, error: 'Cobrança sem link Asaas.' };
   }
 
-  const text = buildSaasBillingReminderWhatsAppMessage({
+  const message = buildSaasBillingReminderWhatsAppMessage({
     ...input,
     paymentUrl,
   });
 
-  const result = await sendEvolutionTextMessage(normalizedPhone, text);
+  const result = await sendText({ phone: normalizedPhone, message });
   if (!result.ok) {
     return {
       ok: false,

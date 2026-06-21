@@ -362,7 +362,7 @@ export async function processSaasBillingReminderWhatsAppForCharge(
   }
 
   if (!isSaasBillingWhatsAppConfigured()) {
-    return { ...baseItem, message: 'Evolution API não configurada.' };
+    return { ...baseItem, message: 'Z-API não configurada.' };
   }
 
   const duplicate = await wasSaasBillingReminderSent(
