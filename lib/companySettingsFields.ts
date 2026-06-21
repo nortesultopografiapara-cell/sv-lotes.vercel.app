@@ -18,7 +18,7 @@ export const COMPANY_SETTINGS_COLUMNS_BASE =
 
 /** Colunas extras v2 — nullable; fallback para BASE se migration ausente. */
 export const COMPANY_SETTINGS_COLUMNS_EXTENDED =
-  'cep, created_at, legal_representative_role, legal_representative_email, legal_representative_phone, use_technical_as_legal_rep, settings_layout';
+  'cep, created_at, bairro, company_stamp_url, legal_representative_role, legal_representative_email, legal_representative_phone, use_technical_as_legal_rep, settings_layout';
 
 export const COMPANY_SETTINGS_COLUMNS = `${COMPANY_SETTINGS_COLUMNS_BASE}, ${COMPANY_SETTINGS_COLUMNS_EXTENDED}`;
 
@@ -136,9 +136,11 @@ export function buildCompanySettingsSavePayload(
     city: addressNorm.city,
     state: addressNorm.state,
     zip_code: addressNorm.zip_code,
+    bairro: String(company.bairro ?? '').trim() || null,
     ...legalRep,
     logo_url: company.logo_url,
     signature_url: company.signature_url,
+    company_stamp_url: company.company_stamp_url || null,
     contract_model: normalizeSaleContractModel(company.contract_model as string),
     contract_legal_nationality: company.contract_legal_nationality || null,
     contract_legal_marital_status: company.contract_legal_marital_status || null,

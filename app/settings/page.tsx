@@ -7,7 +7,7 @@ import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSec
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
 import { CompanySettingsFormLegacy } from '@/components/settings/CompanySettingsFormLegacy';
-import { CompanySettingsFormV2 } from '@/components/settings/CompanySettingsFormV2';
+import { CompanySettingsV2Shell } from '@/components/settings/CompanySettingsV2Shell';
 import { useCompanySettingsForm, resolveSettingsCompanyId } from '@/components/settings/useCompanySettingsForm';
 import { resolveCompanySettingsLayout } from '@/lib/companySettingsLayout';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
@@ -43,6 +43,15 @@ export default function SettingsPage() {
 
   const v2Active = layout === 'v2';
   const loading = form.loading || authLoading;
+  const showAdmins = Boolean(isTenantAdminRole(user?.role) && settingsCompanyId && user?.id);
+
+  const impersonatingTenantId =
+    typeof window !== 'undefined' &&
+    user?.role &&
+    PLATFORM_ADMIN_ROLES.includes(user.role) &&
+    localStorage.getItem('impersonating_tenant_id')
+      ? localStorage.getItem('impersonating_tenant_id')
+      : null;
 
   if (loading) {
     return (
@@ -69,7 +78,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="sv-page sv-page--scroll-y p-8 max-w-4xl mx-auto font-sans h-full w-full">
+    <div className={`sv-page sv-page--scroll-y p-8 mx-auto font-sans h-full w-full ${v2Active ? 'max-w-6xl' : 'max-w-4xl'}`}>
       <div className="flex items-center gap-3 mb-8 pb-4 border-b border-[var(--border-color)]">
         <div className="w-12 h-12 bg-[var(--color-primary)]/15 rounded-xl flex items-center justify-center text-[var(--color-primary)] border border-[var(--color-primary)]/25">
           <Building2 className="w-6 h-6" />
@@ -84,51 +93,46 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
-          <Palette className="w-4 h-4" />
-          <span className="text-xs font-semibold uppercase tracking-wider">Aparência</span>
-        </div>
-        <ThemeAppearanceSection />
-      </div>
-
-      {isTenantAdminRole(user?.role) && settingsCompanyId && user?.id ? (
-        <div className="mb-8">
-          <TenantCompanyAdminsPanel
-            callerUserId={user.id}
-            tenantId={settingsCompanyId}
-            impersonatingTenantId={
-              typeof window !== 'undefined' &&
-              PLATFORM_ADMIN_ROLES.includes(user.role || '') &&
-              localStorage.getItem('impersonating_tenant_id')
-                ? localStorage.getItem('impersonating_tenant_id')
-                : null
-            }
-          />
-        </div>
-      ) : null}
-
-      {isTenantAdminRole(user?.role) && settingsCompanyId && user?.id ? (
-        <div className="mb-8">
-          <OwnerProjectAccessPanel callerUserId={user.id} tenantId={settingsCompanyId} />
-        </div>
-      ) : null}
-
       {v2Active ? (
-        <>
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[var(--border-color)]">
-            <div className="w-10 h-10 bg-[var(--color-info)]/15 rounded-lg flex items-center justify-center text-[var(--color-info)] border border-[var(--color-info)]/25">
-              <Building2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">Cadastro da empresa</h2>
-              <p className="text-sm text-[var(--text-secondary)]">Blocos organizados — mínimo para contrato SaaS.</p>
-            </div>
-          </div>
-          <CompanySettingsFormV2 {...form} />
-        </>
+        <CompanySettingsV2Shell
+          {...form}
+          showAdmins={showAdmins}
+          adminPanelProps={
+            showAdmins && settingsCompanyId && user?.id
+              ? {
+                  callerUserId: user.id,
+                  tenantId: settingsCompanyId,
+                  impersonatingTenantId,
+                }
+              : undefined
+          }
+        />
       ) : (
         <>
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
+              <Palette className="w-4 h-4" />
+              <span className="text-xs font-semibold uppercase tracking-wider">Aparência</span>
+            </div>
+            <ThemeAppearanceSection />
+          </div>
+
+          {showAdmins && settingsCompanyId && user?.id ? (
+            <div className="mb-8">
+              <TenantCompanyAdminsPanel
+                callerUserId={user.id}
+                tenantId={settingsCompanyId}
+                impersonatingTenantId={impersonatingTenantId}
+              />
+            </div>
+          ) : null}
+
+          {showAdmins && settingsCompanyId && user?.id ? (
+            <div className="mb-8">
+              <OwnerProjectAccessPanel callerUserId={user.id} tenantId={settingsCompanyId} />
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[var(--border-color)]">
             <div className="w-10 h-10 bg-[var(--color-info)]/15 rounded-lg flex items-center justify-center text-[var(--color-info)] border border-[var(--color-info)]/25">
               <Building2 className="w-5 h-5" />

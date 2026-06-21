@@ -56,11 +56,13 @@ export function useCompanySettingsForm({
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
+  const companyStampInputRef = useRef<HTMLInputElement>(null);
   const techSignatureInputRef = useRef<HTMLInputElement>(null);
   const techStampInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [uploadingCompanyStamp, setUploadingCompanyStamp] = useState(false);
   const [uploadingTechSignature, setUploadingTechSignature] = useState(false);
   const [uploadingTechStamp, setUploadingTechStamp] = useState(false);
 
@@ -171,6 +173,18 @@ export function useCompanySettingsForm({
     setUploadingSignature(false);
   };
 
+  const handleCompanyStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const companyId = resolveSettingsCompanyId(user) || String(company?.id ?? '');
+    if (!e.target.files?.length || !companyId) return;
+    setUploadingCompanyStamp(true);
+    const url = await uploadImage(e.target.files[0], 'signature');
+    if (url) {
+      setCompany((prev) => (prev ? { ...prev, company_stamp_url: url } : prev));
+      await supabase.from('companies').update({ company_stamp_url: url }).eq('id', companyId);
+    }
+    setUploadingCompanyStamp(false);
+  };
+
   const handleTechChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setTechnical((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
@@ -270,15 +284,18 @@ export function useCompanySettingsForm({
     handleSave,
     handleLogoUpload,
     handleSignatureUpload,
+    handleCompanyStampUpload,
     handleTechChange,
     handleTechSignatureUpload,
     handleTechStampUpload,
     logoInputRef,
     signatureInputRef,
+    companyStampInputRef,
     techSignatureInputRef,
     techStampInputRef,
     uploadingLogo,
     uploadingSignature,
+    uploadingCompanyStamp,
   uploadingTechSignature,
     uploadingTechStamp,
     settingsCompanyId: resolveSettingsCompanyId(user),
