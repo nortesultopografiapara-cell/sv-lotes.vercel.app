@@ -5,6 +5,7 @@ import { SAAS_AUTOMATION_RULES } from '@/lib/masterSaasPanel';
 import { SAAS_BILLING_REMINDER_DEFINITIONS } from '@/lib/saasBillingReminderTypes';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDateBr } from '@/lib/saasSubscription';
+import { SaasWhatsAppTestModal } from './SaasWhatsAppTestModal';
 
 type ReminderStat = {
   automationId: string;
@@ -24,12 +25,13 @@ function formatLastSent(iso: string | null | undefined): string {
   return formatDateBr(iso.split('T')[0]);
 }
 
-export function SaasAutomationsPanel() {
+export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const { user } = useAuth();
   const [stats, setStats] = useState<ReminderStat[]>([]);
   const [emailConfigured, setEmailConfigured] = useState(true);
   const [whatsappConfigured, setWhatsappConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [testModalOpen, setTestModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,12 +69,25 @@ export function SaasAutomationsPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-white/5 bg-[#11161d] p-5">
-        <h2 className="text-lg font-bold text-white">Automações SaaS</h2>
-        <p className="text-sm text-gray-400 mt-1">
-          Lembretes automáticos por e-mail e WhatsApp executados diariamente via cron (
-          <code className="text-gray-500">/api/cron/saas-billing-reminders</code>
-          ).
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-white">Automações SaaS</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              Lembretes automáticos por e-mail e WhatsApp executados diariamente via cron (
+              <code className="text-gray-500">/api/cron/saas-billing-reminders</code>
+              ).
+            </p>
+          </div>
+          {isSuperAdmin && user?.id ? (
+            <button
+              type="button"
+              onClick={() => setTestModalOpen(true)}
+              className="shrink-0 px-4 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[13px] font-semibold hover:bg-emerald-500/20"
+            >
+              Testar WhatsApp
+            </button>
+          ) : null}
+        </div>
         {!emailConfigured ? (
           <p className="mt-3 text-sm text-amber-300">
             RESEND_API_KEY não configurada — os lembretes por e-mail não serão enviados até configurar
@@ -178,6 +193,15 @@ export function SaasAutomationsPanel() {
           );
         })}
       </div>
+
+      {isSuperAdmin && user?.id ? (
+        <SaasWhatsAppTestModal
+          open={testModalOpen}
+          userId={user.id}
+          whatsappConfigured={whatsappConfigured}
+          onClose={() => setTestModalOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

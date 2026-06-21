@@ -1111,7 +1111,7 @@ function SaaSFinancePageContent() {
         />
       ) : null}
 
-      {panelView === 'automacoes' ? <SaasAutomationsPanel /> : null}
+      {panelView === 'automacoes' ? <SaasAutomationsPanel isSuperAdmin={isSuperAdmin} /> : null}
 
       {panelView === 'caixa' ? (
         <SuperAdminOnlyGuard>

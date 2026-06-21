@@ -67,6 +67,10 @@ import {
 } from '../lib/saasBillingReminderWhatsApp';
 import { isZapiConfigured, sendText } from '../lib/whatsapp/zapiProvider';
 import {
+  SAAS_WHATSAPP_TEST_MESSAGE,
+  sendSaasWhatsAppTest,
+} from '../lib/saasWhatsAppTest';
+import {
   DEFAULT_FINE_PERCENT,
   DEFAULT_INTEREST_PERCENT,
   hasAsaasLateFeesConfigured,
@@ -1506,6 +1510,91 @@ async function testZapiSendTextMocked() {
   }
 }
 
+async function testSaasWhatsAppTestButton() {
+  assert(
+    SAAS_WHATSAPP_TEST_MESSAGE === '✅ Teste de integração WhatsApp do SV LOTES',
+    'mensagem fixa teste whatsapp',
+  );
+
+  const apiRoute = read('app/api/master/saas-whatsapp-test/route.ts');
+  assert(apiRoute.includes('assertSuperAdmin'), 'api teste whatsapp super admin');
+  assert(apiRoute.includes('sendSaasWhatsAppTest'), 'api usa serviço teste');
+
+  const service = read('lib/saasWhatsAppTest.ts');
+  assert(service.includes('WHATSAPP_TEST_SENT'), 'auditoria WHATSAPP_TEST_SENT');
+  assert(service.includes('sendText'), 'teste usa mesmo provider z-api');
+
+  const panel = read('components/master/saas/SaasAutomationsPanel.tsx');
+  assert(panel.includes('Testar WhatsApp'), 'botão testar whatsapp');
+  assert(panel.includes('isSuperAdmin'), 'botão restrito super admin');
+  assert(panel.includes('SaasWhatsAppTestModal'), 'modal teste whatsapp');
+
+  const modal = read('components/master/saas/SaasWhatsAppTestModal.tsx');
+  assert(modal.includes('/api/master/saas-whatsapp-test'), 'modal chama api teste');
+  assert(modal.includes('SAAS_WHATSAPP_TEST_MESSAGE'), 'modal exibe mensagem fixa');
+
+  const page = read('app/saas-finance/page.tsx');
+  assert(page.includes('isSuperAdmin={isSuperAdmin}'), 'page passa isSuperAdmin');
+
+  const origFetch = globalThis.fetch;
+  const origId = process.env.ZAPI_INSTANCE_ID;
+  const origToken = process.env.ZAPI_INSTANCE_TOKEN;
+
+  try {
+    process.env.ZAPI_INSTANCE_ID = 'inst-test';
+    process.env.ZAPI_INSTANCE_TOKEN = 'token-test';
+
+    globalThis.fetch = (async (_url, init) => {
+      const body = JSON.parse(String(init?.body || '{}')) as { phone?: string; message?: string };
+      assert(body.phone === '5594991001988', 'teste serviço normaliza telefone');
+      assert(body.message === SAAS_WHATSAPP_TEST_MESSAGE, 'teste serviço mensagem fixa');
+      return new Response(JSON.stringify({ messageId: 'zapi-test-1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const mockSupabase = {
+      from(table: string) {
+        if (table === 'users') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { tenant_id: 'company-audit-1' } }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_logs') {
+          return {
+            insert: async (row: Record<string, unknown>) => {
+              assert(row.action === 'WHATSAPP_TEST_SENT', 'auditoria inserida');
+              assert(row.module === 'SAAS_BILLING', 'modulo auditoria');
+              return { error: null };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      },
+    };
+
+    const result = await sendSaasWhatsAppTest(mockSupabase as never, {
+      phone: '(94) 99100-1988',
+      actorUserId: 'user-super-admin',
+    });
+
+    assert(result.ok, 'serviço teste whatsapp ok');
+    assert(result.normalizedPhone === '5594991001988', 'telefone normalizado no serviço');
+    assert(result.messageId === 'zapi-test-1', 'messageId retornado');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origId === undefined) delete process.env.ZAPI_INSTANCE_ID;
+    else process.env.ZAPI_INSTANCE_ID = origId;
+    if (origToken === undefined) delete process.env.ZAPI_INSTANCE_TOKEN;
+    else process.env.ZAPI_INSTANCE_TOKEN = origToken;
+  }
+}
+
 async function run() {
   const tests: Array<[string, () => void | Promise<void>]> = [
     ['geração cobrança PIX', testPixChargeGeneration],
@@ -1542,6 +1631,7 @@ async function run() {
     ['automações lembretes SaaS', testSaasBillingReminders],
     ['automações WhatsApp Z-API', testSaasBillingReminderWhatsApp],
     ['envio mockado Z-API', testZapiSendTextMocked],
+    ['botão testar WhatsApp SaaS', testSaasWhatsAppTestButton],
     ['migration saas_charges', testDatabaseMigration],
     ['página /billing', testBillingPage],
     ['auth tenant billing', testTenantBillingAuth],
