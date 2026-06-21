@@ -123,11 +123,17 @@ function sanitizeContractFileName(contractNumber: string): string {
   return contractNumber.replace(/[^\w-]+/g, '_');
 }
 
-export {
+import {
   buildSignedPdfStoragePath,
   hasSaasSignedDocumentAccess,
   resolveSaasSignedContractRecord,
 } from '@/lib/saasContractSignedAccess';
+
+export {
+  buildSignedPdfStoragePath,
+  hasSaasSignedDocumentAccess,
+  resolveSaasSignedContractRecord,
+};
 
 export async function getLatestFullySignedSignature(
   supabaseAdmin: SupabaseClient,

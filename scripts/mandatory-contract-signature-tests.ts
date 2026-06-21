@@ -24,6 +24,7 @@ import {
   formatSignatureTimeBr,
 } from '../lib/saasContractSignaturePdf';
 import {
+  buildSignedPdfStoragePath,
   buildSignatureHistory,
   daysPendingSince,
   generateSignatureToken,
@@ -579,6 +580,31 @@ async function testNextBuild() {
   console.log('OK testNextBuild');
 }
 
+function testSignedPdfStoragePathBinding() {
+  const path = buildSignedPdfStoragePath('co-abc', 'CTR-2026-001', 2);
+  assert(
+    path === 'contracts/saas/co-abc/CTR-2026-001_v2_signed.pdf',
+    'caminho PDF assinado no storage',
+  );
+
+  const serviceSrc = readFileSync(
+    join(process.cwd(), 'lib/saasContractSignatureService.ts'),
+    'utf8',
+  );
+  assert(
+    serviceSrc.includes('import {') &&
+      serviceSrc.includes('buildSignedPdfStoragePath') &&
+      serviceSrc.includes("from '@/lib/saasContractSignedAccess'"),
+    'import local de buildSignedPdfStoragePath',
+  );
+  assert(
+    serviceSrc.includes('buildSignedPdfStoragePath(companyId, contractNumber, version)'),
+    'uploadSignedContractPdf usa buildSignedPdfStoragePath',
+  );
+
+  console.log('OK testSignedPdfStoragePathBinding');
+}
+
 async function main() {
   testTokenGeneration();
   testExpiration();
@@ -588,6 +614,7 @@ async function main() {
   testBilateralSignatureFlow();
   testSignedDocumentAccessUi();
   testBilateralFinalPdf();
+  testSignedPdfStoragePathBinding();
   testSendReturnsSignatureUrl();
   testWhatsAppUrl();
   testMailtoUrl();
