@@ -50,7 +50,17 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
       const json = await res.json();
 
       if (!res.ok) {
-        setFeedback({ type: 'error', text: json.error || 'Falha ao enviar teste.' });
+        const debugLines = json.debug
+          ? [
+              `URL: ${json.debug.requestUrlMasked ?? '—'}`,
+              `HTTP: ${json.debug.httpStatus ?? '—'}`,
+              `Resposta: ${JSON.stringify(json.debug.responseBody ?? json.debug.responseText ?? '—')}`,
+            ].join('\n')
+          : '';
+        setFeedback({
+          type: 'error',
+          text: [json.error || 'Falha ao enviar teste.', debugLines].filter(Boolean).join('\n\n'),
+        });
         return;
       }
 
@@ -116,7 +126,7 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
 
           {feedback ? (
             <p
-              className={`text-sm ${
+              className={`text-sm whitespace-pre-wrap ${
                 feedback.type === 'ok' ? 'text-emerald-300' : 'text-red-300'
               }`}
             >

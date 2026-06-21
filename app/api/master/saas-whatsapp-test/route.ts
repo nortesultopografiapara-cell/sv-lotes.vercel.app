@@ -33,7 +33,13 @@ export async function POST(request: Request) {
     });
 
     if (!result.ok) {
-      return NextResponse.json({ error: result.error || 'Falha no envio.' }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: result.error || 'Falha no envio.',
+          debug: result.debug ?? null,
+        },
+        { status: 502 },
+      );
     }
 
     return NextResponse.json({

@@ -1416,7 +1416,9 @@ function testSaasBillingReminderWhatsApp() {
   const zapi = read('lib/whatsapp/zapiProvider.ts');
   assert(zapi.includes('ZAPI_INSTANCE_ID'), 'provider z-api instance id');
   assert(zapi.includes('ZAPI_INSTANCE_TOKEN'), 'provider z-api instance token');
-  assert(zapi.includes('/send-text'), 'endpoint send-text z-api');
+  assert(zapi.includes('buildZapiSendTextUrl'), 'helper url z-api');
+  assert(zapi.includes('buildZapiRequestDiagnostics'), 'diagnostico z-api');
+  assert(zapi.includes('zapi-send-text'), 'log request z-api');
   assert(zapi.includes('export async function sendText'), 'função sendText z-api');
   assert(!fs.existsSync(path.join(ROOT, 'lib/whatsapp/evolutionProvider.ts')), 'evolution removido');
 

@@ -13,6 +13,7 @@ export type SaasWhatsAppTestResult = {
   normalizedPhone?: string | null;
   messageId?: string | null;
   error?: string;
+  debug?: import('@/lib/whatsapp/zapiProvider').ZapiSendTextResult['debug'];
 };
 
 async function resolveAuditCompanyId(
@@ -84,6 +85,7 @@ export async function sendSaasWhatsAppTest(
       ok: false,
       normalizedPhone,
       error: result.error || 'Falha ao enviar WhatsApp de teste.',
+      debug: result.debug,
     };
   }
 
