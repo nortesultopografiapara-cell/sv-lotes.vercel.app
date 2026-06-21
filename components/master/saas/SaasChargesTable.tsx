@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import { formatDateBr } from '@/lib/saasSubscription';
 import type { SaasInvoiceChargeRow } from '@/lib/saasInvoiceChargeView';
@@ -9,8 +10,52 @@ import {
   saasChargeDisplayStatusLabel,
   saasChargeDisplayStatusTone,
 } from '@/lib/masterSaasPanel';
+import {
+  DEFAULT_SAAS_CHARGE_SORT,
+  SAAS_CHARGE_SORT_PRESET_OPTIONS,
+  resolveSaasChargeSortPresetValue,
+  saasChargeSortColumnLabel,
+  saasChargeSortPresetToState,
+  sortSaasInvoiceChargeRows,
+  toggleSaasChargeColumnSort,
+  type SaasChargeSortColumn,
+  type SaasChargeSortState,
+} from '@/lib/saasChargeTableSort';
 import { SaasActionsDropdown, type SaasActionItem } from './SaasActionsDropdown';
 import { SaasLateFeeLabels } from './SaasLateFeeLabels';
+
+function SortableHeader({
+  column,
+  sortState,
+  onSort,
+}: {
+  column: SaasChargeSortColumn;
+  sortState: SaasChargeSortState;
+  onSort: (column: SaasChargeSortColumn) => void;
+}) {
+  const active = sortState.column === column;
+  const label = saasChargeSortColumnLabel(column);
+
+  return (
+    <th className="p-4 font-medium">
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`inline-flex items-center gap-1 hover:text-white transition-colors ${
+          active ? 'text-white' : ''
+        }`}
+        aria-sort={active ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        <span>{label}</span>
+        {active ? (
+          <span className="text-[10px] text-blue-400" aria-hidden>
+            {sortState.direction === 'asc' ? '▲' : '▼'}
+          </span>
+        ) : null}
+      </button>
+    </th>
+  );
+}
 
 type Props = {
   rows: SaasInvoiceChargeRow[];
@@ -69,14 +114,31 @@ export function SaasChargesTable({
   onFilterStatus,
   companies = [],
 }: Props) {
-  const filtered = rows.filter((row) => {
-    if (filterCompany !== 'all' && row.companyId !== filterCompany) return false;
-    if (filterStatus !== 'all') {
-      const st = resolveSaasChargeDisplayStatus(row);
-      if (st !== filterStatus) return false;
-    }
-    return true;
-  });
+  const [sortState, setSortState] = useState<SaasChargeSortState>(DEFAULT_SAAS_CHARGE_SORT);
+
+  const filtered = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (filterCompany !== 'all' && row.companyId !== filterCompany) return false;
+        if (filterStatus !== 'all') {
+          const st = resolveSaasChargeDisplayStatus(row);
+          if (st !== filterStatus) return false;
+        }
+        return true;
+      }),
+    [rows, filterCompany, filterStatus],
+  );
+
+  const sorted = useMemo(
+    () => sortSaasInvoiceChargeRows(filtered, sortState),
+    [filtered, sortState],
+  );
+
+  const sortPresetValue = resolveSaasChargeSortPresetValue(sortState);
+
+  const handleHeaderSort = (column: SaasChargeSortColumn) => {
+    setSortState((current) => toggleSaasChargeColumnSort(current, column));
+  };
 
   const canGenerate = showGenerateButton || !!onGenerateCharge;
 
@@ -138,6 +200,20 @@ export function SaasChargesTable({
               <option value="CANCELADA">Cancelada</option>
             </select>
           ) : null}
+          <select
+            value={sortPresetValue}
+            onChange={(e) =>
+              setSortState(saasChargeSortPresetToState(e.target.value as typeof sortPresetValue))
+            }
+            className="bg-[#0B0E14] border border-white/10 text-white px-3 py-2 rounded-lg text-[13px]"
+            aria-label="Ordenação"
+          >
+            {SAAS_CHARGE_SORT_PRESET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -145,19 +221,23 @@ export function SaasChargesTable({
         <table className="w-full text-left min-w-[1020px]">
           <thead>
             <tr className="border-b border-white/5 text-[12px] text-gray-400">
-              <th className="p-4 font-medium">Empresa</th>
-              <th className="p-4 font-medium">Competência</th>
-              <th className="p-4 font-medium">Valor</th>
-              <th className="p-4 font-medium">Vencimento</th>
+              <SortableHeader column="companyName" sortState={sortState} onSort={handleHeaderSort} />
+              <SortableHeader
+                column="referenceMonth"
+                sortState={sortState}
+                onSort={handleHeaderSort}
+              />
+              <SortableHeader column="amount" sortState={sortState} onSort={handleHeaderSort} />
+              <SortableHeader column="dueDate" sortState={sortState} onSort={handleHeaderSort} />
               <th className="p-4 font-medium">Forma</th>
-              <th className="p-4 font-medium">Status</th>
+              <SortableHeader column="status" sortState={sortState} onSort={handleHeaderSort} />
               <th className="p-4 font-medium">Payment ID</th>
               <th className="p-4 font-medium">Link Asaas</th>
               <th className="p-4 font-medium w-[120px]">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row) => {
+            {sorted.map((row) => {
               const displayStatus = resolveSaasChargeDisplayStatus(row);
               const phone = getCompanyPhone(row.companyId);
               const email = getCompanyEmail(row.companyId);
@@ -281,7 +361,7 @@ export function SaasChargesTable({
                 </tr>
               );
             })}
-            {!loading && filtered.length === 0 ? (
+            {!loading && sorted.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-8">
                   <div className="rounded-xl border border-dashed border-white/10 bg-[#0B0E14]/40 px-6 py-10 text-center">

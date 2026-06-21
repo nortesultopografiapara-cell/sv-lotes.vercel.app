@@ -34,6 +34,13 @@ import {
   pickBestChargeForInvoice,
   truncatePaymentId,
 } from '../lib/saasInvoiceChargeView';
+import {
+  compareSaasChargeRows,
+  DEFAULT_SAAS_CHARGE_SORT,
+  saasChargeSortPresetToState,
+  sortSaasInvoiceChargeRows,
+  toggleSaasChargeColumnSort,
+} from '../lib/saasChargeTableSort';
 import { addOneMonthToIsoDate, companyNextPaymentPatch } from '../lib/companySubscriptionDates';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
@@ -176,6 +183,9 @@ function testSaasFinanceGatewayUi() {
   assert(chargesTable.includes('Atualizar status'), 'ação sync no dropdown');
   assert(chargesTable.includes('Enviar WhatsApp'), 'ação whatsapp');
   assert(chargesTable.includes('Enviar E-mail'), 'ação e-mail');
+  assert(chargesTable.includes('SAAS_CHARGE_SORT_PRESET_OPTIONS'), 'dropdown ordenação cobranças');
+  assert(chargesTable.includes('SortableHeader'), 'cabeçalhos ordenáveis cobranças');
+  assert(chargesTable.includes('DEFAULT_SAAS_CHARGE_SORT'), 'ordenacao padrao vencimento');
   assert(chargeModal.includes('Copiar PIX'), 'copiar PIX no modal');
   assert(workspace.includes('SaasContractPanel'), 'contrato no workspace');
   assert(workspace.includes('showGenerateButton'), 'workspace flag gerar cobrança');
@@ -620,6 +630,91 @@ function testSaasPixValidation() {
   const today = new Date().toISOString().split('T')[0];
   assert(resolveAsaasDueDate('2020-01-01') === today, 'dueDate passado → hoje');
   assert(resolveAsaasDueDate('2099-12-31') === '2099-12-31', 'dueDate futuro mantido');
+}
+
+function testSaasChargeTableSort() {
+  type Row = ReturnType<typeof buildSaasInvoiceChargeRows>[number];
+
+  const row = (
+    partial: Partial<Row> & Pick<Row, 'invoiceId' | 'dueDate'>,
+  ): Row => ({
+    invoiceId: partial.invoiceId,
+    companyId: partial.companyId || 'c1',
+    companyName: partial.companyName || 'Empresa',
+    referenceMonth: partial.referenceMonth || '2026-07',
+    amount: partial.amount ?? 100,
+    dueDate: partial.dueDate,
+    invoiceStatus: partial.invoiceStatus || 'PENDENTE',
+    chargeStatus: partial.chargeStatus ?? 'PENDING',
+    asaasStatus: partial.asaasStatus || 'Pendente',
+    paymentId: partial.paymentId ?? 'pay_test',
+    paymentProvider: partial.paymentProvider ?? 'asaas',
+    billingType: partial.billingType || 'PIX',
+    pixCopyPaste: partial.pixCopyPaste ?? 'BR.GOV.BCB.PIX',
+    pixQrCode: partial.pixQrCode ?? null,
+    paymentUrl: partial.paymentUrl ?? null,
+    invoiceUrl: partial.invoiceUrl ?? null,
+    bankSlipUrl: partial.bankSlipUrl ?? null,
+    bankSlipIdentification: partial.bankSlipIdentification ?? null,
+    chargeId: partial.chargeId ?? 'ch1',
+    hasCharge: partial.hasCharge ?? true,
+  });
+
+  assert(
+    DEFAULT_SAAS_CHARGE_SORT.column === 'dueDate' && DEFAULT_SAAS_CHARGE_SORT.direction === 'asc',
+    'ordenacao padrao due_date ASC',
+  );
+
+  const byDue = sortSaasInvoiceChargeRows(
+    [
+      row({ invoiceId: 'a', dueDate: '2026-08-15' }),
+      row({ invoiceId: 'b', dueDate: '2026-07-15' }),
+      row({ invoiceId: 'c', dueDate: '2026-07-27' }),
+      row({ invoiceId: 'd', dueDate: '2026-07-19' }),
+    ],
+    DEFAULT_SAAS_CHARGE_SORT,
+  );
+  assert(
+    byDue.map((r) => r.dueDate).join(',') === '2026-07-15,2026-07-19,2026-07-27,2026-08-15',
+    'vencimento ASC mais proximo primeiro',
+  );
+
+  const byDueDesc = sortSaasInvoiceChargeRows(byDue, saasChargeSortPresetToState('due_desc'));
+  assert(byDueDesc[0]?.dueDate === '2026-08-15', 'vencimento DESC');
+
+  const byCompany = sortSaasInvoiceChargeRows(
+    [
+      row({ invoiceId: 'a', dueDate: '2026-07-01', companyName: 'SV Topografia' }),
+      row({ invoiceId: 'b', dueDate: '2026-07-02', companyName: 'Ivanilde de Moura Silva' }),
+      row({ invoiceId: 'c', dueDate: '2026-07-03', companyName: 'Meneses Imobiliária' }),
+    ],
+    saasChargeSortPresetToState('company_asc'),
+  );
+  assert(byCompany[0]?.companyName === 'Ivanilde de Moura Silva', 'empresa A-Z');
+
+  const byStatus = sortSaasInvoiceChargeRows(
+    [
+      row({ invoiceId: 'paid', dueDate: '2026-08-19', chargeStatus: 'PAID', invoiceStatus: 'PAGO' }),
+      row({ invoiceId: 'pend', dueDate: '2026-07-19', chargeStatus: 'PENDING' }),
+      row({ invoiceId: 'over', dueDate: '2026-06-15', chargeStatus: 'OVERDUE', invoiceStatus: 'VENCIDO' }),
+      row({ invoiceId: 'cancel', dueDate: '2026-09-15', chargeStatus: 'CANCELLED' }),
+    ],
+    saasChargeSortPresetToState('status'),
+  );
+  assert(byStatus.map((r) => r.invoiceId).join(',') === 'over,pend,paid,cancel', 'prioridade status ASC');
+  assert(
+    compareSaasChargeRows(byStatus[0]!, byStatus[1]!, saasChargeSortPresetToState('status')) < 0,
+    'VENCIDA antes de GERADA',
+  );
+  assert(
+    byStatus[1]?.dueDate === '2026-07-19' && byStatus[0]?.dueDate === '2026-06-15',
+    'dentro do grupo status mantem vencimento',
+  );
+
+  const toggled = toggleSaasChargeColumnSort(DEFAULT_SAAS_CHARGE_SORT, 'dueDate');
+  assert(toggled.direction === 'desc', 'segundo clique cabecalho inverte direcao');
+  const newCol = toggleSaasChargeColumnSort(toggled, 'amount');
+  assert(newCol.column === 'amount' && newCol.direction === 'asc', 'primeiro clique nova coluna ASC');
 }
 
 function testSaasInvoiceChargeView() {
@@ -1295,6 +1390,7 @@ async function run() {
     ['validação PIX Asaas', testSaasPixValidation],
     ['provider Asaas PIX + refresh', testAsaasPixProviderAndRefresh],
     ['view faturas + PIX', testSaasInvoiceChargeView],
+    ['ordenacao tabela cobranças', testSaasChargeTableSort],
     ['próximo vencimento pagamento', testAdvanceSubscriptionDueDate],
     ['webhook PAYMENT_RECEIVED idempotente', testWebhookPaymentIdempotency],
     ['webhook PAYMENT_OVERDUE', testWebhookOverdueEvent],
