@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   backfillSaasCashForPaidCharges,
+  computeSaasCashHiddenByMarcoFromRows,
   computeSaasCashSummaryFromRows,
   createSaasCashIncomeFromChargePaid,
   ensureSaasCashIncomeForPaidCharge,
@@ -27,6 +28,7 @@ import {
   filterMovementsByCashStartAt,
   effectiveSaasCashFromDate,
   isSaasFinancialRecordAfterStartAt,
+  parseSaasCashStartAtInput,
   sumSaasReceivedRevenue,
 } from '../lib/saasFinanceSettings';
 import { computeSaasBillingMetrics } from '../lib/saasBilling';
@@ -578,6 +580,58 @@ function testWebhookIntegration() {
   console.log('OK testWebhookIntegration');
 }
 
+function testHiddenByMarcoSummaryAndCashVisibility() {
+  const marcoJun21 = '2026-06-21T12:38:00.000Z';
+  const marcoJun01 = '2026-06-01T00:00:00.000Z';
+
+  const movements = [
+    {
+      type: 'income' as const,
+      amount: 10,
+      movement_date: '2026-06-10',
+      created_at: '2026-06-10T09:00:00.000Z',
+    },
+    {
+      type: 'income' as const,
+      amount: 5,
+      movement_date: '2026-06-25',
+      created_at: '2026-06-25T15:00:00.000Z',
+    },
+  ];
+
+  const hiddenJun21 = computeSaasCashHiddenByMarcoFromRows(movements, marcoJun21);
+  assert(hiddenJun21.hiddenCount === 1, 'jun21 oculta movimento anterior');
+  assert(hiddenJun21.hiddenIncome === 10, 'jun21 ignora R$ 10');
+  assert(hiddenJun21.latestHiddenAt === '2026-06-10T09:00:00.000Z', 'jun21 maior data ignorada');
+
+  const hiddenJun01 = computeSaasCashHiddenByMarcoFromRows(movements, marcoJun01);
+  assert(hiddenJun01.hiddenCount === 0, 'jun01 não oculta pagamento R$ 10');
+
+  const visible = filterMovementsByCashStartAt(
+    movements.map((m) => ({ movement_date: m.movement_date, created_at: m.created_at })),
+    marcoJun01,
+  );
+  assert(visible.length === 2, 'jun01 exibe ambos no caixa');
+
+  const parsed = parseSaasCashStartAtInput('2026-06-01T00:00');
+  assert(parsed.includes('2026-06-01'), 'parse datetime-local jun01');
+
+  const cashPanel = read('components/master/saas/SaasCashPanel.tsx');
+  assert(cashPanel.includes('SaasCashHiddenByMarcoAlert'), 'alerta ocultos no painel');
+  assert(cashPanel.includes('formatHiddenMarcoToast'), 'toast explica ocultos');
+  assert(cashPanel.includes('Reprocessar pagas'), 'botão reprocessar');
+  assert(cashPanel.includes('datetime-local'), 'marco personalizado');
+
+  const reprocessRoute = read('app/api/master/saas-cash/reprocess-paid/route.ts');
+  assert(reprocessRoute.includes('reprocessSaasCashForPaidCharges'), 'rota reprocessar');
+
+  const dashboard = read('lib/masterDashboardData.ts');
+  assert(dashboard.includes('sumSaasCashReceivedIncome'), 'dashboard usa caixa');
+  assert(dashboard.includes('receivedRevenueHiddenCount'), 'dashboard expõe ocultos');
+
+  console.log('OK testHiddenByMarcoSummaryAndCashVisibility');
+}
+
 function testExportRespectsFilteredMovements() {
   const movements = [
     {
@@ -745,7 +799,7 @@ function testDashboardFinanceStartAtFilters() {
   const dashboard = read('lib/masterDashboardData.ts');
   assert(dashboard.includes('applySaasFinanceStartAtFilter'), 'master dashboard filtra');
   assert(dashboard.includes('getSaasCashStartAt'), 'master dashboard lê marco');
-  assert(dashboard.includes('sumSaasReceivedRevenue'), 'master dashboard receita central');
+  assert(dashboard.includes('sumSaasCashReceivedIncome'), 'master dashboard receita do caixa');
 
   const financePage = read('app/saas-finance/page.tsx');
   assert(financePage.includes('applySaasFinanceStartAtFilter'), 'financeiro SaaS filtra');
@@ -902,7 +956,8 @@ function testUiLoadsWithoutMovements() {
   assert(panel.includes('ZERAR CAIXA'), 'confirmação digitada');
   assert(panel.includes('startAtConfirmText'), 'campo confirmação');
   assert(panel.includes('canConfirmStartAt'), 'botão confirmar condicional');
-  assert(panel.includes('SaasFinanceStartAtBanner'), 'aviso marco');
+  assert(panel.includes('SaasCashHiddenByMarcoAlert'), 'alerta marco ocultos');
+  assert(panel.includes('formatBackfillSummary'), 'mensagem backfill ocultos');
   assert(panel.includes('isSuperAdmin'), 'botão restrito super admin');
   assert(saasCashSourceLabel('asaas_webhook') === 'Asaas', 'label Asaas');
   assert(saasCashSourceLabel('asaas_fee') === 'Tarifa', 'label Tarifa');
@@ -928,6 +983,7 @@ async function main() {
   await testSyncAsaasRespectsCashStartAt();
   await testSyncAsaasDoesNotDuplicate();
   testKpisAfterWithdrawalScenario();
+  testHiddenByMarcoSummaryAndCashVisibility();
   testExportRespectsFilteredMovements();
   testCashStartAtFiltersWithoutDeleting();
   testDashboardFinanceStartAtFilters();

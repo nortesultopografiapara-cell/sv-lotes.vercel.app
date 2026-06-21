@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertSuperAdmin, createServiceSupabase } from '@/lib/apiSuperAdmin';
-import {
-  getSaasCashStartAt,
-  parseSaasCashStartAtInput,
-  setSaasCashStartAt,
-} from '@/lib/saasFinanceSettings';
+import { getSaasCashStartAt } from '@/lib/saasFinanceSettings';
 import { loadSaasCashView, reprocessSaasCashForPaidCharges } from '@/lib/saasCashMovements';
 
 export const runtime = 'nodejs';
@@ -22,17 +18,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: auth.error }, { status: 403 });
     }
 
-    const startAtIso = body.startAt
-      ? parseSaasCashStartAtInput(String(body.startAt))
-      : new Date().toISOString();
-
-    const cashStartAt = await setSaasCashStartAt(supabaseAdmin, {
-      at: startAtIso,
-      userId: body.userId,
-    });
-
     const fromDate = String(body.fromDate || '').split('T')[0] || undefined;
     const toDate = String(body.toDate || '').split('T')[0] || undefined;
+    const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
 
     const reprocess = await reprocessSaasCashForPaidCharges(supabaseAdmin, {
       fromDate,
@@ -57,32 +45,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      cashStartAt,
       reprocess,
-      movements: view.movements,
-      summary: view.summary,
-      hiddenByMarco: view.hiddenByMarco,
-      backfill: reprocess.backfill,
+      ...view,
     });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Erro ao definir marco inicial';
+    const message = e instanceof Error ? e.message : 'Erro ao reprocessar cobranças pagas';
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-export async function GET(request: Request) {
-  const { client: supabaseAdmin, error: configError } = createServiceSupabase();
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: configError }, { status: 500 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId');
-  const auth = await assertSuperAdmin(supabaseAdmin, userId);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 403 });
-  }
-
-  const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
-  return NextResponse.json({ cashStartAt });
 }

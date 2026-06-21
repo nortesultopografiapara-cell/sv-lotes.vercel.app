@@ -9,10 +9,11 @@ import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
 import { computeSaasBillingMetrics } from '@/lib/saasBilling';
 import {
   applySaasFinanceStartAtFilter,
+  formatSaasCashStartAtLabel,
   getSaasCashStartAt,
   isSaasFinancialRecordAfterStartAt,
-  sumSaasReceivedRevenue,
 } from '@/lib/saasFinanceSettings';
+import { sumSaasCashReceivedIncome } from '@/lib/saasCashMovements';
 
 export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
 
@@ -48,6 +49,8 @@ export type MasterDashboardData = {
     activeSubscriptions: number;
     mrr: number;
     receivedRevenue: number;
+    receivedRevenueHiddenCount: number;
+    receivedRevenueHiddenTotal: number;
     revenueToReceive: number;
     delinquencyAmount: number;
     totalUsers: number;
@@ -66,6 +69,7 @@ export type MasterDashboardData = {
   alerts: MasterDashboardAlert[];
   recentCompanies: MasterRecentCompany[];
   cashStartAt: string | null;
+  receivedRevenueSource: 'saas_cash_movements';
   errors: string[];
 };
 
@@ -221,11 +225,11 @@ export async function loadMasterDashboardData(
   companies.forEach((c) => {
     if (isBillableCompany(c)) activeSubscriptions++;
   });
-  const paymentsReceived = sumSaasReceivedRevenue(payments, cashStartAt);
+  const paymentsReceivedFromCash = await sumSaasCashReceivedIncome(supabase, cashStartAt);
   const billingMetrics = computeSaasBillingMetrics(
     invoices as Parameters<typeof computeSaasBillingMetrics>[0],
     mrr,
-    paymentsReceived,
+    paymentsReceivedFromCash.visibleTotal,
   );
 
   let totalLots = blocksRes.count ?? 0;
@@ -389,7 +393,9 @@ export async function loadMasterDashboardData(
       inactiveCompanies,
       activeSubscriptions,
       mrr,
-      receivedRevenue: paymentsReceived,
+      receivedRevenue: paymentsReceivedFromCash.visibleTotal,
+      receivedRevenueHiddenCount: paymentsReceivedFromCash.hiddenCount,
+      receivedRevenueHiddenTotal: paymentsReceivedFromCash.hiddenTotal,
       revenueToReceive: billingMetrics.revenueToReceive,
       delinquencyAmount: billingMetrics.delinquencyAmount,
       totalUsers: usersRes.count ?? 0,
@@ -403,6 +409,7 @@ export async function loadMasterDashboardData(
     alerts,
     recentCompanies,
     cashStartAt,
+    receivedRevenueSource: 'saas_cash_movements',
     errors,
   };
 

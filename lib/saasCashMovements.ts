@@ -108,7 +108,25 @@ export type BackfillSaasCashResult = {
   checked: number;
   backfilled: number;
   alreadyHadMovement: number;
+  hiddenByCashStartAt: number;
+  hiddenByCashStartAtAmount: number;
+  existingButHidden: number;
+  existingButHiddenAmount: number;
   diagnostics: SaasCashIncomeDiagnostic[];
+};
+
+export type SaasCashHiddenByMarcoSummary = {
+  hiddenCount: number;
+  hiddenIncome: number;
+  hiddenExpense: number;
+  hiddenNet: number;
+  latestHiddenAt: string | null;
+};
+
+export type SaasCashReceivedIncomeSummary = {
+  visibleTotal: number;
+  hiddenTotal: number;
+  hiddenCount: number;
 };
 
 export type SyncAsaasCashMovementsInput = {
@@ -306,6 +324,80 @@ function cashVisibilityAfterStartAt(
 ): boolean {
   if (!cashStartAt) return true;
   return isSaasFinancialRecordAfterStartAt({ movement_date: movementDate }, cashStartAt);
+}
+
+function movementRowVisibility(
+  row: Pick<SaasCashMovement, 'movement_date' | 'created_at'>,
+  cashStartAt: string | null,
+): boolean {
+  if (!cashStartAt) return true;
+  return isSaasFinancialRecordAfterStartAt(
+    {
+      movement_date: row.movement_date,
+      created_at: row.created_at,
+    },
+    cashStartAt,
+  );
+}
+
+/** Estatísticas de movimentações ocultas pelo marco financeiro no período. */
+export function computeSaasCashHiddenByMarcoFromRows(
+  movements: Pick<SaasCashMovement, 'type' | 'amount' | 'movement_date' | 'created_at'>[],
+  cashStartAt: string | null,
+): SaasCashHiddenByMarcoSummary {
+  if (!cashStartAt) {
+    return {
+      hiddenCount: 0,
+      hiddenIncome: 0,
+      hiddenExpense: 0,
+      hiddenNet: 0,
+      latestHiddenAt: null,
+    };
+  }
+
+  let hiddenCount = 0;
+  let hiddenIncome = 0;
+  let hiddenExpense = 0;
+  let latestHiddenMs: number | null = null;
+  let latestHiddenAt: string | null = null;
+
+  for (const row of movements) {
+    if (movementRowVisibility(row, cashStartAt)) continue;
+
+    hiddenCount += 1;
+    const amount = Number(row.amount || 0);
+    if (row.type === 'expense') {
+      hiddenExpense += amount;
+    } else {
+      hiddenIncome += amount;
+    }
+
+    const instant =
+      parseFinancialInstant(String(row.created_at || '')) ??
+      parseFinancialInstant(String(row.movement_date || ''));
+    if (instant != null && (latestHiddenMs == null || instant > latestHiddenMs)) {
+      latestHiddenMs = instant;
+      latestHiddenAt = row.created_at || `${row.movement_date}T12:00:00.000Z`;
+    }
+  }
+
+  return {
+    hiddenCount,
+    hiddenIncome,
+    hiddenExpense,
+    hiddenNet: hiddenIncome - hiddenExpense,
+    latestHiddenAt,
+  };
+}
+
+function parseFinancialInstant(raw: string): number | null {
+  const normalized = String(raw || '').trim();
+  if (!normalized) return null;
+  const iso = normalized.includes('T')
+    ? normalized
+    : `${normalized.split('T')[0]}T12:00:00`;
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /** Registra entrada automática quando cobrança SaaS é paga (idempotente por asaas_payment_id). */
@@ -695,6 +787,10 @@ export async function backfillSaasCashForPaidCharges(
   const diagnostics: SaasCashIncomeDiagnostic[] = [];
   let backfilled = 0;
   let alreadyHadMovement = 0;
+  let hiddenByCashStartAt = 0;
+  let hiddenByCashStartAtAmount = 0;
+  let existingButHidden = 0;
+  let existingButHiddenAmount = 0;
 
   for (const row of charges || []) {
     const charge = row as Pick<
@@ -709,6 +805,12 @@ export async function backfillSaasCashForPaidCharges(
     );
     if (existing) {
       alreadyHadMovement += 1;
+      if (cashStartAt && !movementRowVisibility(existing, cashStartAt)) {
+        existingButHidden += 1;
+        if (existing.type === 'income') {
+          existingButHiddenAmount += Number(existing.amount || 0);
+        }
+      }
       continue;
     }
 
@@ -722,16 +824,31 @@ export async function backfillSaasCashForPaidCharges(
       { cashStartAt },
     );
     diagnostics.push(result.diagnostic);
-    if (result.created) backfilled += 1;
+    if (result.created) {
+      backfilled += 1;
+      if (result.diagnostic.skip_reason === 'hidden_by_cash_start_at') {
+        hiddenByCashStartAt += 1;
+        hiddenByCashStartAtAmount += Number(result.diagnostic.amount || 0);
+      }
+    }
   }
 
-  if (backfilled > 0 || diagnostics.some((d) => d.skip_reason === 'hidden_by_cash_start_at')) {
+  if (
+    backfilled > 0 ||
+    hiddenByCashStartAt > 0 ||
+    existingButHidden > 0 ||
+    diagnostics.some((d) => d.skip_reason === 'hidden_by_cash_start_at')
+  ) {
     console.warn(
       '[saas-cash-backfill]',
       JSON.stringify({
         checked: (charges || []).length,
         backfilled,
         alreadyHadMovement,
+        hiddenByCashStartAt,
+        hiddenByCashStartAtAmount,
+        existingButHidden,
+        existingButHiddenAmount,
         cashStartAt,
         fromDate: options.fromDate ?? null,
         toDate: options.toDate ?? null,
@@ -743,8 +860,171 @@ export async function backfillSaasCashForPaidCharges(
     checked: (charges || []).length,
     backfilled,
     alreadyHadMovement,
+    hiddenByCashStartAt,
+    hiddenByCashStartAtAmount,
+    existingButHidden,
+    existingButHiddenAmount,
     diagnostics,
   };
+}
+
+/** Lista movimentações do período sem filtrar pelo marco (para estatísticas de ocultos). */
+export async function listSaasCashMovementsInPeriod(
+  supabaseAdmin: SupabaseClient,
+  options: Omit<ListSaasCashMovementsOptions, 'cashStartAt'> = {},
+): Promise<SaasCashMovement[]> {
+  let query = supabaseAdmin
+    .from('saas_cash_movements')
+    .select('*')
+    .order('movement_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (options.fromDate) {
+    query = query.gte('movement_date', options.fromDate);
+  }
+  if (options.toDate) {
+    query = query.lte('movement_date', options.toDate);
+  }
+  if (options.companyId) {
+    query = query.eq('company_id', options.companyId);
+  }
+  if (options.type && options.type !== 'all') {
+    query = query.eq('type', options.type);
+  }
+  if (options.limit && options.limit > 0) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message || 'Falha ao listar movimentações do caixa SaaS');
+  }
+
+  const rows = (data || []) as Record<string, unknown>[];
+  if (rows.length === 0) return [];
+
+  const companyIds = [
+    ...new Set(
+      rows
+        .map((row) => (row.company_id ? String(row.company_id) : ''))
+        .filter(Boolean),
+    ),
+  ];
+
+  const companyNames = new Map<string, string>();
+  if (companyIds.length > 0) {
+    const { data: companies } = await supabaseAdmin
+      .from('companies')
+      .select('id, name, fantasy_name')
+      .in('id', companyIds);
+
+    for (const company of companies || []) {
+      const id = String((company as { id?: string }).id || '');
+      const name =
+        String((company as { fantasy_name?: string }).fantasy_name || '') ||
+        String((company as { name?: string }).name || '');
+      if (id) companyNames.set(id, name || '—');
+    }
+  }
+
+  return rows.map((row) => {
+    const movement = parseMovementRow(row);
+    if (movement.company_id) {
+      movement.company_name = companyNames.get(movement.company_id) || null;
+    }
+    return movement;
+  });
+}
+
+export async function computeSaasCashHiddenByMarcoInPeriod(
+  supabaseAdmin: SupabaseClient,
+  options: ListSaasCashMovementsOptions,
+): Promise<SaasCashHiddenByMarcoSummary> {
+  const rows = await listSaasCashMovementsInPeriod(supabaseAdmin, {
+    fromDate: options.fromDate,
+    toDate: options.toDate,
+    companyId: options.companyId,
+    type: options.type,
+  });
+  return computeSaasCashHiddenByMarcoFromRows(rows, options.cashStartAt ?? null);
+}
+
+/** Receita recebida visível/oculta — mesma fonte do Caixa SaaS (entradas). */
+export async function sumSaasCashReceivedIncome(
+  supabaseAdmin: SupabaseClient,
+  cashStartAt: string | null,
+): Promise<SaasCashReceivedIncomeSummary> {
+  const { data, error } = await supabaseAdmin
+    .from('saas_cash_movements')
+    .select('type, amount, movement_date, created_at')
+    .eq('type', 'income');
+
+  if (error) {
+    throw new Error(error.message || 'Falha ao somar entradas do caixa SaaS');
+  }
+
+  let visibleTotal = 0;
+  let hiddenTotal = 0;
+  let hiddenCount = 0;
+
+  for (const row of data || []) {
+    const amount = Number(row.amount || 0);
+    const movement = {
+      movement_date: String(row.movement_date || '').split('T')[0],
+      created_at: row.created_at ? String(row.created_at) : null,
+      type: 'income' as const,
+      amount,
+    };
+    if (movementRowVisibility(movement, cashStartAt)) {
+      visibleTotal += amount;
+    } else {
+      hiddenTotal += amount;
+      hiddenCount += 1;
+    }
+  }
+
+  return { visibleTotal, hiddenTotal, hiddenCount };
+}
+
+export async function reprocessSaasCashForPaidCharges(
+  supabaseAdmin: SupabaseClient,
+  input: {
+    fromDate?: string;
+    toDate?: string;
+    companyId?: string;
+    createdBy?: string | null;
+    cashStartAt?: string | null;
+    syncAsaas?: boolean;
+  },
+): Promise<{
+  backfill: BackfillSaasCashResult;
+  sync?: SyncAsaasCashMovementsResult;
+  cashStartAt: string | null;
+}> {
+  const cashStartAt =
+    input.cashStartAt !== undefined
+      ? input.cashStartAt
+      : await getSaasCashStartAt(supabaseAdmin);
+
+  const backfill = await backfillSaasCashForPaidCharges(supabaseAdmin, {
+    companyId: input.companyId,
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    createdBy: input.createdBy ?? null,
+    cashStartAt,
+  });
+
+  let sync: SyncAsaasCashMovementsResult | undefined;
+  if (input.syncAsaas && input.fromDate && input.toDate) {
+    sync = await syncAsaasCashMovements(supabaseAdmin, {
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      createdBy: input.createdBy ?? null,
+      cashStartAt,
+    });
+  }
+
+  return { backfill, sync, cashStartAt };
 }
 
 export async function listSaasCashMovements(
@@ -852,6 +1132,7 @@ export async function loadSaasCashView(
   summary: SaasCashSummary;
   cashStartAt: string | null;
   backfill?: BackfillSaasCashResult;
+  hiddenByMarco: SaasCashHiddenByMarcoSummary;
 }> {
   let backfill: BackfillSaasCashResult | undefined;
   if (backfillOptions?.enabled !== false) {
@@ -871,11 +1152,12 @@ export async function loadSaasCashView(
   }
 
   const queryOptions = { ...options, cashStartAt };
-  const [movements, summary] = await Promise.all([
+  const [movements, summary, hiddenByMarco] = await Promise.all([
     listSaasCashMovements(supabaseAdmin, queryOptions),
     getSaasCashSummary(supabaseAdmin, queryOptions),
+    computeSaasCashHiddenByMarcoInPeriod(supabaseAdmin, queryOptions),
   ]);
-  return { movements, summary, cashStartAt, backfill };
+  return { movements, summary, cashStartAt, backfill, hiddenByMarco };
 }
 
 async function findExistingByAsaasMovementId(

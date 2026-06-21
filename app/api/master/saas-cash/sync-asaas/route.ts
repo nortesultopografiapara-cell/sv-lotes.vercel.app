@@ -64,7 +64,10 @@ export async function POST(request: Request) {
       success: true,
       sync: syncResult,
       backfill,
-      ...view,
+      movements: view.movements,
+      summary: view.summary,
+      cashStartAt: view.cashStartAt,
+      hiddenByMarco: view.hiddenByMarco,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Erro ao sincronizar Asaas';

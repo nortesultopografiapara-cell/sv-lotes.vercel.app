@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react';
 import type { SaasPanelView } from '@/lib/masterSaasPanel';
 import { formatSaasCashStartAtLabel } from '@/lib/saasFinanceSettings';
+import type { SaasCashHiddenByMarcoSummary } from '@/lib/saasCashMovements';
+import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
   LayoutDashboard,
   Building2,
@@ -135,6 +137,66 @@ export function SaasFinanceStartAtBanner({ cashStartAt }: { cashStartAt?: string
   return (
     <div className="mb-6 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-100/90 text-sm">
       Financeiro contabilizado a partir de {label}
+    </div>
+  );
+}
+
+function formatHiddenInstant(iso: string | null): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+type SaasCashHiddenByMarcoAlertProps = {
+  cashStartAt?: string | null;
+  hiddenByMarco?: SaasCashHiddenByMarcoSummary | null;
+  onAdjustMarco?: () => void;
+};
+
+export function SaasCashHiddenByMarcoAlert({
+  cashStartAt,
+  hiddenByMarco,
+  onAdjustMarco,
+}: SaasCashHiddenByMarcoAlertProps) {
+  const marcoLabel = formatSaasCashStartAtLabel(cashStartAt);
+  if (!marcoLabel || !hiddenByMarco || hiddenByMarco.hiddenCount <= 0) return null;
+
+  return (
+    <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-50 text-sm space-y-2">
+      <p className="font-semibold text-amber-100">
+        {hiddenByMarco.hiddenCount} movimentação(ões) oculta(s) pelo marco financeiro
+      </p>
+      <ul className="text-amber-100/90 space-y-1 list-disc list-inside">
+        <li>
+          Valor ignorado no período:{' '}
+          <strong>{formatSaasCurrency(hiddenByMarco.hiddenNet)}</strong>
+          {' '}(entradas {formatSaasCurrency(hiddenByMarco.hiddenIncome)}, saídas{' '}
+          {formatSaasCurrency(hiddenByMarco.hiddenExpense)})
+        </li>
+        <li>Maior data/hora ignorada: {formatHiddenInstant(hiddenByMarco.latestHiddenAt)}</li>
+        <li>Marco atual: {marcoLabel}</li>
+      </ul>
+      <p className="text-xs text-amber-100/80">
+        Os dados não foram apagados — apenas ficam fora do Caixa e da Receita Recebida enquanto
+        forem anteriores ao marco. Para incluí-los, retroceda o marco (ex.: 01/06/2026 00:00) e
+        reprocessar cobranças pagas.
+      </p>
+      {onAdjustMarco ? (
+        <button
+          type="button"
+          onClick={onAdjustMarco}
+          className="mt-1 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/40 bg-amber-500/15 text-xs font-semibold text-amber-50 hover:bg-amber-500/25"
+        >
+          Ajustar marco financeiro
+        </button>
+      ) : null}
     </div>
   );
 }

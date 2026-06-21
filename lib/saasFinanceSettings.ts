@@ -93,6 +93,30 @@ export function formatSaasCashStartAtLabel(iso: string | null | undefined): stri
   });
 }
 
+/** Valor para input datetime-local (YYYY-MM-DDTHH:mm). */
+export function formatSaasCashStartAtForInput(iso: string | null | undefined): string {
+  const raw = String(iso || '').trim();
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Converte datetime-local ou ISO em instante UTC para persistência. */
+export function parseSaasCashStartAtInput(value?: string | null): string {
+  const raw = String(value || '').trim();
+  if (!raw) return new Date().toISOString();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return new Date(raw).toISOString();
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Data/hora do marco financeiro inválida.');
+  }
+  return parsed.toISOString();
+}
+
 /** Alias semântico — marco financeiro SaaS (Caixa + dashboards). */
 export const getSaasFinanceStartAt = getSaasCashStartAt;
 

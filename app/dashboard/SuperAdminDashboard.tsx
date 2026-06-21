@@ -271,7 +271,11 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
         <KpiCard
           title="Receita Recebida"
           value={formatCurrency(stats.receivedRevenue)}
-          sub="Pagamentos confirmados"
+          sub={
+            dashboard.cashStartAt && stats.receivedRevenueHiddenCount > 0
+              ? `${stats.receivedRevenueHiddenCount} entrada(s) oculta(s) pelo marco (${formatCurrency(stats.receivedRevenueHiddenTotal)}) — fonte: Caixa SaaS`
+              : 'Entradas confirmadas no Caixa SaaS'
+          }
           icon={<Banknote className="w-5 h-5" />}
           iconClass="bg-emerald-500/10 text-emerald-400"
           isCurrency

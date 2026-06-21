@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, RefreshCw, RotateCcw, Wallet, X } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, CloudDownload, FileSpreadsheet, FileText, RefreshCw, RotateCcw, Wallet, X, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
@@ -12,10 +12,13 @@ import {
 import {
   saasCashSourceLabel,
   saasCashTypeLabel,
+  type SaasCashHiddenByMarcoSummary,
   type SaasCashMovement,
   type SaasCashSummary,
+  type BackfillSaasCashResult,
 } from '@/lib/saasCashMovements';
-import { SaasFinanceStartAtBanner, SaasMetricCard } from './SaasPanelUi';
+import { formatSaasCashStartAtForInput } from '@/lib/saasFinanceSettings';
+import { SaasCashHiddenByMarcoAlert, SaasFinanceStartAtBanner, SaasMetricCard } from './SaasPanelUi';
 
 const FINANCE_START_CONFIRMATION = 'ZERAR CAIXA';
 
@@ -35,6 +38,33 @@ function currentMonthRange(): { from: string; to: string } {
     from: `${year}-${month}-01`,
     to: `${year}-${month}-${String(lastDay).padStart(2, '0')}`,
   };
+}
+
+function formatBackfillSummary(backfill?: BackfillSaasCashResult | null): string | null {
+  if (!backfill) return null;
+  const parts: string[] = [];
+  if (backfill.backfilled > 0) {
+    parts.push(`${backfill.backfilled} cobrança(s) lançada(s) no caixa`);
+  }
+  if (backfill.hiddenByCashStartAt > 0) {
+    parts.push(
+      `${backfill.hiddenByCashStartAt} lançada(s) oculta(s) pelo marco (${formatSaasCurrency(backfill.hiddenByCashStartAtAmount)})`,
+    );
+  }
+  if (backfill.existingButHidden > 0) {
+    parts.push(
+      `${backfill.existingButHidden} já existente(s) mas oculta(s) (${formatSaasCurrency(backfill.existingButHiddenAmount)})`,
+    );
+  }
+  if (backfill.alreadyHadMovement > 0 && backfill.backfilled === 0) {
+    parts.push(`${backfill.alreadyHadMovement} cobrança(s) já tinham movimentação`);
+  }
+  return parts.length > 0 ? parts.join('. ') + '.' : null;
+}
+
+function formatHiddenMarcoToast(hidden?: SaasCashHiddenByMarcoSummary | null): string | null {
+  if (!hidden || hidden.hiddenCount <= 0) return null;
+  return `${hidden.hiddenCount} movimentação(ões) no período estão ocultas pelo marco (${formatSaasCurrency(hidden.hiddenNet)} ignorados). Ajuste o marco ou reprocesse cobranças pagas.`;
 }
 
 function formatDateBr(iso: string): string {
@@ -81,8 +111,12 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
   const [cashStartAt, setCashStartAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [hiddenByMarco, setHiddenByMarco] = useState<SaasCashHiddenByMarcoSummary | null>(null);
   const [startAtModalOpen, setStartAtModalOpen] = useState(false);
   const [startAtConfirmText, setStartAtConfirmText] = useState('');
+  const [startAtMode, setStartAtMode] = useState<'now' | 'custom'>('now');
+  const [customStartAt, setCustomStartAt] = useState('2026-06-01T00:00');
+  const [reprocessing, setReprocessing] = useState(false);
 
   const isSuperAdmin = String(user?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
@@ -117,6 +151,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         },
       );
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
+      setHiddenByMarco(body.hiddenByMarco ?? null);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro ao carregar caixa SaaS';
       setError(message);
@@ -128,6 +163,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         movementCount: 0,
       });
       setCashStartAt(null);
+      setHiddenByMarco(null);
     } finally {
       setLoading(false);
     }
@@ -175,6 +211,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         },
       );
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
+      setHiddenByMarco(body.hiddenByMarco ?? null);
       const sync = body.sync || {};
       const parts = [
         `${sync.created ?? 0} nova(s)`,
@@ -185,7 +222,12 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       if (sync.skippedBeforeStartAt) {
         parts.push(`${sync.skippedBeforeStartAt} antes do marco`);
       }
-      setSyncMessage(`Asaas sincronizado: ${parts.join(', ')}.`);
+      const backfillToast = formatBackfillSummary(body.backfill);
+      const hiddenToast = formatHiddenMarcoToast(body.hiddenByMarco);
+      const messages = [`Asaas sincronizado: ${parts.join(', ')}.`];
+      if (backfillToast) messages.push(backfillToast);
+      if (hiddenToast) messages.push(hiddenToast);
+      setSyncMessage(messages.join(' '));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro ao sincronizar Asaas';
       setError(message);
@@ -247,10 +289,12 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
+          startAt: startAtMode === 'custom' ? customStartAt : undefined,
           fromDate,
           toDate,
           companyId: companyFilter !== 'all' ? companyFilter : undefined,
           type: typeFilter,
+          syncAsaas: true,
         }),
       });
       const body = await res.json();
@@ -260,7 +304,20 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       setMovements(Array.isArray(body.movements) ? body.movements : []);
       setSummary(body.summary || summary);
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
-      setSyncMessage('Marco financeiro atualizado. Dashboards e Caixa passam a contar a partir de agora.');
+      setHiddenByMarco(body.hiddenByMarco ?? null);
+      const backfillToast = formatBackfillSummary(body.backfill);
+      const hiddenToast = formatHiddenMarcoToast(body.hiddenByMarco);
+      setSyncMessage(
+        [
+          startAtMode === 'custom'
+            ? `Marco financeiro ajustado para ${customStartAt.replace('T', ' ')}. Backfill e sync executados.`
+            : 'Marco financeiro atualizado. Backfill e sync executados.',
+          backfillToast,
+          hiddenToast,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      );
       setStartAtModalOpen(false);
       setStartAtConfirmText('');
     } catch (e: unknown) {
@@ -277,13 +334,64 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
     typeFilter,
     summary,
     startAtConfirmText,
+    startAtMode,
+    customStartAt,
   ]);
+
+  const handleReprocessPaid = useCallback(async () => {
+    if (!user?.id || !isSuperAdmin) return;
+    setReprocessing(true);
+    setError(null);
+    setSyncMessage(null);
+    try {
+      const res = await fetch('/api/master/saas-cash/reprocess-paid', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          fromDate,
+          toDate,
+          companyId: companyFilter !== 'all' ? companyFilter : undefined,
+          type: typeFilter,
+          syncAsaas: true,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || 'Falha ao reprocessar cobranças pagas');
+      }
+      setMovements(Array.isArray(body.movements) ? body.movements : []);
+      setSummary(
+        body.summary || {
+          periodIncome: 0,
+          periodExpense: 0,
+          netResult: 0,
+          movementCount: 0,
+        },
+      );
+      setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
+      setHiddenByMarco(body.hiddenByMarco ?? null);
+      const backfill = body.reprocess?.backfill ?? body.backfill;
+      const backfillToast = formatBackfillSummary(backfill);
+      const hiddenToast = formatHiddenMarcoToast(body.hiddenByMarco);
+      setSyncMessage(
+        ['Cobranças pagas reprocessadas.', backfillToast, hiddenToast].filter(Boolean).join(' '),
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao reprocessar cobranças pagas');
+    } finally {
+      setReprocessing(false);
+    }
+  }, [user?.id, isSuperAdmin, fromDate, toDate, companyFilter, typeFilter]);
 
   const openStartAtModal = useCallback(() => {
     if (!isSuperAdmin) return;
     setStartAtConfirmText('');
+    setStartAtMode('now');
+    setCustomStartAt(formatSaasCashStartAtForInput(cashStartAt) || '2026-06-01T00:00');
     setStartAtModalOpen(true);
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, cashStartAt]);
 
   const canConfirmStartAt = startAtConfirmText.trim() === FINANCE_START_CONFIRMATION;
 
@@ -341,8 +449,17 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
               </button>
               <button
                 type="button"
+                onClick={() => void handleReprocessPaid()}
+                disabled={loading || syncing || reprocessing || !!exporting || settingStartAt}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-cyan-500/30 bg-cyan-600/15 text-sm text-cyan-100 hover:bg-cyan-600/25 disabled:opacity-50"
+              >
+                <Zap className={`w-4 h-4 ${reprocessing ? 'animate-pulse' : ''}`} />
+                {reprocessing ? 'Reprocessando…' : 'Reprocessar pagas'}
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleSyncAsaas()}
-                disabled={loading || syncing || !!exporting || settingStartAt}
+                disabled={loading || syncing || reprocessing || !!exporting || settingStartAt}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-emerald-500/30 bg-emerald-600/20 text-sm text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
               >
                 <CloudDownload className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
@@ -364,8 +481,20 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
 
       <SaasFinanceStartAtBanner cashStartAt={cashStartAt} />
 
+      <SaasCashHiddenByMarcoAlert
+        cashStartAt={cashStartAt}
+        hiddenByMarco={hiddenByMarco}
+        onAdjustMarco={isSuperAdmin ? openStartAtModal : undefined}
+      />
+
       {syncMessage ? (
-        <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-100 text-sm">
+        <div
+          className={`p-3 rounded-lg border text-sm ${
+            hiddenByMarco && hiddenByMarco.hiddenCount > 0
+              ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+          }`}
+        >
           {syncMessage}
         </div>
       ) : null}
@@ -560,12 +689,43 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
             </div>
             <div className="px-6 py-5 space-y-4">
               <p className="text-sm text-gray-300 leading-relaxed">
-                Isso não apaga dados antigos. Apenas define que os dashboards financeiros SaaS
-                e o Caixa passarão a contar a partir de agora.
+                Isso não apaga dados antigos. Define a partir de quando o Caixa SaaS e a Receita
+                Recebida passam a contar movimentações. Você pode avançar o marco (zerar visão) ou
+                retroceder (ex.: 01/06/2026 00:00) para incluir pagamentos anteriores.
               </p>
               <p className="text-xs text-amber-200/90">
-                Empresas ativas, usuários, corretores e projetos não são afetados.
+                Após confirmar, o sistema reprocessa cobranças pagas e sincroniza o Asaas no período
+                selecionado na tela.
               </p>
+              <fieldset className="space-y-2">
+                <legend className="text-sm text-gray-400 mb-2">Nova data do marco</legend>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="radio"
+                    name="startAtMode"
+                    checked={startAtMode === 'now'}
+                    onChange={() => setStartAtMode('now')}
+                  />
+                  A partir de agora
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="radio"
+                    name="startAtMode"
+                    checked={startAtMode === 'custom'}
+                    onChange={() => setStartAtMode('custom')}
+                  />
+                  Data/hora personalizada
+                </label>
+                {startAtMode === 'custom' ? (
+                  <input
+                    type="datetime-local"
+                    value={customStartAt}
+                    onChange={(e) => setCustomStartAt(e.target.value)}
+                    className="mt-1 w-full bg-[#0d1117] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white"
+                  />
+                ) : null}
+              </fieldset>
               <label className="block text-sm text-gray-400">
                 Digite <strong className="text-white">{FINANCE_START_CONFIRMATION}</strong> para confirmar
                 <input
