@@ -484,6 +484,7 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       <SaasCashHiddenByMarcoAlert
         cashStartAt={cashStartAt}
         hiddenByMarco={hiddenByMarco}
+        userId={user?.id}
         onAdjustMarco={isSuperAdmin ? openStartAtModal : undefined}
       />
 

@@ -34,6 +34,12 @@ import {
 import { computeSaasBillingMetrics } from '../lib/saasBilling';
 import { sumReceivedRevenue } from '../lib/masterSaasPayments';
 import { calculateMrrFromCompanies } from '../lib/companyPricing';
+import {
+  buildSaasCashHiddenAlertStorageKey,
+  readSaasCashHiddenAlertExpanded,
+  shouldShowSaasCashHiddenAlert,
+  writeSaasCashHiddenAlertExpanded,
+} from '../lib/saasCashHiddenAlertPrefs';
 
 const ROOT = process.cwd();
 
@@ -618,18 +624,45 @@ function testHiddenByMarcoSummaryAndCashVisibility() {
 
   const cashPanel = read('components/master/saas/SaasCashPanel.tsx');
   assert(cashPanel.includes('SaasCashHiddenByMarcoAlert'), 'alerta ocultos no painel');
-  assert(cashPanel.includes('formatHiddenMarcoToast'), 'toast explica ocultos');
-  assert(cashPanel.includes('Reprocessar pagas'), 'botão reprocessar');
-  assert(cashPanel.includes('datetime-local'), 'marco personalizado');
+  assert(cashPanel.includes('userId={user?.id}'), 'preferência por usuário');
 
-  const reprocessRoute = read('app/api/master/saas-cash/reprocess-paid/route.ts');
-  assert(reprocessRoute.includes('reprocessSaasCashForPaidCharges'), 'rota reprocessar');
+  const panelUi = read('components/master/saas/SaasPanelUi.tsx');
+  assert(panelUi.includes('Ver detalhes'), 'barra compacta ver detalhes');
+  assert(panelUi.includes('Ocultar detalhes'), 'recolher detalhes');
+  assert(panelUi.includes('readSaasCashHiddenAlertExpanded'), 'lê preferência localStorage');
+  assert(panelUi.includes('writeSaasCashHiddenAlertExpanded'), 'salva preferência localStorage');
 
-  const dashboard = read('lib/masterDashboardData.ts');
-  assert(dashboard.includes('sumSaasCashReceivedIncome'), 'dashboard usa caixa');
-  assert(dashboard.includes('receivedRevenueHiddenCount'), 'dashboard expõe ocultos');
+  const dashboard = read('app/dashboard/SuperAdminDashboard.tsx');
+  assert(dashboard.includes('oculta(s) pelo marco'), 'dashboard texto discreto');
+  assert(!dashboard.includes('SaasCashHiddenByMarcoAlert'), 'dashboard sem alerta grande');
 
   console.log('OK testHiddenByMarcoSummaryAndCashVisibility');
+}
+
+function testHiddenAlertLocalStoragePrefs() {
+  const storage = new Map<string, string>();
+  const mockStorage = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+  };
+
+  const userId = 'user-abc';
+  const key = buildSaasCashHiddenAlertStorageKey(userId);
+  assert(key.includes(userId), 'chave por usuário');
+  assert(!readSaasCashHiddenAlertExpanded(mockStorage, userId), 'padrão recolhido');
+
+  writeSaasCashHiddenAlertExpanded(mockStorage, userId, true);
+  assert(readSaasCashHiddenAlertExpanded(mockStorage, userId), 'expandido persistido');
+
+  writeSaasCashHiddenAlertExpanded(mockStorage, userId, false);
+  assert(!readSaasCashHiddenAlertExpanded(mockStorage, userId), 'recolhido persistido');
+
+  assert(!shouldShowSaasCashHiddenAlert(0), 'zero ocultos não exibe');
+  assert(shouldShowSaasCashHiddenAlert(16), '16 ocultos exibe barra');
+
+  console.log('OK testHiddenAlertLocalStoragePrefs');
 }
 
 function testExportRespectsFilteredMovements() {
@@ -984,6 +1017,7 @@ async function main() {
   await testSyncAsaasDoesNotDuplicate();
   testKpisAfterWithdrawalScenario();
   testHiddenByMarcoSummaryAndCashVisibility();
+  testHiddenAlertLocalStoragePrefs();
   testExportRespectsFilteredMovements();
   testCashStartAtFiltersWithoutDeleting();
   testDashboardFinanceStartAtFilters();

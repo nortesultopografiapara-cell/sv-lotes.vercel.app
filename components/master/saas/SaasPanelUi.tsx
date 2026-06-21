@@ -1,9 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { SaasPanelView } from '@/lib/masterSaasPanel';
 import { formatSaasCashStartAtLabel } from '@/lib/saasFinanceSettings';
 import type { SaasCashHiddenByMarcoSummary } from '@/lib/saasCashMovements';
+import {
+  readSaasCashHiddenAlertExpanded,
+  writeSaasCashHiddenAlertExpanded,
+} from '@/lib/saasCashHiddenAlertPrefs';
 import { formatSaasCurrency } from '@/lib/companyPricing';
 import {
   LayoutDashboard,
@@ -158,44 +162,116 @@ type SaasCashHiddenByMarcoAlertProps = {
   cashStartAt?: string | null;
   hiddenByMarco?: SaasCashHiddenByMarcoSummary | null;
   onAdjustMarco?: () => void;
+  userId?: string | null;
 };
 
 export function SaasCashHiddenByMarcoAlert({
   cashStartAt,
   hiddenByMarco,
   onAdjustMarco,
+  userId,
 }: SaasCashHiddenByMarcoAlertProps) {
   const marcoLabel = formatSaasCashStartAtLabel(cashStartAt);
-  if (!marcoLabel || !hiddenByMarco || hiddenByMarco.hiddenCount <= 0) return null;
+  const hiddenCount = hiddenByMarco?.hiddenCount ?? 0;
+  const [expanded, setExpanded] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setExpanded(readSaasCashHiddenAlertExpanded(window.localStorage, userId));
+    setHydrated(true);
+  }, [userId]);
+
+  const setExpandedPersisted = useCallback(
+    (next: boolean) => {
+      setExpanded(next);
+      writeSaasCashHiddenAlertExpanded(window.localStorage, userId, next);
+    },
+    [userId],
+  );
+
+  if (!marcoLabel || hiddenCount <= 0) return null;
+
+  const countLabel =
+    hiddenCount === 1
+      ? '1 movimentação oculta pelo marco financeiro'
+      : `${hiddenCount} movimentação(ões) ocultas pelo marco financeiro`;
 
   return (
-    <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-50 text-sm space-y-2">
-      <p className="font-semibold text-amber-100">
-        {hiddenByMarco.hiddenCount} movimentação(ões) oculta(s) pelo marco financeiro
-      </p>
-      <ul className="text-amber-100/90 space-y-1 list-disc list-inside">
-        <li>
-          Valor ignorado no período:{' '}
-          <strong>{formatSaasCurrency(hiddenByMarco.hiddenNet)}</strong>
-          {' '}(entradas {formatSaasCurrency(hiddenByMarco.hiddenIncome)}, saídas{' '}
-          {formatSaasCurrency(hiddenByMarco.hiddenExpense)})
-        </li>
-        <li>Maior data/hora ignorada: {formatHiddenInstant(hiddenByMarco.latestHiddenAt)}</li>
-        <li>Marco atual: {marcoLabel}</li>
-      </ul>
-      <p className="text-xs text-amber-100/80">
-        Os dados não foram apagados — apenas ficam fora do Caixa e da Receita Recebida enquanto
-        forem anteriores ao marco. Para incluí-los, retroceda o marco (ex.: 01/06/2026 00:00) e
-        reprocessar cobranças pagas.
-      </p>
-      {onAdjustMarco ? (
-        <button
-          type="button"
-          onClick={onAdjustMarco}
-          className="mt-1 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400/40 bg-amber-500/15 text-xs font-semibold text-amber-50 hover:bg-amber-500/25"
-        >
-          Ajustar marco financeiro
-        </button>
+    <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 text-amber-50 text-sm overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5">
+        <p className="text-amber-100/95 text-xs sm:text-sm leading-snug min-w-0">
+          <span aria-hidden="true" className="mr-1">
+            ⚠️
+          </span>
+          {countLabel}
+          {!expanded ? (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => setExpandedPersisted(true)}
+                className="text-amber-200 underline underline-offset-2 hover:text-white font-medium whitespace-nowrap"
+              >
+                Ver detalhes
+              </button>
+            </>
+          ) : null}
+        </p>
+        {expanded ? (
+          <button
+            type="button"
+            onClick={() => setExpandedPersisted(false)}
+            className="shrink-0 self-start sm:self-auto text-xs font-medium text-amber-200/90 hover:text-white underline underline-offset-2"
+          >
+            Ocultar detalhes
+          </button>
+        ) : null}
+      </div>
+
+      {expanded && hydrated ? (
+        <div className="border-t border-amber-500/20 px-3 py-3 space-y-3 text-xs sm:text-sm text-amber-100/90">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+            <div>
+              <dt className="text-amber-200/70">Valor ignorado no período</dt>
+              <dd className="font-semibold text-amber-50 tabular-nums">
+                {formatSaasCurrency(hiddenByMarco!.hiddenNet)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-amber-200/70">Entradas ocultas</dt>
+              <dd className="font-medium tabular-nums">
+                {formatSaasCurrency(hiddenByMarco!.hiddenIncome)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-amber-200/70">Saídas ocultas</dt>
+              <dd className="font-medium tabular-nums">
+                {formatSaasCurrency(hiddenByMarco!.hiddenExpense)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-amber-200/70">Maior data/hora ignorada</dt>
+              <dd>{formatHiddenInstant(hiddenByMarco!.latestHiddenAt)}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-amber-200/70">Marco atual</dt>
+              <dd>{marcoLabel}</dd>
+            </div>
+          </dl>
+          <p className="text-[11px] sm:text-xs text-amber-100/75 leading-relaxed">
+            Os dados não foram apagados — ficam fora do Caixa e da Receita Recebida enquanto forem
+            anteriores ao marco. Retroceda o marco e reprocessar cobranças pagas para incluí-los.
+          </p>
+          {onAdjustMarco ? (
+            <button
+              type="button"
+              onClick={onAdjustMarco}
+              className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-3 py-2 rounded-lg border border-amber-400/40 bg-amber-500/15 text-xs font-semibold text-amber-50 hover:bg-amber-500/25"
+            >
+              Ajustar marco financeiro
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

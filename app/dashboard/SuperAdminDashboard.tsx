@@ -273,8 +273,8 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
           value={formatCurrency(stats.receivedRevenue)}
           sub={
             dashboard.cashStartAt && stats.receivedRevenueHiddenCount > 0
-              ? `${stats.receivedRevenueHiddenCount} entrada(s) oculta(s) pelo marco (${formatCurrency(stats.receivedRevenueHiddenTotal)}) — fonte: Caixa SaaS`
-              : 'Entradas confirmadas no Caixa SaaS'
+              ? `${stats.receivedRevenueHiddenCount} oculta(s) pelo marco`
+              : 'Caixa SaaS'
           }
           icon={<Banknote className="w-5 h-5" />}
           iconClass="bg-emerald-500/10 text-emerald-400"
