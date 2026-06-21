@@ -176,9 +176,16 @@ export function SaasCashPanel({ companies = [], showBackLink = false }: Props) {
       );
       setCashStartAt(body.cashStartAt ? String(body.cashStartAt) : null);
       const sync = body.sync || {};
-      setSyncMessage(
-        `Asaas sincronizado: ${sync.created ?? 0} nova(s), ${sync.skipped ?? 0} ignorada(s).`,
-      );
+      const parts = [
+        `${sync.created ?? 0} nova(s)`,
+        `${sync.incomeCreated ?? 0} entrada(s)`,
+        `${sync.expenseCreated ?? 0} saída(s)`,
+        `${sync.skippedDuplicate ?? 0} duplicada(s)`,
+      ];
+      if (sync.skippedBeforeStartAt) {
+        parts.push(`${sync.skippedBeforeStartAt} antes do marco`);
+      }
+      setSyncMessage(`Asaas sincronizado: ${parts.join(', ')}.`);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro ao sincronizar Asaas';
       setError(message);

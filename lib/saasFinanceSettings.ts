@@ -176,16 +176,15 @@ export function filterMovementsByCashStartAt<T extends {
   cashStartAt?: string | null,
 ): T[] {
   if (!cashStartAt) return movements;
-  const startMs = new Date(cashStartAt).getTime();
-  if (Number.isNaN(startMs)) return movements;
-
-  return movements.filter((movement) => {
-    if (movement.created_at) {
-      return new Date(movement.created_at).getTime() >= startMs;
-    }
-    const dayEnd = new Date(`${movement.movement_date}T23:59:59.999`);
-    return dayEnd.getTime() >= startMs;
-  });
+  return movements.filter((movement) =>
+    isSaasFinancialRecordAfterStartAt(
+      {
+        movement_date: movement.movement_date,
+        created_at: movement.created_at,
+      },
+      cashStartAt,
+    ),
+  );
 }
 
 export function effectiveSaasCashFromDate(

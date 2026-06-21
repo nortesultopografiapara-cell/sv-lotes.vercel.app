@@ -30,13 +30,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
+
     const syncResult = await syncAsaasCashMovements(supabaseAdmin, {
       fromDate,
       toDate,
       createdBy: body.userId,
+      cashStartAt,
     });
 
-    const cashStartAt = await getSaasCashStartAt(supabaseAdmin);
     const view = await loadSaasCashView(
       supabaseAdmin,
       {

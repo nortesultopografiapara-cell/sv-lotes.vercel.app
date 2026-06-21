@@ -301,15 +301,51 @@ function testAsaasMovementMapping() {
   assert(transfer.source === 'asaas_transfer', 'transfer source');
   assert(transfer.category === 'Saque', 'transfer categoria saque');
   assert(transfer.amount === 5, 'transfer valor absoluto');
+  assert(transfer.description === 'Transferência bancária', 'descrição original Asaas');
+
+  const pixDebit = mapAsaasFinancialTransaction({
+    id: 'ft_pix_debit',
+    type: 'PIX_TRANSACTION_DEBIT',
+    value: -15,
+    date: '2026-06-20',
+    description: 'Transação via Pix com chave +55 94...',
+  });
+  assert(!pixDebit.skip, 'pix debit mapeado');
+  assert(pixDebit.type === 'expense', 'pix debit expense');
+  assert(pixDebit.category === 'Transferência Pix', 'pix debit categoria');
+  assert(pixDebit.description?.includes('Transação via Pix'), 'descrição pix original');
 
   const fee = mapAsaasFinancialTransaction({
     id: 'ft_fee',
     type: 'PAYMENT_FEE',
     value: -2.99,
     date: '2026-06-20',
+    description: 'Taxa do Pix',
   });
   assert(isAsaasCashSyncExpenseMapping(fee), 'tarifa expense');
   assert(fee.category === 'Tarifa Asaas', 'tarifa categoria');
+  assert(fee.description === 'Taxa do Pix', 'descrição tarifa original');
+
+  const feeDiscount = mapAsaasFinancialTransaction({
+    id: 'ft_fee_rev',
+    type: 'PAYMENT_FEE_REVERSAL',
+    value: 1.99,
+    date: '2026-06-20',
+    description: 'Desconto na tarifa',
+  });
+  assert(!feeDiscount.skip, 'desconto tarifa mapeado');
+  assert(feeDiscount.type === 'income', 'desconto tarifa income');
+  assert(feeDiscount.category === 'Ajuste positivo', 'desconto categoria');
+  assert(feeDiscount.description === 'Desconto na tarifa', 'descrição desconto original');
+
+  const messagingFee = mapAsaasFinancialTransaction({
+    id: 'ft_msg_fee',
+    type: 'PAYMENT_MESSAGING_NOTIFICATION_FEE',
+    value: -0.99,
+    date: '2026-06-20',
+    description: 'Taxa de mensageria',
+  });
+  assert(messagingFee.type === 'expense', 'taxa mensageria expense');
 
   const internal = mapAsaasFinancialTransaction({
     id: 'ft_internal',
@@ -356,14 +392,53 @@ async function testSyncAsaasCreatesExpenses() {
         { id: 'ft1', type: 'TRANSFER', value: -5, date: '2026-06-20' },
         { id: 'ft2', type: 'PAYMENT_FEE', value: -2.99, date: '2026-06-20' },
         { id: 'ft3', type: 'PAYMENT_RECEIVED', value: 10, date: '2026-06-20' },
+        {
+          id: 'ft4',
+          type: 'PIX_TRANSACTION_DEBIT',
+          value: -15,
+          date: '2026-06-20',
+          description: 'Transação via Pix com chave',
+        },
+        {
+          id: 'ft5',
+          type: 'PAYMENT_FEE_REVERSAL',
+          value: 1.99,
+          date: '2026-06-20',
+          description: 'Desconto na tarifa',
+        },
       ],
     },
   );
 
-  assert(result.created === 2, 'duas saídas criadas');
-  assert(result.skipped >= 1, 'recebimento ignorado');
-  assert(supabase._tables.saas_cash_movements.length === 2, 'duas linhas');
+  assert(result.created === 4, 'quatro movimentos criados');
+  assert(result.expenseCreated === 3, 'três saídas');
+  assert(result.incomeCreated === 1, 'um ajuste positivo');
+  assert(result.skippedWebhookIncome === 1, 'recebimento webhook ignorado');
+  assert(supabase._tables.saas_cash_movements.length === 4, 'quatro linhas');
   console.log('OK testSyncAsaasCreatesExpenses');
+}
+
+async function testSyncAsaasRespectsCashStartAt() {
+  const supabase = createMockSupabase();
+  const result = await syncAsaasCashMovements(
+    supabase,
+    {
+      fromDate: '2026-06-01',
+      toDate: '2026-06-30',
+      cashStartAt: '2026-06-20T09:00:00.000Z',
+    },
+    {
+      fetchTransactions: async () => [
+        { id: 'old', type: 'TRANSFER', value: -5, date: '2026-06-01' },
+        { id: 'new', type: 'TRANSFER', value: -5, date: '2026-06-20' },
+      ],
+    },
+  );
+
+  assert(result.created === 1, 'somente após marco');
+  assert(result.skippedBeforeStartAt === 1, 'ignora anterior ao marco');
+  assert(supabase._tables.saas_cash_movements.length === 1, 'uma linha');
+  console.log('OK testSyncAsaasRespectsCashStartAt');
 }
 
 async function testSyncAsaasDoesNotDuplicate() {
@@ -698,6 +773,14 @@ function testApiAndSecurity() {
   assert(syncApi.includes('syncAsaasCashMovements'), 'sync handler');
   assert(syncApi.includes('getSaasCashStartAt'), 'sync respeita marco');
 
+  const syncLib = read('lib/saasCashMovements.ts');
+  assert(syncLib.includes('listAsaasFinancialTransactions'), 'sync usa extrato financeiro');
+  assert(syncLib.includes('[saas-cash-sync-result]'), 'log diagnóstico sync');
+
+  const mappingLib = read('lib/asaasFinancialTransactions.ts');
+  assert(mappingLib.includes('PIX_TRANSACTION_DEBIT'), 'mapeia pix debit');
+  assert(mappingLib.includes('PAYMENT_FEE_REVERSAL'), 'mapeia desconto tarifa');
+
   const startAtApi = read('app/api/master/saas-cash/start-at/route.ts');
   assert(startAtApi.includes('assertSuperAdmin'), 'start-at super admin');
   assert(startAtApi.includes('setSaasCashStartAt'), 'start-at salva marco');
@@ -747,6 +830,7 @@ async function main() {
   testWebhookIntegration();
   testAsaasMovementMapping();
   await testSyncAsaasCreatesExpenses();
+  await testSyncAsaasRespectsCashStartAt();
   await testSyncAsaasDoesNotDuplicate();
   testKpisAfterWithdrawalScenario();
   testExportRespectsFilteredMovements();

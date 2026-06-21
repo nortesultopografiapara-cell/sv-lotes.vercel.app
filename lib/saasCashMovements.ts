@@ -12,6 +12,7 @@ import {
 import {
   effectiveSaasCashFromDate,
   filterMovementsByCashStartAt,
+  isSaasFinancialRecordAfterStartAt,
 } from '@/lib/saasFinanceSettings';
 import {
   isAsaasConfigured,
@@ -74,14 +75,22 @@ export type SyncAsaasCashMovementsInput = {
   fromDate: string;
   toDate: string;
   createdBy?: string | null;
+  cashStartAt?: string | null;
 };
 
 export type SyncAsaasCashMovementsResult = {
   fetched: number;
   created: number;
+  incomeCreated: number;
+  expenseCreated: number;
   skipped: number;
+  skippedDuplicate: number;
+  skippedBeforeStartAt: number;
+  skippedWebhookIncome: number;
   unknown: number;
   unknownTypes: string[];
+  period: { fromDate: string; toDate: string };
+  sampleTypes: string[];
 };
 
 export type SyncAsaasCashMovementsDeps = {
@@ -296,19 +305,22 @@ export async function listSaasCashMovements(
     .order('created_at', { ascending: false });
 
   if (options.cashStartAt) {
-    query = query.gte('created_at', options.cashStartAt);
-  }
-  if (options.companyId) {
-    query = query.eq('company_id', options.companyId);
-  }
-  if (options.type && options.type !== 'all') {
-    query = query.eq('type', options.type);
+    const startDay = options.cashStartAt.split('T')[0];
+    if (startDay) {
+      query = query.gte('movement_date', startDay);
+    }
   }
   if (fromDate) {
     query = query.gte('movement_date', fromDate);
   }
   if (options.toDate) {
     query = query.lte('movement_date', options.toDate);
+  }
+  if (options.companyId) {
+    query = query.eq('company_id', options.companyId);
+  }
+  if (options.type && options.type !== 'all') {
+    query = query.eq('type', options.type);
   }
   if (options.limit && options.limit > 0) {
     query = query.limit(options.limit);
@@ -493,23 +505,51 @@ export async function syncAsaasCashMovements(
     throw new Error('ASAAS_API_KEY não configurada.');
   }
 
-  const transactions = await fetchTransactions(input.fromDate, input.toDate);
+  const effectiveFrom = effectiveSaasCashFromDate(input.fromDate, input.cashStartAt);
+  const effectiveTo = input.toDate;
+  const transactions = await fetchTransactions(
+    effectiveFrom || input.fromDate,
+    effectiveTo,
+  );
+
   let created = 0;
+  let incomeCreated = 0;
+  let expenseCreated = 0;
   let skipped = 0;
+  let skippedDuplicate = 0;
+  let skippedBeforeStartAt = 0;
+  let skippedWebhookIncome = 0;
   let unknown = 0;
   const unknownTypes = new Set<string>();
+  const typeSamples = new Map<string, number>();
 
   for (const tx of transactions) {
+    const asaasType = String(tx.type || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
+    typeSamples.set(asaasType, (typeSamples.get(asaasType) || 0) + 1);
+
+    const movementDate = String(tx.date || '').split('T')[0];
+    if (
+      input.cashStartAt &&
+      movementDate &&
+      !isSaasFinancialRecordAfterStartAt({ movement_date: movementDate }, input.cashStartAt)
+    ) {
+      skipped += 1;
+      skippedBeforeStartAt += 1;
+      continue;
+    }
+
     const mapped = mapTransaction(tx);
     if (mapped.skip) {
       skipped += 1;
+      if (mapped.skipReason === 'webhook_income') {
+        skippedWebhookIncome += 1;
+      }
       if (mapped.skipReason === 'unknown_type') {
         unknown += 1;
-        const type = String(mapped.metadata?.asaas_type || tx.type || 'UNKNOWN');
-        unknownTypes.add(type);
-        console.info('[saas-cash] tipo Asaas ignorado:', {
+        unknownTypes.add(asaasType);
+        console.info('[saas-cash-sync] tipo Asaas ignorado:', {
           id: tx.id,
-          type,
+          type: asaasType,
           value: tx.value,
           description: tx.description,
         });
@@ -524,16 +564,51 @@ export async function syncAsaasCashMovements(
     );
     if (result.created) {
       created += 1;
+      if (mapped.type === 'income') {
+        incomeCreated += 1;
+      } else if (mapped.type === 'expense') {
+        expenseCreated += 1;
+      }
     } else {
       skipped += 1;
+      skippedDuplicate += 1;
     }
   }
+
+  const sampleTypes = [...typeSamples.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([type, count]) => `${type}(${count})`);
+
+  const diagnostics = {
+    period: { fromDate: effectiveFrom || input.fromDate, toDate: effectiveTo },
+    fetched: transactions.length,
+    created,
+    incomeCreated,
+    expenseCreated,
+    skipped,
+    skippedDuplicate,
+    skippedBeforeStartAt,
+    skippedWebhookIncome,
+    unknown,
+    unknownTypes: [...unknownTypes].sort(),
+    sampleTypes,
+  };
+
+  console.warn('[saas-cash-sync-result]', JSON.stringify(diagnostics));
 
   return {
     fetched: transactions.length,
     created,
+    incomeCreated,
+    expenseCreated,
     skipped,
+    skippedDuplicate,
+    skippedBeforeStartAt,
+    skippedWebhookIncome,
     unknown,
     unknownTypes: [...unknownTypes].sort(),
+    period: diagnostics.period,
+    sampleTypes,
   };
 }
