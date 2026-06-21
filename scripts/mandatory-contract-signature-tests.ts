@@ -665,6 +665,60 @@ function testPublicSignRouteUsesSafeCompanyLookup() {
   console.log('OK testPublicSignRouteUsesSafeCompanyLookup');
 }
 
+function testCertificateFooterReservedLayout() {
+  const src = readFileSync(
+    join(process.cwd(), 'lib/saasContractSignaturePdf.ts'),
+    'utf8',
+  );
+  assert(src.includes('FOOTER_RESERVED = 45'), 'certificado reserva área do rodapé');
+  assert(src.includes('ensureSpace'), 'certificado usa quebra automática de página');
+  assert(src.includes('TECHNICAL_FONT_SIZE = 8'), 'campos técnicos em 8pt');
+
+  const longHash = 'a'.repeat(64);
+  const doc = new jsPDF();
+  appendBilateralSignatureCertificateToPdf(
+    doc,
+    {
+      contractNumber: '00099/2026',
+      contentVersion: 2,
+      client: {
+        contractNumber: '00099/2026',
+        signerName: 'Cliente Teste Layout Certificado',
+        signerDocument: '12345678901',
+        signerEmail: 'cliente@empresa.com.br',
+        signerRole: 'Socio administrador',
+        signerAddress: 'Rua Exemplo, 100, Bairro Centro, Cidade/UF',
+        ipAddress: '200.150.10.20',
+        signedDate: '15/06/2026',
+        signedTime: '14:25',
+        signatureHash: longHash,
+        signatureToken: 'tok1234567890abcdef',
+        signatureId: 'sig-client-uuid',
+        geoCity: 'Parauapebas',
+        latitude: -6.0678,
+        longitude: -49.9032,
+      },
+      provider: {
+        contractNumber: '00099/2026',
+        signerName: 'Representante SV LOTES',
+        signerDocument: '98765432100',
+        signerEmail: 'sv@svlotes.com.br',
+        signerRole: 'Socio administrador',
+        ipAddress: '201.20.30.40',
+        signedDate: '15/06/2026',
+        signedTime: '15:00',
+        signatureHash: longHash,
+        signatureToken: 'prov9876543210fedcba',
+        signatureId: 'sig-provider-uuid',
+      },
+    },
+    16,
+    210,
+  );
+  assert(doc.getNumberOfPages() >= 1, 'certificado bilateral denso renderiza');
+  console.log('OK testCertificateFooterReservedLayout');
+}
+
 async function main() {
   testTokenGeneration();
   testExpiration();
@@ -686,6 +740,7 @@ async function main() {
   testSignUrl();
   testPendingDays();
   testPublicSignRouteUsesSafeCompanyLookup();
+  testCertificateFooterReservedLayout();
   await testNextBuild();
   console.log('\nTodos os testes de assinatura eletrônica passaram.');
 }
