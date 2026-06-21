@@ -16,16 +16,22 @@ type ConfigRowProps = {
   label: string;
   configured: boolean;
   hint: string | null;
+  optional?: boolean;
 };
 
-function ConfigRow({ label, configured, hint }: ConfigRowProps) {
+function ConfigRow({ label, configured, hint, optional = false }: ConfigRowProps) {
+  const statusClass = configured
+    ? 'text-emerald-300'
+    : optional
+      ? 'text-gray-500'
+      : 'text-amber-300';
+  const statusLabel = configured ? 'sim' : optional ? 'não (opcional)' : 'não';
+
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-gray-400">{label}</span>
       <span className="text-right">
-        <span className={configured ? 'text-emerald-300' : 'text-amber-300'}>
-          {configured ? 'sim' : 'não'}
-        </span>
+        <span className={statusClass}>{statusLabel}</span>
         {hint ? <span className="ml-2 font-mono text-[11px] text-gray-500">{hint}</span> : null}
       </span>
     </div>
@@ -162,9 +168,10 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
                   hint={configStatus.tokenHint}
                 />
                 <ConfigRow
-                  label="Client-Token configurado"
+                  label="Client-Token (opcional)"
                   configured={configStatus.clientTokenConfigured}
                   hint={configStatus.clientTokenHint}
+                  optional
                 />
               </>
             ) : (
@@ -197,8 +204,8 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
 
           {!readyToSend ? (
             <p className="text-sm text-amber-300">
-              Configure ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) e ZAPI_CLIENT_TOKEN na
-              Vercel (Production) e redeploy o projeto.
+              Configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) na Vercel (Production)
+              e redeploy o projeto. ZAPI_CLIENT_TOKEN é opcional.
             </p>
           ) : null}
 

@@ -4,8 +4,6 @@
 
 export const ZAPI_SEND_TEXT_BASE_URL = 'https://api.z-api.io';
 
-export const ZAPI_CLIENT_TOKEN_MISSING_ERROR = 'ZAPI_CLIENT_TOKEN ausente na Vercel';
-
 export type ZapiConfigStatus = {
   instanceConfigured: boolean;
   instanceHint: string | null;
@@ -91,7 +89,7 @@ export function getZapiConfigStatus(): ZapiConfigStatus {
     tokenHint: maskZapiSuffixOnly(token),
     clientTokenConfigured: !!clientToken,
     clientTokenHint: maskZapiSuffixOnly(clientToken),
-    ready: !!(instanceId && token && clientToken),
+    ready: !!(instanceId && token),
   };
 }
 
@@ -121,7 +119,7 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
   }
   if (!clientToken) {
     configWarnings.push(
-      `${ZAPI_CLIENT_TOKEN_MISSING_ERROR} — a Z-API exige header Client-Token (token de segurança da conta).`,
+      'ZAPI_CLIENT_TOKEN não configurado (opcional) — algumas contas Z-API exigem header Client-Token.',
     );
   }
 
@@ -194,22 +192,6 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
   }
 
   const clientToken = String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
-  if (!clientToken) {
-    console.log(
-      '[zapi-send-text:blocked]',
-      JSON.stringify({
-        instanceId: diagnostics.instanceId,
-        tokenMasked: diagnostics.tokenMasked,
-        clientTokenConfigured: false,
-        error: ZAPI_CLIENT_TOKEN_MISSING_ERROR,
-      }),
-    );
-    return {
-      ok: false,
-      error: ZAPI_CLIENT_TOKEN_MISSING_ERROR,
-      debug: diagnostics,
-    };
-  }
 
   logZapiDiagnostics('request', diagnostics, {
     phone,
@@ -218,8 +200,10 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Client-Token': clientToken,
   };
+  if (clientToken) {
+    headers['Client-Token'] = clientToken;
+  }
 
   try {
     const response = await fetch(url, {
