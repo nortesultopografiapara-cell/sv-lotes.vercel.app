@@ -8,12 +8,15 @@ import {
   IVANILDE_LEGACY_CPF,
   SETTINGS_V2_ROLLOUT_ISO,
   resolveCompanySettingsLayout,
+  resolveCompanySettingsLayoutPolicy,
   isLegacySettingsCompanyDocument,
+  isCompanySettingsV2Enabled,
 } from '../lib/companySettingsLayout';
 import { MENESES_COMPANY_ID } from '../lib/saasContractContent';
 import {
   buildCompanySettingsSavePayload,
   resolveLegalRepresentativeForSave,
+  COMPANY_SETTINGS_COLUMNS,
 } from '../lib/companySettingsFields';
 import { isSaasContractPlaceholderValue } from '../lib/saasContractCompanyProfile';
 
@@ -38,22 +41,37 @@ function testIvanildeLegacyByCpf() {
   console.log('OK testIvanildeLegacyByCpf');
 }
 
-function testTopografiaV2() {
+function testTopografiaV2Policy() {
   assert(
-    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID) === 'v2',
-    'SV Topografia usa layout v2',
+    resolveCompanySettingsLayoutPolicy(TOPOGRAFIA_COMPANY_ID) === 'v2',
+    'SV Topografia usa layout v2 na policy',
   );
-  console.log('OK testTopografiaV2');
+  console.log('OK testTopografiaV2Policy');
+}
+
+function testV2FlagOffForcesLegacy() {
+  assert(!isCompanySettingsV2Enabled(), 'flag V2 desligada no hotfix');
+  assert(
+    resolveCompanySettingsLayout(TOPOGRAFIA_COMPANY_ID) === 'legacy',
+    'flag off força legacy mesmo na Topografia',
+  );
+  console.log('OK testV2FlagOffForcesLegacy');
+}
+
+function testSettingsColumnsExcludeCompaniesCpf() {
+  const cols = COMPANY_SETTINGS_COLUMNS.split(',').map((s) => s.trim());
+  assert(!cols.includes('cpf'), 'SELECT não referencia companies.cpf inexistente');
+  console.log('OK testSettingsColumnsExcludeCompaniesCpf');
 }
 
 function testNewCompanyV2() {
   const afterRollout = new Date(SETTINGS_V2_ROLLOUT_ISO);
   afterRollout.setDate(afterRollout.getDate() + 1);
   assert(
-    resolveCompanySettingsLayout('new-company-uuid', {
+    resolveCompanySettingsLayoutPolicy('new-company-uuid', {
       createdAt: afterRollout.toISOString(),
     }) === 'v2',
-    'empresa criada após rollout usa v2',
+    'empresa criada após rollout usa v2 na policy',
   );
   console.log('OK testNewCompanyV2');
 }
@@ -159,7 +177,9 @@ function testPlaceholderRejected() {
 function main() {
   testMenesesLegacy();
   testIvanildeLegacyByCpf();
-  testTopografiaV2();
+  testTopografiaV2Policy();
+  testV2FlagOffForcesLegacy();
+  testSettingsColumnsExcludeCompaniesCpf();
   testNewCompanyV2();
   testExistingOtherCompanyLegacy();
   testTechnicalDoesNotReplaceLegalWithoutCheckbox();

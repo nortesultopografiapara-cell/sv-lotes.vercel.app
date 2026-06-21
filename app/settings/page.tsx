@@ -9,7 +9,10 @@ import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdm
 import { CompanySettingsFormLegacy } from '@/components/settings/CompanySettingsFormLegacy';
 import { CompanySettingsFormV2 } from '@/components/settings/CompanySettingsFormV2';
 import { useCompanySettingsForm, resolveSettingsCompanyId } from '@/components/settings/useCompanySettingsForm';
-import { resolveCompanySettingsLayout } from '@/lib/companySettingsLayout';
+import {
+  resolveCompanySettingsLayout,
+  isCompanySettingsV2Enabled,
+} from '@/lib/companySettingsLayout';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
@@ -20,34 +23,27 @@ export default function SettingsPage() {
   const settingsCompanyId = resolveSettingsCompanyId(user);
   const isPlatformAdmin = user?.role && PLATFORM_ADMIN_ROLES.includes(user.role);
 
-  const layoutHint = useMemo(() => {
+  const layoutPreview = useMemo(() => {
     if (!settingsCompanyId) return 'legacy' as const;
-    return 'legacy';
+    return resolveCompanySettingsLayout(settingsCompanyId);
   }, [settingsCompanyId]);
 
-  const formLegacy = useCompanySettingsForm({
+  const form = useCompanySettingsForm({
     user,
     authLoading,
-    normalizeAddressOnSave: false,
+    normalizeAddressOnSave: layoutPreview === 'v2',
   });
 
-  const formV2 = useCompanySettingsForm({
-    user,
-    authLoading,
-    normalizeAddressOnSave: true,
-  });
-
-  const company = formLegacy.company ?? formV2.company;
   const layout = useMemo(() => {
-    if (!company || !settingsCompanyId) return layoutHint;
+    if (!form.company || !settingsCompanyId) return layoutPreview;
     return resolveCompanySettingsLayout(settingsCompanyId, {
-      documentRaw: String(company.cnpj || company.cpf || ''),
-      createdAt: String(company.created_at || ''),
-      settingsLayout: company.settings_layout as string | null,
+      documentRaw: String(form.company.cnpj || ''),
+      createdAt: String(form.company.created_at || ''),
+      settingsLayout: form.company.settings_layout as string | null,
     });
-  }, [company, settingsCompanyId, layoutHint]);
+  }, [form.company, settingsCompanyId, layoutPreview]);
 
-  const form = layout === 'v2' ? formV2 : formLegacy;
+  const v2Active = isCompanySettingsV2Enabled() && layout === 'v2';
   const loading = form.loading || authLoading;
 
   if (loading) {
@@ -70,7 +66,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (!company) {
+  if (!form.company) {
     return <div className="p-8 text-center sv-theme-muted">Empresa não encontrada em companies.</div>;
   }
 
@@ -83,7 +79,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Configurações</h1>
           <p className="text-sm text-[var(--text-secondary)]">
-            {layout === 'v2'
+            {v2Active
               ? 'Empresa, representante legal e identidade para contratos SaaS.'
               : 'Empresa, aparência e identidade para contratos e recibos.'}
           </p>
@@ -120,7 +116,7 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
-      {layout === 'v2' ? (
+      {v2Active ? (
         <>
           <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[var(--border-color)]">
             <div className="w-10 h-10 bg-[var(--color-info)]/15 rounded-lg flex items-center justify-center text-[var(--color-info)] border border-[var(--color-info)]/25">
@@ -131,7 +127,7 @@ export default function SettingsPage() {
               <p className="text-sm text-[var(--text-secondary)]">Blocos organizados — mínimo para contrato SaaS.</p>
             </div>
           </div>
-          <CompanySettingsFormV2 {...formV2} />
+          <CompanySettingsFormV2 {...form} />
         </>
       ) : (
         <>
@@ -144,7 +140,7 @@ export default function SettingsPage() {
               <p className="text-sm text-[var(--text-secondary)]">Informações legais e técnicas.</p>
             </div>
           </div>
-          <CompanySettingsFormLegacy {...formLegacy} />
+          <CompanySettingsFormLegacy {...form} />
         </>
       )}
     </div>

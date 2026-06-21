@@ -18,14 +18,21 @@ const LEGACY_SETTINGS_COMPANY_IDS = new Set<string>([
 /** Empresas criadas a partir desta data usam layout v2 (exceto legacy explícito). */
 export const SETTINGS_V2_ROLLOUT_ISO = '2026-06-08T00:00:00.000Z';
 
+/** Feature flag — reativar V2 após hotfix validado em produção. */
+export const COMPANY_SETTINGS_V2_ENABLED = false;
+
 export type CompanySettingsLayout = 'legacy' | 'v2';
+
+export function isCompanySettingsV2Enabled(): boolean {
+  return COMPANY_SETTINGS_V2_ENABLED;
+}
 
 export function isLegacySettingsCompanyDocument(documentRaw?: string | null): boolean {
   const digits = String(documentRaw ?? '').replace(/\D/g, '');
   return digits === IVANILDE_LEGACY_CPF;
 }
 
-export function resolveCompanySettingsLayout(
+export function resolveCompanySettingsLayoutPolicy(
   companyId: string,
   options?: {
     documentRaw?: string | null;
@@ -49,6 +56,18 @@ export function resolveCompanySettingsLayout(
   }
 
   return 'legacy';
+}
+
+export function resolveCompanySettingsLayout(
+  companyId: string,
+  options?: {
+    documentRaw?: string | null;
+    createdAt?: string | null;
+    settingsLayout?: string | null;
+  },
+): CompanySettingsLayout {
+  if (!isCompanySettingsV2Enabled()) return 'legacy';
+  return resolveCompanySettingsLayoutPolicy(companyId, options);
 }
 
 export function companySettingsLayoutLabel(layout: CompanySettingsLayout): string {

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   COMPANY_SETTINGS_COLUMNS,
+  COMPANY_SETTINGS_COLUMNS_BASE,
   buildCompanySettingsSavePayload,
   technicalFromCompanyRow,
   type TechnicalResponsibleFormState,
@@ -69,11 +70,22 @@ export function useCompanySettingsForm({
         return;
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('companies')
         .select(COMPANY_SETTINGS_COLUMNS)
         .eq('id', companyId)
         .single();
+
+      if (error) {
+        console.warn('[settings] fallback para colunas base (pré-v2)', error.message);
+        const fallback = await supabase
+          .from('companies')
+          .select(COMPANY_SETTINGS_COLUMNS_BASE)
+          .eq('id', companyId)
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         console.error('[settings] erro ao carregar companies', error);

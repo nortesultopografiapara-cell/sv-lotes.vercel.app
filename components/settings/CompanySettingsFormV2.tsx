@@ -112,7 +112,7 @@ export function CompanySettingsFormV2({
 
   const contractModel = normalizeSaleContractModel(company.contract_model as string);
   const isRecantoContract = contractModel === 'RECANTO_PRIMAVERA';
-  const documentRaw = String(company.cnpj || company.cpf || '');
+  const documentRaw = String(company.cnpj || '');
   const partyType = resolveSaasContractPartyType(documentRaw);
   const useTechnicalAsLegal = Boolean(company.use_technical_as_legal_rep);
 

@@ -9,8 +9,18 @@ import {
 } from '@/lib/saasContractAddress';
 import { isSaasContractPlaceholderValue } from '@/lib/saasContractCompanyProfile';
 
-export const COMPANY_SETTINGS_COLUMNS =
-  'id, name, fantasy_name, cnpj, cpf, phone, email, address, city, state, zip_code, cep, created_at, legal_representative, representative_cpf, legal_representative_role, legal_representative_email, legal_representative_phone, use_technical_as_legal_rep, settings_layout, logo_url, signature_url, contract_model, contract_legal_nationality, contract_legal_marital_status, contract_legal_profession, contract_legal_rg, contract_legal_rg_issuer, contract_legal_phone, contract_legal_email, contract_legal_address, contract_enterprise_name, contract_enterprise_location, contract_enterprise_municipality, contract_enterprise_uf, contract_forum_city, contract_bank_name, contract_bank_branch, contract_bank_account, contract_bank_pix, contract_bank_beneficiary, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
+/**
+ * Colunas base — idênticas à lista funcional pré-v2 (COMPANY_TECHNICAL_COLUMNS).
+ * Não incluir `cpf`: companies usa `cnpj` (PF armazena CPF em cnpj).
+ */
+export const COMPANY_SETTINGS_COLUMNS_BASE =
+  'id, name, fantasy_name, cnpj, phone, email, address, city, state, zip_code, legal_representative, representative_cpf, logo_url, signature_url, contract_model, contract_legal_nationality, contract_legal_marital_status, contract_legal_profession, contract_legal_rg, contract_legal_rg_issuer, contract_legal_phone, contract_legal_email, contract_legal_address, contract_enterprise_name, contract_enterprise_location, contract_enterprise_municipality, contract_enterprise_uf, contract_forum_city, contract_bank_name, contract_bank_branch, contract_bank_account, contract_bank_pix, contract_bank_beneficiary, technical_responsible_name, technical_responsible_role, technical_responsible_crea, technical_responsible_cau, technical_responsible_cft, technical_responsible_cpf, technical_responsible_phone, technical_responsible_email, technical_signature_url, technical_stamp_url';
+
+/** Colunas extras v2 — nullable; fallback para BASE se migration ausente. */
+export const COMPANY_SETTINGS_COLUMNS_EXTENDED =
+  'cep, created_at, legal_representative_role, legal_representative_email, legal_representative_phone, use_technical_as_legal_rep, settings_layout';
+
+export const COMPANY_SETTINGS_COLUMNS = `${COMPANY_SETTINGS_COLUMNS_BASE}, ${COMPANY_SETTINGS_COLUMNS_EXTENDED}`;
 
 export type TechnicalResponsibleFormState = {
   name: string;
