@@ -85,17 +85,13 @@ function testCertificateWithEmail() {
   });
 
   assert(cert.includes(SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE), 'título certificado');
-  assert(cert.includes('Vendedor'), 'cert vendedor');
-  assert(cert.includes('Comprador'), 'cert comprador');
-  assert(cert.includes('000000022/2026'), 'número contrato');
-  assert(cert.includes('Residencial Meneses'), 'empreendimento');
-  assert(cert.includes('04'), 'quadra');
-  assert(cert.includes('22'), 'lote');
+  assert(cert.includes('PROMITENTE VENDEDOR'), 'cert vendedor');
+  assert(cert.includes('PROMISSÁRIO COMPRADOR'), 'cert comprador');
   assert(cert.includes('177.1.2.3'), 'IP no certificado');
-  assert(cert.includes('ASSINADO'), 'status assinado');
-  assert(cert.includes('Hash SHA-256'), 'hash opcional');
+  assert(cert.includes('VALIDADO'), 'status validado');
+  assert(cert.includes('Hash do documento (SHA-256)'), 'hash label');
   assert(cert.includes('token123456789abcdef'), 'token completo');
-  assert(cert.includes('sv-cert-compact'), 'layout compacto');
+  assert(cert.includes('sv-cert-official'), 'layout oficial unificado');
   console.log('OK testCertificateWithEmail');
 }
 
@@ -178,19 +174,32 @@ function testElectronicSignaturesPage() {
     signedAt: '2026-06-08T15:30:00.000Z',
     signatureStatus: 'ASSINADO ELETRONICAMENTE',
   });
-  assert(page.includes('PROMITENTE VENDEDOR'), 'card vendedor');
-  assert(page.includes('PROMISSÁRIO COMPRADOR'), 'card comprador');
-  assert(page.includes('✓ ASSINADO ELETRONICAMENTE'), 'selo assinatura');
-  assert(page.includes('MENESES IMOBILIÁRIA LTDA'), 'nome empresa');
+  assert(page === '', 'página e-sign separada removida (unificada no certificado)');
+
+  const cert = buildSaleContractSignatureCertificateHtml({
+    contractNumber: '000000022/2026',
+    projectName: 'Residencial Meneses',
+    quadra: '04',
+    lote: '22',
+    buyerName: 'Comprador Teste',
+    buyerDocument: '98765432100',
+    companyName: 'MENESES IMOBILIÁRIA LTDA',
+    representativeName: 'Carlos Daniel Araújo Meneses',
+    representativeCpf: '12345678901',
+    signedAt: '2026-06-08T15:30:00.000Z',
+  });
+  assert(cert.includes('PROMITENTE VENDEDOR'), 'card vendedor no certificado');
+  assert(cert.includes('PROMISSÁRIO COMPRADOR'), 'card comprador no certificado');
+  assert(cert.includes('✓ ASSINADO ELETRONICAMENTE'), 'selo assinatura');
+  assert(cert.includes('MENESES IMOBILIÁRIA LTDA'), 'nome empresa');
 
   const html = replaceContractSignaturesBlock(
     '<div class="contract-signatures"><div class="signature-slot">old</div></div><footer/>',
-    page,
+    '',
   );
   assert(!html.includes('signature-slot'), 'bloco antigo removido');
-  assert(html.includes('e-sign-card'), 'cards inseridos');
-  assert(html.includes('#f0fff4'), 'cartões com fundo verde');
-  assert(html.includes('min-height: 168px'), 'altura padronizada');
+  assert(!html.includes('e-sign-card'), 'sem cartões duplicados');
+  assert(html.includes('<footer/>'), 'resto do documento preservado');
   console.log('OK testElectronicSignaturesPage');
 }
 

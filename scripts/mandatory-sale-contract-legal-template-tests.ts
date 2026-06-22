@@ -198,7 +198,8 @@ function testSignatureCertificateHtml() {
   assert(cert.includes('comprador@test.com'), 'cert email');
   assert(cert.includes('Hash SHA-256'), 'cert hash');
   assert(cert.includes(SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE), 'cert título profissional');
-  assert(cert.includes('VALIDADO'), 'cert status');
+  assert(cert.includes('ASSINADO'), 'cert status');
+  assert(cert.includes('sv-cert-official'), 'cert oficial unificado');
   console.log('OK testSignatureCertificateHtml');
 }
 

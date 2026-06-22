@@ -1,15 +1,12 @@
 /**
- * Certificado digital de assinatura — contratos de compra e venda.
- * Camada visual profissional; preserva tokens, hash, IP, histórico e demais evidências.
+ * Certificado Digital de Assinatura SV LOTES — layout oficial unificado.
+ * Aplicado globalmente a todos os modelos de contrato de venda assinado.
  */
 
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import { formatSignatureDateBr, formatSignatureTimeBr } from '@/lib/saasContractSignaturePdf';
 import type { SignatureHistoryEvent } from '@/lib/saleContractSignatureService';
-import {
-  SALE_CONTRACT_SIGNATURE_CERTIFICATE_SUBTITLE,
-  SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE,
-} from '@/lib/saleContractSignatureVerify';
+import { SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE } from '@/lib/saleContractSignatureVerify';
 
 export type { SignatureHistoryEvent };
 
@@ -31,29 +28,18 @@ export type SaleContractSignatureCertificateInput = {
   ipAddress?: string | null;
   signatureToken?: string | null;
   signatureHash?: string | null;
-  /** Data de criação/emissão do contrato. */
   issuedAt?: string | null;
-  /** Versão do documento (regenerações). */
   documentVersion?: number | string | null;
-  /** Identificador único da assinatura (UUID). */
   uniqueId?: string | null;
-  /** URL pública de validação (/sign/sale/{token}). */
   publicUrl?: string | null;
-  /** @deprecated Use publicUrl */
   verifyUrl?: string | null;
-  /** Link público de assinatura (fallback enquanto /verify não existir). */
   signatureUrl?: string | null;
-  /** Data URL do QR Code (PNG). */
   qrCodeDataUrl?: string | null;
-  /** Logo da empresa (base64 data URL ou URL pública). */
   logoSrc?: string | null;
-  /** Histórico de eventos da assinatura. */
   historyEvents?: SignatureHistoryEvent[];
-  /** IP do vendedor, quando disponível. */
   vendorIpAddress?: string | null;
-  /** Data/hora da assinatura do vendedor, quando disponível. */
   vendorSignedAt?: string | null;
-  /** @deprecated Título unificado — ignorado se vazio; mantido por compatibilidade. */
+  vendorDocumentLabel?: 'CPF' | 'CNPJ';
   certificateTitle?: string | null;
 };
 
@@ -70,220 +56,181 @@ export type SaleContractElectronicSignaturesInput = {
 
 const CERT_STYLES = `
 <style type="text/css">
-  .sv-contract-document .e-signatures-page {
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    margin-top: 20px;
-    margin-bottom: 0;
-  }
-  .sv-contract-document .e-signatures-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 14px;
-    align-items: stretch;
-  }
-  .sv-contract-document .e-sign-card {
-    border: 1px solid #b8dfc8;
-    border-radius: 8px;
-    background: #f0fff4;
-    padding: 16px 18px;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
-    text-align: left;
-    height: 100%;
-    min-height: 168px;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-  }
-  .sv-contract-document .e-sign-badge {
-    display: inline-block;
-    background: #e8f5ee;
-    color: #167848;
-    border: 1px solid #b8dfc8;
-    border-radius: 999px;
-    font-size: 8.5pt;
-    font-weight: bold;
-    letter-spacing: 0.03em;
-    padding: 4px 10px;
-    margin-bottom: 12px;
-  }
-  .sv-contract-document .e-sign-role {
-    margin: 0 0 6px 0;
-    font-size: 9pt;
-    font-weight: bold;
-    text-transform: uppercase;
-    color: #4a5568;
-    letter-spacing: 0.04em;
-  }
-  .sv-contract-document .e-sign-name {
-    margin: 0 0 10px 0;
-    font-size: 12pt;
-    font-weight: bold;
-    color: #1a202c;
-    line-height: 1.3;
-  }
-  .sv-contract-document .e-sign-field {
-    margin: 0 0 6px 0;
-    font-size: 10pt;
-    line-height: 1.45;
-    color: #2d3748;
-  }
-  .sv-contract-document .e-sign-field strong {
-    color: #1a202c;
-  }
-  .sv-contract-document .e-sign-status {
-    margin: auto 0 0 0;
-    padding-top: 10px;
-    font-size: 9.5pt;
-    font-weight: bold;
-    color: #167848;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-  .sv-contract-document .sv-cert-compact {
-    margin-top: 16px;
-    padding: 12px 14px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #f8fafc;
+  .sv-cert-official {
+    margin-top: 18px;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 8.5pt;
+    font-size: 9pt;
     line-height: 1.4;
-    color: #1e293b;
+    color: #1a202c;
     page-break-inside: avoid;
     break-inside: avoid-page;
     page-break-before: avoid;
     break-before: avoid-page;
   }
-  .sv-contract-document .sv-cert-compact-title {
-    margin: 0 0 2px 0;
-    font-size: 10pt;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #1e40af;
-    text-align: center;
-  }
-  .sv-contract-document .sv-cert-compact-subtitle {
-    margin: 0 0 10px 0;
-    font-size: 8pt;
-    color: #64748b;
-    text-align: center;
-  }
-  .sv-contract-document .sv-cert-compact-parties {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 10px;
+  .sv-cert-official .sv-cert-cards {
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
     align-items: stretch;
+    margin-bottom: 14px;
   }
-  .sv-contract-document .sv-cert-compact-party {
-    border: 1px solid #b8dfc8;
-    border-radius: 4px;
+  .sv-cert-official .sv-cert-card {
+    flex: 1 1 0;
+    border: 1.5px solid #86efac;
+    border-radius: 8px;
     background: #f0fff4;
-    padding: 8px 10px;
-    height: 100%;
-    min-height: 108px;
+    padding: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 220px;
     box-sizing: border-box;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
   }
-  .sv-contract-document .sv-cert-compact-party-head {
+  .sv-cert-official .sv-cert-card-head {
+    padding: 10px 12px 8px 12px;
+    text-align: center;
+    border-bottom: 1px solid #bbf7d0;
+  }
+  .sv-cert-official .sv-cert-card-role {
+    margin: 0 0 8px 0;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #14532d;
+  }
+  .sv-cert-official .sv-cert-card-badge {
+    display: inline-block;
+    background: #166534;
+    color: #fff;
+    border-radius: 999px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 4px 12px;
+    text-transform: uppercase;
+  }
+  .sv-cert-official .sv-cert-card-body {
+    padding: 10px 12px 8px 12px;
+    flex: 1 1 auto;
+  }
+  .sv-cert-official .sv-cert-field {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    font-weight: 700;
-    font-size: 8pt;
-    text-transform: uppercase;
-    color: #334155;
-  }
-  .sv-contract-document .sv-cert-compact-status {
-    font-size: 7.5pt;
-    font-weight: 700;
-    color: #166534;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-  .sv-contract-document .sv-cert-compact-status-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #22c55e;
-    margin-right: 3px;
-    vertical-align: middle;
-  }
-  .sv-contract-document .sv-cert-compact-line {
-    margin: 0 0 3px 0;
-    font-size: 8pt;
-    color: #475569;
-  }
-  .sv-contract-document .sv-cert-compact-line strong {
-    color: #334155;
-  }
-  .sv-contract-document .sv-cert-compact-meta {
-    margin: 0 0 8px 0;
-    padding: 6px 8px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    font-size: 8pt;
-  }
-  .sv-contract-document .sv-cert-compact-meta span {
-    display: inline-block;
-    margin-right: 12px;
-  }
-  .sv-contract-document .sv-cert-compact-security {
-    margin: 0 0 8px 0;
-    font-size: 7.5pt;
-    word-break: break-all;
-  }
-  .sv-contract-document .sv-cert-compact-security p {
-    margin: 0 0 4px 0;
-  }
-  .sv-contract-document .sv-cert-compact-security code {
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 7pt;
-    color: #1e293b;
-  }
-  .sv-contract-document .sv-cert-compact-qr-row {
-    display: grid;
-    grid-template-columns: 72px 1fr;
-    gap: 10px;
-    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    align-items: flex-start;
     margin-bottom: 8px;
   }
-  .sv-contract-document .sv-cert-compact-qr {
-    width: 68px;
-    height: 68px;
+  .sv-cert-official .sv-cert-field-icon {
+    width: 16px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 11pt;
+    line-height: 1;
+    text-align: center;
+  }
+  .sv-cert-official .sv-cert-field-label {
+    display: block;
+    font-size: 6.5pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 1px;
+  }
+  .sv-cert-official .sv-cert-field-value {
+    display: block;
+    font-size: 9pt;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.35;
+  }
+  .sv-cert-official .sv-cert-card-foot {
+    margin-top: auto;
+    padding: 7px 10px;
+    background: #166534;
+    text-align: center;
+    font-size: 6.5pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #fff;
+  }
+  .sv-cert-official .sv-cert-validation {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+    display: flex;
+    flex-direction: row;
+    gap: 14px;
+    align-items: flex-start;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+  .sv-cert-official .sv-cert-qr {
+    width: 84px;
+    height: 84px;
+    flex-shrink: 0;
     border: 1px solid #cbd5e1;
     border-radius: 4px;
-    padding: 2px;
+    padding: 3px;
     background: #fff;
     display: block;
   }
-  .sv-contract-document .sv-cert-compact-url-label {
-    margin: 0 0 2px 0;
-    font-size: 7.5pt;
-    font-weight: 700;
-    color: #475569;
-    text-transform: uppercase;
+  .sv-cert-official .sv-cert-validation-body {
+    flex: 1 1 auto;
+    min-width: 0;
   }
-  .sv-contract-document .sv-cert-compact-url {
-    margin: 0;
+  .sv-cert-official .sv-cert-validation-title {
+    margin: 0 0 8px 0;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #14532d;
+  }
+  .sv-cert-official .sv-cert-validation-row {
+    margin: 0 0 5px 0;
+    font-size: 7.5pt;
+    line-height: 1.45;
+  }
+  .sv-cert-official .sv-cert-validation-row strong {
+    display: block;
+    font-size: 6.5pt;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 1px;
+  }
+  .sv-cert-official .sv-cert-validation-row code,
+  .sv-cert-official .sv-cert-validation-row span.value {
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 7pt;
+    color: #0f172a;
     word-break: break-all;
-    color: #1e293b;
   }
-  .sv-contract-document .sv-cert-compact-footer {
-    margin: 0;
-    padding-top: 6px;
-    border-top: 1px solid #e2e8f0;
-    font-size: 7.5pt;
+  .sv-cert-official .sv-cert-validation-row .status-validado {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+    border-radius: 4px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    text-transform: uppercase;
+  }
+  .sv-cert-official .sv-cert-legal {
+    margin: 10px 0 0 0;
+    font-size: 7pt;
+    line-height: 1.5;
     color: #64748b;
     text-align: center;
   }
@@ -297,12 +244,12 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function formatSignedDateTime(iso?: string | null): string {
+function formatSignedDateTimeBr(iso?: string | null): string {
   if (!iso) return '—';
   const date = formatSignatureDateBr(iso);
   const time = formatSignatureTimeBr(iso);
   if (date === '—') return '—';
-  return `${date} ${time}`;
+  return `${date} ${time} (BRT)`;
 }
 
 function hasRealIp(ip?: string | null): boolean {
@@ -310,87 +257,110 @@ function hasRealIp(ip?: string | null): boolean {
   return Boolean(value && value !== '—');
 }
 
-function buildCompactPartyBlock(params: {
-  role: string;
-  name: string;
-  documentLabel: string;
-  document: string;
-  ip?: string | null;
-  signedAt?: string | null;
-}): string {
-  const ipLine = hasRealIp(params.ip)
-    ? `<p class="sv-cert-compact-line"><strong>IP:</strong> ${escapeHtml(String(params.ip).trim())}</p>`
-    : '';
-
+function buildCertField(icon: string, label: string, value: string): string {
   return `
-    <div class="sv-cert-compact-party">
-      <div class="sv-cert-compact-party-head">
-        <span>${escapeHtml(params.role)}</span>
-        <span class="sv-cert-compact-status"><span class="sv-cert-compact-status-dot"></span>ASSINADO</span>
+    <div class="sv-cert-field">
+      <span class="sv-cert-field-icon">${icon}</span>
+      <div>
+        <span class="sv-cert-field-label">${escapeHtml(label)}</span>
+        <span class="sv-cert-field-value">${escapeHtml(value || '—')}</span>
       </div>
-      <p class="sv-cert-compact-line"><strong>Nome:</strong> ${escapeHtml(params.name)}</p>
-      <p class="sv-cert-compact-line"><strong>${escapeHtml(params.documentLabel)}:</strong> ${escapeHtml(params.document)}</p>
-      ${ipLine}
-      <p class="sv-cert-compact-line"><strong>Data/Hora:</strong> ${escapeHtml(formatSignedDateTime(params.signedAt))}</p>
     </div>`;
 }
 
-function buildElectronicSignatureCard(params: {
+function buildOfficialSignatureCard(params: {
   role: string;
-  name: string;
-  representative?: string | null;
-  documentLabel: string;
-  document: string;
-  signedAt?: string | null;
-  status: string;
+  fields: Array<{ icon: string; label: string; value: string }>;
 }): string {
-  const repBlock = params.representative
-    ? `<p class="e-sign-field"><strong>Representante:</strong><br/>${escapeHtml(params.representative)}</p>`
-    : '';
+  const fieldsHtml = params.fields.map((f) => buildCertField(f.icon, f.label, f.value)).join('');
 
   return `
-    <div class="e-sign-card">
-      <div class="e-sign-badge">✓ ASSINADO ELETRONICAMENTE</div>
-      <p class="e-sign-role">${escapeHtml(params.role)}</p>
-      <p class="e-sign-name">${escapeHtml(params.name)}</p>
-      ${repBlock}
-      <p class="e-sign-field"><strong>${escapeHtml(params.documentLabel)}:</strong> ${escapeHtml(params.document || '—')}</p>
-      <p class="e-sign-field"><strong>Data/Hora da assinatura:</strong><br/>${escapeHtml(formatSignedDateTime(params.signedAt))}</p>
-      <p class="e-sign-status">Status: ${escapeHtml(params.status)}</p>
+    <div class="sv-cert-card">
+      <div class="sv-cert-card-head">
+        <p class="sv-cert-card-role">${escapeHtml(params.role)}</p>
+        <span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>
+      </div>
+      <div class="sv-cert-card-body">${fieldsHtml}</div>
+      <div class="sv-cert-card-foot">✓ DOCUMENTO ASSINADO ELETRONICAMENTE COM VALIDADE JURÍDICA</div>
     </div>`;
 }
 
+function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
+  const vendorDoc = input.representativeCpf
+    ? formatCpfCnpj(input.representativeCpf) || input.representativeCpf
+    : formatCpfCnpj(input.companyCnpj || '') || input.companyCnpj || '—';
+
+  const docLabel = input.representativeCpf
+    ? 'CPF'
+    : input.vendorDocumentLabel === 'CPF'
+      ? 'CPF'
+      : 'CNPJ';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '🏢', label: 'Empresa', value: String(input.companyName || '—') },
+  ];
+
+  const rep = String(input.representativeName || '').trim();
+  if (rep && rep.toLowerCase() !== 'não informado') {
+    fields.push({ icon: '👤', label: 'Representante', value: rep });
+  }
+
+  fields.push({ icon: '🪪', label: docLabel, value: vendorDoc });
+
+  if (hasRealIp(input.vendorIpAddress)) {
+    fields.push({
+      icon: '🌐',
+      label: 'IP da assinatura',
+      value: String(input.vendorIpAddress).trim(),
+    });
+  }
+
+  fields.push({
+    icon: '📅',
+    label: 'Data e hora da assinatura',
+    value: formatSignedDateTimeBr(input.vendorSignedAt || input.signedAt),
+  });
+
+  return buildOfficialSignatureCard({
+    role: 'PROMITENTE VENDEDOR',
+    fields,
+  });
+}
+
+function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
+  const buyerDoc =
+    formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: String(input.buyerName || '—') },
+    { icon: '🪪', label: 'CPF', value: buyerDoc },
+  ];
+
+  if (hasRealIp(input.ipAddress)) {
+    fields.push({
+      icon: '🌐',
+      label: 'IP da assinatura',
+      value: String(input.ipAddress).trim(),
+    });
+  }
+
+  fields.push({
+    icon: '📅',
+    label: 'Data e hora da assinatura',
+    value: formatSignedDateTimeBr(input.signedAt),
+  });
+
+  return buildOfficialSignatureCard({
+    role: 'PROMISSÁRIO COMPRADOR',
+    fields,
+  });
+}
+
+/** @deprecated Cartões integrados ao certificado oficial — retorna vazio para evitar duplicação. */
 export function buildSaleContractElectronicSignaturesPageHtml(
-  input: SaleContractElectronicSignaturesInput,
+  _input: SaleContractElectronicSignaturesInput,
 ): string {
-  const status = input.signatureStatus || 'ASSINADO ELETRONICAMENTE';
-  const vendorDocLabel = input.vendorDocumentLabel || 'CNPJ';
-  const vendorDoc =
-    formatCpfCnpj(input.vendorDocument || '') || input.vendorDocument || '—';
-
-  return `
-    ${CERT_STYLES}
-    <div class="contract-clause contract-clause--tight e-signatures-page">
-      <div class="e-signatures-grid">
-        ${buildElectronicSignatureCard({
-          role: 'PROMITENTE VENDEDOR',
-          name: input.vendorName,
-          representative: input.vendorRepresentative,
-          documentLabel: vendorDocLabel,
-          document: vendorDoc,
-          signedAt: input.signedAt,
-          status,
-        })}
-        ${buildElectronicSignatureCard({
-          role: 'PROMISSÁRIO COMPRADOR',
-          name: input.buyerName,
-          documentLabel: 'CPF',
-          document: formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—',
-          signedAt: input.signedAt,
-          status,
-        })}
-      </div>
-    </div>`;
+  return '';
 }
 
 /** Substitui o bloco `.contract-signatures` no HTML do contrato (somente PDF assinado). */
@@ -426,7 +396,6 @@ export function replaceContractSignaturesBlock(html: string, replacement: string
   return html;
 }
 
-/** Gera certificado com QR Code (data URL) para PDF assinado. */
 export async function buildSaleContractSignatureCertificateHtmlWithQr(
   input: SaleContractSignatureCertificateInput,
 ): Promise<string> {
@@ -445,7 +414,7 @@ export async function buildSaleContractSignatureCertificateHtmlWithQr(
   if (!qrCodeDataUrl && (token || publicUrl)) {
     const QRCode = await import('qrcode');
     const qrUrl = resolveSaleContractCertificateQrUrl(token, publicUrl);
-    qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 140 });
+    qrCodeDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 160 });
   }
 
   return buildSaleContractSignatureCertificateHtml({
@@ -462,73 +431,59 @@ export function buildSaleContractSignatureCertificateHtml(
     String(input.certificateTitle || '').trim() ||
     SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE;
 
-  const vendorDoc = input.representativeCpf
-    ? formatCpfCnpj(input.representativeCpf) || input.representativeCpf
-    : formatCpfCnpj(input.companyCnpj || '') || input.companyCnpj || '—';
-
-  const vendorName = input.representativeName
-    ? `${input.companyName || '—'} — ${input.representativeName}`
-    : input.companyName || '—';
-
-  const vendorDocLabel = input.representativeCpf ? 'CPF' : 'CNPJ';
-  const buyerDoc = formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
   const publicUrl = String(
     input.publicUrl || input.verifyUrl || input.signatureUrl || '',
   ).trim();
-  const tokenFull = String(input.signatureToken || '').trim() || '—';
+  const tokenFull = String(input.signatureToken || input.uniqueId || '').trim() || '—';
   const hashFull = String(input.signatureHash || '').trim() || '—';
+  const issuedAt = formatSignedDateTimeBr(input.signedAt || input.issuedAt);
 
   const qrBlock = input.qrCodeDataUrl
-    ? `<img src="${escapeHtml(input.qrCodeDataUrl)}" alt="QR Code" class="sv-cert-compact-qr" />`
+    ? `<img src="${escapeHtml(input.qrCodeDataUrl)}" alt="QR Code" class="sv-cert-qr" />`
     : '';
 
   return `
     ${CERT_STYLES}
-    <div class="contract-clause contract-clause--tight sv-cert-compact">
-      <h3 class="sv-cert-compact-title">${escapeHtml(title)}</h3>
-      <p class="sv-cert-compact-subtitle">${escapeHtml(SALE_CONTRACT_SIGNATURE_CERTIFICATE_SUBTITLE)}</p>
-
-      <div class="sv-cert-compact-parties">
-        ${buildCompactPartyBlock({
-          role: 'Vendedor',
-          name: vendorName,
-          documentLabel: vendorDocLabel,
-          document: vendorDoc,
-          ip: input.vendorIpAddress,
-          signedAt: input.vendorSignedAt || input.signedAt,
-        })}
-        ${buildCompactPartyBlock({
-          role: 'Comprador',
-          name: input.buyerName || '—',
-          documentLabel: 'CPF',
-          document: buyerDoc,
-          ip: input.ipAddress,
-          signedAt: input.signedAt,
-        })}
+    <div class="contract-clause contract-clause--tight sv-cert-official">
+      <div class="sv-cert-cards">
+        ${buildVendorCard(input)}
+        ${buildBuyerCard(input)}
       </div>
 
-      <div class="sv-cert-compact-meta">
-        <span><strong>Contrato nº</strong> ${escapeHtml(input.contractNumber)}</span>
-        <span><strong>Empreendimento</strong> ${escapeHtml(input.projectName || '—')}</span>
-        <span><strong>Quadra</strong> ${escapeHtml(input.quadra || '—')}</span>
-        <span><strong>Lote</strong> ${escapeHtml(input.lote || '—')}</span>
-      </div>
-
-      <div class="sv-cert-compact-security">
-        <p><strong>Hash SHA-256</strong><br/><code>${escapeHtml(hashFull)}</code></p>
-        <p><strong>Token</strong><br/><code>${escapeHtml(tokenFull)}</code></p>
-      </div>
-
-      <div class="sv-cert-compact-qr-row">
+      <div class="sv-cert-validation">
         ${qrBlock}
-        <div>
-          <p class="sv-cert-compact-url-label">URL pública</p>
-          <p class="sv-cert-compact-url">${escapeHtml(publicUrl || '—')}</p>
+        <div class="sv-cert-validation-body">
+          <h3 class="sv-cert-validation-title">${escapeHtml(title)}</h3>
+          <div class="sv-cert-validation-row">
+            <strong>Hash do documento (SHA-256)</strong>
+            <code>${escapeHtml(hashFull)}</code>
+          </div>
+          <div class="sv-cert-validation-row">
+            <strong>Token de assinatura</strong>
+            <code>${escapeHtml(tokenFull)}</code>
+          </div>
+          <div class="sv-cert-validation-row">
+            <strong>URL pública</strong>
+            <span class="value">${escapeHtml(publicUrl || '—')}</span>
+          </div>
+          <div class="sv-cert-validation-row">
+            <strong>Emitido em</strong>
+            <span class="value">${escapeHtml(issuedAt)}</span>
+          </div>
+          <div class="sv-cert-validation-row">
+            <strong>Status</strong>
+            <span class="status-validado">VALIDADO</span>
+          </div>
+          <div class="sv-cert-validation-row">
+            <strong>Tipo de certificado</strong>
+            <span class="value">Assinatura Eletrônica SV LOTES — MP 2.200-2/2001</span>
+          </div>
         </div>
       </div>
 
-      <p class="sv-cert-compact-footer">
-        A autenticidade deste documento pode ser confirmada pelo QR Code ou pela URL acima.
+      <p class="sv-cert-legal">
+        Este documento foi assinado eletronicamente com certificado digital conforme MP 2.200-2/2001 e Lei 14.063/2020.
+        A autenticidade pode ser verificada através do QR Code ou dos dados acima.
       </p>
     </div>`;
 }

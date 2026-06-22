@@ -746,7 +746,6 @@ export async function loadSaleContractPdfForSign(
   if (signature?.signature_status === 'SIGNED') {
     const ctx = options?.signContext;
     const {
-      buildSaleContractElectronicSignaturesPageHtml,
       buildSaleContractSignatureCertificateHtmlWithQr,
       replaceContractSignaturesBlock,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
@@ -777,19 +776,7 @@ export async function loadSaleContractPdfForSign(
     const buyerName = String(signature.signer_name || customer?.name || '');
     const buyerDocument = String(signature.signer_document || '');
 
-    html = replaceContractSignaturesBlock(
-      html,
-      buildSaleContractElectronicSignaturesPageHtml({
-        vendorName: companyName,
-        vendorRepresentative: seller.representative,
-        vendorDocument: seller.representativeCpf || seller.cnpj,
-        vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
-        buyerName,
-        buyerDocument,
-        signedAt: signature.signed_at,
-        signatureStatus: 'ASSINADO ELETRONICAMENTE',
-      }),
-    );
+    html = replaceContractSignaturesBlock(html, '');
 
     html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
@@ -805,6 +792,7 @@ export async function loadSaleContractPdfForSign(
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
       representativeName: seller.representative,
       representativeCpf: seller.representativeCpf,
+      vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
       signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,

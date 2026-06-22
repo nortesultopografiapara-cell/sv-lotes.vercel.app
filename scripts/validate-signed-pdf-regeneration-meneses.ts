@@ -12,7 +12,6 @@ import {
   loadSaleSignPageContext,
 } from '../lib/saleContractSignatureService';
 import {
-  buildSaleContractElectronicSignaturesPageHtml,
   replaceContractSignaturesBlock,
 } from '../lib/saleContractSignatureCertificateHtml';
 
@@ -100,17 +99,7 @@ async function main() {
   const htmlBefore = await loadSaleContractHtmlForSign(sb, contract.id);
   assert(htmlBefore.includes('contract-signatures'), 'HTML base contém bloco de assinaturas legado');
 
-  const cards = buildSaleContractElectronicSignaturesPageHtml({
-    vendorName: 'MENESES IMOBILIÁRIA LTDA',
-    vendorRepresentative: 'Representante Teste',
-    vendorDocument: '12345678901',
-    vendorDocumentLabel: 'CPF',
-    buyerName: signature!.signer_name || 'Comprador',
-    buyerDocument: signature!.signer_document || '',
-    signedAt: signature!.signed_at,
-  });
-  const htmlPatched = replaceContractSignaturesBlock(htmlBefore, cards);
-  assert(htmlPatched.includes('e-sign-card'), 'HTML regenerado contém cards eletrônicos');
+  const htmlPatched = replaceContractSignaturesBlock(htmlBefore, '');
   assert(!htmlPatched.includes('signature-slot'), 'Bloco legado de linhas removido');
 
   console.log('Regenerando PDF (mesmo caminho da API Baixar PDF Assinado)...');
