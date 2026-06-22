@@ -1,7 +1,5 @@
 'use client';
 
-'use client';
-
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -9,12 +7,14 @@ import {
   Calendar,
   FileText,
   FlaskConical,
+  Lock,
   Map,
   Play,
   Wallet,
 } from 'lucide-react';
 import {
   LANDING_CLIENTS,
+  LANDING_LOGIN_PATH,
   LANDING_PRESENTATION_URL,
   LANDING_TEST_LOTEMENT_PATH,
 } from '../constants/landingConfig';
@@ -87,6 +87,17 @@ export function HeroSection() {
                 <small>Fale com um especialista</small>
               </span>
             </a>
+            <Link
+              href={LANDING_LOGIN_PATH}
+              className="landing-btn-system landing-cta-card landing-btn-system-hero"
+              aria-label="Acessar o sistema"
+            >
+              <Lock className="w-5 h-5" />
+              <span>
+                <strong>Acessar o Sistema</strong>
+                <small>Corretores, admins e clientes</small>
+              </span>
+            </Link>
             <a
               href={LANDING_PRESENTATION_URL}
               target="_blank"
