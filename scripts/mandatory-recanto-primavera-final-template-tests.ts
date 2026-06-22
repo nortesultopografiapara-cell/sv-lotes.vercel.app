@@ -27,16 +27,19 @@ function assertNotIncludes(html: string, needle: string, msg: string) {
 const ivanildeTenant = {
   name: 'IVANILDE DE MOURA SILVA',
   fantasy_name: 'RECANTO PRIMAVERA',
+  legal_representative: 'Ivanilde de Moura Silva',
+  representative_cpf: '32641281104',
   cnpj: '32641281104',
   contract_model: 'RECANTO_PRIMAVERA',
   contract_legal_nationality: 'Brasileira',
-  contract_legal_marital_status: 'Solteira',
-  contract_legal_profession: 'Agricultora',
-  contract_legal_rg: '1234567',
-  contract_legal_rg_issuer: 'SSP/PA',
-  contract_legal_phone: '(94) 99222-3344',
-  contract_legal_email: 'ivanilde@recantoprimavera.test',
-  contract_legal_address: 'Rua das Acácias, 50, Centro',
+  contract_legal_marital_status: 'Divorciada',
+  contract_legal_profession: 'Empresária',
+  contract_legal_rg: '18.664.587',
+  contract_legal_rg_issuer: 'SSP/MG',
+  contract_legal_phone: '(94) 99218-1007',
+  contract_legal_email: 'chacararecantoprimavera@gmail.com',
+  contract_legal_address:
+    'Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II, Chácara Recanto Primavera, Parauapebas-PA',
   contract_bank_name: 'Sicredi',
   contract_bank_branch: '0804',
   contract_bank_account: '91047-5',
@@ -196,7 +199,56 @@ function testPdfChromeUsesCpfLabel() {
   const chrome = buildRecantoPrimaveraPdfChrome(ivanildeTenant, 'TESTE/2026', null);
   assert(chrome.tenantDocumentLabel === 'CPF', 'chrome com label CPF');
   assert(chrome.tenantCnpj === '326.412.811-04', 'chrome com documento formatado');
+  assert(
+    chrome.addressLine === ivanildeTenant.contract_legal_address,
+    'chrome pdf usa endereço completo do contrato',
+  );
+  assert(chrome.cityUfLine === 'Parauapebas - PA', 'chrome pdf cidade/uf');
+  assert(
+    chrome.tenantName === 'Ivanilde De Moura Silva',
+    'chrome pdf nome do representante legal',
+  );
   console.log('OK testPdfChromeUsesCpfLabel');
+}
+
+function testVendorQualificationFromContractLegalSettings() {
+  const html = buildHtml();
+  const fullAddress = ivanildeTenant.contract_legal_address as string;
+  assert(html.includes('Ivanilde De Moura Silva'), 'nome vendedor representante legal');
+  assert(html.includes('Divorciada'), 'estado civil jurídico');
+  assert(html.includes('Empresária'), 'profissão jurídica');
+  assert(html.includes('18.664.587 — SSP/MG'), 'rg com emissor');
+  assert(html.includes('(94) 99218-1007'), 'telefone contrato');
+  assert(html.includes('chacararecantoprimavera@gmail.com'), 'email contrato');
+  assert(html.includes(fullAddress), 'endereço completo contrato na qualificação');
+  assertNotIncludes(html, 'Rua das Acácias', 'sem endereço genérico antigo');
+  console.log('OK testVendorQualificationFromContractLegalSettings');
+}
+
+function testVendorAddressFallbackFromContactAddress() {
+  const tenant = {
+    ...ivanildeTenant,
+    contract_legal_address: '',
+    address: 'Acesso a Palmares II, Zona Rural',
+  };
+  const html = generateContractHTML({
+    tenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale,
+    contractDate: '2026-06-08',
+  });
+  assert(
+    html.includes('Acesso a Palmares II, Zona Rural, Parauapebas-PA'),
+    'fallback endereço contato + cidade-UF',
+  );
+  const chrome = buildRecantoPrimaveraPdfChrome(tenant, 'TEST/2026', null);
+  assert(
+    chrome.addressLine === 'Acesso a Palmares II, Zona Rural, Parauapebas-PA',
+    'chrome fallback endereço',
+  );
+  console.log('OK testVendorAddressFallbackFromContactAddress');
 }
 
 function testLiteralPhrasesNotSummarized() {
@@ -602,7 +654,7 @@ function testStoredContractUnchanged() {
   const stored = '<div>Contrato antigo Tel.: (94) 11111-1111</div>';
   const fresh = buildHtml();
   assert(stored.includes('11111-1111'), 'antigo intacto');
-  assert(fresh.includes('99222-3344'), 'novo com telefone atualizado');
+  assert(fresh.includes('99218-1007'), 'novo com telefone atualizado');
   console.log('OK testStoredContractUnchanged');
 }
 
@@ -660,7 +712,7 @@ function testFormatMasksApplied() {
   assert(html.includes('326.412.811-04'), 'cpf vendedor mascarado');
   assert(html.includes('987.654.321-00'), 'cpf comprador mascarado');
   assert(html.includes('111.222.333-44'), 'cpf cônjuge mascarado');
-  assert(html.includes('(94) 99222-3344') || html.includes('(94) 9922-2334'), 'telefone vendedor');
+  assert(html.includes('(94) 99218-1007') || html.includes('(94) 9921-8100'), 'telefone vendedor');
   assert(html.includes('68.515-000') || html.includes('68515'), 'cep comprador');
   console.log('OK testFormatMasksApplied');
 }
@@ -824,6 +876,8 @@ async function main() {
   testSpouseBlockConditional();
   testNoLogoBeforeTitle();
   testPdfChromeUsesCpfLabel();
+  testVendorQualificationFromContractLegalSettings();
+  testVendorAddressFallbackFromContactAddress();
   testLiteralPhrasesNotSummarized();
   testClauseFirstBuyerDeclaration();
   testDocxClausesPresent();

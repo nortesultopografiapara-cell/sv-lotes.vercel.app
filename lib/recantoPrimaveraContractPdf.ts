@@ -2,12 +2,12 @@
  * Chrome PDF isolado para contratos Recanto Primavera.
  */
 
-import {
-  formatCompanyAddressForHeader,
-  getCompanyDisplayName,
-} from '@/lib/contractCompanyDisplay';
+import { getCompanyDisplayName } from '@/lib/contractCompanyDisplay';
 import type { ContractPdfChromeInput } from '@/lib/contractPdfPostProcess';
-import { normalizeRecantoPrimaveraCompanyProfile } from '@/lib/recantoPrimaveraCompanyProfile';
+import {
+  formatRecantoVendorAddressForPdfHeader,
+  normalizeRecantoPrimaveraCompanyProfile,
+} from '@/lib/recantoPrimaveraCompanyProfile';
 
 export function buildRecantoPrimaveraPdfChrome(
   tenant: Record<string, unknown>,
@@ -15,7 +15,8 @@ export function buildRecantoPrimaveraPdfChrome(
   logoBase64: string | null = null,
 ): ContractPdfChromeInput {
   const profile = normalizeRecantoPrimaveraCompanyProfile(tenant);
-  const { addressLine, cityUfLine } = formatCompanyAddressForHeader(tenant);
+  const { addressLine, cityUfLine } =
+    formatRecantoVendorAddressForPdfHeader(profile);
 
   return {
     tenantName: profile.vendorName || getCompanyDisplayName(tenant),

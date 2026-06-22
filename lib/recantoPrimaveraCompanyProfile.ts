@@ -89,15 +89,54 @@ function toTitleCase(str: string): string {
     .replace(/\bS\/n\b/g, 'S/N');
 }
 
+/** Endereço da vendedora: contract_legal_address ou fallback contato/endereço + cidade-UF. */
+export function resolveRecantoVendorContractAddress(
+  company: Record<string, unknown> | null | undefined,
+): string {
+  const c = company && typeof company === 'object' ? company : {};
+
+  const contractAddress = sanitizeContractField(c.contract_legal_address);
+  if (contractAddress) return contractAddress;
+
+  const general = sanitizeContractField(pickString(c.address, c.endereco));
+  const city = sanitizeContractField(pickString(c.city, c.cidade));
+  const state = sanitizeContractField(pickString(c.state, c.uf));
+
+  const parts: string[] = [];
+  if (general) parts.push(general);
+  if (city && state) {
+    parts.push(`${city}-${state.toUpperCase()}`);
+  } else if (city) {
+    parts.push(city);
+  } else if (state) {
+    parts.push(state.toUpperCase());
+  }
+  return parts.join(', ');
+}
+
+export function formatRecantoVendorAddressForPdfHeader(
+  profile: RecantoPrimaveraCompanyProfile,
+): { addressLine: string; cityUfLine: string } {
+  const city = profile.city ? toTitleCase(profile.city) : '';
+  const state = profile.state ? profile.state.toUpperCase() : '';
+  const cityUfLine =
+    city && state ? `${city} - ${state}` : city || state || '';
+
+  return {
+    addressLine: profile.address,
+    cityUfLine,
+  };
+}
+
 export function normalizeRecantoPrimaveraCompanyProfile(
   company: Record<string, unknown> | null | undefined,
 ): RecantoPrimaveraCompanyProfile {
   const c = company && typeof company === 'object' ? company : {};
 
   const vendorName = toTitleCase(
-    pickString(c.fantasy_name, c.name, c.legal_representative),
+    pickString(c.legal_representative, c.fantasy_name, c.name),
   );
-  const documentRaw = pickString(c.cnpj, c.document);
+  const documentRaw = pickString(c.representative_cpf, c.cnpj, c.document);
   const documentFmt = documentRaw ? formatCNPJCPF(documentRaw) : '';
   const documentLabel = resolveContractDocumentLabel(documentRaw);
 
@@ -113,9 +152,7 @@ export function normalizeRecantoPrimaveraCompanyProfile(
     documentLabel,
     phone: formatRecantoPhone(pickString(c.contract_legal_phone, c.phone)),
     email: pickString(c.contract_legal_email, c.email),
-    address: toTitleCase(
-      pickString(c.contract_legal_address, c.address, c.endereco),
-    ),
+    address: resolveRecantoVendorContractAddress(c),
     city: toTitleCase(pickString(c.city, c.cidade)),
     state: pickString(c.state, c.uf).toUpperCase(),
     zip: formatRecantoCep(pickString(c.zip_code, c.cep)),

@@ -261,6 +261,23 @@ function testCpfLabelForPfSeller() {
   console.log('OK testCpfLabelForPfSeller');
 }
 
+function testVendorAddressFromContractLegalSettings() {
+  const fullAddress =
+    'Acesso a Palmares II, Zona Rural, entre Palmares I e Palmares II, Chácara Recanto Primavera, Parauapebas-PA';
+  const tenant = recantoTenant({
+    legal_representative: 'Ivanilde de Moura Silva',
+    representative_cpf: '32641281104',
+    contract_legal_address: fullAddress,
+    address: 'Rua Curta Errada, 1',
+    contract_legal_phone: '(94) 99218-1007',
+    contract_legal_email: 'chacararecantoprimavera@gmail.com',
+  });
+  const html = buildRecantoHtml(tenant);
+  assert(html.includes(fullAddress), 'endereço contract_legal_address na qualificação');
+  assertNotIncludes(html, 'Rua Curta Errada', 'ignora endereço genérico quando legal preenchido');
+  console.log('OK testVendorAddressFromContractLegalSettings');
+}
+
 function main() {
   testContractModelNormalization();
   testPhoneUpdatesOnNewContract();
@@ -272,6 +289,7 @@ function main() {
   testStoredContractHtmlUnchanged();
   testRecantoDirectGenerator();
   testCpfLabelForPfSeller();
+  testVendorAddressFromContractLegalSettings();
   console.log('OK — mandatory-recanto-primavera-contract-tests passed');
 }
 
