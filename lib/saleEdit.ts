@@ -4,10 +4,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  customerPatchFromForm,
   customerToFormValues,
   mergeCustomerData,
-  mergePreservingCustomerFields,
+  mergeCustomerPatchFromForm,
   normalizeDocument,
   type CustomerFormValues,
   type CustomerRecord,
@@ -260,10 +259,7 @@ export async function updateSaleFromEdit(
     paymentType: data.payment_type,
   };
 
-  const customerPatch = mergePreservingCustomerFields(
-    customerBefore,
-    customerPatchFromForm(data),
-  );
+  const customerPatch = mergeCustomerPatchFromForm(customerBefore, data);
 
   await logCustomerAudit(supabase, {
     customerId,

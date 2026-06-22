@@ -10,8 +10,8 @@ import {
   loadCustomerById,
   type CustomerFormValues,
 } from '@/lib/customerIdentity';
+import { validateOptionalCustomerEmail, validateSaleLotFormSubmission } from '@/lib/saleLotFormValidation';
 import {
-  validateCustomerForContract,
   type CustomerContractValidation,
 } from '@/lib/validateCustomerForContract';
 import {
@@ -260,6 +260,19 @@ export function CustomerLotFormModal({
     let confirmedInstallmentsCount = installmentsCountStr;
     let confirmedInstallmentValue = installmentValue;
 
+    const emailCheck = validateOptionalCustomerEmail(formData.email);
+    if (!emailCheck.valid) {
+      alert(emailCheck.message);
+      return;
+    }
+
+    if (actionName === 'Reservado') {
+      if (!formData.name?.trim()) {
+        alert('Preencha o campo obrigatório: Nome completo.');
+        return;
+      }
+    }
+
     if (actionName === 'Vendido' || isEditMode) {
       if (paymentType === 'À vista') {
         if (discountValue > price) {
@@ -311,14 +324,15 @@ export function CustomerLotFormModal({
     }
 
     if (actionName === 'Vendido' || isEditMode) {
-      const validation = validateCustomerForContract({
-        ...formData,
-        id: formData.selected_customer_id || undefined,
-        civil_state: formData.civil_state,
-        marital_status: formData.civil_state,
+      const saleValidation = validateSaleLotFormSubmission({
+        form: formData,
+        finalValue,
       });
-      if (!validation.valid) {
-        onCustomerValidationFailed?.(validation);
+      if (!saleValidation.valid) {
+        alert(saleValidation.message || 'Preencha os campos obrigatórios.');
+        if (saleValidation.contractValidation) {
+          onCustomerValidationFailed?.(saleValidation.contractValidation);
+        }
         return;
       }
     }
@@ -439,7 +453,7 @@ export function CustomerLotFormModal({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">CPF / CNPJ</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">CPF / CNPJ *</label>
                   <input
                     type="text"
                     value={formData.cpf_cnpj}
@@ -454,7 +468,7 @@ export function CustomerLotFormModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">RG</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">RG *</label>
                   <input
                     type="text"
                     value={formData.rg}
@@ -506,7 +520,7 @@ export function CustomerLotFormModal({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Profissão *</label>
                   <input
                     type="text"
                     value={formData.profession}
@@ -515,7 +529,7 @@ export function CustomerLotFormModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Estado Civil *</label>
                   <select
                     value={formData.civil_state}
                     onChange={(e) => setField({ civil_state: e.target.value })}
@@ -531,7 +545,7 @@ export function CustomerLotFormModal({
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Endereço *</label>
                 <input
                   type="text"
                   value={formData.address}
@@ -550,7 +564,7 @@ export function CustomerLotFormModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Cidade</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Cidade *</label>
                   <input
                     type="text"
                     value={formData.city}
@@ -559,7 +573,7 @@ export function CustomerLotFormModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">UF</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">UF *</label>
                   <input
                     type="text"
                     maxLength={2}
@@ -774,7 +788,7 @@ export function CustomerLotFormModal({
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Valor do Lote</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Valor do Lote *</label>
                     <CurrencyInput
                       readOnly
                       value={String(price)}
@@ -783,7 +797,7 @@ export function CustomerLotFormModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Forma de Pagamento</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Forma de Pagamento *</label>
                     <select
                       value={paymentType}
                       onChange={(e) => {
@@ -811,7 +825,7 @@ export function CustomerLotFormModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor Final</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Valor Final *</label>
                       <CurrencyInput
                         readOnly
                         value={String(finalValue)}

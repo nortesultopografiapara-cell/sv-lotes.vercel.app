@@ -10,6 +10,7 @@ import {
   customerToFormValues,
   emptyCustomerFormValues,
   mergeCustomerData,
+  mergeCustomerPatchFromForm,
   mergePreservingCustomerFields,
   type CustomerRecord,
 } from '../lib/customerIdentity';
@@ -168,7 +169,7 @@ function testContractHtmlWithFullCustomer() {
 
 function testEditSalePatchPreservesFields() {
   const before = { ...FULL_CUSTOMER };
-  const editPayload = customerPatchFromForm({
+  const after = mergeCustomerPatchFromForm(before, {
     ...customerToFormValues(FULL_CUSTOMER),
     profession: '',
     civil_state: '',
@@ -177,7 +178,6 @@ function testEditSalePatchPreservesFields() {
     zip_code: '',
     rg: '',
   });
-  const after = mergePreservingCustomerFields(before, editPayload);
   assert(after.rg === FULL_CUSTOMER.rg, 'edit sale RG');
   assert(after.profession === FULL_CUSTOMER.profession, 'edit sale profissão');
   assert(after.civil_state === FULL_CUSTOMER.civil_state, 'edit sale estado civil');
@@ -185,6 +185,15 @@ function testEditSalePatchPreservesFields() {
   assert(after.city === FULL_CUSTOMER.city, 'edit sale cidade');
   assert(after.zip_code === FULL_CUSTOMER.zip_code, 'edit sale CEP');
   console.log('OK testEditSalePatchPreservesFields');
+}
+
+function testEditSaleClearsEmailWhenFormEmpty() {
+  const after = mergeCustomerPatchFromForm(FULL_CUSTOMER, {
+    ...customerToFormValues(FULL_CUSTOMER),
+    email: '',
+  });
+  assert(after.email === null, 'e-mail limpo na edição');
+  console.log('OK testEditSaleClearsEmailWhenFormEmpty');
 }
 
 function testRegenerateMergeFromLayers() {
@@ -222,5 +231,6 @@ testBuildCustomerPayloadPreservesExisting();
 testSaleFormOverlayDoesNotWipeDbCustomer();
 testContractHtmlWithFullCustomer();
 testEditSalePatchPreservesFields();
+testEditSaleClearsEmailWhenFormEmpty();
 testRegenerateMergeFromLayers();
 console.log('mandatory-customer-data-preservation-tests: all passed');

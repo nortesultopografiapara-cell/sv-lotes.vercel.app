@@ -332,6 +332,13 @@ const CUSTOMER_EMPTY_TOKENS = new Set([
   'cpf/cnpj não informado',
 ]);
 
+/** E-mail opcional no formulário: vazio limpa no banco (null). */
+export function customerEmailFromForm(email?: string | null): string | null {
+  const trimmed = String(email ?? '').trim();
+  if (!trimmed) return null;
+  return trimmed.toUpperCase();
+}
+
 /** Campo vazio, placeholder ou "Não informado" — não deve sobrescrever dado existente. */
 export function isEmptyCustomerField(value: unknown): boolean {
   if (value == null) return true;
@@ -476,9 +483,7 @@ export function customerPatchFromForm(
     patch.document = cpf;
   }
   if (!isEmptyCustomerField(form.phone)) patch.phone = form.phone?.trim() || null;
-  if (!isEmptyCustomerField(form.email)) {
-    patch.email = form.email?.trim().toUpperCase() || null;
-  }
+  patch.email = customerEmailFromForm(form.email);
   if (!isEmptyCustomerField(form.rg)) patch.rg = form.rg?.trim() || null;
   if (!isEmptyCustomerField(form.rg_issuer)) {
     patch.rg_issuer = form.rg_issuer?.trim() || null;
@@ -517,6 +522,17 @@ export function customerPatchFromForm(
   return patch;
 }
 
+/** Mescla patch do formulário preservando campos preenchidos, exceto e-mail (pode limpar). */
+export function mergeCustomerPatchFromForm(
+  existing: Record<string, unknown> | null | undefined,
+  form: Partial<CustomerFormValues> & { name?: string },
+): Record<string, unknown> {
+  const patch = customerPatchFromForm(form);
+  const merged = mergePreservingCustomerFields(existing, patch);
+  merged.email = customerEmailFromForm(form.email);
+  return merged;
+}
+
 export function buildCustomerPayload(
   form: CustomerFormValues,
   ctx: { tenantId: string; projectId: string },
@@ -531,7 +547,7 @@ export function buildCustomerPayload(
     cpf_cnpj: cpf,
     document: cpf,
     phone: form.phone?.trim() || null,
-    email: form.email?.trim().toUpperCase() || null,
+    email: customerEmailFromForm(form.email),
     rg: form.rg?.trim() || null,
     rg_issuer: form.rg_issuer?.trim() || null,
     rg_issuer_state: form.rg_issuer_state?.trim().toUpperCase() || null,
@@ -552,7 +568,7 @@ export function buildCustomerPayload(
   };
 
   if (existing) {
-    return mergePreservingCustomerFields(existing, fromForm);
+    return mergeCustomerPatchFromForm(existing, form);
   }
   return fromForm;
 }
@@ -728,6 +744,7 @@ export async function resolveOrCreateCustomer(
     state_uf: payload.state_uf,
     zip_code: payload.zip_code,
   });
+  clientPayload.email = payload.email;
 
   if (!clientId) {
     const { data: newClient } = await supabase
