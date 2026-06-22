@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from 'react';
 import {
   Copy,
   ExternalLink,
@@ -58,19 +65,32 @@ function resolveLote(block: SelectedContract['blocks']): string {
   return String(block.lot_number || block.lote || block.number || '—');
 }
 
+export type SaleContractSignatureCapabilities = {
+  canSend: boolean;
+  canShare: boolean;
+  sending: boolean;
+};
+
+export type SaleContractSignatureSectionHandle = {
+  sendForSignature: () => Promise<void>;
+  openShareModal: () => void;
+};
+
 type Props = {
   contract: SelectedContract | null;
   userRole?: string | null;
   compact?: boolean;
   onSigned?: () => void;
+  onCapabilitiesChange?: (capabilities: SaleContractSignatureCapabilities) => void;
 };
 
-export function SaleContractSignatureSection({
-  contract,
-  userRole,
-  compact = false,
-  onSigned,
-}: Props) {
+export const SaleContractSignatureSection = forwardRef<
+  SaleContractSignatureSectionHandle,
+  Props
+>(function SaleContractSignatureSection(
+  { contract, userRole, compact = false, onSigned, onCapabilitiesChange },
+  ref,
+) {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [latest, setLatest] = useState<ContractSignatureRow | null>(null);
@@ -142,7 +162,7 @@ export function SaleContractSignatureSection({
     });
   }, [signUrl, contract, buyerName, projectName, quadra, lote]);
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (!contract?.id || blockOwnerWriteOnClient(userRole)) return;
     setSending(true);
     setError(null);
@@ -168,7 +188,24 @@ export function SaleContractSignatureSection({
     } finally {
       setSending(false);
     }
-  };
+  }, [contract?.id, onSigned, userRole]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      sendForSignature: handleSend,
+      openShareModal: () => setShareOpen(true),
+    }),
+    [handleSend],
+  );
+
+  useEffect(() => {
+    onCapabilitiesChange?.({
+      canSend: Boolean(canSend),
+      canShare: Boolean(canShare && signUrl),
+      sending,
+    });
+  }, [canSend, canShare, signUrl, sending, onCapabilitiesChange]);
 
   const handleCopyLink = async () => {
     if (!signUrl) return;
@@ -306,7 +343,7 @@ export function SaleContractSignatureSection({
       )}
     </div>
   );
-}
+});
 
 function ActionChip({
   icon: Icon,

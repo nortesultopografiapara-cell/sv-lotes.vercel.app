@@ -297,6 +297,21 @@
     color: #c084fc;
   }
 
+  .contracts-mobile-action-btn--signature {
+    color: #fff;
+    border-color: color-mix(in srgb, var(--brand-primary) 55%, #38bdf8);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--brand-primary) 88%, #2563eb) 0%,
+      #0891b2 100%
+    );
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+  }
+
+  .contracts-mobile-action-btn--signature:disabled {
+    opacity: 0.55;
+  }
+
   .contracts-page--contract-selected .contracts-list-scroll {
     padding-bottom: var(--contracts-mobile-reserve);
   }

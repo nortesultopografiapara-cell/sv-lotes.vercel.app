@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useSessionGuard } from "@/hooks/useSessionGuard";
 import {
@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Trash2,
   History,
+  ShieldCheck,
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
@@ -50,7 +51,11 @@ import {
   type CustomerContractValidation,
 } from "@/lib/validateCustomerForContract";
 import { CustomerContractValidationModal } from "@/components/contracts/CustomerContractValidationModal";
-import { SaleContractSignatureSection } from "@/components/contracts/SaleContractSignatureSection";
+import {
+  SaleContractSignatureSection,
+  type SaleContractSignatureCapabilities,
+  type SaleContractSignatureSectionHandle,
+} from "@/components/contracts/SaleContractSignatureSection";
 import {
   applyContractPdfChrome,
   buildContractPdfChromeFromTenant,
@@ -492,6 +497,12 @@ export default function ContractsPage() {
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regeneratingContract, setRegeneratingContract] = useState(false);
   const [contractToast, setContractToast] = useState<string | null>(null);
+  const signatureSectionRef = useRef<SaleContractSignatureSectionHandle>(null);
+  const [signatureCaps, setSignatureCaps] = useState<SaleContractSignatureCapabilities>({
+    canSend: false,
+    canShare: false,
+    sending: false,
+  });
 
   const [stats, setStats] = useState({
     ativos: 0,
@@ -516,6 +527,10 @@ export default function ContractsPage() {
     }
     return true;
   };
+
+  useEffect(() => {
+    setSignatureCaps({ canSend: false, canShare: false, sending: false });
+  }, [selectedContract?.id]);
 
   useEffect(() => {
     async function loadTenant() {
@@ -1925,8 +1940,10 @@ export default function ContractsPage() {
                 </div>
 
                 <SaleContractSignatureSection
+                  ref={signatureSectionRef}
                   contract={selectedContract}
                   userRole={user?.role}
+                  onCapabilitiesChange={setSignatureCaps}
                   onSigned={() => {
                     void reloadContractsList();
                   }}
@@ -2744,6 +2761,27 @@ export default function ContractsPage() {
                     className={regeneratingContract ? "animate-spin" : ""}
                   />
                   Regenerar
+                </button>
+              )}
+              {(signatureCaps.canSend || signatureCaps.canShare) && (
+                <button
+                  type="button"
+                  disabled={signatureCaps.sending || blockOwnerWriteOnClient(user?.role)}
+                  onClick={() => {
+                    if (signatureCaps.canSend) {
+                      void signatureSectionRef.current?.sendForSignature();
+                      return;
+                    }
+                    signatureSectionRef.current?.openShareModal();
+                  }}
+                  className="contracts-mobile-action-btn contracts-mobile-action-btn--signature"
+                >
+                  <ShieldCheck className={signatureCaps.sending ? "animate-pulse" : ""} />
+                  {signatureCaps.sending
+                    ? "Enviando…"
+                    : signatureCaps.canSend
+                      ? "Enviar p/ Assinatura"
+                      : "Compartilhar link"}
                 </button>
               )}
               {getStatusLabel(selectedContract.status) === "Pendente" && (
