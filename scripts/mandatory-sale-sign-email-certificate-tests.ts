@@ -91,16 +91,11 @@ function testCertificateWithEmail() {
   assert(cert.includes('Residencial Meneses'), 'empreendimento');
   assert(cert.includes('04'), 'quadra');
   assert(cert.includes('22'), 'lote');
-  assert(cert.includes('comprador@example.com'), 'e-mail no certificado');
   assert(cert.includes('177.1.2.3'), 'IP no certificado');
-  assert(cert.includes('VALIDADO'), 'status validado');
-  assert(
-    cert.includes('assinado eletronicamente através da plataforma SV LOTES'),
-    'declaração',
-  );
+  assert(cert.includes('ASSINADO'), 'status assinado');
   assert(cert.includes('Hash SHA-256'), 'hash opcional');
   assert(cert.includes('token123456789abcdef'), 'token completo');
-  assert(cert.includes('Histórico'), 'histórico');
+  assert(cert.includes('sv-cert-compact'), 'layout compacto');
   console.log('OK testCertificateWithEmail');
 }
 
@@ -194,6 +189,8 @@ function testElectronicSignaturesPage() {
   );
   assert(!html.includes('signature-slot'), 'bloco antigo removido');
   assert(html.includes('e-sign-card'), 'cards inseridos');
+  assert(html.includes('#f0fff4'), 'cartões com fundo verde');
+  assert(html.includes('min-height: 168px'), 'altura padronizada');
   console.log('OK testElectronicSignaturesPage');
 }
 

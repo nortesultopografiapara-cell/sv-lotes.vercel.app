@@ -81,15 +81,21 @@ const CERT_STYLES = `
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     margin-top: 14px;
+    align-items: stretch;
   }
   .sv-contract-document .e-sign-card {
-    border: 1px solid #c5d0dc;
+    border: 1px solid #b8dfc8;
     border-radius: 8px;
-    background: #f7fafc;
+    background: #f0fff4;
     padding: 16px 18px;
     page-break-inside: avoid;
     break-inside: avoid-page;
     text-align: left;
+    height: 100%;
+    min-height: 168px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
   }
   .sv-contract-document .e-sign-badge {
     display: inline-block;
@@ -128,7 +134,8 @@ const CERT_STYLES = `
     color: #1a202c;
   }
   .sv-contract-document .e-sign-status {
-    margin: 10px 0 0 0;
+    margin: auto 0 0 0;
+    padding-top: 10px;
     font-size: 9.5pt;
     font-weight: bold;
     color: #167848;
@@ -170,12 +177,18 @@ const CERT_STYLES = `
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-bottom: 10px;
+    align-items: stretch;
   }
   .sv-contract-document .sv-cert-compact-party {
-    border: 1px solid #e2e8f0;
+    border: 1px solid #b8dfc8;
     border-radius: 4px;
-    background: #fff;
+    background: #f0fff4;
     padding: 8px 10px;
+    height: 100%;
+    min-height: 108px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
   }
   .sv-contract-document .sv-cert-compact-party-head {
     display: flex;
@@ -292,6 +305,11 @@ function formatSignedDateTime(iso?: string | null): string {
   return `${date} ${time}`;
 }
 
+function hasRealIp(ip?: string | null): boolean {
+  const value = String(ip ?? '').trim();
+  return Boolean(value && value !== '—');
+}
+
 function buildCompactPartyBlock(params: {
   role: string;
   name: string;
@@ -300,6 +318,10 @@ function buildCompactPartyBlock(params: {
   ip?: string | null;
   signedAt?: string | null;
 }): string {
+  const ipLine = hasRealIp(params.ip)
+    ? `<p class="sv-cert-compact-line"><strong>IP:</strong> ${escapeHtml(String(params.ip).trim())}</p>`
+    : '';
+
   return `
     <div class="sv-cert-compact-party">
       <div class="sv-cert-compact-party-head">
@@ -308,7 +330,7 @@ function buildCompactPartyBlock(params: {
       </div>
       <p class="sv-cert-compact-line"><strong>Nome:</strong> ${escapeHtml(params.name)}</p>
       <p class="sv-cert-compact-line"><strong>${escapeHtml(params.documentLabel)}:</strong> ${escapeHtml(params.document)}</p>
-      <p class="sv-cert-compact-line"><strong>IP:</strong> ${escapeHtml(params.ip || '—')}</p>
+      ${ipLine}
       <p class="sv-cert-compact-line"><strong>Data/Hora:</strong> ${escapeHtml(formatSignedDateTime(params.signedAt))}</p>
     </div>`;
 }
