@@ -28,6 +28,8 @@ export const DEMO_BLOCKED_API_PREFIXES = [
   '/api/companies/cleanup',
   '/api/companies/update',
   '/api/companies/status',
+  '/api/company-admins',
+  '/api/super-admin/change-password',
   '/api/saas/',
   '/api/cron/',
   '/api/payments/webhook',

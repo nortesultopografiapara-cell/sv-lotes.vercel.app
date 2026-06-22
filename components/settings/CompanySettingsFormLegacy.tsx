@@ -8,6 +8,8 @@ import {
   type SaleContractModel,
 } from '@/lib/contractModel';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 
 type FormState = ReturnType<typeof useCompanySettingsForm>;
 
@@ -31,7 +33,9 @@ type Props = Pick<
   | 'uploadingSignature'
   | 'uploadingTechSignature'
   | 'uploadingTechStamp'
->;
+> & {
+  readOnlyDemo?: boolean;
+};
 
 export function CompanySettingsFormLegacy({
   company,
@@ -52,6 +56,7 @@ export function CompanySettingsFormLegacy({
   uploadingSignature,
   uploadingTechSignature,
   uploadingTechStamp,
+  readOnlyDemo = false,
 }: Props) {
   if (!company) return null;
 
@@ -60,7 +65,8 @@ export function CompanySettingsFormLegacy({
 
   return (
     <form onSubmit={handleSave} className="space-y-8 sv-theme-card p-6 rounded-xl shadow-lg border">
-      <div className="space-y-4">
+      {readOnlyDemo ? <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} /> : null}
+      <fieldset disabled={readOnlyDemo} className={`space-y-8 ${readOnlyDemo ? 'opacity-60' : ''}`}>
         <h2 className="sv-theme-heading flex items-center gap-2">
           <ImagePlus className="w-5 h-5 sv-theme-section-icon" />
           Identidade Visual
@@ -108,7 +114,6 @@ export function CompanySettingsFormLegacy({
             </div>
           </div>
         </div>
-      </div>
 
       <div className="space-y-4">
         <h2 className="sv-theme-heading flex items-center gap-2">
@@ -343,12 +348,15 @@ export function CompanySettingsFormLegacy({
         </div>
       </div>
 
+      {!readOnlyDemo ? (
       <div className="flex justify-end pt-4 border-t border-[var(--border-color)] mt-8">
         <button type="submit" disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 sv-brand-btn-primary font-medium rounded-lg transition-colors disabled:opacity-50">
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
           Salvar Configurações
         </button>
       </div>
+      ) : null}
+      </fieldset>
     </form>
   );
 }

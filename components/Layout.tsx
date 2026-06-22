@@ -762,9 +762,15 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                         <button onClick={() => setActiveProfileModal('profile')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left">
                           <User className="w-4 h-4" /> Meu Perfil
                         </button>
-                        <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left mt-1">
-                          <Lock className="w-4 h-4" /> Alterar Senha
-                        </button>
+                        {!isDemoUser ? (
+                          <button onClick={() => setActiveProfileModal('password')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left mt-1">
+                            <Lock className="w-4 h-4" /> Alterar Senha
+                          </button>
+                        ) : (
+                          <p className="px-3 py-2 mt-1 text-xs text-amber-400/90 leading-snug">
+                            Usuário demonstração não pode alterar senha.
+                          </p>
+                        )}
                         <button onClick={() => setActiveProfileModal('security')} className="w-full flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors text-left mt-1">
                           <Shield className="w-4 h-4" /> Segurança
                         </button>

@@ -17,11 +17,14 @@ import {
 } from '@/lib/companyAdminsApiClient';
 import { supabase } from '@/lib/supabase';
 import type { CompanyAdminListMeta, CompanyAdminUserRow } from '@/lib/companyAdminUsers';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 
 type Props = {
   callerUserId: string;
   tenantId: string;
   impersonatingTenantId?: string | null;
+  readOnlyDemo?: boolean;
 };
 
 type FormState = {
@@ -57,6 +60,7 @@ export function TenantCompanyAdminsPanel({
   callerUserId,
   tenantId,
   impersonatingTenantId,
+  readOnlyDemo = false,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -224,6 +228,10 @@ export function TenantCompanyAdminsPanel({
       setSaving(false);
     }
   };
+
+  if (readOnlyDemo) {
+    return <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} />;
+  }
 
   return (
     <div className="sv-theme-card rounded-xl border p-6 space-y-4">

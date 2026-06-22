@@ -11,6 +11,8 @@ import { CompanySettingsV2Shell } from '@/components/settings/CompanySettingsV2S
 import { useCompanySettingsForm, resolveSettingsCompanyId } from '@/components/settings/useCompanySettingsForm';
 import { resolveCompanySettingsLayout } from '@/lib/companySettingsLayout';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE, isDemoProfile } from '@/lib/demoRestrictions';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
@@ -44,6 +46,7 @@ export default function SettingsPage() {
   const v2Active = layout === 'v2';
   const loading = form.loading || authLoading;
   const showAdmins = Boolean(isTenantAdminRole(user?.role) && settingsCompanyId && user?.id);
+  const readOnlyDemo = isDemoProfile(user);
 
   const impersonatingTenantId =
     typeof window !== 'undefined' &&
@@ -93,9 +96,12 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {readOnlyDemo ? <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} /> : null}
+
       {v2Active ? (
         <CompanySettingsV2Shell
           {...form}
+          readOnlyDemo={readOnlyDemo}
           showAdmins={showAdmins}
           adminPanelProps={
             showAdmins && settingsCompanyId && user?.id
@@ -103,6 +109,7 @@ export default function SettingsPage() {
                   callerUserId: user.id,
                   tenantId: settingsCompanyId,
                   impersonatingTenantId,
+                  readOnlyDemo,
                 }
               : undefined
           }
@@ -123,13 +130,18 @@ export default function SettingsPage() {
                 callerUserId={user.id}
                 tenantId={settingsCompanyId}
                 impersonatingTenantId={impersonatingTenantId}
+                readOnlyDemo={readOnlyDemo}
               />
             </div>
           ) : null}
 
           {showAdmins && settingsCompanyId && user?.id ? (
             <div className="mb-8">
-              <OwnerProjectAccessPanel callerUserId={user.id} tenantId={settingsCompanyId} />
+              <OwnerProjectAccessPanel
+                callerUserId={user.id}
+                tenantId={settingsCompanyId}
+                readOnlyDemo={readOnlyDemo}
+              />
             </div>
           ) : null}
 
@@ -142,7 +154,7 @@ export default function SettingsPage() {
               <p className="text-sm text-[var(--text-secondary)]">Informações legais e técnicas.</p>
             </div>
           </div>
-          <CompanySettingsFormLegacy {...form} />
+          <CompanySettingsFormLegacy {...form} readOnlyDemo={readOnlyDemo} />
         </>
       )}
     </div>

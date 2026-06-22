@@ -8,6 +8,7 @@ import {
   updateCompanyAdminUser,
 } from '@/lib/companyAdminUsers';
 import { createAdminSupabase } from '@/lib/supabase/server';
+import { rejectIfDemoCaller } from '@/lib/demoServerGuard';
 
 export const runtime = 'nodejs';
 
@@ -56,6 +57,9 @@ export async function POST(request: Request) {
   if (!ctx.ok || !ctx.tenantId || !ctx.callerId) {
     return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
   }
+
+  const demoBlock = await rejectIfDemoCaller(admin, ctx.callerId);
+  if (demoBlock) return demoBlock;
 
   const fullName = String(body.fullName || '').trim();
   const email = String(body.email || '').trim();
@@ -113,6 +117,9 @@ export async function PATCH(request: Request) {
   if (!ctx.ok || !ctx.tenantId || !ctx.callerId) {
     return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
   }
+
+  const demoBlock = await rejectIfDemoCaller(admin, ctx.callerId);
+  if (demoBlock) return demoBlock;
 
   const adminId = String(body.adminId || '').trim();
   if (!adminId) {

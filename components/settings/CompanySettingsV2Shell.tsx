@@ -34,6 +34,8 @@ import {
 } from '@/lib/saasContractCompanyProfile';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdminsPanel';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
 
 type FormState = ReturnType<typeof useCompanySettingsForm>;
@@ -80,11 +82,13 @@ type Props = Pick<
   | 'uploadingTechSignature'
   | 'uploadingTechStamp'
 > & {
+  readOnlyDemo?: boolean;
   showAdmins: boolean;
   adminPanelProps?: {
     callerUserId: string;
     tenantId: string;
     impersonatingTenantId: string | null;
+    readOnlyDemo?: boolean;
   };
 };
 
@@ -120,7 +124,8 @@ function CollapsibleSection({
   );
 }
 
-function SaveBar({ submitting }: { submitting: boolean }) {
+function SaveBar({ submitting, readOnlyDemo }: { submitting: boolean; readOnlyDemo?: boolean }) {
+  if (readOnlyDemo) return null;
   return (
     <div className="flex justify-end pt-6 mt-6 border-t border-[var(--border-color)]">
       <button
@@ -169,6 +174,7 @@ export function CompanySettingsV2Shell({
   uploadingCompanyStamp,
   uploadingTechSignature,
   uploadingTechStamp,
+  readOnlyDemo = false,
   showAdmins,
   adminPanelProps,
 }: Props) {
@@ -272,7 +278,10 @@ export function CompanySettingsV2Shell({
             {activeTab === 'aparencia' ? (
               <>
                 <ThemeAppearanceSection />
-                <div className="sv-theme-card p-6 rounded-xl shadow-lg border space-y-6">
+                {readOnlyDemo ? (
+                  <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} />
+                ) : null}
+                <div className={`sv-theme-card p-6 rounded-xl shadow-lg border space-y-6 ${readOnlyDemo ? 'opacity-60 pointer-events-none' : ''}`}>
                   <h3 className="sv-theme-heading flex items-center gap-2 text-base">
                     <ImagePlus className="w-4 h-4 sv-theme-section-icon" />
                     Logotipo, assinatura e carimbo
@@ -357,6 +366,8 @@ export function CompanySettingsV2Shell({
           </div>
         ) : (
           <form onSubmit={handleSave} className="sv-theme-card p-6 rounded-xl shadow-lg border">
+            {readOnlyDemo ? <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} /> : null}
+            <fieldset disabled={readOnlyDemo} className={readOnlyDemo ? 'opacity-60' : undefined}>
             {activeTab === 'geral' ? (
               <div className="space-y-8">
                 {missingLegalRep ? (
@@ -798,7 +809,8 @@ export function CompanySettingsV2Shell({
               </div>
             ) : null}
 
-            {showSaveBar ? <SaveBar submitting={submitting} /> : null}
+            {showSaveBar ? <SaveBar submitting={submitting} readOnlyDemo={readOnlyDemo} /> : null}
+            </fieldset>
           </form>
         )}
       </div>

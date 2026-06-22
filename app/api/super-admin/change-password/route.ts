@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const callerEmail = userAuth.user.email;
     const { data: callerData, error: callerError } = await supabaseAdmin
       .from('users')
-      .select('role, is_super_admin, email')
+      .select('role, is_super_admin, email, is_demo')
       .eq('id', userAuth.user.id)
       .single();
 
@@ -61,6 +61,13 @@ export async function POST(req: Request) {
     if (!isSuperAdmin) {
       console.log('User is not a SUPER_ADMIN. Rejecting.');
       return NextResponse.json({ error: 'Permissão negada. Apenas SUPER_ADMIN pode alterar senhas master.' }, { status: 403 });
+    }
+
+    if (callerData?.is_demo === true) {
+      return NextResponse.json(
+        { error: 'Usuário demonstração não pode alterar senha.' },
+        { status: 403 },
+      );
     }
 
     // Apenas permitir alterar a própria senha, ou se houver lógica adicional.

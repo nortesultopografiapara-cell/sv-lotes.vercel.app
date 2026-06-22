@@ -8,6 +8,8 @@ import {
   OwnerProjectAccessEditor,
   type AccessEntry,
 } from '@/components/owners/OwnerProjectAccessEditor';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 
 type OwnerUser = {
   id: string;
@@ -24,9 +26,10 @@ type ProjectOption = {
 type Props = {
   callerUserId: string;
   tenantId: string;
+  readOnlyDemo?: boolean;
 };
 
-export function OwnerProjectAccessPanel({ callerUserId, tenantId }: Props) {
+export function OwnerProjectAccessPanel({ callerUserId, tenantId, readOnlyDemo = false }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<OwnerUser[]>([]);
@@ -118,6 +121,10 @@ export function OwnerProjectAccessPanel({ callerUserId, tenantId }: Props) {
   }, [loadAccess]);
 
   const handleSave = async () => {
+    if (readOnlyDemo) {
+      setMessage(DEMO_SENSITIVE_SETTINGS_MESSAGE);
+      return;
+    }
     if (!selectedUserId) return;
     setSaving(true);
     setMessage(null);
@@ -151,6 +158,10 @@ export function OwnerProjectAccessPanel({ callerUserId, tenantId }: Props) {
         Carregando acesso por empreendimento...
       </div>
     );
+  }
+
+  if (readOnlyDemo) {
+    return <DemoSensitiveNotice message={DEMO_SENSITIVE_SETTINGS_MESSAGE} />;
   }
 
   return (

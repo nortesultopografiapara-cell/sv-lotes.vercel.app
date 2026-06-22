@@ -3,8 +3,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Lock, User, Shield, X, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import {
+  DEMO_PASSWORD_BLOCKED_MESSAGE,
+  DEMO_SENSITIVE_PROFILE_MESSAGE,
+  isDemoProfile,
+} from '@/lib/demoRestrictions';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 
 export function UserProfileModals({ user, company, activeModal, setActiveModal }: { user: any, company: any, activeModal: 'profile' | 'password' | 'security' | null, setActiveModal: (v: any) => void }) {
+  const isDemoUser = isDemoProfile(user);
   // Password Change State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -15,6 +22,12 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
   const [sessionInfo, setSessionInfo] = useState<any>(null);
+
+  useEffect(() => {
+    if (isDemoUser && activeModal === 'password') {
+      setActiveModal('profile');
+    }
+  }, [isDemoUser, activeModal, setActiveModal]);
 
   useEffect(() => {
     if (activeModal === 'security') {
@@ -35,6 +48,11 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
     e.preventDefault();
     setPasswordError('');
     setPasswordSuccess('');
+
+    if (isDemoUser) {
+      setPasswordError(DEMO_PASSWORD_BLOCKED_MESSAGE);
+      return;
+    }
 
     if (!currentPassword) {
       setPasswordError('A senha atual é obrigatória.');
@@ -126,6 +144,9 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
           
           {activeModal === 'profile' && (
             <div className="space-y-4">
+               {isDemoUser ? (
+                 <DemoSensitiveNotice message={DEMO_SENSITIVE_PROFILE_MESSAGE} />
+               ) : null}
                <div className="flex flex-col items-center mb-6">
                   <div className="w-20 h-20 rounded-full bg-[var(--color-primary)]/20 border border-[var(--color-primary)] flex items-center justify-center text-[var(--color-primary)] font-bold text-3xl shadow-lg uppercase">
                     {company?.name?.charAt(0) || user?.name?.charAt(0) || 'U'}
@@ -160,6 +181,18 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
           )}
 
           {activeModal === 'password' && (
+            isDemoUser ? (
+              <div className="space-y-4">
+                <DemoSensitiveNotice message={DEMO_PASSWORD_BLOCKED_MESSAGE} />
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="w-full px-4 py-2 bg-transparent border border-gray-700 hover:bg-[#1a1f29] text-gray-300 rounded-lg font-medium transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handlePasswordChange} className="space-y-5">
                {passwordError && (
                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400 flex items-center gap-2">
@@ -222,6 +255,7 @@ export function UserProfileModals({ user, company, activeModal, setActiveModal }
                   </button>
                </div>
             </form>
+            )
           )}
 
           {activeModal === 'security' && (

@@ -6,10 +6,13 @@ import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
 import { Building2, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { DEMO_PASSWORD_BLOCKED_MESSAGE, isDemoProfile } from '@/lib/demoRestrictions';
+import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const isDemoUser = isDemoProfile(user);
   
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -47,6 +50,11 @@ export default function OnboardingPage() {
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (isDemoUser) {
+      setError(DEMO_PASSWORD_BLOCKED_MESSAGE);
+      return;
+    }
 
     if (password.length < 6) {
       setError('A senha deve ter no mínimo 6 caracteres.');

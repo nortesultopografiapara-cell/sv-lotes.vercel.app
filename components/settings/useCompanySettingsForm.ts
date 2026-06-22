@@ -9,6 +9,7 @@ import {
   technicalFromCompanyRow,
   type TechnicalResponsibleFormState,
 } from '@/lib/companySettingsFields';
+import { DEMO_SENSITIVE_SETTINGS_MESSAGE, isDemoProfile } from '@/lib/demoRestrictions';
 
 const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'MASTER-ADMIN', 'MASTER_ADMIN'];
 
@@ -26,7 +27,7 @@ export function resolveSettingsCompanyId(
 }
 
 type UseCompanySettingsFormOptions = {
-  user: { tenant_id?: string; company_id?: string; role?: string } | null;
+  user: { tenant_id?: string; company_id?: string; role?: string; is_demo?: boolean | null } | null;
   authLoading: boolean;
   normalizeAddressOnSave?: boolean;
   syncNameFromFantasy?: boolean;
@@ -38,6 +39,7 @@ export function useCompanySettingsForm({
   normalizeAddressOnSave = false,
   syncNameFromFantasy = false,
 }: UseCompanySettingsFormOptions) {
+  const readOnlyDemo = isDemoProfile(user);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [company, setCompany] = useState<Record<string, unknown> | null>(null);
@@ -121,6 +123,10 @@ export function useCompanySettingsForm({
 
   const uploadImage = useCallback(
     async (file: File, type: 'logo' | 'signature') => {
+      if (readOnlyDemo) {
+        alert(DEMO_SENSITIVE_SETTINGS_MESSAGE);
+        return null;
+      }
       const tenantPath = resolveSettingsCompanyId(user) || String(company?.id ?? '');
       if (!tenantPath) return null;
       if (file.size > 5 * 1024 * 1024) {
@@ -145,7 +151,7 @@ export function useCompanySettingsForm({
       const { data } = supabase.storage.from('company-assets').getPublicUrl(filePath);
       return data.publicUrl;
     },
-    [user, company?.id],
+    [user, company?.id, readOnlyDemo],
   );
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,6 +213,11 @@ export function useCompanySettingsForm({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (readOnlyDemo) {
+      alert(DEMO_SENSITIVE_SETTINGS_MESSAGE);
+      return;
+    }
 
     const companyId = resolveSettingsCompanyId(user);
     if (!companyId) {
@@ -296,8 +307,8 @@ export function useCompanySettingsForm({
     uploadingLogo,
     uploadingSignature,
     uploadingCompanyStamp,
-  uploadingTechSignature,
     uploadingTechStamp,
     settingsCompanyId: resolveSettingsCompanyId(user),
+    readOnlyDemo,
   };
 }

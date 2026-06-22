@@ -6,6 +6,7 @@ import {
   resolveCompanyAdminContextFromRequest,
 } from '@/lib/companyAdminUsers';
 import { createAdminSupabase } from '@/lib/supabase/server';
+import { DEMO_PASSWORD_BLOCKED_MESSAGE, rejectIfDemoCaller } from '@/lib/demoServerGuard';
 
 export const runtime = 'nodejs';
 
@@ -32,6 +33,9 @@ export async function POST(
   if (!ctx.ok || !ctx.tenantId || !ctx.callerId) {
     return NextResponse.json({ error: ctx.error }, { status: ctx.status || 403 });
   }
+
+  const demoBlock = await rejectIfDemoCaller(admin, ctx.callerId, DEMO_PASSWORD_BLOCKED_MESSAGE);
+  if (demoBlock) return demoBlock;
 
   try {
     const actorName = await resolveActorDisplayName(admin, ctx.callerId);
