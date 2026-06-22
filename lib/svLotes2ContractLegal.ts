@@ -5,7 +5,7 @@
 export const SV_LOTES_2_CONTRACT_TITLE =
   'INSTRUMENTO PARTICULAR DE COMPROMISSO DE COMPRA E VENDA DE IMÓVEL';
 
-export const SV_LOTES_2_LEGAL_MARKER = 'SV LOTES 2.0 — QUADRO RESUMO';
+export const SV_LOTES_2_LEGAL_MARKER = 'SV_LOTES_2_SUMMARY_TABLE';
 
 export const SV_LOTES_2_CONTRACT_CSS = `
 <style type="text/css">
@@ -28,19 +28,6 @@ export const SV_LOTES_2_CONTRACT_CSS = `
     margin: 0 0 6px 0;
     color: #1e3a8a;
     text-transform: uppercase;
-  }
-  .sv-contract-sv-lotes-2 .sv2-badge {
-    display: inline-block;
-    font-size: 8pt;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #2563eb;
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 4px;
-    padding: 2px 8px;
-    margin-bottom: 8px;
   }
   .sv-contract-sv-lotes-2 .sv2-summary {
     width: 100%;

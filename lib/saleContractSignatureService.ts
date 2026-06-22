@@ -819,7 +819,6 @@ export async function loadSaleContractPdfForSign(
       issuedAt: String(contractRow.created_at || contractCtx?.created_at || ''),
       documentVersion: Number(contractRow.version || contractCtx?.version || 1),
       uniqueId: signature.id,
-      logoSrc: logoBase64,
       historyEvents: buildSaleSignatureHistory(signature),
     });
   }

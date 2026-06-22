@@ -97,7 +97,6 @@ export function buildSvLotes2SaleContractPrintTemplates(chrome: ContractPdfChrom
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2563eb;padding-bottom:5px;">
         <div style="max-width:72%;">
           ${logoImg}<strong style="font-size:9px;">${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
-          <span style="display:inline-block;margin-left:6px;font-size:7px;background:#eff6ff;color:#2563eb;padding:1px 5px;border-radius:3px;">SV LOTES 2.0</span>
           ${infoLine ? `<br/><span style="color:#475569;">${infoLine}</span>` : ''}
           ${chrome.addressLine ? `<br/><span style="color:#475569;">${escapeHtml(chrome.addressLine)}</span>` : ''}
         </div>
@@ -108,7 +107,7 @@ export function buildSvLotes2SaleContractPrintTemplates(chrome: ContractPdfChrom
   const footerTemplate = `
     <div style="font-size:7px;width:100%;padding:4px 14mm 0;font-family:'Segoe UI',Arial,sans-serif;color:#64748b;box-sizing:border-box;">
       <div style="border-top:1px solid #cbd5e1;padding-top:4px;display:flex;justify-content:space-between;">
-        <span>SV LOTES 2.0 — Documento emitido digitalmente</span>
+        <span>Documento emitido digitalmente pelo SV LOTES GIS</span>
         <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
       </div>
     </div>`;

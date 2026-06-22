@@ -9,7 +9,7 @@ export const SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE =
   'CERTIFICADO DIGITAL DE ASSINATURA SV LOTES';
 
 export const SALE_CONTRACT_SIGNATURE_CERTIFICATE_SUBTITLE =
-  'Este documento foi assinado eletronicamente através da plataforma SV LOTES e possui registro de integridade, autenticação e rastreabilidade.';
+  'Documento assinado eletronicamente.';
 
 /**
  * URL pública do contrato assinado — mesma rota usada no envio por WhatsApp/e-mail.

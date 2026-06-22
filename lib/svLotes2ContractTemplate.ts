@@ -31,8 +31,6 @@ export function generateSvLotes2Contract(
         <div class="sv-contract-document sv-contract-sv-lotes-2" data-sv-lotes-model="2.0" style="background:#fff;padding:10px;text-align:justify;">
 
             <div class="sv2-header">
-              ${ctx.empresaLogoHtml}
-              <span class="sv2-badge">SV LOTES 2.0 — Recomendado</span>
               <h2>${SV_LOTES_2_CONTRACT_TITLE}</h2>
               <p style="margin:0;font-size:10pt;color:#64748b;">Contrato nº ${ctx.contractNumber}</p>
             </div>
