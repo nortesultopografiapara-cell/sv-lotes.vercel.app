@@ -82,6 +82,32 @@ export const LANDING_CLIENTS = [
   'LF Imóveis',
 ] as const;
 
+/** Métricas exibidas na seção Benefícios (percepção de escala). */
+export const LANDING_STATS = [
+  { value: 100, suffix: '+', label: 'empreendimentos cadastrados' },
+  { value: 10000, suffix: '+', label: 'lotes gerenciados' },
+  { value: 0, suffix: '', label: 'milhares de parcelas controladas', textOnly: true },
+] as const;
+
+/** Galeria Sobre — substitua por fotos reais em public/landing/about/ quando disponíveis. */
+export const LANDING_ABOUT_PHOTOS = [
+  {
+    src: '/landing/logo.png',
+    alt: 'SV Topografia e Projetos — sede e identidade da empresa',
+    caption: 'Sede SV Topografia & Projetos — Parauapebas, PA',
+  },
+  {
+    src: '/landing/02.png',
+    alt: 'Levantamento de campo e mapa GIS de loteamento',
+    caption: 'Levantamentos de campo com GNSS RTK de alta precisão',
+  },
+  {
+    src: '/landing/06.png',
+    alt: 'Tecnologia de precisão e operações de topografia',
+    caption: 'Drone e equipamentos de precisão para projetos',
+  },
+] as const;
+
 export const LANDING_INCLUDED_FEATURES = [
   'Mapa GIS Interativo',
   'Controle de Lotes',

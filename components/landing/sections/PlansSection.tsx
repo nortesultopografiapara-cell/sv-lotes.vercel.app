@@ -9,6 +9,7 @@ import {
   type LandingPlanId,
 } from '../constants/landingConfig';
 import { LANDING_PLANS } from '../landingPlans';
+import { HoverLift, Reveal, Stagger, StaggerItem } from '../LandingMotion';
 
 const PLAN_MESSAGES: Record<LandingPlanId, string> = {
   basico: LANDING_WHATSAPP_MESSAGES.planBasic,
@@ -26,7 +27,7 @@ export function PlansSection() {
   return (
     <section id="planos" className="landing-section landing-plans">
       <div className="landing-container">
-        <div className="landing-section-head-center">
+        <Reveal className="landing-section-head-center">
           <span className="landing-pill">Planos e Assinaturas</span>
           <h2 className="landing-section-title">
             Planos para <span className="text-brand">cada tamanho</span> de loteadora
@@ -44,86 +45,89 @@ export function PlansSection() {
               ),
             )}
           </div>
-        </div>
+        </Reveal>
 
         <div className="landing-plans-layout">
-          <div className="landing-plans-grid">
+          <Stagger className="landing-plans-grid">
             {LANDING_PLANS.map((plan) => {
               const colors = COLOR_MAP[plan.color];
               return (
-                <article
-                  key={plan.id}
-                  className={`landing-plan-card ${colors.border} ${plan.popular ? 'is-popular' : ''}`}
-                >
-                  {plan.popular ? (
-                    <span className="landing-plan-popular">Mais escolhido</span>
-                  ) : null}
-                  <h3 className={`landing-plan-name ${colors.badge}`}>{plan.name.toUpperCase()}</h3>
-                  <p className="landing-plan-price">
-                    {plan.price}
-                    <span>/mês</span>
-                  </p>
-                  <ul className="landing-plan-limits">
-                    <li>{plan.limits.loteamentos}</li>
-                    <li>{plan.limits.lotes}</li>
-                    <li>{plan.limits.corretores}</li>
-                    <li>{plan.limits.admins}</li>
-                    <li>{plan.limits.concurrent}</li>
-                  </ul>
-
-                  <div className="landing-plan-features">
-                    <p className="landing-plan-features-title">Recursos inclusos</p>
-                    <ul>
-                      {LANDING_INCLUDED_FEATURES.map((f) => (
-                        <li key={f}>
-                          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="landing-plan-roadmap">
-                    <p className="landing-plan-features-title">Em desenvolvimento</p>
-                    <ul>
-                      {LANDING_ROADMAP_FEATURES.map((f) => (
-                        <li key={f}>
-                          <Circle className="w-3 h-3 text-orange-400 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="landing-plan-actions">
-                    <a
-                      href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${colors.btn} w-full justify-center`}
+                <StaggerItem key={plan.id}>
+                  <HoverLift>
+                    <article
+                      className={`landing-plan-card landing-plan-card--premium ${colors.border} ${plan.popular ? 'is-popular landing-plan-glow' : ''}`}
                     >
-                      Escolher Plano
-                    </a>
-                    <a href="#contato" className="landing-btn-outline w-full justify-center">
-                      <Calendar className="w-4 h-4" />
-                      Solicitar Demonstração
-                    </a>
-                    <a
-                      href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="landing-btn-whatsapp-text w-full justify-center"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Falar no WhatsApp
-                    </a>
-                  </div>
-                </article>
+                      {plan.popular ? (
+                        <span className="landing-plan-popular">Mais escolhido</span>
+                      ) : null}
+                      <h3 className={`landing-plan-name ${colors.badge}`}>{plan.name.toUpperCase()}</h3>
+                      <p className="landing-plan-price">
+                        {plan.price}
+                        <span>/mês</span>
+                      </p>
+                      <ul className="landing-plan-limits">
+                        <li>{plan.limits.loteamentos}</li>
+                        <li>{plan.limits.lotes}</li>
+                        <li>{plan.limits.corretores}</li>
+                        <li>{plan.limits.admins}</li>
+                        <li>{plan.limits.concurrent}</li>
+                      </ul>
+
+                      <div className="landing-plan-features">
+                        <p className="landing-plan-features-title">Recursos inclusos</p>
+                        <ul>
+                          {LANDING_INCLUDED_FEATURES.map((f) => (
+                            <li key={f}>
+                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="landing-plan-roadmap">
+                        <p className="landing-plan-features-title">Em desenvolvimento</p>
+                        <ul>
+                          {LANDING_ROADMAP_FEATURES.map((f) => (
+                            <li key={f}>
+                              <Circle className="w-3 h-3 text-orange-400 shrink-0" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="landing-plan-actions">
+                        <a
+                          href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`${colors.btn} w-full justify-center landing-btn-interactive`}
+                        >
+                          Escolher Plano
+                        </a>
+                        <a href="#contato" className="landing-btn-outline w-full justify-center landing-btn-interactive">
+                          <Calendar className="w-4 h-4" />
+                          Solicitar Demonstração
+                        </a>
+                        <a
+                          href={buildWhatsAppUrl(PLAN_MESSAGES[plan.id])}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="landing-btn-whatsapp-text w-full justify-center landing-btn-interactive"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          Falar no WhatsApp
+                        </a>
+                      </div>
+                    </article>
+                  </HoverLift>
+                </StaggerItem>
               );
             })}
-          </div>
+          </Stagger>
 
-          <aside className="landing-grow-box">
+          <Reveal className="landing-grow-box" delay={0.1}>
             <h3 className="text-xl font-bold text-white">
               Cresça <span className="text-brand">sem limites</span>
             </h3>
@@ -140,7 +144,7 @@ export function PlansSection() {
               O adicional é cobrado por demanda, com valores justos e transparentes, sempre após
               análise da sua necessidade.
             </p>
-          </aside>
+          </Reveal>
         </div>
       </div>
     </section>

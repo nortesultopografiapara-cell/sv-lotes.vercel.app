@@ -1,3 +1,5 @@
+'use client';
+
 import Image from 'next/image';
 import {
   BarChart3,
@@ -14,6 +16,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { BenefitsStats } from '../components/BenefitsStats';
+import { HoverLift, Reveal, Stagger, StaggerItem } from '../LandingMotion';
 
 const BEFORE = [
   'Planilhas espalhadas',
@@ -37,7 +41,7 @@ const BENEFIT_CARDS = [
     title: 'Economize horas de trabalho',
     color: '#f97316',
     items: ['Contratos automáticos', 'Parcelas geradas', 'Lembretes programados'],
-    footer: 'Mais tempo para vender. Menos tempo com burocracia.',
+    footer: 'Mais tempo para vender. Menos burocracia.',
   },
   {
     icon: TrendingUp,
@@ -50,7 +54,7 @@ const BENEFIT_CARDS = [
     icon: Bell,
     title: 'Reduza a inadimplência',
     color: '#a855f7',
-    items: ['7 dias antes', '3 dias antes', 'No dia do vencimento', 'Após vencimento'],
+    items: ['7 dias antes', '3 dias antes', 'No vencimento', 'Após vencimento'],
     footer: 'Menos pagamentos esquecidos.',
   },
   {
@@ -79,7 +83,7 @@ export function BenefitsSection() {
   return (
     <section id="beneficios" className="landing-section landing-benefits">
       <div className="landing-container">
-        <div className="landing-section-head">
+        <Reveal className="landing-section-head">
           <h2 className="landing-section-title">
             Benefícios que <span className="text-brand">impulsionam seus resultados</span> todos os dias
           </h2>
@@ -87,9 +91,11 @@ export function BenefitsSection() {
             O SV LOTES é a solução completa para vender mais, organizar sua operação e ter controle
             total do seu negócio imobiliário.
           </p>
-        </div>
+        </Reveal>
 
-        <div className="landing-compare">
+        <BenefitsStats />
+
+        <Reveal className="landing-compare" delay={0.06}>
           <div className="landing-compare-col landing-compare-before">
             <div className="landing-compare-head">
               <X className="w-6 h-6 text-red-400" />
@@ -120,37 +126,50 @@ export function BenefitsSection() {
             </ul>
             <Smile className="w-10 h-10 text-emerald-400/50 mx-auto mt-4" />
           </div>
-        </div>
+        </Reveal>
 
-        <div className="landing-benefit-grid">
+        <Stagger className="landing-benefit-grid">
           {BENEFIT_CARDS.map((card) => (
-            <article key={card.title} className="landing-benefit-card" style={{ borderColor: `${card.color}40` }}>
-              <card.icon className="w-8 h-8 mb-3" style={{ color: card.color }} />
-              <h3 className="landing-benefit-card-title">{card.title}</h3>
-              <ul className="landing-benefit-card-list">
-                {card.items.map((i) => (
-                  <li key={i}>{i}</li>
-                ))}
-              </ul>
-              <p className="landing-benefit-card-footer">{card.footer}</p>
-            </article>
+            <StaggerItem key={card.title}>
+              <HoverLift>
+                <article
+                  className="landing-benefit-card landing-benefit-card--premium"
+                  style={{ borderColor: `${card.color}50`, '--benefit-accent': card.color } as React.CSSProperties}
+                >
+                  <card.icon className="landing-benefit-icon" style={{ color: card.color }} />
+                  <h3 className="landing-benefit-card-title">{card.title}</h3>
+                  <ul className="landing-benefit-card-list">
+                    {card.items.map((i) => (
+                      <li key={i}>{i}</li>
+                    ))}
+                  </ul>
+                  <p className="landing-benefit-card-footer">{card.footer}</p>
+                </article>
+              </HoverLift>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
 
-        <div className="landing-benefit-wide-grid">
+        <Reveal className="landing-benefit-wide-grid" delay={0.1}>
           <article className="landing-benefit-wide">
             <h3 className="text-lg font-bold text-amber-400 mb-3">Mais produtividade técnica</h3>
             <div className="grid sm:grid-cols-3 gap-3">
               {TECH_ITEMS.map((t) => (
                 <div key={t} className="landing-tech-chip">
-                  <Image src="/landing/02.png" alt="" width={120} height={80} className="rounded mb-2 w-full h-16 object-cover" />
+                  <Image
+                    src="/landing/02.png"
+                    alt=""
+                    width={120}
+                    height={80}
+                    className="rounded mb-2 w-full h-16 object-cover"
+                  />
                   <p className="text-sm text-gray-200">{t}</p>
                 </div>
               ))}
             </div>
           </article>
           <article className="landing-benefit-wide">
-            <Shield className="w-8 h-8 text-emerald-400 mb-3" />
+            <Shield className="w-10 h-10 text-emerald-400 mb-3" />
             <h3 className="text-lg font-bold text-white mb-3">Segurança e tranquilidade</h3>
             <div className="grid grid-cols-2 gap-2">
               {SECURITY_ITEMS.map((s) => (
@@ -162,7 +181,7 @@ export function BenefitsSection() {
             </div>
           </article>
           <article className="landing-benefit-wide">
-            <Layers className="w-8 h-8 text-cyan-400 mb-3" />
+            <Layers className="w-10 h-10 text-cyan-400 mb-3" />
             <h3 className="text-lg font-bold text-white mb-3">Cresça sem aumentar sua equipe</h3>
             <p className="text-sm text-gray-400 mb-3">
               Escale de pequenos a grandes empreendimentos sem multiplicar a operação manual.
@@ -175,14 +194,14 @@ export function BenefitsSection() {
               <span>Grande</span>
             </div>
           </article>
-        </div>
+        </Reveal>
 
-        <div className="landing-benefit-closing">
+        <Reveal className="landing-benefit-closing" delay={0.12}>
           <p>
             Um sistema completo para quem vende terrenos, chácaras e loteamentos —{' '}
             <strong className="text-brand">tudo integrado em uma única plataforma.</strong>
           </p>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

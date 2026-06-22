@@ -22,6 +22,7 @@ import {
   LANDING_PHONE_NUMBER,
   LANDING_WHATSAPP_MESSAGES,
 } from '../constants/landingConfig';
+import { Reveal } from '../LandingMotion';
 
 const PLANS = ['Básico', 'Business', 'Profissional', 'Ainda não sei'];
 
@@ -44,7 +45,7 @@ export function ContactSection() {
   return (
     <section id="contato" className="landing-section landing-contact">
       <div className="landing-container">
-        <div className="landing-contact-head">
+        <Reveal className="landing-contact-head">
           <span className="landing-pill">Entre em Contato</span>
           <h2 className="landing-section-title">
             Estamos prontos para <span className="text-brand">atender você!</span>
@@ -53,6 +54,24 @@ export function ContactSection() {
             Fale conosco e descubra como o SV LOTES pode transformar a gestão do seu loteamento ou
             empreendimento.
           </p>
+        </Reveal>
+
+        <div className="landing-contact-cta-banner">
+          <div>
+            <p className="landing-contact-cta-title">Pronto para ver o SV LOTES em ação?</p>
+            <p className="landing-contact-cta-desc">
+              Agende uma demonstração personalizada ou fale direto no WhatsApp com nossa equipe.
+            </p>
+          </div>
+          <a
+            href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="landing-btn-whatsapp landing-btn-interactive"
+          >
+            <MessageCircle className="w-5 h-5" />
+            Chamar no WhatsApp
+          </a>
         </div>
 
         <div className="landing-contact-grid">
@@ -74,7 +93,7 @@ export function ContactSection() {
               </div>
             </div>
 
-            <div className="landing-map-wrap">
+            <Reveal className="landing-map-wrap landing-map-wrap--lg" delay={0.06}>
               <iframe
                 title="Localização SV Topografia - Parauapebas PA"
                 src={`https://maps.google.com/maps?q=${LANDING_ADDRESS.lat},${LANDING_ADDRESS.lng}&z=16&output=embed`}
@@ -87,7 +106,7 @@ export function ContactSection() {
                   href={LANDING_GOOGLE_MAPS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="landing-btn-outline text-xs py-2"
+                  className="landing-btn-outline text-xs py-2 landing-btn-interactive"
                   aria-label="Abrir no Google Maps"
                 >
                   <MapPin className="w-4 h-4" />
@@ -97,7 +116,7 @@ export function ContactSection() {
                   href={LANDING_GOOGLE_MAPS_DIRECTIONS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="landing-btn-outline text-xs py-2"
+                  className="landing-btn-outline text-xs py-2 landing-btn-interactive"
                   aria-label="Traçar rota no Google Maps"
                 >
                   <Navigation className="w-4 h-4" />
@@ -110,78 +129,93 @@ export function ContactSection() {
                   Lat: {LANDING_ADDRESS.lat} · Long: {LANDING_ADDRESS.lng}
                 </p>
               </div>
-            </div>
+            </Reveal>
 
-            <form onSubmit={handleSubmit} className="landing-contact-form">
-              <h3 className="text-lg font-bold text-white mb-4">Envie sua mensagem</h3>
-              <div className="landing-form-grid">
-                <label>
-                  Nome
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Seu nome"
-                  />
-                </label>
-                <label>
-                  Empresa
-                  <input
-                    value={form.company}
-                    onChange={(e) => setForm({ ...form, company: e.target.value })}
-                    placeholder="Nome da empresa"
-                  />
-                </label>
-                <label>
-                  WhatsApp
-                  <input
-                    required
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    placeholder="(94) 99999-9999"
-                  />
-                </label>
-                <label>
-                  E-mail
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    placeholder="seu@email.com"
-                  />
-                </label>
-                <label className="sm:col-span-2">
-                  Plano de interesse
-                  <select
-                    value={form.plan}
-                    onChange={(e) => setForm({ ...form, plan: e.target.value })}
-                  >
-                    {PLANS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="sm:col-span-2">
-                  Mensagem
-                  <textarea
-                    rows={3}
-                    value={form.message}
-                    onChange={(e) => setForm({ ...form, message: e.target.value })}
-                    placeholder="Como podemos ajudar?"
-                  />
-                </label>
-              </div>
-              <button type="submit" className="landing-btn-primary w-full justify-center mt-4">
-                <MessageCircle className="w-4 h-4" />
-                Enviar via WhatsApp
-              </button>
-            </form>
+            <Reveal delay={0.1}>
+              <form onSubmit={handleSubmit} className="landing-contact-form">
+                <h3 className="text-lg font-bold text-white mb-4">Envie sua mensagem</h3>
+                <div className="landing-form-grid">
+                  <label>
+                    Nome
+                    <input
+                      required
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="Seu nome"
+                    />
+                  </label>
+                  <label>
+                    Empresa
+                    <input
+                      value={form.company}
+                      onChange={(e) => setForm({ ...form, company: e.target.value })}
+                      placeholder="Nome da empresa"
+                    />
+                  </label>
+                  <label>
+                    WhatsApp
+                    <input
+                      required
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      placeholder="(94) 99999-9999"
+                    />
+                  </label>
+                  <label>
+                    E-mail
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      placeholder="seu@email.com"
+                    />
+                  </label>
+                  <label className="sm:col-span-2">
+                    Plano de interesse
+                    <select
+                      value={form.plan}
+                      onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                    >
+                      {PLANS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="sm:col-span-2">
+                    Mensagem
+                    <textarea
+                      rows={3}
+                      value={form.message}
+                      onChange={(e) => setForm({ ...form, message: e.target.value })}
+                      placeholder="Como podemos ajudar?"
+                    />
+                  </label>
+                </div>
+                <button type="submit" className="landing-btn-primary w-full justify-center mt-4 landing-btn-interactive">
+                  <MessageCircle className="w-4 h-4" />
+                  Enviar via WhatsApp
+                </button>
+              </form>
+            </Reveal>
           </div>
 
-          <aside className="landing-contact-sidebar">
-            <h3 className="text-lg font-bold text-white mb-4">Nossos contatos</h3>
+          <Reveal className="landing-contact-sidebar" delay={0.08}>
+            <a
+              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="landing-contact-whatsapp-card"
+            >
+              <MessageCircle className="w-8 h-8" />
+              <div>
+                <p className="font-bold text-white">WhatsApp direto</p>
+                <p className="text-sm opacity-90">Resposta rápida no horário comercial</p>
+              </div>
+            </a>
+
+            <h3 className="text-lg font-bold text-white mb-4 mt-6">Nossos contatos</h3>
             <ul className="landing-contact-list">
               <li>
                 <MapPin className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -241,13 +275,13 @@ export function ContactSection() {
               href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
               target="_blank"
               rel="noopener noreferrer"
-              className="landing-btn-primary w-full justify-center mt-6"
+              className="landing-btn-primary w-full justify-center mt-6 landing-btn-interactive"
               aria-label="Agendar demonstração"
             >
               <Calendar className="w-4 h-4" />
               Agendar Demonstração
             </a>
-          </aside>
+          </Reveal>
         </div>
       </div>
     </section>

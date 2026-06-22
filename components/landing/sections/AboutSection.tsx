@@ -1,6 +1,14 @@
+'use client';
+
 import Image from 'next/image';
 import { Calendar, CheckCircle2, Diamond, Eye, Target } from 'lucide-react';
-import { buildWhatsAppUrl, LANDING_CONTACT, LANDING_WHATSAPP_MESSAGES } from '../constants/landingConfig';
+import {
+  buildWhatsAppUrl,
+  LANDING_ABOUT_PHOTOS,
+  LANDING_CONTACT,
+  LANDING_WHATSAPP_MESSAGES,
+} from '../constants/landingConfig';
+import { HoverLift, Reveal, Stagger, StaggerItem } from '../LandingMotion';
 
 const EXPERTISE = [
   'Topografia',
@@ -29,7 +37,7 @@ export function AboutSection() {
   return (
     <section id="sobre" className="landing-section landing-about">
       <div className="landing-container">
-        <div className="landing-section-head">
+        <Reveal className="landing-section-head">
           <h2 className="landing-section-title">
             Tecnologia criada por quem <span className="text-brand">vive o mercado</span> todos os dias
           </h2>
@@ -44,9 +52,31 @@ export function AboutSection() {
               </span>
             ))}
           </div>
-        </div>
+        </Reveal>
 
-        <div className="landing-about-grid">
+        <Stagger className="landing-about-gallery">
+          {LANDING_ABOUT_PHOTOS.map((photo) => (
+            <StaggerItem key={photo.src}>
+              <HoverLift>
+                <figure className="landing-about-photo">
+                  <div className="landing-about-photo-frame">
+                    <Image
+                      src={photo.src}
+                      alt={photo.alt}
+                      width={640}
+                      height={420}
+                      className="landing-about-photo-img"
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                    />
+                  </div>
+                  <figcaption className="landing-about-photo-caption">{photo.caption}</figcaption>
+                </figure>
+              </HoverLift>
+            </StaggerItem>
+          ))}
+        </Stagger>
+
+        <Reveal className="landing-about-grid" delay={0.08}>
           <article className="landing-about-card">
             <h3 className="text-lg font-bold text-white mb-3">Nossa história</h3>
             <p className="text-sm text-gray-400 mb-4">
@@ -68,20 +98,7 @@ export function AboutSection() {
             </p>
           </article>
 
-          <div className="landing-about-visual">
-            <Image
-              src="/landing/landing-sobre.png"
-              alt="Sede da SV Topografia e Projetos em Parauapebas - PA"
-              width={600}
-              height={400}
-              className="rounded-xl w-full object-cover"
-            />
-            <p className="text-xs text-gray-500 mt-2 text-center">
-              Sede da SV Topografia &amp; Projetos, Parauapebas - PA
-            </p>
-          </div>
-
-          <aside className="landing-about-stats">
+          <aside className="landing-about-stats landing-about-stats--featured">
             <h3 className="text-lg font-bold text-white mb-4">Números que inspiram confiança</h3>
             <ul className="landing-stats-list">
               <li>
@@ -95,9 +112,9 @@ export function AboutSection() {
               <li>Plataforma GIS própria</li>
             </ul>
           </aside>
-        </div>
+        </Reveal>
 
-        <div className="landing-about-grid-2">
+        <Reveal className="landing-about-grid-2" delay={0.1}>
           <article className="landing-about-card">
             <h3 className="text-lg font-bold text-white mb-3">Como nasceu o SV LOTES</h3>
             <ul className="landing-pain-list">
@@ -121,12 +138,12 @@ export function AboutSection() {
               financeiro e memorial em um só lugar.
             </p>
             <p className="text-xs text-gray-500 mt-3">
-              Drone Matrice 300 RTK com LIDAR para levantamentos de precisão
+              Drone Matrice 350 RTK para levantamentos de precisão
             </p>
           </article>
-        </div>
+        </Reveal>
 
-        <div className="landing-mvv-grid">
+        <Reveal className="landing-mvv-grid" delay={0.12}>
           <article className="landing-mvv-card">
             <Target className="w-8 h-8 text-brand mb-3" />
             <h3>Missão</h3>
@@ -152,15 +169,15 @@ export function AboutSection() {
               ))}
             </ul>
           </article>
-        </div>
+        </Reveal>
 
-        <div className="landing-about-cta">
+        <Reveal className="landing-about-cta" delay={0.14}>
           <p className="text-lg text-gray-200">
             <strong className="text-white">Do levantamento topográfico à venda do último lote.</strong>{' '}
             Mais de 15 anos de experiência transformados em tecnologia.
           </p>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            <a href="#contato" className="landing-btn-primary">
+            <a href="#contato" className="landing-btn-primary landing-btn-interactive">
               <Calendar className="w-4 h-4" />
               Agendar Demonstração
             </a>
@@ -168,12 +185,12 @@ export function AboutSection() {
               href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
               target="_blank"
               rel="noopener noreferrer"
-              className="landing-btn-outline"
+              className="landing-btn-outline landing-btn-interactive"
             >
               Falar no WhatsApp
             </a>
           </div>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

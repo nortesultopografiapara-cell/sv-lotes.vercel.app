@@ -52,6 +52,7 @@
     "exceljs": "^4.4.0",
     "extenso": "^2.1.0",
     "file-saver": "^2.0.5",
+    "framer-motion": "^12.40.0",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
     "idb": "^8.0.3",
