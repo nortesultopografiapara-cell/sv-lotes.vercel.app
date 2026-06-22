@@ -25,8 +25,9 @@ import {
   buildSaleContractRepresentativeSignatureHtml,
   isSaleContractCashPayment,
 } from "@/lib/saleContractLegalTemplate";
-import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
+import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
   formatContractDueDateBr,
   resolveContractPaymentDates,
@@ -82,6 +83,19 @@ export function generateContractHTML({
 }: GenerateContractParams) {
   if (isRecantoPrimaveraContractModel(tenant)) {
     return generateRecantoPrimaveraContract({
+      tenant,
+      customer,
+      project,
+      block,
+      sale,
+      contractSnapshot,
+      contractDate,
+      financeReceipts,
+    });
+  }
+
+  if (isSvLotes2ContractModel(tenant)) {
+    return generateSvLotes2Contract({
       tenant,
       customer,
       project,

@@ -751,6 +751,9 @@ export async function loadSaleContractPdfForSign(
       replaceContractSignaturesBlock,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
+    const { isSvLotes2ContractModel, SV_LOTES_2_CERTIFICATE_TITLE } = await import(
+      '@/lib/contractModel'
+    );
 
     const block = ctx?.block as Record<string, unknown> | null;
     const project = ctx?.project as Record<string, unknown> | null;
@@ -808,6 +811,9 @@ export async function loadSaleContractPdfForSign(
       ipAddress: signature.ip_address,
       signatureToken: signature.signature_token,
       signatureHash: signature.signature_hash,
+      certificateTitle: isSvLotes2ContractModel(company || tenant)
+        ? SV_LOTES_2_CERTIFICATE_TITLE
+        : undefined,
     });
   }
 

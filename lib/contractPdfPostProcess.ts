@@ -7,9 +7,10 @@ import {
   formatCompanyAddressForHeader,
   getCompanyDisplayName,
 } from "@/lib/contractCompanyDisplay";
-import { isRecantoPrimaveraContractModel } from "@/lib/contractModel";
+import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import { formatCpfCnpj } from "@/lib/inputMasks";
 import { buildRecantoPrimaveraPdfChrome } from "@/lib/recantoPrimaveraContractPdf";
+import { buildSvLotes2PdfChrome } from "@/lib/svLotes2ContractPdf";
 
 export type ContractPdfChromeInput = {
   tenantName: string;
@@ -20,6 +21,8 @@ export type ContractPdfChromeInput = {
   cityUfLine: string;
   contractNumber: string;
   logoBase64: string | null;
+  /** Variante visual do cabeçalho/rodapé PDF. */
+  printStyle?: 'default' | 'sv-lotes-2';
 };
 
 /** CSS embutido no HTML do contrato — evita página extra após assinaturas. */
@@ -306,6 +309,10 @@ export function buildContractPdfChromeFromTenant(
 
   if (isRecantoPrimaveraContractModel(row)) {
     return buildRecantoPrimaveraPdfChrome(row, contractNumber, logoBase64);
+  }
+
+  if (isSvLotes2ContractModel(row)) {
+    return buildSvLotes2PdfChrome(row, contractNumber, logoBase64);
   }
 
   const { addressLine, cityUfLine } = formatCompanyAddressForHeader(row);

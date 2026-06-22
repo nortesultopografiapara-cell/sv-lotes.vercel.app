@@ -77,6 +77,45 @@ export function buildSaleContractPrintTemplates(chrome: ContractPdfChromeInput):
   return { headerTemplate, footerTemplate };
 }
 
+export function buildSvLotes2SaleContractPrintTemplates(chrome: ContractPdfChromeInput): {
+  headerTemplate: string;
+  footerTemplate: string;
+} {
+  const contractLabel = `Contrato nº ${displayContractNumber(chrome.contractNumber)}`;
+  const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
+  const infoParts: string[] = [];
+  if (chrome.tenantCnpj) infoParts.push(`${docLabel}: ${escapeHtml(chrome.tenantCnpj)}`);
+  if (chrome.cityUfLine) infoParts.push(escapeHtml(chrome.cityUfLine));
+  const infoLine = infoParts.join(' · ');
+
+  const logoImg = chrome.logoBase64
+    ? `<img src="${chrome.logoBase64}" style="height:14px;margin-right:8px;vertical-align:middle;" />`
+    : '';
+
+  const headerTemplate = `
+    <div style="font-size:8px;width:100%;padding:0 14mm 6px 14mm;font-family:'Segoe UI',Arial,sans-serif;color:#1e3a8a;box-sizing:border-box;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2563eb;padding-bottom:5px;">
+        <div style="max-width:72%;">
+          ${logoImg}<strong style="font-size:9px;">${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
+          <span style="display:inline-block;margin-left:6px;font-size:7px;background:#eff6ff;color:#2563eb;padding:1px 5px;border-radius:3px;">SV LOTES 2.0</span>
+          ${infoLine ? `<br/><span style="color:#475569;">${infoLine}</span>` : ''}
+          ${chrome.addressLine ? `<br/><span style="color:#475569;">${escapeHtml(chrome.addressLine)}</span>` : ''}
+        </div>
+        <div style="text-align:right;white-space:nowrap;color:#334155;">${escapeHtml(contractLabel)}</div>
+      </div>
+    </div>`;
+
+  const footerTemplate = `
+    <div style="font-size:7px;width:100%;padding:4px 14mm 0;font-family:'Segoe UI',Arial,sans-serif;color:#64748b;box-sizing:border-box;">
+      <div style="border-top:1px solid #cbd5e1;padding-top:4px;display:flex;justify-content:space-between;">
+        <span>SV LOTES 2.0 — Documento emitido digitalmente</span>
+        <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+      </div>
+    </div>`;
+
+  return { headerTemplate, footerTemplate };
+}
+
 export function isSaleSignPdfServerless(): boolean {
   return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION);
 }
@@ -142,7 +181,10 @@ export async function buildSaleContractPdfFromHtml(
     htmlFragment,
     `Contrato ${chrome.contractNumber}`,
   );
-  const { headerTemplate, footerTemplate } = buildSaleContractPrintTemplates(chrome);
+  const { headerTemplate, footerTemplate } =
+    chrome.printStyle === 'sv-lotes-2'
+      ? buildSvLotes2SaleContractPrintTemplates(chrome)
+      : buildSaleContractPrintTemplates(chrome);
 
   let browser: Browser | null = null;
   let page: Awaited<ReturnType<Browser['newPage']>> | null = null;

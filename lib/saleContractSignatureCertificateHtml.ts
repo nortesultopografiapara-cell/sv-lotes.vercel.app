@@ -24,6 +24,8 @@ export type SaleContractSignatureCertificateInput = {
   ipAddress?: string | null;
   signatureToken?: string | null;
   signatureHash?: string | null;
+  /** Título do certificado final (ex.: SV LOTES 2.0). */
+  certificateTitle?: string | null;
 };
 
 export type SaleContractElectronicSignaturesInput = {
@@ -342,10 +344,14 @@ export function buildSaleContractSignatureCertificateHtml(
     ? `<p class="e-cert-meta"><strong>Hash de integridade (SHA-256) — comprador:</strong> ${escapeHtml(input.signatureHash)}</p>`
     : '';
 
+  const title =
+    String(input.certificateTitle || '').trim() ||
+    'Certificado de Assinatura Eletrônica';
+
   return `
     ${E_SIGN_STYLES}
     <div class="contract-clause contract-clause--tight e-cert-page">
-      <h3 class="e-cert-title">Certificado de Assinatura Eletrônica</h3>
+      <h3 class="e-cert-title">${escapeHtml(title)}</h3>
       <div class="e-cert-summary">
         <span>✓ Promitente Vendedor</span>
         <span>✓ Promissário Comprador</span>
