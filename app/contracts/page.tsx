@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { useSessionGuard } from "@/hooks/useSessionGuard";
 import {
@@ -56,6 +56,10 @@ import {
   type SaleContractSignatureCapabilities,
   type SaleContractSignatureSectionHandle,
 } from "@/components/contracts/SaleContractSignatureSection";
+import {
+  canResendSaleSignature,
+  canSendSaleSignature,
+} from "@/lib/saleContractSignatureStatus";
 import {
   applyContractPdfChrome,
   buildContractPdfChromeFromTenant,
@@ -1556,6 +1560,33 @@ export default function ContractsPage() {
     setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
   };
 
+  const showMobileSignatureAction = useMemo(() => {
+    if (!selectedContract) return false;
+    const signatureStatus = String(selectedContract.signature_status || "").toUpperCase();
+    const contractStatus = String(selectedContract.status || "").toLowerCase();
+    if (signatureStatus === "SIGNED" || ["assinado", "signed"].includes(contractStatus)) {
+      return false;
+    }
+    if (signatureCaps.canSend || signatureCaps.canShare) return true;
+    return (
+      canSendSaleSignature(selectedContract.status, selectedContract.signature_status) ||
+      canResendSaleSignature(selectedContract.signature_status)
+    );
+  }, [selectedContract, signatureCaps]);
+
+  const mobileSignatureCanSend = useMemo(() => {
+    if (!selectedContract) return false;
+    if (signatureCaps.canSend) return true;
+    if (signatureCaps.canShare) return false;
+    return canSendSaleSignature(selectedContract.status, selectedContract.signature_status);
+  }, [selectedContract, signatureCaps]);
+
+  const mobileSignatureCanShare = useMemo(() => {
+    if (!selectedContract) return false;
+    if (signatureCaps.canShare) return true;
+    return canResendSaleSignature(selectedContract.signature_status);
+  }, [selectedContract, signatureCaps]);
+
   if (authLoading) return null;
 
   const allFilteredSelected =
@@ -1569,6 +1600,20 @@ export default function ContractsPage() {
   const mobileDockStatusLabel = selectedContract
     ? getStatusLabel(selectedContract.status).toUpperCase()
     : "";
+
+  const mobileSignatureLabel = signatureCaps.sending
+    ? "Enviando…"
+    : mobileSignatureCanShare && !mobileSignatureCanSend
+      ? "Compartilhar link"
+      : "Enviar p/ Assinatura";
+
+  const handleMobileSignatureAction = () => {
+    if (mobileSignatureCanSend) {
+      void signatureSectionRef.current?.sendForSignature();
+      return;
+    }
+    signatureSectionRef.current?.openShareModal();
+  };
 
   return (
     <div
@@ -2763,27 +2808,6 @@ export default function ContractsPage() {
                   Regenerar
                 </button>
               )}
-              {(signatureCaps.canSend || signatureCaps.canShare) && (
-                <button
-                  type="button"
-                  disabled={signatureCaps.sending || blockOwnerWriteOnClient(user?.role)}
-                  onClick={() => {
-                    if (signatureCaps.canSend) {
-                      void signatureSectionRef.current?.sendForSignature();
-                      return;
-                    }
-                    signatureSectionRef.current?.openShareModal();
-                  }}
-                  className="contracts-mobile-action-btn contracts-mobile-action-btn--signature"
-                >
-                  <ShieldCheck className={signatureCaps.sending ? "animate-pulse" : ""} />
-                  {signatureCaps.sending
-                    ? "Enviando…"
-                    : signatureCaps.canSend
-                      ? "Enviar p/ Assinatura"
-                      : "Compartilhar link"}
-                </button>
-              )}
               {getStatusLabel(selectedContract.status) === "Pendente" && (
                 <button
                   type="button"
@@ -2802,14 +2826,17 @@ export default function ContractsPage() {
                 <Printer />
                 Imprimir
               </button>
-              <button
-                type="button"
-                onClick={handleReenviar}
-                className="contracts-mobile-action-btn contracts-mobile-action-btn--purple"
-              >
-                <Send />
-                Reenviar
-              </button>
+              {showMobileSignatureAction && (
+                <button
+                  type="button"
+                  disabled={signatureCaps.sending || blockOwnerWriteOnClient(user?.role)}
+                  onClick={handleMobileSignatureAction}
+                  className="contracts-mobile-action-btn contracts-mobile-action-btn--signature"
+                >
+                  <ShieldCheck className={signatureCaps.sending ? "animate-pulse" : ""} />
+                  {mobileSignatureLabel}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveTab("Templates")}
