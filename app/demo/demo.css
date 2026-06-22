@@ -1,0 +1,198 @@
+.demo-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.demo-page-glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(90vw, 48rem);
+  height: 20rem;
+  background: radial-gradient(ellipse, rgba(249, 115, 22, 0.12), transparent 70%);
+  pointer-events: none;
+}
+
+.demo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 1.5rem;
+  padding-bottom: 1rem;
+  position: relative;
+  z-index: 1;
+}
+
+.demo-back {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  transition: color 0.2s ease;
+}
+
+.demo-back:hover {
+  color: #fff;
+}
+
+.demo-main {
+  flex: 1;
+  max-width: 40rem;
+  padding-top: 1rem;
+  padding-bottom: 3rem;
+  position: relative;
+  z-index: 1;
+}
+
+.demo-title {
+  margin-top: 1rem;
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 800;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.demo-lead {
+  margin-top: 1rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: #9ca3af;
+}
+
+.demo-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.demo-feature {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+  color: #d1d5db;
+}
+
+.demo-card {
+  margin-top: 2rem;
+  padding: 1.75rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--lp-card, #111827) 90%, transparent);
+  box-shadow: 0 20px 48px -16px rgba(0, 0, 0, 0.45);
+}
+
+.demo-card-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.demo-card-desc {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  line-height: 1.55;
+}
+
+.demo-card-desc strong {
+  color: #e5e7eb;
+}
+
+.demo-credentials {
+  margin: 1.25rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.demo-credential-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.demo-credential-row dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+}
+
+.demo-credential-row dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.demo-credential-row a {
+  color: var(--brand-primary);
+}
+
+.demo-credential-row a:hover {
+  text-decoration: underline;
+}
+
+.demo-password {
+  display: inline-block;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.4rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+.demo-password-placeholder {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+.demo-password-placeholder code {
+  font-size: 0.78rem;
+  color: #d1d5db;
+}
+
+.demo-enter-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.demo-warning {
+  margin-top: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  font-size: 0.78rem;
+  color: #fcd34d;
+  line-height: 1.5;
+}
+
+.demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.demo-footer {
+  padding-bottom: 2rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #6b7280;
+  position: relative;
+  z-index: 1;
+}

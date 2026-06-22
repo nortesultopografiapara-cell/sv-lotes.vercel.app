@@ -12,6 +12,7 @@ export interface UserProfile {
   name: string;
   force_password_change: boolean;
   onboarding_completed: boolean;
+  is_demo: boolean;
 }
 
 export function useAuth() {
@@ -44,6 +45,7 @@ export function useAuth() {
             name: 'Desenvolvedor (Preview)',
             force_password_change: false,
             onboarding_completed: true,
+            is_demo: false,
           });
           setLoading(false);
           
@@ -67,6 +69,7 @@ export function useAuth() {
             name: 'Visitante (Demo)',
             force_password_change: false,
             onboarding_completed: true,
+            is_demo: false,
           });
           setLoading(false);
         });
@@ -110,6 +113,7 @@ export function useAuth() {
               name: userData.full_name || session.user.email?.split('@')[0] || 'Usuário',
               force_password_change: userData.force_password_change || false,
               onboarding_completed: userData.onboarding_completed || false,
+              is_demo: userData.is_demo === true,
             });
             setLoading(false);
           }

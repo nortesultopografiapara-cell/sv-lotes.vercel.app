@@ -104,7 +104,6 @@ export function HeroSection() {
               href={LANDING_TEST_LOTEMENT_PATH}
               className="landing-btn-green landing-cta-card"
               aria-label="Loteamento para teste"
-              title="TODO: definir rota real do loteamento demo"
             >
               <FlaskConical className="w-5 h-5" />
               <span>

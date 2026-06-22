@@ -56,6 +56,8 @@ import {
   formatImpersonationDateTime,
   readImpersonationState,
 } from '@/lib/impersonationStorage';
+import { DemoEnvironmentBanner } from '@/components/demo/DemoEnvironmentBanner';
+import { isDemoProfile } from '@/lib/demoRestrictions';
 
 function NotificationBell({ user }: { user: any }) {
   const [show, setShow] = useState(false);
@@ -336,6 +338,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
   
   const { user, loading: isCheckingAuth } = useSessionGuard();
   const isMasterConsole = shouldUseMasterConsoleLayout(user?.role);
+  const isDemoUser = isDemoProfile(user);
 
   useEffect(() => {
     try {
@@ -465,6 +468,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
   const isPublicStandalone =
     pathname === '/' ||
+    pathname === '/demo' ||
     pathname.startsWith('/sign/') ||
     ['/login', '/onboarding', '/verify-email', '/auth/callback'].some((route) =>
       pathname.startsWith(route)
@@ -695,6 +699,8 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         )}
+
+        {isDemoUser && !impersonatingTenantId ? <DemoEnvironmentBanner /> : null}
 
         {/* Desktop Top Header inside Main Content */}
         {!isMobile && (

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
+import { DemoLoginPrefill } from '@/components/login/DemoLoginPrefill';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -14,6 +15,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  const applyDemoEmail = useCallback((demoEmail: string) => {
+    setEmail(demoEmail);
+  }, []);
 
   // Synchronize state avoiding infinite loops between client and middleware
   useEffect(() => {
@@ -169,6 +174,9 @@ export default function LoginPage() {
           </div>
         ) : (
           <form onSubmit={handleLogin} className="space-y-6">
+            <Suspense fallback={null}>
+              <DemoLoginPrefill onDemoMode={applyDemoEmail} />
+            </Suspense>
             <div className="space-y-2">
               <label className="text-xs font-bold text-[var(--color-text-muted)] tracking-wider uppercase">Email Corporativo</label>
               <div className="relative">

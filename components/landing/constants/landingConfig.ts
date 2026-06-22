@@ -3,8 +3,8 @@
 export const LANDING_PRESENTATION_URL =
   'https://www.youtube.com/watch?v=u7Z7uCLGP6U';
 
-/** Rota do loteamento demo — TODO: definir rota real quando disponível */
-export const LANDING_TEST_LOTEMENT_PATH = '/login';
+/** Rota pública do loteamento demonstrativo */
+export const LANDING_TEST_LOTEMENT_PATH = '/demo';
 
 export const LANDING_LOGIN_PATH = '/login';
 

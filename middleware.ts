@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { resolveLoginRedirectPath } from '@/lib/loginRoleResolution';
+import { isDemoBlockedApi, isDemoBlockedRoute } from '@/lib/demoConfig';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -45,7 +46,11 @@ export async function middleware(request: NextRequest) {
       user = data.user;
       
       if (user) {
-        const { data: ud } = await supabase.from('users').select('role, status').eq('id', user.id).single();
+        const { data: ud } = await supabase
+          .from('users')
+          .select('role, status, is_demo')
+          .eq('id', user.id)
+          .single();
         userData = ud;
       }
     } catch (e) {
@@ -55,10 +60,11 @@ export async function middleware(request: NextRequest) {
 
   const url = request.nextUrl.clone();
 
-  // 1. PUBLIC ROUTES (landing + auth + validação)
+  // 1. PUBLIC ROUTES (landing + auth + validação + demo)
   const isLanding = url.pathname === '/';
+  const isDemoPage = url.pathname === '/demo';
   const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/api/payments/webhook', '/validar', '/validar-recibo', '/api/validar-recibo', '/api/company-lookup', '/sign', '/api/sign'];
-  const isPublicRoute = isLanding || publicRoutes.some(route => url.pathname.startsWith(route));
+  const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {
     if (user || isDemoMode) {
@@ -88,6 +94,24 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/login';
     url.searchParams.set('inactive', '1');
     return NextResponse.redirect(url);
+  }
+
+  // 3. DEMO USER — sem Master/SaaS/integrações de produção
+  if (user && userData?.is_demo === true) {
+    if (isDemoBlockedRoute(url.pathname)) {
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+
+    if (isDemoBlockedApi(url.pathname, request.method)) {
+      return NextResponse.json(
+        {
+          error: 'Esta ação não está disponível no ambiente de demonstração.',
+          code: 'DEMO_READ_ONLY',
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // 4. BROKER / CORRETOR — somente Mapa GIS (venda e reserva)
