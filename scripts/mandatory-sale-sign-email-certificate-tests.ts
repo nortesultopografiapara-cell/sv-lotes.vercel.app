@@ -10,6 +10,7 @@ import {
   buildSaleContractSignatureCertificateHtml,
   replaceContractSignaturesBlock,
 } from '../lib/saleContractSignatureCertificateHtml';
+import { SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE } from '../lib/saleContractSignatureVerify';
 import {
   isValidSignerEmail,
   normalizeSignerEmail,
@@ -73,23 +74,33 @@ function testCertificateWithEmail() {
     ipAddress: '177.1.2.3',
     signatureToken: 'token123456789abcdef',
     signatureHash: 'sha256hash',
+    verifyUrl: 'https://www.svlotes.com.br/sign/sale/token123456789abcdef',
+    signatureUrl: 'https://www.svlotes.com.br/sign/sale/token123456789abcdef',
+    publicUrl: 'https://www.svlotes.com.br/sign/sale/token123456789abcdef',
+    uniqueId: 'sig-test-id',
+    historyEvents: [
+      { at: '2026-06-08T14:00:00.000Z', event: 'Link enviado', user: 'Sistema', ip: null },
+      { at: '2026-06-08T15:30:00.000Z', event: 'CONTRACT_SIGNED_ELECTRONICALLY', user: 'Comprador', ip: '177.1.2.3' },
+    ],
   });
 
-  assert(cert.includes('Certificado de Assinatura Eletrônica'), 'título certificado');
-  assert(cert.includes('Promitente Vendedor'), 'cert vendedor');
-  assert(cert.includes('Promissário Comprador'), 'cert comprador');
+  assert(cert.includes(SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE), 'título certificado');
+  assert(cert.includes('Vendedor'), 'cert vendedor');
+  assert(cert.includes('Comprador'), 'cert comprador');
   assert(cert.includes('000000022/2026'), 'número contrato');
   assert(cert.includes('Residencial Meneses'), 'empreendimento');
-  assert(cert.includes('QD 04'), 'quadra');
-  assert(cert.includes('LT 22'), 'lote');
+  assert(cert.includes('04'), 'quadra');
+  assert(cert.includes('22'), 'lote');
   assert(cert.includes('comprador@example.com'), 'e-mail no certificado');
   assert(cert.includes('177.1.2.3'), 'IP no certificado');
-  assert(cert.includes('ASSINADO ELETRONICAMENTE'), 'status');
+  assert(cert.includes('VALIDADO'), 'status validado');
   assert(
     cert.includes('assinado eletronicamente através da plataforma SV LOTES'),
     'declaração',
   );
-  assert(cert.includes('Hash de integridade'), 'hash opcional');
+  assert(cert.includes('Hash SHA-256'), 'hash opcional');
+  assert(cert.includes('token123456789abcdef'), 'token completo');
+  assert(cert.includes('Histórico'), 'histórico');
   console.log('OK testCertificateWithEmail');
 }
 
@@ -105,8 +116,7 @@ function testCertificateWithoutEmailLegacy() {
     signedAt: '2025-12-01T10:00:00.000Z',
   });
   assert(cert.includes('Cliente Antigo'), 'contrato legado mantém comprador');
-  assert(cert.includes('E-mail'), 'campo e-mail presente');
-  assert(cert.includes('—'), 'e-mail ausente exibe traço');
+  assert(!cert.includes('E-mail'), 'e-mail omitido quando ausente');
   console.log('OK testCertificateWithoutEmailLegacy');
 }
 

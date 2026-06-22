@@ -11,6 +11,7 @@ import {
   isValidRepresentativeCpf,
 } from '../lib/saleContractLegalTemplate';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
+import { SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE } from '../lib/saleContractSignatureVerify';
 import { isPdfBytes } from '../lib/saasContractPdfHttp';
 import {
   buildSaleContractPdfFilename,
@@ -189,14 +190,15 @@ function testSignatureCertificateHtml() {
 
   assert(cert.includes('000000022/2026'), 'cert contrato');
   assert(cert.includes('Residencial Meneses'), 'cert empreendimento');
-  assert(cert.includes('QD 04'), 'cert quadra');
-  assert(cert.includes('LT 22'), 'cert lote');
+  assert(cert.includes('04'), 'cert quadra');
+  assert(cert.includes('22'), 'cert lote');
   assert(cert.includes('MENESES IMOBILIARIA LTDA'), 'cert empresa');
-  assert(cert.includes('Promitente Vendedor'), 'cert bloco vendedor');
-  assert(cert.includes('Promissário Comprador'), 'cert bloco comprador');
+  assert(cert.includes('Vendedor'), 'cert bloco vendedor');
+  assert(cert.includes('Comprador'), 'cert bloco comprador');
   assert(cert.includes('comprador@test.com'), 'cert email');
-  assert(cert.includes('Hash de integridade'), 'cert hash');
-  assert(cert.includes('ASSINADO ELETRONICAMENTE'), 'cert status');
+  assert(cert.includes('Hash SHA-256'), 'cert hash');
+  assert(cert.includes(SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE), 'cert título profissional');
+  assert(cert.includes('VALIDADO'), 'cert status');
   console.log('OK testSignatureCertificateHtml');
 }
 

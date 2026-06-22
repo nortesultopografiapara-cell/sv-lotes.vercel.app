@@ -75,5 +75,9 @@ export function isClassicSaleContractModel(
   return model === 'PADRAO' || model === 'MENESES';
 }
 
-export const SV_LOTES_2_CERTIFICATE_TITLE =
-  'CERTIFICADO DIGITAL DE ASSINATURA SV LOTES';
+export {
+  SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE,
+  SV_LOTES_2_CERTIFICATE_TITLE,
+  resolveSaleContractCertificatePublicUrl,
+  resolveSaleContractCertificateQrUrl,
+} from '@/lib/saleContractSignatureVerify';

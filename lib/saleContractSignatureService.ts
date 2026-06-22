@@ -711,7 +711,7 @@ export async function loadSaleContractPdfForSign(
 
   const { data: contract, error } = await supabaseAdmin
     .from('contracts')
-    .select('contract_number, tenant_id, company_id')
+    .select('contract_number, tenant_id, company_id, created_at, version')
     .eq('id', contractId)
     .single();
 
@@ -747,12 +747,12 @@ export async function loadSaleContractPdfForSign(
     const ctx = options?.signContext;
     const {
       buildSaleContractElectronicSignaturesPageHtml,
-      buildSaleContractSignatureCertificateHtml,
+      buildSaleContractSignatureCertificateHtmlWithQr,
       replaceContractSignaturesBlock,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
-    const { isSvLotes2ContractModel, SV_LOTES_2_CERTIFICATE_TITLE } = await import(
-      '@/lib/contractModel'
+    const { resolveSaleContractCertificatePublicUrl } = await import(
+      '@/lib/saleContractSignatureVerify'
     );
 
     const block = ctx?.block as Record<string, unknown> | null;
@@ -791,7 +791,7 @@ export async function loadSaleContractPdfForSign(
       }),
     );
 
-    html += buildSaleContractSignatureCertificateHtml({
+    html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
       projectName: String(
         project?.name || contractCtx?.project_name_snapshot || '',
@@ -811,9 +811,16 @@ export async function loadSaleContractPdfForSign(
       ipAddress: signature.ip_address,
       signatureToken: signature.signature_token,
       signatureHash: signature.signature_hash,
-      certificateTitle: isSvLotes2ContractModel(company || tenant)
-        ? SV_LOTES_2_CERTIFICATE_TITLE
-        : undefined,
+      signatureUrl: signature.signature_url,
+      publicUrl: resolveSaleContractCertificatePublicUrl(
+        signature.signature_token,
+        signature.signature_url,
+      ),
+      issuedAt: String(contractRow.created_at || contractCtx?.created_at || ''),
+      documentVersion: Number(contractRow.version || contractCtx?.version || 1),
+      uniqueId: signature.id,
+      logoSrc: logoBase64,
+      historyEvents: buildSaleSignatureHistory(signature),
     });
   }
 
