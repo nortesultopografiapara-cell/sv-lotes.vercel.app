@@ -16,22 +16,16 @@ type ConfigRowProps = {
   label: string;
   configured: boolean;
   hint: string | null;
-  optional?: boolean;
 };
 
-function ConfigRow({ label, configured, hint, optional = false }: ConfigRowProps) {
-  const statusClass = configured
-    ? 'text-emerald-300'
-    : optional
-      ? 'text-gray-500'
-      : 'text-amber-300';
-  const statusLabel = configured ? 'sim' : optional ? 'não (opcional)' : 'não';
-
+function ConfigRow({ label, configured, hint }: ConfigRowProps) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-gray-400">{label}</span>
       <span className="text-right">
-        <span className={statusClass}>{statusLabel}</span>
+        <span className={configured ? 'text-emerald-300' : 'text-amber-300'}>
+          {configured ? 'sim' : 'não'}
+        </span>
         {hint ? <span className="ml-2 font-mono text-[11px] text-gray-500">{hint}</span> : null}
       </span>
     </div>
@@ -109,6 +103,7 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
         const debugLines = json.debug
           ? [
               `URL: ${json.debug.requestUrlMasked ?? '—'}`,
+              `Headers: ${JSON.stringify(json.debug.requestHeadersSent ?? ['Content-Type'])}`,
               `HTTP: ${json.debug.httpStatus ?? '—'}`,
               `Resposta: ${JSON.stringify(json.debug.responseBody ?? json.debug.responseText ?? '—')}`,
             ].join('\n')
@@ -158,7 +153,7 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
             ) : configStatus ? (
               <>
                 <ConfigRow
-                  label="Instance configurada"
+                  label="Instância configurada"
                   configured={configStatus.instanceConfigured}
                   hint={configStatus.instanceHint}
                 />
@@ -166,12 +161,6 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
                   label="Token configurado"
                   configured={configStatus.tokenConfigured}
                   hint={configStatus.tokenHint}
-                />
-                <ConfigRow
-                  label="Client-Token (opcional)"
-                  configured={configStatus.clientTokenConfigured}
-                  hint={configStatus.clientTokenHint}
-                  optional
                 />
               </>
             ) : (
@@ -205,7 +194,7 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
           {!readyToSend ? (
             <p className="text-sm text-amber-300">
               Configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) na Vercel (Production)
-              e redeploy o projeto. ZAPI_CLIENT_TOKEN é opcional.
+              e redeploy o projeto.
             </p>
           ) : null}
 
