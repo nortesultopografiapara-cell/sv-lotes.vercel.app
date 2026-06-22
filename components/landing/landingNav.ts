@@ -1,12 +1,20 @@
-export const LANDING_NAV_ITEMS = [
-  { id: 'inicio', label: 'Início', href: '#inicio' },
-  { id: 'recursos', label: 'Recursos', href: '#recursos' },
-  { id: 'mapa-gis', label: 'Mapa GIS', href: '#mapa-gis' },
-  { id: 'planos', label: 'Planos', href: '#planos' },
-  { id: 'beneficios', label: 'Benefícios', href: '#beneficios' },
-  { id: 'contato', label: 'Contato', href: '#contato' },
+export const LANDING_SECTION_IDS = [
+  'home',
+  'recursos',
+  'funcionalidades',
+  'beneficios',
+  'planos',
+  'sobre',
+  'contato',
 ] as const;
 
-export type LandingNavId = (typeof LANDING_NAV_ITEMS)[number]['id'];
+export type LandingNavId = (typeof LANDING_SECTION_IDS)[number];
 
-export const LANDING_SECTION_IDS: LandingNavId[] = LANDING_NAV_ITEMS.map((item) => item.id);
+export const LANDING_NAV_ITEMS: { id: LandingNavId; href: string; label: string }[] = [
+  { id: 'recursos', href: '#recursos', label: 'Recursos' },
+  { id: 'funcionalidades', href: '#funcionalidades', label: 'Funcionalidades' },
+  { id: 'beneficios', href: '#beneficios', label: 'Benefícios' },
+  { id: 'planos', href: '#planos', label: 'Planos' },
+  { id: 'sobre', href: '#sobre', label: 'Sobre' },
+  { id: 'contato', href: '#contato', label: 'Contato' },
+];

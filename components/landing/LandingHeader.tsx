@@ -2,17 +2,22 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Calendar, Lock, Menu, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
+import {
+  buildWhatsAppUrl,
+  LANDING_LOGIN_PATH,
+  LANDING_WHATSAPP_MESSAGES,
+} from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
 
-type LandingHeaderProps = {
+type Props = {
   scrolled: boolean;
 };
 
-export function LandingHeader({ scrolled }: LandingHeaderProps) {
+export function LandingHeader({ scrolled }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeId, setActiveId] = useState<LandingNavId>('inicio');
+  const [activeId, setActiveId] = useState<LandingNavId>('home');
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -40,7 +45,7 @@ export function LandingHeader({ scrolled }: LandingHeaderProps) {
           setActiveId(visible[0].target.id as LandingNavId);
         }
       },
-      { rootMargin: '-20% 0px -55% 0px', threshold: [0, 0.15, 0.35, 0.5] }
+      { rootMargin: '-15% 0px -55% 0px', threshold: [0, 0.12, 0.3] },
     );
 
     sections.forEach((el) => observer.observe(el!));
@@ -49,22 +54,19 @@ export function LandingHeader({ scrolled }: LandingHeaderProps) {
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
-  const handleNavClick = useCallback(() => {
-    closeMenu();
-  }, [closeMenu]);
-
   return (
     <header
       className={`landing-header ${scrolled ? 'is-scrolled' : ''} ${menuOpen ? 'is-menu-open' : ''}`}
     >
       <div className="landing-header-bar">
         <SvLotesLogo
-          href="#inicio"
-          size={36}
+          href="#home"
+          size={40}
           showText
-          subtitle="Gestão para loteadoras"
+          subtitle="Gestão Imobiliária Inteligente"
           className="landing-header-logo shrink-0 min-w-0"
           textClassName="landing-header-logo-text"
+          onClick={closeMenu}
         />
 
         <nav className="landing-nav-desktop" aria-label="Navegação principal">
@@ -74,7 +76,7 @@ export function LandingHeader({ scrolled }: LandingHeaderProps) {
                 <a
                   href={item.href}
                   className={`landing-nav-link ${activeId === item.id ? 'is-active' : ''}`}
-                  onClick={handleNavClick}
+                  onClick={closeMenu}
                 >
                   {item.label}
                 </a>
@@ -94,8 +96,23 @@ export function LandingHeader({ scrolled }: LandingHeaderProps) {
           >
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <Link href="/login" className="landing-btn-primary landing-header-cta-btn text-sm py-2 px-3 sm:px-4 shrink-0">
-            Entrar no Sistema
+          <a
+            href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="landing-btn-demo hidden sm:inline-flex"
+            aria-label="Agendar demonstração via WhatsApp"
+          >
+            <Calendar className="w-4 h-4" />
+            Agendar Demonstração
+          </a>
+          <Link
+            href={LANDING_LOGIN_PATH}
+            className="landing-btn-outline hidden sm:inline-flex"
+            aria-label="Acessar o sistema"
+          >
+            <Lock className="w-4 h-4" />
+            Acessar o Sistema
           </Link>
         </div>
       </div>
@@ -112,22 +129,35 @@ export function LandingHeader({ scrolled }: LandingHeaderProps) {
               <a
                 href={item.href}
                 className={`landing-nav-link landing-nav-link--mobile ${activeId === item.id ? 'is-active' : ''}`}
-                onClick={handleNavClick}
+                onClick={closeMenu}
               >
                 {item.label}
               </a>
             </li>
           ))}
+          <li className="pt-2 border-t border-white/10 space-y-2">
+            <a
+              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="landing-btn-demo w-full justify-center"
+              onClick={closeMenu}
+            >
+              Agendar Demonstração
+            </a>
+            <Link
+              href={LANDING_LOGIN_PATH}
+              className="landing-btn-outline w-full justify-center"
+              onClick={closeMenu}
+            >
+              Acessar o Sistema
+            </Link>
+          </li>
         </ul>
       </nav>
 
       {menuOpen ? (
-        <button
-          type="button"
-          className="landing-nav-backdrop"
-          aria-label="Fechar menu"
-          onClick={closeMenu}
-        />
+        <button type="button" className="landing-nav-backdrop" aria-label="Fechar menu" onClick={closeMenu} />
       ) : null}
     </header>
   );
