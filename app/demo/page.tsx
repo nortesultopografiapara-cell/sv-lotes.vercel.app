@@ -7,6 +7,7 @@ import {
   DEMO_LOGIN_PATH,
   DEMO_PROJECT_NAME,
   DEMO_USER_EMAIL,
+  DEMO_USER_PASSWORD,
 } from '@/lib/demoConfig';
 import '@/components/landing/landing.css';
 import './demo.css';
@@ -25,8 +26,6 @@ const FEATURES = [
 ];
 
 export default function DemoPage() {
-  const demoPassword = process.env.DEMO_USER_PASSWORD?.trim();
-
   return (
     <div className="demo-page landing-page min-h-screen">
       <div className="demo-page-glow" aria-hidden />
@@ -84,13 +83,7 @@ export default function DemoPage() {
                 Senha
               </dt>
               <dd>
-                {demoPassword ? (
-                  <code className="demo-password">{demoPassword}</code>
-                ) : (
-                  <span className="demo-password-placeholder">
-                    Configure <code>DEMO_USER_PASSWORD</code> no servidor ou solicite acesso comercial.
-                  </span>
-                )}
+                <code className="demo-password">{DEMO_USER_PASSWORD}</code>
               </dd>
             </div>
           </dl>

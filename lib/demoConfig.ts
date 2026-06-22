@@ -2,6 +2,7 @@
 export const DEMO_COMPANY_ID = 'a0c1d2e3-f4a5-6789-abcd-ef0123456789';
 
 export const DEMO_USER_EMAIL = 'demo@svlotes.com.br';
+export const DEMO_USER_PASSWORD = '10203040';
 export const DEMO_USER_NAME = 'Usuário Demonstração';
 export const DEMO_COMPANY_NAME = 'Empresa Demonstração SV LOTES';
 export const DEMO_PROJECT_NAME = 'Loteamento Demonstração SV LOTES';
