@@ -1,7 +1,7 @@
 /** Configuração central da landing pública — edite links e mensagens aqui */
 
 export const LANDING_PRESENTATION_URL =
-  'https://www.youtube.com/watch?v=dQw4w9WgXcQ'; // TODO: substituir pelo link real da apresentação
+  'https://www.youtube.com/watch?v=u7Z7uCLGP6U';
 
 /** Rota do loteamento demo — TODO: definir rota real quando disponível */
 export const LANDING_TEST_LOTEMENT_PATH = '/login';
