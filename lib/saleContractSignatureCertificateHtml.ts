@@ -57,22 +57,24 @@ export type SaleContractElectronicSignaturesInput = {
 const CERT_STYLES = `
 <style type="text/css">
   .sv-cert-official {
-    margin-top: 6px;
+    margin-top: 4px;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 8.5pt;
-    line-height: 1.35;
+    font-size: 8pt;
+    line-height: 1.3;
     color: #1a202c;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
     page-break-before: avoid;
     break-before: avoid-page;
   }
   .sv-cert-official .sv-cert-cards {
     display: flex;
     flex-direction: row;
-    gap: 10px;
+    gap: 8px;
     align-items: stretch;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    page-break-inside: avoid;
+    break-inside: avoid-page;
   }
   .sv-cert-official .sv-cert-card {
     flex: 1 1 0;
@@ -89,13 +91,13 @@ const CERT_STYLES = `
     break-inside: avoid-page;
   }
   .sv-cert-official .sv-cert-card-head {
-    padding: 7px 10px 6px 10px;
+    padding: 5px 8px 4px 8px;
     text-align: center;
     border-bottom: 1px solid #bbf7d0;
   }
   .sv-cert-official .sv-cert-card-role {
-    margin: 0 0 8px 0;
-    font-size: 9pt;
+    margin: 0 0 4px 0;
+    font-size: 8pt;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -106,22 +108,22 @@ const CERT_STYLES = `
     background: #166534;
     color: #fff;
     border-radius: 999px;
-    font-size: 7.5pt;
+    font-size: 6.5pt;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 4px 12px;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-card-body {
-    padding: 7px 10px 6px 10px;
+    padding: 5px 8px 4px 8px;
     flex: 1 1 auto;
   }
   .sv-cert-official .sv-cert-field {
     display: flex;
     flex-direction: row;
-    gap: 6px;
+    gap: 5px;
     align-items: flex-start;
-    margin-bottom: 5px;
+    margin-bottom: 3px;
   }
   .sv-cert-official .sv-cert-field-icon {
     width: 16px;
@@ -143,17 +145,17 @@ const CERT_STYLES = `
   }
   .sv-cert-official .sv-cert-field-value {
     display: block;
-    font-size: 9pt;
+    font-size: 8pt;
     font-weight: 600;
     color: #0f172a;
     line-height: 1.35;
   }
   .sv-cert-official .sv-cert-card-foot {
     margin-top: auto;
-    padding: 5px 8px;
+    padding: 4px 6px;
     background: #166534;
     text-align: center;
-    font-size: 6.5pt;
+    font-size: 5.5pt;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -163,17 +165,17 @@ const CERT_STYLES = `
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     background: #fff;
-    padding: 8px;
+    padding: 6px;
     display: flex;
     flex-direction: row;
-    gap: 10px;
+    gap: 8px;
     align-items: flex-start;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
   }
   .sv-cert-official .sv-cert-qr {
-    width: 72px;
-    height: 72px;
+    width: 64px;
+    height: 64px;
     flex-shrink: 0;
     border: 1px solid #cbd5e1;
     border-radius: 4px;

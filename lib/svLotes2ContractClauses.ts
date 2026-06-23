@@ -3,37 +3,32 @@
  */
 
 import type { SvLotes2ContractContext } from '@/lib/svLotes2ContractContext';
+import { buildSvLotes2SummaryGridHtml } from '@/lib/svLotes2ContractFormat';
 import { buildSaleContractElectronicSignatureClauseHtml } from '@/lib/saleContractLegalTemplate';
-
-function row(label: string, value: string): string {
-  const clean = String(value || '—').trim() || '—';
-  return `<tr><td class="label">${label}</td><td>${clean}</td></tr>`;
-}
 
 export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
   const parcelasLabel = ctx.isCashPayment
     ? 'À vista'
     : `${ctx.qtdParcelas} parcela(s)`;
 
-  return `
-    <table class="sv2-summary">
-      ${row('EMPREENDIMENTO', ctx.empreendimentoNome.toUpperCase())}
-      ${row('QUADRA', ctx.quadra)}
-      ${row('LOTE', ctx.lote)}
-      ${row('ÁREA', ctx.area)}
-      ${row('MUNICÍPIO', ctx.municipio)}
-      ${row('ESTADO', ctx.estado)}
-      ${row('COMPRADOR', ctx.clienteNome)}
-      ${row('CPF', ctx.buyerCpfFmt)}
-      ${row('VENDEDOR', ctx.empresaNome)}
-      ${row('VALOR TOTAL', ctx.valorTotalFmt)}
-      ${row('ENTRADA', ctx.isCashPayment ? '—' : ctx.entradaFmt)}
-      ${row('PARCELAS', parcelasLabel)}
-      ${row('VALOR DA PARCELA', ctx.isCashPayment ? '—' : ctx.valorParcelaFmt)}
-      ${row('VENCIMENTO', ctx.vencimentoLabel || '—')}
-      ${row('DATA DA VENDA', ctx.dataContratoFmt)}
-      ${row('CONTRATO Nº', ctx.contractNumber)}
-    </table>`;
+  return buildSvLotes2SummaryGridHtml([
+    { label: 'EMPREENDIMENTO', value: ctx.empreendimentoNome.toUpperCase(), span: 3 },
+    { label: 'QUADRA', value: ctx.quadra },
+    { label: 'LOTE', value: ctx.lote },
+    { label: 'ÁREA', value: ctx.area },
+    { label: 'MUNICÍPIO', value: ctx.municipio },
+    { label: 'UF', value: ctx.estado },
+    { label: 'CONTRATO Nº', value: ctx.contractNumber },
+    { label: 'COMPRADOR', value: ctx.clienteNome, span: 2 },
+    { label: 'CPF', value: ctx.buyerCpfFmt },
+    { label: 'VENDEDOR', value: ctx.empresaNome, span: 3 },
+    { label: 'VALOR TOTAL', value: ctx.valorTotalFmt },
+    { label: 'ENTRADA', value: ctx.isCashPayment ? '—' : ctx.entradaFmt },
+    { label: 'PARCELAS', value: parcelasLabel },
+    { label: 'VALOR PARCELA', value: ctx.isCashPayment ? '—' : ctx.valorParcelaFmt },
+    { label: 'VENCIMENTO', value: ctx.vencimentoLabel || '—' },
+    { label: 'DATA VENDA', value: ctx.dataContratoFmt },
+  ]);
 }
 
 export function buildSvLotes2VendorQualificationHtml(
@@ -53,7 +48,7 @@ export function buildSvLotes2VendorQualificationHtml(
         ? `<strong>Profissão:</strong> ${ctx.vendorProfession}`
         : '',
       ctx.empresaEndereco !== 'Não informado'
-        ? `<strong>Endereço:</strong> ${ctx.empresaEndereco}${ctx.empresaCidade !== 'Não informado' ? `, ${ctx.empresaCidade}-${ctx.empresaUf}` : ''}`
+        ? `<strong>Endereço:</strong> ${ctx.empresaEndereco}`
         : '',
     ].filter(Boolean);
     return `<div class="sv2-party-block">${parts.map((p) => `<p>${p}</p>`).join('')}</div>`;
@@ -65,7 +60,7 @@ export function buildSvLotes2VendorQualificationHtml(
       ? `<strong>CNPJ:</strong> ${ctx.empresaDocumentoFmt}`
       : '',
     ctx.empresaEndereco !== 'Não informado'
-      ? `<strong>Endereço:</strong> ${ctx.empresaEndereco}${ctx.empresaCidade !== 'Não informado' ? `, ${ctx.empresaCidade}-${ctx.empresaUf}` : ''}`
+      ? `<strong>Endereço:</strong> ${ctx.empresaEndereco}`
       : '',
     ctx.empresaRepresentante && ctx.empresaRepresentante !== 'Não Informado'
       ? `<strong>Representante legal:</strong> ${ctx.empresaRepresentante}${ctx.empresaRepresentanteDocFmt ? `, CPF ${ctx.empresaRepresentanteDocFmt}` : ''}`
@@ -85,7 +80,7 @@ export function buildSvLotes2BuyerQualificationHtml(
     `<strong>Profissão:</strong> ${ctx.clienteProfissao}`,
     ctx.clienteTelefone ? `<strong>Telefone:</strong> ${ctx.clienteTelefone}` : '',
     ctx.clienteEmail ? `<strong>E-mail:</strong> ${ctx.clienteEmail}` : '',
-    `<strong>Endereço:</strong> ${ctx.clienteEndereco}${ctx.clienteBairro ? `, ${ctx.clienteBairro}` : ''}, ${ctx.clienteCidade}-${ctx.clienteUf}, CEP ${ctx.clienteCep}${ctx.clienteConjugeSuffix}`,
+    `<strong>Endereço:</strong> ${ctx.clienteEndereco}${ctx.clienteBairro ? `, ${ctx.clienteBairro}` : ''}${ctx.clienteCidade && ctx.clienteCidade !== 'cidade não informada' ? `, ${ctx.clienteCidade}-${ctx.clienteUf}` : ''}${ctx.clienteCep && ctx.clienteCep !== 'cep não informado' ? `, CEP ${ctx.clienteCep}` : ''}${ctx.clienteConjugeSuffix}`,
   ].filter(Boolean);
   return `<div class="sv2-party-block">${parts.map((p) => `<p>${p}</p>`).join('')}</div>`;
 }

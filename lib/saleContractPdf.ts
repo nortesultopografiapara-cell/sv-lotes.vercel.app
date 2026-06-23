@@ -82,25 +82,18 @@ export function buildSvLotes2SaleContractPrintTemplates(chrome: ContractPdfChrom
   footerTemplate: string;
 } {
   const contractLabel = `Contrato nº ${displayContractNumber(chrome.contractNumber)}`;
-  const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
-  const infoParts: string[] = [];
-  if (chrome.tenantCnpj) infoParts.push(`${docLabel}: ${escapeHtml(chrome.tenantCnpj)}`);
-  if (chrome.cityUfLine) infoParts.push(escapeHtml(chrome.cityUfLine));
-  const infoLine = infoParts.join(' · ');
 
   const logoImg = chrome.logoBase64
-    ? `<img src="${chrome.logoBase64}" style="height:14px;margin-right:8px;vertical-align:middle;" />`
+    ? `<img src="${chrome.logoBase64}" style="height:11px;margin-right:6px;vertical-align:middle;" />`
     : '';
 
   const headerTemplate = `
-    <div style="font-size:8px;width:100%;padding:0 14mm 6px 14mm;font-family:'Segoe UI',Arial,sans-serif;color:#1e3a8a;box-sizing:border-box;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2563eb;padding-bottom:5px;">
-        <div style="max-width:72%;">
-          ${logoImg}<strong style="font-size:9px;">${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
-          ${infoLine ? `<br/><span style="color:#475569;">${infoLine}</span>` : ''}
-          ${chrome.addressLine ? `<br/><span style="color:#475569;">${escapeHtml(chrome.addressLine)}</span>` : ''}
+    <div style="font-size:7.5px;width:100%;padding:0 14mm 4px 14mm;font-family:'Segoe UI',Arial,sans-serif;color:#334155;box-sizing:border-box;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #cbd5e1;padding-bottom:3px;">
+        <div style="display:flex;align-items:center;min-width:0;">
+          ${logoImg}
         </div>
-        <div style="text-align:right;white-space:nowrap;color:#334155;">${escapeHtml(contractLabel)}</div>
+        <div style="text-align:right;white-space:nowrap;font-weight:600;color:#1e3a8a;">${escapeHtml(contractLabel)}</div>
       </div>
     </div>`;
 

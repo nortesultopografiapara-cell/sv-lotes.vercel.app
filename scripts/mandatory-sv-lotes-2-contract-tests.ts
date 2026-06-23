@@ -14,6 +14,10 @@ import {
   normalizeSaleContractModel,
 } from '../lib/contractModel';
 import { SV_LOTES_2_CONTRACT_TITLE, SV_LOTES_2_LEGAL_MARKER } from '../lib/svLotes2ContractLegal';
+import {
+  formatGenderedCivilState,
+  formatSvLotes2CompanyAddressLine,
+} from '../lib/svLotes2ContractFormat';
 import { buildSvLotes2PdfChrome } from '../lib/svLotes2ContractPdf';
 import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSignatureCertificateHtml';
 import { RECANTO_PRIMAVERA_LEGAL_MARKER } from '../lib/recantoPrimaveraContractLegal';
@@ -106,7 +110,9 @@ function testSv2TemplateStructure() {
   assert(html.includes(SV_LOTES_2_CONTRACT_TITLE), 'título sv2');
   assert(html.includes(SV_LOTES_2_LEGAL_MARKER), 'marcador quadro resumo');
   assert(html.includes('sv-contract-sv-lotes-2'), 'classe template');
-  assert(html.includes('QUADRO RESUMO') || html.includes('EMPREENDIMENTO'), 'quadro resumo');
+  assert(html.includes('sv2-summary-grid'), 'quadro resumo compacto em grid');
+  assertNotIncludes(html, 'class="sv2-summary"', 'sem tabela alta de 2 colunas');
+  assert(html.includes('sv2-header-company'), 'cabeçalho institucional p1');
   assert(html.includes('VALOR TOTAL'), 'valor total resumo');
   assert(html.includes('Qualificação das Partes'), 'qualificação');
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
@@ -120,8 +126,27 @@ function testSv2TemplateStructure() {
   assert(html.includes('ASSINATURA ELETRÔNICA'), 'assinatura eletrônica');
   assert(html.includes('CLÁUSULA VIGÉSIMA — DO FORO'), 'foro');
   assertNotIncludes(html, 'class="sv2-badge"', 'sem elemento badge');
-  assertNotIncludes(html, '<img', 'sem logo no corpo');
   console.log('OK testSv2TemplateStructure');
+}
+
+function testSv2AddressAndCivilState() {
+  const address = formatSvLotes2CompanyAddressLine({
+    address: 'Rua 02, Quadra 123, Lote 05',
+    neighborhood: 'Nova Carajás',
+    city: 'Parauapebas',
+    state: 'PA',
+  });
+  assert(address.includes('Rua 02'), 'endereço rua');
+  assert(address.includes('Nova Carajás'), 'bairro preenchido');
+  assert(address.includes('Parauapebas-PA'), 'cidade-uf');
+  assertNotIncludes(address, 'S/N', 'sem S/N automático');
+  assertNotIncludes(address, 'Bairro:', 'sem label bairro vazio');
+
+  const feminina = formatGenderedCivilState('Divorciado(a)', 'Ivanilde de Mora Silva');
+  assert(feminina === 'Divorciada', 'estado civil feminino');
+  const masculino = formatGenderedCivilState('Divorciado(a)', 'João Comprador');
+  assert(masculino === 'Divorciado', 'estado civil masculino');
+  console.log('OK testSv2AddressAndCivilState');
 }
 
 function testRoutingDoesNotBreakPadrao() {
@@ -221,15 +246,100 @@ function writeSampleArtifacts() {
   console.log('OK writeSampleArtifacts', { p1, p2 });
 }
 
-function main() {
+function countPdfPages(pdf: Uint8Array): number {
+  const text = new TextDecoder('latin1').decode(pdf);
+  const matches = text.match(/\/Type\s*\/Page\b/g);
+  return matches?.length || 0;
+}
+
+async function writeSv2SignedPdfArtifacts() {
+  if (process.env.RUN_SALE_PDF_BROWSER_TESTS !== '1') return;
+
+  const { stripManualContractSignaturesForSignedPdf, buildSaleContractSignatureCertificateHtmlWithQr } =
+    await import('../lib/saleContractSignatureCertificateHtml');
+  const { buildSaleContractPdfFromHtml, launchSaleContractPdfBrowser, wrapSaleContractHtmlDocument } =
+    await import('../lib/saleContractPdf');
+  const { buildSvLotes2PdfChrome } = await import('../lib/svLotes2ContractPdf');
+  const { isPdfBytes } = await import('../lib/saasContractPdfHttp');
+
+  const contractHtml = generateContractHTML({
+    tenant: tenantSv2,
+    customer: { ...customer, civil_state: 'Divorciado(a)', name: 'Ivanilde de Mora Silva' },
+    project,
+    block,
+    sale,
+    contractDate: '2026-06-08',
+    contractSnapshot: { contract_number: '000000010/2026' },
+  });
+
+  const cert = await buildSaleContractSignatureCertificateHtmlWithQr({
+    contractNumber: '000000010/2026',
+    projectName: project.name,
+    quadra: block.quadra,
+    lote: block.lot,
+    buyerName: 'Ivanilde de Mora Silva',
+    buyerDocument: customer.document,
+    companyName: tenantSv2.name,
+    companyCnpj: tenantSv2.cnpj,
+    representativeName: tenantSv2.legal_representative,
+    representativeCpf: tenantSv2.representative_cpf,
+    signedAt: '2025-05-30T13:24:58.000Z',
+    vendorSignedAt: '2025-05-30T13:24:21.000Z',
+    ipAddress: '177.1.2.3',
+    signatureToken: 'abc123token456def789',
+    signatureHash: 'a'.repeat(64),
+    signatureUrl: 'https://www.svlotes.com.br/sign/sale/abc123token456def789',
+  });
+
+  const signedHtml = stripManualContractSignaturesForSignedPdf(contractHtml) + cert;
+  const chrome = buildSvLotes2PdfChrome(tenantSv2, '000000010/2026', null);
+  const pdf = await buildSaleContractPdfFromHtml(signedHtml, chrome);
+  assert(isPdfBytes(pdf), 'pdf sv2 assinado válido');
+  const pages = countPdfPages(pdf);
+  assert(pages >= 2, `pdf possui ${pages} páginas`);
+
+  const outDir = path.join(process.cwd(), 'tmp');
+  fs.mkdirSync(outDir, { recursive: true });
+  const pdfPath = path.join(outDir, 'sv2-refino-assinado.pdf');
+  fs.writeFileSync(pdfPath, pdf);
+
+  const browser = await launchSaleContractPdfBrowser();
+  const page = await browser.newPage();
+  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+
+  await page.setContent(
+    wrapSaleContractHtmlDocument(contractHtml.replace(/<div class="sv2-section-title">Cláusulas Contratuais[\s\S]*/, ''), 'SV2 P1'),
+    { waitUntil: 'load', timeout: 45_000 },
+  );
+  const p1 = path.join(outDir, 'sv2-refino-pagina-1.png');
+  await page.screenshot({ path: p1, fullPage: false, type: 'png' });
+
+  await page.setContent(
+    wrapSaleContractHtmlDocument(`<div class="sv-contract-document">${cert}</div>`, 'Certificado'),
+    { waitUntil: 'load', timeout: 45_000 },
+  );
+  const certEl = await page.$('.sv-cert-official');
+  const pLast = path.join(outDir, 'sv2-refino-pagina-final-certificado.png');
+  if (certEl) await certEl.screenshot({ path: pLast, type: 'png' });
+  await browser.close();
+
+  console.log('OK writeSv2SignedPdfArtifacts', { pdfPath, pages, p1, pLast });
+}
+
+async function main() {
   testModelNormalization();
   testSv2TemplateStructure();
+  testSv2AddressAndCivilState();
   testRoutingDoesNotBreakPadrao();
   testRoutingSv2ViaGenerateContractHTML();
   testRecantoUnchanged();
   testPdfChromeAndCertificate();
   writeSampleArtifacts();
+  await writeSv2SignedPdfArtifacts();
   console.log('OK — mandatory-sv-lotes-2-contract-tests passed');
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

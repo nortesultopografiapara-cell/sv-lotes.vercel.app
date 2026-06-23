@@ -9,6 +9,11 @@ import {
 } from '@/lib/saleContractContext';
 import { resolveContractPaymentDates } from '@/lib/contractPaymentDates';
 import { formatCpfCnpj } from '@/lib/inputMasks';
+import {
+  formatGenderedCivilState,
+  formatSvLotes2CompanyAddressLine,
+  sanitizeNeighborhoodForContract,
+} from '@/lib/svLotes2ContractFormat';
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -82,6 +87,18 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     area,
     municipio,
     estado,
+    empresaEndereco: formatSvLotes2CompanyAddressLine(params.tenant) || base.empresaEndereco,
+    clienteEstadoCivil: formatGenderedCivilState(
+      String(
+        customer?.civil_state ||
+          customer?.marital_status ||
+          base.clienteEstadoCivil,
+      ),
+      base.clienteNome,
+    ),
+    clienteBairro: sanitizeNeighborhoodForContract(
+      String(customer?.neighborhood || ''),
+    ),
     clienteTelefone,
     clienteEmail,
     clienteRg,

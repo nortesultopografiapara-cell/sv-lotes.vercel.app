@@ -7,9 +7,9 @@ import type { SaleContractRenderParams } from '@/lib/saleContractContext';
 import { buildSvLotes2ContractContext } from '@/lib/svLotes2ContractContext';
 import {
   SV_LOTES_2_CONTRACT_CSS,
-  SV_LOTES_2_CONTRACT_TITLE,
   SV_LOTES_2_LEGAL_MARKER,
 } from '@/lib/svLotes2ContractLegal';
+import { buildSvLotes2InstitutionalHeaderHtml } from '@/lib/svLotes2ContractHeader';
 import {
   buildSvLotes2BuyerQualificationHtml,
   buildSvLotes2ClausesHtml,
@@ -30,10 +30,7 @@ export function generateSvLotes2Contract(
         ${SV_LOTES_2_CONTRACT_CSS}
         <div class="sv-contract-document sv-contract-sv-lotes-2" data-sv-lotes-model="2.0" style="background:#fff;padding:10px;text-align:justify;">
 
-            <div class="sv2-header">
-              <h2>${SV_LOTES_2_CONTRACT_TITLE}</h2>
-              <p style="margin:0;font-size:10pt;color:#64748b;">Contrato nº ${ctx.contractNumber}</p>
-            </div>
+            ${buildSvLotes2InstitutionalHeaderHtml(ctx)}
 
             <!-- ${SV_LOTES_2_LEGAL_MARKER} -->
             ${buildSvLotes2SummaryHtml(ctx)}
