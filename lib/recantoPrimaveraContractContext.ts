@@ -17,6 +17,8 @@ import {
 import { isSaleContractCashPayment } from '@/lib/saleContractLegalTemplate';
 import {
   resolveContractPaymentDates,
+  formatContractSaleDateBr,
+  parseContractSaleDate,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
 import {
@@ -458,14 +460,7 @@ export function buildRecantoPrimaveraContractContext(
     ? titleLine2Raw
     : `${titleLine2Raw}.`;
 
-  const rawContractDate =
-    sanitizeContractField(contractDate) ||
-    sanitizeContractField(sale?.created_at) ||
-    new Date().toISOString();
-  const isoDate = String(rawContractDate).trim().split('T')[0];
-  const dContrato = /^\d{4}-\d{2}-\d{2}$/.test(isoDate)
-    ? new Date(`${isoDate}T12:00:00`)
-    : new Date(rawContractDate);
+  const dContrato = parseContractSaleDate(sale as Record<string, unknown>);
   const signaturePlace = resolveRecantoSignatureCity({
     project: projectRecord,
     companyCity: profile.city,
@@ -560,12 +555,10 @@ export function buildRecantoPrimaveraContractContext(
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,
     hasBroker: broker.hasBroker,
-    dataContratoFmt: dContrato.toLocaleDateString('pt-BR'),
-    dataContratoExtensoFmt: formatRecantoContractDateLine(
-      dataContratoCidade,
-      dataContratoUf,
-      dContrato,
-    ),
+    dataContratoFmt: formatContractSaleDateBr(sale as Record<string, unknown>),
+    dataContratoExtensoFmt: dContrato
+      ? formatRecantoContractDateLine(dataContratoCidade, dataContratoUf, dContrato)
+      : '',
     dataContratoCidade,
     dataContratoUf,
   };

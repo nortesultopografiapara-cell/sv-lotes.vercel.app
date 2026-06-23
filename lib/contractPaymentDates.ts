@@ -18,6 +18,56 @@ export type ContractPaymentDates = {
   lastInstallmentDueFmt: string;
 };
 
+/** Fuso do certificado de assinatura eletrônica — alinhado a formatSignatureDateBr. */
+export const CONTRACT_BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+
+/**
+ * Timestamp canônico da venda para contrato.
+ * Usa sale_date; created_at apenas como legado quando sale_date ausente.
+ * Nunca usa contractDate, updated_at ou data de geração/regeneração.
+ */
+export function resolveContractSaleDateRaw(sale: Record<string, unknown>): string | null {
+  const saleDate = String(sale?.sale_date ?? '').trim();
+  if (saleDate) return saleDate;
+  const createdAt = String(sale?.created_at ?? '').trim();
+  if (createdAt) return createdAt;
+  return null;
+}
+
+export function parseContractSaleDate(sale: Record<string, unknown>): Date | null {
+  const raw = resolveContractSaleDateRaw(sale);
+  if (!raw) return null;
+
+  const trimmed = raw.trim();
+  const dateOnly = trimmed.split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly) && trimmed.length <= 10) {
+    const d = new Date(`${dateOnly}T12:00:00Z`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const parsed = new Date(trimmed);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Data da venda em pt-BR — fuso America/Sao_Paulo para timestamps com hora. */
+export function formatContractSaleDateBr(sale: Record<string, unknown>): string {
+  const raw = resolveContractSaleDateRaw(sale);
+  if (!raw) return '';
+
+  const trimmed = raw.trim();
+  const dateOnly = trimmed.split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly) && trimmed.length <= 10) {
+    const d = new Date(`${dateOnly}T12:00:00Z`);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleDateString('pt-BR', { timeZone: CONTRACT_BRAZIL_TIMEZONE });
+}
+
 /** Data YYYY-MM-DD em pt-BR sem deslocar fuso (UTC noon). */
 export function formatContractDueDateBr(dateStr: unknown): string {
   if (dateStr == null || dateStr === '') return '';

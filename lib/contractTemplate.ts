@@ -30,13 +30,14 @@ import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContract
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
 import {
   formatContractDueDateBr,
+  formatContractSaleDateBr,
   resolveContractPaymentDates,
   type ContractFinanceReceiptRef,
   type ContractPaymentDates,
 } from "@/lib/contractPaymentDates";
 
 export type { ContractFinanceReceiptRef, ContractPaymentDates };
-export { formatContractDueDateBr, resolveContractPaymentDates };
+export { formatContractDueDateBr, formatContractSaleDateBr, resolveContractPaymentDates };
 
 const formatArea = (val: any) => {
   if (!val) return "não informado";
@@ -379,8 +380,7 @@ export function generateContractHTML({
     buildSaleContractElectronicSignatureClauseHtml();
   const forumClauseHtml = buildSaleContractForumClauseHtml(foroText);
 
-  const dContrato = new Date(contractDate || sale?.created_at || new Date());
-  const dataContratoFmt = dContrato.toLocaleDateString("pt-BR");
+  const dataContratoFmt = formatContractSaleDateBr(sale as Record<string, unknown>);
 
   const projectNeighborhood = toTitleCase(
     (isValid(project?.neighborhood) ? project.neighborhood : null) ||

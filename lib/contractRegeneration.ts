@@ -861,7 +861,6 @@ export async function buildFreshSaleContractHtml(
       contract_number: contractNumber,
       ...contractPayloadPartial,
     },
-    contractDate: new Date().toISOString(),
     projectBlocks,
     streetGuides,
     manualConfrontants: null,

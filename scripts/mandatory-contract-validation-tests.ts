@@ -4,6 +4,9 @@
  */
 
 import { generateContractHTML } from '../lib/contractTemplate';
+import { buildSaleContractRenderContext } from '../lib/saleContractContext';
+import { formatContractSaleDateBr } from '../lib/contractPaymentDates';
+import { formatSignatureDateBr } from '../lib/saasContractSignaturePdf';
 import {
   customerPatchFromForm,
   emptyCustomerFormValues,
@@ -205,6 +208,65 @@ function testNaoInformadoTreatedAsMissing() {
   console.log('OK testNaoInformadoTreatedAsMissing');
 }
 
+/** Data da venda: sale_date + fuso SP; ignora contractDate e regeneração */
+function testSaleDateUsesSaleRecordAndTimezone() {
+  const signedAt = '2026-06-23T01:16:00.000Z';
+  const sale = {
+    sale_date: signedAt,
+    created_at: signedAt,
+    total_value: 100000,
+    installments_count: 1,
+    payment_type: 'À vista',
+  };
+
+  const expectedSaleDate = formatContractSaleDateBr(sale);
+  const expectedSignatureDate = formatSignatureDateBr(signedAt);
+  assert(
+    expectedSaleDate === expectedSignatureDate,
+    `data venda deve coincidir com data assinatura no mesmo fuso (${expectedSaleDate} vs ${expectedSignatureDate})`,
+  );
+  assert(expectedSaleDate === '22/06/2026', '22:16 UTC-3 deve ser 22/06/2026');
+
+  const ctx = buildSaleContractRenderContext({
+    tenant: {
+      name: 'Empresa Teste',
+      cnpj: '00000000000100',
+      city: 'Belem',
+      state: 'PA',
+      address: 'Rua X',
+      zip_code: '66000-000',
+    },
+    customer: FULL_CUSTOMER,
+    project: { name: 'Projeto X', city: 'Belem', uf: 'PA' },
+    block: { block_name: 'A', number: '1', area: 250 },
+    sale,
+    contractDate: '2026-06-25T18:00:00.000Z',
+  });
+  assert(ctx.dataContratoFmt === '22/06/2026', 'contractDate de regeneração não altera data da venda');
+
+  const html = generateContractHTML({
+    tenant: {
+      name: 'Empresa Teste',
+      cnpj: '00000000000100',
+      city: 'Belem',
+      state: 'PA',
+      address: 'Rua X',
+      zip_code: '66000-000',
+      contract_model: 'SV_LOTES_2',
+    },
+    customer: FULL_CUSTOMER,
+    project: { name: 'Projeto X', city: 'Belem', uf: 'PA' },
+    block: { block_name: 'A', number: '1', area: 250 },
+    sale,
+    contractSnapshot: { contract_number: '000000001/2026' },
+    contractDate: '2026-06-25T18:00:00.000Z',
+  });
+  assert(html.includes('22/06/2026'), 'HTML SV2 deve exibir data da venda correta');
+  assert(!html.includes('25/06/2026'), 'HTML não deve usar data de regeneração');
+
+  console.log('OK testSaleDateUsesSaleRecordAndTimezone');
+}
+
 function main() {
   testCompleteCustomerGeneratesContract();
   testMissingRgBlocksContract();
@@ -215,6 +277,7 @@ function main() {
   testRegenerationPreservesCustomerData();
   testFilledFieldNotErasedByEmptyForm();
   testNaoInformadoTreatedAsMissing();
+  testSaleDateUsesSaleRecordAndTimezone();
   console.log('\nTodos os testes de validação de contrato passaram.');
 }
 

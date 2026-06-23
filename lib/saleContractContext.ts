@@ -32,6 +32,7 @@ import {
 } from '@/lib/saleContractLegalTemplate';
 import {
   resolveContractPaymentDates,
+  formatContractSaleDateBr,
   type ContractFinanceReceiptRef,
 } from '@/lib/contractPaymentDates';
 
@@ -159,7 +160,6 @@ export function buildSaleContractRenderContext(
     block,
     sale,
     contractSnapshot,
-    contractDate,
     financeReceipts,
   } = params;
 
@@ -405,8 +405,7 @@ export function buildSaleContractRenderContext(
     .filter(Boolean)
     .join(' | ');
 
-  const dContrato = new Date(contractDate || String(sale?.created_at || new Date()));
-  const dataContratoFmt = dContrato.toLocaleDateString('pt-BR');
+  const dataContratoFmt = formatContractSaleDateBr(sale as Record<string, unknown>);
 
   return {
     seller,
