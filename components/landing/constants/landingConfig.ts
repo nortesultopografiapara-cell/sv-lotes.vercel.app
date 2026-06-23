@@ -52,26 +52,73 @@ export function buildWhatsAppUrl(message: string): string {
   return `https://wa.me/${LANDING_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
-export function buildContactFormWhatsApp(input: {
+export type ContactFormInput = {
   name: string;
   company: string;
   phone: string;
   email: string;
   plan: string;
   message: string;
-}): string {
-  const lines = [
-    'Olá! Vim pelo site do SV LOTES.',
-    '',
-    `Nome: ${input.name}`,
-    `Empresa: ${input.company}`,
-    `WhatsApp: ${input.phone}`,
-    `E-mail: ${input.email}`,
+};
+
+export type ContactFormFieldErrors = Partial<
+  Record<'name' | 'phone' | 'message', string>
+>;
+
+export const LANDING_CONTACT_FORM_EMAIL_SUBJECT =
+  'Solicitação de Demonstração - SV LOTES';
+
+export function validateContactForm(input: ContactFormInput): ContactFormFieldErrors {
+  const errors: ContactFormFieldErrors = {};
+  if (!input.name.trim()) {
+    errors.name = 'Informe seu nome para continuar.';
+  }
+  if (!input.phone.trim()) {
+    errors.phone = 'Informe seu WhatsApp para continuar.';
+  }
+  if (!input.message.trim()) {
+    errors.message = 'Escreva uma mensagem para nossa equipe.';
+  }
+  return errors;
+}
+
+function formatContactFormFields(input: ContactFormInput): string {
+  return [
+    `Nome: ${input.name.trim()}`,
+    `Empresa: ${input.company.trim() || '—'}`,
+    `WhatsApp: ${input.phone.trim()}`,
+    `E-mail: ${input.email.trim() || '—'}`,
     `Plano de interesse: ${input.plan}`,
     '',
-    input.message || '(sem mensagem adicional)',
-  ];
-  return buildWhatsAppUrl(lines.join('\n'));
+    'Mensagem:',
+    input.message.trim(),
+  ].join('\n');
+}
+
+export function buildContactFormWhatsAppMessage(input: ContactFormInput): string {
+  return [
+    'Olá, gostaria de solicitar uma demonstração do SV LOTES.',
+    '',
+    formatContactFormFields(input),
+  ].join('\n');
+}
+
+export function buildContactFormWhatsApp(input: ContactFormInput): string {
+  return buildWhatsAppUrl(buildContactFormWhatsAppMessage(input));
+}
+
+export function buildContactFormMailto(input: ContactFormInput): string {
+  const body = [
+    'Olá,',
+    '',
+    'Gostaria de solicitar uma demonstração do SV LOTES.',
+    '',
+    formatContactFormFields(input),
+    '',
+    'Atenciosamente.',
+  ].join('\n');
+
+  return `mailto:${LANDING_CONTACT.email}?subject=${encodeURIComponent(LANDING_CONTACT_FORM_EMAIL_SUBJECT)}&body=${encodeURIComponent(body)}`;
 }
 
 export const LANDING_CLIENTS = [

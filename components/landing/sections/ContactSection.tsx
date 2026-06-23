@@ -13,6 +13,7 @@ import {
   Shield,
 } from 'lucide-react';
 import {
+  buildContactFormMailto,
   buildContactFormWhatsApp,
   buildWhatsAppUrl,
   LANDING_ADDRESS,
@@ -21,26 +22,45 @@ import {
   LANDING_GOOGLE_MAPS_URL,
   LANDING_PHONE_NUMBER,
   LANDING_WHATSAPP_MESSAGES,
+  validateContactForm,
+  type ContactFormFieldErrors,
 } from '../constants/landingConfig';
 import { Reveal } from '../LandingMotion';
 
 const PLANS = ['Básico', 'Business', 'Profissional', 'Ainda não sei'];
 
-export function ContactSection() {
-  const [form, setForm] = useState({
-    name: '',
-    company: '',
-    phone: '',
-    email: '',
-    plan: 'Ainda não sei',
-    message: '',
-  });
+const EMPTY_FORM = {
+  name: '',
+  company: '',
+  phone: '',
+  email: '',
+  plan: 'Ainda não sei',
+  message: '',
+};
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+export function ContactSection() {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [errors, setErrors] = useState<ContactFormFieldErrors>({});
+
+  const runValidation = () => {
+    const nextErrors = validateContactForm(form);
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleWhatsApp = () => {
+    if (!runValidation()) return;
     const url = buildContactFormWhatsApp(form);
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const handleEmail = () => {
+    if (!runValidation()) return;
+    window.location.href = buildContactFormMailto(form);
+  };
+
+  const fieldClass = (field: keyof ContactFormFieldErrors) =>
+    errors[field] ? 'landing-contact-form-field--error' : '';
 
   return (
     <section id="contato" className="landing-section landing-contact">
@@ -132,17 +152,27 @@ export function ContactSection() {
             </Reveal>
 
             <Reveal delay={0.1}>
-              <form onSubmit={handleSubmit} className="landing-contact-form">
+              <div className="landing-contact-form">
                 <h3 className="text-lg font-bold text-white mb-4">Envie sua mensagem</h3>
                 <div className="landing-form-grid">
                   <label>
                     Nome
                     <input
-                      required
                       value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      onChange={(e) => {
+                        setForm({ ...form, name: e.target.value });
+                        if (errors.name) setErrors({ ...errors, name: undefined });
+                      }}
                       placeholder="Seu nome"
+                      className={fieldClass('name')}
+                      aria-invalid={Boolean(errors.name)}
+                      aria-describedby={errors.name ? 'contact-error-name' : undefined}
                     />
+                    {errors.name ? (
+                      <span id="contact-error-name" className="landing-contact-form-error">
+                        {errors.name}
+                      </span>
+                    ) : null}
                   </label>
                   <label>
                     Empresa
@@ -155,11 +185,21 @@ export function ContactSection() {
                   <label>
                     WhatsApp
                     <input
-                      required
                       value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      onChange={(e) => {
+                        setForm({ ...form, phone: e.target.value });
+                        if (errors.phone) setErrors({ ...errors, phone: undefined });
+                      }}
                       placeholder="(94) 99999-9999"
+                      className={fieldClass('phone')}
+                      aria-invalid={Boolean(errors.phone)}
+                      aria-describedby={errors.phone ? 'contact-error-phone' : undefined}
                     />
+                    {errors.phone ? (
+                      <span id="contact-error-phone" className="landing-contact-form-error">
+                        {errors.phone}
+                      </span>
+                    ) : null}
                   </label>
                   <label>
                     E-mail
@@ -188,16 +228,46 @@ export function ContactSection() {
                     <textarea
                       rows={3}
                       value={form.message}
-                      onChange={(e) => setForm({ ...form, message: e.target.value })}
+                      onChange={(e) => {
+                        setForm({ ...form, message: e.target.value });
+                        if (errors.message) setErrors({ ...errors, message: undefined });
+                      }}
                       placeholder="Como podemos ajudar?"
+                      className={fieldClass('message')}
+                      aria-invalid={Boolean(errors.message)}
+                      aria-describedby={errors.message ? 'contact-error-message' : undefined}
                     />
+                    {errors.message ? (
+                      <span id="contact-error-message" className="landing-contact-form-error">
+                        {errors.message}
+                      </span>
+                    ) : null}
                   </label>
                 </div>
-                <button type="submit" className="landing-btn-primary w-full justify-center mt-4 landing-btn-interactive">
-                  <MessageCircle className="w-4 h-4" />
-                  Enviar via WhatsApp
-                </button>
-              </form>
+
+                <p className="landing-contact-form-hint">
+                  Escolha como deseja entrar em contato conosco:
+                </p>
+
+                <div className="landing-contact-form-actions">
+                  <button
+                    type="button"
+                    onClick={handleWhatsApp}
+                    className="landing-btn-primary landing-contact-form-btn landing-btn-interactive"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Enviar via WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEmail}
+                    className="landing-btn-system landing-contact-form-btn landing-btn-interactive"
+                  >
+                    <Mail className="w-4 h-4" />
+                    Enviar por E-mail
+                  </button>
+                </div>
+              </div>
             </Reveal>
           </div>
 

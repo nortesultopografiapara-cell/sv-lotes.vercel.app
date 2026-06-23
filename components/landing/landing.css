@@ -2020,6 +2020,63 @@ html:has(.landing-page) {
   font-size: 0.875rem;
 }
 
+.landing-contact-form-field--error {
+  border-color: #f87171 !important;
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.35);
+}
+
+.landing-contact-form-error {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #fca5a5;
+}
+
+.landing-contact-form-hint {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.landing-contact-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.landing-contact-form-btn {
+  width: 100%;
+  min-height: 3rem;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .landing-contact-form-actions {
+    flex-direction: row;
+  }
+
+  .landing-contact-form-btn {
+    flex: 1 1 calc(50% - 6px);
+    width: calc(50% - 6px);
+    max-width: calc(50% - 6px);
+  }
+}
+
+.landing-contact-form .landing-btn-system.landing-contact-form-btn {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9375rem;
+  border-radius: 0.625rem;
+}
+
+[data-theme='light'] .landing-contact-form-hint {
+  color: #6b7280;
+}
+
+[data-theme='light'] .landing-contact-form-error {
+  color: #dc2626;
+}
+
 .landing-contact-sidebar {
   padding: 1.25rem;
   background: var(--lp-card);
