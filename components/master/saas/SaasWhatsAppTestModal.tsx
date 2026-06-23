@@ -103,7 +103,11 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
         const debugLines = json.debug
           ? [
               `URL: ${json.debug.requestUrlMasked ?? '—'}`,
-              `Headers: ${JSON.stringify(json.debug.requestHeadersSent ?? ['Content-Type'])}`,
+              ...(Array.isArray(json.debug.requestHeadersMasked)
+                ? json.debug.requestHeadersMasked.map((line: string) => `Header: ${line}`)
+                : [
+                    `Headers: ${JSON.stringify(json.debug.requestHeadersSent ?? ['Content-Type', 'Client-Token'])}`,
+                  ]),
               `HTTP: ${json.debug.httpStatus ?? '—'}`,
               `Resposta: ${JSON.stringify(json.debug.responseBody ?? json.debug.responseText ?? '—')}`,
             ].join('\n')
@@ -162,6 +166,11 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
                   configured={configStatus.tokenConfigured}
                   hint={configStatus.tokenHint}
                 />
+                <ConfigRow
+                  label="Client Token configurado"
+                  configured={configStatus.clientTokenConfigured}
+                  hint={configStatus.clientTokenHint}
+                />
               </>
             ) : (
               <p className="text-sm text-gray-500">Não foi possível carregar o diagnóstico.</p>
@@ -193,8 +202,8 @@ export function SaasWhatsAppTestModal({ open, userId, whatsappConfigured, onClos
 
           {!readyToSend ? (
             <p className="text-sm text-amber-300">
-              Configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) na Vercel (Production)
-              e redeploy o projeto.
+              Configure ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN) e ZAPI_CLIENT_TOKEN
+              na Vercel (Production) e redeploy o projeto.
             </p>
           ) : null}
 

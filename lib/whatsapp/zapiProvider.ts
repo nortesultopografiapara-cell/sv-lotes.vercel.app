@@ -1,6 +1,6 @@
 /**
  * Provider Z-API — envio de mensagens WhatsApp.
- * Autenticação via URL (instance id + instance token). Não usa Client-Token.
+ * Autenticação: instance id + instance token na URL e Client-Token no header.
  */
 
 export const ZAPI_SEND_TEXT_BASE_URL = 'https://api.z-api.io';
@@ -10,6 +10,8 @@ export type ZapiConfigStatus = {
   instanceHint: string | null;
   tokenConfigured: boolean;
   tokenHint: string | null;
+  clientTokenConfigured: boolean;
+  clientTokenHint: string | null;
   ready: boolean;
 };
 
@@ -23,10 +25,13 @@ export type ZapiRequestDiagnostics = {
   instanceIdLength: number;
   tokenMasked: string;
   tokenLength: number;
+  clientTokenMasked: string;
+  clientTokenLength: number;
   requestUrlMasked: string;
   requestUrlPatternOk: boolean;
   usesEnvInstanceId: boolean;
   usesEnvInstanceToken: boolean;
+  usesEnvClientToken: boolean;
   configWarnings: string[];
 };
 
@@ -39,6 +44,7 @@ export type ZapiSendTextResult = {
     responseBody?: unknown;
     responseText?: string;
     requestHeadersSent?: string[];
+    requestHeadersMasked?: string[];
   };
 };
 
@@ -57,9 +63,22 @@ export function maskZapiSuffixOnly(value: string): string | null {
   return `…${trimmed.slice(-4)}`;
 }
 
+/** Máscara para exibição de header Client-Token (ex.: ****ABCD). */
+export function maskZapiClientTokenHeader(value: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '(vazio)';
+  if (trimmed.length <= 4) return '****';
+  return `****${trimmed.slice(-4)}`;
+}
+
 /** Token da instância — aceita ZAPI_INSTANCE_TOKEN ou alias legado ZAPI_TOKEN. */
 export function resolveZapiInstanceToken(): string {
   return String(process.env.ZAPI_INSTANCE_TOKEN || process.env.ZAPI_TOKEN || '').trim();
+}
+
+/** Token de segurança da conta Z-API (header Client-Token). */
+export function resolveZapiClientToken(): string {
+  return String(process.env.ZAPI_CLIENT_TOKEN || '').trim();
 }
 
 export function buildZapiSendTextUrl(instanceId: string, token: string): string {
@@ -78,21 +97,25 @@ export function maskZapiRequestUrl(url: string, token: string): string {
 export function getZapiConfigStatus(): ZapiConfigStatus {
   const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
   const token = resolveZapiInstanceToken();
+  const clientToken = resolveZapiClientToken();
 
   return {
     instanceConfigured: !!instanceId,
     instanceHint: maskZapiSuffixOnly(instanceId),
     tokenConfigured: !!token,
     tokenHint: maskZapiSuffixOnly(token),
-    ready: !!(instanceId && token),
+    clientTokenConfigured: !!clientToken,
+    clientTokenHint: maskZapiSuffixOnly(clientToken),
+    ready: !!(instanceId && token && clientToken),
   };
 }
 
 export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
   const instanceId = String(process.env.ZAPI_INSTANCE_ID || '').trim();
   const token = resolveZapiInstanceToken();
+  const clientToken = resolveZapiClientToken();
 
-  if (!instanceId || !token) return null;
+  if (!instanceId || !token || !clientToken) return null;
 
   const requestUrl = buildZapiSendTextUrl(instanceId, token);
   const expectedPrefix = `${ZAPI_SEND_TEXT_BASE_URL}/instances/`;
@@ -111,12 +134,17 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
   if (token.includes(' ')) {
     configWarnings.push('ZAPI_INSTANCE_TOKEN contém espaços — verifique aspas/quebras na Vercel.');
   }
+  if (clientToken.includes(' ')) {
+    configWarnings.push('ZAPI_CLIENT_TOKEN contém espaços — verifique aspas/quebras na Vercel.');
+  }
 
   return {
     instanceId,
     instanceIdLength: instanceId.length,
     tokenMasked: maskZapiSecret(token),
     tokenLength: token.length,
+    clientTokenMasked: maskZapiSecret(clientToken),
+    clientTokenLength: clientToken.length,
     requestUrlMasked: maskZapiRequestUrl(requestUrl, token),
     requestUrlPatternOk:
       requestUrl.startsWith(expectedPrefix) &&
@@ -124,6 +152,7 @@ export function buildZapiRequestDiagnostics(): ZapiRequestDiagnostics | null {
       requestUrl.endsWith(expectedSuffix),
     usesEnvInstanceId: instanceId === String(process.env.ZAPI_INSTANCE_ID || '').trim(),
     usesEnvInstanceToken: token === resolveZapiInstanceToken(),
+    usesEnvClientToken: clientToken === resolveZapiClientToken(),
     configWarnings,
   };
 }
@@ -140,11 +169,25 @@ export function resolveZapiSendTextUrl(): string | null {
   return buildZapiSendTextUrl(instanceId, token);
 }
 
-/** Headers enviados em toda requisição send-text (sem Client-Token). */
+/** Headers enviados em toda requisição send-text (Content-Type + Client-Token). */
 export function buildZapiSendTextHeaders(): Record<string, string> {
-  return {
+  const clientToken = resolveZapiClientToken();
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+  if (clientToken) {
+    headers['Client-Token'] = clientToken;
+  }
+  return headers;
+}
+
+export function maskZapiRequestHeaders(headers: Record<string, string>): string[] {
+  return Object.entries(headers).map(([key, value]) => {
+    if (key.toLowerCase() === 'client-token') {
+      return `Client-Token: ${maskZapiClientTokenHeader(value)}`;
+    }
+    return `${key}: ${value}`;
+  });
 }
 
 function logZapiDiagnostics(
@@ -159,6 +202,8 @@ function logZapiDiagnostics(
       instanceIdLength: diagnostics.instanceIdLength,
       tokenMasked: diagnostics.tokenMasked,
       tokenLength: diagnostics.tokenLength,
+      clientTokenMasked: diagnostics.clientTokenMasked,
+      clientTokenLength: diagnostics.clientTokenLength,
       requestUrlMasked: diagnostics.requestUrlMasked,
       requestUrlPatternOk: diagnostics.requestUrlPatternOk,
       ...extra,
@@ -167,6 +212,17 @@ function logZapiDiagnostics(
 }
 
 export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextResult> {
+  const config = getZapiConfigStatus();
+  if (!config.instanceConfigured || !config.tokenConfigured) {
+    return { ok: false, error: 'Z-API não configurada.' };
+  }
+  if (!config.clientTokenConfigured) {
+    return {
+      ok: false,
+      error: 'ZAPI_CLIENT_TOKEN não configurado no servidor.',
+    };
+  }
+
   const diagnostics = buildZapiRequestDiagnostics();
   const url = resolveZapiSendTextUrl();
   if (!url || !diagnostics) {
@@ -185,11 +241,13 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
 
   const headers = buildZapiSendTextHeaders();
   const requestHeadersSent = Object.keys(headers);
+  const requestHeadersMasked = maskZapiRequestHeaders(headers);
 
   logZapiDiagnostics('request', diagnostics, {
     phone,
     messageLength: message.length,
     requestHeadersSent,
+    requestHeadersMasked,
   });
 
   try {
@@ -211,6 +269,7 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
       httpStatus: response.status,
       responseBody: body,
       requestHeadersSent,
+      requestHeadersMasked,
     });
 
     const debug = {
@@ -219,6 +278,7 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
       responseBody: body,
       responseText,
       requestHeadersSent,
+      requestHeadersMasked,
     };
 
     if (!response.ok) {
@@ -235,7 +295,9 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
           JSON.stringify({
             requestUrlMasked: diagnostics.requestUrlMasked,
             requestHeadersSent,
-            clientTokenHeaderSent: false,
+            requestHeadersMasked,
+            clientTokenHeaderSent: !!headers['Client-Token'],
+            clientTokenConfigured: config.clientTokenConfigured,
             httpStatus: response.status,
             responseBody: body,
           }),
@@ -258,15 +320,17 @@ export async function sendText(input: ZapiSendTextInput): Promise<ZapiSendTextRe
       JSON.stringify({
         instanceId: diagnostics.instanceId,
         tokenMasked: diagnostics.tokenMasked,
+        clientTokenMasked: diagnostics.clientTokenMasked,
         requestUrlMasked: diagnostics.requestUrlMasked,
         requestHeadersSent,
+        requestHeadersMasked,
         error: message,
       }),
     );
     return {
       ok: false,
       error: message,
-      debug: { ...diagnostics, requestHeadersSent },
+      debug: { ...diagnostics, requestHeadersSent, requestHeadersMasked },
     };
   }
 }
