@@ -25,6 +25,10 @@ import {
   buildSaleContractRepresentativeSignatureHtml,
   isSaleContractCashPayment,
 } from "@/lib/saleContractLegalTemplate";
+import {
+  buildSaleContractPaymentSummaryHtml,
+  resolveSaleContractPaymentBreakdown,
+} from "@/lib/saleContractPaymentSummary";
 import { isRecantoPrimaveraContractModel, isSvLotes2ContractModel } from "@/lib/contractModel";
 import { generateRecantoPrimaveraContract } from "@/lib/recantoPrimaveraContractTemplate";
 import { generateSvLotes2Contract } from "@/lib/svLotes2ContractTemplate";
@@ -412,6 +416,10 @@ export function generateContractHTML({
     .filter(Boolean)
     .join(" | ");
 
+  const paymentSummaryHtml = buildSaleContractPaymentSummaryHtml(
+    resolveSaleContractPaymentBreakdown(sale, { isCashPayment }),
+  );
+
   return `
         ${CONTRACT_PDF_PRINT_CSS}
         <div class="sv-contract-document" style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.5; color: #111; background: #fff; padding: 10px; text-align: justify;">
@@ -434,6 +442,8 @@ export function generateContractHTML({
                     Pelo presente instrumento particular, partes acima qualificadas têm entre si justo e acertado a celebração do presente compromisso de compra e venda que se regerá pelas cláusulas, termos e condições, estipuladas a seguir, que as partes mutuamente outorgam e aceitam, as quais comprometem cumprir e respeitar, por si, seus herdeiros e sucessores, na forma da lei:
                 </p>
             </div>
+
+            ${paymentSummaryHtml}
 
             <div class="contract-clause" style="padding-bottom: 5px;">
                 <p style="margin-bottom: 0;">

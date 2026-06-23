@@ -117,7 +117,10 @@ function testSv2TemplateStructure() {
   assertNotIncludes(html, 'sv2-header-company', 'sem dados da empresa duplicados no corpo');
   assert(html.includes('Contrato nº'), 'número do contrato abaixo do título');
   assertNotIncludes(html, 'CONTRATO Nº', 'sem número duplicado no quadro resumo');
-  assert(html.includes('VALOR TOTAL'), 'valor total resumo');
+  assert(html.includes('VALOR DO LOTE'), 'valor do lote no resumo');
+  assert(html.includes('DESCONTO'), 'desconto no resumo');
+  assert(html.includes('SALDO PARCELADO'), 'saldo parcelado no resumo');
+  assert(html.includes('CORREÇÃO'), 'correção das parcelas no resumo');
   assert(html.includes('Qualificação das Partes'), 'qualificação');
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
   assert(html.includes('CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA'), 'inadimplência 2%');

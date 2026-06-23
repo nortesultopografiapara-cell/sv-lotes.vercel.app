@@ -29,6 +29,11 @@ import {
   computeInstallmentDisplayValue,
   downPaymentReducesInstallmentBase,
 } from '@/lib/saleInstallmentCalc';
+import {
+  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+  INSTALLMENT_CORRECTION_OPTIONS,
+  normalizeInstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
 import type { SaleContractModel } from '@/lib/contractModel';
 import {
   formatCurrencyBRL,
@@ -47,6 +52,7 @@ export type LotFormState = CustomerFormValues &
   first_installment_due_date: string;
   broker_id: string;
   notes: string;
+  installment_correction_type: string;
   signal_amount?: string;
   signal_date?: string;
   signal_payment_method?: string;
@@ -80,6 +86,7 @@ function emptyLotFormState(): LotFormState {
     first_installment_due_date: '',
     broker_id: '',
     notes: '',
+    installment_correction_type: DEFAULT_INSTALLMENT_CORRECTION_TYPE,
   };
 }
 
@@ -244,6 +251,7 @@ export function CustomerLotFormModal({
   const installmentsCount =
     installmentsValidation?.valid === true ? installmentsValidation.value : 0;
   const isRecantoSinal = !downPaymentReducesInstallmentBase(contractModel);
+  const isStandardSaleForm = !isRecantoSinal;
   const installmentValue =
     installmentsCount > 0
       ? computeInstallmentDisplayValue({
@@ -288,6 +296,14 @@ export function CustomerLotFormModal({
           return;
         }
       } else {
+        if (discountValue > price) {
+          alert('O desconto não pode ser maior que o valor do lote.');
+          return;
+        }
+        if (finalValue <= 0) {
+          alert('O valor final não pode ser zero ou negativo.');
+          return;
+        }
         if (downPayment > price) {
           alert(
             isRecantoSinal
@@ -348,6 +364,11 @@ export function CustomerLotFormModal({
         lot_value: price,
         final_value: finalValue,
         installment_value: confirmedInstallmentValue,
+        installment_correction_type: isStandardSaleForm
+          ? paymentType === 'Parcelado'
+            ? normalizeInstallmentCorrectionType(formData.installment_correction_type)
+            : DEFAULT_INSTALLMENT_CORRECTION_TYPE
+          : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
       });
     } catch (err) {
       console.error('CUSTOMER_LOT_FORM_SUBMIT_ERROR', err);
@@ -801,10 +822,16 @@ export function CustomerLotFormModal({
                     <select
                       value={paymentType}
                       onChange={(e) => {
+                        const nextType = e.target.value;
                         setField({
-                          payment_type: e.target.value,
+                          payment_type: nextType,
                           installments_count: '',
                           first_installment_due_date: '',
+                          installment_correction_type:
+                            nextType === 'Parcelado'
+                              ? formData.installment_correction_type ||
+                                DEFAULT_INSTALLMENT_CORRECTION_TYPE
+                              : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
                         });
                       }}
                       className={GIS_INPUT}
@@ -814,10 +841,12 @@ export function CustomerLotFormModal({
                     </select>
                   </div>
                 </div>
-                {paymentType === 'À vista' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {isStandardSaleForm && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Desconto (R$)</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Valor do Desconto (R$)
+                      </label>
                       <CurrencyInput
                         value={formData.discount_value}
                         onChange={(next) => setField({ discount_value: next })}
@@ -833,7 +862,32 @@ export function CustomerLotFormModal({
                         className={`${GIS_INPUT_READONLY} font-bold text-green-700`}
                       />
                     </div>
-                    <div>
+                  </div>
+                )}
+                {paymentType === 'À vista' && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {!isStandardSaleForm ? (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Desconto (R$)</label>
+                        <CurrencyInput
+                          value={formData.discount_value}
+                          onChange={(next) => setField({ discount_value: next })}
+                          className={GIS_INPUT}
+                        />
+                      </div>
+                    ) : null}
+                    {!isStandardSaleForm ? (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Valor Final *</label>
+                        <CurrencyInput
+                          readOnly
+                          value={String(finalValue)}
+                          onChange={() => {}}
+                          className={`${GIS_INPUT_READONLY} font-bold text-green-700`}
+                        />
+                      </div>
+                    ) : null}
+                    <div className={isStandardSaleForm ? 'md:col-span-3' : ''}>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Data de Vencimento *</label>
                       <input
                         type="date"
@@ -893,6 +947,28 @@ export function CustomerLotFormModal({
                         className={`${GIS_INPUT_READONLY} font-semibold text-blue-800`}
                       />
                     </div>
+                    {isStandardSaleForm ? (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Correção das Parcelas
+                        </label>
+                        <select
+                          value={normalizeInstallmentCorrectionType(
+                            formData.installment_correction_type,
+                          )}
+                          onChange={(e) =>
+                            setField({ installment_correction_type: e.target.value })
+                          }
+                          className={GIS_INPUT}
+                        >
+                          {INSTALLMENT_CORRECTION_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">Vencimento 1ª Parcela *</label>
                       <input

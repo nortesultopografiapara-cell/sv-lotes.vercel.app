@@ -14,6 +14,7 @@ import {
   formatGenderedCivilState,
   sanitizeNeighborhoodForContract,
 } from '@/lib/svLotes2ContractFormat';
+import { resolveSaleContractPaymentBreakdown } from '@/lib/saleContractPaymentSummary';
 
 function toTitleCase(str: string): string {
   if (!str) return '';
@@ -100,6 +101,9 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
   return {
     ...base,
     contractNumber,
+    paymentBreakdown: resolveSaleContractPaymentBreakdown(sale as Record<string, unknown>, {
+      isCashPayment: base.isCashPayment,
+    }),
     area,
     municipio,
     estado,

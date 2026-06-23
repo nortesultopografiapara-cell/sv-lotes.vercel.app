@@ -4,6 +4,10 @@
  */
 
 import {
+  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+  normalizeInstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
+import {
   buildSaleSpouseDbPatch,
   SALE_SPOUSE_DB_FIELDS,
   type SaleSpouseFormFields,
@@ -19,6 +23,7 @@ export const SALES_OFFICIAL_UPDATE_FIELDS = [
   'payment_type',
   'down_payment',
   'installments_count',
+  'installment_correction_type',
   'broker_id',
   ...SALE_SPOUSE_DB_FIELDS,
 ] as const;
@@ -47,6 +52,7 @@ export type OfficialSalesUpdateInput = {
   paymentType: string;
   downPayment: number;
   installmentsCount: number;
+  installmentCorrectionType?: string | null;
   brokerId: string | null;
   spouse?: Partial<SaleSpouseFormFields>;
 };
@@ -64,6 +70,9 @@ export function buildOfficialSalesUpdatePatch(
     payment_type: input.paymentType,
     down_payment: input.downPayment,
     installments_count: input.installmentsCount,
+    installment_correction_type: normalizeInstallmentCorrectionType(
+      input.installmentCorrectionType ?? DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    ),
     broker_id: input.brokerId,
     ...buildSaleSpouseDbPatch(input.spouse || {}),
   };

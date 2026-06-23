@@ -40,6 +40,10 @@ import { generateContractHTML } from "@/lib/contractTemplate";
 import { CustomerLotFormModal } from "@/components/map/CustomerLotFormModal";
 import { parseValidatedInstallmentsCount } from "@/lib/installmentsCount";
 import { buildSaleSpouseDbPatch } from "@/lib/saleSpouseFields";
+import {
+  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+  normalizeInstallmentCorrectionType,
+} from "@/lib/installmentCorrectionType";
 import { buildSaleEditFinancePayloads } from "@/lib/saleEditFinanceRecalc";
 import { normalizeSaleContractModel } from "@/lib/contractModel";
 import {
@@ -4059,6 +4063,7 @@ export default function GISMap({
             pmtType === "Parcelado"
               ? parseValidatedInstallmentsCount(String(customerData.installments_count ?? ""))
               : 1;
+          const saleContractModel = normalizeSaleContractModel(tenantContractModel);
 
           const salePayload: any = {
             tenant_id: finalTenantId,
@@ -4079,6 +4084,12 @@ export default function GISMap({
             total_value: customerData.final_value || finalPrice,
             down_payment: parseCurrencyBRLNumber(customerData.down_payment),
             installments_count: instCount,
+            installment_correction_type:
+              saleContractModel === "RECANTO_PRIMAVERA"
+                ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
+                : normalizeInstallmentCorrectionType(
+                    customerData.installment_correction_type,
+                  ),
             status: "ACTIVE",
             ...buildSaleSpouseDbPatch(customerData),
           };

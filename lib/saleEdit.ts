@@ -27,6 +27,11 @@ import {
   planPartialFinanceRecalc,
 } from '@/lib/saleEditFinanceRecalc';
 import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
+import {
+  DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+  normalizeInstallmentCorrectionType,
+} from '@/lib/installmentCorrectionType';
+import { normalizeSaleContractModel } from '@/lib/contractModel';
 
 import { isPartnerPanelAdmin } from '@/lib/partnerPanelAdmin';
 import { cpfCnpjIlikePatterns, matchesCpfCnpj } from '@/lib/inputMasks';
@@ -207,6 +212,9 @@ export async function loadSaleEditContext(
     first_installment_due_date: firstInstDue ? String(firstInstDue) : '',
     broker_id: String(sale.broker_id || ''),
     notes: String(sale.notes || ''),
+    installment_correction_type: normalizeInstallmentCorrectionType(
+      sale.installment_correction_type ?? DEFAULT_INSTALLMENT_CORRECTION_TYPE,
+    ),
     reservation_signal_paid: paidSignal ? Number(paidSignal.amount) || 0 : 0,
     signal_amount: paidSignal ? String(paidSignal.amount) : '',
     signal_date: paidSignal?.due_date ? String(paidSignal.due_date).split('T')[0] : '',
@@ -252,7 +260,7 @@ export async function updateSaleFromEdit(
     .select('contract_model')
     .eq('id', tenantId)
     .maybeSingle();
-  const contractModel = companyRow?.contract_model;
+  const contractModel = normalizeSaleContractModel(companyRow?.contract_model);
   const financeOptions = {
     contractModel,
     grossDownPayment: parseCurrencyBRLNumber(data.down_payment),
@@ -290,6 +298,12 @@ export async function updateSaleFromEdit(
       data.payment_type === 'Parcelado'
         ? Number(data.installments_count) || 1
         : 1,
+    installmentCorrectionType:
+      contractModel === 'RECANTO_PRIMAVERA'
+        ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
+        : data.payment_type === 'Parcelado'
+          ? data.installment_correction_type
+          : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     brokerId,
     spouse: {
       has_spouse: data.has_spouse,
