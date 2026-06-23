@@ -39,7 +39,7 @@ async function main() {
   const diagnostics = buildZapiRequestDiagnostics();
   if (!diagnostics) {
     console.log(
-      'Z-API não configurada (ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN ou ZAPI_CLIENT_TOKEN ausentes).',
+      'Z-API não configurada (ZAPI_INSTANCE_ID ou ZAPI_INSTANCE_TOKEN ausentes).',
     );
     process.exit(1);
   }

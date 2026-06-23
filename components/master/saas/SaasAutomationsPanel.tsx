@@ -96,8 +96,8 @@ export function SaasAutomationsPanel({ isSuperAdmin = false }: { isSuperAdmin?: 
         ) : null}
         {!whatsappConfigured ? (
           <p className="mt-3 text-sm text-gray-400">
-            Z-API não configurada — configure ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN)
-            e ZAPI_CLIENT_TOKEN na Vercel para ativar WhatsApp automático.
+            Z-API não configurada — configure ZAPI_INSTANCE_ID e ZAPI_INSTANCE_TOKEN (ou ZAPI_TOKEN)
+            na Vercel para ativar WhatsApp automático. ZAPI_CLIENT_TOKEN é opcional.
           </p>
         ) : null}
       </div>
