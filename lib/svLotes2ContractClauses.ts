@@ -18,7 +18,6 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     { label: 'ÁREA', value: ctx.area },
     { label: 'MUNICÍPIO', value: ctx.municipio },
     { label: 'UF', value: ctx.estado },
-    { label: 'CONTRATO Nº', value: ctx.contractNumber },
     { label: 'COMPRADOR', value: ctx.clienteNome, span: 2 },
     { label: 'CPF', value: ctx.buyerCpfFmt },
     { label: 'VENDEDOR', value: ctx.empresaNome, span: 3 },

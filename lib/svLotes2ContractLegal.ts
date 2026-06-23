@@ -17,17 +17,9 @@ export const SV_LOTES_2_CONTRACT_CSS = `
   }
   .sv-contract-sv-lotes-2 .sv2-header {
     text-align: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 2px solid #2563eb;
-  }
-  .sv-contract-sv-lotes-2 .sv2-header-logo {
-    margin-bottom: 6px;
-  }
-  .sv-contract-sv-lotes-2 .sv2-header-logo img {
-    max-height: 48px;
-    max-width: 160px;
-    object-fit: contain;
   }
   .sv-contract-sv-lotes-2 .sv2-header h2 {
     font-size: 13pt;
@@ -38,21 +30,9 @@ export const SV_LOTES_2_CONTRACT_CSS = `
     text-transform: uppercase;
   }
   .sv-contract-sv-lotes-2 .sv2-header-contract {
-    margin: 0 0 6px 0;
+    margin: 0;
     font-size: 9pt;
     color: #64748b;
-  }
-  .sv-contract-sv-lotes-2 .sv2-header-company {
-    font-size: 8.5pt;
-    color: #334155;
-    line-height: 1.35;
-  }
-  .sv-contract-sv-lotes-2 .sv2-header-company p {
-    margin: 0 0 2px 0;
-  }
-  .sv-contract-sv-lotes-2 .sv2-header-company-name {
-    font-weight: 700;
-    color: #1e3a8a;
   }
   .sv-contract-sv-lotes-2 .sv2-summary-grid {
     display: grid;

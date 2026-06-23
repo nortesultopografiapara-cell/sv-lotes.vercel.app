@@ -81,19 +81,42 @@ export function buildSvLotes2SaleContractPrintTemplates(chrome: ContractPdfChrom
   headerTemplate: string;
   footerTemplate: string;
 } {
-  const contractLabel = `Contrato nº ${displayContractNumber(chrome.contractNumber)}`;
-
   const logoImg = chrome.logoBase64
-    ? `<img src="${chrome.logoBase64}" style="height:11px;margin-right:6px;vertical-align:middle;" />`
+    ? `<img src="${chrome.logoBase64}" style="height:14px;margin-right:6px;vertical-align:middle;" />`
     : '';
 
+  const docLabel = chrome.tenantDocumentLabel || 'CNPJ';
+  const metaLines: string[] = [];
+  if (chrome.tenantCnpj) {
+    metaLines.push(`${escapeHtml(docLabel)}: ${escapeHtml(chrome.tenantCnpj)}`);
+  }
+  if (chrome.addressLine) {
+    metaLines.push(escapeHtml(chrome.addressLine));
+  } else if (chrome.cityUfLine) {
+    metaLines.push(escapeHtml(chrome.cityUfLine));
+  }
+  if (chrome.tenantCep && !String(chrome.addressLine || '').includes(chrome.tenantCep)) {
+    metaLines.push(`CEP ${escapeHtml(chrome.tenantCep)}`);
+  }
+  const contactParts = [chrome.tenantPhone, chrome.tenantEmail]
+    .filter(Boolean)
+    .map((part) => escapeHtml(String(part)));
+  if (contactParts.length) {
+    metaLines.push(contactParts.join(' · '));
+  }
+
+  const metaHtml = metaLines
+    .map((line) => `<span style="display:block;line-height:1.35;">${line}</span>`)
+    .join('');
+
   const headerTemplate = `
-    <div style="font-size:7.5px;width:100%;padding:0 14mm 4px 14mm;font-family:'Segoe UI',Arial,sans-serif;color:#334155;box-sizing:border-box;">
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #cbd5e1;padding-bottom:3px;">
-        <div style="display:flex;align-items:center;min-width:0;">
-          ${logoImg}
+    <div style="font-size:7px;width:100%;padding:0 14mm 4px 14mm;font-family:'Segoe UI',Arial,sans-serif;color:#334155;box-sizing:border-box;">
+      <div style="display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid #cbd5e1;padding-bottom:3px;">
+        <div style="flex-shrink:0;padding-top:1px;">${logoImg}</div>
+        <div style="min-width:0;">
+          <strong style="display:block;font-size:7.5px;color:#1e3a8a;line-height:1.3;">${escapeHtml(String(chrome.tenantName || '').toUpperCase())}</strong>
+          ${metaHtml}
         </div>
-        <div style="text-align:right;white-space:nowrap;font-weight:600;color:#1e3a8a;">${escapeHtml(contractLabel)}</div>
       </div>
     </div>`;
 

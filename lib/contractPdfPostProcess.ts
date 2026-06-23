@@ -23,6 +23,10 @@ export type ContractPdfChromeInput = {
   logoBase64: string | null;
   /** Variante visual do cabeçalho/rodapé PDF. */
   printStyle?: 'default' | 'sv-lotes-2';
+  /** SV LOTES 2.0 — contato no cabeçalho institucional PDF. */
+  tenantPhone?: string;
+  tenantEmail?: string;
+  tenantCep?: string;
 };
 
 /** CSS embutido no HTML do contrato — evita página extra após assinaturas. */

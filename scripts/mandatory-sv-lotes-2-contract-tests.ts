@@ -113,7 +113,10 @@ function testSv2TemplateStructure() {
   assert(html.includes('sv-contract-sv-lotes-2'), 'classe template');
   assert(html.includes('sv2-summary-grid'), 'quadro resumo compacto em grid');
   assertNotIncludes(html, 'class="sv2-summary"', 'sem tabela alta de 2 colunas');
-  assert(html.includes('sv2-header-company'), 'cabeçalho institucional p1');
+  assertNotIncludes(html, 'sv2-header-logo', 'sem logo central no corpo');
+  assertNotIncludes(html, 'sv2-header-company', 'sem dados da empresa duplicados no corpo');
+  assert(html.includes('Contrato nº'), 'número do contrato abaixo do título');
+  assertNotIncludes(html, 'CONTRATO Nº', 'sem número duplicado no quadro resumo');
   assert(html.includes('VALOR TOTAL'), 'valor total resumo');
   assert(html.includes('Qualificação das Partes'), 'qualificação');
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
@@ -295,6 +298,10 @@ function testRecantoUnchanged() {
 function testPdfChromeAndCertificate() {
   const chrome = buildSvLotes2PdfChrome(tenantSv2, '000000010/2026', null);
   assert(chrome.printStyle === 'sv-lotes-2', 'print style sv2');
+  assert(chrome.addressLine.includes('Parauapebas'), 'endereço no chrome pdf');
+  assert(chrome.tenantPhone === '(94) 99111-0000', 'telefone no chrome pdf');
+  assert(chrome.tenantEmail === 'contato@exemplo.test', 'email no chrome pdf');
+  assert(chrome.tenantCep === '68515-000', 'cep no chrome pdf');
   const cert = buildSaleContractSignatureCertificateHtml({
     contractNumber: '000000010/2026',
     projectName: 'Residencial Horizonte',
