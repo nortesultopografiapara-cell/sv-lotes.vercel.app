@@ -49,6 +49,11 @@ export type SignatureCertificateData = {
   geoCity?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  phone?: string | null;
+  approxLocation?: string | null;
 };
 
 export type BilateralSignatureCertificateData = {
@@ -154,7 +159,7 @@ type CertificateRowDef = {
   technical?: boolean;
 };
 
-function buildCertificateRows(cert: SignatureCertificateData): CertificateRowDef[] {
+export function buildCertificateRows(cert: SignatureCertificateData): CertificateRowDef[] {
   const docLabel = formatSignerDocumentFieldLabel(cert.signerDocument);
   const docValue = formatSignerDocumentDisplay(cert.signerDocument);
   const rows: CertificateRowDef[] = [
@@ -186,6 +191,20 @@ function buildCertificateRows(cert: SignatureCertificateData): CertificateRowDef
   });
   if (cert.geoCity?.trim()) {
     rows.push({ label: 'Local aproximado', value: cert.geoCity.trim() });
+  } else if (cert.approxLocation?.trim() && cert.approxLocation !== 'Não identificado') {
+    rows.push({ label: 'Local aproximado', value: cert.approxLocation.trim() });
+  }
+  if (cert.browser?.trim() && cert.browser !== 'Não informado') {
+    rows.push({ label: 'Navegador', value: cert.browser.trim() });
+  }
+  if (cert.os?.trim() && cert.os !== 'Não informado') {
+    rows.push({ label: 'Sistema operacional', value: cert.os.trim() });
+  }
+  if (cert.device?.trim() && cert.device !== 'Não informado') {
+    rows.push({ label: 'Dispositivo', value: cert.device.trim() });
+  }
+  if (cert.phone?.trim() && cert.phone !== 'Não informado') {
+    rows.push({ label: 'Telefone', value: cert.phone.trim() });
   }
   if (cert.latitude != null && cert.longitude != null) {
     rows.push(

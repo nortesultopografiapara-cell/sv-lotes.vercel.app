@@ -63,7 +63,7 @@ export async function middleware(request: NextRequest) {
   // 1. PUBLIC ROUTES (landing + auth + validação + demo)
   const isLanding = url.pathname === '/';
   const isDemoPage = url.pathname === '/demo';
-  const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/api/payments/webhook', '/validar', '/validar-recibo', '/api/validar-recibo', '/api/company-lookup', '/sign', '/api/sign'];
+  const publicRoutes = ['/login', '/auth/callback', '/verify-email', '/api/setup', '/api/regenerate', '/api/payments/webhook', '/validar', '/validar-recibo', '/api/validar-recibo', '/api/company-lookup', '/sign', '/api/sign', '/verify', '/api/verify'];
   const isPublicRoute = isLanding || isDemoPage || publicRoutes.some(route => url.pathname.startsWith(route));
 
   if (isPublicRoute) {

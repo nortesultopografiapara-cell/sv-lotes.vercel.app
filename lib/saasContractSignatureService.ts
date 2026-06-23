@@ -34,6 +34,14 @@ import {
   isPublicClientSignBlocked,
 } from '@/lib/saasContractBilateralSignature';
 import { onlyDigits } from '@/lib/inputMasks';
+import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
+import {
+  enrichClientEvidenceForSign,
+  enrichProviderEvidenceForSign,
+  readClientEvidenceFromRow,
+  readProviderEvidenceFromRow,
+} from '@/lib/signatureEvidence';
+import { logSignatureEvent } from '@/lib/signatureEventService';
 
 const SAAS_CONTRACT_BUCKET = 'company-assets';
 const SIGNATURE_EXPIRY_DAYS = 30;
@@ -80,6 +88,27 @@ export type CompanyContractSignatureRow = {
   provider_signature_hash: string | null;
   provider_ip_address: string | null;
   provider_user_agent: string | null;
+  signer_phone?: string | null;
+  signer_browser?: string | null;
+  signer_os?: string | null;
+  signer_device?: string | null;
+  signer_ip_city?: string | null;
+  signer_ip_region?: string | null;
+  signer_ip_country?: string | null;
+  signed_at_iso?: string | null;
+  signature_event_id?: string | null;
+  signed_document_type?: string | null;
+  validation_public_url?: string | null;
+  certificate_status?: string | null;
+  provider_signer_phone?: string | null;
+  provider_browser?: string | null;
+  provider_os?: string | null;
+  provider_device?: string | null;
+  provider_ip_city?: string | null;
+  provider_ip_region?: string | null;
+  provider_ip_country?: string | null;
+  provider_signed_at_iso?: string | null;
+  provider_signature_event_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -254,6 +283,13 @@ export async function buildFullySignedSaasContractPdfBytes(
     cep: SAAS_PROVIDER.cep,
   }).multiline.replace(/\n/g, ', ');
 
+  const clientEvidence = readClientEvidenceFromRow(
+    signatureRow as unknown as Record<string, unknown>,
+  );
+  const providerEvidence = readProviderEvidenceFromRow(
+    signatureRow as unknown as Record<string, unknown>,
+  );
+
   const bilateralCertificate: BilateralSignatureCertificateData = {
     contractNumber: contractRow.contract_number,
     contentVersion,
@@ -269,12 +305,17 @@ export async function buildFullySignedSaasContractPdfBytes(
       signedTime: formatSignatureTimeBr(clientSignedAt),
       signatureHash: clientHash,
       signatureToken: signatureRow.signature_token,
-      signatureId: signatureRow.id,
+      signatureId: signatureRow.signature_event_id || signatureRow.id,
       contentVersion,
       partyLabel: 'CONTRATANTE',
       geoCity: signatureRow.signer_geo_city,
       latitude: signatureRow.signer_latitude,
       longitude: signatureRow.signer_longitude,
+      browser: clientEvidence.browser,
+      os: clientEvidence.os,
+      device: clientEvidence.device,
+      phone: clientEvidence.phone,
+      approxLocation: clientEvidence.location,
     },
     provider: {
       contractNumber: contractRow.contract_number,
@@ -288,12 +329,18 @@ export async function buildFullySignedSaasContractPdfBytes(
       signedTime: formatSignatureTimeBr(providerSignedAt),
       signatureHash: providerHash,
       signatureToken: resolveProviderSignatureToken(signatureRow),
-      signatureId: signatureRow.id,
+      signatureId:
+        signatureRow.provider_signature_event_id || signatureRow.id,
       contentVersion,
       partyLabel: 'CONTRATADA',
       geoCity: signatureRow.provider_geo_city,
       latitude: signatureRow.provider_latitude,
       longitude: signatureRow.provider_longitude,
+      browser: providerEvidence.browser,
+      os: providerEvidence.os,
+      device: providerEvidence.device,
+      phone: providerEvidence.phone,
+      approxLocation: providerEvidence.location,
     },
   };
   const built = buildSaasContractPdfWithMeta(
@@ -764,6 +811,7 @@ export async function sendContractForSignature(
 
   const token = generateSignatureToken();
   const signUrl = buildSignUrl(token);
+  const validationUrl = buildSignatureVerifyUrl(token);
   const now = new Date().toISOString();
   const expiresAt = signatureExpiresAt();
 
@@ -775,6 +823,8 @@ export async function sendContractForSignature(
       signature_status: 'PENDING',
       signature_token: token,
       signature_url: signUrl,
+      validation_public_url: validationUrl,
+      signed_document_type: 'CONTRATO_SAAS',
       expires_at: expiresAt,
       created_at: now,
       updated_at: now,
@@ -788,6 +838,15 @@ export async function sendContractForSignature(
       `Falha ao registrar envio para assinatura: ${error?.message || 'sem retorno'}`,
     );
   }
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: token,
+    signatureSource: 'SAAS',
+    signatureRecordId: String(signature.id),
+    eventType: 'LINK_CREATED',
+    eventDescription: 'Link de assinatura criado para contrato SaaS.',
+    occurredAt: now,
+  });
 
   const { error: contractErr } = await supabaseAdmin
     .from('company_contracts')
@@ -872,6 +931,18 @@ export async function markContractSignatureViewed(
     .from('company_subscriptions')
     .update({ contract_status: 'viewed', updated_at: now })
     .eq('company_id', signature.company_id);
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signature.signature_token,
+    signatureSource: 'SAAS',
+    signatureRecordId: signature.id,
+    eventType: 'DOCUMENT_VIEWED',
+    personName: signature.signer_name,
+    ipAddress: meta.ipAddress || undefined,
+    userAgent: meta.userAgent || undefined,
+    eventDescription: 'Cliente visualizou o contrato SaaS para assinatura.',
+    occurredAt: now,
+  });
 
   return data as CompanyContractSignatureRow;
 }
@@ -977,6 +1048,16 @@ export async function signContractElectronically(
   });
   const signatureHash = await computeSignatureHash(hashPayload);
 
+  const evidencePatch = await enrichClientEvidenceForSign({
+    signerEmail,
+    signerPhone: null,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt,
+    documentType: 'CONTRATO_SAAS',
+    validationToken: token,
+  });
+
   const { data: updatedSignature, error: signErr } = await supabaseAdmin
     .from('company_contract_signatures')
     .update({
@@ -992,6 +1073,7 @@ export async function signContractElectronically(
       signer_latitude: input.latitude ?? null,
       signer_longitude: input.longitude ?? null,
       signer_geo_city: input.geoCity?.trim() || null,
+      ...evidencePatch,
       updated_at: signedAt,
     })
     .eq('id', signature.id)
@@ -1004,6 +1086,20 @@ export async function signContractElectronically(
       `Falha ao registrar assinatura: ${signErr?.message || 'sem retorno'}`,
     );
   }
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: token,
+    signatureSource: 'SAAS',
+    signatureRecordId: signature.id,
+    eventType: 'CLIENT_SIGNED',
+    personName: signerName,
+    personEmail: signerEmail,
+    ipAddress: input.ipAddress || undefined,
+    userAgent: input.userAgent || undefined,
+    eventDescription: 'Assinatura eletrônica realizada pelo cliente contratante.',
+    occurredAt: signedAt,
+    metadata: { signature_event_id: evidencePatch.signature_event_id },
+  });
 
   await supabaseAdmin
     .from('company_contracts')
@@ -1132,6 +1228,14 @@ export async function signContractByProvider(
   });
   const providerHash = await computeSignatureHash(providerHashPayload);
 
+  const providerEvidencePatch = await enrichProviderEvidenceForSign({
+    providerEmail,
+    providerPhone: null,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt: providerSignedAt,
+  });
+
   const previewSignature: CompanyContractSignatureRow = {
     ...signatureRow,
     provider_signer_name: providerName,
@@ -1146,9 +1250,10 @@ export async function signContractByProvider(
     provider_latitude: input.latitude ?? null,
     provider_longitude: input.longitude ?? null,
     provider_geo_city: input.geoCity?.trim() || null,
+    ...providerEvidencePatch,
     signature_status: 'SIGNED',
     signature_hash: clientHash,
-  };
+  } as CompanyContractSignatureRow;
 
   const pdfBytes = await buildFullySignedSaasContractPdfBytes(
     supabaseAdmin,
@@ -1180,7 +1285,9 @@ export async function signContractByProvider(
       provider_latitude: input.latitude ?? null,
       provider_longitude: input.longitude ?? null,
       provider_geo_city: input.geoCity?.trim() || null,
+      ...providerEvidencePatch,
       signature_status: 'SIGNED',
+      certificate_status: 'VALIDADO',
       updated_at: providerSignedAt,
     })
     .eq('id', signatureRow.id)
@@ -1210,6 +1317,30 @@ export async function signContractByProvider(
       updated_at: providerSignedAt,
     })
     .eq('company_id', companyId);
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signatureRow.signature_token,
+    signatureSource: 'SAAS',
+    signatureRecordId: signatureRow.id,
+    eventType: 'PROVIDER_SIGNED',
+    personName: providerName,
+    personEmail: providerEmail,
+    ipAddress: input.ipAddress || undefined,
+    userAgent: input.userAgent || undefined,
+    eventDescription: 'Assinatura eletrônica realizada pela SV (contratada).',
+    occurredAt: providerSignedAt,
+    metadata: { signature_event_id: providerEvidencePatch.provider_signature_event_id },
+  });
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signatureRow.signature_token,
+    signatureSource: 'SAAS',
+    signatureRecordId: signatureRow.id,
+    eventType: 'CERTIFICATE_ISSUED',
+    personName: providerName,
+    eventDescription: 'Certificado digital bilateral emitido e anexado ao PDF assinado.',
+    occurredAt: providerSignedAt,
+  });
 
   return {
     signature: updatedSignature as CompanyContractSignatureRow,

@@ -1,8 +1,9 @@
 /**
  * URLs e constantes do certificado digital de assinatura — contratos de venda.
- * QR Code e link público usam /sign/sale/[token] (página já existente).
+ * QR Code e link público usam /verify/[token] (validação pública).
  */
 
+import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
 import { buildSaleSignUrl } from '@/lib/saleContractUrls';
 
 export const SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE =
@@ -12,25 +13,34 @@ export const SALE_CONTRACT_SIGNATURE_CERTIFICATE_SUBTITLE =
   'Documento assinado eletronicamente.';
 
 /**
- * URL pública do contrato assinado — mesma rota usada no envio por WhatsApp/e-mail.
+ * URL pública de validação do documento assinado.
  */
 export function resolveSaleContractCertificatePublicUrl(
   token: string,
   signatureUrl?: string | null,
+  validationPublicUrl?: string | null,
 ): string {
+  const validation = String(validationPublicUrl || '').trim();
+  if (validation) return validation;
+  const trimmed = String(token || '').trim();
+  if (trimmed) return buildSignatureVerifyUrl(trimmed);
   const stored = String(signatureUrl || '').trim();
   if (stored) return stored;
-  const trimmed = String(token || '').trim();
-  if (!trimmed) return '';
-  return buildSaleSignUrl(trimmed);
+  return '';
 }
 
-/** URL usada no QR Code do certificado (página pública /sign/sale/[token]). */
+/** URL usada no QR Code do certificado (/verify/[token]). */
 export function resolveSaleContractCertificateQrUrl(
   token: string,
   signatureUrl?: string | null,
+  validationPublicUrl?: string | null,
 ): string {
-  return resolveSaleContractCertificatePublicUrl(token, signatureUrl);
+  return resolveSaleContractCertificatePublicUrl(token, signatureUrl, validationPublicUrl);
+}
+
+/** Rota de assinatura (fluxo interativo). */
+export function resolveSaleContractSignPageUrl(token: string): string {
+  return buildSaleSignUrl(token);
 }
 
 /** @deprecated Use SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE */

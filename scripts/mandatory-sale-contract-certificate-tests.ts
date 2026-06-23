@@ -57,16 +57,17 @@ function signatureFixture(): ContractSignatureRow {
 function testPublicUrlHelpers() {
   const token = 'abc123token456def789';
   const stored = 'https://www.svlotes.com.br/sign/sale/abc123token456def789';
+  const validation = 'https://www.svlotes.com.br/verify/abc123token456def789';
   assert(
-    resolveSaleContractCertificatePublicUrl(token, stored) === stored,
-    'prioriza signature_url armazenada',
+    resolveSaleContractCertificatePublicUrl(token, stored, validation) === validation,
+    'prioriza validation_public_url',
   );
   const built = resolveSaleContractCertificatePublicUrl(token);
-  assert(built.includes('/sign/sale/'), 'url pública sign/sale');
+  assert(built.includes('/verify/'), 'url pública verify');
   assert(built.includes(token), 'url contém token');
   assert(
-    resolveSaleContractCertificateQrUrl(token, stored) === stored,
-    'qr usa mesma url pública',
+    resolveSaleContractCertificateQrUrl(token, stored, validation) === validation,
+    'qr usa url de validação',
   );
   assert(buildSaleSignUrl(token).includes('/sign/sale/'), 'buildSaleSignUrl');
   console.log('OK testPublicUrlHelpers');
@@ -122,8 +123,7 @@ function testOfficialCertificateStructure() {
   assert(cert.includes('VALIDADO'), 'status validado');
   assert(cert.includes('177.1.2.3'), 'IP comprador');
   assert(cert.includes('data:image/png;base64,TESTQR'), 'qr renderizado');
-  assert(cert.includes('/sign/sale/'), 'url pública sign/sale');
-  assertNotIncludes(cert, '/verify/', 'sem rota verify');
+  assert(cert.includes('/verify/'), 'url pública verify no certificado');
   assert(
     cert.includes('MP 2.200-2/2001 e Lei 14.063/2020'),
     'rodapé autenticidade legal',
@@ -149,7 +149,7 @@ async function testCertificateWithQrGeneration() {
     historyEvents: buildSaleSignatureHistory(sig),
   });
   assert(cert.includes('data:image/png;base64,'), 'qr gerado automaticamente');
-  assert(cert.includes('/sign/sale/'), 'qr aponta sign/sale');
+  assert(cert.includes('/verify/'), 'qr aponta verify');
   console.log('OK testCertificateWithQrGeneration');
 }
 

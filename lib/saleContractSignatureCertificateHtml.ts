@@ -37,6 +37,13 @@ export type SaleContractSignatureCertificateInput = {
   qrCodeDataUrl?: string | null;
   logoSrc?: string | null;
   historyEvents?: SignatureHistoryEvent[];
+  signerPhone?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+  validationPublicUrl?: string | null;
   vendorIpAddress?: string | null;
   vendorSignedAt?: string | null;
   vendorDocumentLabel?: 'CPF' | 'CNPJ';
@@ -363,15 +370,24 @@ function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
   });
 }
 
-function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
-  const buyerDoc =
-    formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
-
-  const fields: Array<{ icon: string; label: string; value: string }> = [
-    { icon: '👤', label: 'Nome', value: String(input.buyerName || '—') },
-    { icon: '🪪', label: 'CPF', value: buyerDoc },
-  ];
-
+function buildEvidenceFields(input: {
+  email?: string | null;
+  phone?: string | null;
+  ipAddress?: string | null;
+  signedAt?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  device?: string | null;
+  approxLocation?: string | null;
+  signatureEventId?: string | null;
+}): Array<{ icon: string; label: string; value: string }> {
+  const fields: Array<{ icon: string; label: string; value: string }> = [];
+  const email = String(input.email || '').trim();
+  if (email) fields.push({ icon: '✉️', label: 'E-mail', value: email });
+  const phone = String(input.phone || '').trim();
+  if (phone && phone !== 'Não informado') {
+    fields.push({ icon: '📱', label: 'Telefone', value: phone });
+  }
   if (hasRealIp(input.ipAddress)) {
     fields.push({
       icon: '🌐',
@@ -379,12 +395,57 @@ function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
       value: String(input.ipAddress).trim(),
     });
   }
-
   fields.push({
     icon: '📅',
     label: 'Data e hora da assinatura',
     value: formatSignedDateTimeBr(input.signedAt),
   });
+  const browser = String(input.browser || '').trim();
+  if (browser && browser !== 'Não informado') {
+    fields.push({ icon: '🧭', label: 'Navegador', value: browser });
+  }
+  const os = String(input.os || '').trim();
+  if (os && os !== 'Não informado') {
+    fields.push({ icon: '💻', label: 'Sistema operacional', value: os });
+  }
+  const device = String(input.device || '').trim();
+  if (device && device !== 'Não informado') {
+    fields.push({ icon: '📲', label: 'Dispositivo', value: device });
+  }
+  const location = String(input.approxLocation || '').trim();
+  fields.push({
+    icon: '📍',
+    label: 'Localização aproximada',
+    value: location || 'Não identificado',
+  });
+  const eventId = String(input.signatureEventId || '').trim();
+  fields.push({
+    icon: '🔑',
+    label: 'ID único da assinatura',
+    value: eventId || 'Não informado',
+  });
+  return fields;
+}
+
+function buildBuyerCard(input: SaleContractSignatureCertificateInput): string {
+  const buyerDoc =
+    formatCpfCnpj(input.buyerDocument) || input.buyerDocument || '—';
+
+  const fields: Array<{ icon: string; label: string; value: string }> = [
+    { icon: '👤', label: 'Nome', value: String(input.buyerName || '—') },
+    { icon: '🪪', label: 'CPF', value: buyerDoc },
+    ...buildEvidenceFields({
+      email: input.signerEmail,
+      phone: input.signerPhone,
+      ipAddress: input.ipAddress,
+      signedAt: input.signedAt,
+      browser: input.browser,
+      os: input.os,
+      device: input.device,
+      approxLocation: input.approxLocation,
+      signatureEventId: input.signatureEventId || input.uniqueId,
+    }),
+  ];
 
   return buildOfficialSignatureCard({
     role: 'PROMISSÁRIO COMPRADOR',
@@ -486,6 +547,7 @@ export async function buildSaleContractSignatureCertificateHtmlWithQr(
   const publicUrl = resolveSaleContractCertificatePublicUrl(
     token,
     input.signatureUrl || input.publicUrl || input.verifyUrl,
+    input.validationPublicUrl,
   );
 
   if (!qrCodeDataUrl && (token || publicUrl)) {

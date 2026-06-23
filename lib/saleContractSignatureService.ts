@@ -19,6 +19,14 @@ import {
   resolveClientIp,
   signatureExpiresAt,
 } from '@/lib/saasContractSignatureService';
+import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
+import {
+  enrichClientEvidenceForSign,
+  readClientEvidenceFromRow,
+} from '@/lib/signatureEvidence';
+import {
+  logSignatureEvent,
+} from '@/lib/signatureEventService';
 import { buildSaleSignUrl } from '@/lib/saleContractUrls';
 import type { SaleSignatureStatus } from '@/lib/saleContractSignatureStatus';
 import {
@@ -148,6 +156,18 @@ export type ContractSignatureRow = {
   signed_at: string | null;
   expires_at: string;
   signature_hash: string | null;
+  signer_phone?: string | null;
+  signer_browser?: string | null;
+  signer_os?: string | null;
+  signer_device?: string | null;
+  signer_ip_city?: string | null;
+  signer_ip_region?: string | null;
+  signer_ip_country?: string | null;
+  signed_at_iso?: string | null;
+  signature_event_id?: string | null;
+  signed_document_type?: string | null;
+  validation_public_url?: string | null;
+  certificate_status?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -349,6 +369,7 @@ export async function sendSaleContractForSignature(
 
   const token = generateSignatureToken();
   const signUrl = buildSaleSignUrl(token);
+  const validationUrl = buildSignatureVerifyUrl(token);
   const now = new Date().toISOString();
   const expiresAt = signatureExpiresAt();
 
@@ -361,6 +382,8 @@ export async function sendSaleContractForSignature(
       signature_status: 'PENDING',
       signature_token: token,
       signature_url: signUrl,
+      validation_public_url: validationUrl,
+      signed_document_type: 'CONTRATO_VENDA',
       expires_at: expiresAt,
       created_at: now,
       updated_at: now,
@@ -374,6 +397,15 @@ export async function sendSaleContractForSignature(
       'db_save',
     );
   }
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: token,
+    signatureSource: 'SALE',
+    signatureRecordId: String(signature.id),
+    eventType: 'LINK_CREATED',
+    eventDescription: 'Link de assinatura criado para contrato de venda.',
+    occurredAt: now,
+  });
 
   await mirrorSignatureToContract(supabaseAdmin, contractId, signature as ContractSignatureRow, {
     signature_sent_at: now,
@@ -436,6 +468,18 @@ export async function markSaleSignatureViewed(
 
   await mirrorSignatureToContract(supabaseAdmin, signature.contract_id, data as ContractSignatureRow, {
     signature_viewed_at: now,
+  });
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signature.signature_token,
+    signatureSource: 'SALE',
+    signatureRecordId: signature.id,
+    eventType: 'DOCUMENT_VIEWED',
+    personName: signature.signer_name,
+    ipAddress: meta.ipAddress || undefined,
+    userAgent: meta.userAgent || undefined,
+    eventDescription: 'Comprador visualizou o contrato para assinatura.',
+    occurredAt: now,
   });
 
   return data as ContractSignatureRow;
@@ -528,6 +572,16 @@ export async function signSaleContractElectronically(
   });
   const signatureHash = await computeSignatureHash(hashPayload);
 
+  const evidencePatch = await enrichClientEvidenceForSign({
+    signerEmail,
+    signerPhone: null,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt,
+    documentType: 'CONTRATO_VENDA',
+    validationToken: token,
+  });
+
   const { data: updatedSignature, error: signErr } = await supabaseAdmin
     .from('contract_signatures')
     .update({
@@ -539,6 +593,7 @@ export async function signSaleContractElectronically(
       signature_hash: signatureHash,
       ip_address: input.ipAddress || null,
       user_agent: input.userAgent || null,
+      ...evidencePatch,
       updated_at: signedAt,
     })
     .eq('id', signature.id)
@@ -575,6 +630,20 @@ export async function signSaleContractElectronically(
   }
 
   const signedSignature = updatedSignature as ContractSignatureRow;
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: token,
+    signatureSource: 'SALE',
+    signatureRecordId: signedSignature.id,
+    eventType: 'CLIENT_SIGNED',
+    personName: signerName,
+    personEmail: signerEmail,
+    ipAddress: input.ipAddress || undefined,
+    userAgent: input.userAgent || undefined,
+    eventDescription: 'Assinatura eletrônica realizada pelo comprador.',
+    occurredAt: signedAt,
+    metadata: { signature_event_id: evidencePatch.signature_event_id },
+  });
 
   await recordSaleContractSignatureAudit(supabaseAdmin, {
     tenantId,
@@ -614,6 +683,15 @@ export async function signSaleContractElectronically(
         .update({ pdf_signed_url: pdfSignedUrl, updated_at: signedAt })
         .eq('id', signature.contract_id);
     }
+    await logSignatureEvent(supabaseAdmin, {
+      signatureToken: token,
+      signatureSource: 'SALE',
+      signatureRecordId: signedSignature.id,
+      eventType: 'CERTIFICATE_ISSUED',
+      personName: signerName,
+      eventDescription: 'Certificado digital emitido e anexado ao PDF assinado.',
+      occurredAt: new Date().toISOString(),
+    });
   } catch (pdfErr) {
     console.warn(
       '[SALE_CONTRACT_SIGN] signed pdf generation',
@@ -778,6 +856,8 @@ export async function loadSaleContractPdfForSign(
 
     html = stripManualContractSignaturesForSignedPdf(html);
 
+    const evidence = readClientEvidenceFromRow(signature as unknown as Record<string, unknown>);
+
     html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
       projectName: String(
@@ -788,6 +868,7 @@ export async function loadSaleContractPdfForSign(
       buyerName,
       buyerDocument,
       signerEmail: signature.signer_email,
+      signerPhone: evidence.phone !== 'Não informado' ? evidence.phone : null,
       companyName,
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
       representativeName: seller.representative,
@@ -797,13 +878,20 @@ export async function loadSaleContractPdfForSign(
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,
       ipAddress: signature.ip_address,
+      browser: evidence.browser,
+      os: evidence.os,
+      device: evidence.device,
+      approxLocation: evidence.location,
+      signatureEventId: evidence.signatureEventId,
       signatureToken: signature.signature_token,
       signatureHash: signature.signature_hash,
       signatureUrl: signature.signature_url,
       publicUrl: resolveSaleContractCertificatePublicUrl(
         signature.signature_token,
         signature.signature_url,
+        signature.validation_public_url,
       ),
+      validationPublicUrl: signature.validation_public_url,
       issuedAt: String(contractRow.created_at || contractCtx?.created_at || ''),
       documentVersion: Number(contractRow.version || contractCtx?.version || 1),
       uniqueId: signature.id,
