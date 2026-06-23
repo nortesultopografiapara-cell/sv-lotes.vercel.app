@@ -57,10 +57,10 @@ export type SaleContractElectronicSignaturesInput = {
 const CERT_STYLES = `
 <style type="text/css">
   .sv-cert-official {
-    margin-top: 18px;
+    margin-top: 6px;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 9pt;
-    line-height: 1.4;
+    font-size: 8.5pt;
+    line-height: 1.35;
     color: #1a202c;
     page-break-inside: avoid;
     break-inside: avoid-page;
@@ -70,26 +70,26 @@ const CERT_STYLES = `
   .sv-cert-official .sv-cert-cards {
     display: flex;
     flex-direction: row;
-    gap: 14px;
+    gap: 10px;
     align-items: stretch;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
   }
   .sv-cert-official .sv-cert-card {
     flex: 1 1 0;
     border: 1.5px solid #86efac;
-    border-radius: 8px;
+    border-radius: 6px;
     background: #f0fff4;
     padding: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    min-height: 220px;
+    min-height: 0;
     box-sizing: border-box;
     page-break-inside: avoid;
     break-inside: avoid-page;
   }
   .sv-cert-official .sv-cert-card-head {
-    padding: 10px 12px 8px 12px;
+    padding: 7px 10px 6px 10px;
     text-align: center;
     border-bottom: 1px solid #bbf7d0;
   }
@@ -113,15 +113,15 @@ const CERT_STYLES = `
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-card-body {
-    padding: 10px 12px 8px 12px;
+    padding: 7px 10px 6px 10px;
     flex: 1 1 auto;
   }
   .sv-cert-official .sv-cert-field {
     display: flex;
     flex-direction: row;
-    gap: 8px;
+    gap: 6px;
     align-items: flex-start;
-    margin-bottom: 8px;
+    margin-bottom: 5px;
   }
   .sv-cert-official .sv-cert-field-icon {
     width: 16px;
@@ -150,7 +150,7 @@ const CERT_STYLES = `
   }
   .sv-cert-official .sv-cert-card-foot {
     margin-top: auto;
-    padding: 7px 10px;
+    padding: 5px 8px;
     background: #166534;
     text-align: center;
     font-size: 6.5pt;
@@ -161,19 +161,19 @@ const CERT_STYLES = `
   }
   .sv-cert-official .sv-cert-validation {
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
+    border-radius: 6px;
     background: #fff;
-    padding: 12px;
+    padding: 8px;
     display: flex;
     flex-direction: row;
-    gap: 14px;
+    gap: 10px;
     align-items: flex-start;
     page-break-inside: avoid;
     break-inside: avoid-page;
   }
   .sv-cert-official .sv-cert-qr {
-    width: 84px;
-    height: 84px;
+    width: 72px;
+    height: 72px;
     flex-shrink: 0;
     border: 1px solid #cbd5e1;
     border-radius: 4px;
@@ -186,16 +186,16 @@ const CERT_STYLES = `
     min-width: 0;
   }
   .sv-cert-official .sv-cert-validation-title {
-    margin: 0 0 8px 0;
-    font-size: 9pt;
+    margin: 0 0 5px 0;
+    font-size: 8.5pt;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: #14532d;
   }
   .sv-cert-official .sv-cert-validation-row {
-    margin: 0 0 5px 0;
-    font-size: 7.5pt;
+    margin: 0 0 3px 0;
+    font-size: 7pt;
     line-height: 1.45;
   }
   .sv-cert-official .sv-cert-validation-row strong {
@@ -228,8 +228,8 @@ const CERT_STYLES = `
     text-transform: uppercase;
   }
   .sv-cert-official .sv-cert-legal {
-    margin: 10px 0 0 0;
-    font-size: 7pt;
+    margin: 6px 0 0 0;
+    font-size: 6.5pt;
     line-height: 1.5;
     color: #64748b;
     text-align: center;
@@ -361,6 +361,47 @@ export function buildSaleContractElectronicSignaturesPageHtml(
   _input: SaleContractElectronicSignaturesInput,
 ): string {
   return '';
+}
+
+/** Remove um bloco `<div>` cujo atributo `class` contém o marcador informado. */
+function removeHtmlDivBlockByClassMarker(html: string, classMarker: string): string {
+  const markerIdx = html.indexOf(classMarker);
+  if (markerIdx < 0) return html;
+
+  const divStart = html.lastIndexOf('<div', markerIdx);
+  if (divStart < 0) return html;
+
+  let depth = 1;
+  let pos = divStart + 4;
+
+  while (pos < html.length) {
+    const openAt = html.indexOf('<div', pos);
+    const closeAt = html.indexOf('</div>', pos);
+    if (closeAt === -1) break;
+
+    if (openAt !== -1 && openAt < closeAt) {
+      depth += 1;
+      pos = openAt + 4;
+      continue;
+    }
+
+    pos = closeAt + 6;
+    depth -= 1;
+    if (depth === 0) {
+      return html.slice(0, divStart) + html.slice(pos);
+    }
+  }
+
+  return html;
+}
+
+/** Remove blocos de assinatura manual de todos os modelos (PDF assinado eletronicamente). */
+export function stripManualContractSignaturesForSignedPdf(html: string): string {
+  let result = html;
+  for (const marker of ['class="contract-signatures', 'class="sv2-signatures']) {
+    result = removeHtmlDivBlockByClassMarker(result, marker);
+  }
+  return result;
 }
 
 /** Substitui o bloco `.contract-signatures` no HTML do contrato (somente PDF assinado). */

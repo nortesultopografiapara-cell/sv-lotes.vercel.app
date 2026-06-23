@@ -112,8 +112,15 @@ function testSv2TemplateStructure() {
   assert(html.includes('CLÁUSULA PRIMEIRA — DO OBJETO'), 'cláusula objeto');
   assert(html.includes('CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA'), 'inadimplência 2%');
   assert(html.includes('LGPD'), 'cláusula lgpd');
+  assert(html.includes('CLÁUSULA DÉCIMA QUARTA — DA VISTORIA E ACEITE DO IMÓVEL'), 'vistoria');
+  assert(html.includes('CLÁUSULA DÉCIMA QUINTA — DA PROTEÇÃO AMBIENTAL E APP'), 'app');
+  assert(html.includes('CLÁUSULA DÉCIMA SEXTA — DA CESSÃO DE DIREITOS'), 'cessão');
+  assert(html.includes('CLÁUSULA DÉCIMA SÉTIMA — DA TOLERÂNCIA CADASTRAL E REGISTRAL'), 'tolerância');
+  assert(html.includes('CLÁUSULA DÉCIMA OITAVA — DAS COMUNICAÇÕES ELETRÔNICAS'), 'comunicações');
   assert(html.includes('ASSINATURA ELETRÔNICA'), 'assinatura eletrônica');
-  assert(html.includes('CLÁUSULA DÉCIMA QUINTA — DO FORO'), 'foro');
+  assert(html.includes('CLÁUSULA VIGÉSIMA — DO FORO'), 'foro');
+  assertNotIncludes(html, 'class="sv2-badge"', 'sem elemento badge');
+  assertNotIncludes(html, '<img', 'sem logo no corpo');
   console.log('OK testSv2TemplateStructure');
 }
 
@@ -147,7 +154,7 @@ function testRoutingSv2ViaGenerateContractHTML() {
     contractSnapshot: { contract_number: '000000011/2026' },
   });
   assert(html.includes('sv-contract-sv-lotes-2'), 'roteamento sv2');
-  assert(html.includes('SV LOTES 2.0'), 'badge sv2');
+  assertNotIncludes(html, 'SV LOTES 2.0', 'sem branding sv2 visível');
   console.log('OK testRoutingSv2ViaGenerateContractHTML');
 }
 

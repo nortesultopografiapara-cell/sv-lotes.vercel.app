@@ -9,6 +9,7 @@ import path from 'path';
 import {
   buildSaleContractSignatureCertificateHtml,
   buildSaleContractSignatureCertificateHtmlWithQr,
+  stripManualContractSignaturesForSignedPdf,
 } from '../lib/saleContractSignatureCertificateHtml';
 import {
   resolveSaleContractCertificatePublicUrl,
@@ -217,7 +218,7 @@ async function writeSampleArtifacts() {
   const wrap = (body: string, title: string) =>
     `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body><div class="sv-contract-document">${body}</div></body></html>`;
 
-  const fullHtml = `${firstPage.replace(/<div class="contract-signatures[\s\S]*?<\/div>\s*(?=<)/, '')}${cert}`;
+  const fullHtml = `${stripManualContractSignaturesForSignedPdf(firstPage)}${cert}`;
   const p1 = path.join(outDir, 'certificado-oficial-preview.html');
   const p2 = path.join(outDir, 'certificado-oficial-contrato-completo.html');
   fs.writeFileSync(p1, wrap(cert, 'Certificado oficial SV LOTES'));
@@ -266,10 +267,76 @@ async function writeSampleArtifacts() {
   console.log('OK writeSampleArtifacts', { p1, p2 });
 }
 
+async function testStripManualSignaturesAllModels() {
+  const { generateContractHTML } = await import('../lib/contractTemplate');
+
+  const base = {
+    customer: {
+      name: 'Comprador',
+      document: '12345678901',
+      cpf: '12345678901',
+      profession: 'Engenheiro',
+      civil_state: 'Solteiro',
+      address: 'Rua A',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    project: { name: 'Projeto', city: 'Parauapebas', uf: 'PA' },
+    block: { quadra: '01', lot: '01', area: 250 },
+    sale: {
+      payment_type: 'Parcelado',
+      installments_count: 12,
+      total_value: 80000,
+      down_payment: 5000,
+    },
+    contractDate: '2026-06-08',
+  };
+
+  const sv2 = generateContractHTML({
+    tenant: { name: 'Empresa', contract_model: 'SV_LOTES_2', cnpj: '12345678000199' },
+    ...base,
+  });
+  const sv2Stripped = stripManualContractSignaturesForSignedPdf(sv2);
+  assert(sv2.includes('class="sv2-signatures"'), 'sv2 tem assinatura manual');
+  assert(!sv2Stripped.includes('class="sv2-signatures"'), 'sv2 assinatura manual removida');
+  assert(!sv2Stripped.includes('class="sv2-sign-line"'), 'sv2 linhas removidas');
+
+  const meneses = generateContractHTML({
+    tenant: {
+      name: 'MENESES IMOBILIARIA LTDA',
+      contract_model: 'MENESES',
+      cnpj: '64435850000103',
+    },
+    ...base,
+  });
+  const menesesStripped = stripManualContractSignaturesForSignedPdf(meneses);
+  assert(meneses.includes('contract-signatures'), 'meneses tem bloco manual');
+  assert(!menesesStripped.includes('class="contract-signatures"'), 'meneses bloco manual removido');
+
+  const recanto = generateContractHTML({
+    tenant: {
+      name: 'RECANTO',
+      contract_model: 'RECANTO_PRIMAVERA',
+      cnpj: '32641281104',
+      contract_legal_address: 'Endereço teste',
+    },
+    ...base,
+  });
+  const recantoStripped = stripManualContractSignaturesForSignedPdf(recanto);
+  assert(recanto.includes('contract-signatures--recanto'), 'recanto tem bloco manual');
+  assert(
+    !recantoStripped.includes('class="contract-signatures contract-signatures--recanto"'),
+    'recanto manual removido',
+  );
+
+  console.log('OK testStripManualSignaturesAllModels');
+}
+
 async function main() {
   testPublicUrlHelpers();
   testOfficialCertificateStructure();
   await testCertificateWithQrGeneration();
+  testStripManualSignaturesAllModels();
   await writeSampleArtifacts();
   console.log('OK — mandatory-sale-contract-certificate-tests passed');
 }

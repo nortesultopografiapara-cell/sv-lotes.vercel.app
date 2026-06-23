@@ -12,7 +12,7 @@ import {
   loadSaleSignPageContext,
 } from '../lib/saleContractSignatureService';
 import {
-  replaceContractSignaturesBlock,
+  stripManualContractSignaturesForSignedPdf,
 } from '../lib/saleContractSignatureCertificateHtml';
 
 const CONTRACT_NUMBER = process.argv[2]?.trim() || '000000026/2026';
@@ -99,7 +99,7 @@ async function main() {
   const htmlBefore = await loadSaleContractHtmlForSign(sb, contract.id);
   assert(htmlBefore.includes('contract-signatures'), 'HTML base contém bloco de assinaturas legado');
 
-  const htmlPatched = replaceContractSignaturesBlock(htmlBefore, '');
+  const htmlPatched = stripManualContractSignaturesForSignedPdf(htmlBefore);
   assert(!htmlPatched.includes('signature-slot'), 'Bloco legado de linhas removido');
 
   console.log('Regenerando PDF (mesmo caminho da API Baixar PDF Assinado)...');

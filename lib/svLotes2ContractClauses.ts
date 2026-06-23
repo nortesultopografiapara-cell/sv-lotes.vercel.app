@@ -156,13 +156,38 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
       <p><strong>CLÁUSULA DÉCIMA TERCEIRA — DA PROTEÇÃO DE DADOS (LGPD):</strong> As partes declaram ciência de que dados pessoais informados serão tratados exclusivamente para execução deste contrato, cumprimento de obrigações legais, registro, cobrança, assinatura eletrônica e comunicações relacionadas, nos termos da Lei nº 13.709/2018 (LGPD).</p>
     </div>`;
 
+  const vistoria = `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA DÉCIMA QUARTA — DA VISTORIA E ACEITE DO IMÓVEL:</strong> O(A) COMPRADOR(A) declara ter realizado vistoria prévia do imóvel, tomando pleno conhecimento de sua localização, dimensões, confrontações, topografia, acessos, servidões e estado de conservação, aceitando-o no estado em que se encontra, nada tendo a reclamar quanto às condições físicas do lote.</p>
+    </div>`;
+
+  const protecaoAmbiental = `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA DÉCIMA QUINTA — DA PROTEÇÃO AMBIENTAL E APP:</strong> O(A) COMPRADOR(A) obriga-se a respeitar a legislação ambiental vigente, inclusive quanto a Áreas de Preservação Permanente (APP), reservas legais, cursos d'água e demais restrições ambientais incidentes sobre o imóvel ou em seu entorno, responsabilizando-se por eventuais infrações praticadas após a transmissão da posse.</p>
+    </div>`;
+
+  const cessao = `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA DÉCIMA SEXTA — DA CESSÃO DE DIREITOS:</strong> É vedada a cessão, transferência ou alienação dos direitos e obrigações decorrentes deste contrato sem prévia anuência escrita do(a) VENDEDOR(A), salvo hipóteses previstas em lei ou autorizadas expressamente neste instrumento.</p>
+    </div>`;
+
+  const tolerancia = `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA DÉCIMA SÉTIMA — DA TOLERÂNCIA CADASTRAL E REGISTRAL:</strong> As partes reconhecem que eventuais divergências cadastrais, registrais, de metragem, confrontação ou numeração do lote serão sanadas de boa-fé, dentro dos prazos legais e administrativos aplicáveis, sem que tal tolerância implique renúncia de direitos ou alteração do objeto contratado.</p>
+    </div>`;
+
+  const comunicacoes = `
+    <div class="sv2-clause">
+      <p><strong>CLÁUSULA DÉCIMA OITAVA — DAS COMUNICAÇÕES ELETRÔNICAS:</strong> As partes autorizam o envio de avisos, cobranças, boletos, notificações, links de assinatura e demais comunicações contratuais por meios eletrônicos, inclusive e-mail, WhatsApp e plataforma SV LOTES, reconhecendo validade probatória das comunicações enviadas aos contatos cadastrados.</p>
+    </div>`;
+
   const assinaturaEletronica = buildSaleContractElectronicSignatureClauseHtml()
-    .replace('Cláusula Décima Segunda', 'CLÁUSULA DÉCIMA QUARTA — DA ASSINATURA ELETRÔNICA')
+    .replace('Cláusula Décima Segunda', 'CLÁUSULA DÉCIMA NONA — DA ASSINATURA ELETRÔNICA')
     .replace('class="contract-clause"', 'class="sv2-clause contract-clause"');
 
   const foro = `
     <div class="sv2-clause">
-      ${ctx.forumClauseHtml.replace('Cláusula Décima Terceira', 'CLÁUSULA DÉCIMA QUINTA — DO FORO')}
+      ${ctx.forumClauseHtml.replace('Cláusula Décima Terceira', 'CLÁUSULA VIGÉSIMA — DO FORO')}
     </div>`;
 
   return [
@@ -179,6 +204,11 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
     sucessores,
     forcaMaior,
     lgpd,
+    vistoria,
+    protecaoAmbiental,
+    cessao,
+    tolerancia,
+    comunicacoes,
     assinaturaEletronica,
     foro,
   ].join('\n');

@@ -9,6 +9,7 @@ import {
   buildSaleContractElectronicSignaturesPageHtml,
   buildSaleContractSignatureCertificateHtml,
   replaceContractSignaturesBlock,
+  stripManualContractSignaturesForSignedPdf,
 } from '../lib/saleContractSignatureCertificateHtml';
 import { SALE_CONTRACT_SIGNATURE_CERTIFICATE_TITLE } from '../lib/saleContractSignatureVerify';
 import {
@@ -193,9 +194,8 @@ function testElectronicSignaturesPage() {
   assert(cert.includes('✓ ASSINADO ELETRONICAMENTE'), 'selo assinatura');
   assert(cert.includes('MENESES IMOBILIÁRIA LTDA'), 'nome empresa');
 
-  const html = replaceContractSignaturesBlock(
+  const html = stripManualContractSignaturesForSignedPdf(
     '<div class="contract-signatures"><div class="signature-slot">old</div></div><footer/>',
-    '',
   );
   assert(!html.includes('signature-slot'), 'bloco antigo removido');
   assert(!html.includes('e-sign-card'), 'sem cartões duplicados');

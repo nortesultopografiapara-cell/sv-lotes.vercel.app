@@ -747,7 +747,7 @@ export async function loadSaleContractPdfForSign(
     const ctx = options?.signContext;
     const {
       buildSaleContractSignatureCertificateHtmlWithQr,
-      replaceContractSignaturesBlock,
+      stripManualContractSignaturesForSignedPdf,
     } = await import('@/lib/saleContractSignatureCertificateHtml');
     const { normalizeSellerFromCompany } = await import('@/lib/contractSeller');
     const { resolveSaleContractCertificatePublicUrl } = await import(
@@ -776,7 +776,7 @@ export async function loadSaleContractPdfForSign(
     const buyerName = String(signature.signer_name || customer?.name || '');
     const buyerDocument = String(signature.signer_document || '');
 
-    html = replaceContractSignaturesBlock(html, '');
+    html = stripManualContractSignaturesForSignedPdf(html);
 
     html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
