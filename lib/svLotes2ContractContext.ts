@@ -10,8 +10,8 @@ import {
 import { resolveContractPaymentDates } from '@/lib/contractPaymentDates';
 import { formatCpfCnpj } from '@/lib/inputMasks';
 import {
+  buildSvLotes2SellerFromCompany,
   formatGenderedCivilState,
-  formatSvLotes2CompanyAddressLine,
   sanitizeNeighborhoodForContract,
 } from '@/lib/svLotes2ContractFormat';
 
@@ -81,13 +81,29 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     ? paymentDates.downPaymentDueFmt || paymentDates.firstInstallmentDueFmt
     : paymentDates.firstInstallmentDueFmt;
 
+  const sv2Seller = buildSvLotes2SellerFromCompany(params.tenant);
+
   return {
     ...base,
     contractNumber,
     area,
     municipio,
     estado,
-    empresaEndereco: formatSvLotes2CompanyAddressLine(params.tenant) || base.empresaEndereco,
+    empresaNome: sv2Seller.displayName || base.empresaNome,
+    empresaDocumentoFmt: sv2Seller.documentFmt || base.empresaDocumentoFmt,
+    empresaDocumentoLabel: sv2Seller.documentLabel || base.empresaDocumentoLabel,
+    empresaEndereco: sv2Seller.addressLine || base.empresaEndereco,
+    empresaCidade: sv2Seller.city || base.empresaCidade,
+    empresaUf: sv2Seller.state || base.empresaUf,
+    empresaCep: sv2Seller.cepFmt || base.empresaCep,
+    empresaTelefone: sv2Seller.phone || base.empresaTelefone,
+    empresaEmail: sv2Seller.email || base.empresaEmail,
+    empresaRepresentante: sv2Seller.representativeName || base.empresaRepresentante,
+    empresaRepresentanteDocFmt:
+      sv2Seller.representativeCpfFmt || base.empresaRepresentanteDocFmt,
+    vendorRepresentativeRole: sv2Seller.representativeRole,
+    vendorRepresentativeEmail: sv2Seller.representativeEmail,
+    vendorRepresentativePhone: sv2Seller.representativePhone,
     clienteEstadoCivil: formatGenderedCivilState(
       String(
         customer?.civil_state ||

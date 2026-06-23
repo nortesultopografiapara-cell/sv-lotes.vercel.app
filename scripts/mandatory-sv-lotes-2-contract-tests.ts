@@ -15,6 +15,7 @@ import {
 } from '../lib/contractModel';
 import { SV_LOTES_2_CONTRACT_TITLE, SV_LOTES_2_LEGAL_MARKER } from '../lib/svLotes2ContractLegal';
 import {
+  buildSvLotes2SellerFromCompany,
   formatGenderedCivilState,
   formatSvLotes2CompanyAddressLine,
 } from '../lib/svLotes2ContractFormat';
@@ -132,21 +133,100 @@ function testSv2TemplateStructure() {
 function testSv2AddressAndCivilState() {
   const address = formatSvLotes2CompanyAddressLine({
     address: 'Rua 02, Quadra 123, Lote 05',
-    neighborhood: 'Nova Carajás',
+    bairro: 'Nova Carajás',
     city: 'Parauapebas',
     state: 'PA',
+    zip_code: '68515000',
   });
   assert(address.includes('Rua 02'), 'endereço rua');
   assert(address.includes('Nova Carajás'), 'bairro preenchido');
   assert(address.includes('Parauapebas-PA'), 'cidade-uf');
+  assert(address.includes('CEP 68515-000'), 'cep formatado');
   assertNotIncludes(address, 'S/N', 'sem S/N automático');
   assertNotIncludes(address, 'Bairro:', 'sem label bairro vazio');
+
+  const brokenAddress = formatSvLotes2CompanyAddressLine({
+    address: 'Rua: 02, Quadra 123, Lote 05, S/N Bairro:',
+    bairro: 'Nova Carajás',
+    city: 'Parauapebas',
+    state: 'PA',
+    zip_code: '68515000',
+  });
+  assert(brokenAddress.includes('Rua 02'), 'endereço corrigido sem Rua:');
+  assert(brokenAddress.includes('Nova Carajás'), 'bairro do cadastro');
+  assertNotIncludes(brokenAddress, 'S/N Bairro', 'sem S/N Bairro');
+  assertNotIncludes(brokenAddress, 'Bairro:', 'sem label bairro solto');
 
   const feminina = formatGenderedCivilState('Divorciado(a)', 'Ivanilde de Mora Silva');
   assert(feminina === 'Divorciada', 'estado civil feminino');
   const masculino = formatGenderedCivilState('Divorciado(a)', 'João Comprador');
   assert(masculino === 'Divorciado', 'estado civil masculino');
   console.log('OK testSv2AddressAndCivilState');
+}
+
+const tenantSvTopografia = {
+  name: 'SV TOPOGRAFIA E PROJETOS LTDA',
+  fantasy_name: 'SV TOPOGRAFIA E PROJETOS',
+  cnpj: '12631238000102',
+  legal_representative: 'Severino José de França',
+  representative_cpf: '65082028200',
+  legal_representative_role: 'Sócio Administrador',
+  legal_representative_email: 'severino@svtopografia.test',
+  legal_representative_phone: '(94) 99123-4567',
+  address: 'Rua: 02, Quadra 123, Lote 05, S/N Bairro:',
+  bairro: 'Nova Carajás',
+  city: 'Parauapebas',
+  state: 'PA',
+  zip_code: '68515000',
+  phone: '(94) 3344-5566',
+  email: 'contato@svtopografia.test',
+  contract_model: 'SV_LOTES_2',
+};
+
+function testSv2SellerFromCompanySettings() {
+  const seller = buildSvLotes2SellerFromCompany(tenantSvTopografia);
+  assert(
+    seller.displayName === 'Sv Topografia E Projetos',
+    `nome fantasia: ${seller.displayName}`,
+  );
+  assert(seller.documentFmt === '12.631.238/0001-02', 'cnpj formatado');
+  assert(
+    seller.addressLine.includes('Rua 02, Quadra 123, Lote 05'),
+    'logradouro montado',
+  );
+  assert(seller.addressLine.includes('Nova Carajás'), 'bairro montado');
+  assert(seller.addressLine.includes('Parauapebas-PA'), 'cidade-uf montada');
+  assert(seller.addressLine.includes('CEP 68515-000'), 'cep montado');
+  assertNotIncludes(seller.addressLine, 'S/N Bairro', 'sem S/N Bairro');
+  assert(
+    seller.representativeName.toLowerCase() === 'severino josé de frança',
+    'representante legal',
+  );
+  assert(seller.representativeCpfFmt === '650.820.282-00', 'cpf representante');
+  assert(seller.representativeRole === 'Sócio Administrador', 'cargo representante');
+  assert(seller.phone === '(94) 3344-5566', 'telefone empresa');
+  assert(seller.email === 'contato@svtopografia.test', 'email empresa');
+
+  const html = generateSvLotes2Contract({
+    tenant: tenantSvTopografia,
+    customer,
+    project,
+    block,
+    sale,
+    contractDate: '2026-06-08',
+    contractSnapshot: { contract_number: '000000007/2026' },
+  });
+  assert(html.toLowerCase().includes('sv topografia e projetos'), 'nome no contrato');
+  assert(html.includes('12.631.238/0001-02'), 'cnpj no contrato');
+  assert(html.includes('Rua 02, Quadra 123, Lote 05'), 'endereço no contrato');
+  assert(html.includes('Nova Carajás'), 'bairro no contrato');
+  assert(html.includes('Parauapebas-PA'), 'cidade-uf no contrato');
+  assert(html.includes('CEP 68515-000'), 'cep no contrato');
+  assert(html.toLowerCase().includes('severino josé de frança'), 'representante no contrato');
+  assert(html.includes('650.820.282-00'), 'cpf representante no contrato');
+  assertNotIncludes(html, 'S/N Bairro', 'sem endereço quebrado no html');
+  assertNotIncludes(html, 'Bairro:', 'sem label bairro vazio no html');
+  console.log('OK testSv2SellerFromCompanySettings');
 }
 
 function testRoutingDoesNotBreakPadrao() {
@@ -326,16 +406,59 @@ async function writeSv2SignedPdfArtifacts() {
   console.log('OK writeSv2SignedPdfArtifacts', { pdfPath, pages, p1, pLast });
 }
 
+async function writeSvTopografiaPdfArtifact() {
+  if (process.env.RUN_SALE_PDF_BROWSER_TESTS !== '1') return;
+
+  const { buildSaleContractPdfFromHtml, launchSaleContractPdfBrowser, wrapSaleContractHtmlDocument } =
+    await import('../lib/saleContractPdf');
+  const { buildSvLotes2PdfChrome } = await import('../lib/svLotes2ContractPdf');
+  const { isPdfBytes } = await import('../lib/saasContractPdfHttp');
+
+  const contractHtml = generateContractHTML({
+    tenant: tenantSvTopografia,
+    customer,
+    project,
+    block,
+    sale,
+    contractDate: '2026-06-08',
+    contractSnapshot: { contract_number: '000000007/2026' },
+  });
+
+  const chrome = buildSvLotes2PdfChrome(tenantSvTopografia, '000000007/2026', null);
+  const pdf = await buildSaleContractPdfFromHtml(contractHtml, chrome);
+  assert(isPdfBytes(pdf), 'pdf sv topografia válido');
+
+  const outDir = path.join(process.cwd(), 'tmp');
+  fs.mkdirSync(outDir, { recursive: true });
+  const pdfPath = path.join(outDir, 'sv2-vendedor-config-assinado.pdf');
+  fs.writeFileSync(pdfPath, pdf);
+
+  const browser = await launchSaleContractPdfBrowser();
+  const page = await browser.newPage();
+  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+  await page.setContent(
+    wrapSaleContractHtmlDocument(contractHtml, 'SV Topografia P1'),
+    { waitUntil: 'load', timeout: 45_000 },
+  );
+  const p1 = path.join(outDir, 'sv2-vendedor-config-pagina-1.png');
+  await page.screenshot({ path: p1, fullPage: false, type: 'png' });
+  await browser.close();
+
+  console.log('OK writeSvTopografiaPdfArtifact', { pdfPath, p1 });
+}
+
 async function main() {
   testModelNormalization();
   testSv2TemplateStructure();
   testSv2AddressAndCivilState();
+  testSv2SellerFromCompanySettings();
   testRoutingDoesNotBreakPadrao();
   testRoutingSv2ViaGenerateContractHTML();
   testRecantoUnchanged();
   testPdfChromeAndCertificate();
   writeSampleArtifacts();
   await writeSv2SignedPdfArtifacts();
+  await writeSvTopografiaPdfArtifact();
   console.log('OK — mandatory-sv-lotes-2-contract-tests passed');
 }
 

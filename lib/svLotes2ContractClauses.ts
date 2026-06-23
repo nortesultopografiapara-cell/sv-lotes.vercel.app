@@ -59,11 +59,23 @@ export function buildSvLotes2VendorQualificationHtml(
     ctx.empresaDocumentoFmt
       ? `<strong>CNPJ:</strong> ${ctx.empresaDocumentoFmt}`
       : '',
-    ctx.empresaEndereco !== 'Não informado'
+    ctx.empresaEndereco && ctx.empresaEndereco !== 'Não informado'
       ? `<strong>Endereço:</strong> ${ctx.empresaEndereco}`
       : '',
+    ctx.empresaTelefone && ctx.empresaTelefone !== 'Não informado'
+      ? `<strong>Telefone:</strong> ${ctx.empresaTelefone}`
+      : '',
+    ctx.empresaEmail && ctx.empresaEmail !== 'Não informado'
+      ? `<strong>E-mail:</strong> ${ctx.empresaEmail}`
+      : '',
     ctx.empresaRepresentante && ctx.empresaRepresentante !== 'Não Informado'
-      ? `<strong>Representante legal:</strong> ${ctx.empresaRepresentante}${ctx.empresaRepresentanteDocFmt ? `, CPF ${ctx.empresaRepresentanteDocFmt}` : ''}`
+      ? `<strong>Representante legal:</strong> ${ctx.empresaRepresentante}${ctx.empresaRepresentanteDocFmt ? `, CPF ${ctx.empresaRepresentanteDocFmt}` : ''}${ctx.vendorRepresentativeRole ? ` — ${ctx.vendorRepresentativeRole}` : ''}`
+      : '',
+    ctx.vendorRepresentativeEmail
+      ? `<strong>E-mail do representante:</strong> ${ctx.vendorRepresentativeEmail}`
+      : '',
+    ctx.vendorRepresentativePhone
+      ? `<strong>Telefone do representante:</strong> ${ctx.vendorRepresentativePhone}`
       : '',
   ].filter(Boolean);
   return `<div class="sv2-party-block">${parts.map((p) => `<p>${p}</p>`).join('')}</div>`;

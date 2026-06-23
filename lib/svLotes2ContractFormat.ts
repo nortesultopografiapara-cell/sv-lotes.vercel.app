@@ -1,8 +1,9 @@
 /**
- * Formatação de endereço, estado civil e quadro resumo — SV LOTES 2.0.
+ * Formatação de endereço, estado civil, vendedor e quadro resumo — SV LOTES 2.0.
  */
 
 import { normalizeSellerFromCompany } from '@/lib/contractSeller';
+import { formatCpfCnpj } from '@/lib/inputMasks';
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -32,15 +33,40 @@ function toTitleCase(str: string): string {
     .replace(/\bS\/n\b/g, 'S/N');
 }
 
+function normalizeTextForCompare(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function textIncludesFragment(haystack: string, needle: string): boolean {
+  const normalizedHaystack = normalizeTextForCompare(haystack);
+  const normalizedNeedle = normalizeTextForCompare(needle);
+  if (!normalizedHaystack || !normalizedNeedle) return false;
+  return normalizedHaystack.includes(normalizedNeedle);
+}
+
+function formatContractCep(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length !== 8) return String(raw || '').trim();
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
 function cleanStreetFragment(value: string): string {
   let s = String(value || '').trim();
   if (!s) return '';
 
+  s = s.replace(/^Rua:\s*/i, 'Rua ');
+  s = s.replace(/,\s*S\/N\s*Bairro:\s*$/i, '');
   s = s.replace(/,\s*S\/N\s*$/i, '');
   s = s.replace(/,\s*S\s*$/i, '');
   s = s.replace(/,\s*Bairro:\s*$/i, '');
   s = s.replace(/,\s*Bairro\s*$/i, '');
   s = s.replace(/\s+Bairro:\s*$/i, '');
+  s = s.replace(/\bBairro:\s*$/i, '');
   s = s.replace(/\s+/g, ' ').replace(/,\s*,/g, ', ').replace(/,\s*$/g, '').trim();
 
   return s;
@@ -68,9 +94,10 @@ export function formatSvLotes2CompanyAddressLine(
     company?.bairro,
     company?.district,
   );
+  const joinedSoFar = parts.join(', ');
   if (
     neighborhood &&
-    !street.toLowerCase().includes(neighborhood.toLowerCase())
+    !textIncludesFragment(joinedSoFar, neighborhood)
   ) {
     parts.push(toTitleCase(neighborhood));
   }
@@ -79,11 +106,118 @@ export function formatSvLotes2CompanyAddressLine(
     seller.city !== 'Não informado' ? toTitleCase(seller.city) : '';
   const state =
     seller.state !== 'Não informado' ? seller.state.toUpperCase() : '';
-  if (city && state) parts.push(`${city}-${state}`);
-  else if (city) parts.push(city);
-  else if (state) parts.push(state);
+  const cityStateJoined = parts.join(', ');
+  if (city && state) {
+    const cityStateCompact = `${city}-${state}`;
+    const cityStateSpaced = `${city} - ${state}`;
+    if (
+      !textIncludesFragment(cityStateJoined, cityStateCompact) &&
+      !textIncludesFragment(cityStateJoined, cityStateSpaced) &&
+      !textIncludesFragment(cityStateJoined, `${city}, ${state}`)
+    ) {
+      parts.push(cityStateCompact);
+    }
+  } else if (city && !textIncludesFragment(cityStateJoined, city)) {
+    parts.push(city);
+  } else if (state && !textIncludesFragment(cityStateJoined, state)) {
+    parts.push(state);
+  }
+
+  const cepRaw = pickString(company?.zip_code, company?.cep, seller.zip);
+  const cepFmt = cepRaw ? formatContractCep(cepRaw) : '';
+  const joinedBeforeCep = parts.join(', ');
+  if (
+    cepFmt &&
+    !textIncludesFragment(joinedBeforeCep, `CEP ${cepFmt}`) &&
+    !textIncludesFragment(joinedBeforeCep, cepFmt)
+  ) {
+    parts.push(`CEP ${cepFmt}`);
+  }
 
   return parts.join(', ');
+}
+
+export type SvLotes2SellerData = {
+  displayName: string;
+  documentFmt: string;
+  documentLabel: string;
+  addressLine: string;
+  city: string;
+  state: string;
+  cepFmt: string;
+  phone: string;
+  email: string;
+  representativeName: string;
+  representativeCpfFmt: string;
+  representativeRole: string;
+  representativeEmail: string;
+  representativePhone: string;
+};
+
+/** Dados do vendedor a partir de Configurações → Geral (somente SV LOTES 2.0). */
+export function buildSvLotes2SellerFromCompany(
+  company: Record<string, unknown> | null | undefined,
+): SvLotes2SellerData {
+  const seller = normalizeSellerFromCompany(company);
+
+  const displayName = toTitleCase(
+    pickString(
+      company?.fantasy_name,
+      company?.name,
+      seller.name !== 'Não informado' ? seller.name : '',
+      seller.razaoSocial !== 'Não informado' ? seller.razaoSocial : '',
+    ),
+  );
+
+  const docRaw = pickString(company?.cnpj, company?.document, seller.cnpj);
+  const docDigits = docRaw.replace(/\D/g, '');
+  const documentLabel = docDigits.length === 11 ? 'CPF' : 'CNPJ';
+  const documentFmt = docRaw ? formatCpfCnpj(docRaw) : '';
+
+  const addressLine = formatSvLotes2CompanyAddressLine(company);
+  const city =
+    seller.city !== 'Não informado' ? toTitleCase(seller.city) : '';
+  const state =
+    seller.state !== 'Não informado' ? seller.state.toUpperCase() : '';
+  const cepRaw = pickString(company?.zip_code, company?.cep, seller.zip);
+  const cepFmt = cepRaw ? formatContractCep(cepRaw) : '';
+
+  const phone = pickString(company?.phone, seller.phone);
+  const email = pickString(company?.email, seller.email);
+
+  const representativeName = toTitleCase(
+    pickString(
+      company?.legal_representative,
+      company?.responsible_name,
+      seller.representative !== 'Não informado' ? seller.representative : '',
+    ),
+  );
+  const repCpfRaw = pickString(
+    company?.representative_cpf,
+    company?.responsible_cpf,
+    seller.representativeCpf !== 'Não informado' ? seller.representativeCpf : '',
+  );
+  const representativeCpfFmt = repCpfRaw ? formatCpfCnpj(repCpfRaw) : '';
+  const representativeRole = pickString(company?.legal_representative_role);
+  const representativeEmail = pickString(company?.legal_representative_email);
+  const representativePhone = pickString(company?.legal_representative_phone);
+
+  return {
+    displayName,
+    documentFmt,
+    documentLabel,
+    addressLine,
+    city,
+    state,
+    cepFmt,
+    phone,
+    email,
+    representativeName,
+    representativeCpfFmt,
+    representativeRole,
+    representativeEmail,
+    representativePhone,
+  };
 }
 
 /** Linha curta para cabeçalho PDF reduzido (sem repetir endereço completo). */
