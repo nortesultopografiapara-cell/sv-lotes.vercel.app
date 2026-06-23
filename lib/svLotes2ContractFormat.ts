@@ -29,8 +29,7 @@ function toTitleCase(str: string): string {
   if (!str) return '';
   return str
     .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase())
-    .replace(/\bS\/n\b/g, 'S/N');
+    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
 }
 
 function normalizeTextForCompare(value: string): string {
@@ -55,21 +54,32 @@ function formatContractCep(raw: string): string {
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 }
 
+function stripLegacySnTokens(value: string): string {
+  let s = String(value || '').trim();
+  if (!s) return '';
+
+  s = s.replace(/,\s*S\/N\s*,/gi, ',');
+  s = s.replace(/,\s*S\/N(?=\s*,|\s*$)/gi, '');
+  s = s.replace(/^S\/N\s*,\s*/i, '');
+  s = s.replace(/,\s*S\s*,/gi, ',');
+  s = s.replace(/,\s*S(?=\s*,|\s*$)/gi, '');
+
+  return s.replace(/\s+/g, ' ').replace(/,\s*,/g, ', ').replace(/,\s*$/g, '').trim();
+}
+
 function cleanStreetFragment(value: string): string {
   let s = String(value || '').trim();
   if (!s) return '';
 
   s = s.replace(/^Rua:\s*/i, 'Rua ');
   s = s.replace(/,\s*S\/N\s*Bairro:\s*$/i, '');
-  s = s.replace(/,\s*S\/N\s*$/i, '');
-  s = s.replace(/,\s*S\s*$/i, '');
   s = s.replace(/,\s*Bairro:\s*$/i, '');
   s = s.replace(/,\s*Bairro\s*$/i, '');
   s = s.replace(/\s+Bairro:\s*$/i, '');
   s = s.replace(/\bBairro:\s*$/i, '');
-  s = s.replace(/\s+/g, ' ').replace(/,\s*,/g, ', ').replace(/,\s*$/g, '').trim();
+  s = stripLegacySnTokens(s);
 
-  return s;
+  return s.replace(/\s+/g, ' ').replace(/,\s*,/g, ', ').replace(/,\s*$/g, '').trim();
 }
 
 /** Monta endereço completo apenas com campos preenchidos (sem S/N automático). */

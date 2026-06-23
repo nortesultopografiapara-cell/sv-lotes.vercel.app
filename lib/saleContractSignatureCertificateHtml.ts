@@ -56,39 +56,60 @@ export type SaleContractElectronicSignaturesInput = {
 
 const CERT_STYLES = `
 <style type="text/css">
+  .sv-cert-official-block {
+    display: block !important;
+    width: 100%;
+    overflow: hidden;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+  .sv-cert-official-inner {
+    display: block !important;
+    width: 100%;
+    overflow: hidden;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
   .sv-cert-official {
     margin-top: 4px;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     font-size: 8pt;
     line-height: 1.3;
     color: #1a202c;
+    display: block !important;
+    width: 100%;
+    overflow: hidden;
     page-break-inside: avoid !important;
-    break-inside: avoid-page !important;
-    page-break-before: avoid;
-    break-before: avoid-page;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    margin-bottom: 0 !important;
   }
   .sv-cert-official .sv-cert-cards {
-    display: flex;
-    flex-direction: row;
-    gap: 8px;
-    align-items: stretch;
+    display: table !important;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 8px 0;
     margin-bottom: 6px;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
   .sv-cert-official .sv-cert-card {
-    flex: 1 1 0;
+    display: table-cell !important;
+    vertical-align: top;
+    width: 50%;
     border: 1.5px solid #86efac;
     border-radius: 6px;
     background: #f0fff4;
     padding: 0;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
     box-sizing: border-box;
-    page-break-inside: avoid;
-    break-inside: avoid-page;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
   .sv-cert-official .sv-cert-card-head {
     padding: 5px 8px 4px 8px;
@@ -116,7 +137,6 @@ const CERT_STYLES = `
   }
   .sv-cert-official .sv-cert-card-body {
     padding: 5px 8px 4px 8px;
-    flex: 1 1 auto;
   }
   .sv-cert-official .sv-cert-field {
     display: flex;
@@ -151,7 +171,6 @@ const CERT_STYLES = `
     line-height: 1.35;
   }
   .sv-cert-official .sv-cert-card-foot {
-    margin-top: auto;
     padding: 4px 6px;
     background: #166534;
     text-align: center;
@@ -166,17 +185,31 @@ const CERT_STYLES = `
     border-radius: 6px;
     background: #fff;
     padding: 6px;
-    display: flex;
-    flex-direction: row;
-    gap: 8px;
-    align-items: flex-start;
+    display: block !important;
+    width: 100%;
+    overflow: hidden;
     page-break-inside: avoid !important;
-    break-inside: avoid-page !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+  .sv-cert-official .sv-cert-validation-inner {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
   .sv-cert-official .sv-cert-qr {
+    display: table-cell;
+    vertical-align: top;
+    width: 72px;
+    height: 64px;
+    padding-right: 8px;
+  }
+  .sv-cert-official .sv-cert-qr img,
+  .sv-cert-official img.sv-cert-qr {
     width: 64px;
     height: 64px;
-    flex-shrink: 0;
     border: 1px solid #cbd5e1;
     border-radius: 4px;
     padding: 3px;
@@ -184,8 +217,9 @@ const CERT_STYLES = `
     display: block;
   }
   .sv-cert-official .sv-cert-validation-body {
-    flex: 1 1 auto;
-    min-width: 0;
+    display: table-cell;
+    vertical-align: top;
+    width: auto;
   }
   .sv-cert-official .sv-cert-validation-title {
     margin: 0 0 5px 0;
@@ -482,18 +516,21 @@ export function buildSaleContractSignatureCertificateHtml(
   const issuedAt = formatSignedDateTimeBr(input.signedAt || input.issuedAt);
 
   const qrBlock = input.qrCodeDataUrl
-    ? `<img src="${escapeHtml(input.qrCodeDataUrl)}" alt="QR Code" class="sv-cert-qr" />`
+    ? `<div class="sv-cert-qr"><img src="${escapeHtml(input.qrCodeDataUrl)}" alt="QR Code" class="sv-cert-qr" /></div>`
     : '';
 
   return `
     ${CERT_STYLES}
-    <div class="contract-clause contract-clause--tight sv-cert-official">
+    <div class="sv-cert-official-block">
+    <div class="sv-cert-official-inner">
+    <div class="sv-cert-official">
       <div class="sv-cert-cards">
         ${buildVendorCard(input)}
         ${buildBuyerCard(input)}
       </div>
 
       <div class="sv-cert-validation">
+        <div class="sv-cert-validation-inner">
         ${qrBlock}
         <div class="sv-cert-validation-body">
           <h3 class="sv-cert-validation-title">${escapeHtml(title)}</h3>
@@ -522,11 +559,14 @@ export function buildSaleContractSignatureCertificateHtml(
             <span class="value">Assinatura Eletrônica SV LOTES — MP 2.200-2/2001</span>
           </div>
         </div>
+        </div>
       </div>
 
       <p class="sv-cert-legal">
         Este documento foi assinado eletronicamente com certificado digital conforme MP 2.200-2/2001 e Lei 14.063/2020.
         A autenticidade pode ser verificada através do QR Code ou dos dados acima.
       </p>
+    </div>
+    </div>
     </div>`;
 }

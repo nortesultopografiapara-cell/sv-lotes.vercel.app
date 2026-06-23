@@ -93,6 +93,23 @@ export const CONTRACT_PDF_PRINT_CSS = `
     break-after: avoid-page !important;
     margin-bottom: 0 !important;
   }
+  .sv-cert-official-block,
+  .sv-cert-official-inner,
+  .sv-cert-official,
+  .sv-cert-official .sv-cert-cards,
+  .sv-cert-official .sv-cert-card,
+  .sv-cert-official .sv-cert-validation,
+  .sv-cert-official .sv-cert-validation-inner {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+  .sv-cert-official-block {
+    display: block !important;
+    overflow: hidden;
+    page-break-before: always !important;
+    break-before: page !important;
+  }
 </style>
 `;
 

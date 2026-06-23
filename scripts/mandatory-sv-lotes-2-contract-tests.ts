@@ -157,6 +157,17 @@ function testSv2AddressAndCivilState() {
   assertNotIncludes(brokenAddress, 'S/N Bairro', 'sem S/N Bairro');
   assertNotIncludes(brokenAddress, 'Bairro:', 'sem label bairro solto');
 
+  const legacySnAddress = formatSvLotes2CompanyAddressLine({
+    address: 'Rua: 02, Quadra 123, Lote 05, S/N',
+    bairro: 'Nova Carajás',
+    city: 'Parauapebas',
+    state: 'PA',
+    zip_code: '68515000',
+  });
+  assert(legacySnAddress.includes('Rua 02, Quadra 123, Lote 05'), 'logradouro sem S/N legado');
+  assertNotIncludes(legacySnAddress, 'S/N', 'sem token S/N no endereço final');
+  assert(legacySnAddress.includes('CEP 68515-000'), 'cep no endereço legado corrigido');
+
   const feminina = formatGenderedCivilState('Divorciado(a)', 'Ivanilde de Mora Silva');
   assert(feminina === 'Divorciada', 'estado civil feminino');
   const masculino = formatGenderedCivilState('Divorciado(a)', 'João Comprador');
@@ -398,12 +409,19 @@ async function writeSv2SignedPdfArtifacts() {
     wrapSaleContractHtmlDocument(`<div class="sv-contract-document">${cert}</div>`, 'Certificado'),
     { waitUntil: 'load', timeout: 45_000 },
   );
-  const certEl = await page.$('.sv-cert-official');
+  const certEl = await page.$('.sv-cert-official-block');
   const pLast = path.join(outDir, 'sv2-refino-pagina-final-certificado.png');
   if (certEl) await certEl.screenshot({ path: pLast, type: 'png' });
+
+  await page.setContent(
+    wrapSaleContractHtmlDocument(signedHtml, 'SV2 Assinado Completo'),
+    { waitUntil: 'load', timeout: 45_000 },
+  );
+  const pLastFull = path.join(outDir, 'sv2-assinatura-ultima-pagina.png');
+  await page.screenshot({ path: pLastFull, fullPage: true, type: 'png' });
   await browser.close();
 
-  console.log('OK writeSv2SignedPdfArtifacts', { pdfPath, pages, p1, pLast });
+  console.log('OK writeSv2SignedPdfArtifacts', { pdfPath, pages, p1, pLast, pLastFull });
 }
 
 async function writeSvTopografiaPdfArtifact() {
