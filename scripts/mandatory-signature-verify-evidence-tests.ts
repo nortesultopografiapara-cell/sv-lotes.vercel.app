@@ -8,6 +8,7 @@ import {
   parseUserAgent,
   readClientEvidenceFromRow,
 } from '../lib/signatureEvidence';
+import { shouldIssueSaleCertificate } from '../lib/saleContractBilateralSignature';
 import {
   maskCpfPublic,
   maskEmailPublic,
@@ -178,6 +179,12 @@ function testSaasCertificateEvidenceRows() {
   console.log('OK testSaasCertificateEvidenceRows');
 }
 
+function testBilateralVerifyStatus() {
+  assert(!shouldIssueSaleCertificate('CLIENT_SIGNED'), 'verify pending blocks cert');
+  assert(shouldIssueSaleCertificate('SIGNED', '2026-06-08T16:00:00.000Z'), 'verify valid after vendor');
+  console.log('OK testBilateralVerifyStatus');
+}
+
 function testParseUserAgent() {
   const parsed = parseUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36');
   assert(parsed.browser === 'Google Chrome', 'ua browser');
@@ -194,6 +201,7 @@ function main() {
   testVerifyUrlAndQrTarget();
   testHashUnchanged();
   testSaasCertificateEvidenceRows();
+  testBilateralVerifyStatus();
   testParseUserAgent();
   console.log('OK — mandatory-signature-verify-evidence-tests passed');
 }

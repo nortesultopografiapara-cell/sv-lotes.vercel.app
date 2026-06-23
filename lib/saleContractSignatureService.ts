@@ -21,8 +21,15 @@ import {
 } from '@/lib/saasContractSignatureService';
 import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
 import {
+  canVendorSignSaleContract,
+  isSaleLegacyAutoSigned,
+  shouldIssueSaleCertificate,
+} from '@/lib/saleContractBilateralSignature';
+import {
   enrichClientEvidenceForSign,
+  enrichVendorEvidenceForSign,
   readClientEvidenceFromRow,
+  readVendorEvidenceFromRow,
 } from '@/lib/signatureEvidence';
 import {
   logSignatureEvent,
@@ -168,6 +175,23 @@ export type ContractSignatureRow = {
   signed_document_type?: string | null;
   validation_public_url?: string | null;
   certificate_status?: string | null;
+  vendor_signer_name?: string | null;
+  vendor_signer_email?: string | null;
+  vendor_signer_document?: string | null;
+  vendor_signer_role?: string | null;
+  vendor_signed_at?: string | null;
+  vendor_signature_hash?: string | null;
+  vendor_ip_address?: string | null;
+  vendor_user_agent?: string | null;
+  vendor_phone?: string | null;
+  vendor_browser?: string | null;
+  vendor_os?: string | null;
+  vendor_device?: string | null;
+  vendor_ip_city?: string | null;
+  vendor_ip_region?: string | null;
+  vendor_ip_country?: string | null;
+  vendor_signed_at_iso?: string | null;
+  vendor_signature_event_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -235,7 +259,7 @@ export function buildSaleSignatureHistory(
   if (signature.signed_at) {
     events.push({
       at: signature.signed_at,
-      event: 'CONTRACT_SIGNED_ELECTRONICALLY',
+      event: 'Comprador assinou',
       user: signature.signer_name || 'Comprador',
       ip: signature.ip_address,
       details: [
@@ -245,6 +269,36 @@ export function buildSaleSignatureHistory(
       ]
         .filter(Boolean)
         .join(' · '),
+    });
+  }
+
+  if (signature.vendor_signed_at) {
+    events.push({
+      at: signature.vendor_signed_at,
+      event: 'Vendedor assinou',
+      user: signature.vendor_signer_name || 'PROMITENTE VENDEDOR',
+      ip: signature.vendor_ip_address,
+      details: [
+        signature.vendor_signer_document
+          ? `Doc. ${signature.vendor_signer_document}`
+          : null,
+        signature.vendor_signer_email ? `E-mail ${signature.vendor_signer_email}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    });
+  }
+
+  if (
+    signature.signature_status === 'SIGNED' &&
+    shouldIssueSaleCertificate(signature.signature_status, signature.vendor_signed_at)
+  ) {
+    events.push({
+      at: signature.vendor_signed_at || signature.signed_at || signature.updated_at,
+      event: 'Certificado emitido',
+      user: 'Sistema',
+      ip: null,
+      details: 'Certificado digital bilateral anexado ao PDF',
     });
   }
 
@@ -332,6 +386,11 @@ function assertContractEligibleForSignature(
   }
   if (['assinado', 'signed'].includes(status)) {
     throw new SaleContractSignatureError('Este contrato já está assinado.');
+  }
+  if (['client_signed'].includes(status)) {
+    throw new SaleContractSignatureError(
+      'Aguardando assinatura do vendedor. Não é possível reenviar até concluir a assinatura bilateral.',
+    );
   }
   if (!contract.generated_html && !contract.html_content) {
     throw new SaleContractSignatureError(
@@ -507,9 +566,11 @@ export async function signSaleContractElectronically(
     const msg =
       signature.signature_status === 'SIGNED'
         ? 'Este contrato já foi assinado. O link está bloqueado.'
-        : signature.signature_status === 'CANCELLED'
-          ? 'Esta solicitação de assinatura foi cancelada.'
-          : 'O link de assinatura não está mais disponível.';
+        : signature.signature_status === 'CLIENT_SIGNED'
+          ? 'Você já assinou este contrato. Aguardando assinatura do vendedor.'
+          : signature.signature_status === 'CANCELLED'
+            ? 'Esta solicitação de assinatura foi cancelada.'
+            : 'O link de assinatura não está mais disponível.';
     throw new SaleContractSignatureError(msg);
   }
 
@@ -558,6 +619,11 @@ export async function signSaleContractElectronically(
   if (['assinado', 'signed'].includes(contractStatus)) {
     throw new SaleContractSignatureError('Este contrato já possui assinatura registrada.');
   }
+  if (['client_signed'].includes(contractStatus)) {
+    throw new SaleContractSignatureError(
+      'Contrato aguardando assinatura do vendedor.',
+    );
+  }
 
   const signedAt = new Date().toISOString();
   const hashPayload = buildSignatureHashPayload({
@@ -581,6 +647,8 @@ export async function signSaleContractElectronically(
     documentType: 'CONTRATO_VENDA',
     validationToken: token,
   });
+  // Não marcar certificado como validado até assinatura bilateral completa.
+  delete evidencePatch.certificate_status;
 
   const { data: updatedSignature, error: signErr } = await supabaseAdmin
     .from('contract_signatures')
@@ -588,12 +656,13 @@ export async function signSaleContractElectronically(
       signer_name: signerName,
       signer_email: signerEmail,
       signer_document: signerDocument,
-      signature_status: 'SIGNED',
+      signature_status: 'CLIENT_SIGNED',
       signed_at: signedAt,
       signature_hash: signatureHash,
       ip_address: input.ipAddress || null,
       user_agent: input.userAgent || null,
       ...evidencePatch,
+      certificate_status: null,
       updated_at: signedAt,
     })
     .eq('id', signature.id)
@@ -610,8 +679,8 @@ export async function signSaleContractElectronically(
   await supabaseAdmin
     .from('contracts')
     .update({
-      status: 'assinado',
-      signature_status: 'SIGNED',
+      status: 'client_signed',
+      signature_status: 'CLIENT_SIGNED',
       signed_at: signedAt,
       signed_by_name: signerName,
       signed_by_cpf: signerDocument,
@@ -621,15 +690,9 @@ export async function signSaleContractElectronically(
     })
     .eq('id', signature.contract_id);
 
-  const saleId = contractRow.sale_id as string | undefined;
-  if (saleId) {
-    await supabaseAdmin
-      .from('sales')
-      .update({ status: 'ativo' })
-      .eq('id', saleId);
-  }
-
   const signedSignature = updatedSignature as ContractSignatureRow;
+
+  await mirrorSignatureToContract(supabaseAdmin, signature.contract_id, signedSignature);
 
   await logSignatureEvent(supabaseAdmin, {
     signatureToken: token,
@@ -658,48 +721,245 @@ export async function signSaleContractElectronically(
     token,
   });
 
-  try {
-    const signContext = await loadSaleSignPageContext(supabaseAdmin, signedSignature);
-    const { pdf } = await loadSaleContractPdfForSign(
-      supabaseAdmin,
-      signature.contract_id,
-      {
-        signature: signedSignature,
-        signContext,
-      },
-    );
-    const contractNumber = String(contractRow.contract_number || '');
-    const pdfSignedUrl = tenantId
-      ? await uploadSignedSaleContractPdf(
-          supabaseAdmin,
-          tenantId,
-          contractNumber,
-          pdf,
-        )
-      : null;
-    if (pdfSignedUrl) {
-      await supabaseAdmin
-        .from('contracts')
-        .update({ pdf_signed_url: pdfSignedUrl, updated_at: signedAt })
-        .eq('id', signature.contract_id);
-    }
-    await logSignatureEvent(supabaseAdmin, {
-      signatureToken: token,
-      signatureSource: 'SALE',
-      signatureRecordId: signedSignature.id,
-      eventType: 'CERTIFICATE_ISSUED',
-      personName: signerName,
-      eventDescription: 'Certificado digital emitido e anexado ao PDF assinado.',
-      occurredAt: new Date().toISOString(),
-    });
-  } catch (pdfErr) {
-    console.warn(
-      '[SALE_CONTRACT_SIGN] signed pdf generation',
-      pdfErr instanceof Error ? pdfErr.message : pdfErr,
+  return { signature: signedSignature };
+}
+
+export type SignSaleContractByVendorInput = {
+  vendorName: string;
+  vendorDocument: string;
+  vendorEmail: string;
+  vendorRole?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
+
+export async function signSaleContractByVendor(
+  supabaseAdmin: SupabaseClient,
+  contractId: string,
+  signatureId: string,
+  input: SignSaleContractByVendorInput,
+): Promise<{
+  signature: ContractSignatureRow;
+  pdfSignedUrl: string | null;
+}> {
+  const { data: signature, error: sigErr } = await supabaseAdmin
+    .from('contract_signatures')
+    .select('*')
+    .eq('id', signatureId)
+    .eq('contract_id', contractId)
+    .maybeSingle();
+
+  if (sigErr || !signature) {
+    throw new SaleContractSignatureError('Solicitação de assinatura não encontrada.');
+  }
+
+  const signatureRow = signature as ContractSignatureRow;
+
+  if (!canVendorSignSaleContract(signatureRow.signature_status)) {
+    throw new SaleContractSignatureError(
+      signatureRow.signature_status === 'SIGNED'
+        ? 'Este contrato já foi assinado pelo vendedor.'
+        : 'O vendedor só pode assinar após a assinatura do comprador.',
     );
   }
 
-  return { signature: signedSignature };
+  if (!signatureRow.signed_at || !signatureRow.signer_name) {
+    throw new SaleContractSignatureError(
+      'Assinatura do comprador incompleta. Aguarde o comprador assinar primeiro.',
+    );
+  }
+
+  const vendorName = String(input.vendorName || '').trim();
+  const vendorDocument = onlyDigits(input.vendorDocument);
+  const vendorEmail = normalizeSignerEmail(input.vendorEmail);
+
+  if (!vendorName || vendorDocument.length < 11) {
+    throw new SaleContractSignatureError(
+      'Informe nome completo e CPF/CNPJ válidos do representante da imobiliária.',
+    );
+  }
+  if (!isValidSignerEmail(vendorEmail)) {
+    throw new SaleContractSignatureError('Informe um e-mail válido para assinar.');
+  }
+
+  const { data: contract, error: contractErr } = await supabaseAdmin
+    .from('contracts')
+    .select('*')
+    .eq('id', contractId)
+    .single();
+
+  if (contractErr || !contract) {
+    throw new SaleContractSignatureError('Contrato não encontrado.');
+  }
+
+  const contractRow = contract as Record<string, unknown>;
+  const tenantId = String(contractRow.tenant_id || contractRow.company_id || '');
+  const contractStatus = String(contractRow.status || '').toLowerCase();
+
+  if (['cancelado', 'cancelled', 'canceled'].includes(contractStatus)) {
+    throw new SaleContractSignatureError('Contrato cancelado. Assinatura não permitida.');
+  }
+  if (['assinado', 'signed'].includes(contractStatus) && contractRow.pdf_signed_url) {
+    throw new SaleContractSignatureError('Este contrato já possui PDF assinado final.');
+  }
+
+  const clientSignedAt = signatureRow.signed_at!;
+  const vendorSignedAt = new Date().toISOString();
+
+  const clientHash =
+    signatureRow.signature_hash ||
+    (await computeSignatureHash(
+      buildSignatureHashPayload({
+        contractId: String(contractRow.id),
+        contractNumber: String(contractRow.contract_number || ''),
+        signerName: signatureRow.signer_name!,
+        signerDocument: signatureRow.signer_document || '',
+        signerEmail: signatureRow.signer_email || '',
+        signedAt: clientSignedAt,
+        ipAddress: signatureRow.ip_address || '',
+        party: 'CLIENT',
+      }),
+    ));
+
+  const vendorHashPayload = buildSignatureHashPayload({
+    contractId: String(contractRow.id),
+    contractNumber: String(contractRow.contract_number || ''),
+    signerName: vendorName,
+    signerDocument: vendorDocument,
+    signerEmail: vendorEmail,
+    signedAt: vendorSignedAt,
+    ipAddress: input.ipAddress || '',
+    party: 'PROVIDER',
+  });
+  const vendorHash = await computeSignatureHash(vendorHashPayload);
+
+  const vendorEvidencePatch = await enrichVendorEvidenceForSign({
+    vendorEmail,
+    vendorPhone: null,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt: vendorSignedAt,
+  });
+
+  const previewSignature: ContractSignatureRow = {
+    ...signatureRow,
+    vendor_signer_name: vendorName,
+    vendor_signer_email: vendorEmail,
+    vendor_signer_document: vendorDocument,
+    vendor_signer_role: input.vendorRole || null,
+    vendor_signed_at: vendorSignedAt,
+    vendor_signature_hash: vendorHash,
+    vendor_ip_address: input.ipAddress || null,
+    vendor_user_agent: input.userAgent || null,
+    ...vendorEvidencePatch,
+    signature_status: 'SIGNED',
+    signature_hash: clientHash,
+    certificate_status: 'VALIDADO',
+  } as ContractSignatureRow;
+
+  const signContext = await loadSaleSignPageContext(supabaseAdmin, previewSignature);
+  const { pdf } = await loadSaleContractPdfForSign(
+    supabaseAdmin,
+    contractId,
+    {
+      signature: previewSignature,
+      signContext,
+    },
+  );
+
+  const contractNumber = String(contractRow.contract_number || '');
+  const pdfSignedUrl = tenantId
+    ? await uploadSignedSaleContractPdf(supabaseAdmin, tenantId, contractNumber, pdf)
+    : null;
+
+  const { data: updatedSignature, error: signErr } = await supabaseAdmin
+    .from('contract_signatures')
+    .update({
+      vendor_signer_name: vendorName,
+      vendor_signer_email: vendorEmail,
+      vendor_signer_document: vendorDocument,
+      vendor_signer_role: input.vendorRole || null,
+      vendor_signed_at: vendorSignedAt,
+      vendor_signature_hash: vendorHash,
+      vendor_ip_address: input.ipAddress || null,
+      vendor_user_agent: input.userAgent || null,
+      ...vendorEvidencePatch,
+      signature_status: 'SIGNED',
+      signature_hash: clientHash,
+      certificate_status: 'VALIDADO',
+      updated_at: vendorSignedAt,
+    })
+    .eq('id', signatureRow.id)
+    .select('*')
+    .single();
+
+  if (signErr || !updatedSignature) {
+    throw new SaleContractSignatureError(
+      `Falha ao registrar assinatura do vendedor: ${signErr?.message || 'sem retorno'}`,
+      'db_save',
+    );
+  }
+
+  const finalSignature = updatedSignature as ContractSignatureRow;
+
+  await supabaseAdmin
+    .from('contracts')
+    .update({
+      status: 'assinado',
+      signature_status: 'SIGNED',
+      signed_at: vendorSignedAt,
+      pdf_signed_url: pdfSignedUrl,
+      updated_at: vendorSignedAt,
+    })
+    .eq('id', contractId);
+
+  const saleId = contractRow.sale_id as string | undefined;
+  if (saleId) {
+    await supabaseAdmin.from('sales').update({ status: 'ativo' }).eq('id', saleId);
+  }
+
+  await mirrorSignatureToContract(supabaseAdmin, contractId, finalSignature, {
+    signed_at: vendorSignedAt,
+  });
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signatureRow.signature_token,
+    signatureSource: 'SALE',
+    signatureRecordId: signatureRow.id,
+    eventType: 'PROVIDER_SIGNED',
+    personName: vendorName,
+    personEmail: vendorEmail,
+    ipAddress: input.ipAddress || undefined,
+    userAgent: input.userAgent || undefined,
+    eventDescription: 'Assinatura eletrônica realizada pelo PROMITENTE VENDEDOR (imobiliária).',
+    occurredAt: vendorSignedAt,
+    metadata: { signature_event_id: vendorEvidencePatch.vendor_signature_event_id },
+  });
+
+  await logSignatureEvent(supabaseAdmin, {
+    signatureToken: signatureRow.signature_token,
+    signatureSource: 'SALE',
+    signatureRecordId: signatureRow.id,
+    eventType: 'CERTIFICATE_ISSUED',
+    personName: vendorName,
+    eventDescription: 'Certificado digital bilateral emitido e anexado ao PDF assinado.',
+    occurredAt: vendorSignedAt,
+  });
+
+  await recordSaleContractSignatureAudit(supabaseAdmin, {
+    tenantId,
+    contractId,
+    contractNumber,
+    signerName: vendorName,
+    signerDocument: vendorDocument,
+    signerEmail: vendorEmail,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    signedAt: vendorSignedAt,
+    token: signatureRow.signature_token,
+  });
+
+  return { signature: finalSignature, pdfSignedUrl };
 }
 
 export async function loadSaleContractHtmlForSign(
@@ -821,7 +1081,10 @@ export async function loadSaleContractPdfForSign(
   const logoBase64 = await loadTenantLogoBase64ForPdf(tenant);
 
   const signature = options?.signature;
-  if (signature?.signature_status === 'SIGNED') {
+  if (
+    signature &&
+    shouldIssueSaleCertificate(signature.signature_status, signature.vendor_signed_at)
+  ) {
     const ctx = options?.signContext;
     const {
       buildSaleContractSignatureCertificateHtmlWithQr,
@@ -856,7 +1119,16 @@ export async function loadSaleContractPdfForSign(
 
     html = stripManualContractSignaturesForSignedPdf(html);
 
-    const evidence = readClientEvidenceFromRow(signature as unknown as Record<string, unknown>);
+    const clientEvidence = readClientEvidenceFromRow(
+      signature as unknown as Record<string, unknown>,
+    );
+    const vendorEvidence = readVendorEvidenceFromRow(
+      signature as unknown as Record<string, unknown>,
+    );
+    const legacyAutoVendor = isSaleLegacyAutoSigned(
+      signature.signature_status,
+      signature.vendor_signed_at,
+    );
 
     html += await buildSaleContractSignatureCertificateHtmlWithQr({
       contractNumber,
@@ -868,23 +1140,44 @@ export async function loadSaleContractPdfForSign(
       buyerName,
       buyerDocument,
       signerEmail: signature.signer_email,
-      signerPhone: evidence.phone !== 'Não informado' ? evidence.phone : null,
+      signerPhone: clientEvidence.phone !== 'Não informado' ? clientEvidence.phone : null,
       companyName,
       companyCnpj: String(company?.cnpj || tenant?.cnpj || ''),
-      representativeName: seller.representative,
-      representativeCpf: seller.representativeCpf,
+      representativeName: legacyAutoVendor
+        ? seller.representative
+        : signature.vendor_signer_name || seller.representative,
+      representativeCpf: legacyAutoVendor
+        ? seller.representativeCpf
+        : signature.vendor_signer_document || seller.representativeCpf,
       vendorDocumentLabel: seller.representativeCpf ? 'CPF' : 'CNPJ',
       signatureStatus: 'ASSINADO ELETRONICAMENTE',
       signedAt: signature.signed_at,
       viewedAt: signature.viewed_at,
       ipAddress: signature.ip_address,
-      browser: evidence.browser,
-      os: evidence.os,
-      device: evidence.device,
-      approxLocation: evidence.location,
-      signatureEventId: evidence.signatureEventId,
+      browser: clientEvidence.browser,
+      os: clientEvidence.os,
+      device: clientEvidence.device,
+      approxLocation: clientEvidence.location,
+      signatureEventId: clientEvidence.signatureEventId,
+      vendorIpAddress: legacyAutoVendor
+        ? signature.ip_address
+        : signature.vendor_ip_address,
+      vendorSignedAt: legacyAutoVendor
+        ? signature.signed_at
+        : signature.vendor_signed_at,
+      vendorEmail: legacyAutoVendor ? null : signature.vendor_signer_email,
+      vendorPhone: legacyAutoVendor ? null : vendorEvidence.phone,
+      vendorBrowser: legacyAutoVendor ? null : vendorEvidence.browser,
+      vendorOs: legacyAutoVendor ? null : vendorEvidence.os,
+      vendorDevice: legacyAutoVendor ? null : vendorEvidence.device,
+      vendorApproxLocation: legacyAutoVendor ? null : vendorEvidence.location,
+      vendorSignatureEventId: legacyAutoVendor
+        ? null
+        : vendorEvidence.signatureEventId,
+      legacyAutoVendor,
       signatureToken: signature.signature_token,
       signatureHash: signature.signature_hash,
+      vendorSignatureHash: signature.vendor_signature_hash,
       signatureUrl: signature.signature_url,
       publicUrl: resolveSaleContractCertificatePublicUrl(
         signature.signature_token,
@@ -892,7 +1185,7 @@ export async function loadSaleContractPdfForSign(
         signature.validation_public_url,
       ),
       validationPublicUrl: signature.validation_public_url,
-      issuedAt: String(contractRow.created_at || contractCtx?.created_at || ''),
+      issuedAt: String(signature.vendor_signed_at || contractRow.created_at || contractCtx?.created_at || ''),
       documentVersion: Number(contractRow.version || contractCtx?.version || 1),
       uniqueId: signature.id,
       historyEvents: buildSaleSignatureHistory(signature),

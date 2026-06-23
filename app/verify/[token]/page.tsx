@@ -22,6 +22,11 @@ const STATUS_META = {
     className: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
     icon: ShieldCheck,
   },
+  AGUARDANDO_VENDEDOR: {
+    label: 'AGUARDANDO ASSINATURA DO VENDEDOR',
+    className: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+    icon: ShieldAlert,
+  },
   INVALIDO: {
     label: 'INVÁLIDO',
     className: 'text-amber-400 bg-amber-500/10 border-amber-500/30',

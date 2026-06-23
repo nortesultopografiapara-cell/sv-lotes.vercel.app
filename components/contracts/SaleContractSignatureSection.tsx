@@ -33,7 +33,9 @@ import {
   saleSignatureStatusEmoji,
   saleSignatureStatusLabel,
 } from '@/lib/saleContractSignatureStatus';
+import { canShowVendorSignButton } from '@/lib/saleContractBilateralSignature';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
+import { SaleContractVendorSignModal } from '@/components/contracts/SaleContractVendorSignModal';
 
 type SelectedContract = {
   id: string;
@@ -100,6 +102,14 @@ export const SaleContractSignatureSection = forwardRef<
   const [error, setError] = useState<string | null>(null);
   const [localTimeline, setLocalTimeline] = useState<LocalSignatureTimelineEvent[]>([]);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [vendorSignOpen, setVendorSignOpen] = useState(false);
+  const [signingVendor, setSigningVendor] = useState(false);
+  const [vendorDefaults, setVendorDefaults] = useState({
+    name: '',
+    document: '',
+    email: '',
+    companyName: '',
+  });
 
   const buyerName = contract?.customer_name || contract?.customers?.name || 'Comprador';
   const buyerPhone = contract?.customers?.phone || null;
@@ -125,13 +135,19 @@ export const SaleContractSignatureSection = forwardRef<
       }
       setLatest(json.latest || null);
       setSignUrl(json.latest?.signature_url || null);
+      setVendorDefaults({
+        name: String(json.vendorDefaults?.name || ''),
+        document: String(json.vendorDefaults?.document || ''),
+        email: String(json.vendorDefaults?.email || ''),
+        companyName: String(json.vendorDefaults?.companyName || projectName),
+      });
       setTimeline(mergeSaleSignatureTimeline(json.history || [], localTimeline));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar assinatura.');
     } finally {
       setLoading(false);
     }
-  }, [contract?.id, localTimeline]);
+  }, [contract?.id, localTimeline, projectName]);
 
   useEffect(() => {
     setLocalTimeline([]);
@@ -149,6 +165,52 @@ export const SaleContractSignatureSection = forwardRef<
   );
 
   const canShare = canResendSaleSignature(latest?.signature_status);
+  const showVendorSignButton = canShowVendorSignButton(latest?.signature_status);
+
+  const handleVendorSign = useCallback(
+    async (input: {
+      vendorName: string;
+      vendorDocument: string;
+      vendorEmail: string;
+      vendorRole: string;
+    }) => {
+      if (!contract?.id || !latest?.id || blockOwnerWriteOnClient(userRole)) {
+        throw new Error('Dados insuficientes para assinar.');
+      }
+      setSigningVendor(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/contracts/${contract.id}/signature/sign-vendor`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signatureId: latest.id,
+            vendorName: input.vendorName,
+            vendorDocument: input.vendorDocument,
+            vendorEmail: input.vendorEmail,
+            vendorRole: input.vendorRole,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.error || 'Falha ao assinar como vendedor.');
+        }
+        setLocalTimeline((prev) => [
+          ...prev,
+          {
+            at: new Date().toISOString(),
+            event: 'Vendedor assinou',
+            details: input.vendorName,
+          },
+        ]);
+        await loadSignature();
+        onSigned?.();
+      } finally {
+        setSigningVendor(false);
+      }
+    },
+    [contract?.id, latest?.id, loadSignature, onSigned, userRole],
+  );
 
   const shareMessage = useMemo(() => {
     if (!signUrl || !contract) return '';
@@ -229,6 +291,7 @@ export const SaleContractSignatureSection = forwardRef<
   const isElectronicallySigned =
     String(status || '').toUpperCase() === 'SIGNED' ||
     ['assinado', 'signed'].includes(String(contract.status || '').toLowerCase());
+  const isAwaitingVendor = String(status || '').toUpperCase() === 'CLIENT_SIGNED';
 
   const signedPdfDownloadUrl = `/api/contracts/${contract.id}/pdf?download=1`;
   const signedPdfOpenUrl = `/api/contracts/${contract.id}/pdf?inline=1`;
@@ -244,7 +307,7 @@ export const SaleContractSignatureSection = forwardRef<
           <p className="text-sm font-semibold text-[var(--text-primary)] mt-1">
             {saleSignatureStatusEmoji(status)} {statusLabel}
           </p>
-          {latest?.expires_at && status !== 'SIGNED' && (
+          {latest?.expires_at && !['SIGNED', 'CLIENT_SIGNED'].includes(String(status || '').toUpperCase()) && (
             <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
               Expira em {formatSignatureTimelineDateTime(latest.expires_at)}
             </p>
@@ -285,6 +348,20 @@ export const SaleContractSignatureSection = forwardRef<
             />
             <ActionChip icon={Share2} label="Compartilhar" onClick={() => setShareOpen(true)} />
           </>
+        )}
+        {showVendorSignButton && (
+          <ActionChip
+            icon={ShieldCheck}
+            label={signingVendor ? 'Assinando…' : 'Assinar como vendedor'}
+            onClick={() => setVendorSignOpen(true)}
+            disabled={signingVendor}
+            primary
+          />
+        )}
+        {isAwaitingVendor && (
+          <p className="w-full text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+            Comprador assinou. Aguardando assinatura do vendedor para emitir o certificado final.
+          </p>
         )}
         {isElectronicallySigned ? (
           <>
@@ -341,6 +418,18 @@ export const SaleContractSignatureSection = forwardRef<
           modalSubtitle="Compartilhe o link com o comprador por WhatsApp, e-mail ou QR Code."
         />
       )}
+
+      <SaleContractVendorSignModal
+        isOpen={vendorSignOpen}
+        onClose={() => setVendorSignOpen(false)}
+        companyName={vendorDefaults.companyName || projectName}
+        contractNumber={String(contract.contract_number || '')}
+        busy={signingVendor}
+        defaultName={vendorDefaults.name}
+        defaultDocument={vendorDefaults.document}
+        defaultEmail={vendorDefaults.email}
+        onSign={handleVendorSign}
+      />
     </div>
   );
 });

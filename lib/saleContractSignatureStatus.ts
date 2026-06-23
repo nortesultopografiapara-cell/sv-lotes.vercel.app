@@ -5,6 +5,7 @@
 export type SaleSignatureStatus =
   | 'PENDING'
   | 'VIEWED'
+  | 'CLIENT_SIGNED'
   | 'SIGNED'
   | 'EXPIRED'
   | 'CANCELLED';
@@ -12,6 +13,7 @@ export type SaleSignatureStatus =
 const LABELS: Record<SaleSignatureStatus, string> = {
   PENDING: 'Enviado',
   VIEWED: 'Visualizado',
+  CLIENT_SIGNED: 'Aguardando assinatura do vendedor',
   SIGNED: 'Assinado',
   EXPIRED: 'Expirado',
   CANCELLED: 'Cancelado',
@@ -20,6 +22,7 @@ const LABELS: Record<SaleSignatureStatus, string> = {
 const EMOJI: Record<SaleSignatureStatus, string> = {
   PENDING: '📤',
   VIEWED: '👁️',
+  CLIENT_SIGNED: '🟠',
   SIGNED: '✅',
   EXPIRED: '⏰',
   CANCELLED: '❌',
@@ -44,7 +47,7 @@ export function canPublicSaleSign(status?: string | null): boolean {
 
 export function isSaleSignatureBlocked(status?: string | null): boolean {
   const key = String(status || '').toUpperCase();
-  return ['SIGNED', 'EXPIRED', 'CANCELLED'].includes(key);
+  return ['CLIENT_SIGNED', 'SIGNED', 'EXPIRED', 'CANCELLED'].includes(key);
 }
 
 export function canSendSaleSignature(
@@ -55,11 +58,10 @@ export function canSendSaleSignature(
   if (['cancelado', 'cancelled', 'canceled', 'superseded'].includes(st)) {
     return false;
   }
-  if (['assinado', 'signed'].includes(st)) return false;
+  if (['assinado', 'signed', 'client_signed'].includes(st)) return false;
   if (signatureStatus) {
     const sig = String(signatureStatus).toUpperCase();
-    if (['PENDING', 'VIEWED'].includes(sig)) return false;
-    if (sig === 'SIGNED') return false;
+    if (['PENDING', 'VIEWED', 'CLIENT_SIGNED', 'SIGNED'].includes(sig)) return false;
   }
   return true;
 }

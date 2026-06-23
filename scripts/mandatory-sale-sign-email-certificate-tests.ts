@@ -81,7 +81,7 @@ function testCertificateWithEmail() {
     uniqueId: 'sig-test-id',
     historyEvents: [
       { at: '2026-06-08T14:00:00.000Z', event: 'Link enviado', user: 'Sistema', ip: null },
-      { at: '2026-06-08T15:30:00.000Z', event: 'CONTRACT_SIGNED_ELECTRONICALLY', user: 'Comprador', ip: '177.1.2.3' },
+      { at: '2026-06-08T15:30:00.000Z', event: 'Comprador assinou', user: 'Comprador', ip: '177.1.2.3' },
     ],
   });
 
@@ -142,8 +142,8 @@ function testSignatureHashIncludesEmail() {
 
 function testAuditHistoryEvent() {
   const history = buildSaleSignatureHistory(signatureFixture());
-  const signedEvent = history.find((e) => e.event === 'CONTRACT_SIGNED_ELECTRONICALLY');
-  assert(Boolean(signedEvent), 'evento CONTRACT_SIGNED_ELECTRONICALLY');
+  const signedEvent = history.find((e) => e.event === 'Comprador assinou');
+  assert(Boolean(signedEvent), 'evento Comprador assinou');
   assert(
     String(signedEvent?.details || '').includes('comprador@example.com'),
     'histórico contém e-mail',

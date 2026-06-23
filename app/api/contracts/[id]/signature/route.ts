@@ -11,6 +11,8 @@ import {
   sendSaleContractForSignature,
 } from '@/lib/saleContractSignatureService';
 import { loadSaleContractContext } from '@/lib/contractRegeneration';
+import { normalizeSellerFromCompany } from '@/lib/contractSeller';
+import { getCompanyDisplayName } from '@/lib/contractCompanyDisplay';
 
 export const runtime = 'nodejs';
 
@@ -55,17 +57,42 @@ export async function GET(
     }
 
     const { id: contractId } = await params;
-    await assertContractAccess(supabase, contractId, user.id);
+    const { contract } = await assertContractAccess(supabase, contractId, user.id);
 
     const signatures = await listSaleContractSignatures(supabase, contractId);
     const latest = signatures[0] || null;
     const history = latest ? buildSaleSignatureHistory(latest) : [];
+
+    const tenantId = String(contract.tenant_id || contract.company_id || '');
+    let vendorDefaults = {
+      name: '',
+      document: '',
+      email: '',
+      companyName: '',
+    };
+    if (tenantId) {
+      const { data: company } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', tenantId)
+        .maybeSingle();
+      if (company) {
+        const seller = normalizeSellerFromCompany(company as Record<string, unknown>);
+        vendorDefaults = {
+          name: seller.representative !== 'Não informado' ? seller.representative : '',
+          document: seller.representativeCpf || seller.cnpj || '',
+          email: seller.email !== 'Não informado' ? seller.email : '',
+          companyName: getCompanyDisplayName(company as Record<string, unknown>),
+        };
+      }
+    }
 
     return NextResponse.json({
       success: true,
       latest,
       history,
       signatures,
+      vendorDefaults,
     });
   } catch (err) {
     const message =

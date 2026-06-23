@@ -202,6 +202,7 @@ export async function GET(
         : null,
       blocked,
       canSign: canPublicSaleSign(signature.signature_status),
+      awaitingVendor: signature.signature_status === 'CLIENT_SIGNED',
     },
     pdfUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1`,
     pdfDownloadUrl: `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`,
@@ -232,6 +233,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       signature: result.signature,
+      awaitingVendor: result.signature.signature_status === 'CLIENT_SIGNED',
     });
   } catch (err) {
     const message =

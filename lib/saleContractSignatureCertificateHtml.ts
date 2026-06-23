@@ -46,6 +46,15 @@ export type SaleContractSignatureCertificateInput = {
   validationPublicUrl?: string | null;
   vendorIpAddress?: string | null;
   vendorSignedAt?: string | null;
+  vendorEmail?: string | null;
+  vendorPhone?: string | null;
+  vendorBrowser?: string | null;
+  vendorOs?: string | null;
+  vendorDevice?: string | null;
+  vendorApproxLocation?: string | null;
+  vendorSignatureEventId?: string | null;
+  vendorSignatureHash?: string | null;
+  legacyAutoVendor?: boolean;
   vendorDocumentLabel?: 'CPF' | 'CNPJ';
   certificateTitle?: string | null;
 };
@@ -314,14 +323,18 @@ function buildCertField(icon: string, label: string, value: string): string {
 function buildOfficialSignatureCard(params: {
   role: string;
   fields: Array<{ icon: string; label: string; value: string }>;
+  signed?: boolean;
 }): string {
   const fieldsHtml = params.fields.map((f) => buildCertField(f.icon, f.label, f.value)).join('');
+  const badge = params.signed !== false
+    ? '<span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>'
+    : '<span class="sv-cert-card-badge" style="background:#92400e;">⏳ AGUARDANDO ASSINATURA</span>';
 
   return `
     <div class="sv-cert-card">
       <div class="sv-cert-card-head">
         <p class="sv-cert-card-role">${escapeHtml(params.role)}</p>
-        <span class="sv-cert-card-badge">✓ ASSINADO ELETRONICAMENTE</span>
+        ${badge}
       </div>
       <div class="sv-cert-card-body">${fieldsHtml}</div>
       <div class="sv-cert-card-foot">✓ DOCUMENTO ASSINADO ELETRONICAMENTE COM VALIDADE JURÍDICA</div>
@@ -329,6 +342,9 @@ function buildOfficialSignatureCard(params: {
 }
 
 function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
+  const legacyAutoVendor = Boolean(input.legacyAutoVendor);
+  const vendorSigned = Boolean(input.vendorSignedAt || legacyAutoVendor);
+
   const vendorDoc = input.representativeCpf
     ? formatCpfCnpj(input.representativeCpf) || input.representativeCpf
     : formatCpfCnpj(input.companyCnpj || '') || input.companyCnpj || '—';
@@ -350,23 +366,39 @@ function buildVendorCard(input: SaleContractSignatureCertificateInput): string {
 
   fields.push({ icon: '🪪', label: docLabel, value: vendorDoc });
 
-  if (hasRealIp(input.vendorIpAddress)) {
+  if (legacyAutoVendor) {
+    if (hasRealIp(input.vendorIpAddress)) {
+      fields.push({
+        icon: '🌐',
+        label: 'IP da assinatura',
+        value: String(input.vendorIpAddress).trim(),
+      });
+    }
     fields.push({
-      icon: '🌐',
-      label: 'IP da assinatura',
-      value: String(input.vendorIpAddress).trim(),
+      icon: '📅',
+      label: 'Data e hora da assinatura',
+      value: formatSignedDateTimeBr(input.vendorSignedAt || input.signedAt),
     });
+  } else {
+    fields.push(
+      ...buildEvidenceFields({
+        email: input.vendorEmail,
+        phone: input.vendorPhone,
+        ipAddress: input.vendorIpAddress,
+        signedAt: input.vendorSignedAt,
+        browser: input.vendorBrowser,
+        os: input.vendorOs,
+        device: input.vendorDevice,
+        approxLocation: input.vendorApproxLocation,
+        signatureEventId: input.vendorSignatureEventId,
+      }),
+    );
   }
-
-  fields.push({
-    icon: '📅',
-    label: 'Data e hora da assinatura',
-    value: formatSignedDateTimeBr(input.vendorSignedAt || input.signedAt),
-  });
 
   return buildOfficialSignatureCard({
     role: 'PROMITENTE VENDEDOR',
     fields,
+    signed: vendorSigned,
   });
 }
 

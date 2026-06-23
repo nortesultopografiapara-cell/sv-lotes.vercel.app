@@ -5,11 +5,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatSignatureDateBr, formatSignatureTimeBr } from '@/lib/saasContractSignaturePdf';
 import { isSignatureExpired } from '@/lib/saasContractSignatureService';
+import {
+  isSaleLegacyAutoSigned,
+  shouldIssueSaleCertificate,
+} from '@/lib/saleContractBilateralSignature';
 import { isFullySignedContract } from '@/lib/saasContractBilateralSignature';
 import {
   documentTypeLabel,
   readClientEvidenceFromRow,
   readProviderEvidenceFromRow,
+  readVendorEvidenceFromRow,
 } from '@/lib/signatureEvidence';
 import {
   listSignatureEventsByToken,
@@ -24,7 +29,12 @@ import {
 } from '@/lib/signaturePrivacy';
 import { buildSignatureVerifyUrl } from '@/lib/signatureVerifyUrls';
 
-export type PublicValidationStatus = 'VALIDO' | 'INVALIDO' | 'REVOGADO' | 'EXPIRADO';
+export type PublicValidationStatus =
+  | 'VALIDO'
+  | 'AGUARDANDO_VENDEDOR'
+  | 'INVALIDO'
+  | 'REVOGADO'
+  | 'EXPIRADO';
 
 export type PublicSignerView = {
   role: string;
@@ -77,11 +87,17 @@ export type PublicValidationPayload = {
 function resolveValidationStatus(
   signatureStatus: string,
   expiresAt?: string | null,
+  options?: { saleAwaitingVendor?: boolean; saleFullySigned?: boolean },
 ): PublicValidationStatus {
   const status = String(signatureStatus || '').toUpperCase();
   if (status === 'CANCELLED') return 'REVOGADO';
   if (status === 'EXPIRED' || isSignatureExpired(expiresAt)) return 'EXPIRADO';
-  if (status === 'SIGNED' || status === 'CLIENT_SIGNED') return 'VALIDO';
+  if (options?.saleAwaitingVendor) return 'AGUARDANDO_VENDEDOR';
+  if (status === 'SIGNED' || (status === 'CLIENT_SIGNED' && options?.saleFullySigned)) {
+    return 'VALIDO';
+  }
+  if (status === 'CLIENT_SIGNED') return 'AGUARDANDO_VENDEDOR';
+  if (status === 'SIGNED') return 'VALIDO';
   return 'INVALIDO';
 }
 
@@ -132,15 +148,72 @@ async function resolveSaleValidation(
   }
 
   const evidence = readClientEvidenceFromRow(row);
+  const vendorEvidence = readVendorEvidenceFromRow(row);
   const events = await listSignatureEventsByToken(supabaseAdmin, token);
-  const status = resolveValidationStatus(
-    String(row.signature_status || ''),
-    row.expires_at as string | null,
+  const signatureStatus = String(row.signature_status || '');
+  const fullySigned = shouldIssueSaleCertificate(
+    signatureStatus,
+    row.vendor_signed_at as string | null,
   );
+  const status = resolveValidationStatus(signatureStatus, row.expires_at as string | null, {
+    saleAwaitingVendor: signatureStatus.toUpperCase() === 'CLIENT_SIGNED',
+    saleFullySigned: fullySigned,
+  });
 
   const signedAt = String(row.signed_at || '');
   const validationUrl =
     String(row.validation_public_url || '').trim() || buildSignatureVerifyUrl(token);
+
+  const signers: PublicSignerView[] = [
+    {
+      role: 'Comprador / Cliente',
+      name: String(row.signer_name || '—'),
+      documentMasked: maskCpfPublic(String(row.signer_document || '')),
+      emailMasked: maskEmailPublic(String(row.signer_email || '')),
+      phoneMasked: maskPhonePublic(evidence.phone),
+      ipMasked: maskIpPublic(String(row.ip_address || '')),
+      signedAt: formatPublicDateTime(signedAt),
+      browser: evidence.browser,
+      os: evidence.os,
+      device: evidence.device,
+      location: evidence.location,
+      signatureEventId: evidence.signatureEventId,
+    },
+  ];
+
+  if (row.vendor_signed_at) {
+    signers.push({
+      role: 'PROMITENTE VENDEDOR',
+      name: String(row.vendor_signer_name || issuer),
+      documentMasked: maskCpfPublic(String(row.vendor_signer_document || '')),
+      emailMasked: maskEmailPublic(String(row.vendor_signer_email || '')),
+      phoneMasked: maskPhonePublic(vendorEvidence.phone),
+      ipMasked: maskIpPublic(String(row.vendor_ip_address || '')),
+      signedAt: formatPublicDateTime(String(row.vendor_signed_at || '')),
+      browser: vendorEvidence.browser,
+      os: vendorEvidence.os,
+      device: vendorEvidence.device,
+      location: vendorEvidence.location,
+      signatureEventId: vendorEvidence.signatureEventId,
+    });
+  } else if (
+    isSaleLegacyAutoSigned(signatureStatus, row.vendor_signed_at as string | null)
+  ) {
+    signers.push({
+      role: 'PROMITENTE VENDEDOR',
+      name: issuer,
+      documentMasked: '—',
+      emailMasked: '—',
+      phoneMasked: '—',
+      ipMasked: maskIpPublic(String(row.ip_address || '')),
+      signedAt: formatPublicDateTime(signedAt),
+      browser: 'Assinatura automática legada',
+      os: '—',
+      device: '—',
+      location: evidence.location,
+      signatureEventId: 'legacy_auto_vendor',
+    });
+  }
 
   return {
     status,
@@ -152,38 +225,25 @@ async function resolveSaleValidation(
       issuer,
       clientName: String(row.signer_name || '—'),
       issuedAt: formatPublicDateTime(String(contractRow.created_at || row.created_at || '')),
-      signedAt: formatPublicDateTime(signedAt),
+      signedAt: formatPublicDateTime(
+        String(row.vendor_signed_at || row.signed_at || ''),
+      ),
       hashSha256: String(row.signature_hash || '—'),
       validationToken: token,
       publicUrl: validationUrl,
-      certificateStatus: String(row.certificate_status || (status === 'VALIDO' ? 'VALIDADO' : '—')),
+      certificateStatus: String(
+        row.certificate_status || (fullySigned ? 'VALIDADO' : status === 'AGUARDANDO_VENDEDOR' ? 'AGUARDANDO VENDEDOR' : '—'),
+      ),
     },
-    signers: [
-      {
-        role: 'Comprador / Cliente',
-        name: String(row.signer_name || '—'),
-        documentMasked: maskCpfPublic(String(row.signer_document || '')),
-        emailMasked: maskEmailPublic(String(row.signer_email || '')),
-        phoneMasked: maskPhonePublic(evidence.phone),
-        ipMasked: maskIpPublic(String(row.ip_address || '')),
-        signedAt: formatPublicDateTime(signedAt),
-        browser: evidence.browser,
-        os: evidence.os,
-        device: evidence.device,
-        location: evidence.location,
-        signatureEventId: evidence.signatureEventId,
-      },
-    ],
+    signers,
     events: mapEvents(events),
     downloads: {
-      certificateUrl:
-        status === 'VALIDO'
-          ? `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`
-          : null,
-      signedDocumentUrl:
-        status === 'VALIDO'
-          ? `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`
-          : null,
+      certificateUrl: fullySigned
+        ? `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`
+        : null,
+      signedDocumentUrl: fullySigned
+        ? `/api/sign/sale/${encodeURIComponent(token)}?pdf=1&download=1`
+        : null,
     },
   };
 }

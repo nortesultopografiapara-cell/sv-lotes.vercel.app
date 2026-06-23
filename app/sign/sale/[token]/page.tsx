@@ -23,15 +23,16 @@ type SaleSignPageData = {
   company: { id: string; name: string; cnpj?: string | null } | null;
   lot: { quadra: string; lote: string; project: string };
   buyer: { name: string | null; document?: string | null; email?: string | null };
-  signature: {
-    status: string;
-    statusLabel: string;
-    expiresAt: string;
-    signedAt?: string | null;
-    signerName?: string | null;
-    blocked: boolean;
-    canSign: boolean;
-  };
+    signature: {
+      status: string;
+      statusLabel: string;
+      expiresAt: string;
+      signedAt?: string | null;
+      signerName?: string | null;
+      blocked: boolean;
+      canSign: boolean;
+      awaitingVendor?: boolean;
+    };
   pdfUrl: string;
   pdfDownloadUrl: string;
 };
@@ -135,10 +136,11 @@ export default function SaleSignContractPage() {
               ...prev,
               signature: {
                 ...prev.signature,
-                status: 'SIGNED',
-                statusLabel: 'Assinado',
+                status: 'CLIENT_SIGNED',
+                statusLabel: 'Aguardando assinatura do vendedor',
                 blocked: true,
                 canSign: false,
+                awaitingVendor: true,
                 signedAt: new Date().toISOString(),
                 signerName: signerName.trim(),
               },
@@ -173,6 +175,18 @@ export default function SaleSignContractPage() {
           <Download className="w-4 h-4" />
           Baixar contrato
         </a>
+      </div>
+    ) : data.signature.status === 'CLIENT_SIGNED' || data.signature.awaitingVendor ? (
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6 text-center">
+        <CheckCircle2 className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+        <h3 className="text-lg font-bold text-amber-300">Sua assinatura foi registrada</h3>
+        <p className="text-sm text-gray-300 mt-2">
+          Aguardando assinatura do vendedor (imobiliária) para concluir o contrato.
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Assinado por {data.signature.signerName || signerName || 'comprador'} em{' '}
+          {formatDateTimeBr(data.signature.signedAt)}
+        </p>
       </div>
     ) : data.signature.canSign ? (
       <div className="bg-[#11161d] border border-white/10 rounded-2xl p-5 space-y-4 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-5">

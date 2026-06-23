@@ -262,6 +262,69 @@ export async function enrichProviderEvidenceForSign(
   return buildProviderEvidencePatch({ ...input, geo, signatureEventId: randomUUID() });
 }
 
+export type BuildVendorEvidenceInput = {
+  vendorEmail?: string | null;
+  vendorPhone?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  signedAt: string;
+  geo?: IpGeoApprox | null;
+  signatureEventId?: string;
+};
+
+export function buildVendorEvidencePatch(
+  input: BuildVendorEvidenceInput,
+): Record<string, unknown> {
+  const ua = parseUserAgent(input.userAgent);
+  const geo = input.geo || {
+    city: NOT_IDENTIFIED,
+    region: NOT_IDENTIFIED,
+    country: NOT_IDENTIFIED,
+  };
+
+  return {
+    vendor_signer_email: String(input.vendorEmail || '').trim() || null,
+    vendor_phone: String(input.vendorPhone || '').trim() || null,
+    vendor_browser: ua.browser,
+    vendor_os: ua.os,
+    vendor_device: ua.device,
+    vendor_ip_city: geo.city,
+    vendor_ip_region: geo.region,
+    vendor_ip_country: geo.country,
+    vendor_signed_at_iso: formatSignedAtIso(input.signedAt),
+    vendor_signature_event_id: input.signatureEventId || randomUUID(),
+  };
+}
+
+export async function enrichVendorEvidenceForSign(
+  input: Omit<BuildVendorEvidenceInput, 'geo' | 'signatureEventId'>,
+): Promise<Record<string, unknown>> {
+  const geo = await resolveIpGeoApprox(input.ipAddress);
+  return buildVendorEvidencePatch({ ...input, geo, signatureEventId: randomUUID() });
+}
+
+export function readVendorEvidenceFromRow(
+  row: Record<string, unknown>,
+): SignatureEvidenceDisplay {
+  const geo = {
+    city: String(row.vendor_ip_city || NOT_IDENTIFIED),
+    region: String(row.vendor_ip_region || NOT_IDENTIFIED),
+    country: String(row.vendor_ip_country || NOT_IDENTIFIED),
+  };
+
+  return {
+    email: String(row.vendor_signer_email || NOT_INFORMED),
+    phone: String(row.vendor_phone || NOT_INFORMED),
+    ipAddress: String(row.vendor_ip_address || NOT_INFORMED),
+    signedAt: String(row.vendor_signed_at_iso || row.vendor_signed_at || NOT_INFORMED),
+    browser: String(row.vendor_browser || NOT_INFORMED),
+    os: String(row.vendor_os || NOT_INFORMED),
+    device: String(row.vendor_device || NOT_INFORMED),
+    location: formatApproxLocation(geo),
+    signatureEventId: String(row.vendor_signature_event_id || NOT_INFORMED),
+  };
+}
+
 export function documentTypeLabel(type?: string | null): string {
   switch (String(type || '').toUpperCase()) {
     case 'CONTRATO_SAAS':
