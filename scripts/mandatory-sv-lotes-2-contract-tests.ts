@@ -130,6 +130,12 @@ function testSv2TemplateStructure() {
   assert(html.includes('ASSINATURA ELETRÔNICA'), 'assinatura eletrônica');
   assert(html.includes('CLÁUSULA VIGÉSIMA — DO FORO'), 'foro');
   assertNotIncludes(html, 'class="sv2-badge"', 'sem elemento badge');
+  assert(html.includes('PROMISSÁRIO(A) COMPRADOR(A)'), 'nomenclatura comprador');
+  assert(html.includes('PROMITENTE VENDEDOR(A)'), 'nomenclatura vendedor');
+  assert(html.includes('correção monetária prevista neste contrato'), 'cláusula segunda monetária');
+  assertNotIncludes(html, 'parcelas iguais', 'sem parcela fixa');
+  const empreendimentoCount = (html.match(/integrante do empreendimento/gi) || []).length;
+  assert(empreendimentoCount === 1, `sem duplicação empreendimento (${empreendimentoCount})`);
   console.log('OK testSv2TemplateStructure');
 }
 

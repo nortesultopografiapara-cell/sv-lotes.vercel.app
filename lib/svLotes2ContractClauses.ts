@@ -4,6 +4,11 @@
 
 import type { SvLotes2ContractContext } from '@/lib/svLotes2ContractContext';
 import { buildSvLotes2SummaryGridHtml } from '@/lib/svLotes2ContractFormat';
+import {
+  SV2_BUYER_LABEL,
+  SV2_VENDOR_LABEL,
+  buildSvLotes2ClauseSegundaHtml,
+} from '@/lib/svLotes2ContractTerms';
 import { buildSaleContractElectronicSignatureClauseHtml } from '@/lib/saleContractLegalTemplate';
 
 export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
@@ -18,9 +23,9 @@ export function buildSvLotes2SummaryHtml(ctx: SvLotes2ContractContext): string {
     { label: 'ÁREA', value: ctx.area },
     { label: 'MUNICÍPIO', value: ctx.municipio },
     { label: 'UF', value: ctx.estado },
-    { label: 'COMPRADOR', value: ctx.clienteNome, span: 2 },
+    { label: 'PROMISSÁRIO(A)', value: ctx.clienteNome, span: 2 },
     { label: 'CPF', value: ctx.buyerCpfFmt },
-    { label: 'VENDEDOR', value: ctx.empresaNome, span: 3 },
+    { label: 'PROMITENTE VENDEDOR(A)', value: ctx.empresaNome, span: 3 },
     { label: 'VALOR TOTAL', value: ctx.valorTotalFmt },
     { label: 'ENTRADA', value: ctx.isCashPayment ? '—' : ctx.entradaFmt },
     { label: 'PARCELAS', value: parcelasLabel },
@@ -35,7 +40,7 @@ export function buildSvLotes2VendorQualificationHtml(
 ): string {
   if (ctx.vendorIsPf) {
     const parts = [
-      `<strong>VENDEDOR(A):</strong> ${ctx.empresaNome}`,
+      `<strong>${SV2_VENDOR_LABEL}:</strong> ${ctx.empresaNome}`,
       ctx.empresaDocumentoFmt
         ? `<strong>${ctx.empresaDocumentoLabel}:</strong> ${ctx.empresaDocumentoFmt}`
         : '',
@@ -54,7 +59,7 @@ export function buildSvLotes2VendorQualificationHtml(
   }
 
   const parts = [
-    `<strong>VENDEDOR(A):</strong> ${ctx.empresaNome}`,
+    `<strong>${SV2_VENDOR_LABEL}:</strong> ${ctx.empresaNome}`,
     ctx.empresaDocumentoFmt
       ? `<strong>CNPJ:</strong> ${ctx.empresaDocumentoFmt}`
       : '',
@@ -84,7 +89,7 @@ export function buildSvLotes2BuyerQualificationHtml(
   ctx: SvLotes2ContractContext,
 ): string {
   const parts = [
-    `<strong>COMPRADOR(A):</strong> ${ctx.clienteNome}`,
+    `<strong>${SV2_BUYER_LABEL}:</strong> ${ctx.clienteNome}`,
     `<strong>CPF:</strong> ${ctx.buyerCpfFmt}${ctx.clienteIdentitySuffix}`,
     ctx.clienteRg ? `<strong>RG:</strong> ${ctx.clienteRg}` : '',
     `<strong>Estado civil:</strong> ${ctx.clienteEstadoCivil}`,
@@ -99,32 +104,29 @@ export function buildSvLotes2BuyerQualificationHtml(
 export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
   const objeto = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA PRIMEIRA — DO OBJETO:</strong> O(A) VENDEDOR(A) promete vender ao(à) COMPRADOR(A), que promete comprar, o imóvel identificado como <strong>LOTE ${ctx.lote} DA QUADRA ${ctx.quadra}</strong>${ctx.projectDescString}${ctx.lotLocationSuffix}, integrante do empreendimento <strong>${ctx.empreendimentoNome.toUpperCase() || '—'}</strong>, com área de <strong>${ctx.area}</strong>, ${ctx.lotBoundariesClause}${ctx.curvaClause}</p>
+      <p><strong>CLÁUSULA PRIMEIRA — DO OBJETO:</strong> O(A) ${SV2_VENDOR_LABEL} promete vender ao(à) ${SV2_BUYER_LABEL}, que promete comprar, o imóvel identificado como <strong>LOTE ${ctx.lote} DA QUADRA ${ctx.quadra}</strong>${ctx.projectDescString}${ctx.lotLocationSuffix}, com área de <strong>${ctx.area}</strong>, ${ctx.lotBoundariesClause}${ctx.curvaClause}</p>
     </div>`;
 
-  const preco = `
-    <div class="sv2-clause">
-      ${ctx.clauseQuartaHtml.replace('Cláusula Quarta', 'CLÁUSULA SEGUNDA — DO PREÇO E FORMA DE PAGAMENTO')}
-    </div>`;
+  const preco = buildSvLotes2ClauseSegundaHtml(ctx);
 
   const posse = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA TERCEIRA — DA POSSE:</strong> A posse do imóvel será transmitida ao(à) COMPRADOR(A) na data de assinatura deste instrumento, ou na data acordada entre as partes, exclusivamente para fins de conservação, cercamento e benfeitorias permitidas, respondendo o(a) COMPRADOR(A) por danos causados a terceiros a partir dessa data.</p>
+      <p><strong>CLÁUSULA TERCEIRA — DA POSSE:</strong> A posse do imóvel será transmitida ao(à) ${SV2_BUYER_LABEL} na data de assinatura deste instrumento, ou na data acordada entre as partes, exclusivamente para fins de conservação, cercamento e benfeitorias permitidas, respondendo o(a) ${SV2_BUYER_LABEL} por danos causados a terceiros a partir dessa data.</p>
     </div>`;
 
   const obrigComprador = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA QUARTA — DAS OBRIGAÇÕES DO(A) COMPRADOR(A):</strong> Cumprir pontualmente o pagamento do preço; manter cadastro atualizado; responder por tributos, taxas e encargos incidentes sobre o imóvel após a transmissão da posse; não ceder ou transferir o imóvel sem anuência do(a) VENDEDOR(A), quando aplicável; observar normas urbanísticas, ambientais e registrais.</p>
+      <p><strong>CLÁUSULA QUARTA — DAS OBRIGAÇÕES DO(A) ${SV2_BUYER_LABEL}:</strong> Cumprir pontualmente o pagamento do preço; manter cadastro atualizado; responder por tributos, taxas e encargos incidentes sobre o imóvel após a transmissão da posse; não ceder ou transferir o imóvel sem anuência do(a) ${SV2_VENDOR_LABEL}, quando aplicável; observar normas urbanísticas, ambientais e registrais.</p>
     </div>`;
 
   const obrigVendedor = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA QUINTA — DAS OBRIGAÇÕES DO(A) VENDEDOR(A):</strong> Garantir a regularidade dominial do imóvel na data da assinatura; fornecer documentação necessária à outorga da escritura definitiva, quando cabível; colaborar com o registro e eventuais regularizações cadastrais dentro dos prazos legais.</p>
+      <p><strong>CLÁUSULA QUINTA — DAS OBRIGAÇÕES DO(A) ${SV2_VENDOR_LABEL}:</strong> Garantir a regularidade dominial do imóvel na data da assinatura; fornecer documentação necessária à outorga da escritura definitiva, quando cabível; colaborar com o registro e eventuais regularizações cadastrais dentro dos prazos legais.</p>
     </div>`;
 
   const tributos = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA SEXTA — DOS TRIBUTOS E TAXAS:</strong> Desde a transmissão da posse, corre por conta exclusiva do(a) COMPRADOR(A) o pagamento de IPTU, taxas condominiais ou associativas, contribuições de melhoria e demais encargos incidentes sobre o imóvel, salvo disposição legal em contrário.</p>
+      <p><strong>CLÁUSULA SEXTA — DOS TRIBUTOS E TAXAS:</strong> Desde a transmissão da posse, corre por conta exclusiva do(a) ${SV2_BUYER_LABEL} o pagamento de IPTU, taxas condominiais ou associativas, contribuições de melhoria e demais encargos incidentes sobre o imóvel, salvo disposição legal em contrário.</p>
     </div>`;
 
   const inadimplencia = `
@@ -132,9 +134,10 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
       <p><strong>CLÁUSULA SÉTIMA — DA INADIMPLÊNCIA:</strong> O atraso no pagamento de qualquer parcela implicará multa moratória de <strong>2% (dois por cento)</strong>, juros de <strong>1% (um por cento) ao mês</strong> e correção monetária pelo índice legal ou contratualmente previsto, sem prejuízo das demais medidas previstas neste instrumento.</p>
     </div>`;
 
+  // TODO(jurídico): parametrizar percentual de retenção em distrato/rescisão via configuração da empresa ou do contrato.
   const rescisao = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA OITAVA — DA RESCISÃO CONTRATUAL:</strong> Em caso de rescisão por culpa do(a) COMPRADOR(A), poderá haver retenção de despesas administrativas e encargos comprovados, bem como devolução parcial dos valores pagos, conforme percentuais e prazos compatíveis com a legislação aplicável e a natureza do empreendimento. A rescisão observará notificação prévia e apuração de saldo devedor ou credor.</p>
+      <p><strong>CLÁUSULA OITAVA — DA RESCISÃO CONTRATUAL:</strong> Em caso de rescisão por culpa do(a) ${SV2_BUYER_LABEL}, poderá haver retenção de despesas administrativas e encargos comprovados, bem como devolução parcial dos valores pagos, conforme percentuais e prazos compatíveis com a legislação aplicável e a natureza do empreendimento. A rescisão observará notificação prévia e apuração de saldo devedor ou credor.</p>
     </div>`;
 
   const benfeitorias = `
@@ -144,7 +147,7 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
 
   const escritura = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA DÉCIMA — DA ESCRITURA DEFINITIVA:</strong> Quitado integralmente o preço e cumpridas as demais condições contratuais, o(a) VENDEDOR(A) outorgará escritura definitiva de compra e venda em favor do(a) COMPRADOR(A), no prazo legal ou acordado, ressalvadas exigências registrais, fiscais e urbanísticas.</p>
+      <p><strong>CLÁUSULA DÉCIMA — DA ESCRITURA DEFINITIVA:</strong> Quitado integralmente o preço e cumpridas as demais condições contratuais, o(a) ${SV2_VENDOR_LABEL} outorgará escritura definitiva de compra e venda em favor do(a) ${SV2_BUYER_LABEL}, no prazo legal ou acordado, ressalvadas exigências registrais, fiscais e urbanísticas.</p>
     </div>`;
 
   const sucessores = `
@@ -164,17 +167,17 @@ export function buildSvLotes2ClausesHtml(ctx: SvLotes2ContractContext): string {
 
   const vistoria = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA DÉCIMA QUARTA — DA VISTORIA E ACEITE DO IMÓVEL:</strong> O(A) COMPRADOR(A) declara ter realizado vistoria prévia do imóvel, tomando pleno conhecimento de sua localização, dimensões, confrontações, topografia, acessos, servidões e estado de conservação, aceitando-o no estado em que se encontra, nada tendo a reclamar quanto às condições físicas do lote.</p>
+      <p><strong>CLÁUSULA DÉCIMA QUARTA — DA VISTORIA E ACEITE DO IMÓVEL:</strong> O(A) ${SV2_BUYER_LABEL} declara ter realizado vistoria prévia do imóvel, tomando pleno conhecimento de sua localização, dimensões, confrontações, topografia, acessos, servidões e estado de conservação, aceitando-o no estado em que se encontra, nada tendo a reclamar quanto às condições físicas do lote.</p>
     </div>`;
 
   const protecaoAmbiental = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA DÉCIMA QUINTA — DA PROTEÇÃO AMBIENTAL E APP:</strong> O(A) COMPRADOR(A) obriga-se a respeitar a legislação ambiental vigente, inclusive quanto a Áreas de Preservação Permanente (APP), reservas legais, cursos d'água e demais restrições ambientais incidentes sobre o imóvel ou em seu entorno, responsabilizando-se por eventuais infrações praticadas após a transmissão da posse.</p>
+      <p><strong>CLÁUSULA DÉCIMA QUINTA — DA PROTEÇÃO AMBIENTAL E APP:</strong> O(A) ${SV2_BUYER_LABEL} obriga-se a respeitar a legislação ambiental vigente, inclusive quanto a Áreas de Preservação Permanente (APP), reservas legais, cursos d'água e demais restrições ambientais incidentes sobre o imóvel ou em seu entorno, responsabilizando-se por eventuais infrações praticadas após a transmissão da posse.</p>
     </div>`;
 
   const cessao = `
     <div class="sv2-clause">
-      <p><strong>CLÁUSULA DÉCIMA SEXTA — DA CESSÃO DE DIREITOS:</strong> É vedada a cessão, transferência ou alienação dos direitos e obrigações decorrentes deste contrato sem prévia anuência escrita do(a) VENDEDOR(A), salvo hipóteses previstas em lei ou autorizadas expressamente neste instrumento.</p>
+      <p><strong>CLÁUSULA DÉCIMA SEXTA — DA CESSÃO DE DIREITOS:</strong> É vedada a cessão, transferência ou alienação dos direitos e obrigações decorrentes deste contrato sem prévia anuência escrita do(a) ${SV2_VENDOR_LABEL}, salvo hipóteses previstas em lei ou autorizadas expressamente neste instrumento.</p>
     </div>`;
 
   const tolerancia = `
@@ -228,12 +231,13 @@ export function buildSvLotes2SignaturesHtml(ctx: SvLotes2ContractContext): strin
         <div class="sv2-sign-line">
           ${ctx.empresaAssinatura}
           <strong>${ctx.empresaNome}</strong><br/>
+          ${SV2_VENDOR_LABEL}<br/>
           ${ctx.empresaDocumentoLabel}: ${ctx.empresaDocumentoFmt}
           ${ctx.representanteAssinaturaHtml}
         </div>
         <div class="sv2-sign-line">
           <strong>${ctx.clienteNome}</strong><br/>
-          COMPRADOR(A)<br/>
+          ${SV2_BUYER_LABEL}<br/>
           CPF: ${ctx.buyerCpfFmt}
         </div>
       </div>

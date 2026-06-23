@@ -37,13 +37,13 @@ export const SV_LOTES_2_CONTRACT_CSS = `
   .sv-contract-sv-lotes-2 .sv2-summary-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px 10px;
-    margin: 0 0 12px 0;
-    padding: 8px 10px;
-    font-size: 8.5pt;
+    gap: 4px 8px;
+    margin: 0 0 8px 0;
+    padding: 6px 8px;
+    font-size: 8pt;
     background: #f8fafc;
     border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    border-radius: 4px;
   }
   .sv-contract-sv-lotes-2 .sv2-summary-cell {
     min-width: 0;
@@ -56,27 +56,28 @@ export const SV_LOTES_2_CONTRACT_CSS = `
   }
   .sv-contract-sv-lotes-2 .sv2-summary-label {
     display: block;
-    font-size: 6.5pt;
+    font-size: 6pt;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #64748b;
-    margin-bottom: 1px;
+    margin-bottom: 0;
+    line-height: 1.2;
   }
   .sv-contract-sv-lotes-2 .sv2-summary-value {
     display: block;
-    font-size: 8.5pt;
+    font-size: 8pt;
     font-weight: 600;
     color: #0f172a;
-    line-height: 1.3;
+    line-height: 1.25;
     word-break: break-word;
   }
   .sv-contract-sv-lotes-2 .sv2-section-title {
     font-size: 10pt;
     font-weight: 700;
     color: #1e40af;
-    margin: 12px 0 6px 0;
-    padding-bottom: 4px;
+    margin: 8px 0 4px 0;
+    padding-bottom: 3px;
     border-bottom: 1px solid #dbeafe;
     text-transform: uppercase;
     letter-spacing: 0.03em;

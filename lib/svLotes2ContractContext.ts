@@ -15,6 +15,13 @@ import {
   sanitizeNeighborhoodForContract,
 } from '@/lib/svLotes2ContractFormat';
 
+function toTitleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (a) => a.toUpperCase());
+}
+
 function pickString(...values: unknown[]): string {
   for (const value of values) {
     const text = String(value ?? '').trim();
@@ -82,6 +89,13 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     : paymentDates.firstInstallmentDueFmt;
 
   const sv2Seller = buildSvLotes2SellerFromCompany(params.tenant);
+  const empresaLegalNome = toTitleCase(
+    pickString(
+      params.tenant?.razao_social,
+      params.tenant?.name,
+      sv2Seller.displayName,
+    ),
+  );
 
   return {
     ...base,
@@ -89,7 +103,7 @@ export function buildSvLotes2ContractContext(params: SaleContractRenderParams) {
     area,
     municipio,
     estado,
-    empresaNome: sv2Seller.displayName || base.empresaNome,
+    empresaNome: empresaLegalNome || sv2Seller.displayName || base.empresaNome,
     empresaDocumentoFmt: sv2Seller.documentFmt || base.empresaDocumentoFmt,
     empresaDocumentoLabel: sv2Seller.documentLabel || base.empresaDocumentoLabel,
     empresaEndereco: sv2Seller.addressLine || base.empresaEndereco,
