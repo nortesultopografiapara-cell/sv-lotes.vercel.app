@@ -71,11 +71,14 @@ export type SaleContractSignatureCapabilities = {
   canSend: boolean;
   canShare: boolean;
   sending: boolean;
+  canVendorSign: boolean;
+  signingVendor: boolean;
 };
 
 export type SaleContractSignatureSectionHandle = {
   sendForSignature: () => Promise<void>;
   openShareModal: () => void;
+  openVendorSignModal: () => void;
 };
 
 type Props = {
@@ -257,8 +260,13 @@ export const SaleContractSignatureSection = forwardRef<
     () => ({
       sendForSignature: handleSend,
       openShareModal: () => setShareOpen(true),
+      openVendorSignModal: () => {
+        if (showVendorSignButton && !blockOwnerWriteOnClient(userRole)) {
+          setVendorSignOpen(true);
+        }
+      },
     }),
-    [handleSend],
+    [handleSend, showVendorSignButton, userRole],
   );
 
   useEffect(() => {
@@ -266,8 +274,10 @@ export const SaleContractSignatureSection = forwardRef<
       canSend: Boolean(canSend),
       canShare: Boolean(canShare && signUrl),
       sending,
+      canVendorSign: Boolean(showVendorSignButton),
+      signingVendor,
     });
-  }, [canSend, canShare, signUrl, sending, onCapabilitiesChange]);
+  }, [canSend, canShare, signUrl, sending, showVendorSignButton, signingVendor, onCapabilitiesChange]);
 
   const handleCopyLink = async () => {
     if (!signUrl) return;

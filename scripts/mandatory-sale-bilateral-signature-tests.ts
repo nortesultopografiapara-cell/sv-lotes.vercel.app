@@ -149,11 +149,72 @@ function testHistoryEvents() {
   console.log('OK testHistoryEvents');
 }
 
+function testMobileVendorSignVisibility() {
+  const { canShowMobileVendorSignAction } = require('../lib/saleContractBilateralSignature');
+
+  assert(
+    canShowMobileVendorSignAction({
+      signatureStatus: 'CLIENT_SIGNED',
+      contractStatus: 'ativo',
+      isAdmin: true,
+      ownerReadOnly: false,
+    }),
+    'mobile: admin aguardando vendedor',
+  );
+  assert(
+    !canShowMobileVendorSignAction({
+      signatureStatus: 'VIEWED',
+      contractStatus: 'ativo',
+      isAdmin: true,
+      ownerReadOnly: false,
+    }),
+    'mobile: aguardando comprador',
+  );
+  assert(
+    !canShowMobileVendorSignAction({
+      signatureStatus: 'SIGNED',
+      contractStatus: 'assinado',
+      isAdmin: true,
+      ownerReadOnly: false,
+    }),
+    'mobile: já assinado',
+  );
+  assert(
+    !canShowMobileVendorSignAction({
+      signatureStatus: 'CLIENT_SIGNED',
+      contractStatus: 'cancelado',
+      isAdmin: true,
+      ownerReadOnly: false,
+    }),
+    'mobile: cancelado',
+  );
+  assert(
+    !canShowMobileVendorSignAction({
+      signatureStatus: 'CLIENT_SIGNED',
+      contractStatus: 'ativo',
+      isAdmin: false,
+      ownerReadOnly: false,
+    }),
+    'mobile: não admin',
+  );
+  assert(
+    !canShowMobileVendorSignAction({
+      signatureStatus: 'CLIENT_SIGNED',
+      contractStatus: 'ativo',
+      isAdmin: true,
+      ownerReadOnly: true,
+    }),
+    'mobile: owner read only',
+  );
+  console.log('OK testMobileVendorSignVisibility');
+}
+
 function main() {
   testStatusHelpers();
   testVendorEvidenceDistinct();
   testCertificateBilateralEvidence();
   testHistoryEvents();
+  testMobileVendorSignVisibility();
   console.log('OK — mandatory-sale-bilateral-signature-tests passed');
 }
 

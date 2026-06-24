@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { ContractGenerator } from "@/components/contracts/ContractGenerator";
 import { RegenerateContractModal } from "@/components/contracts/RegenerateContractModal";
+import { canShowMobileVendorSignAction } from "@/lib/saleContractBilateralSignature";
 import { isPartnerPanelAdmin } from "@/lib/partnerPanelAdmin";
 import { isOwnerRole } from "@/lib/rolePermissions";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
@@ -506,6 +507,8 @@ export default function ContractsPage() {
     canSend: false,
     canShare: false,
     sending: false,
+    canVendorSign: false,
+    signingVendor: false,
   });
 
   const [stats, setStats] = useState({
@@ -1618,6 +1621,23 @@ export default function ContractsPage() {
     if (signatureCaps.canShare) return true;
     return canResendSaleSignature(selectedContract.signature_status);
   }, [selectedContract, signatureCaps]);
+
+  const showMobileVendorSignAction = useMemo(() => {
+    if (!selectedContract) return false;
+    const signatureStatus = signatureCaps.canVendorSign
+      ? "CLIENT_SIGNED"
+      : selectedContract.signature_status;
+    return canShowMobileVendorSignAction({
+      signatureStatus,
+      contractStatus: selectedContract.status,
+      isAdmin: isPartnerPanelAdmin(user?.role),
+      ownerReadOnly: blockOwnerWriteOnClient(user?.role),
+    });
+  }, [selectedContract, signatureCaps.canVendorSign, user?.role]);
+
+  const handleMobileVendorSignAction = () => {
+    signatureSectionRef.current?.openVendorSignModal();
+  };
 
   if (authLoading) return null;
 
@@ -2858,6 +2878,24 @@ export default function ContractsPage() {
                 <Printer />
                 Imprimir
               </button>
+              {showMobileVendorSignAction && (
+                <button
+                  type="button"
+                  disabled={
+                    signatureCaps.signingVendor ||
+                    blockOwnerWriteOnClient(user?.role)
+                  }
+                  onClick={handleMobileVendorSignAction}
+                  className="contracts-mobile-action-btn contracts-mobile-action-btn--signature"
+                >
+                  <ShieldCheck
+                    className={signatureCaps.signingVendor ? "animate-pulse" : ""}
+                  />
+                  {signatureCaps.signingVendor
+                    ? "Assinando…"
+                    : "Assinar como vendedor"}
+                </button>
+              )}
               {showMobileSignatureAction && (
                 <button
                   type="button"

@@ -50,6 +50,28 @@ export function canShowVendorSignButton(
   return canVendorSignSaleContract(status);
 }
 
+/** Visibilidade do botão "Assinar como vendedor" no dock mobile (/contracts). */
+export function canShowMobileVendorSignAction(params: {
+  signatureStatus?: SaleSignatureStatus | string | null;
+  contractStatus?: string | null;
+  isAdmin?: boolean;
+  ownerReadOnly?: boolean;
+}): boolean {
+  if (!params.isAdmin || params.ownerReadOnly) return false;
+
+  const contractSt = String(params.contractStatus || '').toLowerCase();
+  if (['cancelado', 'cancelled', 'assinado', 'signed'].includes(contractSt)) {
+    return false;
+  }
+
+  const sig = String(params.signatureStatus || '').toUpperCase();
+  if (sig === 'SIGNED' || sig === 'CANCELLED' || sig === 'EXPIRED') {
+    return false;
+  }
+
+  return canShowVendorSignButton(params.signatureStatus);
+}
+
 export function isSaleSignatureSendBlocked(
   status?: SaleSignatureStatus | string | null,
 ): boolean {
