@@ -3,6 +3,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  BROKERS_COMMISSION_CONTRACT_SELECT,
+  BROKERS_CONTRACT_SELECT,
+} from '@/lib/brokersContractQuery';
 
 export type BrokerSnapshot = {
   name: string;
@@ -194,7 +198,7 @@ async function fetchBrokerRowById(
 ): Promise<Record<string, unknown> | null> {
   const { data, error } = await supabase
     .from('brokers')
-    .select('id, name, cpf, document, creci, role')
+    .select(BROKERS_CONTRACT_SELECT)
     .eq('id', brokerId)
     .maybeSingle();
 
@@ -215,7 +219,7 @@ async function resolveBrokerIdFromCommission(
 ): Promise<{ brokerId: string; row: Record<string, unknown> | null }> {
   const { data, error } = await supabase
     .from('broker_commissions')
-    .select('broker_id, brokers(id, name, cpf, document, creci, role)')
+    .select(BROKERS_COMMISSION_CONTRACT_SELECT)
     .eq('sale_id', saleId)
     .not('broker_id', 'is', null)
     .order('created_at', { ascending: false })

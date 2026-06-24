@@ -510,6 +510,79 @@ function testBrokerFromBlockAndContractFallback() {
   console.log('OK testBrokerFromBlockAndContractFallback');
 }
 
+function testBrokersContractSelectHasNoDocumentColumn() {
+  const { BROKERS_CONTRACT_SELECT, BROKERS_COMMISSION_CONTRACT_SELECT } = require(
+    '../lib/brokersContractQuery',
+  );
+  assert(!BROKERS_CONTRACT_SELECT.includes('document'), 'select brokers sem document');
+  assert(!BROKERS_COMMISSION_CONTRACT_SELECT.includes('document'), 'join brokers sem document');
+  console.log('OK testBrokersContractSelectHasNoDocumentColumn');
+}
+
+async function testBrokerEnrichResolvesJhonneFromBlockBrokerId() {
+  const { enrichSaleWithBrokerForContract } = require('../lib/saleBrokerSnapshot');
+  const brokerName = 'jhonne de sousa silva';
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain;
+        },
+        eq() {
+          return chain;
+        },
+        not() {
+          return chain;
+        },
+        order() {
+          return chain;
+        },
+        limit() {
+          return chain;
+        },
+        maybeSingle: async () => {
+          if (table === 'brokers') {
+            return {
+              data: {
+                id: 'broker-jhonne',
+                name: brokerName,
+                cpf: '12345678901',
+                creci: '12345-PA',
+                role: 'BROKER',
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return chain;
+    },
+  };
+
+  const enriched = await enrichSaleWithBrokerForContract(
+    supabase,
+    { id: 'sale-1', broker_id: null, broker_name: '' },
+    { block: { broker_id: 'broker-jhonne' }, contract: { broker_id: null } },
+  );
+
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: enriched,
+    contractDate: '2026-06-17',
+  });
+
+  assert(html.includes('CORRETOR'), 'block broker_id: título corretor');
+  assert(
+    html.toLowerCase().includes(brokerName.toLowerCase()),
+    'block broker_id: nome jhonne',
+  );
+  console.log('OK testBrokerEnrichResolvesJhonneFromBlockBrokerId');
+}
+
 function testSinalNotEntrada() {
   const html = buildHtml();
   assert(html.includes('SINAL'), 'contém SINAL');
@@ -1020,6 +1093,8 @@ async function main() {
   testBrokerResolutionHelpers();
   testBrokerRegenerationRealWorldShape();
   testBrokerFromBlockAndContractFallback();
+  await testBrokerEnrichResolvesJhonneFromBlockBrokerId();
+  testBrokersContractSelectHasNoDocumentColumn();
   testSinalNotEntrada();
   testPaymentTableUsesTotalNotMinusSignal();
   testObjectClauseFormat();

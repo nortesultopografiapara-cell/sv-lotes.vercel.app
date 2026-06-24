@@ -11,6 +11,93 @@ import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
   enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
+import { loadSaleContractContext } from "@/lib/contractRegeneration";
+
+export async function buildContractViewHtmlForContractId(
+  supabase: SupabaseClient,
+  contractId: string,
+): Promise<string> {
+  const contract = await loadSaleContractContext(supabase, contractId);
+  const tenantId = String(contract.tenant_id || contract.company_id || "").trim();
+  if (!tenantId) {
+    throw new Error("Contrato sem tenant_id.");
+  }
+
+  const { data: company, error: companyErr } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("id", tenantId)
+    .single();
+  if (companyErr || !company) {
+    throw new Error(companyErr?.message || "Empresa não encontrada.");
+  }
+
+  const saleId = String(contract.sale_id || "").trim();
+  let sale: Record<string, unknown> = {};
+  if (saleId) {
+    const { data: saleRow } = await supabase
+      .from("sales")
+      .select("*")
+      .eq("id", saleId)
+      .maybeSingle();
+    sale = (saleRow as Record<string, unknown>) || {};
+  }
+
+  let customer: Record<string, unknown> = {};
+  const customerId = String(contract.customer_id || "").trim();
+  if (customerId) {
+    const { data: customerRow } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("id", customerId)
+      .maybeSingle();
+    customer = (customerRow as Record<string, unknown>) || {};
+  }
+
+  let block: Record<string, unknown> = {};
+  const blockId = String(contract.block_id || "").trim();
+  if (blockId) {
+    const { data: blockRow } = await supabase
+      .from("blocks")
+      .select("*")
+      .eq("id", blockId)
+      .maybeSingle();
+    block = (blockRow as Record<string, unknown>) || {};
+  }
+
+  let project: Record<string, unknown> = {};
+  const projectId = String(
+    contract.project_id || block.project_id || sale.project_id || "",
+  ).trim();
+  if (projectId) {
+    const { data: projectRow } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", projectId)
+      .maybeSingle();
+    project = (projectRow as Record<string, unknown>) || {};
+  }
+
+  let receipts: ContractFinanceReceiptRef[] = [];
+  if (saleId) {
+    const { data: receiptRows } = await supabase
+      .from("finance_receipts")
+      .select("amount, due_date, status, installment_number")
+      .eq("sale_id", saleId)
+      .neq("status", "cancelado");
+    receipts = (receiptRows || []) as ContractFinanceReceiptRef[];
+  }
+
+  return buildContractViewHtml(supabase, {
+    contract,
+    tenant: { ...(company as Record<string, unknown>), id: tenantId },
+    receipts,
+    block,
+    customer,
+    sale,
+    project,
+  });
+}
 
 export async function buildContractViewHtml(
   supabase: SupabaseClient,
@@ -42,8 +129,8 @@ export async function buildContractViewHtml(
       .maybeSingle();
     if (fullBlock) {
       block = {
-        ...(fullBlock as Record<string, unknown>),
         ...block,
+        ...(fullBlock as Record<string, unknown>),
         id: blockId,
       };
     }
@@ -72,6 +159,12 @@ export async function buildContractViewHtml(
 
   const sale = {
     ...(params.sale || (contract.sales as Record<string, unknown>) || {}),
+    id:
+      (params.sale?.id as string | undefined) ||
+      ((contract.sales as Record<string, unknown> | undefined)?.id as
+        | string
+        | undefined) ||
+      (contract.sale_id as string | undefined),
     finance_receipts:
       params.receipts ||
       (contract.sales as { finance_receipts?: unknown })?.finance_receipts,

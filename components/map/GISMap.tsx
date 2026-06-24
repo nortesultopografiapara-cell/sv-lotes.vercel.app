@@ -50,6 +50,7 @@ import {
   attachBrokerSnapshotToSale,
   brokerRowToSnapshot,
 } from "@/lib/saleBrokerSnapshot";
+import { BROKERS_CONTRACT_SELECT } from "@/lib/brokersContractQuery";
 import {
   computeGisMapOverlayOpen,
 } from "@/lib/gisToolbarOverlay";
@@ -4187,7 +4188,7 @@ export default function GISMap({
           if (finalBrokerId) {
             const { data: brokerRow } = await supabase
               .from("brokers")
-              .select("name, cpf, document, creci, role")
+              .select(BROKERS_CONTRACT_SELECT)
               .eq("id", finalBrokerId)
               .maybeSingle();
             brokerSnapshot = brokerRowToSnapshot(

@@ -752,13 +752,45 @@ export default function ContractsPage() {
     (async () => {
       setContractViewLoading(true);
       try {
-        const block = enrichBlockForContract(selectedContract.blocks);
-        const html = await buildContractViewHtml(supabase, {
-          contract: selectedContract,
-          tenant: tenantData,
-          receipts,
-          block,
-        });
+        let html: string | null = null;
+        try {
+          const impersonatingTenantId =
+            typeof window !== "undefined"
+              ? localStorage.getItem("impersonating_tenant_id")
+              : null;
+          const activeTenantId = await resolveContractsTenantWithDb(user);
+          const query = new URLSearchParams();
+          if (activeTenantId) query.set("activeTenantId", activeTenantId);
+          if (user?.role === "SUPER_ADMIN" && impersonatingTenantId) {
+            query.set("impersonatingTenantId", impersonatingTenantId);
+          }
+          const res = await fetch(
+            `/api/contracts/${selectedContract.id}/html?${query.toString()}`,
+            { credentials: "include" },
+          );
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && typeof json.html === "string") {
+            html = json.html;
+          } else {
+            console.warn("[CONTRATOS] contractViewHtml API fallback", json.error);
+            const block = enrichBlockForContract(selectedContract.blocks);
+            html = await buildContractViewHtml(supabase, {
+              contract: selectedContract,
+              tenant: tenantData,
+              receipts,
+              block,
+            });
+          }
+        } catch (apiErr) {
+          console.warn("[CONTRATOS] contractViewHtml API error", apiErr);
+          const block = enrichBlockForContract(selectedContract.blocks);
+          html = await buildContractViewHtml(supabase, {
+            contract: selectedContract,
+            tenant: tenantData,
+            receipts,
+            block,
+          });
+        }
         if (active) setContractViewHtml(html);
       } catch (e) {
         console.error("[CONTRATOS] contractViewHtml", e);
