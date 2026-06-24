@@ -127,16 +127,11 @@ export function buildRecantoPrimaveraSignaturesHtml(
       })
     : '';
 
-  const brokerSignatureSlot = ctx.hasBroker
-    ? buildSignatureSlot({
-        role: 'CORRETOR',
-        name: ctx.brokerNome,
-        docLines: [
-          ctx.brokerDocumento ? `CPF: ${ctx.brokerDocumento}` : '',
-          ctx.brokerCreci ? `CRECI: ${ctx.brokerCreci}` : '',
-        ].filter(Boolean),
-      })
-    : '';
+  const brokerSignatureSlot = buildSignatureSlot({
+    role: 'CORRETOR',
+    name: ctx.hasBroker ? ctx.brokerNome : '',
+    docLines: [],
+  });
 
   return `
     <div class="contract-clause contract-clause--tight">

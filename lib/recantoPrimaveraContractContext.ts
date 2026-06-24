@@ -118,7 +118,8 @@ export type RecantoPrimaveraContractContext = {
   brokerNome: string;
   brokerDocumento: string;
   brokerCreci: string;
-  /** true quando sale.broker_id está preenchido */
+  brokerRole: string;
+  /** true quando há corretor vinculado à venda com nome resolvido */
   hasBroker: boolean;
   dataContratoFmt: string;
   dataContratoExtensoFmt: string;
@@ -182,9 +183,8 @@ function extractDueDay(raw: string | null | undefined): string {
 }
 
 function resolveBroker(sale: Record<string, unknown>) {
-  const hasBroker = Boolean(sanitizeContractField(sale.broker_id));
-  if (!hasBroker) {
-    return { hasBroker: false, nome: '', documento: '', creci: '' };
+  if (!sanitizeContractField(sale.broker_id)) {
+    return { hasBroker: false, nome: '', documento: '', creci: '', role: '' };
   }
 
   const brokers =
@@ -201,6 +201,10 @@ function resolveBroker(sale: Record<string, unknown>) {
       brokers?.name ?? broker?.name ?? sale.broker_name,
     ),
   );
+  if (!nome) {
+    return { hasBroker: false, nome: '', documento: '', creci: '', role: '' };
+  }
+
   const documento = formatCNPJCPF(
     sanitizeContractField(
       brokers?.document ??
@@ -213,8 +217,11 @@ function resolveBroker(sale: Record<string, unknown>) {
   const creci = sanitizeContractField(
     brokers?.creci ?? broker?.creci ?? sale.broker_creci,
   );
+  const role = sanitizeContractField(
+    brokers?.role ?? broker?.role ?? sale.broker_role,
+  );
 
-  return { hasBroker: true, nome, documento, creci };
+  return { hasBroker: true, nome, documento, creci, role };
 }
 
 function buildBankBoletoText(profile: RecantoPrimaveraCompanyProfile): string {
@@ -554,6 +561,7 @@ export function buildRecantoPrimaveraContractContext(
     brokerNome: broker.nome,
     brokerDocumento: broker.documento,
     brokerCreci: broker.creci,
+    brokerRole: broker.role,
     hasBroker: broker.hasBroker,
     dataContratoFmt: formatContractSaleDateBr(sale as Record<string, unknown>),
     dataContratoExtensoFmt: dContrato

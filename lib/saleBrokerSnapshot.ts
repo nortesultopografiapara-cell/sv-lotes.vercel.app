@@ -7,6 +7,7 @@ export type BrokerSnapshot = {
   cpf: string;
   document: string;
   creci: string;
+  role?: string;
 };
 
 function clean(value: unknown): string {
@@ -24,11 +25,13 @@ export function brokerRowToSnapshot(
   if (!name) return null;
   const cpf = clean(row.cpf || row.document);
   const creci = clean(row.creci);
+  const role = clean(row.role);
   return {
     name,
     cpf,
     document: cpf,
     creci,
+    role,
   };
 }
 
@@ -44,5 +47,6 @@ export function attachBrokerSnapshotToSale(
     broker_name: broker.name,
     broker_cpf: broker.cpf,
     broker_creci: broker.creci,
+    broker_role: broker.role || null,
   };
 }

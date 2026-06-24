@@ -4187,7 +4187,7 @@ export default function GISMap({
           if (finalBrokerId) {
             const { data: brokerRow } = await supabase
               .from("brokers")
-              .select("name, cpf, document, creci")
+              .select("name, cpf, document, creci, role")
               .eq("id", finalBrokerId)
               .maybeSingle();
             brokerSnapshot = brokerRowToSnapshot(

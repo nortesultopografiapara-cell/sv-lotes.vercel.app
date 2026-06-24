@@ -98,7 +98,7 @@ const sale = {
   total_value: 95000,
   down_payment: 10000,
   first_installment_due_date: '2026-07-15',
-  created_at: '2026-06-15',
+  created_at: '2026-06-17',
   broker_id: 'broker-test-1',
   sale_spouse_name: 'Maria Santos',
   sale_spouse_nationality: 'Brasileira',
@@ -393,9 +393,10 @@ function testContractWithSpouseCpfOnly() {
 
 function testBrokerFilled() {
   const html = buildHtml();
-  assert(html.includes('Carlos Corretor'), 'nome corretor');
-  assert(html.includes('555.666.777-88'), 'cpf corretor');
-  assert(html.includes('12345-PA'), 'creci');
+  assert(html.includes('CORRETOR'), 'título corretor nas assinaturas');
+  assert(html.includes('Carlos Corretor'), 'nome corretor abaixo do título');
+  assertNotIncludes(html, 'Corretor responsável', 'sem resumo corretor');
+  assertNotIncludes(html, 'Intermediação', 'sem bloco intermediação');
   console.log('OK testBrokerFilled');
 }
 
@@ -414,8 +415,10 @@ function testBrokerEmpty() {
     },
     contractDate: '2026-06-17',
   });
-  assertNotIncludes(html, 'CORRETOR', 'sem bloco corretor');
-  assertNotIncludes(html, 'CPF/CRECI', 'sem linha cpf/creci corretor');
+  assert(html.includes('CORRETOR'), 'título corretor mantido sem broker');
+  assertNotIncludes(html, 'Carlos Corretor', 'sem nome corretor');
+  assertNotIncludes(html, 'Corretor responsável', 'sem corretor no resumo');
+  assertNotIncludes(html, 'Intermediação', 'sem bloco intermediação');
   console.log('OK testBrokerEmpty');
 }
 
@@ -487,13 +490,11 @@ function testDueDayParagraph() {
 function testSignaturesFormat() {
   const html = buildHtml();
   assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
-  assert(html.includes('CORRETOR'), 'assinatura corretor');
-  assert(html.includes('CRECI:'), 'creci corretor');
+  assert(html.includes('CORRETOR'), 'slot assinatura corretor');
+  assert(html.includes('Carlos Corretor'), 'nome corretor abaixo do título');
   assert(html.includes('Testemunhas'), 'testemunhas');
   assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
-  assert(html.includes('Carlos Corretor'), 'nome corretor');
-  assert(html.includes('555.666.777-88'), 'cpf corretor');
-  assert(html.includes('12345-PA'), 'creci');
+  assertNotIncludes(html, 'Intermediação', 'sem intermediação antes das assinaturas');
   assertNotIncludes(html, 'CPF/CRECI:', 'sem linha combinada cpf/creci');
   console.log('OK testSignaturesFormat');
 }
@@ -641,6 +642,43 @@ function testMenesesUnchanged() {
   console.log('OK testMenesesUnchanged');
 }
 
+function testPadraoWithBrokerNoRecantoBrokerBlocks() {
+  const html = generateContractHTML({
+    tenant: {
+      name: 'EMPRESA TESTE',
+      fantasy_name: 'EMPRESA TESTE',
+      cnpj: '12345678000199',
+      contract_model: 'PADRAO',
+      city: 'Goiânia',
+      state: 'GO',
+    },
+    customer: {
+      name: 'Cliente Teste',
+      document: '12345678901',
+      profession: 'x',
+      civil_state: 's',
+      address: 'a',
+      neighborhood: 'b',
+      city: 'c',
+      state: 'GO',
+      zip_code: '1',
+    },
+    project: { name: 'Residencial', city: 'Goiânia', uf: 'GO' },
+    block: { quadra: '1', lot: '1', area: 100 },
+    sale: {
+      total_value: 1000,
+      installments_count: 1,
+      down_payment: 0,
+      broker_id: 'broker-1',
+      brokers: { name: 'Corretor Meneses', cpf: '11122233344', creci: '9999-GO' },
+    },
+    contractDate: '2026-06-01',
+  });
+  assertNotIncludes(html, 'Intermediação', 'PADRAO sem intermediação Recanto');
+  assertNotIncludes(html, 'CORRETOR', 'PADRAO sem slot corretor Recanto');
+  console.log('OK testPadraoWithBrokerNoRecantoBrokerBlocks');
+}
+
 function testSaasUnchanged() {
   const { buildSaasContractDocumentText, menesesSaasContractFixture } = require('../lib/saasContractContent');
   const text = buildSaasContractDocumentText(menesesSaasContractFixture());
@@ -673,7 +711,8 @@ function testFinalScenarioNoBrokerNoSpouse() {
     },
     contractDate: '2026-06-17',
   });
-  assertNotIncludes(html, 'CORRETOR', 'cenário 1 sem corretor');
+  assert(html.includes('CORRETOR'), 'cenário 1 título corretor');
+  assertNotIncludes(html, 'Carlos Corretor', 'cenário 1 sem nome corretor');
   assertNotIncludes(html, 'Esposo(A)/Cônjuge', 'cenário 1 sem cônjuge');
   assertNotIncludes(html, 'CÔNJUGE ANUENTE', 'cenário 1 sem assinatura cônjuge');
   console.log('OK testFinalScenarioNoBrokerNoSpouse');
@@ -693,7 +732,7 @@ function testFinalScenarioBrokerNoSpouse() {
     },
     contractDate: '2026-06-17',
   });
-  assert(html.includes('CORRETOR'), 'cenário 2 corretor');
+  assert(html.includes('CORRETOR'), 'cenário 2 título corretor');
   assert(html.includes('Carlos Corretor'), 'cenário 2 nome corretor');
   assertNotIncludes(html, 'Esposo(A)/Cônjuge', 'cenário 2 sem cônjuge');
   console.log('OK testFinalScenarioBrokerNoSpouse');
@@ -701,7 +740,8 @@ function testFinalScenarioBrokerNoSpouse() {
 
 function testFinalScenarioBrokerAndSpouse() {
   const html = buildHtml();
-  assert(html.includes('CORRETOR'), 'cenário 3 corretor');
+  assert(html.includes('CORRETOR'), 'cenário 3 título corretor');
+  assert(html.includes('Carlos Corretor'), 'cenário 3 nome corretor');
   assert(html.includes('CÔNJUGE ANUENTE'), 'cenário 3 cônjuge');
   assert(html.includes('Maria Santos'), 'cenário 3 nome cônjuge');
   console.log('OK testFinalScenarioBrokerAndSpouse');
@@ -910,6 +950,7 @@ async function main() {
   testSignatureCityPriority();
   testNoEmptyFieldLabels();
   testMenesesUnchanged();
+  testPadraoWithBrokerNoRecantoBrokerBlocks();
   testSaasUnchanged();
   testStoredContractUnchanged();
   await writeSampleArtifacts();
