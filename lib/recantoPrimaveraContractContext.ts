@@ -31,6 +31,9 @@ import {
   resolveRecantoPrimaveraProjectContractFields,
 } from '@/lib/recantoPrimaveraProjectContext';
 import {
+  resolveBrokerFromSaleRecord,
+} from '@/lib/saleBrokerSnapshot';
+import {
   buildRecantoFullAddress,
   formatRecantoDocument,
   formatRecantoPhone,
@@ -182,46 +185,22 @@ function extractDueDay(raw: string | null | undefined): string {
   return Number.isFinite(day) ? String(day) : '';
 }
 
-function resolveBroker(sale: Record<string, unknown>) {
-  if (!sanitizeContractField(sale.broker_id)) {
-    return { hasBroker: false, nome: '', documento: '', creci: '', role: '' };
-  }
+function resolveBroker(
+  sale: Record<string, unknown>,
+  contractSnapshot?: Record<string, unknown>,
+) {
+  const resolved = resolveBrokerFromSaleRecord(sale, { contractSnapshot });
+  const nome = resolved.nome
+    ? toTitleCase(sanitizeContractField(resolved.nome))
+    : '';
 
-  const brokers =
-    sale.brokers && typeof sale.brokers === 'object'
-      ? (sale.brokers as Record<string, unknown>)
-      : null;
-  const broker =
-    sale.broker && typeof sale.broker === 'object'
-      ? (sale.broker as Record<string, unknown>)
-      : null;
-
-  const nome = toTitleCase(
-    sanitizeContractField(
-      brokers?.name ?? broker?.name ?? sale.broker_name,
-    ),
-  );
-  if (!nome) {
-    return { hasBroker: false, nome: '', documento: '', creci: '', role: '' };
-  }
-
-  const documento = formatCNPJCPF(
-    sanitizeContractField(
-      brokers?.document ??
-        brokers?.cpf ??
-        broker?.document ??
-        broker?.cpf ??
-        sale.broker_cpf,
-    ),
-  );
-  const creci = sanitizeContractField(
-    brokers?.creci ?? broker?.creci ?? sale.broker_creci,
-  );
-  const role = sanitizeContractField(
-    brokers?.role ?? broker?.role ?? sale.broker_role,
-  );
-
-  return { hasBroker: true, nome, documento, creci, role };
+  return {
+    hasBroker: Boolean(nome),
+    nome,
+    documento: resolved.documento,
+    creci: resolved.creci,
+    role: resolved.role,
+  };
 }
 
 function buildBankBoletoText(profile: RecantoPrimaveraCompanyProfile): string {
@@ -442,7 +421,7 @@ export function buildRecantoPrimaveraContractContext(
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
   const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
-  const broker = resolveBroker(sale);
+  const broker = resolveBroker(sale, contractSnapshot);
 
   const clienteEndereco = toTitleCase(
     sanitizeContractField(customer?.address || customer?.street),

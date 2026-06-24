@@ -9,8 +9,7 @@ import { generateContractHTML } from "@/lib/contractTemplate";
 import type { ContractFinanceReceiptRef } from "@/lib/contractTemplate";
 import { loadManualConfrontants } from "@/lib/lotConfrontations";
 import {
-  attachBrokerSnapshotToSale,
-  brokerRowToSnapshot,
+  enrichSaleWithBrokerForContract,
 } from "@/lib/saleBrokerSnapshot";
 
 export async function buildContractViewHtml(
@@ -78,19 +77,15 @@ export async function buildContractViewHtml(
       (contract.sales as { finance_receipts?: unknown })?.finance_receipts,
   };
 
-  const brokerId = sale.broker_id as string | undefined;
-  let saleForContract: Record<string, unknown> = sale;
-  if (brokerId) {
-    const { data: brokerRow } = await supabase
-      .from("brokers")
-      .select("name, cpf, document, creci, role")
-      .eq("id", brokerId)
-      .maybeSingle();
-    saleForContract = attachBrokerSnapshotToSale(
-      sale,
-      brokerRowToSnapshot((brokerRow as Record<string, unknown>) || null),
-    );
-  }
+  const saleForContract = await enrichSaleWithBrokerForContract(
+    supabase,
+    sale,
+    {
+      contract,
+      block,
+      contractSnapshot: contract,
+    },
+  );
 
   const mergedCustomer = mergeCustomerData(
     params.customer ||

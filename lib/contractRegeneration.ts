@@ -11,8 +11,7 @@ import {
 import { logLotAuditEvent, lotAuditContextFromBlock } from '@/lib/lotAudit';
 import { generateContractHTML } from '@/lib/contractTemplate';
 import {
-  attachBrokerSnapshotToSale,
-  brokerRowToSnapshot,
+  enrichSaleWithBrokerForContract,
 } from '@/lib/saleBrokerSnapshot';
 import {
   ensureValidContractNumber,
@@ -641,19 +640,6 @@ export async function loadFreshRegenerationEntities(
     sale = await fetchScopedEntity(supabase, 'sales', saleId, tenantId, 'Venda');
   }
 
-  const brokerId = sale.broker_id as string | undefined;
-  if (brokerId) {
-    const { data: brokerRow } = await supabase
-      .from('brokers')
-      .select('name, cpf, document, creci, role')
-      .eq('id', brokerId)
-      .maybeSingle();
-    sale = attachBrokerSnapshotToSale(
-      sale,
-      brokerRowToSnapshot((brokerRow as Record<string, unknown>) || null),
-    );
-  }
-
   let customer: Record<string, unknown> = {};
   if (customerId) {
     customer = await fetchScopedEntity(
@@ -725,6 +711,11 @@ export async function loadFreshRegenerationEntities(
       tenantId,
     );
   }
+
+  sale = await enrichSaleWithBrokerForContract(supabase, sale, {
+    contract,
+    block,
+  });
 
   const projectId =
     (contract.project_id as string) ||

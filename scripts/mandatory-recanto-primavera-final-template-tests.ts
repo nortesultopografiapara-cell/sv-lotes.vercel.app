@@ -422,6 +422,94 @@ function testBrokerEmpty() {
   console.log('OK testBrokerEmpty');
 }
 
+function testBrokerResolutionHelpers() {
+  const {
+    resolveBrokerFromSaleRecord,
+    resolveSaleBrokerId,
+    resolveBrokerDisplayName,
+    attachBrokerSnapshotToSale,
+  } = require('../lib/saleBrokerSnapshot');
+
+  const fromJoinArray = resolveBrokerFromSaleRecord({
+    broker_id: 'broker-1',
+    brokers: [{ name: 'Maria Corretora' }],
+  });
+  assert(fromJoinArray.nome === 'Maria Corretora', 'brokers join array');
+
+  const fromContractFallback = resolveSaleBrokerId(
+    { broker_id: null },
+    { broker_id: 'broker-contract-1' },
+    { broker_id: 'broker-block-1' },
+  );
+  assert(fromContractFallback === 'broker-contract-1', 'contract broker_id fallback');
+
+  const fromLegacyName = resolveBrokerFromSaleRecord({
+    broker_name: 'João da Silva',
+  });
+  assert(fromLegacyName.nome === 'João da Silva', 'broker_name legado');
+  assert(fromLegacyName.hasBroker === true, 'hasBroker com broker_name');
+
+  const fromNomeField = resolveBrokerDisplayName({ nome: 'Ana Souza' });
+  assert(fromNomeField === 'Ana Souza', 'campo nome pt-BR');
+
+  console.log('OK testBrokerResolutionHelpers');
+}
+
+function testBrokerRegenerationRealWorldShape() {
+  const { attachBrokerSnapshotToSale } = require('../lib/saleBrokerSnapshot');
+  const enrichedSale = attachBrokerSnapshotToSale(
+    {
+      ...sale,
+      broker_id: 'broker-test-1',
+      brokers: undefined,
+      broker: undefined,
+      broker_name: '',
+    },
+    {
+      name: 'João da Silva',
+      cpf: '12345678901',
+      document: '12345678901',
+      creci: '12345-PA',
+      role: 'Corretor',
+    },
+  );
+
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: enrichedSale,
+    contractSnapshot: { broker_id: 'broker-test-1' },
+    contractDate: '2026-06-17',
+  });
+
+  assert(html.includes('CORRETOR'), 'regeneração: título corretor');
+  assert(html.includes('João Da Silva'), 'regeneração: nome corretor no slot');
+  console.log('OK testBrokerRegenerationRealWorldShape');
+}
+
+function testBrokerFromBlockAndContractFallback() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block: { ...block, broker_id: 'broker-test-1' },
+    sale: {
+      ...sale,
+      broker_id: null,
+      brokers: undefined,
+      broker: undefined,
+      broker_name: 'Pedro Corretor',
+    },
+    contractSnapshot: { broker_id: 'broker-test-1' },
+    contractDate: '2026-06-17',
+  });
+
+  assert(html.includes('Pedro Corretor'), 'nome via broker_name legado');
+  console.log('OK testBrokerFromBlockAndContractFallback');
+}
+
 function testSinalNotEntrada() {
   const html = buildHtml();
   assert(html.includes('SINAL'), 'contém SINAL');
@@ -929,6 +1017,9 @@ async function main() {
   testContractWithSpouseCpfOnly();
   testBrokerFilled();
   testBrokerEmpty();
+  testBrokerResolutionHelpers();
+  testBrokerRegenerationRealWorldShape();
+  testBrokerFromBlockAndContractFallback();
   testSinalNotEntrada();
   testPaymentTableUsesTotalNotMinusSignal();
   testObjectClauseFormat();
