@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Loader2, Building2, Palette } from 'lucide-react';
+import { Loader2, Building2, Palette, Landmark } from 'lucide-react';
+import { BankingIntegrationPanel } from '@/components/banking/BankingIntegrationPanel';
+import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
 import { ThemeAppearanceSection } from '@/components/settings/ThemeAppearanceSection';
 import { OwnerProjectAccessPanel } from '@/components/settings/OwnerProjectAccessPanel';
@@ -47,6 +49,7 @@ export default function SettingsPage() {
   const loading = form.loading || authLoading;
   const showAdmins = Boolean(isTenantAdminRole(user?.role) && settingsCompanyId && user?.id);
   const readOnlyDemo = isDemoProfile(user);
+  const bankingUiEnabled = isBankingModuleEnabledForUi();
 
   const impersonatingTenantId =
     typeof window !== 'undefined' &&
@@ -123,6 +126,16 @@ export default function SettingsPage() {
             </div>
             <ThemeAppearanceSection />
           </div>
+
+          {bankingUiEnabled && settingsCompanyId ? (
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
+                <Landmark className="w-4 h-4" />
+                <span className="text-xs font-semibold uppercase tracking-wider">Integração Bancária</span>
+              </div>
+              <BankingIntegrationPanel tenantId={settingsCompanyId} readOnlyDemo={readOnlyDemo} />
+            </div>
+          ) : null}
 
           {showAdmins && settingsCompanyId && user?.id ? (
             <div className="mb-8">

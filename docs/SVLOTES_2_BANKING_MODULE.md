@@ -373,9 +373,15 @@ pending → registered → paid
 - [x] Migrations: `bank_integrations`, `bank_credentials`, `bank_charges`, `bank_webhook_events`, `bank_cash_movements`
 - [x] Interface `BankProvider` + registry + provider MOCK
 - [ ] Criptografia de credenciais (Fase 1.5 — antes de conectar banco real)
-- [ ] APIs CRUD integração + teste conexão (Fase 1.5)
-- [ ] Tela Settings → Integração Bancária (Fase 1.5)
+- [ ] APIs CRUD integração persistente (Fase 1.5)
+- [x] Tela Settings → Integração Bancária MOCK (Fase 1.1)
 - [x] Feature flag global `BANKING_MODULE_ENABLED=false` (desativado por padrão)
+
+### Fase 1.1 — Interface MOCK (develop)
+
+- [x] Aba Integração Bancária em Configurações (flag UI)
+- [x] Rotas `/api/banking/mock/*` protegidas
+- [x] Painel teste conexão + boleto + Pix fictícios
 
 ### Fase 2 — Sicoob
 
@@ -459,19 +465,61 @@ pending → registered → paid
 
 ### Fora do escopo desta fase (intencional)
 
-- Nenhuma rota `/api/banking/*`
 - Nenhuma tela visível com `BANKING_MODULE_ENABLED=false`
 - Sem alteração em `lib/payments/` (Asaas Master)
 - Sem conexão bancária real
 
 ---
 
-## Próximo passo sugerido
+## Fase 1.1 — Interface interna MOCK protegida por feature flag
 
-1. Aplicar migration no Supabase de **develop/preview**
-2. Fase 1.5 — criptografia de credenciais + APIs CRUD + UI Settings (ainda com MOCK)
-3. Detalhar API Sicoob sandbox e iniciar **Fase 2**
+**Commit:** `feat(banking): add mock banking admin interface` · Branch `develop`
+
+### Entregas
+
+| Item | Caminho |
+|------|---------|
+| Aba Configurações | `components/settings/CompanySettingsV2Shell.tsx` · `#bancario` |
+| Layout legacy | `app/settings/page.tsx` |
+| Painel UI | `components/banking/BankingIntegrationPanel.tsx` |
+| Guard de rotas | `lib/banking/bankingRouteGuard.ts` |
+| Handlers MOCK | `lib/banking/mockApiHandlers.ts` |
+| POST test-connection | `app/api/banking/mock/test-connection/route.ts` |
+| POST create-boleto | `app/api/banking/mock/create-boleto/route.ts` |
+| POST create-pix | `app/api/banking/mock/create-pix/route.ts` |
+
+### Feature flags
+
+| Variável | Escopo | Padrão |
+|----------|--------|--------|
+| `BANKING_MODULE_ENABLED` | API / servidor | `false` |
+| `NEXT_PUBLIC_BANKING_MODULE_ENABLED` | UI Configurações | `false` (deve coincidir) |
+
+Com ambas `false`: nenhuma aba, nenhuma rota funcional (404).
+
+### UI (quando flag ativa)
+
+- Status: MOCK / Sandbox
+- Banco: MOCK · Ambiente: SANDBOX · Integração: DRAFT
+- Botões: Testar conexão · Gerar boleto mock · Gerar Pix mock
+- Resultado: linha digitável, código de barras, QR Pix, link fictício, status `PENDING`
+
+### Segurança
+
+- Rotas exigem sessão autenticada + tenant (`authorizeTenantBilling`)
+- Apenas `provider=MOCK` aceito; Sicoob/Sicredi retornam 400
+- Sem escrita em `finance_receipts` / `cash_movements`
+- Sem persistência em banco nesta subfase (memória MOCK)
 
 ---
 
-*Documento criado em junho/2026 · Branch: `develop` · Fase 1 implementada*
+## Próximo passo sugerido
+
+1. Aplicar migration no Supabase de **develop/preview**
+2. Ativar flags no preview Vercel para homologar UI MOCK
+3. Fase 1.5 — criptografia de credenciais + CRUD integração persistente
+4. Detalhar API Sicoob sandbox e iniciar **Fase 2**
+
+---
+
+*Documento criado em junho/2026 · Branch: `develop` · Fases 1 e 1.1 implementadas*
