@@ -2,238 +2,190 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useState } from 'react';
 import {
+  BarChart3,
   Calendar,
+  FileText,
   FlaskConical,
+  Map,
   Play,
+  Wallet,
 } from 'lucide-react';
 import {
-  LANDING_LOGIN_PATH,
+  LANDING_CLIENT_LOGOS,
   LANDING_PRESENTATION_URL,
   LANDING_TEST_LOTEMENT_PATH,
 } from '../constants/landingConfig';
+import { Float, Reveal, Stagger, StaggerItem } from '../LandingMotion';
+import { SCREEN_IMAGE_PATHS } from '../ScreenMocks';
 
-/** Arte oficial da primeira dobra — desktop (1024×682). */
-export const HERO_APPROVED_DESKTOP_SRC = '/landing/hero-approved-desktop.png';
-const HERO_ARTWORK_WIDTH = 1024;
-const HERO_ARTWORK_HEIGHT = 682;
-
-type HeroHotspot = {
-  id: string;
-  href: string;
-  label: string;
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-  external?: boolean;
-};
-
-/** Posições em % da arte 1024×682 — calibradas sobre a imagem aprovada. */
-const DESKTOP_HOTSPOTS: HeroHotspot[] = [
-  { id: 'nav-recursos', href: '#recursos', label: 'Recursos', top: 3.2, left: 21.5, width: 7.8, height: 5.8 },
+const HERO_FEATURES = [
   {
-    id: 'nav-funcionalidades',
-    href: '#funcionalidades',
-    label: 'Funcionalidades',
-    top: 3.2,
-    left: 29.8,
-    width: 9.5,
-    height: 5.8,
-  },
-  { id: 'nav-beneficios', href: '#beneficios', label: 'Benefícios', top: 3.2, left: 39.8, width: 7.8, height: 5.8 },
-  { id: 'nav-planos', href: '#planos', label: 'Planos', top: 3.2, left: 48.2, width: 6.2, height: 5.8 },
-  { id: 'nav-sobre', href: '#sobre', label: 'Sobre', top: 3.2, left: 54.8, width: 5.8, height: 5.8 },
-  { id: 'nav-contato', href: '#contato', label: 'Contato', top: 3.2, left: 60.8, width: 6.8, height: 5.8 },
-  {
-    id: 'header-demo',
-    href: '#contato',
-    label: 'Agendar Demonstração',
-    top: 2.6,
-    left: 68.5,
-    width: 17.5,
-    height: 7.2,
+    icon: Map,
+    title: 'Mapa GIS interativo',
+    description: 'Visualize lotes, quadras e disponibilidade em tempo real.',
   },
   {
-    id: 'header-login',
-    href: LANDING_LOGIN_PATH,
-    label: 'Acessar o Sistema',
-    top: 2.6,
-    left: 86.8,
-    width: 12.2,
-    height: 7.2,
+    icon: FileText,
+    title: 'Contratos e assinaturas',
+    description: 'Gere contratos automaticamente e colete assinaturas digitais.',
   },
   {
-    id: 'hero-demo',
-    href: '#contato',
-    label: 'Solicitar Demonstração',
-    top: 71.5,
-    left: 5.2,
-    width: 17.8,
-    height: 13.5,
+    icon: Wallet,
+    title: 'Financeiro completo',
+    description: 'Controle parcelas, recebimentos, inadimplência e relatórios.',
   },
   {
-    id: 'hero-presentation',
-    href: LANDING_PRESENTATION_URL,
-    label: 'Acessar Apresentação',
-    top: 71.5,
-    left: 23.5,
-    width: 17.2,
-    height: 13.5,
-    external: true,
-  },
-  {
-    id: 'hero-test',
-    href: LANDING_TEST_LOTEMENT_PATH,
-    label: 'Loteamento para Teste',
-    top: 71.5,
-    left: 41.2,
-    width: 17.2,
-    height: 13.5,
+    icon: BarChart3,
+    title: 'Relatórios avançados',
+    description: 'Dados precisos para decisões estratégicas mais assertivas.',
   },
 ];
 
-function HeroHotspotLink({ spot }: { spot: HeroHotspot }) {
-  const style = {
-    top: `${spot.top}%`,
-    left: `${spot.left}%`,
-    width: `${spot.width}%`,
-    height: `${spot.height}%`,
-  };
+const DASHBOARD_SCREENSHOT = SCREEN_IMAGE_PATHS.dashboard;
 
-  const className = 'landing-hero-artwork-hotspot';
+function HeroClientLogo({
+  name,
+  src,
+  width,
+  height,
+}: {
+  name: string;
+  src: string;
+  width: number;
+  height: number;
+}) {
+  const [failed, setFailed] = useState(false);
 
-  if (spot.external) {
-    return (
-      <a
-        href={spot.href}
-        className={className}
-        style={style}
-        aria-label={spot.label}
-        target="_blank"
-        rel="noopener noreferrer"
-      />
-    );
+  if (failed) {
+    return <span className="landing-hero-v2-client-name">{name}</span>;
   }
 
-  if (spot.href.startsWith('/')) {
-    return <Link href={spot.href} className={className} style={style} aria-label={spot.label} />;
-  }
-
-  return <a href={spot.href} className={className} style={style} aria-label={spot.label} />;
-}
-
-function HeroArtworkDesktop() {
   return (
-    <div className="landing-hero-artwork-desktop">
-      <div
-        className="landing-hero-artwork-frame"
-        style={{ aspectRatio: `${HERO_ARTWORK_WIDTH} / ${HERO_ARTWORK_HEIGHT}` }}
-      >
-        <Image
-          src={HERO_APPROVED_DESKTOP_SRC}
-          alt="SV LOTES — gestão inteligente para loteamentos e chacreamentos"
-          width={HERO_ARTWORK_WIDTH}
-          height={HERO_ARTWORK_HEIGHT}
-          className="landing-hero-artwork-img"
-          priority
-          quality={95}
-          sizes="100vw"
-        />
-        <div className="landing-hero-artwork-hotspots" aria-label="Áreas clicáveis do hero">
-          {DESKTOP_HOTSPOTS.map((spot) => (
-            <HeroHotspotLink key={spot.id} spot={spot} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeroArtworkMobile() {
-  return (
-    <div className="landing-hero-artwork-mobile">
-      <div className="landing-container landing-hero-artwork-mobile-inner">
-        <span className="landing-hero-v2-pill">Plataforma Completa</span>
-        <h1 className="landing-hero-artwork-mobile-title">
-          Gestão inteligente para loteamentos e chacreamentos
-        </h1>
-        <p className="landing-hero-artwork-mobile-subtitle">
-          A plataforma completa para vender mais, organizar sua operação e ter total controle do seu
-          negócio imobiliário em tempo real.
-        </p>
-
-        <div className="landing-hero-artwork-mobile-ctas">
-          <a href="#contato" className="landing-hero-v2-cta landing-hero-v2-cta--primary">
-            <Calendar className="w-5 h-5 shrink-0" aria-hidden />
-            <span>
-              <strong>Solicitar Demonstração</strong>
-              <small>Fale com um especialista</small>
-            </span>
-          </a>
-          <a
-            href={LANDING_PRESENTATION_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="landing-hero-v2-cta landing-hero-v2-cta--outline"
-            aria-label="Assistir apresentação em vídeo"
-          >
-            <Play className="w-5 h-5 shrink-0" aria-hidden />
-            <span>
-              <strong>Acessar Apresentação</strong>
-              <small>Assista ao vídeo</small>
-            </span>
-          </a>
-          <Link
-            href={LANDING_TEST_LOTEMENT_PATH}
-            className="landing-hero-v2-cta landing-hero-v2-cta--test"
-            aria-label="Loteamento para teste"
-          >
-            <FlaskConical className="w-5 h-5 shrink-0" aria-hidden />
-            <span>
-              <strong>Loteamento para Teste</strong>
-              <small>Acesse e experimente</small>
-            </span>
-          </Link>
-        </div>
-
-        <div className="landing-hero-artwork-mobile-visual" aria-hidden>
-          <Image
-            src={HERO_APPROVED_DESKTOP_SRC}
-            alt=""
-            width={HERO_ARTWORK_WIDTH}
-            height={HERO_ARTWORK_HEIGHT}
-            className="landing-hero-artwork-mobile-dashboard-img"
-            priority
-            sizes="100vw"
-          />
-        </div>
-
-        <div className="landing-hero-artwork-mobile-clients">
-          <p className="landing-hero-artwork-mobile-clients-label">
-            Veja alguns dos nossos clientes que já utilizam o sistema:
-          </p>
-          <div className="landing-hero-artwork-mobile-clients-strip" aria-hidden>
-            <Image
-              src={HERO_APPROVED_DESKTOP_SRC}
-              alt=""
-              width={HERO_ARTWORK_WIDTH}
-              height={HERO_ARTWORK_HEIGHT}
-              className="landing-hero-artwork-mobile-clients-img"
-              sizes="100vw"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+    <Image
+      src={src}
+      alt={name}
+      width={width}
+      height={height}
+      className="landing-hero-v2-client-logo"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
 export function HeroSection() {
   return (
-    <section id="home" className="landing-section landing-hero landing-hero-artwork">
-      <HeroArtworkDesktop />
-      <HeroArtworkMobile />
+    <section id="home" className="landing-section landing-hero landing-hero-v2">
+      <div className="landing-hero-v2-bg" aria-hidden />
+      <div className="landing-hero-v2-glow" aria-hidden />
+
+      <div className="landing-container landing-hero-v2-grid">
+        <Reveal className="landing-hero-v2-content">
+          <span className="landing-hero-v2-pill">Plataforma Completa</span>
+          <h1 className="landing-hero-v2-title">
+            Gestão inteligente para loteamentos e chacreamentos
+          </h1>
+          <p className="landing-hero-v2-subtitle">
+            A plataforma completa para vender mais, organizar sua operação e ter total controle do
+            seu negócio imobiliário em tempo real.
+          </p>
+
+          <Stagger className="landing-hero-v2-features">
+            {HERO_FEATURES.map((item) => (
+              <StaggerItem key={item.title}>
+                <div className="landing-hero-v2-feature">
+                  <span className="landing-hero-v2-feature-icon" aria-hidden>
+                    <item.icon className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <p className="landing-hero-v2-feature-title">{item.title}</p>
+                    <p className="landing-hero-v2-feature-desc">{item.description}</p>
+                  </div>
+                </div>
+              </StaggerItem>
+            ))}
+          </Stagger>
+
+          <div className="landing-hero-v2-ctas">
+            <a href="#contato" className="landing-hero-v2-cta landing-hero-v2-cta--primary">
+              <Calendar className="w-5 h-5 shrink-0" aria-hidden />
+              <span>
+                <strong>Solicitar Demonstração</strong>
+                <small>Fale com um especialista</small>
+              </span>
+            </a>
+            <a
+              href={LANDING_PRESENTATION_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="landing-hero-v2-cta landing-hero-v2-cta--outline"
+              aria-label="Assistir apresentação em vídeo no YouTube"
+            >
+              <Play className="w-5 h-5 shrink-0" aria-hidden />
+              <span>
+                <strong>Acessar Apresentação</strong>
+                <small>Assista ao vídeo</small>
+              </span>
+            </a>
+            <Link
+              href={LANDING_TEST_LOTEMENT_PATH}
+              className="landing-hero-v2-cta landing-hero-v2-cta--test"
+              aria-label="Acessar loteamento para teste"
+            >
+              <FlaskConical className="w-5 h-5 shrink-0" aria-hidden />
+              <span>
+                <strong>Loteamento para Teste</strong>
+                <small>Acesse e experimente</small>
+              </span>
+            </Link>
+          </div>
+        </Reveal>
+
+        <Reveal className="landing-hero-v2-visual" delay={0.12}>
+          <Float>
+            <div className="landing-hero-v2-mockup">
+              <div className="landing-hero-v2-mockup-chrome" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="landing-hero-v2-mockup-screen">
+                <Image
+                  src={DASHBOARD_SCREENSHOT}
+                  alt="Dashboard do SV LOTES com indicadores, resumo financeiro e atividades recentes"
+                  width={1400}
+                  height={880}
+                  className="landing-hero-v2-mockup-img"
+                  priority
+                  quality={92}
+                  sizes="(max-width: 1024px) 100vw, 52vw"
+                />
+              </div>
+              <div className="landing-hero-v2-mockup-glow" aria-hidden />
+            </div>
+          </Float>
+        </Reveal>
+      </div>
+
+      <Reveal className="landing-container landing-hero-v2-clients" delay={0.08}>
+        <p className="landing-hero-v2-clients-label">
+          Veja alguns dos nossos clientes que já utilizam o sistema:
+        </p>
+        <div className="landing-hero-v2-clients-track" role="list">
+          {LANDING_CLIENT_LOGOS.map((client, index) => (
+            <span key={client.name} className="landing-hero-v2-client-item" role="listitem">
+              {index > 0 ? <span className="landing-hero-v2-client-divider" aria-hidden /> : null}
+              <HeroClientLogo
+                name={client.name}
+                src={client.src}
+                width={client.width}
+                height={client.height}
+              />
+            </span>
+          ))}
+        </div>
+      </Reveal>
     </section>
   );
 }

@@ -4,11 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Calendar, Lock, LogIn, Menu, X } from 'lucide-react';
 import { SvLotesLogo } from '@/components/brand/SvLotesLogo';
-import {
-  buildWhatsAppUrl,
-  LANDING_LOGIN_PATH,
-  LANDING_WHATSAPP_MESSAGES,
-} from './constants/landingConfig';
+import { LANDING_LOGIN_PATH } from './constants/landingConfig';
 import { LANDING_NAV_ITEMS, LANDING_SECTION_IDS, type LandingNavId } from './landingNav';
 
 type Props = {
@@ -61,7 +57,7 @@ export function LandingHeader({ scrolled }: Props) {
       <div className="landing-header-bar">
         <SvLotesLogo
           href="#home"
-          size={40}
+          size={48}
           showText
           subtitle="Gestão Imobiliária Inteligente"
           className="landing-header-logo shrink-0 min-w-0"
@@ -107,11 +103,9 @@ export function LandingHeader({ scrolled }: Props) {
           </button>
 
           <a
-            href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
-            target="_blank"
-            rel="noopener noreferrer"
+            href="#contato"
             className="landing-btn-demo landing-btn-system--desktop hidden lg:inline-flex"
-            aria-label="Agendar demonstração via WhatsApp"
+            aria-label="Agendar demonstração"
           >
             <Calendar className="w-4 h-4" />
             Agendar Demonstração
@@ -147,9 +141,7 @@ export function LandingHeader({ scrolled }: Props) {
           ))}
           <li className="pt-2 border-t border-white/10 space-y-2">
             <a
-              href={buildWhatsAppUrl(LANDING_WHATSAPP_MESSAGES.demo)}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#contato"
               className="landing-btn-demo w-full justify-center"
               onClick={closeMenu}
             >
