@@ -84,6 +84,7 @@ export type SaleContractSignatureSectionHandle = {
 type Props = {
   contract: SelectedContract | null;
   userRole?: string | null;
+  loggedInUserEmail?: string | null;
   compact?: boolean;
   onSigned?: () => void;
   onCapabilitiesChange?: (capabilities: SaleContractSignatureCapabilities) => void;
@@ -93,7 +94,7 @@ export const SaleContractSignatureSection = forwardRef<
   SaleContractSignatureSectionHandle,
   Props
 >(function SaleContractSignatureSection(
-  { contract, userRole, compact = false, onSigned, onCapabilitiesChange },
+  { contract, userRole, loggedInUserEmail, compact = false, onSigned, onCapabilitiesChange },
   ref,
 ) {
   const [loading, setLoading] = useState(false);
@@ -107,6 +108,7 @@ export const SaleContractSignatureSection = forwardRef<
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [vendorSignOpen, setVendorSignOpen] = useState(false);
   const [signingVendor, setSigningVendor] = useState(false);
+  const [vendorSignSuccess, setVendorSignSuccess] = useState<string | null>(null);
   const [vendorDefaults, setVendorDefaults] = useState({
     name: '',
     document: '',
@@ -138,10 +140,11 @@ export const SaleContractSignatureSection = forwardRef<
       }
       setLatest(json.latest || null);
       setSignUrl(json.latest?.signature_url || null);
+      const fallbackEmail = String(loggedInUserEmail || '').trim();
       setVendorDefaults({
         name: String(json.vendorDefaults?.name || ''),
         document: String(json.vendorDefaults?.document || ''),
-        email: String(json.vendorDefaults?.email || ''),
+        email: String(json.vendorDefaults?.email || fallbackEmail || ''),
         companyName: String(json.vendorDefaults?.companyName || projectName),
       });
       setTimeline(mergeSaleSignatureTimeline(json.history || [], localTimeline));
@@ -150,7 +153,7 @@ export const SaleContractSignatureSection = forwardRef<
     } finally {
       setLoading(false);
     }
-  }, [contract?.id, localTimeline, projectName]);
+  }, [contract?.id, localTimeline, loggedInUserEmail, projectName]);
 
   useEffect(() => {
     setLocalTimeline([]);
@@ -158,7 +161,7 @@ export const SaleContractSignatureSection = forwardRef<
 
   useEffect(() => {
     void loadSignature();
-  }, [loadSignature]);
+  }, [loadSignature, contract?.signature_status]);
 
   const canSend = useMemo(
     () =>
@@ -170,6 +173,36 @@ export const SaleContractSignatureSection = forwardRef<
   const canShare = canResendSaleSignature(latest?.signature_status);
   const showVendorSignButton = canShowVendorSignButton(latest?.signature_status);
 
+  const resolveSignatureIdForVendorSign = useCallback(async (): Promise<string> => {
+    if (latest?.id && canShowVendorSignButton(latest.signature_status)) {
+      return latest.id;
+    }
+
+    if (!contract?.id) {
+      throw new Error('Contrato não selecionado.');
+    }
+
+    const res = await fetch(`/api/contracts/${contract.id}/signature`, {
+      credentials: 'include',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.error || 'Falha ao carregar assinatura.');
+    }
+
+    const refreshed = json.latest as ContractSignatureRow | null;
+    if (!refreshed?.id) {
+      throw new Error('Solicitação de assinatura não encontrada. Recarregue a página.');
+    }
+    if (!canShowVendorSignButton(refreshed.signature_status)) {
+      throw new Error('O comprador ainda não concluiu a assinatura.');
+    }
+
+    setLatest(refreshed);
+    setSignUrl(refreshed.signature_url || null);
+    return refreshed.id;
+  }, [contract?.id, latest?.id, latest?.signature_status]);
+
   const handleVendorSign = useCallback(
     async (input: {
       vendorName: string;
@@ -177,17 +210,22 @@ export const SaleContractSignatureSection = forwardRef<
       vendorEmail: string;
       vendorRole: string;
     }) => {
-      if (!contract?.id || !latest?.id || blockOwnerWriteOnClient(userRole)) {
-        throw new Error('Dados insuficientes para assinar.');
+      if (!contract?.id || blockOwnerWriteOnClient(userRole)) {
+        throw new Error('Sem permissão para assinar como vendedor.');
       }
+
       setSigningVendor(true);
       setError(null);
+      setVendorSignSuccess(null);
+
       try {
+        const signatureId = await resolveSignatureIdForVendorSign();
         const res = await fetch(`/api/contracts/${contract.id}/signature/sign-vendor`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            signatureId: latest.id,
+            signatureId,
             vendorName: input.vendorName,
             vendorDocument: input.vendorDocument,
             vendorEmail: input.vendorEmail,
@@ -198,6 +236,11 @@ export const SaleContractSignatureSection = forwardRef<
         if (!res.ok) {
           throw new Error(json.error || 'Falha ao assinar como vendedor.');
         }
+
+        if (json.signature) {
+          setLatest(json.signature as ContractSignatureRow);
+        }
+
         setLocalTimeline((prev) => [
           ...prev,
           {
@@ -206,13 +249,14 @@ export const SaleContractSignatureSection = forwardRef<
             details: input.vendorName,
           },
         ]);
+        setVendorSignSuccess('Contrato assinado pelo vendedor com sucesso.');
         await loadSignature();
         onSigned?.();
       } finally {
         setSigningVendor(false);
       }
     },
-    [contract?.id, latest?.id, loadSignature, onSigned, userRole],
+    [contract?.id, loadSignature, onSigned, resolveSignatureIdForVendorSign, userRole],
   );
 
   const shareMessage = useMemo(() => {
@@ -261,12 +305,15 @@ export const SaleContractSignatureSection = forwardRef<
       sendForSignature: handleSend,
       openShareModal: () => setShareOpen(true),
       openVendorSignModal: () => {
-        if (showVendorSignButton && !blockOwnerWriteOnClient(userRole)) {
+        const canOpen =
+          showVendorSignButton ||
+          canShowVendorSignButton(contract?.signature_status);
+        if (canOpen && !blockOwnerWriteOnClient(userRole)) {
           setVendorSignOpen(true);
         }
       },
     }),
-    [handleSend, showVendorSignButton, userRole],
+    [handleSend, showVendorSignButton, contract?.signature_status, userRole],
   );
 
   useEffect(() => {
@@ -329,6 +376,12 @@ export const SaleContractSignatureSection = forwardRef<
       {error && (
         <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
           {error}
+        </p>
+      )}
+
+      {vendorSignSuccess && (
+        <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+          {vendorSignSuccess}
         </p>
       )}
 

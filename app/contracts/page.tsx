@@ -2040,6 +2040,7 @@ export default function ContractsPage() {
                   ref={signatureSectionRef}
                   contract={selectedContract}
                   userRole={user?.role}
+                  loggedInUserEmail={user?.email}
                   onCapabilitiesChange={setSignatureCaps}
                   onSigned={() => {
                     void reloadContractsList();

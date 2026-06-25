@@ -3,6 +3,8 @@
  * npx tsx scripts/mandatory-sale-bilateral-signature-tests.ts
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   canShowVendorSignButton,
   canVendorSignSaleContract,
@@ -19,6 +21,12 @@ import { buildSaleContractSignatureCertificateHtml } from '../lib/saleContractSi
 import { buildVendorEvidencePatch, readVendorEvidenceFromRow } from '../lib/signatureEvidence';
 import { buildSaleSignatureHistory } from '../lib/saleContractSignatureService';
 import type { ContractSignatureRow } from '../lib/saleContractSignatureService';
+
+const ROOT = process.cwd();
+
+function read(relPath: string): string {
+  return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+}
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -209,12 +217,80 @@ function testMobileVendorSignVisibility() {
   console.log('OK testMobileVendorSignVisibility');
 }
 
+function testVendorSignUiAndApiWiring() {
+  const modal = read('components/contracts/SaleContractVendorSignModal.tsx');
+  assert(modal.includes('createPortal'), 'modal usa portal no body');
+  assert(modal.includes('z-[500]'), 'modal acima do dock mobile');
+  assert(modal.includes('onSubmit'), 'form submit conectado');
+  assert(modal.includes('void handleSubmit()'), 'submit chama handleSubmit');
+  assert(modal.includes('Registrando assinatura'), 'loading visível');
+  assert(modal.includes('Assinar como vendedor'), 'rótulo do botão final');
+  assert(modal.includes('role="alert"'), 'erro visível no modal');
+
+  const section = read('components/contracts/SaleContractSignatureSection.tsx');
+  assert(section.includes('/signature/sign-vendor'), 'section chama sign-vendor');
+  assert(section.includes('resolveSignatureIdForVendorSign'), 'resolve signatureId antes do POST');
+  assert(section.includes('credentials: \'include\''), 'fetch com sessão');
+  assert(section.includes('Contrato assinado pelo vendedor com sucesso'), 'mensagem de sucesso');
+
+  const route = read('app/api/contracts/[id]/signature/sign-vendor/route.ts');
+  assert(route.includes('export async function POST'), 'rota POST exportada');
+  assert(route.includes('signSaleContractByVendor'), 'serviço bilateral chamado');
+  assert(route.includes('resolveCallerProfile'), 'valida perfil');
+  assert(route.includes('OWNER'), 'bloqueia OWNER');
+
+  const service = read('lib/saleContractSignatureService.ts');
+  assert(service.includes("signature_status: 'SIGNED'"), 'sign-vendor muda para SIGNED');
+  assert(service.includes('vendor_signed_at'), 'preenche vendor_signed_at');
+  assert(service.includes('certificate_status'), 'emite certificado final');
+  assert(service.includes('pdf_signed_url'), 'gera PDF final');
+
+  console.log('OK testVendorSignUiAndApiWiring');
+}
+
+function testVendorSignAfterState() {
+  const sig = {
+    id: 'sig-vendor',
+    contract_id: 'c1',
+    tenant_id: 't1',
+    customer_id: null,
+    signer_name: 'Comprador',
+    signer_email: 'c@test.com',
+    signer_document: '12345678901',
+    signature_status: 'SIGNED' as const,
+    signature_token: 'tok12345678',
+    signature_url: 'https://example.com/sign',
+    ip_address: '1.2.3.4',
+    user_agent: null,
+    viewed_at: '2026-06-08T15:00:00.000Z',
+    signed_at: '2026-06-08T15:30:00.000Z',
+    vendor_signed_at: '2026-06-08T16:00:00.000Z',
+    vendor_signer_name: 'Vendedor',
+    vendor_signer_email: 'v@test.com',
+    vendor_signer_document: '98765432100',
+    vendor_ip_address: '5.6.7.8',
+    expires_at: '2026-07-08T15:00:00.000Z',
+    signature_hash: 'hash',
+    created_at: '2026-06-08T14:00:00.000Z',
+    updated_at: '2026-06-08T16:00:00.000Z',
+  } satisfies ContractSignatureRow;
+
+  assert(sig.signature_status === 'SIGNED', 'após sign-vendor status SIGNED');
+  assert(Boolean(sig.vendor_signed_at), 'vendor_signed_at preenchido');
+  const events = buildSaleSignatureHistory(sig);
+  assert(events.some((e) => e.event === 'Certificado emitido'), 'certificado no histórico');
+  assert(!canShowVendorSignButton(sig.signature_status), 'botão some após assinado');
+  console.log('OK testVendorSignAfterState');
+}
+
 function main() {
   testStatusHelpers();
   testVendorEvidenceDistinct();
   testCertificateBilateralEvidence();
   testHistoryEvents();
   testMobileVendorSignVisibility();
+  testVendorSignUiAndApiWiring();
+  testVendorSignAfterState();
   console.log('OK — mandatory-sale-bilateral-signature-tests passed');
 }
 
