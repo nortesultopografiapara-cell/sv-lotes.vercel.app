@@ -3048,3 +3048,210 @@ html:has(.landing-page) {
     margin: 0 0.75rem;
   }
 }
+
+/* ─── Hero artwork — arte aprovada + overlays clicáveis ─── */
+
+.landing-hero-artwork {
+  position: relative;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  background: #060606;
+}
+
+/* Desktop: header da arte substitui o header fixo */
+@media (min-width: 1024px) {
+  .landing-page:has(.landing-hero-artwork) .landing-header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .landing-hero-artwork-mobile {
+    display: none;
+  }
+}
+
+.landing-hero-artwork-desktop {
+  display: none;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .landing-hero-artwork-desktop {
+    display: block;
+  }
+}
+
+.landing-hero-artwork-frame {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  line-height: 0;
+}
+
+.landing-hero-artwork-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: top center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.landing-hero-artwork-hotspots {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.landing-hero-artwork-hotspot {
+  position: absolute;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+  border-radius: 0.35rem;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.landing-hero-artwork-hotspot:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.landing-hero-artwork-hotspot:focus {
+  outline: none;
+}
+
+.landing-hero-artwork-hotspot:focus-visible {
+  outline: 2px solid rgba(249, 115, 22, 0.9);
+  outline-offset: 2px;
+  background: rgba(249, 115, 22, 0.08);
+}
+
+/* Mobile — layout responsivo próprio */
+@media (max-width: 1023px) {
+  .landing-hero-artwork-desktop {
+    display: none;
+  }
+
+  .landing-hero-artwork-mobile {
+    display: block;
+    padding-top: calc(5.25rem + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    background:
+      radial-gradient(ellipse 90% 70% at 15% 0%, rgba(249, 115, 22, 0.1), transparent 55%),
+      linear-gradient(180deg, #060606 0%, #0a0a0a 45%, #060606 100%);
+  }
+}
+
+.landing-hero-artwork-mobile-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.landing-hero-artwork-mobile-title {
+  font-size: clamp(1.85rem, 7vw, 2.35rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-top: 0.25rem;
+}
+
+.landing-hero-artwork-mobile-subtitle {
+  margin-top: 1rem;
+  font-size: clamp(0.95rem, 3.8vw, 1.05rem);
+  color: #9ca3af;
+  line-height: 1.65;
+  max-width: 36rem;
+}
+
+.landing-hero-artwork-mobile-ctas {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.landing-hero-artwork-mobile-visual {
+  position: relative;
+  width: 100%;
+  margin-top: 2rem;
+  aspect-ratio: 16 / 10;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 24px 60px -20px rgba(0, 0, 0, 0.75),
+    0 0 80px rgba(99, 102, 241, 0.14),
+    0 0 50px rgba(249, 115, 22, 0.1);
+  background: #0b0e14;
+}
+
+.landing-hero-artwork-mobile-dashboard-img {
+  position: absolute;
+  width: 198%;
+  max-width: none;
+  height: auto;
+  right: -4%;
+  top: -6%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.landing-hero-artwork-mobile-clients {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.landing-hero-artwork-mobile-clients-label {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-bottom: 0.85rem;
+}
+
+.landing-hero-artwork-mobile-clients-strip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  height: 3.25rem;
+}
+
+.landing-hero-artwork-mobile-clients-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.landing-hero-artwork-mobile-clients-img {
+  display: block;
+  width: 100%;
+  min-width: 36rem;
+  height: auto;
+  max-width: none;
+  margin-top: -86.2%;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .landing-hero-artwork-mobile-ctas {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+}
+
