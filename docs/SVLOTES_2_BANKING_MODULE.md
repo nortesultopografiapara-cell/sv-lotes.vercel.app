@@ -1,7 +1,7 @@
 # Módulo Bancário — SV LOTES 2.0
 
-Documento técnico de planejamento.  
-**Branch:** `develop` · **Status:** planejamento — sem implementação  
+Documento técnico de planejamento e implementação.  
+**Branch:** `develop` · **Status:** Fase 1 implementada (estrutura base + MOCK)  
 **Referência:** [ROADMAP_SVLOTES_2.md](./ROADMAP_SVLOTES_2.md)
 
 ---
@@ -369,13 +369,13 @@ pending → registered → paid
 
 ### Fase 1 — Estrutura genérica (develop)
 
-- [ ] Documento aprovado (este arquivo)
-- [ ] Migrations: `bank_integrations`, `bank_credentials`, `bank_charges`, `bank_webhook_events`
-- [ ] Interface `BankProvider` + registry
-- [ ] Criptografia de credenciais
-- [ ] APIs CRUD integração + teste conexão (mock)
-- [ ] Tela Settings → Integração Bancária (UI sem banco real)
-- [ ] Feature flag `BANKING_MODULE_ENABLED` por tenant
+- [x] Documento aprovado (este arquivo)
+- [x] Migrations: `bank_integrations`, `bank_credentials`, `bank_charges`, `bank_webhook_events`, `bank_cash_movements`
+- [x] Interface `BankProvider` + registry + provider MOCK
+- [ ] Criptografia de credenciais (Fase 1.5 — antes de conectar banco real)
+- [ ] APIs CRUD integração + teste conexão (Fase 1.5)
+- [ ] Tela Settings → Integração Bancária (Fase 1.5)
+- [x] Feature flag global `BANKING_MODULE_ENABLED=false` (desativado por padrão)
 
 ### Fase 2 — Sicoob
 
@@ -433,14 +433,45 @@ pending → registered → paid
 
 ---
 
-## Próximo passo sugerido
+## Fase 1 implementada — estrutura base e MOCK provider
 
-Após aprovação deste documento:
+**Commit:** `feat(banking): add base banking module architecture` · Branch `develop`
 
-1. Revisão técnica com stakeholders
-2. Detalhar API Sicoob (endpoints, certificados, sandbox)
-3. Iniciar **Fase 1** — migrations + interface genérica na `develop`
+### Entregas
+
+| Item | Caminho |
+|------|---------|
+| Migration idempotente | `supabase/migrations/20260825150000_banking_module_phase1.sql` |
+| Tipos TypeScript | `lib/banking/types.ts` |
+| Interface genérica | `lib/banking/BankProvider.ts` |
+| Registry + barrel | `lib/banking/registry.ts`, `lib/banking/index.ts` |
+| Feature flag | `lib/banking/config.ts` · `BANKING_MODULE_ENABLED=false` |
+| Provider MOCK | `lib/banking/providers/mockBankProvider.ts` |
+| Idempotência webhook (MOCK/testes) | `lib/banking/webhookIdempotency.ts` |
+| Testes obrigatórios | `npm run test:banking-mock` |
+
+### Comportamento do MOCK
+
+- Gera linha digitável, código de barras, QR Pix EMV e link de pagamento **fictícios**
+- Status inicial `PENDING` — **sem cobrança real**
+- `parseWebhook` deduplica por `idempotency_key` (cache em memória; DB na Fase 2)
+- `reconcilePayment` retorna estrutura válida para `cash_movements` (entrada parcela + tarifa opcional)
+
+### Fora do escopo desta fase (intencional)
+
+- Nenhuma rota `/api/banking/*`
+- Nenhuma tela visível com `BANKING_MODULE_ENABLED=false`
+- Sem alteração em `lib/payments/` (Asaas Master)
+- Sem conexão bancária real
 
 ---
 
-*Documento criado em junho/2026 · Branch: `develop` · Sem implementação de código*
+## Próximo passo sugerido
+
+1. Aplicar migration no Supabase de **develop/preview**
+2. Fase 1.5 — criptografia de credenciais + APIs CRUD + UI Settings (ainda com MOCK)
+3. Detalhar API Sicoob sandbox e iniciar **Fase 2**
+
+---
+
+*Documento criado em junho/2026 · Branch: `develop` · Fase 1 implementada*
