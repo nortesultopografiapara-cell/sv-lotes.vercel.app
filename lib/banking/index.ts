@@ -5,4 +5,7 @@ export * from './registry';
 export * from './webhookIdempotency';
 export * from './bankingRouteGuard';
 export * from './mockApiHandlers';
+export * from './credentialsCrypto';
+export * from './integrationConfig';
+export * from './integrationRepository';
 export { MockBankProvider, mockBankProvider, clearMockBankProviderStateForTests } from './providers/mockBankProvider';

@@ -4,13 +4,15 @@
  */
 
 export const BANK_PROVIDERS = [
+  'MOCK',
   'SICOOB',
   'SICREDI',
   'BRADESCO',
   'BANCO_DO_BRASIL',
   'CAIXA',
+  'ITAU',
+  'SANTANDER',
   'ASAAS_COMPANY',
-  'MOCK',
 ] as const;
 
 export type BankProvider = (typeof BANK_PROVIDERS)[number];
