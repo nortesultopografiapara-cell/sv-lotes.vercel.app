@@ -4,92 +4,230 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  AlertTriangle,
   ArrowLeft,
+  Banknote,
   BookOpen,
-  LayoutDashboard,
-  Map as MapIcon,
-  Users,
-  UserCheck,
+  Building2,
+  CheckCircle,
+  CreditCard,
+  FileStack,
   FileText,
-  Wallet,
-  Settings,
+  HelpCircle,
+  LayoutDashboard,
   Lightbulb,
+  LogIn,
+  Map as MapIcon,
   Search,
+  Settings,
+  ShoppingCart,
   Sparkles,
+  UserRound,
+  Users,
+  Wallet,
+  WifiOff,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { filterManualSections, type ManualSection } from '@/lib/manualSections';
+import {
+  filterManualContent,
+  MANUAL_BADGE_LABELS,
+  MANUAL_FAQ,
+  MANUAL_SECTIONS,
+  type ManualBadgeId,
+  type ManualFaqItem,
+  type ManualSection,
+} from '@/lib/manualSections';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   intro: Sparkles,
+  'primeiro-acesso': LogIn,
   dashboard: LayoutDashboard,
   mapa: MapIcon,
   clientes: Users,
-  corretores: UserCheck,
+  corretores: UserRound,
+  venda: ShoppingCart,
   contratos: FileText,
   financeiro: Wallet,
+  'fluxo-caixa': Banknote,
+  'minha-assinatura': CreditCard,
+  'socios-proprietarios': Building2,
+  'sincronizacao-offline': WifiOff,
   configuracoes: Settings,
+  'documentos-automaticos': FileStack,
   dicas: Lightbulb,
+  faq: HelpCircle,
 };
 
-function ManualSectionCard({ section }: { section: ManualSection }) {
+const BADGE_STYLES: Record<ManualBadgeId, string> = {
+  venda: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+  financeiro: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  contrato: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+  mapa: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  cliente: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+  corretor: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  configuracao: 'bg-slate-400/15 text-slate-300 border-slate-400/30',
+  documento: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  assinatura: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+};
+
+function Badge({ id }: { id: ManualBadgeId }) {
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${BADGE_STYLES[id]}`}
+    >
+      {MANUAL_BADGE_LABELS[id]}
+    </span>
+  );
+}
+
+function ManualModuleCard({ section }: { section: ManualSection }) {
   const Icon = SECTION_ICONS[section.id] ?? BookOpen;
+
   return (
     <article
       id={section.id}
-      className="sv-theme-card rounded-xl p-5 md:p-6 shadow-sm scroll-mt-24"
+      className="rounded-2xl border border-white/10 bg-[#11161d] shadow-lg scroll-mt-28 overflow-hidden"
     >
-      <div className="flex items-start gap-4 mb-4">
-        <div className="w-11 h-11 rounded-xl sv-brand-muted-bg border sv-brand-muted-border flex items-center justify-center shrink-0">
-          <Icon className="w-5 h-5 sv-brand-text" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{section.title}</h2>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">{section.summary}</p>
+      <div className="p-5 md:p-6 border-b border-white/5">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/25 flex items-center justify-center shrink-0">
+            <Icon className="w-6 h-6 text-orange-400" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {section.badges.map((badge) => (
+                <Badge key={badge} id={badge} />
+              ))}
+            </div>
+            <h2 className="text-xl font-bold text-white">{section.title}</h2>
+            <p className="text-sm text-gray-400 mt-1">{section.subtitle}</p>
+            <p className="text-sm text-gray-300 mt-3 leading-relaxed">{section.summary}</p>
+          </div>
         </div>
       </div>
-      <ul className="space-y-2.5 pl-1">
-        {section.items.map((item, idx) => (
-          <li
-            key={`${section.id}-${idx}`}
-            className="flex gap-2.5 text-sm text-[var(--text-secondary)] leading-relaxed"
-          >
-            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-[var(--brand-primary)] shrink-0" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
+
+      <div className="p-5 md:p-6 space-y-5">
+        <div className="rounded-xl bg-blue-500/5 border border-blue-500/15 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1.5">
+            Onde encontrar
+          </p>
+          <p className="text-sm text-gray-300 leading-relaxed">{section.whereToFind}</p>
+        </div>
+
+        <div className="rounded-xl bg-sky-500/5 border border-sky-500/15 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1.5">
+            Para que serve
+          </p>
+          <p className="text-sm text-gray-300 leading-relaxed">{section.purpose}</p>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400 mb-3 flex items-center gap-1.5">
+            <CheckCircle className="w-3.5 h-3.5" />
+            Passo a passo
+          </p>
+          <ol className="space-y-2.5">
+            {section.steps.map((step, idx) => (
+              <li
+                key={`${section.id}-step-${idx}`}
+                className="flex gap-3 text-sm text-gray-300 leading-relaxed"
+              >
+                <span className="shrink-0 w-6 h-6 rounded-full bg-orange-500/15 text-orange-300 text-xs font-bold flex items-center justify-center border border-orange-500/25">
+                  {idx + 1}
+                </span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-2 flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Dicas importantes
+          </p>
+          <ul className="space-y-2">
+            {section.tips.map((tip, idx) => (
+              <li
+                key={`${section.id}-tip-${idx}`}
+                className="flex gap-2 text-sm text-gray-300 leading-relaxed"
+              >
+                <span className="text-amber-400 shrink-0">•</span>
+                <span>{tip}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </article>
+  );
+}
+
+function FaqCard({ item }: { item: ManualFaqItem }) {
+  return (
+    <details
+      id={item.id}
+      className="group rounded-xl border border-white/10 bg-[#11161d] scroll-mt-28 overflow-hidden"
+    >
+      <summary className="flex items-start gap-3 p-4 md:p-5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+        <HelpCircle className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+        <span className="text-sm font-semibold text-white group-open:text-purple-300 transition-colors">
+          {item.question}
+        </span>
+      </summary>
+      <div className="px-4 md:px-5 pb-4 md:pb-5 pl-12 text-sm text-gray-300 leading-relaxed border-t border-white/5 pt-3">
+        {item.answer}
+      </div>
+    </details>
+  );
+}
+
+function QuickNavCard({ section, onClick }: { section: ManualSection; onClick?: () => void }) {
+  const Icon = SECTION_ICONS[section.id] ?? BookOpen;
+  return (
+    <a
+      href={`#${section.id}`}
+      onClick={onClick}
+      className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-[#0d1117] hover:border-orange-500/30 hover:bg-orange-500/5 transition-colors min-w-[140px] shrink-0 md:min-w-0 md:shrink"
+    >
+      <Icon className="w-4 h-4 text-orange-400 shrink-0" />
+      <span className="text-xs font-medium text-gray-300 line-clamp-2">{section.title}</span>
+    </a>
   );
 }
 
 export default function ManualPage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const sections = useMemo(() => filterManualSections(query), [query]);
+  const { sections, faq } = useMemo(() => filterManualContent(query), [query]);
+  const showFaq = !query || faq.length > 0;
+  const hasResults = sections.length > 0 || faq.length > 0;
+
+  const navSections = query ? sections : MANUAL_SECTIONS;
 
   return (
-    <div className="sv-theme-page sv-page sv-page--scroll-y flex flex-col min-h-0">
-      <div className="sticky top-0 z-20 border-b border-[var(--border-color)] bg-[var(--bg-main)]/95 backdrop-blur-md px-4 md:px-8 py-4">
-        <div className="max-w-4xl mx-auto flex flex-col gap-4">
+    <div className="min-h-screen bg-[#0b0e14] text-gray-100 flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b0e14]/95 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl sv-brand-muted-bg border sv-brand-muted-border flex items-center justify-center shrink-0">
-                <BookOpen className="w-5 h-5 sv-brand-text" />
+              <div className="w-11 h-11 rounded-xl bg-orange-500/10 border border-orange-500/25 flex items-center justify-center shrink-0">
+                <BookOpen className="w-5 h-5 text-orange-400" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)] truncate">
-                  Manual do Sistema
+                <h1 className="text-xl md:text-2xl font-bold text-white truncate">
+                  Manual do SV LOTES
                 </h1>
-                <p className="text-xs md:text-sm text-[var(--text-secondary)]">
-                  Guia rápido para operar o SV LOTES
+                <p className="text-xs md:text-sm text-gray-400">
+                  Guia completo para imobiliárias e loteadoras
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => router.back()}
-              className="sv-theme-button shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold transition-colors shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
               Voltar ao sistema
@@ -97,62 +235,177 @@ export default function ManualPage() {
           </div>
 
           <label className="relative block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar no manual (ex.: contrato, mapa, parcelas…)"
-              className="sv-theme-field w-full pl-10 pr-4 py-2.5"
+              placeholder="Buscar: contrato, venda, mapa, parcelas, fluxo de caixa, recibo…"
+              className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#11161d] border border-white/10 text-white placeholder:text-gray-500 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/30"
               aria-label="Buscar no manual"
             />
           </label>
 
-          {!query && (
-            <nav className="flex flex-wrap gap-2" aria-label="Índice do manual">
-              {sections.map((s) => (
-                <a
-                  key={s.id}
-                  href={`#${s.id}`}
-                  className="text-xs font-medium px-2.5 py-1 rounded-md border border-[var(--border-color)] bg-[var(--bg-card-alt)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--brand-primary)]/40 transition-colors"
-                >
-                  {s.title.replace(/^Introdução ao /, '').replace(/^Dicas /, 'Dicas')}
-                </a>
-              ))}
-            </nav>
-          )}
+          {/* Category nav */}
+          <nav
+            className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin"
+            aria-label="Categorias do manual"
+          >
+            {navSections.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-white/10 bg-[#11161d] text-gray-400 hover:text-white hover:border-orange-500/40 hover:bg-orange-500/5 transition-colors"
+              >
+                {s.title.replace(/^Introdução ao /, '')}
+              </a>
+            ))}
+            {!query && (
+              <a
+                href="#faq"
+                className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-purple-500/25 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 transition-colors"
+              >
+                Perguntas frequentes
+              </a>
+            )}
+          </nav>
         </div>
-      </div>
+      </header>
 
-      <div className="flex-1 px-4 md:px-8 py-6 md:py-8">
-        <div className="max-w-4xl mx-auto flex flex-col gap-5 md:gap-6">
-          {sections.length === 0 ? (
-            <div className="sv-theme-card-alt rounded-xl p-8 text-center">
-              <p className="text-[var(--text-primary)] font-medium">Nenhum resultado encontrado</p>
-              <p className="text-sm text-[var(--text-muted)] mt-2">
-                Tente outro termo ou{' '}
+      <div className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+          {/* Sidebar index — desktop */}
+          {!query && (
+            <aside className="hidden lg:block w-56 shrink-0">
+              <div className="sticky top-36 rounded-2xl border border-white/10 bg-[#11161d] p-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+                  Índice
+                </p>
+                <ul className="space-y-1">
+                  {MANUAL_SECTIONS.map((s) => (
+                    <li key={s.id}>
+                      <a
+                        href={`#${s.id}`}
+                        className="block text-xs text-gray-400 hover:text-orange-300 py-1.5 px-2 rounded-lg hover:bg-white/5 transition-colors leading-snug"
+                      >
+                        {s.title}
+                      </a>
+                    </li>
+                  ))}
+                  <li>
+                    <a
+                      href="#faq"
+                      className="block text-xs text-purple-400 hover:text-purple-300 py-1.5 px-2 rounded-lg hover:bg-purple-500/10 transition-colors"
+                    >
+                      Perguntas frequentes
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </aside>
+          )}
+
+          <main className="flex-1 min-w-0 space-y-6">
+            {/* Quick nav cards — mobile */}
+            {!query && (
+              <section aria-label="Navegação rápida" className="lg:hidden">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+                  Navegação rápida
+                </p>
+                <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+                  {MANUAL_SECTIONS.map((s) => (
+                    <QuickNavCard key={s.id} section={s} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Legend */}
+            {!query && (
+              <div className="rounded-2xl border border-white/10 bg-[#11161d] p-4 md:p-5">
+                <p className="text-sm font-semibold text-white mb-3">Legenda de cores no mapa</p>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
+                    <span className="w-3 h-3 rounded-full bg-emerald-500" />
+                    Verde — disponível
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300">
+                    <span className="w-3 h-3 rounded-full bg-amber-400" />
+                    Amarelo — reservado
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-300">
+                    <span className="w-3 h-3 rounded-full bg-red-500" />
+                    Vermelho — vendido
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {!hasResults ? (
+              <div className="rounded-2xl border border-white/10 bg-[#11161d] p-10 text-center">
+                <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                <p className="text-white font-medium">Nenhum resultado encontrado</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Tente: contrato, venda, cliente, mapa, parcelas, fluxo de caixa, recibo, corretor,
+                  assinatura, carnê, memorial ou prancha.
+                </p>
                 <button
                   type="button"
-                  className="sv-brand-text underline"
+                  className="mt-4 text-sm text-orange-400 hover:text-orange-300 underline"
                   onClick={() => setQuery('')}
                 >
-                  limpar a busca
+                  Limpar busca
                 </button>
-                .
-              </p>
-            </div>
-          ) : (
-            sections.map((section) => <ManualSectionCard key={section.id} section={section} />)
-          )}
+              </div>
+            ) : (
+              <>
+                {sections.map((section) => (
+                  <ManualModuleCard key={section.id} section={section} />
+                ))}
 
-          <div className="sv-theme-card-alt rounded-xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <p className="text-sm text-[var(--text-secondary)]">
-              Precisa de suporte adicional? Consulte seu administrador ou a equipe SV LOTES.
-            </p>
-            <Link href="/dashboard" className="sv-theme-button sv-theme-button--primary shrink-0 text-center">
-              Ir para o Dashboard
-            </Link>
-          </div>
+                {showFaq && (
+                  <section id="faq" className="scroll-mt-28 space-y-4">
+                    <div className="flex items-center gap-3 pt-2">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/25 flex items-center justify-center">
+                        <HelpCircle className="w-5 h-5 text-purple-400" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-white">Perguntas frequentes</h2>
+                        <p className="text-sm text-gray-400">Dúvidas comuns no dia a dia</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {(query ? faq : MANUAL_FAQ).map((item) => (
+                        <FaqCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+
+            <footer className="rounded-2xl border border-white/10 bg-[#11161d] p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <p className="text-sm text-gray-400">
+                Precisa de ajuda? Fale com o administrador da sua empresa ou com o suporte SV LOTES.
+              </p>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <Link
+                  href="/map"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 text-sm font-medium transition-colors"
+                >
+                  <MapIcon className="w-4 h-4" />
+                  Abrir Mapa GIS
+                </Link>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Ir ao Dashboard
+                </Link>
+              </div>
+            </footer>
+          </main>
         </div>
       </div>
     </div>
