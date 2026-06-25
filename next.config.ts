@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
   transpilePackages: ['motion', 'leaflet.gridlayer.googlemutant'],
+  env: {
+    NEXT_PUBLIC_BANKING_MODULE_ENABLED:
+      process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED ?? 'false',
+  },
   webpack: (config, { dev }) => {
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {
