@@ -42,6 +42,7 @@ import { SuperAdminQuickActions } from './admin/SuperAdminQuickActions';
 import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext';
 import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
+import { HelpCenterHeaderButton } from '@/components/ui/HelpCenterHeaderButton';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
@@ -535,14 +536,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             {isMasterConsole && <SuperAdminQuickActions />}
             <GisProjectHeaderBadge />
             <NotificationBell user={user} />
-            <Link
-              href="/manual"
-              className="flex items-center justify-center w-9 h-9 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] transition-colors"
-              title="Manual do Sistema"
-              aria-label="Manual do Sistema"
-            >
-              <BookOpen className="w-5 h-5" />
-            </Link>
+            <HelpCenterHeaderButton variant="mobile" />
             <button className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white text-sm font-bold">
               {user?.name?.charAt(0) || 'U'}
             </button>
@@ -725,18 +719,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
               )}
               <GisProjectHeaderBadge />
               <NotificationBell user={user} />
-              <Link
-                href="/manual"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors ${
-                  pathname === '/manual'
-                    ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/25'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-alt)] border-transparent hover:border-[var(--border-color)]'
-                }`}
-                title="Manual do Sistema"
-              >
-                <BookOpen className="w-5 h-5 shrink-0" />
-                <span className="hidden lg:inline text-xs font-semibold">Manual</span>
-              </Link>
+              <HelpCenterHeaderButton variant="desktop" />
 
               {/* Profile Dropdown */}
               <div className="relative group cursor-pointer">
@@ -780,7 +763,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                       href="/manual"
                       className="flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors mt-1"
                     >
-                      <BookOpen className="w-4 h-4" /> Manual do Sistema
+                      <BookOpen className="w-4 h-4" /> Central de Ajuda
                     </Link>
                     <div className="h-px bg-[var(--border-color)] my-1" />
                     <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left">

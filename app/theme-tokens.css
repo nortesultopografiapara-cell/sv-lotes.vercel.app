@@ -463,3 +463,99 @@ html[data-brand='purple'] {
   background-color: color-mix(in srgb, var(--brand-primary) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--brand-primary) 32%, transparent);
 }
+
+/* Central de Ajuda — botão premium no cabeçalho */
+.sv-help-center-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+  border-radius: 12px;
+  padding: 0.375rem 0.875rem;
+  min-height: 28px;
+  background: linear-gradient(135deg, #ff6b00, #ff8a00);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  box-shadow: 0 0 18px rgba(255, 107, 0, 0.22);
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    filter 200ms ease;
+  text-decoration: none;
+}
+
+.sv-help-center-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 0 28px rgba(255, 107, 0, 0.42);
+  filter: brightness(1.1);
+  color: #fff;
+}
+
+.sv-help-center-btn:active {
+  transform: scale(0.98);
+}
+
+.sv-help-center-btn:focus-visible {
+  outline: 2px solid rgba(255, 180, 100, 0.95);
+  outline-offset: 2px;
+}
+
+.sv-help-center-btn.is-active {
+  box-shadow: 0 0 24px rgba(255, 107, 0, 0.45);
+  outline: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.sv-help-center-btn--mobile {
+  padding: 0.375rem 0.625rem;
+  min-height: 28px;
+  max-width: 100%;
+}
+
+.sv-help-center-btn__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background: #0f172a;
+  font-size: 0.625rem;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.sv-help-center-tooltip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: max-content;
+  max-width: 260px;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 200ms ease,
+    visibility 200ms ease;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.group:hover .sv-help-center-tooltip,
+.group:focus-within .sv-help-center-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
