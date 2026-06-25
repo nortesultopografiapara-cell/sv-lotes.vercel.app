@@ -88,7 +88,7 @@ export function LandingHeader({ scrolled }: Props) {
         <div className="landing-header-actions">
           <Link
             href={LANDING_LOGIN_PATH}
-            className="landing-btn-system landing-btn-system--header-mobile"
+            className="landing-btn-system landing-btn-system--header-outline landing-btn-system--header-mobile"
             aria-label="Acessar o sistema"
           >
             <LogIn className="w-3.5 h-3.5 shrink-0" />
@@ -118,7 +118,7 @@ export function LandingHeader({ scrolled }: Props) {
           </a>
           <Link
             href={LANDING_LOGIN_PATH}
-            className="landing-btn-system landing-btn-system--desktop hidden lg:inline-flex"
+            className="landing-btn-system landing-btn-system--header-outline landing-btn-system--desktop hidden lg:inline-flex"
             aria-label="Acessar o sistema"
           >
             <Lock className="w-4 h-4" />
@@ -157,7 +157,7 @@ export function LandingHeader({ scrolled }: Props) {
             </a>
             <Link
               href={LANDING_LOGIN_PATH}
-              className="landing-btn-system w-full justify-center"
+              className="landing-btn-system landing-btn-system--header-outline w-full justify-center"
               onClick={closeMenu}
             >
               <Lock className="w-4 h-4" />
