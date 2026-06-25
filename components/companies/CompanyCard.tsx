@@ -86,6 +86,23 @@ export function CompanyCard({
   const brokerCount = company.broker_count ?? 0;
   const lotCount = company.lot_count ?? 0;
   const saasPlan = getCompanySaasPlan(company);
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[CompanyCard] plan limits', {
+      companyId: company.id,
+      planKey: saasPlan.planKey,
+      project_limit: company.project_limit,
+      broker_limit: company.broker_limit,
+      max_lots: company.max_lots,
+      admin_users_limit: company.admin_users_limit,
+      resolved: {
+        maxProjects: saasPlan.maxProjects,
+        maxLots: saasPlan.maxLots,
+        maxBrokers: saasPlan.maxBrokers,
+        maxAdmins: saasPlan.maxAdmins,
+      },
+    });
+  }
   const protectedCompany =
     isMaster || company.id === user?.tenant_id || company.is_master || company.slug?.toLowerCase() === 'master';
   const pricing = resolveCompanyPricing(company);

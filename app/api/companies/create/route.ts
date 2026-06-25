@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import {
+  buildCompanyLimitsDbWritePayload,
   buildManualLimitsFromForm,
   saasLimitsDbPayload,
   saasPlanModuleSyncPayload,
@@ -87,6 +88,7 @@ export async function POST(req: Request) {
     const manualOverrides = buildManualLimitsFromForm(body);
     const limits = saasLimitsDbPayload(planSource, manualOverrides);
     const moduleSync = saasPlanModuleSyncPayload(limits.planKey);
+    const limitsPayload = buildCompanyLimitsDbWritePayload(limits);
 
     const companyPayload: any = {
       name,
@@ -98,13 +100,7 @@ export async function POST(req: Request) {
       plan_type: limits.plan,
       ...moduleSync,
       status_operacional: body.status_operacional || 'Ativa',
-      project_limit: limits.project_limit,
-      broker_limit: limits.broker_limit,
-      admin_users_limit: limits.admin_users_limit ?? 1,
-      max_projects: limits.max_projects,
-      max_brokers: limits.max_brokers,
-      max_lots: limits.max_lots,
-      saas_commercial_note: limits.saas_commercial_note,
+      ...limitsPayload,
     };
 
     const postalCode = String(body.zip_code ?? body.cep ?? '').trim();

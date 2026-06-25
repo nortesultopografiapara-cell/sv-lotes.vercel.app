@@ -6,7 +6,7 @@ import {
   dueDayFromDate,
   toIsoDateOnly,
 } from '@/lib/companySubscriptionDates';
-import { legacyDbKeyForForm } from '@/lib/saasPlans';
+import { legacyDbKeyForForm, readCompanyLimitFromDb } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
 const COMPANY_SELECT = `
@@ -22,11 +22,16 @@ const COMPANY_SELECT = `
   zip_code,
   plan,
   plan_type,
+  project_limit,
+  broker_limit,
   max_projects,
   max_brokers,
   max_lots,
   admin_users_limit,
+  admin_limit,
   saas_commercial_note,
+  module_plan,
+  module_type,
   status_operacional,
   custom_price_enabled,
   custom_monthly_price,
@@ -129,12 +134,22 @@ export function mapCompanyForEditForm(
     zip_code: String(company.zip_code ?? company.cep ?? ''),
     status_operacional: String(company.status_operacional ?? 'Ativa'),
     plan: legacyDbKeyForForm(String(company.plan_type || company.plan || 'basic')),
-    max_projects:
-      company.max_projects != null ? String(company.max_projects) : '',
-    max_lots: company.max_lots != null ? String(company.max_lots) : '',
-    max_brokers: company.max_brokers != null ? String(company.max_brokers) : '',
-    admin_users_limit:
-      company.admin_users_limit != null ? String(company.admin_users_limit) : '',
+    max_projects: (() => {
+      const value = readCompanyLimitFromDb(company as Record<string, unknown>, 'projects');
+      return value != null ? String(value) : '';
+    })(),
+    max_lots: (() => {
+      const value = readCompanyLimitFromDb(company as Record<string, unknown>, 'lots');
+      return value != null ? String(value) : '';
+    })(),
+    max_brokers: (() => {
+      const value = readCompanyLimitFromDb(company as Record<string, unknown>, 'brokers');
+      return value != null ? String(value) : '';
+    })(),
+    admin_users_limit: (() => {
+      const value = readCompanyLimitFromDb(company as Record<string, unknown>, 'admins');
+      return value != null ? String(value) : '';
+    })(),
     saas_commercial_note: String(company.saas_commercial_note ?? ''),
     is_test_company: company.is_test_company === true,
     custom_price_enabled: company.custom_price_enabled === true,

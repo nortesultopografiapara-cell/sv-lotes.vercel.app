@@ -119,6 +119,20 @@ const PRIMARY_PLAN_FIELDS = [
   'plan',
 ] as const;
 
+const AUTHORITATIVE_PLAN_FIELDS = [
+  ...PRIMARY_PLAN_FIELDS,
+  'module_plan',
+  'module_type',
+] as const;
+
+/** Colunas reais em public.companies — preço via custom_monthly_price (não monthly_price). */
+export const COMPANY_SAAS_DB_LIMIT_FIELDS = {
+  projects: ['project_limit', 'max_projects'] as const,
+  lots: ['max_lots'] as const,
+  brokers: ['broker_limit', 'max_brokers'] as const,
+  admins: ['admin_users_limit', 'admin_limit'] as const,
+} as const;
+
 const PLAN_FIELD_PRIORITY = [
   ...PRIMARY_PLAN_FIELDS,
   'module_plan',
@@ -246,7 +260,7 @@ export function resolveAuthoritativePlanKey(
 ): SaasPlanKey {
   if (!company) return 'basico';
 
-  for (const field of PRIMARY_PLAN_FIELDS) {
+  for (const field of AUTHORITATIVE_PLAN_FIELDS) {
     const raw = company[field];
     if (raw == null) continue;
     const text = String(raw).trim();
@@ -339,6 +353,108 @@ function readStoredLimit(...values: Array<number | null | undefined>): number | 
   return null;
 }
 
+/** Lê limite persistido usando nomes reais das colunas do Supabase. */
+export function readCompanyLimitFromDb(
+  company: CompanySaasSource | null | undefined,
+  kind: keyof typeof COMPANY_SAAS_DB_LIMIT_FIELDS,
+): number | null {
+  if (!company) return null;
+  const values = COMPANY_SAAS_DB_LIMIT_FIELDS[kind].map(
+    (field) => company[field as keyof CompanySaasSource] as number | null | undefined,
+  );
+  return readStoredLimit(...values);
+}
+
+/** Normaliza linha do banco para leitura unificada (project_limit → max_projects lógico). */
+export function enrichCompanySaasLimitsFromDb(
+  company?: CompanySaasSource | null,
+): CompanySaasSource | null {
+  if (!company) return null;
+  return {
+    ...company,
+    max_projects: readCompanyLimitFromDb(company, 'projects'),
+    max_lots: readCompanyLimitFromDb(company, 'lots'),
+    max_brokers: readCompanyLimitFromDb(company, 'brokers'),
+    admin_users_limit: readCompanyLimitFromDb(company, 'admins'),
+  };
+}
+
+/**
+ * Payload de escrita — usa colunas que existem em produção.
+ * project_limit / broker_limit são canônicos; max_* são espelho opcional (migration).
+ */
+export function buildCompanyLimitsDbWritePayload(
+  limits: ReturnType<typeof saasLimitsDbPayload>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    project_limit: limits.max_projects ?? -1,
+    broker_limit: limits.max_brokers ?? -1,
+  };
+
+  if (limits.admin_users_limit != null) {
+    payload.admin_users_limit = limits.admin_users_limit;
+    payload.admin_limit = limits.admin_users_limit;
+  }
+
+  if (limits.max_lots != null) {
+    payload.max_lots = limits.max_lots;
+  }
+
+  if (limits.saas_commercial_note != null) {
+    payload.saas_commercial_note = limits.saas_commercial_note;
+  }
+
+  if (limits.max_projects != null) {
+    payload.max_projects = limits.max_projects;
+  }
+  if (limits.max_brokers != null) {
+    payload.max_brokers = limits.max_brokers;
+  }
+
+  return payload;
+}
+
+const OPTIONAL_COMPANY_LIMIT_COLUMNS = [
+  'max_projects',
+  'max_brokers',
+  'max_lots',
+  'saas_commercial_note',
+  'admin_limit',
+] as const;
+
+/** Remove colunas opcionais ausentes no schema e tenta novamente. */
+export async function updateCompanyWithLimitsFallback(
+  supabaseAdmin: { from: (table: string) => any },
+  companyId: string,
+  payload: Record<string, unknown>,
+): Promise<{ data: Record<string, unknown> | null; error: { message?: string; code?: string } | null }> {
+  let current: Record<string, unknown> = { ...payload };
+  let lastError: { message?: string; code?: string } | null = null;
+
+  for (let attempt = 0; attempt <= OPTIONAL_COMPANY_LIMIT_COLUMNS.length; attempt++) {
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .update(current)
+      .eq('id', companyId)
+      .select('*')
+      .single();
+
+    if (!error) {
+      return { data: data as Record<string, unknown>, error: null };
+    }
+
+    lastError = error;
+    const msg = (error.message || '').toLowerCase();
+    const missingOptional = OPTIONAL_COMPANY_LIMIT_COLUMNS.find((col) => msg.includes(col));
+    if (!missingOptional) {
+      break;
+    }
+    delete current[missingOptional];
+  }
+
+  return { data: null, error: lastError };
+}
+
 function resolveEffectiveLimits(
   planKey: SaasPlanKey,
   company?: CompanySaasSource | null,
@@ -352,21 +468,21 @@ function resolveEffectiveLimits(
 
   if (planKey === 'personalizado') {
     return {
-      maxProjects: readStoredLimit(company?.max_projects, company?.project_limit),
-      maxLots: readStoredLimit(company?.max_lots),
-      maxBrokers: readStoredLimit(company?.max_brokers, company?.broker_limit),
-      maxAdmins: readStoredLimit(company?.admin_users_limit, company?.admin_limit),
+      maxProjects: readCompanyLimitFromDb(company, 'projects'),
+      maxLots: readCompanyLimitFromDb(company, 'lots'),
+      maxBrokers: readCompanyLimitFromDb(company, 'brokers'),
+      maxAdmins: readCompanyLimitFromDb(company, 'admins'),
     };
   }
 
   return {
     maxProjects:
-      readStoredLimit(company?.max_projects, company?.project_limit) ?? catalog.maxProjects,
-    maxLots: readStoredLimit(company?.max_lots) ?? catalog.maxLots,
+      readCompanyLimitFromDb(company, 'projects') ?? catalog.maxProjects,
+    maxLots: readCompanyLimitFromDb(company, 'lots') ?? catalog.maxLots,
     maxBrokers:
-      readStoredLimit(company?.max_brokers, company?.broker_limit) ?? catalog.maxBrokers,
+      readCompanyLimitFromDb(company, 'brokers') ?? catalog.maxBrokers,
     maxAdmins:
-      readStoredLimit(company?.admin_users_limit, company?.admin_limit) ?? catalog.maxAdmins,
+      readCompanyLimitFromDb(company, 'admins') ?? catalog.maxAdmins,
   };
 }
 
@@ -386,11 +502,12 @@ export type CompanySaasPlanResolved = {
 };
 
 export function getCompanySaasPlan(company?: CompanySaasSource | null): CompanySaasPlanResolved {
-  const allRawPlans = collectCompanyPlanValues(company);
-  const planKey = resolveAuthoritativePlanKey(company);
+  const enriched = enrichCompanySaasLimitsFromDb(company);
+  const allRawPlans = collectCompanyPlanValues(enriched ?? company);
+  const planKey = resolveAuthoritativePlanKey(enriched ?? company);
 
   const config = SAAS_PLAN_CATALOG[planKey];
-  const limits = resolveEffectiveLimits(planKey, company);
+  const limits = resolveEffectiveLimits(planKey, enriched ?? company);
   const rawPlan =
     allRawPlans.find((v) => normalizeSaasPlanKey(v) === planKey) ??
     allRawPlans[0] ??

@@ -4,8 +4,10 @@
  */
 
 import {
+  buildCompanyLimitsDbWritePayload,
   buildManualLimitsFromForm,
   buildSaasPlanSummary,
+  enrichCompanySaasLimitsFromDb,
   formatSaasUsageLabel,
   getCompanySaasPlan,
   getSaasPlanDisplayNameFromRaw,
@@ -13,6 +15,7 @@ import {
   MASTER_SAAS_PLAN_OPTIONS,
   normalizeSaasPlanKey,
   parseManualPlanLimit,
+  readCompanyLimitFromDb,
   resolveAuthoritativePlanKey,
   resolveSaasLimitUsageLevel,
   SAAS_PLAN_CATALOG,
@@ -181,12 +184,12 @@ function personalizadoCompanyFixture() {
     plan_type: 'custom',
     module_plan: 'Profissional',
     module_type: 'professional',
-    max_projects: 20,
+    project_limit: 20,
+    broker_limit: 30,
     max_lots: 10000,
-    max_brokers: 30,
     admin_users_limit: 15,
     custom_price_enabled: true,
-    custom_monthly_price: 0.01,
+    custom_monthly_price: 800,
     saas_commercial_note: 'Negociação especial SV Topografia',
   };
 }
@@ -195,25 +198,105 @@ function testPersonalizadoUpdatePayloadPersistsLimits() {
   const body = {
     plan: 'custom',
     plan_type: 'custom',
-    max_projects: 20,
-    max_lots: 10000,
-    max_brokers: 30,
-    admin_users_limit: 15,
-    custom_monthly_price: 0.01,
-    saas_commercial_note: 'Negociação especial SV Topografia',
+    max_projects: 15,
+    max_lots: 20000,
+    max_brokers: 70,
+    admin_users_limit: 8,
+    custom_monthly_price: 800,
+    saas_commercial_note: 'a',
   };
   const manual = buildManualLimitsFromForm(body);
   const payload = saasLimitsDbPayload('custom', manual);
+  const dbWrite = buildCompanyLimitsDbWritePayload(payload);
 
   assert(payload.planKey === 'personalizado', 'planKey personalizado');
-  assert(payload.max_projects === 20, 'persiste max_projects');
-  assert(payload.max_lots === 10000, 'persiste max_lots');
-  assert(payload.max_brokers === 30, 'persiste max_brokers');
-  assert(payload.admin_users_limit === 15, 'persiste max_admins');
-  assert(payload.saas_commercial_note === 'Negociação especial SV Topografia', 'persiste nota');
-  assert(parseManualPlanLimit('0.01') === 0, 'parse 0.01 trunc — use number');
-  assert(parseManualPlanLimit(0.01) === 0, 'parse number 0.01');
+  assert(payload.max_projects === 15, 'persiste max_projects lógico');
+  assert(payload.max_lots === 20000, 'persiste max_lots');
+  assert(payload.max_brokers === 70, 'persiste max_brokers lógico');
+  assert(payload.admin_users_limit === 8, 'persiste admin_users_limit');
+  assert(payload.saas_commercial_note === 'a', 'persiste nota');
+  assert(dbWrite.project_limit === 15, 'dbWrite project_limit');
+  assert(dbWrite.broker_limit === 70, 'dbWrite broker_limit');
+  assert(dbWrite.admin_users_limit === 8, 'dbWrite admin_users_limit');
+  assert(dbWrite.max_lots === 20000, 'dbWrite max_lots');
+  assert(!('monthly_price' in dbWrite), 'não usa monthly_price inexistente');
   console.log('OK testPersonalizadoUpdatePayloadPersistsLimits');
+}
+
+function testDbColumnsProjectLimitBrokerLimitRead() {
+  const row = {
+    plan_type: 'custom',
+    project_limit: 15,
+    broker_limit: 70,
+    max_lots: 20000,
+    admin_users_limit: 8,
+    custom_monthly_price: 800,
+  };
+  assert(readCompanyLimitFromDb(row, 'projects') === 15, 'lê project_limit');
+  assert(readCompanyLimitFromDb(row, 'brokers') === 70, 'lê broker_limit');
+  assert(readCompanyLimitFromDb(row, 'lots') === 20000, 'lê max_lots');
+  assert(readCompanyLimitFromDb(row, 'admins') === 8, 'lê admin_users_limit');
+
+  const enriched = enrichCompanySaasLimitsFromDb(row);
+  const saas = getCompanySaasPlan(enriched);
+  assert(saas.planKey === 'personalizado', 'plano personalizado via project_limit row');
+  assert(saas.maxProjects === 15, 'card loteamentos 15');
+  assert(saas.maxLots === 20000, 'card lotes 20000');
+  assert(saas.maxBrokers === 70, 'card corretores 70');
+  assert(saas.maxAdmins === 8, 'card admins 8');
+  console.log('OK testDbColumnsProjectLimitBrokerLimitRead');
+}
+
+function testSvTopografiaCardDisplay() {
+  const company = {
+    plan_type: 'custom',
+    plan: 'custom',
+    project_limit: 15,
+    broker_limit: 70,
+    max_lots: 20000,
+    admin_users_limit: 8,
+    custom_price_enabled: true,
+    custom_monthly_price: 800,
+    project_count: 1,
+    lot_count: 0,
+    broker_count: 2,
+    admin_count: 1,
+  };
+  const saas = getCompanySaasPlan(company);
+  assert(
+    formatSaasUsageLabel(company.project_count, saas.maxProjects) === '1 / 15',
+    'loteamentos 1/15',
+  );
+  assert(
+    formatSaasUsageLabel(company.lot_count, saas.maxLots) === '0 / 20.000',
+    'lotes 0/20000',
+  );
+  assert(
+    formatSaasUsageLabel(company.broker_count, saas.maxBrokers) === '2 / 70',
+    'corretores 2/70',
+  );
+  assert(
+    formatSaasUsageLabel(company.admin_count, saas.maxAdmins) === '1 / 8',
+    'admins 1/8',
+  );
+  assert(getCompanyMonthlyPrice(company) === 800, 'preço R$ 800');
+  console.log('OK testSvTopografiaCardDisplay');
+}
+
+function testModalReloadFromProjectLimitColumns() {
+  const company = {
+    plan_type: 'custom',
+    project_limit: 15,
+    broker_limit: 70,
+    max_lots: 20000,
+    admin_users_limit: 8,
+    custom_monthly_price: 800,
+    saas_commercial_note: 'a',
+  };
+  assert(readCompanyLimitFromDb(company, 'projects') === 15, 'modal max_projects');
+  assert(readCompanyLimitFromDb(company, 'brokers') === 70, 'modal max_brokers');
+  assert(readCompanyLimitFromDb(company, 'admins') === 8, 'modal admin_users_limit');
+  console.log('OK testModalReloadFromProjectLimitColumns');
 }
 
 function testPersonalizadoIgnoresLegacyModulePlan() {
@@ -231,9 +314,9 @@ function testPersonalizadoIgnoresLegacyModulePlan() {
 
 function testPersonalizadoMonthlyPriceFromCompany() {
   const company = personalizadoCompanyFixture();
-  assert(getCompanyMonthlyPrice(company) === 0.01, 'valor mensal personalizado R$ 0,01');
+  assert(getCompanyMonthlyPrice(company) === 800, 'valor mensal personalizado R$ 800,00');
   assert(
-    formatSaasCurrency(getCompanyMonthlyPrice(company)) === formatSaasCurrency(0.01),
+    formatSaasCurrency(getCompanyMonthlyPrice(company)) === formatSaasCurrency(800),
     'formata valor mensal',
   );
   console.log('OK testPersonalizadoMonthlyPriceFromCompany');
@@ -306,9 +389,12 @@ function run() {
   testUsageAlerts();
   testCatalogMatchesLandingPrices();
   testPersonalizadoUpdatePayloadPersistsLimits();
+  testDbColumnsProjectLimitBrokerLimitRead();
   testPersonalizadoIgnoresLegacyModulePlan();
   testPersonalizadoMonthlyPriceFromCompany();
   testCompanyCardUsageLabelsForPersonalizado();
+  testSvTopografiaCardDisplay();
+  testModalReloadFromProjectLimitColumns();
   testNullLimitsShowSemLimiteDefinido();
   testBuildManualLimitsEmptyStringsBecomeNull();
   console.log('OK — mandatory-saas-plan-limits-tests passed');

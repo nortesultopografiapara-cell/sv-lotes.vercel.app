@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
+  buildCompanyLimitsDbWritePayload,
   buildManualLimitsFromForm,
   parseManualPlanLimit,
   saasLimitsDbPayload,
   saasPlanModuleSyncPayload,
+  updateCompanyWithLimitsFallback,
 } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
@@ -86,6 +88,8 @@ export async function PATCH(request: Request) {
       ...addressPayload,
     });
 
+    const limitsPayload = buildCompanyLimitsDbWritePayload(limits);
+
     const updatePayload: Record<string, unknown> = {
       name: body.name,
       cnpj: body.cnpj,
@@ -95,36 +99,29 @@ export async function PATCH(request: Request) {
       plan: limits.plan,
       plan_type: limits.plan,
       ...moduleSync,
-      project_limit: limits.project_limit,
-      broker_limit: limits.broker_limit,
-      max_projects: limits.max_projects,
-      max_brokers: limits.max_brokers,
-      max_lots: limits.max_lots,
-      saas_commercial_note: limits.saas_commercial_note,
+      ...limitsPayload,
       is_test_company: body.is_test_company === true,
       ...customPricePayload,
       ...addressPayload,
     };
 
     if (body.slug) updatePayload.slug = body.slug;
-    if (body.admin_users_limit != null || limits.admin_users_limit != null) {
-      const adminLimit = parseManualPlanLimit(
-        body.admin_users_limit ?? limits.admin_users_limit,
-      );
-      if (adminLimit != null) {
-        updatePayload.admin_users_limit = Math.max(1, adminLimit);
-      }
+    if (
+      limits.planKey === 'personalizado' &&
+      limits.admin_users_limit == null &&
+      updatePayload.admin_users_limit == null
+    ) {
+      updatePayload.admin_users_limit = 1;
+      updatePayload.admin_limit = 1;
     }
 
     console.log('SAVE_COMPANY_PLAN_LIMITS_PAYLOAD', {
       companyId,
       plan: limits.plan,
       planKey: limits.planKey,
-      max_projects: limits.max_projects,
-      max_lots: limits.max_lots,
-      max_brokers: limits.max_brokers,
-      admin_users_limit: updatePayload.admin_users_limit ?? limits.admin_users_limit,
-      saas_commercial_note: limits.saas_commercial_note,
+      received: manualOverrides,
+      dbWrite: limitsPayload,
+      custom_monthly_price: customPricePayload.custom_monthly_price,
     });
 
     let explicitBilling: ReturnType<typeof buildCompanySubscriptionDatePayload> | null = null;
@@ -151,51 +148,21 @@ export async function PATCH(request: Request) {
       next_payment_date: updatePayload.next_payment_date,
     });
 
-    let { data, error } = await supabaseAdmin
-      .from('companies')
-      .update(updatePayload)
-      .eq('id', companyId)
-      .select('*')
-      .single();
+    let { data, error } = await updateCompanyWithLimitsFallback(
+      supabaseAdmin,
+      companyId,
+      updatePayload,
+    );
 
-    if (error?.message?.toLowerCase().includes('cep')) {
+    if (error?.message?.toLowerCase().includes('cep') && data == null) {
       const { cep: _omit, ...withoutCep } = updatePayload;
-      const retry = await supabaseAdmin
-        .from('companies')
-        .update(withoutCep)
-        .eq('id', companyId)
-        .select('*')
-        .single();
+      const retry = await updateCompanyWithLimitsFallback(
+        supabaseAdmin,
+        companyId,
+        withoutCep,
+      );
       data = retry.data;
       error = retry.error;
-    }
-
-    if (error) {
-      const msg = (error.message || '').toLowerCase();
-      const withoutOptional: Record<string, unknown> = { ...updatePayload };
-      let stripped = false;
-      if (msg.includes('max_lots')) {
-        delete withoutOptional.max_lots;
-        stripped = true;
-      }
-      if (msg.includes('saas_commercial_note')) {
-        delete withoutOptional.saas_commercial_note;
-        stripped = true;
-      }
-      if (stripped) {
-        const retry = await supabaseAdmin
-          .from('companies')
-          .update(withoutOptional)
-          .eq('id', companyId)
-          .select('*')
-          .single();
-        if (!retry.error) {
-          data = retry.data;
-          error = null;
-        } else {
-          error = retry.error;
-        }
-      }
     }
 
     console.log('SAVE_COMPANY_ADDRESS_RESULT', data, error);
@@ -226,11 +193,10 @@ export async function PATCH(request: Request) {
         plan: limits.plan,
         plan_type: limits.plan,
         ...moduleSync,
-        project_limit: limits.project_limit,
-        broker_limit: limits.broker_limit,
-        max_projects: limits.max_projects,
-        max_brokers: limits.max_brokers,
-        admin_users_limit: updatePayload.admin_users_limit ?? limits.admin_users_limit,
+        project_limit: limitsPayload.project_limit,
+        broker_limit: limitsPayload.broker_limit,
+        admin_users_limit: limitsPayload.admin_users_limit,
+        admin_limit: limitsPayload.admin_limit,
         is_test_company: body.is_test_company === true,
         address: addressPayload.address,
         city: addressPayload.city,
