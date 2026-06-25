@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -29,6 +29,18 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
+  ManualCommonErrorsSection,
+  ManualCompleteFlowsSection,
+  ManualEstimatedTimeBadge,
+  ManualFirstStepsSection,
+  ManualIllustrationPlaceholder,
+  ManualMainFlowchartSection,
+  ManualOperationTimesSection,
+  ManualReadingProgress,
+  ManualTrainingTipsBlock,
+  ManualVideoButton,
+} from '@/components/manual/ManualTrainingBlocks';
+import {
   filterManualContent,
   MANUAL_BADGE_LABELS,
   MANUAL_FAQ,
@@ -37,6 +49,11 @@ import {
   type ManualFaqItem,
   type ManualSection,
 } from '@/lib/manualSections';
+import {
+  getTrainingTipsForSection,
+  MANUAL_SECTION_ESTIMATED_TIME,
+  MANUAL_SECTION_ILLUSTRATION,
+} from '@/lib/manualTraining';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   intro: Sparkles,
@@ -57,6 +74,14 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   dicas: Lightbulb,
   faq: HelpCircle,
 };
+
+const TRAINING_NAV = [
+  { id: 'primeiros-passos', label: 'Primeiros Passos' },
+  { id: 'fluxograma', label: 'Fluxograma' },
+  { id: 'fluxos-completos', label: 'Fluxos' },
+  { id: 'erros-comuns', label: 'Erros comuns' },
+  { id: 'tempos-medios', label: 'Tempos' },
+] as const;
 
 const BADGE_STYLES: Record<ManualBadgeId, string> = {
   venda: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
@@ -82,6 +107,9 @@ function Badge({ id }: { id: ManualBadgeId }) {
 
 function ManualModuleCard({ section }: { section: ManualSection }) {
   const Icon = SECTION_ICONS[section.id] ?? BookOpen;
+  const illustrationKey = MANUAL_SECTION_ILLUSTRATION[section.id];
+  const estimatedTime = MANUAL_SECTION_ESTIMATED_TIME[section.id];
+  const trainingTips = getTrainingTipsForSection(section.id, section.tips);
 
   return (
     <article
@@ -102,11 +130,19 @@ function ManualModuleCard({ section }: { section: ManualSection }) {
             <h2 className="text-xl font-bold text-white">{section.title}</h2>
             <p className="text-sm text-gray-400 mt-1">{section.subtitle}</p>
             <p className="text-sm text-gray-300 mt-3 leading-relaxed">{section.summary}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              {estimatedTime ? <ManualEstimatedTimeBadge time={estimatedTime} /> : null}
+              <ManualVideoButton topic={section.title} />
+            </div>
           </div>
         </div>
       </div>
 
       <div className="p-5 md:p-6 space-y-5">
+        {illustrationKey ? (
+          <ManualIllustrationPlaceholder illustrationKey={illustrationKey} />
+        ) : null}
+
         <div className="rounded-xl bg-blue-500/5 border border-blue-500/15 p-4">
           <p className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1.5">
             Onde encontrar
@@ -158,6 +194,8 @@ function ManualModuleCard({ section }: { section: ManualSection }) {
             ))}
           </ul>
         </div>
+
+        <ManualTrainingTipsBlock tips={trainingTips} />
       </div>
     </article>
   );
@@ -196,18 +234,52 @@ function QuickNavCard({ section, onClick }: { section: ManualSection; onClick?: 
   );
 }
 
+function TrainingNavLink({ id, label }: { id: string; label: string }) {
+  return (
+    <a
+      href={`#${id}`}
+      className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-orange-500/25 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 transition-colors"
+    >
+      {label}
+    </a>
+  );
+}
+
 export default function ManualPage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const { sections, faq } = useMemo(() => filterManualContent(query), [query]);
+  const [readingProgress, setReadingProgress] = useState(0);
+  const { sections, faq, showTrainingBlocks } = useMemo(
+    () => filterManualContent(query),
+    [query],
+  );
   const showFaq = !query || faq.length > 0;
-  const hasResults = sections.length > 0 || faq.length > 0;
+  const hasResults =
+    sections.length > 0 || faq.length > 0 || (showTrainingBlocks && query.length > 0);
 
   const navSections = query ? sections : MANUAL_SECTIONS;
 
+  useEffect(() => {
+    const updateProgress = () => {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+      setReadingProgress(pct);
+    };
+
+    updateProgress();
+    window.addEventListener('scroll', updateProgress, { passive: true });
+    window.addEventListener('resize', updateProgress);
+    return () => {
+      window.removeEventListener('scroll', updateProgress);
+      window.removeEventListener('resize', updateProgress);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#0b0e14] text-gray-100 flex flex-col">
-      {/* Header */}
+      <ManualReadingProgress progress={readingProgress} />
+
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b0e14]/95 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -217,10 +289,10 @@ export default function ManualPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl md:text-2xl font-bold text-white truncate">
-                  Manual do SV LOTES
+                  Manual de Treinamento SV LOTES
                 </h1>
                 <p className="text-xs md:text-sm text-gray-400">
-                  Guia completo para imobiliárias e loteadoras
+                  Onboarding, fluxos e guia completo para equipes
                 </p>
               </div>
             </div>
@@ -240,17 +312,20 @@ export default function ManualPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar: contrato, venda, mapa, parcelas, fluxo de caixa, recibo…"
+              placeholder="Buscar: primeiros passos, fluxograma, venda, erros comuns, contrato…"
               className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#11161d] border border-white/10 text-white placeholder:text-gray-500 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/30"
               aria-label="Buscar no manual"
             />
           </label>
 
-          {/* Category nav */}
           <nav
             className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin"
             aria-label="Categorias do manual"
           >
+            {!query &&
+              TRAINING_NAV.map((item) => (
+                <TrainingNavLink key={item.id} id={item.id} label={item.label} />
+              ))}
             {navSections.map((s) => (
               <a
                 key={s.id}
@@ -274,12 +349,26 @@ export default function ManualPage() {
 
       <div className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          {/* Sidebar index — desktop */}
           {!query && (
             <aside className="hidden lg:block w-56 shrink-0">
               <div className="sticky top-36 rounded-2xl border border-white/10 bg-[#11161d] p-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400 mb-2">
+                  Treinamento
+                </p>
+                <ul className="space-y-1 mb-4 pb-4 border-b border-white/5">
+                  {TRAINING_NAV.map((item) => (
+                    <li key={item.id}>
+                      <a
+                        href={`#${item.id}`}
+                        className="block text-xs text-orange-300/80 hover:text-orange-300 py-1.5 px-2 rounded-lg hover:bg-orange-500/10 transition-colors leading-snug"
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
-                  Índice
+                  Módulos
                 </p>
                 <ul className="space-y-1">
                   {MANUAL_SECTIONS.map((s) => (
@@ -306,11 +395,18 @@ export default function ManualPage() {
           )}
 
           <main className="flex-1 min-w-0 space-y-6">
-            {/* Quick nav cards — mobile */}
             {!query && (
               <section aria-label="Navegação rápida" className="lg:hidden">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
-                  Navegação rápida
+                  Treinamento rápido
+                </p>
+                <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mb-4">
+                  {TRAINING_NAV.map((item) => (
+                    <TrainingNavLink key={item.id} id={item.id} label={item.label} />
+                  ))}
+                </div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+                  Módulos
                 </p>
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
                   {MANUAL_SECTIONS.map((s) => (
@@ -320,7 +416,6 @@ export default function ManualPage() {
               </section>
             )}
 
-            {/* Legend */}
             {!query && (
               <div className="rounded-2xl border border-white/10 bg-[#11161d] p-4 md:p-5">
                 <p className="text-sm font-semibold text-white mb-3">Legenda de cores no mapa</p>
@@ -346,8 +441,8 @@ export default function ManualPage() {
                 <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                 <p className="text-white font-medium">Nenhum resultado encontrado</p>
                 <p className="text-sm text-gray-500 mt-2">
-                  Tente: contrato, venda, cliente, mapa, parcelas, fluxo de caixa, recibo, corretor,
-                  assinatura, carnê, memorial ou prancha.
+                  Tente: primeiros passos, fluxograma, contrato, venda, erros comuns, parcelas,
+                  fluxo de caixa, recibo, corretor, assinatura ou carnê.
                 </p>
                 <button
                   type="button"
@@ -359,6 +454,16 @@ export default function ManualPage() {
               </div>
             ) : (
               <>
+                {showTrainingBlocks && (
+                  <div className="space-y-6">
+                    <ManualFirstStepsSection />
+                    <ManualMainFlowchartSection />
+                    <ManualCompleteFlowsSection />
+                    <ManualCommonErrorsSection />
+                    <ManualOperationTimesSection />
+                  </div>
+                )}
+
                 {sections.map((section) => (
                   <ManualModuleCard key={section.id} section={section} />
                 ))}

@@ -1,3 +1,9 @@
+/**
+ * Seções e conteúdo do manual SV LOTES.
+ */
+
+import { trainingHaystack } from '@/lib/manualTraining';
+
 export type ManualBadgeId =
   | 'venda'
   | 'financeiro'
@@ -548,12 +554,36 @@ function faqHaystack(item: ManualFaqItem): string {
 export type ManualSearchResult = {
   sections: ManualSection[];
   faq: ManualFaqItem[];
+  showTrainingBlocks: boolean;
 };
+
+export function shouldShowTrainingInSearch(query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = trainingHaystack();
+  const trainingKeywords = [
+    'primeiros passos',
+    'fluxograma',
+    'fluxo de venda',
+    'fluxo de recebimento',
+    'cancelamento',
+    'regeneração',
+    'regenerar',
+    'erros comuns',
+    'treinamento',
+    'onboarding',
+    'tempo médio',
+    'vídeo',
+  ];
+  return haystack.includes(q) || trainingKeywords.some((k) => q.includes(k) || k.includes(q));
+}
 
 export function filterManualContent(query: string): ManualSearchResult {
   const q = query.trim().toLowerCase();
+  const showTrainingBlocks = shouldShowTrainingInSearch(query);
+
   if (!q) {
-    return { sections: MANUAL_SECTIONS, faq: MANUAL_FAQ };
+    return { sections: MANUAL_SECTIONS, faq: MANUAL_FAQ, showTrainingBlocks: true };
   }
 
   const sections = MANUAL_SECTIONS.filter((section) => sectionHaystack(section).includes(q)).map(
@@ -578,7 +608,7 @@ export function filterManualContent(query: string): ManualSearchResult {
 
   const faq = MANUAL_FAQ.filter((item) => faqHaystack(item).includes(q));
 
-  return { sections, faq };
+  return { sections, faq, showTrainingBlocks };
 }
 
 /** @deprecated Use filterManualContent */
