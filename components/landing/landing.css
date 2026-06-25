@@ -2765,7 +2765,8 @@ html:has(.landing-page) {
 
 .landing-hero-v2-features {
   margin: 1.85rem 0 0;
-  padding: 0;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 2px solid #f97316;
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -2895,7 +2896,8 @@ html:has(.landing-page) {
   box-shadow:
     0 32px 80px -24px rgba(0, 0, 0, 0.75),
     0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 0 80px rgba(249, 115, 22, 0.14);
+    0 0 100px rgba(99, 102, 241, 0.16),
+    0 0 60px rgba(249, 115, 22, 0.12);
 }
 
 .landing-hero-v2-mockup-chrome {
@@ -2931,7 +2933,7 @@ html:has(.landing-page) {
   position: absolute;
   inset: auto 10% -1.5rem 10%;
   height: 2.75rem;
-  background: radial-gradient(ellipse, rgba(249, 115, 22, 0.28), transparent 72%);
+  background: radial-gradient(ellipse, rgba(99, 102, 241, 0.32), rgba(249, 115, 22, 0.18) 45%, transparent 72%);
   pointer-events: none;
 }
 
@@ -2979,10 +2981,27 @@ html:has(.landing-page) {
 
 .landing-hero-v2-client-divider {
   width: 1px;
-  height: 1.25rem;
-  margin: 0 1rem;
+  height: 2rem;
+  margin: 0 1.25rem;
   background: rgba(255, 255, 255, 0.14);
   flex-shrink: 0;
+}
+
+.landing-hero-v2-client-logo {
+  display: block;
+  width: auto;
+  height: 2.25rem;
+  max-width: min(9.5rem, 28vw);
+  object-fit: contain;
+  object-position: left center;
+  opacity: 0.92;
+}
+
+@media (min-width: 768px) {
+  .landing-hero-v2-client-logo {
+    height: 2.5rem;
+    max-width: 9.5rem;
+  }
 }
 
 .landing-hero-v2-client-name {

@@ -12,10 +12,11 @@ import {
   Wallet,
 } from 'lucide-react';
 import {
-  LANDING_CLIENTS,
+  LANDING_CLIENT_LOGOS,
   LANDING_PRESENTATION_URL,
   LANDING_TEST_LOTEMENT_PATH,
 } from '../constants/landingConfig';
+import { SCREEN_IMAGE_PATHS } from '../ScreenMocks';
 import { Float, Reveal, Stagger, StaggerItem } from '../LandingMotion';
 
 const HERO_FEATURES = [
@@ -40,6 +41,8 @@ const HERO_FEATURES = [
     description: 'Dados precisos para decisões estratégicas mais assertivas.',
   },
 ];
+
+const DASHBOARD_SCREENSHOT = SCREEN_IMAGE_PATHS.dashboard;
 
 export function HeroSection() {
   return (
@@ -119,8 +122,8 @@ export function HeroSection() {
               </div>
               <div className="landing-hero-v2-mockup-screen">
                 <Image
-                  src="/landing/landing-home.png"
-                  alt="Painel do SV LOTES com dashboard, mapa GIS e indicadores em tempo real"
+                  src={DASHBOARD_SCREENSHOT}
+                  alt="Dashboard do SV LOTES com indicadores, resumo financeiro e atividades recentes"
                   width={1400}
                   height={880}
                   className="landing-hero-v2-mockup-img"
@@ -140,10 +143,16 @@ export function HeroSection() {
           Veja alguns dos nossos clientes que já utilizam o sistema:
         </p>
         <div className="landing-hero-v2-clients-track" role="list">
-          {LANDING_CLIENTS.map((client, index) => (
-            <span key={client} className="landing-hero-v2-client-item" role="listitem">
+          {LANDING_CLIENT_LOGOS.map((client, index) => (
+            <span key={client.name} className="landing-hero-v2-client-item" role="listitem">
               {index > 0 ? <span className="landing-hero-v2-client-divider" aria-hidden /> : null}
-              <span className="landing-hero-v2-client-name">{client}</span>
+              <Image
+                src={client.src}
+                alt={client.name}
+                width={client.width}
+                height={client.height}
+                className="landing-hero-v2-client-logo"
+              />
             </span>
           ))}
         </div>

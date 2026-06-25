@@ -129,6 +129,25 @@ export const LANDING_CLIENTS = [
   'LF Imóveis',
 ] as const;
 
+/** Logos exibidos no hero — substitua por PNGs reais em public/landing/clients/ quando disponíveis. */
+export const LANDING_CLIENT_LOGOS: Array<{
+  name: string;
+  src: string;
+  width: number;
+  height: number;
+}> = [
+  { name: 'SV Topografia & Projetos', src: '/landing/logo.png', width: 140, height: 52 },
+  { name: 'Meneses Imobiliária', src: '/landing/clients/meneses.svg', width: 120, height: 48 },
+  {
+    name: 'Chacreamento Recanto Primavera',
+    src: '/landing/clients/recanto-primavera.svg',
+    width: 150,
+    height: 48,
+  },
+  { name: 'Vila das Chácaras', src: '/landing/clients/vila-chacaras.svg', width: 130, height: 48 },
+  { name: 'LF Imóveis', src: '/landing/clients/lf-imoveis.svg', width: 110, height: 48 },
+];
+
 /** Métricas exibidas na seção Benefícios (percepção de escala). */
 export const LANDING_STATS = [
   { value: 100, suffix: '+', label: 'empreendimentos cadastrados' },
