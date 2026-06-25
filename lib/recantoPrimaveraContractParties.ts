@@ -105,6 +105,12 @@ export function buildRecantoPrimaveraSpouseClauseHtml(
     </div>`;
 }
 
+function buildRecantoBrokerCreciLine(creci: string): string {
+  const clean = sanitizeContractField(creci);
+  if (!clean) return '';
+  return `CRECI nº ${clean}`;
+}
+
 export function buildRecantoPrimaveraSignaturesHtml(
   ctx: RecantoPrimaveraContractContext,
 ): string {
@@ -130,7 +136,9 @@ export function buildRecantoPrimaveraSignaturesHtml(
   const brokerSignatureSlot = buildSignatureSlot({
     role: 'CORRETOR',
     name: ctx.hasBroker ? ctx.brokerNome : '',
-    docLines: [],
+    docLines: ctx.hasBroker
+      ? [buildRecantoBrokerCreciLine(ctx.brokerCreci)].filter(Boolean)
+      : [],
   });
 
   return `

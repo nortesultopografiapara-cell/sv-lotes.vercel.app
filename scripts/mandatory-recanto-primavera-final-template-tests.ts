@@ -395,9 +395,52 @@ function testBrokerFilled() {
   const html = buildHtml();
   assert(html.includes('CORRETOR'), 'título corretor nas assinaturas');
   assert(html.includes('Carlos Corretor'), 'nome corretor abaixo do título');
+  assert(html.includes('CRECI nº 12345-PA'), 'creci do corretor abaixo do nome');
   assertNotIncludes(html, 'Corretor responsável', 'sem resumo corretor');
   assertNotIncludes(html, 'Intermediação', 'sem bloco intermediação');
   console.log('OK testBrokerFilled');
+}
+
+function testBrokerWithCreciDisplaysBelowName() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      brokers: {
+        name: 'Jhonne De Sousa Silva',
+        cpf: '55566677788',
+        creci: '14236F',
+      },
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('Jhonne De Sousa Silva'), 'nome jhonne');
+  assert(html.includes('CRECI nº 14236F'), 'creci jhonne');
+  console.log('OK testBrokerWithCreciDisplaysBelowName');
+}
+
+function testBrokerWithoutCreciShowsNameOnly() {
+  const html = generateContractHTML({
+    tenant: ivanildeTenant,
+    customer,
+    project: recantoProject,
+    block,
+    sale: {
+      ...sale,
+      brokers: {
+        name: 'Corretor Sem Creci',
+        cpf: '55566677788',
+        creci: '',
+      },
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(html.includes('Corretor Sem Creci'), 'nome corretor sem creci');
+  assertNotIncludes(html, 'CRECI nº', 'sem linha creci');
+  console.log('OK testBrokerWithoutCreciShowsNameOnly');
 }
 
 function testBrokerEmpty() {
@@ -417,6 +460,7 @@ function testBrokerEmpty() {
   });
   assert(html.includes('CORRETOR'), 'título corretor mantido sem broker');
   assertNotIncludes(html, 'Carlos Corretor', 'sem nome corretor');
+  assertNotIncludes(html, 'CRECI nº', 'sem creci sem corretor');
   assertNotIncludes(html, 'Corretor responsável', 'sem corretor no resumo');
   assertNotIncludes(html, 'Intermediação', 'sem bloco intermediação');
   console.log('OK testBrokerEmpty');
@@ -653,6 +697,7 @@ function testSignaturesFormat() {
   assert(html.includes('CÔNJUGE ANUENTE'), 'assinatura cônjuge');
   assert(html.includes('CORRETOR'), 'slot assinatura corretor');
   assert(html.includes('Carlos Corretor'), 'nome corretor abaixo do título');
+  assert(html.includes('CRECI nº 12345-PA'), 'creci corretor nas assinaturas');
   assert(html.includes('Testemunhas'), 'testemunhas');
   assert(html.includes('RG/CPF:'), 'rg/cpf testemunhas');
   assertNotIncludes(html, 'Intermediação', 'sem intermediação antes das assinaturas');
@@ -1089,6 +1134,8 @@ async function main() {
   testContractWithoutSpouse();
   testContractWithSpouseCpfOnly();
   testBrokerFilled();
+  testBrokerWithCreciDisplaysBelowName();
+  testBrokerWithoutCreciShowsNameOnly();
   testBrokerEmpty();
   testBrokerResolutionHelpers();
   testBrokerRegenerationRealWorldShape();
