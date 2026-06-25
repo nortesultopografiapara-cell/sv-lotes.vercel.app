@@ -32,8 +32,16 @@ type BillingSubscriptionLike = {
   created_at?: string | null;
 };
 
+/** Fuso padrão para cobrança SaaS e lembretes automáticos (Brasil). */
+export const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+
 export function todayIsoDate(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+/** Data ISO (YYYY-MM-DD) no fuso America/Sao_Paulo — usada por crons diários locais. */
+export function todayBrazilIsoDate(now: Date = new Date()): string {
+  return now.toLocaleDateString('en-CA', { timeZone: BRAZIL_TIMEZONE });
 }
 
 export function toIsoDateOnly(value?: string | null): string | null {

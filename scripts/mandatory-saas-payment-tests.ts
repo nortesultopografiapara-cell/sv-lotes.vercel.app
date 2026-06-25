@@ -41,7 +41,7 @@ import {
   sortSaasInvoiceChargeRows,
   toggleSaasChargeColumnSort,
 } from '../lib/saasChargeTableSort';
-import { addOneMonthToIsoDate, companyNextPaymentPatch } from '../lib/companySubscriptionDates';
+import { addOneMonthToIsoDate, companyNextPaymentPatch, todayBrazilIsoDate } from '../lib/companySubscriptionDates';
 import { resolveSaasFinancialSituation } from '../lib/masterSaasFinancialStatus';
 import { shouldShowFullTenantAdminMenu, isBrokerRole, isOwnerRole } from '../lib/rolePermissions';
 import {
@@ -58,7 +58,7 @@ import {
   isSaasChargeStatusEligibleForReminder,
   resolveReminderTypesForCharge,
 } from '../lib/saasBillingReminderTypes';
-import { isCronSecretValid, resolveCronSecret } from '../lib/saasCronAuth';
+import { isCronSecretValid, resolveCronSecret, resolveCronSecrets } from '../lib/saasCronAuth';
 import { buildSaasBillingReminderEmailHtml } from '../lib/saasBillingReminderEmail';
 import {
   buildSaasBillingReminderWhatsAppMessage,
@@ -1287,6 +1287,18 @@ function testSaasBillingReminders() {
     '3 dias antes gera reminder_3_days',
   );
   assert(
+    resolveReminderTypesForCharge('2026-06-27', 'PENDING', '2026-06-24').includes('reminder_3_days'),
+    'MENESES 2026-06: vencimento 27/06 com execução 24/06 gera reminder_3_days',
+  );
+  assert(
+    resolveReminderTypesForCharge('2026-06-27', 'PENDING', '2026-06-24').length === 1,
+    'MENESES 2026-06: apenas reminder_3_days em 24/06 para vencimento 27/06',
+  );
+  assert(
+    todayBrazilIsoDate(new Date('2026-06-24T11:00:00Z')) === '2026-06-24',
+    'todayBrazilIsoDate 11:00 UTC = 08:00 BRT no mesmo dia civil',
+  );
+  assert(
     resolveReminderTypesForCharge('2026-06-20', 'PENDING', '2026-06-20').includes('due_today'),
     'vencimento hoje gera due_today',
   );
@@ -1334,6 +1346,10 @@ function testSaasBillingReminders() {
 
   const reminders = read('lib/saasBillingReminders.ts');
   assert(reminders.includes('runSaasBillingReminders'), 'runner cron');
+  assert(reminders.includes('todayBrazilIsoDate'), 'runner usa data Brasil');
+  assert(reminders.includes('hasSaasChargeRealPixData'), 'candidatos aceitam link/PIX sem payment_id obrigatório');
+  assert(reminders.includes('automations:'), 'retorno inclui resumo por automação');
+  assert(reminders.includes('candidatesExcluded'), 'retorno inclui cobranças excluídas');
   assert(reminders.includes('wasSaasBillingReminderSent'), 'evita duplicidade');
   assert(reminders.includes('SAAS_BILLING_REMINDER_EMAIL'), 'auditoria envio email');
   assert(reminders.includes('processSaasBillingReminderWhatsAppForCharge'), 'runner whatsapp');
@@ -1343,6 +1359,9 @@ function testSaasBillingReminders() {
   const vercel = read('vercel.json');
   assert(vercel.includes('/api/cron/saas-billing-reminders'), 'vercel cron path');
   assert(vercel.includes('0 11 * * *'), 'cron 08h BRT');
+
+  const middleware = read('middleware.ts');
+  assert(middleware.includes("'/api/cron'"), 'middleware libera rota cron sem sessão');
 
   const panel = read('components/master/saas/SaasAutomationsPanel.tsx');
   assert(panel.includes('E-mail · Ativo'), 'UI email ativo');
@@ -1354,9 +1373,15 @@ function testSaasBillingReminders() {
   assert(apiRoute.includes('whatsappConfigured'), 'API retorna whatsappConfigured');
 
   const origSecret = process.env.CRON_SECRET;
+  const origSaasSecret = process.env.SAAS_CRON_SECRET;
   try {
     process.env.CRON_SECRET = 'test-cron-secret';
+    delete process.env.SAAS_CRON_SECRET;
     assert(resolveCronSecret() === 'test-cron-secret', 'resolve cron secret');
+    assert(
+      resolveCronSecrets().join(',') === 'test-cron-secret',
+      'resolveCronSecrets com CRON_SECRET',
+    );
     assert(
       !isCronSecretValid(
         new Request('http://localhost/api/cron/saas-billing-reminders'),
@@ -1377,9 +1402,22 @@ function testSaasBillingReminders() {
       ),
       'cron query secret',
     );
+
+    delete process.env.CRON_SECRET;
+    process.env.SAAS_CRON_SECRET = 'saas-only-secret';
+    assert(
+      isCronSecretValid(
+        new Request('http://localhost/api/cron/saas-billing-reminders', {
+          headers: { authorization: 'Bearer saas-only-secret' },
+        }),
+      ),
+      'cron aceita SAAS_CRON_SECRET no Bearer',
+    );
   } finally {
     if (origSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = origSecret;
+    if (origSaasSecret === undefined) delete process.env.SAAS_CRON_SECRET;
+    else process.env.SAAS_CRON_SECRET = origSaasSecret;
   }
 }
 

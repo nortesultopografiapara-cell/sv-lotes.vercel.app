@@ -3,8 +3,9 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { todayIsoDate } from '@/lib/companySubscriptionDates';
+import { BRAZIL_TIMEZONE, addDaysToIsoDate, todayBrazilIsoDate } from '@/lib/companySubscriptionDates';
 import { referenceMonthFromDate } from '@/lib/masterSaasPayments';
+import { hasSaasChargeRealPixData } from '@/lib/saasCharges';
 import {
   isSaasBillingEmailConfigured,
   sendSaasBillingReminderEmail,
@@ -41,20 +42,46 @@ export type SaasBillingReminderCandidate = {
 export type SaasBillingReminderRunItem = {
   chargeId: string;
   companyId: string;
+  companyName?: string;
+  dueDate?: string;
   reminderType: SaasBillingReminderType;
+  automationKey?: string;
   channel: SaasBillingReminderChannel;
   outcome: 'sent' | 'skipped' | 'failed' | 'duplicate';
   sentTo?: string | null;
   message?: string;
 };
 
+export type SaasBillingReminderAutomationSummary = {
+  automationKey: string;
+  reminderType: SaasBillingReminderType;
+  channel: SaasBillingReminderChannel;
+  targetDueDate: string;
+  chargesMatched: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  duplicates: number;
+};
+
 export type SaasBillingReminderRunResult = {
   runDate: string;
+  timezone: string;
+  candidatesFound: number;
+  candidatesExcluded: number;
   processed: number;
   sent: number;
   skipped: number;
   failed: number;
   duplicates: number;
+  automations: SaasBillingReminderAutomationSummary[];
+  excluded: Array<{
+    chargeId: string;
+    companyId: string;
+    companyName: string;
+    dueDate: string;
+    reason: string;
+  }>;
   items: SaasBillingReminderRunItem[];
 };
 
@@ -79,11 +106,10 @@ export async function listSaasBillingReminderCandidates(
   const { data: charges, error } = await supabaseAdmin
     .from('saas_charges')
     .select(
-      'id, company_id, amount, due_date, status, payment_id, payment_url, invoice_url, bank_slip_url, invoice_id, created_at',
+      'id, company_id, amount, due_date, status, payment_id, payment_url, invoice_url, bank_slip_url, pix_copy_paste, invoice_id, created_at',
     )
     .is('deleted_at', null)
     .in('status', ['PENDING', 'OVERDUE'])
-    .not('payment_id', 'is', null)
     .order('due_date', { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -120,6 +146,13 @@ export async function listSaasBillingReminderCandidates(
   return charges
     .filter((row) => isSaasChargeStatusEligibleForReminder(String(row.status || '')))
     .filter((row) => !isSaasChargeStatusBlockedForReminder(String(row.status || '')))
+    .filter((row) =>
+      hasSaasChargeRealPixData({
+        payment_id: row.payment_id ? String(row.payment_id) : null,
+        pix_copy_paste: row.pix_copy_paste ? String(row.pix_copy_paste) : null,
+        payment_url: row.payment_url ? String(row.payment_url) : null,
+      }),
+    )
     .map((row) => {
       const company = companyById.get(String(row.company_id));
       const invoiceId = row.invoice_id ? String(row.invoice_id) : '';
@@ -450,30 +483,139 @@ export async function processSaasBillingReminderWhatsAppForCharge(
 function pushReminderRunItem(
   result: SaasBillingReminderRunResult,
   item: SaasBillingReminderRunItem,
+  automationStats: Map<string, SaasBillingReminderAutomationSummary>,
 ): void {
   result.items.push(item);
   if (item.outcome === 'sent') result.sent += 1;
   else if (item.outcome === 'failed') result.failed += 1;
   else if (item.outcome === 'duplicate') result.duplicates += 1;
   else result.skipped += 1;
+
+  const automationKey = item.automationKey || item.reminderType;
+  const channelKey = `${automationKey}:${item.channel}`;
+  const summary =
+    automationStats.get(channelKey) ||
+    ({
+      automationKey,
+      reminderType: item.reminderType,
+      channel: item.channel,
+      targetDueDate: '',
+      chargesMatched: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      duplicates: 0,
+    } satisfies SaasBillingReminderAutomationSummary);
+
+  summary.chargesMatched += 1;
+  if (item.outcome === 'sent') summary.sent += 1;
+  else if (item.outcome === 'failed') summary.failed += 1;
+  else if (item.outcome === 'duplicate') summary.duplicates += 1;
+  else summary.skipped += 1;
+  automationStats.set(channelKey, summary);
+}
+
+function buildAutomationSummaries(
+  runDate: string,
+  automationStats: Map<string, SaasBillingReminderAutomationSummary>,
+): SaasBillingReminderAutomationSummary[] {
+  return SAAS_BILLING_REMINDER_DEFINITIONS.flatMap((definition) => {
+    const targetDueDate =
+      typeof definition.daysBeforeDue === 'number'
+        ? addDaysToIsoDate(runDate, definition.daysBeforeDue)
+        : runDate;
+
+    return (['email', 'whatsapp'] as SaasBillingReminderChannel[]).map((channel) => {
+      const key = `${definition.automationId}:${channel}`;
+      const existing = automationStats.get(key);
+      return {
+        automationKey: definition.automationId,
+        reminderType: definition.type,
+        channel,
+        targetDueDate,
+        chargesMatched: existing?.chargesMatched ?? 0,
+        sent: existing?.sent ?? 0,
+        skipped: existing?.skipped ?? 0,
+        failed: existing?.failed ?? 0,
+        duplicates: existing?.duplicates ?? 0,
+      };
+    });
+  });
 }
 
 export async function runSaasBillingReminders(
   supabaseAdmin: SupabaseClient,
   options?: { today?: string; dryRun?: boolean },
 ): Promise<SaasBillingReminderRunResult> {
-  const runDate = options?.today || todayIsoDate();
+  const runDate = options?.today || todayBrazilIsoDate();
+  const allOpenCharges = await supabaseAdmin
+    .from('saas_charges')
+    .select('id, company_id, due_date, status, payment_id, payment_url, pix_copy_paste, deleted_at')
+    .is('deleted_at', null)
+    .in('status', ['PENDING', 'OVERDUE']);
+
   const candidates = await listSaasBillingReminderCandidates(supabaseAdmin);
+  const candidateIds = new Set(candidates.map((item) => item.chargeId));
+
+  const companyIds = [
+    ...new Set(
+      (allOpenCharges.data || [])
+        .filter((row) => !candidateIds.has(String(row.id)))
+        .map((row) => String(row.company_id)),
+    ),
+  ];
+  const companyNameById = new Map<string, string>();
+  if (companyIds.length) {
+    const { data: companies } = await supabaseAdmin
+      .from('companies')
+      .select('id, name')
+      .in('id', companyIds);
+    for (const company of companies || []) {
+      companyNameById.set(String(company.id), String(company.name || 'Empresa'));
+    }
+  }
+
+  const excluded = (allOpenCharges.data || [])
+    .filter((row) => !candidateIds.has(String(row.id)))
+    .map((row) => {
+      const status = String(row.status || '').toUpperCase();
+      let reason = 'Cobrança não elegível para lembrete automático.';
+      if (!isSaasChargeStatusEligibleForReminder(status)) {
+        reason = `Status ${status} não elegível.`;
+      } else if (
+        !hasSaasChargeRealPixData({
+          payment_id: row.payment_id ? String(row.payment_id) : null,
+          pix_copy_paste: row.pix_copy_paste ? String(row.pix_copy_paste) : null,
+          payment_url: row.payment_url ? String(row.payment_url) : null,
+        })
+      ) {
+        reason = 'Sem payment_id, PIX ou link Asaas — ignorada na busca de candidatos.';
+      }
+      return {
+        chargeId: String(row.id),
+        companyId: String(row.company_id),
+        companyName: companyNameById.get(String(row.company_id)) || 'Empresa',
+        dueDate: String(row.due_date || '').split('T')[0],
+        reason,
+      };
+    });
 
   const result: SaasBillingReminderRunResult = {
     runDate,
+    timezone: BRAZIL_TIMEZONE,
+    candidatesFound: candidates.length,
+    candidatesExcluded: excluded.length,
     processed: 0,
     sent: 0,
     skipped: 0,
     failed: 0,
     duplicates: 0,
+    automations: [],
+    excluded,
     items: [],
   };
+
+  const automationStats = new Map<string, SaasBillingReminderAutomationSummary>();
 
   for (const candidate of candidates) {
     const reminderTypes = resolveReminderTypesForCharge(
@@ -482,7 +624,28 @@ export async function runSaasBillingReminders(
       runDate,
     );
 
+    if (!reminderTypes.length) {
+      result.excluded.push({
+        chargeId: candidate.chargeId,
+        companyId: candidate.companyId,
+        companyName: candidate.companyName,
+        dueDate: candidate.dueDate,
+        reason: `Nenhum lembrete agendado para ${runDate} (vencimento ${candidate.dueDate}).`,
+      });
+      continue;
+    }
+
     for (const reminderType of reminderTypes) {
+      const definition = getSaasBillingReminderDefinition(reminderType);
+      const itemBase = {
+        chargeId: candidate.chargeId,
+        companyId: candidate.companyId,
+        companyName: candidate.companyName,
+        dueDate: candidate.dueDate,
+        reminderType,
+        automationKey: definition.automationId,
+      };
+
       result.processed += 1;
       try {
         const emailItem = await processSaasBillingReminderForCharge(
@@ -491,17 +654,18 @@ export async function runSaasBillingReminders(
           reminderType,
           { dryRun: options?.dryRun },
         );
-        pushReminderRunItem(result, emailItem);
+        pushReminderRunItem(result, { ...itemBase, ...emailItem }, automationStats);
       } catch (err) {
-        result.failed += 1;
-        result.items.push({
-          chargeId: candidate.chargeId,
-          companyId: candidate.companyId,
-          reminderType,
-          channel: 'email',
-          outcome: 'failed',
-          message: err instanceof Error ? err.message : String(err),
-        });
+        pushReminderRunItem(
+          result,
+          {
+            ...itemBase,
+            channel: 'email',
+            outcome: 'failed',
+            message: err instanceof Error ? err.message : String(err),
+          },
+          automationStats,
+        );
       }
 
       result.processed += 1;
@@ -512,21 +676,23 @@ export async function runSaasBillingReminders(
           reminderType,
           { dryRun: options?.dryRun },
         );
-        pushReminderRunItem(result, whatsappItem);
+        pushReminderRunItem(result, { ...itemBase, ...whatsappItem }, automationStats);
       } catch (err) {
-        result.failed += 1;
-        result.items.push({
-          chargeId: candidate.chargeId,
-          companyId: candidate.companyId,
-          reminderType,
-          channel: 'whatsapp',
-          outcome: 'failed',
-          message: err instanceof Error ? err.message : String(err),
-        });
+        pushReminderRunItem(
+          result,
+          {
+            ...itemBase,
+            channel: 'whatsapp',
+            outcome: 'failed',
+            message: err instanceof Error ? err.message : String(err),
+          },
+          automationStats,
+        );
       }
     }
   }
 
+  result.automations = buildAutomationSummaries(runDate, automationStats);
   return result;
 }
 
