@@ -4,13 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Building2, Edit, Eye, ExternalLink, LogIn, MoreVertical, Power, PowerOff, Trash2 } from 'lucide-react';
 import '@/components/admin/admin-shell.css';
-import { getCompanySaasPlan, getSaasPlanDisplayNameFromRaw } from '@/lib/saasPlans';
+import { getCompanySaasPlan } from '@/lib/saasPlans';
 import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
 import { SaasUsageMetric } from '@/components/companies/SaasUsageMetric';
 
-function planLabel(company: { plan?: string; plan_type?: string }) {
-  return getSaasPlanDisplayNameFromRaw(company.plan_type || company.plan);
+function planLabel(company: { plan?: string; plan_type?: string; module_plan?: string | null }) {
+  return getCompanySaasPlan(company).displayName;
 }
 
 function CompanyTypeBadge({ company }: { company: { is_test_company?: boolean; is_test?: boolean } }) {

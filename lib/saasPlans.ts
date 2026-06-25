@@ -112,11 +112,15 @@ const PLAN_ALIAS: Record<string, SaasPlanKey> = {
   custom: 'personalizado',
 };
 
-const PLAN_FIELD_PRIORITY = [
+const PRIMARY_PLAN_FIELDS = [
   'saas_plan',
   'subscription_plan',
   'plan_type',
   'plan',
+] as const;
+
+const PLAN_FIELD_PRIORITY = [
+  ...PRIMARY_PLAN_FIELDS,
   'module_plan',
   'module_type',
 ] as const;
@@ -236,6 +240,95 @@ function pickHighestPlanKey(keys: SaasPlanKey[]): SaasPlanKey {
   return best;
 }
 
+/** Plano efetivo — campos primários (plan_type/plan) têm prioridade sobre module_plan legado. */
+export function resolveAuthoritativePlanKey(
+  company?: CompanySaasSource | null,
+): SaasPlanKey {
+  if (!company) return 'basico';
+
+  for (const field of PRIMARY_PLAN_FIELDS) {
+    const raw = company[field];
+    if (raw == null) continue;
+    const text = String(raw).trim();
+    if (!text) continue;
+    if (normalizeSaasPlanKey(text) === 'personalizado') {
+      return 'personalizado';
+    }
+  }
+
+  const primaryKeys: SaasPlanKey[] = [];
+  for (const field of PRIMARY_PLAN_FIELDS) {
+    const raw = company[field];
+    if (raw == null) continue;
+    const text = String(raw).trim();
+    if (text) primaryKeys.push(normalizeSaasPlanKey(text));
+  }
+  if (primaryKeys.length > 0) {
+    return pickHighestPlanKey(primaryKeys);
+  }
+
+  const metadataPlans = [
+    readMetadataPlan(company, 'plan'),
+    readMetadataPlan(company, 'saas_plan'),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => normalizeSaasPlanKey(value));
+  if (metadataPlans.length > 0) {
+    return pickHighestPlanKey(metadataPlans);
+  }
+
+  const legacyKeys: SaasPlanKey[] = [];
+  for (const field of ['module_plan', 'module_type'] as const) {
+    const raw = company[field];
+    if (raw == null) continue;
+    const text = String(raw).trim();
+    if (text) legacyKeys.push(normalizeSaasPlanKey(text));
+  }
+  if (legacyKeys.length > 0) {
+    return pickHighestPlanKey(legacyKeys);
+  }
+
+  return 'basico';
+}
+
+/** Converte input do formulário/API em limite numérico ou null (vazio → null, nunca catálogo). */
+export function parseManualPlanLimit(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).replace(',', '.').trim());
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.trunc(n);
+}
+
+export function buildManualLimitsFromForm(input: {
+  max_projects?: unknown;
+  max_lots?: unknown;
+  max_brokers?: unknown;
+  admin_users_limit?: unknown;
+  max_admins?: unknown;
+  saas_commercial_note?: unknown;
+}): SaasPlanManualOverrides {
+  return {
+    max_projects: parseManualPlanLimit(input.max_projects),
+    max_lots: parseManualPlanLimit(input.max_lots),
+    max_brokers: parseManualPlanLimit(input.max_brokers),
+    admin_users_limit: parseManualPlanLimit(
+      input.admin_users_limit ?? input.max_admins,
+    ),
+    saas_commercial_note:
+      input.saas_commercial_note == null
+        ? null
+        : String(input.saas_commercial_note).trim() || null,
+  };
+}
+
+export function saasPlanModuleSyncPayload(planKey: SaasPlanKey) {
+  const config = SAAS_PLAN_CATALOG[planKey];
+  return {
+    module_plan: config.label,
+    module_type: config.legacyDbKey,
+  };
+}
+
 function readStoredLimit(...values: Array<number | null | undefined>): number | null {
   for (const value of values) {
     if (value == null) continue;
@@ -294,8 +387,7 @@ export type CompanySaasPlanResolved = {
 
 export function getCompanySaasPlan(company?: CompanySaasSource | null): CompanySaasPlanResolved {
   const allRawPlans = collectCompanyPlanValues(company);
-  const normalizedKeys = allRawPlans.map((v) => normalizeSaasPlanKey(v));
-  let planKey = pickHighestPlanKey(normalizedKeys.length > 0 ? normalizedKeys : ['basico']);
+  const planKey = resolveAuthoritativePlanKey(company);
 
   const config = SAAS_PLAN_CATALOG[planKey];
   const limits = resolveEffectiveLimits(planKey, company);
@@ -344,14 +436,16 @@ export function saasLimitsDbPayload(
   const isCustom = planKey === 'personalizado';
 
   const maxProjects = isCustom
-    ? readStoredLimit(overrides?.max_projects)
+    ? parseManualPlanLimit(overrides?.max_projects)
     : config.maxProjects;
-  const maxLots = isCustom ? readStoredLimit(overrides?.max_lots) : config.maxLots;
+  const maxLots = isCustom
+    ? parseManualPlanLimit(overrides?.max_lots)
+    : config.maxLots;
   const maxBrokers = isCustom
-    ? readStoredLimit(overrides?.max_brokers)
+    ? parseManualPlanLimit(overrides?.max_brokers)
     : config.maxBrokers;
   const maxAdmins = isCustom
-    ? readStoredLimit(overrides?.admin_users_limit)
+    ? parseManualPlanLimit(overrides?.admin_users_limit)
     : config.maxAdmins;
 
   const legacyPlan =

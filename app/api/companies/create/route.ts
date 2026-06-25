@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
-import { saasLimitsDbPayload, type SaasPlanManualOverrides } from '@/lib/saasPlans';
+import {
+  buildManualLimitsFromForm,
+  saasLimitsDbPayload,
+  saasPlanModuleSyncPayload,
+} from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
   defaultNewCompanySubscriptionDates,
@@ -80,15 +84,9 @@ export async function POST(req: Request) {
     console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
     
     const planSource = body.plan_type || plan || 'basic';
-    const manualOverrides: SaasPlanManualOverrides = {
-      max_projects: body.max_projects != null ? Number(body.max_projects) : null,
-      max_lots: body.max_lots != null ? Number(body.max_lots) : null,
-      max_brokers: body.max_brokers != null ? Number(body.max_brokers) : null,
-      admin_users_limit:
-        body.admin_users_limit != null ? Number(body.admin_users_limit) : null,
-      saas_commercial_note: body.saas_commercial_note ?? null,
-    };
+    const manualOverrides = buildManualLimitsFromForm(body);
     const limits = saasLimitsDbPayload(planSource, manualOverrides);
+    const moduleSync = saasPlanModuleSyncPayload(limits.planKey);
 
     const companyPayload: any = {
       name,
@@ -98,6 +96,7 @@ export async function POST(req: Request) {
       phone: phone || adminPhone,
       plan: limits.plan,
       plan_type: limits.plan,
+      ...moduleSync,
       status_operacional: body.status_operacional || 'Ativa',
       project_limit: limits.project_limit,
       broker_limit: limits.broker_limit,

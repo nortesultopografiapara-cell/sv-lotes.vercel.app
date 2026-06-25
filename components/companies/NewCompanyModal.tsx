@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
 import {
+  buildManualLimitsFromForm,
   buildSaasPlanSummary,
   isPersonalizadoPlan,
   MASTER_SAAS_PLAN_OPTIONS,
@@ -332,15 +333,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
       console.log('COMPANY_PLAN_BEFORE_SAVE', initialData?.plan);
-      const manualLimits = {
-        max_projects: formData.max_projects ? Number(formData.max_projects) : null,
-        max_lots: formData.max_lots ? Number(formData.max_lots) : null,
-        max_brokers: formData.max_brokers ? Number(formData.max_brokers) : null,
-        admin_users_limit: formData.admin_users_limit
-          ? Number(formData.admin_users_limit)
-          : null,
-        saas_commercial_note: formData.saas_commercial_note || null,
-      };
+      const manualLimits = buildManualLimitsFromForm(formData);
       const planLimitsPayload = saasLimitsDbPayload(formData.plan, manualLimits);
 
       if (isCustomPlan) {

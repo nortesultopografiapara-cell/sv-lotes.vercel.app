@@ -4,12 +4,16 @@
  */
 
 import {
+  buildManualLimitsFromForm,
   buildSaasPlanSummary,
+  formatSaasUsageLabel,
   getCompanySaasPlan,
   getSaasPlanDisplayNameFromRaw,
   isPersonalizadoPlan,
   MASTER_SAAS_PLAN_OPTIONS,
   normalizeSaasPlanKey,
+  parseManualPlanLimit,
+  resolveAuthoritativePlanKey,
   resolveSaasLimitUsageLevel,
   SAAS_PLAN_CATALOG,
   saasLimitsDbPayload,
@@ -19,7 +23,11 @@ import {
   resolveSaasContractContext,
   SAAS_CONTRACT_CONTENT_VERSION,
 } from '../lib/saasContractContent';
-import { formatSaasCurrency, getStandardPlanMonthlyPrice } from '../lib/companyPricing';
+import {
+  formatSaasCurrency,
+  getCompanyMonthlyPrice,
+  getStandardPlanMonthlyPrice,
+} from '../lib/companyPricing';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -167,6 +175,124 @@ function testCatalogMatchesLandingPrices() {
   console.log('OK testCatalogMatchesLandingPrices');
 }
 
+function personalizadoCompanyFixture() {
+  return {
+    plan: 'custom',
+    plan_type: 'custom',
+    module_plan: 'Profissional',
+    module_type: 'professional',
+    max_projects: 20,
+    max_lots: 10000,
+    max_brokers: 30,
+    admin_users_limit: 15,
+    custom_price_enabled: true,
+    custom_monthly_price: 0.01,
+    saas_commercial_note: 'Negociação especial SV Topografia',
+  };
+}
+
+function testPersonalizadoUpdatePayloadPersistsLimits() {
+  const body = {
+    plan: 'custom',
+    plan_type: 'custom',
+    max_projects: 20,
+    max_lots: 10000,
+    max_brokers: 30,
+    admin_users_limit: 15,
+    custom_monthly_price: 0.01,
+    saas_commercial_note: 'Negociação especial SV Topografia',
+  };
+  const manual = buildManualLimitsFromForm(body);
+  const payload = saasLimitsDbPayload('custom', manual);
+
+  assert(payload.planKey === 'personalizado', 'planKey personalizado');
+  assert(payload.max_projects === 20, 'persiste max_projects');
+  assert(payload.max_lots === 10000, 'persiste max_lots');
+  assert(payload.max_brokers === 30, 'persiste max_brokers');
+  assert(payload.admin_users_limit === 15, 'persiste max_admins');
+  assert(payload.saas_commercial_note === 'Negociação especial SV Topografia', 'persiste nota');
+  assert(parseManualPlanLimit('0.01') === 0, 'parse 0.01 trunc — use number');
+  assert(parseManualPlanLimit(0.01) === 0, 'parse number 0.01');
+  console.log('OK testPersonalizadoUpdatePayloadPersistsLimits');
+}
+
+function testPersonalizadoIgnoresLegacyModulePlan() {
+  const company = personalizadoCompanyFixture();
+  assert(resolveAuthoritativePlanKey(company) === 'personalizado', 'plan_type custom vence module_plan');
+  const resolved = getCompanySaasPlan(company);
+  assert(resolved.planKey === 'personalizado', 'getCompanySaasPlan personalizado');
+  assert(resolved.maxProjects === 20, 'limites manuais loteamentos');
+  assert(resolved.maxLots === 10000, 'limites manuais lotes');
+  assert(resolved.maxBrokers === 30, 'limites manuais corretores');
+  assert(resolved.maxAdmins === 15, 'limites manuais admins');
+  assert(resolved.maxBrokers !== SAAS_PLAN_CATALOG.profissional.maxBrokers, 'não usa catálogo profissional');
+  console.log('OK testPersonalizadoIgnoresLegacyModulePlan');
+}
+
+function testPersonalizadoMonthlyPriceFromCompany() {
+  const company = personalizadoCompanyFixture();
+  assert(getCompanyMonthlyPrice(company) === 0.01, 'valor mensal personalizado R$ 0,01');
+  assert(
+    formatSaasCurrency(getCompanyMonthlyPrice(company)) === formatSaasCurrency(0.01),
+    'formata valor mensal',
+  );
+  console.log('OK testPersonalizadoMonthlyPriceFromCompany');
+}
+
+function testCompanyCardUsageLabelsForPersonalizado() {
+  const company = personalizadoCompanyFixture();
+  const saas = getCompanySaasPlan(company);
+  assert(
+    formatSaasUsageLabel(1, saas.maxProjects) === '1 / 20',
+    'CompanyCard loteamentos 1/20',
+  );
+  assert(
+    formatSaasUsageLabel(0, saas.maxLots) === '0 / 10.000',
+    'CompanyCard lotes 0/10000',
+  );
+  assert(
+    formatSaasUsageLabel(2, saas.maxBrokers) === '2 / 30',
+    'CompanyCard corretores 2/30',
+  );
+  assert(
+    formatSaasUsageLabel(1, saas.maxAdmins) === '1 / 15',
+    'CompanyCard admins 1/15',
+  );
+  console.log('OK testCompanyCardUsageLabelsForPersonalizado');
+}
+
+function testNullLimitsShowSemLimiteDefinido() {
+  const company = {
+    plan_type: 'custom',
+    plan: 'custom',
+    max_projects: null,
+    max_lots: null,
+    max_brokers: null,
+    admin_users_limit: null,
+  };
+  const saas = getCompanySaasPlan(company);
+  assert(saas.maxProjects == null, 'maxProjects null');
+  assert(formatSaasUsageLabel(1, saas.maxProjects) === '1 / Sem limite definido', 'null exibe sem limite');
+  assert(resolveSaasLimitUsageLevel(1, null) === 'unlimited', 'null = unlimited level');
+  console.log('OK testNullLimitsShowSemLimiteDefinido');
+}
+
+function testBuildManualLimitsEmptyStringsBecomeNull() {
+  const manual = buildManualLimitsFromForm({
+    max_projects: '',
+    max_lots: '',
+    max_brokers: '',
+    admin_users_limit: '',
+    saas_commercial_note: '',
+  });
+  assert(manual.max_projects == null, 'vazio max_projects → null');
+  assert(manual.max_lots == null, 'vazio max_lots → null');
+  assert(manual.max_brokers == null, 'vazio max_brokers → null');
+  assert(manual.admin_users_limit == null, 'vazio admin → null');
+  assert(manual.saas_commercial_note == null, 'vazio nota → null');
+  console.log('OK testBuildManualLimitsEmptyStringsBecomeNull');
+}
+
 function run() {
   testDropdownOptions();
   testLegacyStandardAsBusiness();
@@ -179,6 +305,12 @@ function run() {
   testSaasContractUsesPlanLimits();
   testUsageAlerts();
   testCatalogMatchesLandingPrices();
+  testPersonalizadoUpdatePayloadPersistsLimits();
+  testPersonalizadoIgnoresLegacyModulePlan();
+  testPersonalizadoMonthlyPriceFromCompany();
+  testCompanyCardUsageLabelsForPersonalizado();
+  testNullLimitsShowSemLimiteDefinido();
+  testBuildManualLimitsEmptyStringsBecomeNull();
   console.log('OK — mandatory-saas-plan-limits-tests passed');
 }
 

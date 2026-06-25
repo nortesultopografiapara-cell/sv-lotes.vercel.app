@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { saasLimitsDbPayload, type SaasPlanManualOverrides } from '@/lib/saasPlans';
+import {
+  buildManualLimitsFromForm,
+  parseManualPlanLimit,
+  saasLimitsDbPayload,
+  saasPlanModuleSyncPayload,
+} from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
   resolveCompanySubscriptionDates,
@@ -44,15 +49,9 @@ export async function PATCH(request: Request) {
     }
 
     const planSource = body.plan_type || body.plan || 'basic';
-    const manualOverrides: SaasPlanManualOverrides = {
-      max_projects: body.max_projects != null ? Number(body.max_projects) : null,
-      max_lots: body.max_lots != null ? Number(body.max_lots) : null,
-      max_brokers: body.max_brokers != null ? Number(body.max_brokers) : null,
-      admin_users_limit:
-        body.admin_users_limit != null ? Number(body.admin_users_limit) : null,
-      saas_commercial_note: body.saas_commercial_note ?? null,
-    };
+    const manualOverrides = buildManualLimitsFromForm(body);
     const limits = saasLimitsDbPayload(planSource, manualOverrides);
+    const moduleSync = saasPlanModuleSyncPayload(limits.planKey);
 
     const customEnabled =
       body.custom_price_enabled === true || limits.planKey === 'personalizado';
@@ -95,6 +94,7 @@ export async function PATCH(request: Request) {
       status_operacional: body.status_operacional,
       plan: limits.plan,
       plan_type: limits.plan,
+      ...moduleSync,
       project_limit: limits.project_limit,
       broker_limit: limits.broker_limit,
       max_projects: limits.max_projects,
@@ -107,14 +107,25 @@ export async function PATCH(request: Request) {
     };
 
     if (body.slug) updatePayload.slug = body.slug;
-    if (body.admin_users_limit != null) {
-      updatePayload.admin_users_limit = Math.max(
-        1,
-        Math.trunc(Number(body.admin_users_limit)),
+    if (body.admin_users_limit != null || limits.admin_users_limit != null) {
+      const adminLimit = parseManualPlanLimit(
+        body.admin_users_limit ?? limits.admin_users_limit,
       );
-    } else if (limits.admin_users_limit != null) {
-      updatePayload.admin_users_limit = limits.admin_users_limit;
+      if (adminLimit != null) {
+        updatePayload.admin_users_limit = Math.max(1, adminLimit);
+      }
     }
+
+    console.log('SAVE_COMPANY_PLAN_LIMITS_PAYLOAD', {
+      companyId,
+      plan: limits.plan,
+      planKey: limits.planKey,
+      max_projects: limits.max_projects,
+      max_lots: limits.max_lots,
+      max_brokers: limits.max_brokers,
+      admin_users_limit: updatePayload.admin_users_limit ?? limits.admin_users_limit,
+      saas_commercial_note: limits.saas_commercial_note,
+    });
 
     let explicitBilling: ReturnType<typeof buildCompanySubscriptionDatePayload> | null = null;
 
@@ -159,6 +170,34 @@ export async function PATCH(request: Request) {
       error = retry.error;
     }
 
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      const withoutOptional: Record<string, unknown> = { ...updatePayload };
+      let stripped = false;
+      if (msg.includes('max_lots')) {
+        delete withoutOptional.max_lots;
+        stripped = true;
+      }
+      if (msg.includes('saas_commercial_note')) {
+        delete withoutOptional.saas_commercial_note;
+        stripped = true;
+      }
+      if (stripped) {
+        const retry = await supabaseAdmin
+          .from('companies')
+          .update(withoutOptional)
+          .eq('id', companyId)
+          .select('*')
+          .single();
+        if (!retry.error) {
+          data = retry.data;
+          error = null;
+        } else {
+          error = retry.error;
+        }
+      }
+    }
+
     console.log('SAVE_COMPANY_ADDRESS_RESULT', data, error);
 
     if (error && (error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
@@ -186,11 +225,18 @@ export async function PATCH(request: Request) {
         status_operacional: body.status_operacional,
         plan: limits.plan,
         plan_type: limits.plan,
+        ...moduleSync,
+        project_limit: limits.project_limit,
+        broker_limit: limits.broker_limit,
+        max_projects: limits.max_projects,
+        max_brokers: limits.max_brokers,
+        admin_users_limit: updatePayload.admin_users_limit ?? limits.admin_users_limit,
         is_test_company: body.is_test_company === true,
         address: addressPayload.address,
         city: addressPayload.city,
         state: addressPayload.state,
         zip_code: addressPayload.zip_code,
+        ...customPricePayload,
       };
 
       let { data: partial, error: partialErr } = await supabaseAdmin
