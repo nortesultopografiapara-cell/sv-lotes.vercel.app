@@ -260,15 +260,24 @@ export default function ManualPage() {
   const navSections = query ? sections : MANUAL_SECTIONS;
 
   const getManualScrollRoot = useCallback((): HTMLElement => {
+    if (typeof window === 'undefined') {
+      return document.documentElement;
+    }
+    const isDesktopMain = window.matchMedia('(min-width: 1024px)').matches;
+    if (isDesktopMain) {
+      return (
+        document.getElementById('sv-manual-main-scroll') ??
+        document.documentElement
+      );
+    }
     return (
       document.getElementById('sv-manual-scroll-root') ??
-      (document.scrollingElement as HTMLElement | null) ??
       document.documentElement
     );
   }, []);
 
   useEffect(() => {
-    const scrollEl = getManualScrollRoot();
+    let scrollEl = getManualScrollRoot();
 
     const updateProgress = () => {
       const scrollTop = scrollEl.scrollTop;
@@ -277,20 +286,33 @@ export default function ManualPage() {
       setReadingProgress(pct);
     };
 
-    updateProgress();
-    scrollEl.addEventListener('scroll', updateProgress, { passive: true });
-    window.addEventListener('resize', updateProgress);
-    return () => {
-      scrollEl.removeEventListener('scroll', updateProgress);
-      window.removeEventListener('resize', updateProgress);
+    const onScroll = () => updateProgress();
+    const rebindScrollRoot = () => {
+      scrollEl.removeEventListener('scroll', onScroll);
+      scrollEl = getManualScrollRoot();
+      scrollEl.addEventListener('scroll', onScroll, { passive: true });
+      updateProgress();
     };
-  }, [getManualScrollRoot]);
+
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    updateProgress();
+
+    const mq = window.matchMedia('(min-width: 1024px)');
+    mq.addEventListener('change', rebindScrollRoot);
+    window.addEventListener('resize', rebindScrollRoot);
+
+    return () => {
+      scrollEl.removeEventListener('scroll', onScroll);
+      mq.removeEventListener('change', rebindScrollRoot);
+      window.removeEventListener('resize', rebindScrollRoot);
+    };
+  }, [getManualScrollRoot, query, sections.length, showTrainingBlocks, showFaq]);
 
   return (
-    <div className="flex flex-col min-w-0 w-full bg-[#0b0e14] text-gray-100 sv-page--mobile-pad">
+    <div className="flex flex-col min-w-0 w-full bg-[#0b0e14] text-gray-100 sv-page--mobile-pad lg:h-full lg:min-h-0 lg:overflow-hidden">
       <ManualReadingProgress progress={readingProgress} />
 
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b0e14]/95 backdrop-blur-md">
+      <header className="shrink-0 z-30 border-b border-white/10 bg-[#0b0e14]/95 backdrop-blur-md max-lg:sticky max-lg:top-0">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -357,11 +379,11 @@ export default function ManualPage() {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-4 lg:pb-2">
+        <div className="flex flex-col lg:flex-row lg:h-full lg:min-h-0 gap-6 lg:gap-8">
           {!query && (
-            <aside className="hidden lg:block w-56 shrink-0">
-              <div className="sticky top-36 rounded-2xl border border-white/10 bg-[#11161d] p-4 max-h-[calc(100dvh-10rem)] overflow-y-auto sv-scrollbar sv-scrollbar-dark">
+            <aside className="hidden lg:flex lg:flex-col w-56 shrink-0 min-h-0 h-full">
+              <div className="flex-1 min-h-0 h-full max-h-full overflow-y-auto overscroll-y-contain sv-scrollbar sv-scrollbar-dark rounded-2xl border border-white/10 bg-[#11161d] p-4">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400 mb-2">
                   Treinamento
                 </p>
@@ -404,7 +426,10 @@ export default function ManualPage() {
             </aside>
           )}
 
-          <main className="flex-1 min-w-0 space-y-6">
+          <main
+            id="sv-manual-main-scroll"
+            className="flex-1 min-w-0 min-h-0 space-y-6 sv-scrollbar sv-scrollbar-dark lg:h-full lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 lg:pb-8"
+          >
             {!query && (
               <section aria-label="Navegação rápida" className="lg:hidden">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">

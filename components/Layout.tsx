@@ -795,11 +795,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
 
         {/* Page Content */}
         <div
-          id={pathname === '/manual' ? 'sv-manual-scroll-root' : undefined}
+          id={isMobile && pathname === '/manual' ? 'sv-manual-scroll-root' : undefined}
           className={`flex-1 flex flex-col min-h-0 ${
-            isMobile || pathname === '/manual'
-              ? 'sv-mobile-scroll-area sv-scrollbar sv-scrollbar-dark'
-              : 'overflow-hidden'
+            isMobile ? 'sv-mobile-scroll-area sv-scrollbar sv-scrollbar-dark' : 'overflow-hidden'
           }`}
         >
           {children}
