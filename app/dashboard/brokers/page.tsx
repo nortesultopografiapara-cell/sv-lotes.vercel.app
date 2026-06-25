@@ -31,6 +31,7 @@ import {
   getCompanySaasPlan,
   logSaasCompanyContext,
 } from '@/lib/saasPlans';
+import { formatBrokersLimitMessage } from '@/lib/saasPlanEnforcementMessages';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getReportHeaderLogoUrl } from '@/lib/reportBranding';
 import {
@@ -674,7 +675,7 @@ export default function CorretoresPage() {
 
     const activeBrokersCount = filterBrokersForActiveList(corretores).length;
     if (brokerLimit !== null && activeBrokersCount >= brokerLimit && user?.role !== 'SUPER_ADMIN') {
-        setError(`Limite do plano ${companyPlan} atingido. Faça upgrade para cadastrar mais corretores.`);
+        setError(formatBrokersLimitMessage(brokerLimit));
         return;
     }
     if (formData.password.length < 6) {

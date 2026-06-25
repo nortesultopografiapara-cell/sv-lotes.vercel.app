@@ -7,8 +7,9 @@ import {
 } from '@/lib/supabase/server';
 import { getServerConfigErrorMessage } from '@/lib/supabase-config';
 import {
-  fetchCompanySaasByTenantId,
-  getCompanySaasPlan,
+  canCreateProject,
+} from '@/lib/saasPlanEnforcement';
+import {
   logSaasCompanyContext,
 } from '@/lib/saasPlans';
 
@@ -149,21 +150,17 @@ export async function POST(request: Request) {
   const location = [city, uf].filter(Boolean).join(' - ');
 
   if (callerRole !== 'SUPER_ADMIN') {
-    const companyRow = await fetchCompanySaasByTenantId(admin, tenantId);
-    const saas = getCompanySaasPlan(companyRow);
-    const { count: projectCount } = await admin
-      .from('projects')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId);
+    const enforcement = await canCreateProject(admin, tenantId, {
+      isPlatformAdmin: false,
+    });
 
-    const used = projectCount ?? 0;
-    logSaasCompanyContext(tenantId, companyRow, used);
+    logSaasCompanyContext(tenantId, null, enforcement.usage?.projects);
 
-    if (used >= saas.maxProjects) {
+    if (!enforcement.allowed) {
       return NextResponse.json(
         {
-          error: `Limite do plano ${saas.displayName} (${saas.maxProjects} loteamentos) atingido.`,
-          code: 'SAAS_PROJECT_LIMIT',
+          error: enforcement.message,
+          code: enforcement.code || 'SAAS_PROJECT_LIMIT',
         },
         { status: 403 },
       );

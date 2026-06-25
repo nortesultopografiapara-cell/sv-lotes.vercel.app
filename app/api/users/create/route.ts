@@ -5,6 +5,10 @@ import {
   BROKER_USER_ROLE,
   isCompanyAdminAccessLevel,
 } from '@/lib/brokerAccessLevels';
+import { canCreateBroker } from '@/lib/saasPlanEnforcement';
+import { isPlatformAdmin } from '@/lib/rls';
+import { createAdminSupabase, getRequestAuthUser } from '@/lib/supabase/server';
+import { normalizeUserRole } from '@/lib/rolePermissions';
 
 export async function POST(req: Request) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -46,6 +50,35 @@ export async function POST(req: Request) {
 
     if (!tenantId) {
       throw new Error("O tenantId é obrigatório para cadastrar um corretor.");
+    }
+
+    const { user: caller, configError: authConfigError } = await getRequestAuthUser(req);
+    let callerRole = 'USER';
+    if (caller) {
+      const { client: adminLookup } = createAdminSupabase();
+      if (adminLookup) {
+        const { data: profile } = await adminLookup
+          .from('users')
+          .select('role')
+          .eq('id', caller.id)
+          .maybeSingle();
+        callerRole = normalizeUserRole(profile?.role || caller.user_metadata?.role);
+      }
+    } else if (authConfigError) {
+      console.warn('[users/create] auth lookup:', authConfigError);
+    }
+
+    const skipBrokerLimit = isPlatformAdmin(callerRole);
+    if (!skipBrokerLimit) {
+      const enforcement = await canCreateBroker(supabaseAdmin, tenantId, {
+        isPlatformAdmin: false,
+      });
+      if (!enforcement.allowed) {
+        return NextResponse.json(
+          { error: enforcement.message, code: enforcement.code || 'SAAS_BROKER_LIMIT' },
+          { status: 403 },
+        );
+      }
     }
 
     let temporaryPassword = password;

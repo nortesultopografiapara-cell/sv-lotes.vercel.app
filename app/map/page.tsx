@@ -28,6 +28,11 @@ import { calculateLotDimensions } from '@/utils/calculateLotDimensions';
 import proj4 from 'proj4';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { logSaasCompanyContext } from '@/lib/saasPlans';
+import { formatProjectLimitMessage } from '@/lib/saasPlanEnforcementMessages';
+import {
+  canImportLots,
+  getTenantUsage,
+} from '@/lib/saasPlanEnforcement';
 import {
   EMPTY_PROJECT_FORM,
   type ProjectFormInitialData,
@@ -303,13 +308,34 @@ export default function MapPage() {
     reload: reloadSaas,
   } = useCompanySaas();
   const projectLimit = saas?.maxProjects ?? null;
+  const lotLimit = saas?.maxLots ?? null;
   const companyPlan = saas?.displayName ?? '';
+  const [tenantLotCount, setTenantLotCount] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
   const { setGisSelectedProject, clearGisSelectedProject } = useGisSelectedProject();
+
+  const ensureLotImportAllowed = useCallback(
+    async (
+      tenantId: string | null,
+      quantityToAdd: number,
+      isSuperAdmin: boolean,
+    ): Promise<boolean> => {
+      if (!tenantId || isSuperAdmin || quantityToAdd <= 0) return true;
+      const check = await canImportLots(supabase, tenantId, quantityToAdd, {
+        isPlatformAdmin: false,
+      });
+      if (!check.allowed) {
+        alert(check.message || 'Limite de lotes atingido.');
+        return false;
+      }
+      return true;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (selectedProject?.id && selectedProject?.name) {
@@ -388,6 +414,25 @@ export default function MapPage() {
   const [projectFeedback, setProjectFeedback] = useState<ProjectFeedback | null>(null);
 
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (!saasTenantId || user?.role === 'SUPER_ADMIN') {
+      setTenantLotCount(null);
+      return;
+    }
+    let cancelled = false;
+    getTenantUsage(supabase, saasTenantId)
+      .then((usage) => {
+        if (!cancelled) setTenantLotCount(usage.lots);
+      })
+      .catch(() => {
+        if (!cancelled) setTenantLotCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [saasTenantId, user?.role, mapRefreshKey]);
+
   const [enterpriseRefreshKey, setEnterpriseRefreshKey] = useState(0);
   const [quadrasPanelOpen, setQuadrasPanelOpen] = useState(false);
   const [projectQuadras, setProjectQuadras] = useState<string[]>([]);
@@ -772,6 +817,8 @@ export default function MapPage() {
           `Lote ${lotRequested} não encontrado na ${formatQuadraLabel(quadraName)}. Deseja criar novo lote nesta quadra?`,
         );
         if (!createOk) return;
+        const allowedCreate = await ensureLotImportAllowed(finalTenantId, 1, isMasterAdmin);
+        if (!allowedCreate) return;
         allowCreate = true;
       }
 
@@ -1333,13 +1380,12 @@ export default function MapPage() {
   const openCreateProject = () => {
     if (
       projectLimit != null &&
-      projectLimit > 0 &&
       projects.length >= projectLimit &&
       user?.role !== 'SUPER_ADMIN'
     ) {
       setProjectFeedback({
         type: 'error',
-        message: `Limite do plano ${companyPlan || ''} (${projectLimit} loteamentos) atingido. Contate o administrador.`,
+        message: formatProjectLimitMessage(projectLimit),
       });
       return;
     }
@@ -1449,13 +1495,12 @@ export default function MapPage() {
 
     if (
       projectLimit != null &&
-      projectLimit > 0 &&
       projects.length >= projectLimit &&
       user.role !== 'SUPER_ADMIN'
     ) {
       setProjectFeedback({
         type: 'error',
-        message: `O limite do seu plano (${projectLimit} loteamentos) foi atingido.`,
+        message: formatProjectLimitMessage(projectLimit),
       });
       return;
     }
@@ -1695,6 +1740,16 @@ export default function MapPage() {
       });
       
       if (blocksToInsert.length > 0) {
+          const allowed = await ensureLotImportAllowed(
+            finalTenantId,
+            blocksToInsert.length,
+            isMasterAdmin,
+          );
+          if (!allowed) {
+            setImporting(false);
+            return;
+          }
+
           const { error: insertError } = await supabase.from('blocks').insert(blocksToInsert);
           if (insertError) throw insertError;
       }
@@ -1887,6 +1942,17 @@ export default function MapPage() {
         }
       }
       const isReimport = existingLotNumbers.size > 0;
+      const quadraLotsCount = existingQuadraLots?.length ?? 0;
+      const netLotAdd = Math.max(0, blocksParsed.length - quadraLotsCount);
+      const allowedLots = await ensureLotImportAllowed(
+        finalTenantId,
+        netLotAdd,
+        isMasterAdmin,
+      );
+      if (!allowedLots) {
+        setImportingTxt(false);
+        return;
+      }
 
       const { error: deleteQuadraError } = await supabase
         .from('blocks')
@@ -2331,6 +2397,16 @@ export default function MapPage() {
       }
 
       if (inserts.length > 0) {
+        const allowedLots = await ensureLotImportAllowed(
+          finalTenantId,
+          inserts.length,
+          isMasterAdmin,
+        );
+        if (!allowedLots) {
+          setImportingShp(false);
+          return;
+        }
+
         const { error: insertError } = await supabase
           .from('blocks')
           .insert(inserts);
@@ -3366,7 +3442,14 @@ export default function MapPage() {
             Gestão Unificada de Loteamentos
             {user?.role !== 'SUPER_ADMIN' && projectLimit !== null && (
                <span className="ml-3 px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs border border-blue-500/20">
-                 PROJETOS: {projects.length} / {projectLimit}
+                 Loteamentos: {projects.length} / {projectLimit}
+                 {projects.length >= projectLimit ? ' — Limite atingido' : ''}
+               </span>
+            )}
+            {user?.role !== 'SUPER_ADMIN' && lotLimit !== null && tenantLotCount != null && (
+               <span className="ml-3 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-xs border border-amber-500/20">
+                 Lotes: {tenantLotCount.toLocaleString('pt-BR')} / {lotLimit.toLocaleString('pt-BR')}
+                 {tenantLotCount >= lotLimit ? ' — Limite atingido' : ''}
                </span>
             )}
           </p>

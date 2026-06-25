@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { canReactivateBroker } from '@/lib/saasPlanEnforcement';
 import { isPlatformAdmin, type RlsContext } from '@/lib/rls';
 import { isTenantEnterpriseAdminRole } from '@/lib/rolePermissions';
 
@@ -617,6 +618,18 @@ export async function setBrokerActiveViaAdmin(
     brokerTenantId,
     isSuperAdmin,
   });
+
+  if (active && !isSuperAdmin) {
+    const enforcement = await canReactivateBroker(admin, brokerTenantId, {
+      isPlatformAdmin: false,
+    });
+    if (!enforcement.allowed) {
+      throw new BrokerDeleteError(enforcement.message || 'Limite de corretores atingido.', {
+        brokerId,
+        code: enforcement.code,
+      });
+    }
+  }
 
   const resolvedName = brokerRow.name || brokerRow.full_name || 'Corretor';
   const patch = active ? buildBrokerActivatePatch() : buildBrokerSoftDeletePatch();

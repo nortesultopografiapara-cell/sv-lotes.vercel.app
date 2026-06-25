@@ -17,7 +17,8 @@ import {
 import { normalizeUserRole } from '@/lib/rolePermissions';
 import { isPlatformAdmin } from '@/lib/rls';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
-import { MENESES_COMPANY_ID } from '@/lib/saasContractContent';
+import { formatAdminsLimitMessage } from '@/lib/saasPlanEnforcementMessages';
+import { resolveTenantAdminLimit } from '@/lib/saasPlanEnforcement';
 
 export const COMPANY_ADMIN_ROLE_VALUES = [
   'ADMIN',
@@ -44,7 +45,7 @@ export type CompanyAdminUserRow = {
 
 export type CompanyAdminListMeta = {
   tenantId: string;
-  limit: number;
+  limit: number | null;
   activeCount: number;
   canCreate: boolean;
 };
@@ -71,12 +72,13 @@ export function countActiveCompanyAdmins(rows: Pick<CompanyAdminUserRow, 'status
 
 export function canCreateCompanyAdmin(
   activeCount: number,
-  limit: number,
+  limit: number | null,
 ): { ok: boolean; error?: string } {
+  if (limit == null) return { ok: true };
   if (activeCount >= limit) {
     return {
       ok: false,
-      error: `Limite de administradores atingido (${limit}). Solicite aumento ao suporte SV LOTES.`,
+      error: formatAdminsLimitMessage(limit),
     };
   }
   return { ok: true };
@@ -145,18 +147,8 @@ export async function resolveCompanyAdminContextFromRequest(
 export async function loadCompanyAdminLimit(
   admin: SupabaseClient,
   tenantId: string,
-): Promise<number> {
-  const { data } = await admin
-    .from('companies')
-    .select('admin_users_limit')
-    .eq('id', tenantId)
-    .maybeSingle();
-
-  if (!data && tenantId === MENESES_COMPANY_ID) {
-    return MENESES_COMPANY_ADMIN_USERS_LIMIT;
-  }
-
-  return resolveCompanyAdminUsersLimit(data);
+): Promise<number | null> {
+  return resolveTenantAdminLimit(admin, tenantId);
 }
 
 export async function listCompanyAdminUsers(
