@@ -6,3 +6,10 @@ coverage/
 .env*
 !.env.example
 .vercel
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Local scratch / previews (não versionar)
+tmp/
