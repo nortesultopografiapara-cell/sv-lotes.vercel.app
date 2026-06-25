@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -259,25 +259,35 @@ export default function ManualPage() {
 
   const navSections = query ? sections : MANUAL_SECTIONS;
 
+  const getManualScrollRoot = useCallback((): HTMLElement => {
+    return (
+      document.getElementById('sv-manual-scroll-root') ??
+      (document.scrollingElement as HTMLElement | null) ??
+      document.documentElement
+    );
+  }, []);
+
   useEffect(() => {
+    const scrollEl = getManualScrollRoot();
+
     const updateProgress = () => {
-      const scrollTop = window.scrollY;
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+      const scrollTop = scrollEl.scrollTop;
+      const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
+      const pct = maxScroll > 0 ? (scrollTop / maxScroll) * 100 : 0;
       setReadingProgress(pct);
     };
 
     updateProgress();
-    window.addEventListener('scroll', updateProgress, { passive: true });
+    scrollEl.addEventListener('scroll', updateProgress, { passive: true });
     window.addEventListener('resize', updateProgress);
     return () => {
-      window.removeEventListener('scroll', updateProgress);
+      scrollEl.removeEventListener('scroll', updateProgress);
       window.removeEventListener('resize', updateProgress);
     };
-  }, []);
+  }, [getManualScrollRoot]);
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-gray-100 flex flex-col">
+    <div className="flex flex-col min-w-0 w-full bg-[#0b0e14] text-gray-100 sv-page--mobile-pad">
       <ManualReadingProgress progress={readingProgress} />
 
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b0e14]/95 backdrop-blur-md">
@@ -347,11 +357,11 @@ export default function ManualPage() {
         </div>
       </header>
 
-      <div className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+      <div className="flex-1 min-h-0 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 min-h-0">
           {!query && (
             <aside className="hidden lg:block w-56 shrink-0">
-              <div className="sticky top-36 rounded-2xl border border-white/10 bg-[#11161d] p-4 max-h-[calc(100vh-10rem)] overflow-y-auto">
+              <div className="sticky top-36 rounded-2xl border border-white/10 bg-[#11161d] p-4 max-h-[calc(100dvh-10rem)] overflow-y-auto sv-scrollbar sv-scrollbar-dark">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-orange-400 mb-2">
                   Treinamento
                 </p>
