@@ -6,43 +6,82 @@ import {
   dueDayFromDate,
   toIsoDateOnly,
 } from '@/lib/companySubscriptionDates';
-import { legacyDbKeyForForm, readCompanyLimitFromDb } from '@/lib/saasPlans';
+import { legacyDbKeyForForm, readCompanyLimitFromDb, extractMissingCompanyColumnFromError } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
-const COMPANY_SELECT = `
-  id,
-  name,
-  cnpj,
-  email,
-  phone,
-  address,
-  city,
-  state,
-  cep,
-  zip_code,
-  plan,
-  plan_type,
-  project_limit,
-  broker_limit,
-  max_projects,
-  max_brokers,
-  max_lots,
-  admin_users_limit,
-  admin_limit,
-  saas_commercial_note,
-  module_plan,
-  module_type,
-  status_operacional,
-  custom_price_enabled,
-  custom_monthly_price,
-  custom_price_badge,
-  subscription_start_date,
-  subscription_due_day,
-  next_payment_date,
-  is_test_company,
-  slug,
-  created_at
-`;
+/** Campos do SELECT — module_plan/module_type omitidos (colunas legadas opcionais). */
+export const COMPANY_EDIT_SELECT_FIELDS = [
+  'id',
+  'name',
+  'cnpj',
+  'email',
+  'phone',
+  'address',
+  'city',
+  'state',
+  'cep',
+  'zip_code',
+  'plan',
+  'plan_type',
+  'project_limit',
+  'broker_limit',
+  'max_projects',
+  'max_brokers',
+  'max_lots',
+  'admin_users_limit',
+  'admin_limit',
+  'saas_commercial_note',
+  'status_operacional',
+  'custom_price_enabled',
+  'custom_monthly_price',
+  'custom_price_badge',
+  'subscription_start_date',
+  'subscription_due_day',
+  'next_payment_date',
+  'is_test_company',
+  'slug',
+  'created_at',
+] as const;
+
+async function selectCompanyRowWithSchemaFallback(companyId: string): Promise<{
+  data: Record<string, unknown> | null;
+  error: string | null;
+  removedColumns: string[];
+}> {
+  let columns = [...COMPANY_EDIT_SELECT_FIELDS];
+  const removedColumns: string[] = [];
+
+  while (columns.length > 0) {
+    const select = columns.join(', ');
+    const { data, error } = await supabase
+      .from('companies')
+      .select(select)
+      .eq('id', companyId)
+      .single();
+
+    if (!error && data) {
+      if (removedColumns.length > 0) {
+        console.log('LOAD_COMPANY_SELECT_SCHEMA_FALLBACK', { companyId, removedColumns });
+      }
+      return { data: data as Record<string, unknown>, error: null, removedColumns };
+    }
+
+    const missing = extractMissingCompanyColumnFromError(error?.message || '');
+    if (missing && (columns as string[]).includes(missing)) {
+      columns = columns.filter((col) => col !== missing);
+      removedColumns.push(missing);
+      continue;
+    }
+
+    return {
+      data: null,
+      error: error?.message || 'Empresa não encontrada',
+      removedColumns,
+    };
+  }
+
+  return { data: null, error: 'Empresa não encontrada', removedColumns };
+}
 
 const SUBSCRIPTION_SELECT = `
   id,
@@ -174,14 +213,10 @@ export async function loadCompanyForEdit(companyId: string): Promise<{
 }> {
   console.log('LOAD_COMPANY_FOR_EDIT', companyId);
 
-  const { data: company, error: companyErr } = await supabase
-    .from('companies')
-    .select(COMPANY_SELECT)
-    .eq('id', companyId)
-    .single();
+  const { data: company, error: companyErr } = await selectCompanyRowWithSchemaFallback(companyId);
 
   if (companyErr || !company) {
-    const msg = companyErr?.message || 'Empresa não encontrada';
+    const msg = companyErr || 'Empresa não encontrada';
     console.log('LOAD_COMPANY_FOR_EDIT_RESULT', null, null, msg);
     return { company: null, subscription: null, merged: null, error: msg };
   }

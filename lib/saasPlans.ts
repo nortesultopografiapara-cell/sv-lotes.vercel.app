@@ -335,12 +335,142 @@ export function buildManualLimitsFromForm(input: {
   };
 }
 
-export function saasPlanModuleSyncPayload(planKey: SaasPlanKey) {
+export function saasPlanModuleSyncPayload(
+  planKey: SaasPlanKey,
+  options?: { includeLegacyModuleColumns?: boolean },
+): Record<string, string> {
+  if (!options?.includeLegacyModuleColumns) {
+    return {};
+  }
   const config = SAAS_PLAN_CATALOG[planKey];
   return {
     module_plan: config.label,
     module_type: config.legacyDbKey,
   };
+}
+
+/** Extrai nome da coluna ausente a partir da mensagem de erro do Postgres/PostgREST. */
+export function extractMissingCompanyColumnFromError(message: string): string | null {
+  if (!message) return null;
+  const patterns = [
+    /column companies\.(\w+) does not exist/i,
+    /column "(\w+)" of relation "companies" does not exist/i,
+    /Could not find the '(\w+)' column of 'companies'/i,
+    /'(\w+)' column of 'companies' in the schema cache/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
+export type SafeCompanyWriteResult = {
+  data: Record<string, unknown> | null;
+  error: { message?: string; code?: string } | null;
+  removedColumns: string[];
+};
+
+type SupabaseCompaniesWriteClient = {
+  from: (table: string) => {
+    update: (payload: Record<string, unknown>) => {
+      eq: (col: string, val: string) => {
+        select: (cols: string) => {
+          single: () => Promise<{
+            data: unknown;
+            error: { message?: string; code?: string } | null;
+          }>;
+        };
+      };
+    };
+    insert: (payload: Record<string, unknown>) => {
+      select: (cols?: string) => {
+        single: () => Promise<{
+          data: unknown;
+          error: { message?: string; code?: string } | null;
+        }>;
+      };
+    };
+  };
+};
+
+/**
+ * Update com fallback: remove apenas colunas inexistentes e tenta novamente.
+ * Nunca descarta limites/plano — só retira a coluna que causou o erro.
+ */
+export async function safeCompanyUpdateWithSchemaFallback(
+  supabaseAdmin: SupabaseCompaniesWriteClient,
+  companyId: string,
+  payload: Record<string, unknown>,
+): Promise<SafeCompanyWriteResult> {
+  let current: Record<string, unknown> = { ...payload };
+  const removedColumns: string[] = [];
+  let lastError: { message?: string; code?: string } | null = null;
+  const maxAttempts = Math.max(Object.keys(current).length + 2, 12);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .update(current)
+      .eq('id', companyId)
+      .select('*')
+      .single();
+
+    if (!error) {
+      if (removedColumns.length > 0) {
+        console.log('SAFE_COMPANY_UPDATE_SCHEMA_FALLBACK', { companyId, removedColumns });
+      }
+      return { data: data as Record<string, unknown>, error: null, removedColumns };
+    }
+
+    lastError = error;
+    const missing = extractMissingCompanyColumnFromError(error.message || '');
+    if (!missing || !Object.prototype.hasOwnProperty.call(current, missing)) {
+      break;
+    }
+
+    delete current[missing];
+    removedColumns.push(missing);
+  }
+
+  return { data: null, error: lastError, removedColumns };
+}
+
+/** Insert com o mesmo fallback de colunas ausentes. */
+export async function safeCompanyInsertWithSchemaFallback(
+  supabaseAdmin: SupabaseCompaniesWriteClient,
+  payload: Record<string, unknown>,
+): Promise<SafeCompanyWriteResult> {
+  let current: Record<string, unknown> = { ...payload };
+  const removedColumns: string[] = [];
+  let lastError: { message?: string; code?: string } | null = null;
+  const maxAttempts = Math.max(Object.keys(current).length + 2, 12);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabaseAdmin
+      .from('companies')
+      .insert(current)
+      .select('*')
+      .single();
+
+    if (!error) {
+      if (removedColumns.length > 0) {
+        console.log('SAFE_COMPANY_INSERT_SCHEMA_FALLBACK', { removedColumns });
+      }
+      return { data: data as Record<string, unknown>, error: null, removedColumns };
+    }
+
+    lastError = error;
+    const missing = extractMissingCompanyColumnFromError(error.message || '');
+    if (!missing || !Object.prototype.hasOwnProperty.call(current, missing)) {
+      break;
+    }
+
+    delete current[missing];
+    removedColumns.push(missing);
+  }
+
+  return { data: null, error: lastError, removedColumns };
 }
 
 function readStoredLimit(...values: Array<number | null | undefined>): number | null {
@@ -422,37 +552,14 @@ const OPTIONAL_COMPANY_LIMIT_COLUMNS = [
   'admin_limit',
 ] as const;
 
-/** Remove colunas opcionais ausentes no schema e tenta novamente. */
+/** @deprecated use safeCompanyUpdateWithSchemaFallback */
 export async function updateCompanyWithLimitsFallback(
-  supabaseAdmin: { from: (table: string) => any },
+  supabaseAdmin: SupabaseCompaniesWriteClient,
   companyId: string,
   payload: Record<string, unknown>,
 ): Promise<{ data: Record<string, unknown> | null; error: { message?: string; code?: string } | null }> {
-  let current: Record<string, unknown> = { ...payload };
-  let lastError: { message?: string; code?: string } | null = null;
-
-  for (let attempt = 0; attempt <= OPTIONAL_COMPANY_LIMIT_COLUMNS.length; attempt++) {
-    const { data, error } = await supabaseAdmin
-      .from('companies')
-      .update(current)
-      .eq('id', companyId)
-      .select('*')
-      .single();
-
-    if (!error) {
-      return { data: data as Record<string, unknown>, error: null };
-    }
-
-    lastError = error;
-    const msg = (error.message || '').toLowerCase();
-    const missingOptional = OPTIONAL_COMPANY_LIMIT_COLUMNS.find((col) => msg.includes(col));
-    if (!missingOptional) {
-      break;
-    }
-    delete current[missingOptional];
-  }
-
-  return { data: null, error: lastError };
+  const result = await safeCompanyUpdateWithSchemaFallback(supabaseAdmin, companyId, payload);
+  return { data: result.data, error: result.error };
 }
 
 function resolveEffectiveLimits(

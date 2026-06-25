@@ -5,8 +5,7 @@ import {
   buildManualLimitsFromForm,
   parseManualPlanLimit,
   saasLimitsDbPayload,
-  saasPlanModuleSyncPayload,
-  updateCompanyWithLimitsFallback,
+  safeCompanyUpdateWithSchemaFallback,
 } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
@@ -53,7 +52,6 @@ export async function PATCH(request: Request) {
     const planSource = body.plan_type || body.plan || 'basic';
     const manualOverrides = buildManualLimitsFromForm(body);
     const limits = saasLimitsDbPayload(planSource, manualOverrides);
-    const moduleSync = saasPlanModuleSyncPayload(limits.planKey);
 
     const customEnabled =
       body.custom_price_enabled === true || limits.planKey === 'personalizado';
@@ -98,7 +96,6 @@ export async function PATCH(request: Request) {
       status_operacional: body.status_operacional,
       plan: limits.plan,
       plan_type: limits.plan,
-      ...moduleSync,
       ...limitsPayload,
       is_test_company: body.is_test_company === true,
       ...customPricePayload,
@@ -148,85 +145,17 @@ export async function PATCH(request: Request) {
       next_payment_date: updatePayload.next_payment_date,
     });
 
-    let { data, error } = await updateCompanyWithLimitsFallback(
+    const { data, error, removedColumns } = await safeCompanyUpdateWithSchemaFallback(
       supabaseAdmin,
       companyId,
       updatePayload,
     );
 
-    if (error?.message?.toLowerCase().includes('cep') && data == null) {
-      const { cep: _omit, ...withoutCep } = updatePayload;
-      const retry = await updateCompanyWithLimitsFallback(
-        supabaseAdmin,
-        companyId,
-        withoutCep,
-      );
-      data = retry.data;
-      error = retry.error;
+    if (removedColumns.length > 0) {
+      console.log('SAVE_COMPANY_SCHEMA_FALLBACK_REMOVED', { companyId, removedColumns });
     }
 
     console.log('SAVE_COMPANY_ADDRESS_RESULT', data, error);
-
-    if (error && (error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
-      const { error: customOnlyErr } = await supabaseAdmin
-        .from('companies')
-        .update(customPricePayload)
-        .eq('id', companyId);
-
-      if (customOnlyErr) {
-        return NextResponse.json(
-          {
-            error:
-              'Colunas de preço personalizado ausentes no Supabase. Execute a migration 20260528120000_company_custom_pricing.sql',
-            details: customOnlyErr.message,
-          },
-          { status: 500 },
-        );
-      }
-
-      const partialPayload: Record<string, unknown> = {
-        name: body.name,
-        cnpj: body.cnpj,
-        phone: body.phone ?? '',
-        email: body.email ?? '',
-        status_operacional: body.status_operacional,
-        plan: limits.plan,
-        plan_type: limits.plan,
-        ...moduleSync,
-        project_limit: limitsPayload.project_limit,
-        broker_limit: limitsPayload.broker_limit,
-        admin_users_limit: limitsPayload.admin_users_limit,
-        admin_limit: limitsPayload.admin_limit,
-        is_test_company: body.is_test_company === true,
-        address: addressPayload.address,
-        city: addressPayload.city,
-        state: addressPayload.state,
-        zip_code: addressPayload.zip_code,
-        ...customPricePayload,
-      };
-
-      let { data: partial, error: partialErr } = await supabaseAdmin
-        .from('companies')
-        .update({ ...partialPayload, cep: addressPayload.cep })
-        .eq('id', companyId)
-        .select('*')
-        .single();
-
-      if (partialErr?.message?.includes('cep')) {
-        const retry = await supabaseAdmin
-          .from('companies')
-          .update(partialPayload)
-          .eq('id', companyId)
-          .select('*')
-          .single();
-        partial = retry.data;
-        partialErr = retry.error;
-      }
-
-      data = partial;
-      error = partialErr;
-      console.log('SAVE_COMPANY_CUSTOM_PRICE_RESULT_PARTIAL', data, error);
-    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

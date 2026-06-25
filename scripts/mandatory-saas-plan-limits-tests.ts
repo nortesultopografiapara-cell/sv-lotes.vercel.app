@@ -8,6 +8,7 @@ import {
   buildManualLimitsFromForm,
   buildSaasPlanSummary,
   enrichCompanySaasLimitsFromDb,
+  extractMissingCompanyColumnFromError,
   formatSaasUsageLabel,
   getCompanySaasPlan,
   getSaasPlanDisplayNameFromRaw,
@@ -20,7 +21,10 @@ import {
   resolveSaasLimitUsageLevel,
   SAAS_PLAN_CATALOG,
   saasLimitsDbPayload,
+  saasPlanModuleSyncPayload,
+  safeCompanyUpdateWithSchemaFallback,
 } from '../lib/saasPlans';
+import { COMPANY_EDIT_SELECT_FIELDS } from '../lib/loadCompanyForEdit';
 import {
   buildSaasContractSections,
   resolveSaasContractContext,
@@ -376,6 +380,178 @@ function testBuildManualLimitsEmptyStringsBecomeNull() {
   console.log('OK testBuildManualLimitsEmptyStringsBecomeNull');
 }
 
+function testExtractMissingColumnFromError() {
+  assert(
+    extractMissingCompanyColumnFromError('column companies.module_plan does not exist') ===
+      'module_plan',
+    'module_plan',
+  );
+  assert(
+    extractMissingCompanyColumnFromError(
+      'column "module_type" of relation "companies" does not exist',
+    ) === 'module_type',
+    'module_type',
+  );
+  assert(
+    extractMissingCompanyColumnFromError('column companies.project_limit does not exist') ===
+      'project_limit',
+    'project_limit',
+  );
+  console.log('OK testExtractMissingColumnFromError');
+}
+
+function testSaasPlanModuleSyncPayloadOptional() {
+  const sync = saasPlanModuleSyncPayload('personalizado');
+  assert(Object.keys(sync).length === 0, 'não inclui module_plan por padrão');
+  const legacy = saasPlanModuleSyncPayload('personalizado', { includeLegacyModuleColumns: true });
+  assert(legacy.module_plan === 'Personalizado', 'legado opcional module_plan');
+  console.log('OK testSaasPlanModuleSyncPayloadOptional');
+}
+
+function buildSvTopografiaUpdatePayload() {
+  const body = {
+    name: 'SV TOPOGRAFIA E PROJETOS LTDA',
+    plan: 'custom',
+    plan_type: 'custom',
+    max_projects: 15,
+    max_lots: 20000,
+    max_brokers: 70,
+    admin_users_limit: 8,
+    custom_monthly_price: 800,
+    saas_commercial_note: 'a',
+  };
+  const manual = buildManualLimitsFromForm(body);
+  const limits = saasLimitsDbPayload('custom', manual);
+  const dbWrite = buildCompanyLimitsDbWritePayload(limits);
+  return {
+    name: body.name,
+    plan: limits.plan,
+    plan_type: limits.plan,
+    custom_monthly_price: 800,
+    custom_price_enabled: true,
+    ...dbWrite,
+  };
+}
+
+function testUpdatePayloadKeepsLimitsWithoutModulePlan() {
+  const payload = buildSvTopografiaUpdatePayload();
+  assert(payload.name === 'SV TOPOGRAFIA E PROJETOS LTDA', 'nome empresa');
+  assert(payload.project_limit === 15, 'project_limit');
+  assert(payload.max_lots === 20000, 'max_lots');
+  assert(payload.broker_limit === 70, 'broker_limit');
+  assert(payload.admin_users_limit === 8, 'admin_users_limit');
+  assert(payload.custom_monthly_price === 800, 'custom_monthly_price');
+  assert(payload.saas_commercial_note === 'a', 'saas_commercial_note');
+  assert(!('module_plan' in payload), 'sem module_plan no payload');
+  console.log('OK testUpdatePayloadKeepsLimitsWithoutModulePlan');
+}
+
+async function testSafeUpdateIgnoresMissingModulePlan() {
+  let attempts = 0;
+  const mockAdmin = {
+    from: () => ({
+      update: (payload: Record<string, unknown>) => ({
+        eq: () => ({
+          select: () => ({
+            single: async () => {
+              attempts++;
+              if ('module_plan' in payload) {
+                return {
+                  data: null,
+                  error: { message: 'column companies.module_plan does not exist' },
+                };
+              }
+              return { data: { ...payload, id: 'test-id' }, error: null };
+            },
+          }),
+        }),
+      }),
+    }),
+  };
+
+  const result = await safeCompanyUpdateWithSchemaFallback(mockAdmin, 'test-id', {
+    name: 'SV TOPOGRAFIA E PROJETOS LTDA',
+    module_plan: 'Personalizado',
+    ...buildSvTopografiaUpdatePayload(),
+  });
+
+  assert(result.error == null, 'update ok após remover module_plan');
+  assert(result.data?.name === 'SV TOPOGRAFIA E PROJETOS LTDA', 'salva nome');
+  assert(result.data?.project_limit === 15, 'mantém project_limit');
+  assert(result.data?.custom_monthly_price === 800, 'mantém preço');
+  assert(result.removedColumns.includes('module_plan'), 'remove só module_plan');
+  assert(attempts >= 2, 'retentou após erro de coluna');
+  console.log('OK testSafeUpdateIgnoresMissingModulePlan');
+}
+
+async function testSafeUpdateIgnoresMissingModuleType() {
+  const mockAdmin = {
+    from: () => ({
+      update: (payload: Record<string, unknown>) => ({
+        eq: () => ({
+          select: () => ({
+            single: async () => {
+              if ('module_type' in payload) {
+                return {
+                  data: null,
+                  error: { message: 'column companies.module_type does not exist' },
+                };
+              }
+              return { data: { ...payload, id: 'x' }, error: null };
+            },
+          }),
+        }),
+      }),
+    }),
+  };
+
+  const result = await safeCompanyUpdateWithSchemaFallback(mockAdmin, 'x', {
+    module_type: 'custom',
+    ...buildSvTopografiaUpdatePayload(),
+  });
+
+  assert(result.error == null, 'update ok sem module_type');
+  assert(result.data?.max_lots === 20000, 'mantém max_lots');
+  assert(result.removedColumns.includes('module_type'), 'remove module_type');
+  console.log('OK testSafeUpdateIgnoresMissingModuleType');
+}
+
+function testPlanAndCardWithoutModulePlan() {
+  const company = {
+    plan_type: 'custom',
+    plan: 'custom',
+    project_limit: 15,
+    broker_limit: 70,
+    max_lots: 20000,
+    admin_users_limit: 8,
+    custom_monthly_price: 800,
+  };
+  assert(resolveAuthoritativePlanKey(company) === 'personalizado', 'plano via plan_type');
+  const saas = getCompanySaasPlan(company);
+  assert(saas.planKey === 'personalizado', 'CompanyCard personalizado');
+  assert(saas.maxProjects === 15, 'loteamentos 15');
+  assert(saas.maxBrokers === 70, 'corretores 70');
+  assert(saas.maxBrokers !== SAAS_PLAN_CATALOG.profissional.maxBrokers, 'sem catálogo');
+  assert(
+    formatSaasUsageLabel(1, saas.maxProjects) === '1 / 15',
+    'card 1/15',
+  );
+  console.log('OK testPlanAndCardWithoutModulePlan');
+}
+
+function testLoadCompanySelectWithoutModulePlan() {
+  assert(!COMPANY_EDIT_SELECT_FIELDS.includes('module_plan' as never), 'select sem module_plan');
+  assert(!COMPANY_EDIT_SELECT_FIELDS.includes('module_type' as never), 'select sem module_type');
+  assert(COMPANY_EDIT_SELECT_FIELDS.includes('project_limit'), 'select com project_limit');
+  assert(COMPANY_EDIT_SELECT_FIELDS.includes('max_lots'), 'select com max_lots');
+  console.log('OK testLoadCompanySelectWithoutModulePlan');
+}
+
+async function runAsyncTests() {
+  await testSafeUpdateIgnoresMissingModulePlan();
+  await testSafeUpdateIgnoresMissingModuleType();
+}
+
 function run() {
   testDropdownOptions();
   testLegacyStandardAsBusiness();
@@ -397,7 +573,20 @@ function run() {
   testModalReloadFromProjectLimitColumns();
   testNullLimitsShowSemLimiteDefinido();
   testBuildManualLimitsEmptyStringsBecomeNull();
+  testExtractMissingColumnFromError();
+  testSaasPlanModuleSyncPayloadOptional();
+  testUpdatePayloadKeepsLimitsWithoutModulePlan();
+  testPlanAndCardWithoutModulePlan();
+  testLoadCompanySelectWithoutModulePlan();
+}
+
+async function main() {
+  run();
+  await runAsyncTests();
   console.log('OK — mandatory-saas-plan-limits-tests passed');
 }
 
-run();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

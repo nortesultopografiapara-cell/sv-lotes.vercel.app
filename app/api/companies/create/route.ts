@@ -5,7 +5,7 @@ import {
   buildCompanyLimitsDbWritePayload,
   buildManualLimitsFromForm,
   saasLimitsDbPayload,
-  saasPlanModuleSyncPayload,
+  safeCompanyInsertWithSchemaFallback,
 } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
@@ -87,10 +87,9 @@ export async function POST(req: Request) {
     const planSource = body.plan_type || plan || 'basic';
     const manualOverrides = buildManualLimitsFromForm(body);
     const limits = saasLimitsDbPayload(planSource, manualOverrides);
-    const moduleSync = saasPlanModuleSyncPayload(limits.planKey);
     const limitsPayload = buildCompanyLimitsDbWritePayload(limits);
 
-    const companyPayload: any = {
+    const companyPayload: Record<string, unknown> = {
       name,
       slug: uniqueSlug,
       cnpj,
@@ -98,7 +97,6 @@ export async function POST(req: Request) {
       phone: phone || adminPhone,
       plan: limits.plan,
       plan_type: limits.plan,
-      ...moduleSync,
       status_operacional: body.status_operacional || 'Ativa',
       ...limitsPayload,
     };
@@ -139,24 +137,11 @@ export async function POST(req: Request) {
       companyPayload.custom_price_badge = null;
     }
 
-    let { data: newCompany, error: companyError } = await supabaseAdmin
-      .from('companies')
-      .insert(companyPayload)
-      .select()
-      .single();
+    const { data: newCompany, error: companyError, removedColumns } =
+      await safeCompanyInsertWithSchemaFallback(supabaseAdmin, companyPayload);
 
-    if (companyError && (companyError.code === 'PGRST204' || companyError.message.includes('schema cache'))) {
-        console.warn("Retrying minimal payload due to structure mismatch", companyError);
-        const minimalPayload = {
-            name,
-            slug: uniqueSlug,
-            cnpj,
-            status_operacional: body.status_operacional || 'Ativa',
-            is_test_company: body.is_test_company === true
-        };
-        const retryResult = await supabaseAdmin.from('companies').insert(minimalPayload).select().single();
-        newCompany = retryResult.data;
-        companyError = retryResult.error;
+    if (removedColumns.length > 0) {
+      console.log('CREATE_COMPANY_SCHEMA_FALLBACK_REMOVED', { removedColumns });
     }
 
     if (companyError) {
