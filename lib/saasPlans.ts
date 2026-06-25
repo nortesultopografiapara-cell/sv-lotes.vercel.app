@@ -1,30 +1,103 @@
 /**
- * Limites centralizados dos planos SaaS.
+ * Configuração centralizada dos planos SaaS (landing + Master + contratos).
  * Toda validação deve usar getCompanySaasPlan(company) — sem mocks/hardcode.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const SAAS_PLANS = {
+export type SaasPlanKey = 'basico' | 'business' | 'profissional' | 'personalizado';
+
+export type SaasPlanConfig = {
+  key: SaasPlanKey;
+  label: string;
+  /** Chave legada gravada em plan / plan_type */
+  legacyDbKey: string;
+  monthlyPrice: number | null;
+  maxProjects: number | null;
+  maxLots: number | null;
+  maxBrokers: number | null;
+  maxAdmins: number | null;
+  /** Ordem no dropdown Master */
+  sortOrder: number;
+};
+
+export const SAAS_PLAN_CATALOG: Record<SaasPlanKey, SaasPlanConfig> = {
   basico: {
-    maxProjects: 3,
-    maxBrokers: 5,
+    key: 'basico',
+    label: 'Básico',
+    legacyDbKey: 'basic',
+    monthlyPrice: 499.9,
+    maxProjects: 1,
+    maxLots: 500,
+    maxBrokers: 3,
+    maxAdmins: 1,
+    sortOrder: 1,
   },
   business: {
-    maxProjects: 6,
-    maxBrokers: 10,
+    key: 'business',
+    label: 'Business',
+    legacyDbKey: 'standard',
+    monthlyPrice: 799.9,
+    maxProjects: 2,
+    maxLots: 1000,
+    maxBrokers: 5,
+    maxAdmins: 2,
+    sortOrder: 2,
   },
   profissional: {
-    maxProjects: 25,
-    maxBrokers: 50,
+    key: 'profissional',
+    label: 'Profissional',
+    legacyDbKey: 'professional',
+    monthlyPrice: 1199.9,
+    maxProjects: 5,
+    maxLots: 2500,
+    maxBrokers: 10,
+    maxAdmins: 3,
+    sortOrder: 3,
+  },
+  personalizado: {
+    key: 'personalizado',
+    label: 'Personalizado',
+    legacyDbKey: 'custom',
+    monthlyPrice: null,
+    maxProjects: null,
+    maxLots: null,
+    maxBrokers: null,
+    maxAdmins: null,
+    sortOrder: 4,
+  },
+};
+
+/** @deprecated use SAAS_PLAN_CATALOG */
+export const SAAS_PLANS = {
+  basico: {
+    maxProjects: SAAS_PLAN_CATALOG.basico.maxProjects!,
+    maxBrokers: SAAS_PLAN_CATALOG.basico.maxBrokers!,
+  },
+  business: {
+    maxProjects: SAAS_PLAN_CATALOG.business.maxProjects!,
+    maxBrokers: SAAS_PLAN_CATALOG.business.maxBrokers!,
+  },
+  profissional: {
+    maxProjects: SAAS_PLAN_CATALOG.profissional.maxProjects!,
+    maxBrokers: SAAS_PLAN_CATALOG.profissional.maxBrokers!,
   },
 } as const;
 
-export type SaasPlanKey = keyof typeof SAAS_PLANS;
+export const MASTER_SAAS_PLAN_OPTIONS = (
+  Object.values(SAAS_PLAN_CATALOG) as SaasPlanConfig[]
+)
+  .sort((a, b) => a.sortOrder - b.sortOrder)
+  .map((plan) => ({
+    value: plan.legacyDbKey,
+    label: plan.label,
+    planKey: plan.key,
+  }));
 
 const PLAN_ALIAS: Record<string, SaasPlanKey> = {
   basic: 'basico',
   basico: 'basico',
+  'básico': 'basico',
   starter: 'basico',
 
   standard: 'business',
@@ -33,7 +106,10 @@ const PLAN_ALIAS: Record<string, SaasPlanKey> = {
   professional: 'profissional',
   profissional: 'profissional',
   enterprise: 'profissional',
-  premium: 'profissional',
+
+  premium: 'personalizado',
+  personalizado: 'personalizado',
+  custom: 'personalizado',
 };
 
 const PLAN_FIELD_PRIORITY = [
@@ -45,16 +121,14 @@ const PLAN_FIELD_PRIORITY = [
   'module_type',
 ] as const;
 
-function stripAccents(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
+const PLAN_TIER_RANK: Record<SaasPlanKey, number> = {
+  basico: 1,
+  business: 2,
+  profissional: 3,
+  personalizado: 0,
+};
 
-/** Normaliza qualquer variação de nome de plano para basico | business | profissional */
-export function normalizeSaasPlanKey(plan?: string | null): SaasPlanKey {
-  const raw = stripAccents(String(plan || '').trim().toLowerCase());
-  if (!raw) return 'basico';
-  return PLAN_ALIAS[raw] ?? 'basico';
-}
+export type SaasLimitUsageLevel = 'ok' | 'warning' | 'danger' | 'unlimited';
 
 export type CompanySaasSource = {
   id?: string;
@@ -69,8 +143,53 @@ export type CompanySaasSource = {
   broker_limit?: number | null;
   max_projects?: number | null;
   max_brokers?: number | null;
+  max_lots?: number | null;
+  admin_users_limit?: number | null;
+  admin_limit?: number | null;
+  saas_commercial_note?: string | null;
+  custom_monthly_price?: number | string | null;
+  custom_price_enabled?: boolean | null;
   metadata?: Record<string, unknown> | null;
 };
+
+function stripAccents(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/** Normaliza qualquer variação de nome de plano para a chave canônica. */
+export function normalizeSaasPlanKey(plan?: string | null): SaasPlanKey {
+  const raw = stripAccents(String(plan || '').trim().toLowerCase());
+  if (!raw) return 'basico';
+  return PLAN_ALIAS[raw] ?? 'basico';
+}
+
+/** Exibe o nome comercial do plano (Standard → Business, Premium → Personalizado). */
+export function getSaasPlanDisplayName(planKey: SaasPlanKey): string {
+  return SAAS_PLAN_CATALOG[planKey].label;
+}
+
+export function getSaasPlanDisplayNameFromRaw(plan?: string | null): string {
+  return getSaasPlanDisplayName(normalizeSaasPlanKey(plan));
+}
+
+/** Valor legado do dropdown / banco a partir da chave canônica. */
+export function saasPlanToLegacyDbKey(planKey: SaasPlanKey): string {
+  return SAAS_PLAN_CATALOG[planKey].legacyDbKey;
+}
+
+/** Valor do dropdown Master ao carregar empresa existente. */
+export function legacyDbKeyForForm(plan?: string | null): string {
+  const key = normalizeSaasPlanKey(plan);
+  return SAAS_PLAN_CATALOG[key].legacyDbKey;
+}
+
+export function isPersonalizadoPlanKey(planKey: SaasPlanKey): boolean {
+  return planKey === 'personalizado';
+}
+
+export function isPersonalizadoPlan(plan?: string | null): boolean {
+  return normalizeSaasPlanKey(plan) === 'personalizado';
+}
 
 function readMetadataPlan(company: CompanySaasSource, key: 'plan' | 'saas_plan'): string | null {
   const md = company.metadata;
@@ -81,7 +200,6 @@ function readMetadataPlan(company: CompanySaasSource, key: 'plan' | 'saas_plan')
   return text || null;
 }
 
-/** Coleta valores de plano na ordem de prioridade do produto. */
 export function collectCompanyPlanValues(company?: CompanySaasSource | null): string[] {
   if (!company) return [];
 
@@ -103,90 +221,228 @@ export function collectCompanyPlanValues(company?: CompanySaasSource | null): st
 }
 
 function pickHighestPlanKey(keys: SaasPlanKey[]): SaasPlanKey {
-  if (keys.includes('profissional')) return 'profissional';
-  if (keys.includes('business')) return 'business';
-  if (keys.length > 0) return keys[0];
-  return 'basico';
+  let best: SaasPlanKey = 'basico';
+  let bestRank = 0;
+  for (const key of keys) {
+    const rank = PLAN_TIER_RANK[key];
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = key;
+    }
+  }
+  if (keys.includes('personalizado') && bestRank === 0) {
+    return 'personalizado';
+  }
+  return best;
 }
 
-function inferPlanKeyFromLimits(company: CompanySaasSource): SaasPlanKey | null {
-  const maxProjects = company.max_projects ?? company.project_limit;
-  if (maxProjects == null || maxProjects < 0) return null;
-  if (maxProjects >= 25) return 'profissional';
-  if (maxProjects >= 6) return 'business';
-  if (maxProjects >= 3) return 'basico';
+function readStoredLimit(...values: Array<number | null | undefined>): number | null {
+  for (const value of values) {
+    if (value == null) continue;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) continue;
+    return Math.trunc(n);
+  }
   return null;
+}
+
+function resolveEffectiveLimits(
+  planKey: SaasPlanKey,
+  company?: CompanySaasSource | null,
+): {
+  maxProjects: number | null;
+  maxLots: number | null;
+  maxBrokers: number | null;
+  maxAdmins: number | null;
+} {
+  const catalog = SAAS_PLAN_CATALOG[planKey];
+
+  if (planKey === 'personalizado') {
+    return {
+      maxProjects: readStoredLimit(company?.max_projects, company?.project_limit),
+      maxLots: readStoredLimit(company?.max_lots),
+      maxBrokers: readStoredLimit(company?.max_brokers, company?.broker_limit),
+      maxAdmins: readStoredLimit(company?.admin_users_limit, company?.admin_limit),
+    };
+  }
+
+  return {
+    maxProjects:
+      readStoredLimit(company?.max_projects, company?.project_limit) ?? catalog.maxProjects,
+    maxLots: readStoredLimit(company?.max_lots) ?? catalog.maxLots,
+    maxBrokers:
+      readStoredLimit(company?.max_brokers, company?.broker_limit) ?? catalog.maxBrokers,
+    maxAdmins:
+      readStoredLimit(company?.admin_users_limit, company?.admin_limit) ?? catalog.maxAdmins,
+  };
 }
 
 export type CompanySaasPlanResolved = {
   planKey: SaasPlanKey;
   rawPlan: string | null;
   allRawPlans: string[];
-  maxProjects: number;
-  maxBrokers: number;
+  maxProjects: number | null;
+  maxLots: number | null;
+  maxBrokers: number | null;
+  maxAdmins: number | null;
   displayName: string;
   legacyDbPlan: string;
+  monthlyPrice: number | null;
+  isPersonalizado: boolean;
+  commercialNote: string | null;
 };
 
-/**
- * Plano SaaS efetivo da empresa.
- * Não cai em Básico se qualquer campo indicar Profissional ou Business.
- */
 export function getCompanySaasPlan(company?: CompanySaasSource | null): CompanySaasPlanResolved {
   const allRawPlans = collectCompanyPlanValues(company);
   const normalizedKeys = allRawPlans.map((v) => normalizeSaasPlanKey(v));
-  const limitHint = company ? inferPlanKeyFromLimits(company) : null;
-  const mergedKeys = limitHint ? [...normalizedKeys, limitHint] : normalizedKeys;
+  let planKey = pickHighestPlanKey(normalizedKeys.length > 0 ? normalizedKeys : ['basico']);
 
-  let planKey = pickHighestPlanKey(mergedKeys);
-  if (mergedKeys.length === 0) planKey = 'basico';
-
-  const config = SAAS_PLANS[planKey];
+  const config = SAAS_PLAN_CATALOG[planKey];
+  const limits = resolveEffectiveLimits(planKey, company);
   const rawPlan =
     allRawPlans.find((v) => normalizeSaasPlanKey(v) === planKey) ??
     allRawPlans[0] ??
     null;
 
+  const legacyDbPlan =
+    planKey === 'personalizado' && rawPlan
+      ? String(rawPlan).trim().toLowerCase() === 'premium'
+        ? 'premium'
+        : config.legacyDbKey
+      : config.legacyDbKey;
+
   return {
     planKey,
     rawPlan,
     allRawPlans,
-    maxProjects: config.maxProjects,
-    maxBrokers: config.maxBrokers,
-    displayName: getSaasPlanDisplayName(planKey),
-    legacyDbPlan: saasPlanToLegacyDbKey(planKey),
+    maxProjects: limits.maxProjects,
+    maxLots: limits.maxLots,
+    maxBrokers: limits.maxBrokers,
+    maxAdmins: limits.maxAdmins,
+    displayName: config.label,
+    legacyDbPlan,
+    monthlyPrice: config.monthlyPrice,
+    isPersonalizado: planKey === 'personalizado',
+    commercialNote: String(company?.saas_commercial_note ?? '').trim() || null,
   };
 }
 
-export function getSaasPlanDisplayName(planKey: SaasPlanKey): string {
-  const labels: Record<SaasPlanKey, string> = {
-    basico: 'Básico',
-    business: 'Business',
-    profissional: 'Profissional',
+export type SaasPlanManualOverrides = {
+  max_projects?: number | null;
+  max_lots?: number | null;
+  max_brokers?: number | null;
+  admin_users_limit?: number | null;
+  saas_commercial_note?: string | null;
+};
+
+export function saasLimitsDbPayload(
+  plan?: string | null,
+  overrides?: SaasPlanManualOverrides,
+) {
+  const planKey = normalizeSaasPlanKey(plan);
+  const config = SAAS_PLAN_CATALOG[planKey];
+  const isCustom = planKey === 'personalizado';
+
+  const maxProjects = isCustom
+    ? readStoredLimit(overrides?.max_projects)
+    : config.maxProjects;
+  const maxLots = isCustom ? readStoredLimit(overrides?.max_lots) : config.maxLots;
+  const maxBrokers = isCustom
+    ? readStoredLimit(overrides?.max_brokers)
+    : config.maxBrokers;
+  const maxAdmins = isCustom
+    ? readStoredLimit(overrides?.admin_users_limit)
+    : config.maxAdmins;
+
+  const legacyPlan =
+    String(plan || '').trim().toLowerCase() === 'premium' && isCustom
+      ? 'premium'
+      : config.legacyDbKey;
+
+  return {
+    plan: legacyPlan,
+    project_limit: maxProjects ?? -1,
+    broker_limit: maxBrokers ?? -1,
+    max_projects: maxProjects,
+    max_brokers: maxBrokers,
+    max_lots: maxLots,
+    admin_users_limit: maxAdmins,
+    saas_commercial_note: isCustom
+      ? String(overrides?.saas_commercial_note ?? '').trim() || null
+      : null,
+    planKey,
   };
-  return labels[planKey];
 }
 
-/** Chave legada usada no cadastro (basic | standard | professional) */
-export function saasPlanToLegacyDbKey(planKey: SaasPlanKey): string {
-  const map: Record<SaasPlanKey, string> = {
-    basico: 'basic',
-    business: 'standard',
-    profissional: 'professional',
+export function formatSaasPlanLimitValue(value: number | null | undefined): string {
+  if (value == null || value < 0) return 'Sem limite definido';
+  return value.toLocaleString('pt-BR');
+}
+
+export function formatSaasPlanMonthlyPrice(price: number | null | undefined): string {
+  if (price == null) return 'definido manualmente';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
+}
+
+export type SaasPlanSummaryLines = {
+  title: string;
+  monthlyPriceLine: string;
+  limitLines: string[];
+};
+
+export function buildSaasPlanSummary(plan?: string | null): SaasPlanSummaryLines {
+  const planKey = normalizeSaasPlanKey(plan);
+  const config = SAAS_PLAN_CATALOG[planKey];
+
+  if (planKey === 'personalizado') {
+    return {
+      title: `Plano ${config.label}`,
+      monthlyPriceLine: 'Valor mensal e limites definidos manualmente pelo Master.',
+      limitLines: [],
+    };
+  }
+
+  return {
+    title: `Plano ${config.label}`,
+    monthlyPriceLine: `Valor mensal: ${formatSaasPlanMonthlyPrice(config.monthlyPrice)}`,
+    limitLines: [
+      `${config.maxProjects} loteamento${config.maxProjects === 1 ? '' : 's'}`,
+      `até ${formatSaasPlanLimitValue(config.maxLots)} lotes no total`,
+      `até ${config.maxBrokers} corretor${config.maxBrokers === 1 ? '' : 'es'}`,
+      `${config.maxAdmins} administrador${config.maxAdmins === 1 ? '' : 'es'}`,
+    ],
   };
-  return map[planKey];
+}
+
+export function resolveSaasLimitUsageLevel(
+  used: number,
+  limit: number | null | undefined,
+): SaasLimitUsageLevel {
+  if (limit == null || limit < 0) return 'unlimited';
+  if (limit === 0) return used > 0 ? 'danger' : 'ok';
+  const ratio = used / limit;
+  if (ratio >= 1) return 'danger';
+  if (ratio >= 0.8) return 'warning';
+  return 'ok';
+}
+
+export function formatSaasUsageLabel(
+  used: number,
+  limit: number | null | undefined,
+): string {
+  if (limit == null || limit < 0) return `${used} / Sem limite definido`;
+  return `${used} / ${limit.toLocaleString('pt-BR')}`;
 }
 
 /** @deprecated Prefer getCompanySaasPlan(company) */
 export function getSaasPlanLimits(plan?: string | null) {
-  const planKey = normalizeSaasPlanKey(plan);
-  const config = SAAS_PLANS[planKey];
+  const resolved = getCompanySaasPlan({ plan, plan_type: plan });
   return {
-    planKey,
-    maxProjects: config.maxProjects,
-    maxBrokers: config.maxBrokers,
-    displayName: getSaasPlanDisplayName(planKey),
-    legacyDbPlan: saasPlanToLegacyDbKey(planKey),
+    planKey: resolved.planKey,
+    maxProjects: resolved.maxProjects ?? 0,
+    maxBrokers: resolved.maxBrokers ?? 0,
+    displayName: resolved.displayName,
+    legacyDbPlan: resolved.legacyDbPlan,
   };
 }
 
@@ -194,28 +450,19 @@ export function resolveCompanySaasLimits(company?: CompanySaasSource | null) {
   return getCompanySaasPlan(company);
 }
 
-export function saasLimitsDbPayload(plan?: string | null) {
-  const resolved = getCompanySaasPlan({ plan, plan_type: plan });
-  return {
-    plan: resolved.legacyDbPlan,
-    project_limit: resolved.maxProjects,
-    broker_limit: resolved.maxBrokers,
-    max_projects: resolved.maxProjects,
-    max_brokers: resolved.maxBrokers,
-    planKey: resolved.planKey,
-  };
-}
-
 export function getSaasPlanAvailabilityMessage(company?: CompanySaasSource | null): string {
   const { displayName, maxProjects } = getCompanySaasPlan(company);
-  return `Plano ${displayName}: ${maxProjects} loteamentos disponíveis`;
+  if (maxProjects == null) {
+    return `Plano ${displayName}: loteamentos conforme contrato`;
+  }
+  return `Plano ${displayName}: ${maxProjects} loteamento(s) disponível(is)`;
 }
 
 export function logSaasCompanyContext(
   tenantId: string | null | undefined,
   company: CompanySaasSource | null | undefined,
   usedProjects?: number,
-  usedBrokers?: number
+  usedBrokers?: number,
 ) {
   const resolved = getCompanySaasPlan(company);
   console.log('[SAAS] empresa atual', {
@@ -238,14 +485,14 @@ export function logSaasCompanyContext(
 export function logSaasPlanUsage(
   plan?: string | null,
   usedProjects?: number,
-  usedBrokers?: number
+  usedBrokers?: number,
 ) {
   logSaasCompanyContext(null, { plan, plan_type: plan }, usedProjects, usedBrokers);
 }
 
 export async function fetchCompanySaasByTenantId(
   client: SupabaseClient,
-  tenantId: string
+  tenantId: string,
 ): Promise<CompanySaasSource | null> {
   const { data, error } = await client
     .from('companies')

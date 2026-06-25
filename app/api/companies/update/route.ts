@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import { saasLimitsDbPayload, type SaasPlanManualOverrides } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
   resolveCompanySubscriptionDates,
@@ -44,9 +44,18 @@ export async function PATCH(request: Request) {
     }
 
     const planSource = body.plan_type || body.plan || 'basic';
-    const limits = saasLimitsDbPayload(planSource);
+    const manualOverrides: SaasPlanManualOverrides = {
+      max_projects: body.max_projects != null ? Number(body.max_projects) : null,
+      max_lots: body.max_lots != null ? Number(body.max_lots) : null,
+      max_brokers: body.max_brokers != null ? Number(body.max_brokers) : null,
+      admin_users_limit:
+        body.admin_users_limit != null ? Number(body.admin_users_limit) : null,
+      saas_commercial_note: body.saas_commercial_note ?? null,
+    };
+    const limits = saasLimitsDbPayload(planSource, manualOverrides);
 
-    const customEnabled = body.custom_price_enabled === true;
+    const customEnabled =
+      body.custom_price_enabled === true || limits.planKey === 'personalizado';
     const parsedCustom = parseCustomPrice(body.custom_monthly_price);
 
     if (customEnabled && parsedCustom == null) {
@@ -90,6 +99,8 @@ export async function PATCH(request: Request) {
       broker_limit: limits.broker_limit,
       max_projects: limits.max_projects,
       max_brokers: limits.max_brokers,
+      max_lots: limits.max_lots,
+      saas_commercial_note: limits.saas_commercial_note,
       is_test_company: body.is_test_company === true,
       ...customPricePayload,
       ...addressPayload,
@@ -97,7 +108,12 @@ export async function PATCH(request: Request) {
 
     if (body.slug) updatePayload.slug = body.slug;
     if (body.admin_users_limit != null) {
-      updatePayload.admin_users_limit = Math.max(1, Math.trunc(Number(body.admin_users_limit)));
+      updatePayload.admin_users_limit = Math.max(
+        1,
+        Math.trunc(Number(body.admin_users_limit)),
+      );
+    } else if (limits.admin_users_limit != null) {
+      updatePayload.admin_users_limit = limits.admin_users_limit;
     }
 
     let explicitBilling: ReturnType<typeof buildCompanySubscriptionDatePayload> | null = null;

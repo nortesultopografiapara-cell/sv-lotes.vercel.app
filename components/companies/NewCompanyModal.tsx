@@ -5,7 +5,12 @@ import { X, Building2, Loader2, CheckCircle2, Lock, Key, Mail, ShieldAlert, Moni
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { isCnpjDocument, isCpfDocument } from '@/lib/companyCnpjLookup';
-import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import {
+  buildSaasPlanSummary,
+  isPersonalizadoPlan,
+  MASTER_SAAS_PLAN_OPTIONS,
+  saasLimitsDbPayload,
+} from '@/lib/saasPlans';
 import {
   formatSaasCurrency,
   isCustomPriceEnabled,
@@ -48,6 +53,11 @@ function buildFormStateFromMerged(merged: CompanyForEditMerged) {
     zip_code: merged.zip_code,
     status_operacional: merged.status_operacional,
     plan: merged.plan,
+    max_projects: merged.max_projects,
+    max_lots: merged.max_lots,
+    max_brokers: merged.max_brokers,
+    admin_users_limit: merged.admin_users_limit,
+    saas_commercial_note: merged.saas_commercial_note,
     is_test_company: merged.is_test_company,
     custom_price_enabled: merged.custom_price_enabled,
     custom_monthly_price: merged.custom_monthly_price,
@@ -71,6 +81,11 @@ function defaultFormState() {
     zip_code: '',
     status_operacional: 'Ativa',
     plan: 'basic',
+    max_projects: '',
+    max_lots: '',
+    max_brokers: '',
+    admin_users_limit: '',
+    saas_commercial_note: '',
     is_test_company: false,
     custom_price_enabled: false,
     custom_monthly_price: '',
@@ -150,17 +165,31 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       resolveCompanyPricing({
         plan: formData.plan,
         plan_type: formData.plan,
-        custom_price_enabled: formData.custom_price_enabled,
+        max_projects: formData.max_projects ? Number(formData.max_projects) : null,
+        max_brokers: formData.max_brokers ? Number(formData.max_brokers) : null,
+        max_lots: formData.max_lots ? Number(formData.max_lots) : null,
+        admin_users_limit: formData.admin_users_limit
+          ? Number(formData.admin_users_limit)
+          : null,
         custom_monthly_price: formData.custom_monthly_price,
+        custom_price_enabled:
+          formData.custom_price_enabled || isPersonalizadoPlan(formData.plan),
         custom_price_badge: formData.custom_price_badge,
       }),
     [
       formData.plan,
+      formData.max_projects,
+      formData.max_brokers,
+      formData.max_lots,
+      formData.admin_users_limit,
       formData.custom_price_enabled,
       formData.custom_monthly_price,
       formData.custom_price_badge,
     ],
   );
+
+  const planSummary = useMemo(() => buildSaasPlanSummary(formData.plan), [formData.plan]);
+  const isCustomPlan = isPersonalizadoPlan(formData.plan);
 
   if (!isOpen) return null;
 
@@ -303,7 +332,23 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
       const slug = formData.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
 
       console.log('COMPANY_PLAN_BEFORE_SAVE', initialData?.plan);
-      const planLimitsPayload = saasLimitsDbPayload(formData.plan);
+      const manualLimits = {
+        max_projects: formData.max_projects ? Number(formData.max_projects) : null,
+        max_lots: formData.max_lots ? Number(formData.max_lots) : null,
+        max_brokers: formData.max_brokers ? Number(formData.max_brokers) : null,
+        admin_users_limit: formData.admin_users_limit
+          ? Number(formData.admin_users_limit)
+          : null,
+        saas_commercial_note: formData.saas_commercial_note || null,
+      };
+      const planLimitsPayload = saasLimitsDbPayload(formData.plan, manualLimits);
+
+      if (isCustomPlan) {
+        const parsedCustom = parseCustomMonthlyPrice(formData.custom_monthly_price);
+        if (parsedCustom == null) {
+          throw new Error('Informe o valor mensal do plano Personalizado.');
+        }
+      }
 
       if (initialData) {
          const parsedCustom = parseCustomMonthlyPrice(formData.custom_monthly_price);
@@ -312,12 +357,17 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
          }
 
          const customPricePayload = {
-           custom_price_enabled: formData.custom_price_enabled === true,
+           custom_price_enabled:
+             formData.custom_price_enabled === true || isCustomPlan,
            custom_monthly_price:
-             formData.custom_price_enabled && parsedCustom != null ? parsedCustom : null,
-           custom_price_badge: formData.custom_price_enabled
-             ? formData.custom_price_badge || 'desconto_especial'
-             : null,
+             (formData.custom_price_enabled || isCustomPlan) &&
+             parseCustomMonthlyPrice(formData.custom_monthly_price) != null
+               ? parseCustomMonthlyPrice(formData.custom_monthly_price)
+               : null,
+           custom_price_badge:
+             formData.custom_price_enabled || isCustomPlan
+               ? formData.custom_price_badge || 'desconto_especial'
+               : null,
          };
 
          console.log('SAVE_COMPANY_CUSTOM_PRICE_PAYLOAD', {
@@ -347,6 +397,11 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
            status_operacional: formData.status_operacional,
            plan: formData.plan,
            plan_type: formData.plan,
+           max_projects: manualLimits.max_projects,
+           max_lots: manualLimits.max_lots,
+           max_brokers: manualLimits.max_brokers,
+           admin_users_limit: manualLimits.admin_users_limit,
+           saas_commercial_note: manualLimits.saas_commercial_note,
            is_test_company: formData.is_test_company,
            ...customPricePayload,
            ...(subscriptionDatesPayload || {}),
@@ -408,7 +463,10 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
             throw new Error('Senha é obrigatória para criarmos o auth inicial.');
          }
          if (formData.custom_price_enabled && parseCustomMonthlyPrice(formData.custom_monthly_price) == null) {
-            throw new Error('Informe um valor personalizado válido (ex: 549.99).');
+            throw new Error('Informe um valor personalizado válido (ex: 799.90).');
+         }
+         if (isCustomPlan && parseCustomMonthlyPrice(formData.custom_monthly_price) == null) {
+            throw new Error('Informe o valor mensal do plano Personalizado.');
          }
 
          const response = await fetch('/api/companies/create', {
@@ -427,9 +485,15 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                  active: true, // legacy
                  status_operacional: formData.status_operacional,
                  plan_type: formData.plan,
+                 max_projects: manualLimits.max_projects,
+                 max_lots: manualLimits.max_lots,
+                 max_brokers: manualLimits.max_brokers,
+                 admin_users_limit: manualLimits.admin_users_limit,
+                 saas_commercial_note: manualLimits.saas_commercial_note,
                  is_test_company: formData.is_test_company,
-                 custom_price_enabled: formData.custom_price_enabled,
-                 custom_monthly_price: formData.custom_price_enabled
+                 custom_price_enabled: formData.custom_price_enabled || isCustomPlan,
+                 custom_monthly_price:
+                   formData.custom_price_enabled || isCustomPlan
                    ? parseCustomMonthlyPrice(formData.custom_monthly_price)
                    : null,
                  custom_price_badge: formData.custom_price_enabled
@@ -675,15 +739,148 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Plano SaaS</label>
                 <select 
                   value={formData.plan}
-                  onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                  onChange={(e) => {
+                    const nextPlan = e.target.value;
+                    const nextLimits = saasLimitsDbPayload(nextPlan);
+                    setFormData({
+                      ...formData,
+                      plan: nextPlan,
+                      max_projects:
+                        nextLimits.max_projects != null
+                          ? String(nextLimits.max_projects)
+                          : '',
+                      max_lots:
+                        nextLimits.max_lots != null ? String(nextLimits.max_lots) : '',
+                      max_brokers:
+                        nextLimits.max_brokers != null
+                          ? String(nextLimits.max_brokers)
+                          : '',
+                      admin_users_limit:
+                        nextLimits.admin_users_limit != null
+                          ? String(nextLimits.admin_users_limit)
+                          : '',
+                      custom_price_enabled: isPersonalizadoPlan(nextPlan),
+                    });
+                  }}
                   className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
                 >
-                  <option value="basic">Básico</option>
-                  <option value="standard">Standard</option>
-                  <option value="professional">Profissional</option>
-                  <option value="premium">Premium</option>
+                  {MASTER_SAAS_PLAN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
+
+              <div className="md:col-span-2 p-4 bg-[#1a1f29] border border-emerald-500/20 rounded-xl space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">{planSummary.title}</h3>
+                  <p className="text-xs text-gray-400 mt-1">{planSummary.monthlyPriceLine}</p>
+                </div>
+                {planSummary.limitLines.length > 0 ? (
+                  <ul className="text-xs text-gray-300 space-y-1 list-disc pl-4">
+                    {planSummary.limitLines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              {isCustomPlan && (
+                <div className="md:col-span-2 p-4 bg-[#1a1f29] border border-amber-500/20 rounded-xl space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Limites e valor — Personalizado</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Preencha manualmente conforme a negociação comercial.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Valor mensal (R$)
+                      </label>
+                      <CurrencyInput
+                        value={formData.custom_monthly_price}
+                        onChange={(next) =>
+                          setFormData({ ...formData, custom_monthly_price: next })
+                        }
+                        placeholder="R$ 899,90"
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Limite de loteamentos
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={formData.max_projects}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_projects: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Limite total de lotes
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={formData.max_lots}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_lots: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Limite de corretores
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={formData.max_brokers}
+                        onChange={(e) =>
+                          setFormData({ ...formData, max_brokers: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Limite de administradores
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.admin_users_limit}
+                        onChange={(e) =>
+                          setFormData({ ...formData, admin_users_limit: e.target.value })
+                        }
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+                        Observação comercial interna
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={formData.saas_commercial_note}
+                        onChange={(e) =>
+                          setFormData({ ...formData, saas_commercial_note: e.target.value })
+                        }
+                        placeholder="Ex.: Cliente fundador — desconto 20% por 12 meses."
+                        className="w-full bg-[#0b1111] border border-[#2d3340] rounded-lg py-2.5 px-3 text-sm text-white resize-y"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">Status Operacional</label>
@@ -824,7 +1021,7 @@ export default function NewCompanyModal({ isOpen, onClose, onSuccess, initialDat
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <div className="rounded-lg bg-[#0b1111] border border-[#2d3340] p-3">
                     <p className="text-[10px] uppercase text-gray-500 font-semibold">Plano atual</p>
-                    <p className="text-white font-bold mt-1">{pricingPreview.planLabel}</p>
+                    <p className="text-white font-bold mt-1">{pricingPreview.planDisplayName}</p>
                   </div>
                   <div className="rounded-lg bg-[#0b1111] border border-[#2d3340] p-3">
                     <p className="text-[10px] uppercase text-gray-500 font-semibold">Preço padrão</p>

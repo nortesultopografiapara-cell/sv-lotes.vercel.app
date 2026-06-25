@@ -136,8 +136,8 @@ function testSubscriptionRowFieldsForCustomPrice() {
   const company = ivanildeCompanyFixture();
   const pricing = resolveCompanyPricing(company);
   assert(pricing.appliedPrice === 300, 'preço aplicado R$ 300,00');
-  assert(pricing.standardPrice === 329.99, 'preço padrão R$ 329,99');
-  assert(Math.abs(pricing.savings - 29.99) < 0.01, 'desconto R$ 29,99');
+  assert(pricing.standardPrice === 499.9, 'preço padrão R$ 499,90');
+  assert(Math.abs(pricing.savings - 199.9) < 0.01, 'desconto R$ 199,90');
   assert(pricing.hasCustomPrice, 'hasCustomPrice true');
   console.log('OK testSubscriptionRowFieldsForCustomPrice');
 }
@@ -146,11 +146,11 @@ function testStandardCompanyContractContext() {
   const company = standardBasicCompanyFixture();
   const ctx = resolveSaasContractContext({
     company,
-    subscription: subscriptionFixture(company, 329.99),
+    subscription: subscriptionFixture(company, 499.9),
   });
 
   assert(ctx.plan.name === 'BÁSICO', 'plano Básico');
-  assert(ctx.plan.monthlyPrice === formatSaasCurrency(329.99), 'valor mensal padrão');
+  assert(ctx.plan.monthlyPrice === formatSaasCurrency(499.9), 'valor mensal padrão');
   assert(!ctx.plan.discount, 'sem linha de desconto');
   assert(!ctx.plan.noAnnualAdjustment, 'reajuste anual padrão');
 
@@ -165,21 +165,21 @@ function testCustomPriceContractContextIvanilde() {
   const company = ivanildeCompanyFixture();
   const ctx = resolveSaasContractContext({
     company,
-    subscription: subscriptionFixture(company, 329.99),
+    subscription: subscriptionFixture(company, 499.9),
   });
 
   assert(ctx.plan.name === 'BÁSICO', 'plano Básico');
   assert(ctx.plan.monthlyPrice === formatSaasCurrency(300), 'valor mensal R$ 300,00');
-  assert(ctx.plan.standardPrice === formatSaasCurrency(329.99), 'valor padrão R$ 329,99');
-  assert(ctx.plan.discount === formatSaasCurrency(29.99), 'desconto R$ 29,99');
+  assert(ctx.plan.standardPrice === formatSaasCurrency(499.9), 'valor padrão R$ 499,90');
+  assert(ctx.plan.discount === formatSaasCurrency(199.9), 'desconto R$ 199,90');
   assert(ctx.plan.noAnnualAdjustment === true, 'sem reajuste anual para desconto especial');
 
   const sections = buildSaasContractSections(ctx, SAAS_CONTRACT_CONTENT_VERSION);
   const clause5 = sections.find((s) => s.number === 5);
   const clause5Text = clause5?.paragraphs.join(' ') || '';
   assert(clause5Text.includes('300,00'), 'cláusula 5 com valor mensal aplicado');
-  assert(clause5Text.includes('329,99'), 'cláusula 5 com valor padrão');
-  assert(clause5Text.includes('29,99'), 'cláusula 5 com desconto');
+  assert(clause5Text.includes('499,90'), 'cláusula 5 com valor padrão');
+  assert(clause5Text.includes('199,90'), 'cláusula 5 com desconto');
 
   const reajuste = sections.find((s) => s.number === 6);
   assert(
@@ -192,7 +192,7 @@ function testCustomPriceContractContextIvanilde() {
 
 function testCustomPriceUsesCompanyPricingEvenIfSubscriptionStale() {
   const company = ivanildeCompanyFixture();
-  const staleSubPrice = 329.99;
+  const staleSubPrice = 499.9;
   const ctx = resolveSaasContractContext({
     company,
     subscription: subscriptionFixture(company, staleSubPrice),
@@ -212,7 +212,7 @@ function testStandardCompanyGeneratesPdf() {
   );
   assert(built.pdf.byteLength > 5000, 'PDF padrão gerado');
   const rough = roughSaasContractPdfText(built.pdf);
-  assert(rough.includes('329,99') || rough.includes('329.99'), 'PDF padrão contém valor do plano');
+  assert(rough.includes('499,90') || rough.includes('499.90'), 'PDF padrão contém valor do plano');
   console.log('OK testStandardCompanyGeneratesPdf');
 }
 
@@ -228,7 +228,7 @@ function testCustomPriceCompanyGeneratesPdf() {
   assert(built.pdf.byteLength > 5000, 'PDF personalizado gerado');
   const rough = roughSaasContractPdfText(built.pdf);
   assert(rough.includes('300,00') || rough.includes('300.00'), 'PDF contém R$ 300,00');
-  assert(rough.includes('329,99') || rough.includes('329.99'), 'PDF contém valor padrão');
+  assert(rough.includes('499,90') || rough.includes('499.90'), 'PDF contém valor padrão');
   console.log('OK testCustomPriceCompanyGeneratesPdf');
 }
 

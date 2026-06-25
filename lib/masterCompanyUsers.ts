@@ -40,6 +40,43 @@ export function buildCompanyProjectCounts(
   return counts;
 }
 
+export function buildCompanyBrokerCounts(
+  brokers: Array<{ tenant_id?: string | null; company_id?: string | null }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const broker of brokers) {
+    const companyId = broker.tenant_id || broker.company_id;
+    if (!companyId) continue;
+    counts[companyId] = (counts[companyId] || 0) + 1;
+  }
+  return counts;
+}
+
+export function buildCompanyBlockCounts(
+  blocks: Array<{ tenant_id?: string | null; company_id?: string | null }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const block of blocks) {
+    const companyId = block.tenant_id || block.company_id;
+    if (!companyId) continue;
+    counts[companyId] = (counts[companyId] || 0) + 1;
+  }
+  return counts;
+}
+
+export function buildCompanyAdminCounts(users: UserCompanyLink[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const user of users) {
+    if (isSuperAdminRole(user.role)) continue;
+    const role = String(user.role || '').toUpperCase();
+    if (!['ADMIN', 'ADMIN_EMPRESA', 'COMPANY_ADMIN'].includes(role)) continue;
+    const companyId = resolveUserCompanyId(user);
+    if (!companyId) continue;
+    counts[companyId] = (counts[companyId] || 0) + 1;
+  }
+  return counts;
+}
+
 export function userBelongsToCompany(user: UserCompanyLink, companyId: string): boolean {
   return resolveUserCompanyId(user) === companyId;
 }

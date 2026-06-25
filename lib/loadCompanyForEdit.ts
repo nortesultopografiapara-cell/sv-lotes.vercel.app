@@ -6,6 +6,7 @@ import {
   dueDayFromDate,
   toIsoDateOnly,
 } from '@/lib/companySubscriptionDates';
+import { legacyDbKeyForForm } from '@/lib/saasPlans';
 import type { CompanySubscription } from '@/lib/saasSubscription';
 
 const COMPANY_SELECT = `
@@ -21,6 +22,11 @@ const COMPANY_SELECT = `
   zip_code,
   plan,
   plan_type,
+  max_projects,
+  max_brokers,
+  max_lots,
+  admin_users_limit,
+  saas_commercial_note,
   status_operacional,
   custom_price_enabled,
   custom_monthly_price,
@@ -62,6 +68,11 @@ export type CompanyForEditMerged = {
   zip_code: string;
   status_operacional: string;
   plan: string;
+  max_projects: string;
+  max_lots: string;
+  max_brokers: string;
+  admin_users_limit: string;
+  saas_commercial_note: string;
   is_test_company: boolean;
   custom_price_enabled: boolean;
   custom_monthly_price: string;
@@ -117,7 +128,14 @@ export function mapCompanyForEditForm(
     state: String(company.state ?? ''),
     zip_code: String(company.zip_code ?? company.cep ?? ''),
     status_operacional: String(company.status_operacional ?? 'Ativa'),
-    plan: String(company.plan_type || company.plan || 'basic'),
+    plan: legacyDbKeyForForm(String(company.plan_type || company.plan || 'basic')),
+    max_projects:
+      company.max_projects != null ? String(company.max_projects) : '',
+    max_lots: company.max_lots != null ? String(company.max_lots) : '',
+    max_brokers: company.max_brokers != null ? String(company.max_brokers) : '',
+    admin_users_limit:
+      company.admin_users_limit != null ? String(company.admin_users_limit) : '',
+    saas_commercial_note: String(company.saas_commercial_note ?? ''),
     is_test_company: company.is_test_company === true,
     custom_price_enabled: company.custom_price_enabled === true,
     custom_monthly_price:

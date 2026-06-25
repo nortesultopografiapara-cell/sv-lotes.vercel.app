@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
-import { saasLimitsDbPayload } from '@/lib/saasPlans';
+import { saasLimitsDbPayload, type SaasPlanManualOverrides } from '@/lib/saasPlans';
 import {
   buildCompanySubscriptionDatePayload,
   defaultNewCompanySubscriptionDates,
@@ -80,7 +80,15 @@ export async function POST(req: Request) {
     console.log(`[ETAPA 1] Criando tenant na tabela public.companies... Nome: ${name}`);
     
     const planSource = body.plan_type || plan || 'basic';
-    const limits = saasLimitsDbPayload(planSource);
+    const manualOverrides: SaasPlanManualOverrides = {
+      max_projects: body.max_projects != null ? Number(body.max_projects) : null,
+      max_lots: body.max_lots != null ? Number(body.max_lots) : null,
+      max_brokers: body.max_brokers != null ? Number(body.max_brokers) : null,
+      admin_users_limit:
+        body.admin_users_limit != null ? Number(body.admin_users_limit) : null,
+      saas_commercial_note: body.saas_commercial_note ?? null,
+    };
+    const limits = saasLimitsDbPayload(planSource, manualOverrides);
 
     const companyPayload: any = {
       name,
@@ -93,9 +101,11 @@ export async function POST(req: Request) {
       status_operacional: body.status_operacional || 'Ativa',
       project_limit: limits.project_limit,
       broker_limit: limits.broker_limit,
-      admin_users_limit: body.admin_users_limit != null ? Number(body.admin_users_limit) : 1,
+      admin_users_limit: limits.admin_users_limit ?? 1,
       max_projects: limits.max_projects,
       max_brokers: limits.max_brokers,
+      max_lots: limits.max_lots,
+      saas_commercial_note: limits.saas_commercial_note,
     };
 
     const postalCode = String(body.zip_code ?? body.cep ?? '').trim();
@@ -120,7 +130,7 @@ export async function POST(req: Request) {
       companyPayload.next_payment_date = subDates.next_payment_date;
     }
 
-    if (body.custom_price_enabled === true) {
+    if (body.custom_price_enabled === true || limits.planKey === 'personalizado') {
       const custom = Number(body.custom_monthly_price);
       if (!Number.isFinite(custom) || custom < 0) {
         throw new Error('Valor personalizado inválido.');

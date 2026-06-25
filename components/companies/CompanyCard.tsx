@@ -2,26 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import {
-  Building2,
-  Edit,
-  Eye,
-  ExternalLink,
-  LogIn,
-  Map as MapIcon,
-  MoreVertical,
-  Power,
-  PowerOff,
-  Trash2,
-  Users,
-} from 'lucide-react';
+import { Building2, Edit, Eye, ExternalLink, LogIn, MoreVertical, Power, PowerOff, Trash2 } from 'lucide-react';
 import '@/components/admin/admin-shell.css';
-import { getCompanySaasPlan } from '@/lib/saasPlans';
+import { getCompanySaasPlan, getSaasPlanDisplayNameFromRaw } from '@/lib/saasPlans';
 import { formatSaasCurrency, resolveCompanyPricing } from '@/lib/companyPricing';
 import { CustomPriceBadge } from '@/components/companies/CustomPriceBadge';
+import { SaasUsageMetric } from '@/components/companies/SaasUsageMetric';
 
-function planLabel(plan?: string) {
-  return getCompanySaasPlan({ plan }).displayName;
+function planLabel(company: { plan?: string; plan_type?: string }) {
+  return getSaasPlanDisplayNameFromRaw(company.plan_type || company.plan);
 }
 
 function CompanyTypeBadge({ company }: { company: { is_test_company?: boolean; is_test?: boolean } }) {
@@ -92,7 +81,11 @@ export function CompanyCard({
   const normalizedStatus = (company.status_operacional || (company.active ? 'Ativa' : 'Inativa')).toLowerCase();
   const isActive = ['active', 'ativa'].includes(normalizedStatus);
   const userCount = company.user_count ?? company.users?.[0]?.count ?? 0;
+  const adminCount = company.admin_count ?? userCount;
   const projectCount = company.project_count ?? 0;
+  const brokerCount = company.broker_count ?? 0;
+  const lotCount = company.lot_count ?? 0;
+  const saasPlan = getCompanySaasPlan(company);
   const protectedCompany =
     isMaster || company.id === user?.tenant_id || company.is_master || company.slug?.toLowerCase() === 'master';
   const pricing = resolveCompanyPricing(company);
@@ -210,7 +203,7 @@ export function CompanyCard({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <StatusBadge status={company.status_operacional} legacyActive={company.active} />
         <span className="text-[10px] font-medium text-slate-500 px-2 py-0.5 rounded-md bg-white/5 border border-white/5">
-          {planLabel(company.plan)}
+          {planLabel(company)}
         </span>
         <span className="text-[10px] font-semibold text-emerald-400/90 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
           {pricing.hasCustomPrice ? (
@@ -227,23 +220,22 @@ export function CompanyCard({
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-5 flex-1">
-        <div className="rounded-lg bg-[var(--color-background)]/60 border border-white/5 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Projetos</p>
-          <p className="text-sm font-semibold text-white flex items-center gap-1.5">
-            <MapIcon className="w-3.5 h-3.5 text-[var(--color-primary)]" />
-            {projectCount}
-            <span className="text-slate-500 font-normal text-xs">
-              / {getCompanySaasPlan(company).maxProjects}
-            </span>
-          </p>
-        </div>
-        <div className="rounded-lg bg-[var(--color-background)]/60 border border-white/5 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Usuários</p>
-          <p className="text-sm font-semibold text-white flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-purple-400" />
-            {userCount}
-          </p>
-        </div>
+        <SaasUsageMetric
+          label="Loteamentos"
+          used={projectCount}
+          limit={saasPlan.maxProjects}
+        />
+        <SaasUsageMetric label="Lotes" used={lotCount} limit={saasPlan.maxLots} />
+        <SaasUsageMetric
+          label="Corretores"
+          used={brokerCount}
+          limit={saasPlan.maxBrokers}
+        />
+        <SaasUsageMetric
+          label="Administradores"
+          used={adminCount}
+          limit={saasPlan.maxAdmins}
+        />
       </div>
 
       {!isMaster && (

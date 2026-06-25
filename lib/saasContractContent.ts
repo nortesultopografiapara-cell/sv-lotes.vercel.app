@@ -143,11 +143,14 @@ export type SaasContractContext = {
   };
   plan: {
     name: string;
-    maxProjects: number;
-    maxBrokers: number;
+    maxProjects: number | null;
+    maxLots: number | null;
+    maxBrokers: number | null;
+    maxAdmins: number | null;
     monthlyPrice: string;
     standardPrice: string;
     discount?: string;
+    commercialNote?: string;
     dueDay: number;
     startDate: string;
     firstPaymentDate: string;
@@ -203,9 +206,12 @@ export function resolveSaasContractContext(input: SaasContractPdfInput): SaasCon
     plan: {
       name: billingUi.ui_plan,
       maxProjects: saas.maxProjects,
+      maxLots: saas.maxLots,
       maxBrokers: saas.maxBrokers,
+      maxAdmins: saas.maxAdmins,
       monthlyPrice: formatSaasCurrency(applied),
       standardPrice: formatSaasCurrency(standardPrice),
+      commercialNote: saas.commercialNote || undefined,
       discount:
         pricing.hasCustomPrice && standardPrice > applied
           ? formatSaasCurrency(standardPrice - applied)
@@ -231,6 +237,24 @@ export function buildSaasContractSections(
   const p = ctx.provider;
   const c = ctx.contractor;
   const pl = ctx.plan;
+
+  const limitsParts: string[] = [];
+  if (pl.maxProjects != null) {
+    limitsParts.push(`até ${pl.maxProjects} loteamento(s) ativo(s)`);
+  }
+  if (pl.maxLots != null) {
+    limitsParts.push(`até ${pl.maxLots.toLocaleString('pt-BR')} lote(s) no total`);
+  }
+  if (pl.maxBrokers != null) {
+    limitsParts.push(`até ${pl.maxBrokers} corretor(es) cadastrado(s)`);
+  }
+  if (pl.maxAdmins != null) {
+    limitsParts.push(`até ${pl.maxAdmins} administrador(es) interno(s)`);
+  }
+  const limitsText =
+    limitsParts.length > 0
+      ? limitsParts.join(', ')
+      : 'limites conforme negociação comercial registrada neste contrato';
 
   const discountLine = pl.discount
     ? ` Valor padrão do plano: ${pl.standardPrice}. Desconto comercial aplicado: ${pl.discount}.`
@@ -321,7 +345,9 @@ export function buildSaasContractSections(
       number: 4,
       title: 'PLANO CONTRATADO E LIMITES DE USO',
       paragraphs: [
-        `Plano contratado: ${pl.name}. Limites comerciais do plano: até ${pl.maxProjects} projeto(s) ativo(s) e até ${pl.maxBrokers} corretor(es) cadastrado(s), salvo upgrade formalizado entre as partes.`,
+        `Plano contratado: ${pl.name}. Limites comerciais do plano: ${limitsText}, salvo upgrade formalizado entre as partes.${
+          pl.commercialNote ? ` Condições comerciais acordadas: ${pl.commercialNote}.` : ''
+        }`,
         'O uso de funcionalidades, módulos e integrações está condicionado ao plano vigente e às políticas técnicas da plataforma. Excedentes ou necessidades superiores aos limites poderão exigir alteração de plano ou contratação adicional.',
         'Credenciais de acesso são pessoais e intransferíveis. A CONTRATANTE é responsável pelo controle de permissões internas e pelo uso realizado por seus usuários.',
       ],

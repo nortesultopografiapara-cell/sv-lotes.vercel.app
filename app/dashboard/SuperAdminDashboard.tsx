@@ -472,11 +472,13 @@ export default function SuperAdminDashboard({ user }: { user: any }) {
                       <td className="p-4">
                         <span
                           className={`px-2 py-1 rounded text-[10px] font-bold border ${
-                            c.planLabel === 'PROFESSIONAL'
+                            c.planLabel === 'PROFISSIONAL'
                               ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                              : c.planLabel === 'ENTERPRISE'
+                              : c.planLabel === 'BUSINESS'
                                 ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                : 'bg-green-500/10 text-green-400 border-green-500/20'
+                                : c.planLabel === 'PERSONALIZADO'
+                                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  : 'bg-green-500/10 text-green-400 border-green-500/20'
                           }`}
                         >
                           {c.planLabel}

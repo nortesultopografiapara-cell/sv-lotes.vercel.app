@@ -45,11 +45,13 @@ export function augmentCompanyBilling<T extends CompanyLike>(
 ) {
   const resolved = resolveCompanyPricing(company, subscription);
   const uiPlan =
-    resolved.planKey === 'profissional'
-      ? 'PROFISSIONAL'
-      : resolved.planKey === 'business'
-        ? 'BUSINESS'
-        : 'BÁSICO';
+    resolved.planKey === 'personalizado'
+      ? 'PERSONALIZADO'
+      : resolved.planKey === 'profissional'
+        ? 'PROFISSIONAL'
+        : resolved.planKey === 'business'
+          ? 'BUSINESS'
+          : 'BÁSICO';
 
   const active = isActiveSubscriptionCompany(company);
   const companyDates = resolveCompanySubscriptionDates(company);

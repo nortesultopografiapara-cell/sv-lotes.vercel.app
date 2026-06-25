@@ -18,6 +18,9 @@ import { writeImpersonationState } from '@/lib/impersonationStorage';
 import { useAuth } from '@/hooks/useAuth';
 import { isPlatformAdmin } from '@/lib/rls';
 import {
+  buildCompanyAdminCounts,
+  buildCompanyBlockCounts,
+  buildCompanyBrokerCounts,
   buildCompanyProjectCounts,
   buildCompanyUserCounts,
 } from '@/lib/masterCompanyUsers';
@@ -56,10 +59,13 @@ function CompaniesPageContent() {
     setLoadError(null);
 
     try {
-      const [{ data, error }, { data: usersData }, { data: projectsData }] = await Promise.all([
+      const [{ data, error }, { data: usersData }, { data: projectsData }, { data: brokersData }, { data: blocksData }] =
+        await Promise.all([
         supabase.from('companies').select('*'),
         supabase.from('users').select('tenant_id, role'),
         supabase.from('projects').select('tenant_id, company_id'),
+        supabase.from('brokers').select('tenant_id, company_id'),
+        supabase.from('blocks').select('tenant_id, company_id'),
       ]);
 
       console.log('MASTER_COMPANIES_RENDER', data);
@@ -71,13 +77,19 @@ function CompaniesPageContent() {
       }
 
       const userCounts = buildCompanyUserCounts(usersData || []);
+      const adminCounts = buildCompanyAdminCounts(usersData || []);
       const projectCounts = buildCompanyProjectCounts(projectsData || []);
+      const brokerCounts = buildCompanyBrokerCounts(brokersData || []);
+      const lotCounts = buildCompanyBlockCounts(blocksData || []);
 
       setCompanies(
         (data ?? []).map((company) => ({
           ...company,
           user_count: userCounts[company.id] || 0,
+          admin_count: adminCounts[company.id] || 0,
           project_count: projectCounts[company.id] || 0,
+          broker_count: brokerCounts[company.id] || 0,
+          lot_count: lotCounts[company.id] || 0,
         })),
       );
     } catch (err) {

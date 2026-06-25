@@ -4,18 +4,25 @@
  */
 
 import { parseCurrencyBRL } from '@/lib/currencyBrl';
-import { getCompanySaasPlan, type CompanySaasSource } from '@/lib/saasPlans';
+import {
+  getCompanySaasPlan,
+  isPersonalizadoPlanKey,
+  SAAS_PLAN_CATALOG,
+  type CompanySaasSource,
+} from '@/lib/saasPlans';
 
 export const PLAN_MRR: Record<string, number> = {
-  starter: 329.99,
-  basic: 329.99,
-  basico: 329.99,
-  business: 549.99,
-  standard: 549.99,
-  professional: 1099.99,
-  profissional: 1099.99,
-  enterprise: 1099.99,
-  premium: 1099.99,
+  starter: 499.9,
+  basic: 499.9,
+  basico: 499.9,
+  business: 799.9,
+  standard: 799.9,
+  professional: 1199.9,
+  profissional: 1199.9,
+  enterprise: 1199.9,
+  premium: 0,
+  custom: 0,
+  personalizado: 0,
 };
 
 export function planMrrForCompany(plan?: string | null): number {
@@ -39,6 +46,12 @@ export function formatSaasCurrency(value: number): string {
 
 export function getStandardPlanMonthlyPrice(company: CompanySaasSource): number {
   const saas = getCompanySaasPlan(company);
+  if (isPersonalizadoPlanKey(saas.planKey)) {
+    const manual = parseCustomMonthlyPrice(company.custom_monthly_price);
+    return manual ?? 0;
+  }
+  const catalogPrice = SAAS_PLAN_CATALOG[saas.planKey].monthlyPrice;
+  if (catalogPrice != null) return catalogPrice;
   return planMrrForCompany(saas.legacyDbPlan);
 }
 
@@ -157,11 +170,13 @@ export function resolveCompanyPricing(
 ) {
   const saas = getCompanySaasPlan(company);
   const planLabel =
-    saas.planKey === 'profissional'
-      ? 'PROFESSIONAL'
-      : saas.planKey === 'business'
-        ? 'ENTERPRISE'
-        : 'STARTER';
+    saas.planKey === 'personalizado'
+      ? 'PERSONALIZADO'
+      : saas.planKey === 'profissional'
+        ? 'PROFISSIONAL'
+        : saas.planKey === 'business'
+          ? 'BUSINESS'
+          : 'BÁSICO';
 
   const standardPrice = getStandardPlanMonthlyPrice(company);
   const appliedPrice = getCompanyMonthlyPrice(company, subscription);

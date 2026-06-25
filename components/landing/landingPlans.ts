@@ -1,4 +1,5 @@
 import type { LandingPlanId } from './constants/landingConfig';
+import { SAAS_PLAN_CATALOG } from '@/lib/saasPlans';
 
 export type LandingPlan = {
   id: LandingPlanId;
@@ -15,45 +16,38 @@ export type LandingPlan = {
   };
 };
 
-export const LANDING_PLANS: LandingPlan[] = [
-  {
-    id: 'basico',
-    name: 'Básico',
-    price: 'R$ 499,90',
-    color: 'green',
+const LANDING_COLORS: Record<Exclude<LandingPlanId, never>, LandingPlan['color']> = {
+  basico: 'green',
+  business: 'orange',
+  profissional: 'purple',
+};
+
+const LANDING_CONCURRENT: Record<Exclude<LandingPlanId, never>, string> = {
+  basico: '1 usuário conectado por vez',
+  business: 'Até 2 usuários conectados ao mesmo tempo',
+  profissional: 'Até 3 usuários conectados ao mesmo tempo',
+};
+
+function formatLandingPrice(value: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+}
+
+export const LANDING_PLANS: LandingPlan[] = (
+  ['basico', 'business', 'profissional'] as LandingPlanId[]
+).map((id) => {
+  const plan = SAAS_PLAN_CATALOG[id];
+  return {
+    id,
+    name: plan.label,
+    price: formatLandingPrice(plan.monthlyPrice!),
+    color: LANDING_COLORS[id],
+    popular: id === 'business',
     limits: {
-      loteamentos: '1 loteamento',
-      lotes: 'Até 500 lotes no total',
-      corretores: 'Corretores: até 3 corretores',
-      admins: 'Acesso administrador: 1 login administrador',
-      concurrent: '1 usuário conectado por vez',
+      loteamentos: `${plan.maxProjects} loteamento${plan.maxProjects === 1 ? '' : 's'}`,
+      lotes: `Até ${plan.maxLots!.toLocaleString('pt-BR')} lotes no total`,
+      corretores: `Corretores: até ${plan.maxBrokers} corretor${plan.maxBrokers === 1 ? '' : 'es'}`,
+      admins: `Acesso administrador: ${plan.maxAdmins} login${plan.maxAdmins === 1 ? '' : 's'} administrador${plan.maxAdmins === 1 ? '' : 'es'}`,
+      concurrent: LANDING_CONCURRENT[id],
     },
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    price: 'R$ 799,90',
-    color: 'orange',
-    popular: true,
-    limits: {
-      loteamentos: '2 loteamentos',
-      lotes: 'Até 1.000 lotes no total',
-      corretores: 'Corretores: até 5 corretores',
-      admins: 'Acesso administrador: 2 logins administradores',
-      concurrent: 'Até 2 usuários conectados ao mesmo tempo',
-    },
-  },
-  {
-    id: 'profissional',
-    name: 'Profissional',
-    price: 'R$ 1.199,90',
-    color: 'purple',
-    limits: {
-      loteamentos: '5 loteamentos',
-      lotes: 'Até 2.500 lotes no total',
-      corretores: 'Corretores: até 10 corretores',
-      admins: 'Acesso administrador: 3 logins administradores',
-      concurrent: 'Até 3 usuários conectados ao mesmo tempo',
-    },
-  },
-];
+  };
+});

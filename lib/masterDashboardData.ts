@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { calculateMrrFromCompanies, getCompanyMonthlyPrice, isBillableCompany } from '@/lib/companyPricing';
 import { augmentCompanyBilling } from '@/lib/masterBilling';
-import { buildCompanyUserCounts } from '@/lib/masterCompanyUsers';
+import { buildCompanyUserCounts, buildCompanyAdminCounts, buildCompanyBrokerCounts, buildCompanyBlockCounts } from '@/lib/masterCompanyUsers';
 import { buildPaidReferenceMonthsByCompany } from '@/lib/masterSaasPayments';
 import type { MasterSaasPayment } from '@/lib/masterSaasPayments';
 import type { CompanySubscription } from '@/lib/saasSubscription';
@@ -15,7 +15,7 @@ import {
 } from '@/lib/saasFinanceSettings';
 import { sumSaasCashReceivedIncome } from '@/lib/saasCashMovements';
 
-export type MasterPlanTier = 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
+export type MasterPlanTier = 'BÁSICO' | 'BUSINESS' | 'PROFISSIONAL' | 'PERSONALIZADO';
 
 export type MasterDashboardAlert = {
   id: string;
@@ -31,11 +31,13 @@ export type MasterRecentCompany = {
   planLabel: MasterPlanTier;
   status: string;
   projectsUsed: number;
-  projectsLimit: number;
+  projectsLimit: number | null;
+  lotsUsed: number;
+  lotsLimit: number | null;
   usersUsed: number;
-  usersLimit: number;
+  usersLimit: number | null;
   brokersUsed: number;
-  brokersLimit: number;
+  brokersLimit: number | null;
   mrr: number;
   financialSituation: string;
 };
@@ -74,16 +76,18 @@ export type MasterDashboardData = {
 };
 
 const PLAN_TIER_COLORS: Record<MasterPlanTier, string> = {
-  STARTER: '#22c55e',
-  PROFESSIONAL: '#a855f7',
-  ENTERPRISE: '#3b82f6',
+  'BÁSICO': '#22c55e',
+  PROFISSIONAL: '#a855f7',
+  BUSINESS: '#3b82f6',
+  PERSONALIZADO: '#f59e0b',
 };
 
 export function mapPlanToMasterTier(company: CompanySaasSource): MasterPlanTier {
   const key = getCompanySaasPlan(company).planKey;
-  if (key === 'profissional') return 'PROFESSIONAL';
-  if (key === 'business') return 'ENTERPRISE';
-  return 'STARTER';
+  if (key === 'personalizado') return 'PERSONALIZADO';
+  if (key === 'profissional') return 'PROFISSIONAL';
+  if (key === 'business') return 'BUSINESS';
+  return 'BÁSICO';
 }
 
 function companyMrr(
@@ -160,6 +164,7 @@ export async function loadMasterDashboardData(
     projectsListRes,
     usersListRes,
     brokersListRes,
+    blocksListRes,
     subscriptionsRes,
     paymentsRes,
     invoicesRes,
@@ -179,6 +184,7 @@ export async function loadMasterDashboardData(
     supabase.from('projects').select('tenant_id, company_id'),
     supabase.from('users').select('tenant_id, role'),
     supabase.from('brokers').select('tenant_id, company_id'),
+    supabase.from('blocks').select('tenant_id, company_id'),
     supabase.from('company_subscriptions').select('*'),
     supabase
       .from('master_saas_payments')
@@ -266,16 +272,19 @@ export async function loadMasterDashboardData(
   }));
 
   const tierCounts: Record<MasterPlanTier, number> = {
-    STARTER: 0,
-    PROFESSIONAL: 0,
-    ENTERPRISE: 0,
+    'BÁSICO': 0,
+    PROFISSIONAL: 0,
+    BUSINESS: 0,
+    PERSONALIZADO: 0,
   };
   for (const c of companies) {
     tierCounts[mapPlanToMasterTier(c)]++;
   }
 
   const totalCompanies = companies.length;
-  const planDistribution = (['STARTER', 'PROFESSIONAL', 'ENTERPRISE'] as MasterPlanTier[]).map(
+  const planDistribution = (
+    ['BÁSICO', 'BUSINESS', 'PROFISSIONAL', 'PERSONALIZADO'] as MasterPlanTier[]
+  ).map(
     (tier) => ({
       tier,
       count: tierCounts[tier],
@@ -291,12 +300,15 @@ export async function loadMasterDashboardData(
   }
 
   const userCounts = buildCompanyUserCounts(usersListRes.data ?? []);
+  const adminCounts = buildCompanyAdminCounts(usersListRes.data ?? []);
 
   const brokerCounts: Record<string, number> = {};
   for (const b of brokersListRes.data ?? []) {
     const id = b.tenant_id || b.company_id;
     if (id) brokerCounts[id] = (brokerCounts[id] || 0) + 1;
   }
+
+  const lotCounts = buildCompanyBlockCounts(blocksListRes.data ?? []);
 
   const alerts: MasterDashboardAlert[] = [];
 
@@ -377,8 +389,10 @@ export async function loadMasterDashboardData(
       financialSituation: enriched.financial_situation,
       projectsUsed: projectCounts[c.id] || 0,
       projectsLimit: saas.maxProjects,
-      usersUsed: userCounts[c.id] || 0,
-      usersLimit: saas.maxBrokers,
+      lotsUsed: lotCounts[c.id] || 0,
+      lotsLimit: saas.maxLots,
+      usersUsed: adminCounts[c.id] || 0,
+      usersLimit: saas.maxAdmins,
       brokersUsed: brokerCounts[c.id] || 0,
       brokersLimit: saas.maxBrokers,
       mrr: companyMrr(c),
