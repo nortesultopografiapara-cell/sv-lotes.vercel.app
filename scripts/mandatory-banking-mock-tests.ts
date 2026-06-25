@@ -7,8 +7,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   assertBankingModuleEnabled,
+  assertIntegrationResponseSafe,
   clearMockBankProviderStateForTests,
   clearWebhookEventCacheForTests,
+  decryptBankingSecret,
+  encryptBankingSecret,
   isBankingModuleEnabled,
   isBankingModuleEnabledForUi,
   mockBankProvider,
@@ -19,6 +22,7 @@ import {
   runMockCreatePix,
   runMockTestConnection,
 } from '../lib/banking';
+import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
 const ROOT = path.join(__dirname, '..');
 
@@ -204,6 +208,43 @@ async function testMockApiHandlers(): Promise<void> {
   assert(pix.charge.status === 'PENDING', 'handler pix PENDING');
 }
 
+function testCredentialsCrypto(): void {
+  const original = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+  process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = 'test-banking-key-32chars-min!!';
+  const plain = 'client-secret-mock-value';
+  const encrypted = encryptBankingSecret(plain);
+  assert(encrypted.startsWith('v1:'), 'ciphertext prefixo v1');
+  assert(decryptBankingSecret(encrypted) === plain, 'roundtrip decrypt');
+  if (original === undefined) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
+  else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = original;
+}
+
+function testIntegrationResponseSafe(): void {
+  const safe = {
+    ...EMPTY_BANK_INTEGRATION_CONFIG,
+    companyId: context.companyId,
+    id: '11111111-1111-1111-1111-111111111111',
+  };
+  assertIntegrationResponseSafe(safe);
+  assert(safe.hasClientSecret === false, 'flags has* default false');
+}
+
+function testPhase12Source(): void {
+  const migration = read('supabase/migrations/20260826120000_banking_module_phase12_config.sql');
+  assert(migration.includes('bank_provider'), 'migration bank_provider');
+  assert(migration.includes('client_id'), 'migration client_id');
+  assert(migration.includes('ITAU'), 'migration ITAU');
+
+  const integrationRoute = read('app/api/banking/integration/route.ts');
+  assert(integrationRoute.includes('assertIntegrationResponseSafe'), 'API sanitiza resposta');
+  assert(integrationRoute.includes('saveCompanyBankIntegrationConfig'), 'API persiste config');
+
+  const panel = read('components/banking/BankingIntegrationPanel.tsx');
+  assert(panel.includes('/api/banking/integration'), 'painel carrega/salva integração');
+  assert(panel.includes('Salvar Configuração'), 'botão salvar');
+  assert(panel.includes('type="password"'), 'campos secret como password');
+}
+
 function testMockRouteGuardsInSource(): void {
   const routes = [
     'app/api/banking/mock/test-connection/route.ts',
@@ -245,9 +286,12 @@ async function main(): Promise<void> {
   await testReconcilePaymentStructure();
   testFeatureFlagDefaultOff();
   testIsBankingModuleEnabledForUi();
+  testCredentialsCrypto();
+  testIntegrationResponseSafe();
   testFeatureFlagBlocksRoutes();
   testRejectNonMockProvider();
   await testMockApiHandlers();
+  testPhase12Source();
   testMockRouteGuardsInSource();
 
   console.log('OK — mandatory banking mock tests passed');
