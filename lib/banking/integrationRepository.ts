@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   encryptBankingSecret,
+  formatBankingEncryptionKeyError,
+  getBankingEncryptionKeyDiagnostics,
   isBankingCredentialsEncryptionConfigured,
 } from './credentialsCrypto';
 import type { BankIntegrationConfigInput, BankIntegrationConfigResponse } from './integrationConfig';
@@ -162,7 +164,9 @@ export async function saveCompanyBankIntegrationConfig(
   }
 
   if (secretsToSave.length > 0 && !isBankingCredentialsEncryptionConfigured()) {
-    throw new Error('BANKING_CREDENTIALS_ENCRYPTION_KEY não configurada no servidor.');
+    const diag = getBankingEncryptionKeyDiagnostics();
+    console.warn('[banking/integration] encryption key diagnostics', diag);
+    throw new Error(formatBankingEncryptionKeyError());
   }
 
   const existing = await getCompanyBankIntegrationConfig(admin, companyId);

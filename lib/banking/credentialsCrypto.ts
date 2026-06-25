@@ -6,10 +6,56 @@ const IV_LENGTH = 12;
 const SALT = 'sv-lotes-banking-credentials-v1';
 const PREFIX = 'v1';
 
+/** Nome canônico da env — usar via bracket access para leitura runtime no Vercel. */
+export const BANKING_CREDENTIALS_KEY_ENV = 'BANKING_CREDENTIALS_ENCRYPTION_KEY' as const;
+
+export const BANKING_ENCRYPTION_KEY_MIN_LENGTH = 16;
+
+/**
+ * Leitura runtime da chave (server-only).
+ * Acesso dinâmico evita que o bundler substitua por undefined no build Preview.
+ */
+export function readBankingCredentialsEncryptionKey(): string | undefined {
+  const envKey = BANKING_CREDENTIALS_KEY_ENV;
+  const raw = process.env[envKey];
+  if (raw == null) return undefined;
+  const trimmed = String(raw).trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export type BankingEncryptionKeyDiagnostics = {
+  bankingEncryptionKeyExists: boolean;
+  bankingEncryptionKeyLength: number;
+  encryptionKeyConfigured: boolean;
+  vercelEnv: string | null;
+  nodeEnv: string | null;
+};
+
+/** Diagnóstico seguro — nunca expõe o valor da chave. */
+export function getBankingEncryptionKeyDiagnostics(): BankingEncryptionKeyDiagnostics {
+  const secret = readBankingCredentialsEncryptionKey();
+  const length = secret?.length ?? 0;
+  return {
+    bankingEncryptionKeyExists: secret !== undefined,
+    bankingEncryptionKeyLength: length,
+    encryptionKeyConfigured: Boolean(secret && length >= BANKING_ENCRYPTION_KEY_MIN_LENGTH),
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    nodeEnv: process.env.NODE_ENV ?? null,
+  };
+}
+
+export function formatBankingEncryptionKeyError(): string {
+  const diag = getBankingEncryptionKeyDiagnostics();
+  if (!diag.bankingEncryptionKeyExists) {
+    return 'BANKING_CREDENTIALS_ENCRYPTION_KEY não configurada no servidor (runtime Preview/Production).';
+  }
+  return `BANKING_CREDENTIALS_ENCRYPTION_KEY muito curta (${diag.bankingEncryptionKeyLength} caracteres; mínimo ${BANKING_ENCRYPTION_KEY_MIN_LENGTH}).`;
+}
+
 function deriveKey(): Buffer {
-  const secret = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY?.trim();
-  if (!secret || secret.length < 16) {
-    throw new Error('BANKING_CREDENTIALS_ENCRYPTION_KEY não configurada ou muito curta.');
+  const secret = readBankingCredentialsEncryptionKey();
+  if (!secret || secret.length < BANKING_ENCRYPTION_KEY_MIN_LENGTH) {
+    throw new Error(formatBankingEncryptionKeyError());
   }
   return scryptSync(secret, SALT, KEY_LENGTH);
 }
@@ -44,6 +90,16 @@ export function decryptBankingSecret(ciphertext: string): string {
 }
 
 export function isBankingCredentialsEncryptionConfigured(): boolean {
-  const secret = process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY?.trim();
-  return Boolean(secret && secret.length >= 16);
+  return getBankingEncryptionKeyDiagnostics().encryptionKeyConfigured;
+}
+
+/** Payload público da rota debug-encryption-key. */
+export function getBankingEncryptionKeyDebugPayload() {
+  const diag = getBankingEncryptionKeyDiagnostics();
+  return {
+    encryptionKeyExists: diag.bankingEncryptionKeyExists,
+    encryptionKeyLength: diag.bankingEncryptionKeyLength,
+    vercelEnv: diag.vercelEnv,
+    nodeEnv: diag.nodeEnv,
+  };
 }
