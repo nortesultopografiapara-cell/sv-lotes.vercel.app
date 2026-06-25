@@ -12,6 +12,8 @@ import {
   clearWebhookEventCacheForTests,
   decryptBankingSecret,
   encryptBankingSecret,
+  getBankingEncryptionKeyDebugPayload,
+  getBankingEncryptionKeyDiagnostics,
   isBankingModuleEnabled,
   isBankingModuleEnabledForUi,
   mockBankProvider,
@@ -215,8 +217,31 @@ function testCredentialsCrypto(): void {
   const encrypted = encryptBankingSecret(plain);
   assert(encrypted.startsWith('v1:'), 'ciphertext prefixo v1');
   assert(decryptBankingSecret(encrypted) === plain, 'roundtrip decrypt');
+  const diag = getBankingEncryptionKeyDiagnostics();
+  assert(diag.bankingEncryptionKeyExists === true, 'diag key exists');
+  assert(diag.bankingEncryptionKeyLength >= 16, 'diag key length');
+  assert(diag.encryptionKeyConfigured === true, 'diag key configured');
+  const debug = getBankingEncryptionKeyDebugPayload();
+  assert(debug.encryptionKeyExists === true, 'debug payload exists');
+  assert(typeof debug.encryptionKeyLength === 'number', 'debug payload length');
   if (original === undefined) delete process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY;
   else process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY = original;
+}
+
+function testEncryptionKeyDynamicRead(): void {
+  const cryptoSource = read('lib/banking/credentialsCrypto.ts');
+  assert(cryptoSource.includes('process.env[envKey]'), 'leitura dinâmica da env key');
+  assert(cryptoSource.includes('BANKING_CREDENTIALS_KEY_ENV'), 'constante nome env');
+  assert(!cryptoSource.includes('process.env.BANKING_CREDENTIALS_ENCRYPTION_KEY'), 'sem dot access estático');
+
+  const debugRoute = read('app/api/banking/debug-encryption-key/route.ts');
+  assert(debugRoute.includes('authorizeBankingRoute'), 'debug route exige auth');
+  assert(debugRoute.includes('getBankingEncryptionKeyDebugPayload'), 'debug route payload seguro');
+  assert(debugRoute.includes("dynamic = 'force-dynamic'"), 'debug route force-dynamic');
+
+  const integrationRoute = read('app/api/banking/integration/route.ts');
+  assert(integrationRoute.includes("dynamic = 'force-dynamic'"), 'integration route force-dynamic');
+  assert(integrationRoute.includes('getBankingEncryptionKeyDiagnostics'), 'integration log diagnostics');
 }
 
 function testIntegrationResponseSafe(): void {
@@ -287,6 +312,7 @@ async function main(): Promise<void> {
   testFeatureFlagDefaultOff();
   testIsBankingModuleEnabledForUi();
   testCredentialsCrypto();
+  testEncryptionKeyDynamicRead();
   testIntegrationResponseSafe();
   testFeatureFlagBlocksRoutes();
   testRejectNonMockProvider();

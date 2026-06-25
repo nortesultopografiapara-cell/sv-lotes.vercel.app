@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
+import { getBankingEncryptionKeyDiagnostics } from '@/lib/banking/credentialsCrypto';
 import {
   assertIntegrationResponseSafe,
   getCompanyBankIntegrationConfig,
@@ -9,6 +10,7 @@ import type { BankIntegrationConfigInput } from '@/lib/banking/integrationConfig
 import { normalizeBankEnvironmentInput, normalizeBankProviderInput } from '@/lib/banking/integrationConfig';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const auth = await authorizeBankingRoute(request);
@@ -62,10 +64,11 @@ export async function PUT(request: Request) {
     assertIntegrationResponseSafe(integration);
     return NextResponse.json({ integration });
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro ao salvar integração.';
+    if (message.includes('BANKING_CREDENTIALS_ENCRYPTION_KEY')) {
+      console.warn('[banking/integration PUT] encryption key diagnostics', getBankingEncryptionKeyDiagnostics());
+    }
     console.error('[banking/integration PUT]', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao salvar integração.' },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

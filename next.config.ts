@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
   transpilePackages: ['motion', 'leaflet.gridlayer.googlemutant'],
   env: {
+    // Somente NEXT_PUBLIC_* — nunca incluir secrets server-side (evita bake no build).
     NEXT_PUBLIC_BANKING_MODULE_ENABLED:
       process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED ?? 'false',
   },
