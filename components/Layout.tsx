@@ -27,7 +27,6 @@ import {
   Loader2,
   X,
   RefreshCw,
-  BookOpen,
   Handshake,
   CreditCard,
 } from 'lucide-react';
@@ -43,6 +42,7 @@ import { GisSelectedProjectProvider } from '@/contexts/GisSelectedProjectContext
 import { GisProjectHeaderBadge } from '@/components/map/GisProjectHeaderBadge';
 import { OfflineStatusBar } from '@/components/offline/OfflineStatusBar';
 import { HelpCenterHeaderButton } from '@/components/ui/HelpCenterHeaderButton';
+import { HelpCenterProfileMenuLink } from '@/components/ui/HelpCenterProfileMenuLink';
 import { setAppErrorContext } from '@/lib/appErrorReporting';
 import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { isBrokerRole, isOwnerRole, resolveRoleDisplayLabel, shouldShowFullTenantAdminMenu, shouldUseMasterConsoleLayout } from '@/lib/rolePermissions';
@@ -759,12 +759,7 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
                         </button>
                       </>
                     )}
-                    <Link
-                      href="/manual"
-                      className="flex items-center gap-3 px-3 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] rounded-lg transition-colors mt-1"
-                    >
-                      <BookOpen className="w-4 h-4" /> Central de Ajuda
-                    </Link>
+                    <HelpCenterProfileMenuLink />
                     <div className="h-px bg-[var(--border-color)] my-1" />
                     <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors text-left">
                        <LogOut className="w-4 h-4" /> Sair do Sistema
