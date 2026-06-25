@@ -12,7 +12,9 @@ import {
   isBankingModuleEnabled,
   isBankingModuleEnabledForUi,
   mockBankProvider,
+  parseBankingEnvFlag,
   rejectNonMockProvider,
+  resolveBankingUiEnabled,
   runMockCreateBoleto,
   runMockCreatePix,
   runMockTestConnection,
@@ -137,12 +139,31 @@ function testFeatureFlagDefaultOff(): void {
   delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
   assert(isBankingModuleEnabled() === false, 'flag server desligada por padrão');
   assert(isBankingModuleEnabledForUi() === false, 'flag UI desligada por padrão');
+  assert(resolveBankingUiEnabled() === false, 'resolve UI desligada por padrão');
   process.env.BANKING_MODULE_ENABLED = 'true';
   process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = 'true';
   assert(isBankingModuleEnabled() === true, 'flag server liga com true');
   assert(isBankingModuleEnabledForUi() === true, 'flag UI liga com true');
+  assert(resolveBankingUiEnabled() === true, 'resolve UI liga com true');
   if (original === undefined) delete process.env.BANKING_MODULE_ENABLED;
   else process.env.BANKING_MODULE_ENABLED = original;
+  if (originalUi === undefined) delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
+  else process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = originalUi;
+}
+
+function testIsBankingModuleEnabledForUi(): void {
+  assert(parseBankingEnvFlag('true') === true, 'parse true');
+  assert(parseBankingEnvFlag('TRUE') === true, 'parse TRUE');
+  assert(parseBankingEnvFlag(' true ') === true, 'parse trim');
+  assert(parseBankingEnvFlag('false') === false, 'parse false');
+  assert(parseBankingEnvFlag(undefined) === false, 'parse undefined');
+  assert(parseBankingEnvFlag('1') === false, 'parse 1 rejeitado');
+
+  const originalUi = process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
+  process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = 'true';
+  assert(isBankingModuleEnabledForUi() === true, 'UI true com NEXT_PUBLIC');
+  process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = 'false';
+  assert(isBankingModuleEnabledForUi() === false, 'UI false com NEXT_PUBLIC false');
   if (originalUi === undefined) delete process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED;
   else process.env.NEXT_PUBLIC_BANKING_MODULE_ENABLED = originalUi;
 }
@@ -198,8 +219,15 @@ function testMockRouteGuardsInSource(): void {
   }
 
   const settingsShell = read('components/settings/CompanySettingsV2Shell.tsx');
-  assert(settingsShell.includes('isBankingModuleEnabledForUi'), 'aba condicionada à flag UI');
+  assert(settingsShell.includes('bankingUiEnabled'), 'aba condicionada à prop bankingUiEnabled');
   assert(settingsShell.includes('Integração Bancária'), 'label da aba presente');
+
+  const settingsPage = read('app/settings/page.tsx');
+  assert(settingsPage.includes('resolveBankingUiEnabled'), 'settings resolve flag em runtime (RSC)');
+  assert(settingsPage.includes("dynamic = 'force-dynamic'"), 'settings força runtime env');
+
+  const nextConfig = read('next.config.ts');
+  assert(nextConfig.includes('NEXT_PUBLIC_BANKING_MODULE_ENABLED'), 'next.config expõe flag UI no build');
 
   const panel = read('components/banking/BankingIntegrationPanel.tsx');
   assert(panel.includes('/api/banking/mock/test-connection'), 'painel chama rota test-connection');
@@ -216,6 +244,7 @@ async function main(): Promise<void> {
   testParseWebhookNoDuplicate();
   await testReconcilePaymentStructure();
   testFeatureFlagDefaultOff();
+  testIsBankingModuleEnabledForUi();
   testFeatureFlagBlocksRoutes();
   testRejectNonMockProvider();
   await testMockApiHandlers();

@@ -39,7 +39,6 @@ import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
 import { BankingIntegrationPanel } from '@/components/banking/BankingIntegrationPanel';
-import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
 
 type FormState = ReturnType<typeof useCompanySettingsForm>;
 
@@ -88,6 +87,7 @@ type Props = Pick<
 > & {
   readOnlyDemo?: boolean;
   showAdmins: boolean;
+  bankingUiEnabled: boolean;
   adminPanelProps?: {
     callerUserId: string;
     tenantId: string;
@@ -181,6 +181,7 @@ export function CompanySettingsV2Shell({
   uploadingTechStamp,
   readOnlyDemo = false,
   showAdmins,
+  bankingUiEnabled,
   adminPanelProps,
 }: Props) {
   const [activeTab, setActiveTab] = useState<CompanySettingsV2Tab>('geral');
@@ -248,7 +249,6 @@ export function CompanySettingsV2Shell({
     );
 
   const visibleTabs = V2_TABS.filter((t) => t.id !== 'administradores' || showAdmins);
-  const bankingUiEnabled = isBankingModuleEnabledForUi();
   const navTabs = bankingUiEnabled
     ? [
         ...visibleTabs,
