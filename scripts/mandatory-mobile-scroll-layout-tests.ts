@@ -75,6 +75,11 @@ function testMobileLayoutCss() {
   assert(css.includes('rgba(249, 115, 22'), 'thumb laranja visível');
   assert(css.includes('.sv-modal-shell.bg-white .sv-modal-body'), 'modal claro com scrollbar');
   assert(css.includes('safe-area-inset-bottom'), 'safe area no footer');
+  assert(css.includes('.leaflet-bottom.leaflet-right'), 'GIS zoom acima bottom nav no mobile');
+  assert(
+    css.includes('--sv-mobile-bottom-nav-height') && css.includes('leaflet-control-zoom'),
+    'GIS zoom usa altura bottom nav',
+  );
   assert(
     css.includes('z-index: 400') || css.includes('z-index:400'),
     'overlay modal z-index acima bottom nav',
@@ -95,6 +100,8 @@ function testLayoutMainScroll() {
   assert(!layout.match(/isMobile[^]*pb-20/), 'sem pb-20 condicional mobile');
   assert(layout.includes('h-[72px]'), 'bottom nav 72px');
   assert(layout.includes('fixed bottom-0'), 'bottom nav fixa');
+  assert(layout.includes('min-h-0 overflow-y-auto'), 'drawer mobile com scroll min-h-0');
+  assert(layout.includes('flex-shrink-0 p-4 border-t'), 'logout drawer fixo no rodapé');
 }
 
 function testPageScrollPatterns() {

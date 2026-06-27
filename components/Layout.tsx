@@ -599,18 +599,18 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
       {/* Mobile Drawer (tenant roles) */}
       {isMobile && !isMasterConsole && (
         <aside 
-          className={`fixed top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[400] transition-transform duration-300 ease-in-out flex flex-col ${
+          className={`fixed top-0 left-0 h-full w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[400] transition-transform duration-300 ease-in-out flex flex-col min-h-0 ${
             isOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="h-16 flex items-center px-6 border-b border-[var(--color-border)] gap-2">
+          <div className="h-16 flex-shrink-0 flex items-center px-6 border-b border-[var(--color-border)] gap-2">
               {company?.logo_url ? (
                   <img src={company.logo_url} alt="Logo" className="max-h-8 object-contain" />
               ) : (
                   <SvLotesLogo size={36} showText subtitle={company?.fantasy_name || company?.name || undefined} />
               )}
           </div>
-          <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain py-4 px-3 flex flex-col gap-1 sv-scrollbar sv-scrollbar-dark">
             {menuItems.map((item, idx) => {
               if (item.isSection) {
                 return (
@@ -638,8 +638,9 @@ export function Sidebar({ children }: { children: React.ReactNode }) {
             })}
           </div>
 
-          <div className="p-4 flex-1">
+          <div className="flex-shrink-0 p-4 border-t border-[var(--color-border)] pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] border border-transparent">
+               <LogOut className="w-5 h-5 shrink-0" />
                <span className="text-[15px]">Sair do Sistema</span>
              </button>
           </div>
