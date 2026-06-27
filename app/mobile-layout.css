@@ -61,6 +61,21 @@
     .sv-page--mobile-pad {
       padding-bottom: var(--sv-mobile-content-pad-bottom);
     }
+
+    /*
+     * Mapa GIS — controles Leaflet (+/-) acima da bottom navigation.
+     * Desktop: posição padrão Leaflet (inalterada).
+     */
+    .leaflet-bottom.leaflet-right {
+      bottom: calc(
+        var(--sv-mobile-bottom-nav-height, 72px) + env(safe-area-inset-bottom, 0px) + 16px
+      ) !important;
+      right: 12px !important;
+    }
+
+    .leaflet-control-zoom {
+      margin-bottom: 0 !important;
+    }
   }
 
   /* Overlay de modal — acima da bottom nav (z-300) e menu mobile (z-350) */
