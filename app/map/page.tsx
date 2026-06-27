@@ -2712,7 +2712,10 @@ export default function MapPage() {
       <>
       <div className="gis-project-map-view flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
-        <div className="gis-map-legend-anchor absolute bottom-4 left-4 z-[400] pointer-events-auto">
+        <div
+          data-testid="map-status-legend"
+          className="gis-map-legend-anchor map-status-legend absolute bottom-4 left-4 z-[400] pointer-events-auto"
+        >
            <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
               <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--text-secondary)]">
                 <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
@@ -2742,7 +2745,7 @@ export default function MapPage() {
         <div
           data-testid="gis-tools-toolbar"
           aria-hidden={isAnyModalOpen}
-          className={`absolute top-16 right-2 md:top-4 md:right-4 z-[400] flex flex-col gap-1.5 items-end transition-all duration-200 ease-out ${
+          className={`gis-tools-toolbar absolute top-16 right-2 md:top-4 md:right-4 z-[400] flex flex-col gap-1.5 items-end transition-all duration-200 ease-out ${
             isAnyModalOpen ? GIS_TOOLBAR_HIDE_CLASS : GIS_TOOLBAR_SHOW_CLASS
           }`}
         >

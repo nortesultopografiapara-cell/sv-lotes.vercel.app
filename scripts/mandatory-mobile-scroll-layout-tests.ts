@@ -92,12 +92,17 @@ function testGisMapMobileToolbarCss() {
   assert(css.includes('.gis-project-map-view'), 'escopo mapa GIS mobile');
   assert(css.includes('.leaflet-bottom.leaflet-right'), 'reposiciona zoom Leaflet no mobile');
   assert(css.includes('--gis-mobile-toolbar-height'), 'altura toolbar reduzida');
+  assert(css.includes('.gis-tools-toolbar'), 'toolbar colada na lateral direita no mobile');
+  assert(css.includes('.leaflet-control-attribution'), 'oculta créditos Leaflet no mobile');
+  assert(css.includes('.gis-map-legend-anchor'), 'oculta legenda status no mobile');
   assert(css.includes('max-width: 767px'), 'breakpoint mobile exclusivo');
   assert(css.includes('min-width: 768px'), 'desktop inalterado via display contents');
   const mapPage = read('app/map/page.tsx');
   assert(mapPage.includes("import './gis-map-mobile.css'"), 'map page importa gis-map-mobile.css');
   assert(mapPage.includes('gis-project-map-view'), 'map page usa escopo gis-project-map-view');
   assert(mapPage.includes('gis-toolbar-desktop-only'), 'toolbar marca ferramentas desktop-only');
+  assert(mapPage.includes('data-testid="map-status-legend"'), 'legenda com testid map-status-legend');
+  assert(mapPage.includes('gis-tools-toolbar'), 'toolbar com classe gis-tools-toolbar');
 }
 
 function testGlobalsImport() {
