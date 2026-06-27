@@ -131,6 +131,7 @@ import {
   GIS_TOOLBAR_SHOW_CLASS,
 } from '@/lib/gisToolbarOverlay';
 import '@/components/enterprise/enterprise-value.css';
+import './gis-map-mobile.css';
 
 /** v1.9: fluxo oficial de importação no mapa = TXT Civil 3D apenas. */
 const SHOW_LEGACY_GIS_IMPORT = false;
@@ -2709,9 +2710,9 @@ export default function MapPage() {
   if (selectedProject) {
     return (
       <>
-      <div className="flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
+      <div className="gis-project-map-view flex-1 w-full h-full flex flex-col pt-0 relative bg-[var(--color-background)]">
         {/* LEGENDA - BOTTOM LEFT */}
-        <div className="absolute bottom-4 left-4 z-[400] pointer-events-auto">
+        <div className="gis-map-legend-anchor absolute bottom-4 left-4 z-[400] pointer-events-auto">
            <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] rounded flex flex-col gap-1.5 p-2 shadow-lg max-w-[150px]">
               <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--text-secondary)]">
                 <div className="w-3 h-3 rounded-sm bg-[#22c55e] border border-[#16a34a]" /> Disponível
@@ -2749,7 +2750,7 @@ export default function MapPage() {
            <div className="gis-shell-panel bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] py-1.5 px-1.5 rounded-lg shadow-lg flex flex-col gap-1.5 w-10 md:w-12 items-center relative">
              
              {canManageGisProject(user?.role) && (
-               <>
+               <div className="gis-toolbar-desktop-only contents">
                  <ProjectQuadrasPanel
                    open={quadrasPanelOpen}
                    onToggleOpen={() => setQuadrasPanelOpen((o) => !o)}
@@ -2867,6 +2868,12 @@ export default function MapPage() {
                    </span>
                  </button>
 
+                 <hr className="w-2/3 border-[var(--border-color)]" />
+               </div>
+             )}
+
+             {canManageGisProject(user?.role) && (
+               <>
                  <button
                    type="button"
                    onClick={() => {
@@ -2882,8 +2889,7 @@ export default function MapPage() {
                    <ScrollText className="w-4 h-4 md:w-5 md:h-5" />
                    <span className="absolute right-full mr-2 px-2 py-1 bg-[var(--bg-card-alt)] border border-[var(--border-color)] text-[10px] font-bold text-[var(--text-secondary)] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none uppercase max-w-[12rem] text-right leading-tight">Memorial Descritivo</span>
                  </button>
-                 
-                 <hr className="w-2/3 border-[var(--border-color)]" />
+                 <hr className="gis-toolbar-desktop-only w-2/3 border-[var(--border-color)]" />
                </>
              )}
              
@@ -2978,9 +2984,9 @@ export default function MapPage() {
              </div>
              
              {canManageGisProject(user?.role) && (
-               <>
+               <div className="gis-toolbar-desktop-only contents">
                  <hr className="w-2/3 border-[var(--border-color)]" />
-                 
+
                  {/* Linha de Rua */}
                  <button 
                     onClick={() => setDrawStreetActive(!drawStreetActive)} 
@@ -3009,7 +3015,7 @@ export default function MapPage() {
                        {streetGuidesVisible ? "Ocultar Linhas" : "Mostrar Linhas"}
                     </span>
                  </button>
-               </>
+               </div>
              )}
              
            </div>
