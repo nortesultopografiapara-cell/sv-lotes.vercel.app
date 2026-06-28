@@ -422,7 +422,11 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       const charge = json.charge as CompanyAsaasChargeResponse | null;
       if (charge) {
         applyAsaasChargeUpdate(installmentId, charge);
-        showToast('Status atualizado com sucesso.');
+        showToast(
+          charge.status === 'PAID'
+            ? 'Pagamento confirmado — parcela baixada automaticamente.'
+            : 'Status atualizado com sucesso.',
+        );
         if (charge.status === 'PAID') {
           await loadInstallments();
         }

@@ -11,7 +11,9 @@ export async function POST(request: Request) {
 
   try {
     void request;
-    const reprocess = await runAsaasReprocessPayments(auth.admin, auth.tenantId);
+    const reprocess = await runAsaasReprocessPayments(auth.admin, auth.tenantId, {
+      userId: auth.userId,
+    });
     return NextResponse.json({ reprocess });
   } catch (err) {
     console.error('[finance/asaas/reprocess-payments]', err);

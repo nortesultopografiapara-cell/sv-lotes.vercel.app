@@ -5,6 +5,7 @@ import {
   loadAsaasApiKeyForEnvironment,
   patchAsaasIntegrationMetadata,
 } from './asaasIntegrationRepository';
+import { reprocessCompanyAsaasPaidCharges } from './companyAsaasPaymentReconciliation';
 
 export type AsaasTestConnectionResult = {
   ok: boolean;
@@ -197,28 +198,36 @@ export async function runAsaasSyncCharges(
 export async function runAsaasReprocessPayments(
   admin: SupabaseClient,
   companyId: string,
+  options?: { userId?: string | null },
 ): Promise<AsaasReprocessResult> {
-  const { count, error } = await admin
-    .from('bank_webhook_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('company_id', companyId)
-    .eq('processing_status', 'PENDING');
+  try {
+    const result = await reprocessCompanyAsaasPaidCharges(admin, companyId, options);
+    if (result.reprocessedCount === 0) {
+      return {
+        ok: true,
+        message: 'Nenhum pagamento Company pendente de baixa automática.',
+        reprocessedCount: 0,
+      };
+    }
 
-  if (error) {
+    const parts = [`${result.reprocessedCount} cobrança(s) reprocessada(s).`];
+    if (result.receiptUpdatedCount > 0) {
+      parts.push(`${result.receiptUpdatedCount} parcela(s) baixada(s).`);
+    }
+    if (result.cashMovementCreatedCount > 0) {
+      parts.push(`${result.cashMovementCreatedCount} entrada(s) no caixa criada(s).`);
+    }
+
     return {
       ok: true,
-      message: 'Nenhum evento pendente para reprocessar.',
+      message: parts.join(' '),
+      reprocessedCount: result.reprocessedCount,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : 'Erro ao reprocessar pagamentos Company.',
       reprocessedCount: 0,
     };
   }
-
-  const pending = count ?? 0;
-  return {
-    ok: true,
-    message:
-      pending > 0
-        ? `${pending} evento(s) pendente(s) identificado(s). Reprocessamento enfileirado.`
-        : 'Nenhum pagamento pendente de reprocessamento.',
-    reprocessedCount: pending,
-  };
 }

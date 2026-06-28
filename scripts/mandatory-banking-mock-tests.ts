@@ -770,6 +770,17 @@ function testCompanyAsaasChargeFoundation(): void {
     hasProductionApiKey: false,
   }), 'integração company pronta');
 
+  assert(isCompanyAsaasIntegrationReady({
+    connectionStatus: 'CONNECTED',
+    status: 'DRAFT',
+    environment: 'SANDBOX',
+    hasSandboxApiKey: true,
+    hasProductionApiKey: false,
+    webhookActive: true,
+    webhookConfigured: true,
+    accountValidated: true,
+  }), 'integração pronta com status DRAFT legado');
+
   assert(!isCompanyAsaasIntegrationReady({
     connectionStatus: 'DISCONNECTED',
     status: 'DRAFT',
@@ -817,7 +828,9 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(reconciliation.includes('source_table: \'company_asaas_charges\''), 'caixa source company charge');
   assert(reconciliation.includes('Recebimento automático Asaas'), 'descrição caixa automática');
   assert(reconciliation.includes('payment_date'), 'raw payload payment_date');
-  assert(reconciliation.includes('credited_date'), 'raw payload credited_date');
+  assert(reconciliation.includes('reprocessCompanyAsaasPaidCharges'), 'reprocessamento company unificado');
+  assert(reconciliation.includes('isCompanyAsaasChargeFullyReconciled'), 'helper conciliação completa');
+  assert(read('lib/finance/asaasIntegrationService.ts').includes('reprocessCompanyAsaasPaidCharges'), 'reprocess settings usa company');
 }
 
 function testCompanyAsaasChargeWorkflow(): void {

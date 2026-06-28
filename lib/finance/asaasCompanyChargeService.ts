@@ -290,7 +290,7 @@ export async function getCompanyChargeStatusByInstallment(
 ): Promise<CompanyAsaasChargeResponse | null> {
   const charge = await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId);
   if (!charge) return null;
-  if (charge.status === 'PAID' || charge.status === 'CANCELLED') return charge;
+  if (charge.status === 'CANCELLED') return charge;
   return getCompanyChargeStatus(admin, companyId, charge.id);
 }
 

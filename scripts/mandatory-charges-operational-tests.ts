@@ -456,6 +456,77 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
   console.log('OK testChargesUsesSameIntegrationReadyRuleAsSettings');
 }
 
+function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const service = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasCompanyChargeService.ts'),
+    'utf8',
+  );
+  const reconciliation = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/companyAsaasPaymentReconciliation.ts'),
+    'utf8',
+  );
+  const integrationService = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasIntegrationService.ts'),
+    'utf8',
+  );
+
+  assert(
+    !service.includes("'PAID' || charge.status === 'CANCELLED'"),
+    'status manual não retorna cedo quando cobrança já está PAID',
+  );
+  assert(
+    service.includes('executeCompanyAsaasPaymentReconciliation'),
+    'sync manual delega conciliação',
+  );
+  assert(
+    reconciliation.includes("status: 'pago'") && reconciliation.includes('paid_amount'),
+    'conciliação baixa finance_receipts',
+  );
+  assert(
+    reconciliation.includes('reprocessCompanyAsaasPaidCharges'),
+    'reprocessamento Company unificado',
+  );
+  assert(
+    integrationService.includes('reprocessCompanyAsaasPaidCharges'),
+    'Configurações reprocessa cobranças Company pagas',
+  );
+
+  const {
+    isCompanyAsaasChargeFullyReconciled,
+    isCompanyAsaasPaidWebhookEvent,
+  } = require('../lib/finance/companyAsaasPaymentReconciliation') as typeof import('../lib/finance/companyAsaasPaymentReconciliation');
+
+  assert(
+    isCompanyAsaasChargeFullyReconciled({
+      chargeStatus: 'PAID',
+      receiptStatus: 'pago',
+      cashMovementId: 'cm-1',
+    }),
+    'cobrança totalmente conciliada',
+  );
+  assert(
+    !isCompanyAsaasChargeFullyReconciled({
+      chargeStatus: 'PAID',
+      receiptStatus: 'pendente',
+      cashMovementId: 'cm-1',
+    }),
+    'cobrança paga com parcela pendente precisa reprocessar',
+  );
+  assert(
+    !isCompanyAsaasChargeFullyReconciled({
+      chargeStatus: 'PENDING',
+      receiptStatus: 'pendente',
+      cashMovementId: null,
+    }),
+    'cobrança pendente não concilia parcela',
+  );
+  assert(isCompanyAsaasPaidWebhookEvent('PAYMENT_RECEIVED'), 'webhook recebido concilia');
+
+  console.log('OK testCompanyAsaasPaidChargeReconcilesFinanceReceipt');
+}
+
 function main() {
   testPendingWithoutChargeShowsGenerate();
   testPaidInstallmentCannotGenerate();
@@ -469,6 +540,7 @@ function main() {
   testIntegrationReadyWithLegacyDraftStatus();
   testSavePreservesActiveStatus();
   testChargesUsesSameIntegrationReadyRuleAsSettings();
+  testCompanyAsaasPaidChargeReconcilesFinanceReceipt();
   console.log('mandatory-charges-operational-tests: all passed');
 }
 

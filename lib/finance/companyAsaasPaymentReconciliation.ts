@@ -153,6 +153,18 @@ function isReceiptPaid(status?: string | null): boolean {
   return normalized === 'pago' || normalized === 'paid';
 }
 
+export function isCompanyAsaasChargeFullyReconciled(input: {
+  chargeStatus?: string | null;
+  receiptStatus?: string | null;
+  cashMovementId?: string | null;
+}): boolean {
+  return (
+    String(input.chargeStatus || '').toUpperCase() === 'PAID' &&
+    isReceiptPaid(input.receiptStatus) &&
+    Boolean(input.cashMovementId)
+  );
+}
+
 async function findExistingCompanyAsaasCashMovement(
   admin: SupabaseClient,
   companyId: string,
@@ -226,10 +238,11 @@ export async function executeCompanyAsaasPaymentReconciliation(
   const receiptAlreadyPaid = receipt ? isReceiptPaid(receipt.status) : false;
 
   if (
-    charge.status === 'PAID' &&
-    charge.paidAt &&
-    linkedMovementId &&
-    receiptAlreadyPaid
+    isCompanyAsaasChargeFullyReconciled({
+      chargeStatus: charge.status,
+      receiptStatus: receipt?.status,
+      cashMovementId: linkedMovementId,
+    })
   ) {
     return {
       ok: true,
@@ -337,4 +350,109 @@ export async function executeCompanyAsaasPaymentReconciliation(
     installmentId: charge.installmentId,
     receiptUpdated,
   };
+}
+
+export async function reprocessCompanyAsaasPaidCharges(
+  admin: SupabaseClient,
+  companyId: string,
+  options?: { userId?: string | null },
+): Promise<{
+  reprocessedCount: number;
+  receiptUpdatedCount: number;
+  cashMovementCreatedCount: number;
+}> {
+  const { data: paidCharges, error } = await admin
+    .from('company_asaas_charges')
+    .select('id, asaas_payment_id, installment_id, paid_at, status, cash_movement_id')
+    .eq('company_id', companyId)
+    .eq('status', 'PAID');
+
+  if (error) throw new Error(error.message);
+
+  let reprocessedCount = 0;
+  let receiptUpdatedCount = 0;
+  let cashMovementCreatedCount = 0;
+
+  for (const row of paidCharges ?? []) {
+    const asaasPaymentId = String(row.asaas_payment_id || '').trim();
+    if (!asaasPaymentId) continue;
+
+    const installmentId = String(row.installment_id || '').trim();
+    const receipt = installmentId ? await loadFinanceReceipt(admin, installmentId) : null;
+    const alreadyReconciled = isCompanyAsaasChargeFullyReconciled({
+      chargeStatus: row.status,
+      receiptStatus: receipt?.status,
+      cashMovementId: row.cash_movement_id ? String(row.cash_movement_id) : null,
+    });
+    if (alreadyReconciled) continue;
+
+    const result = await executeCompanyAsaasPaymentReconciliation(admin, {
+      companyId,
+      asaasPaymentId,
+      eventType: 'REPROCESS',
+      paidAt: row.paid_at ? String(row.paid_at) : null,
+      userId: options?.userId ?? null,
+    });
+
+    if (!result.ok) continue;
+    reprocessedCount += 1;
+    if (result.receiptUpdated) receiptUpdatedCount += 1;
+    if (result.cashMovementId && !row.cash_movement_id) cashMovementCreatedCount += 1;
+  }
+
+  const { data: failedEvents, error: eventsError } = await admin
+    .from('company_asaas_webhook_events')
+    .select('id, asaas_payment_id, event_type, raw_payload')
+    .eq('company_id', companyId)
+    .in('processing_status', ['FAILED', 'PENDING'])
+    .not('asaas_payment_id', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(100);
+
+  if (eventsError) throw new Error(eventsError.message);
+
+  for (const event of failedEvents ?? []) {
+    const eventType = String(event.event_type || '');
+    if (!isCompanyAsaasPaidWebhookEvent(eventType)) continue;
+
+    const asaasPaymentId = String(event.asaas_payment_id || '').trim();
+    if (!asaasPaymentId) continue;
+
+    const rawPayload =
+      event.raw_payload && typeof event.raw_payload === 'object'
+        ? (event.raw_payload as Record<string, unknown>)
+        : {};
+    const payment =
+      rawPayload.payment && typeof rawPayload.payment === 'object'
+        ? (rawPayload.payment as CompanyAsaasPaymentWebhookPayment)
+        : null;
+    const dates = resolveCompanyAsaasReconcileDates(payment);
+
+    const result = await executeCompanyAsaasPaymentReconciliation(admin, {
+      companyId,
+      asaasPaymentId,
+      eventType,
+      paidAt: dates.paidAt,
+      paymentDate: dates.paymentDate,
+      creditedDate: dates.creditedDate,
+      paymentPayload: payment,
+      userId: options?.userId ?? null,
+    });
+
+    if (result.ok) {
+      reprocessedCount += 1;
+      if (result.receiptUpdated) receiptUpdatedCount += 1;
+      await admin
+        .from('company_asaas_webhook_events')
+        .update({
+          processing_status: result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+          processed_at: new Date().toISOString(),
+          error_message: null,
+        })
+        .eq('id', event.id)
+        .eq('company_id', companyId);
+    }
+  }
+
+  return { reprocessedCount, receiptUpdatedCount, cashMovementCreatedCount };
 }
