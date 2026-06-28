@@ -37,6 +37,20 @@ export type CompanyAsaasReconcilePaymentInput = {
   userId?: string | null;
 };
 
+export const FINANCE_RECEIPT_PAID_STATUS = 'pago' as const;
+
+export class CompanyAsaasReconciliationError extends Error {
+  chargeId?: string;
+  installmentId?: string;
+
+  constructor(message: string, meta?: { chargeId?: string; installmentId?: string }) {
+    super(message);
+    this.name = 'CompanyAsaasReconciliationError';
+    this.chargeId = meta?.chargeId;
+    this.installmentId = meta?.installmentId;
+  }
+}
+
 export type CompanyAsaasReconcilePaymentResult = {
   ok: boolean;
   duplicate: boolean;
@@ -50,6 +64,10 @@ type FinanceReceiptRow = {
   id: string;
   status?: string;
   amount?: number;
+  paid_amount?: number | null;
+  paid_at?: string | null;
+  company_id?: string | null;
+  tenant_id?: string | null;
   installment_number?: number | null;
   sale_id?: string | null;
   customer_id?: string | null;
@@ -68,7 +86,11 @@ export function isCompanyAsaasChargeStatusPaid(status?: string | null): boolean 
 
 export function isReceiptPaidStatus(status?: string | null): boolean {
   const normalized = String(status || '').toLowerCase();
-  return normalized === 'pago' || normalized === 'paid';
+  return (
+    normalized === FINANCE_RECEIPT_PAID_STATUS ||
+    normalized === 'paid' ||
+    normalized === 'paga'
+  );
 }
 
 export function needsCompanyAsaasReceiptReconciliation(input: {
@@ -206,7 +228,7 @@ export async function loadFinanceReceiptForReconciliation(
   const { data, error } = await admin
     .from('finance_receipts')
     .select(
-      'id, status, amount, installment_number, sale_id, customer_id, block_id, project_id',
+      'id, status, amount, paid_amount, paid_at, company_id, tenant_id, installment_number, sale_id, customer_id, block_id, project_id',
     )
     .eq('id', normalizedInstallmentId)
     .maybeSingle();
@@ -221,17 +243,23 @@ export async function markFinanceReceiptPaidFromCompanyAsaasCharge(
     installmentId: string;
     paidAmount: number;
     paidAt: string;
+    chargeId?: string;
   },
 ): Promise<boolean> {
   const installmentId = String(input.installmentId || '').trim();
+  const chargeId = String(input.chargeId || '').trim() || undefined;
   if (!installmentId) {
-    throw new Error('installment_id é obrigatório para baixar finance_receipts.');
+    throw new CompanyAsaasReconciliationError(
+      'installment_id é obrigatório para baixar finance_receipts.',
+      { chargeId, installmentId },
+    );
   }
 
   const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
   if (!receipt) {
-    throw new Error(
+    throw new CompanyAsaasReconciliationError(
       `Parcela financeira não encontrada (installment_id=${installmentId}).`,
+      { chargeId, installmentId },
     );
   }
   if (isReceiptPaidStatus(receipt.status)) return false;
@@ -239,10 +267,18 @@ export async function markFinanceReceiptPaidFromCompanyAsaasCharge(
   const paidAt = String(input.paidAt || new Date().toISOString());
   const paidAmount = Number(input.paidAmount) || Number(receipt.amount) || 0;
 
+  console.info('[company-asaas-reconcile] baixando finance_receipts', {
+    chargeId,
+    installmentId,
+    receiptStatusBefore: receipt.status,
+    paidAmount,
+    paidAt,
+  });
+
   const { data, error } = await admin
     .from('finance_receipts')
     .update({
-      status: 'pago',
+      status: FINANCE_RECEIPT_PAID_STATUS,
       paid_amount: paidAmount,
       paid_at: paidAt,
     })
@@ -251,23 +287,32 @@ export async function markFinanceReceiptPaidFromCompanyAsaasCharge(
 
   if (error) {
     console.error('[company-asaas-reconcile] finance_receipts UPDATE failed', {
+      chargeId,
       installmentId,
       error: error.message,
     });
-    throw new Error(error.message);
+    throw new CompanyAsaasReconciliationError(error.message, { chargeId, installmentId });
   }
 
   if (!data || data.length === 0) {
-    const message = `UPDATE finance_receipts não afetou linhas (id=${installmentId}).`;
+    const message = `UPDATE finance_receipts não afetou linhas (charge.id=${chargeId ?? '—'}, installment_id=${installmentId}).`;
     console.error('[company-asaas-reconcile]', message);
-    throw new Error(message);
+    throw new CompanyAsaasReconciliationError(message, { chargeId, installmentId });
+  }
+
+  const verified = await loadFinanceReceiptForReconciliation(admin, installmentId);
+  if (!isReceiptPaidStatus(verified?.status)) {
+    const message = `Baixa não confirmada após UPDATE (charge.id=${chargeId ?? '—'}, installment_id=${installmentId}, status=${verified?.status ?? 'null'}).`;
+    console.error('[company-asaas-reconcile]', message);
+    throw new CompanyAsaasReconciliationError(message, { chargeId, installmentId });
   }
 
   console.info('[company-asaas-reconcile] finance_receipts baixada', {
+    chargeId,
     installmentId,
     paidAmount,
     paidAt,
-    status: data[0]?.status,
+    status: verified?.status,
   });
 
   return true;
@@ -364,6 +409,7 @@ async function reconcilePaidCompanyAsaasChargeRecord(
       installmentId,
       paidAmount: Number(charge.value) || Number(receipt.amount) || 0,
       paidAt,
+      chargeId: charge.id,
     });
   }
 
@@ -500,6 +546,81 @@ export async function ensureCompanyAsaasInstallmentReconciledIfNeeded(
   }
 
   return ensureCompanyAsaasInstallmentReconciled(admin, companyId, normalizedInstallmentId, options);
+}
+
+/** Baixa obrigatória quando charge PAID e parcela pendente; falha se não confirmar status pago. */
+export async function forceCompanyAsaasPaidInstallmentReconciliation(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+  options?: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId' | 'installmentId'>,
+): Promise<CompanyAsaasReconcilePaymentResult> {
+  const normalizedInstallmentId = String(installmentId || '').trim();
+  const charge = await getLatestCompanyAsaasChargeForInstallment(
+    admin,
+    companyId,
+    normalizedInstallmentId,
+  );
+
+  if (!charge) {
+    throw new CompanyAsaasReconciliationError(
+      `Cobrança Asaas Company não encontrada para installment_id=${normalizedInstallmentId}.`,
+      { installmentId: normalizedInstallmentId },
+    );
+  }
+
+  if (!isCompanyAsaasChargeStatusPaid(charge.status)) {
+    return {
+      ok: false,
+      duplicate: false,
+      chargeId: charge.id,
+      installmentId: normalizedInstallmentId,
+    };
+  }
+
+  const receiptBefore = await loadFinanceReceiptForReconciliation(admin, normalizedInstallmentId);
+  const needsReceipt = needsCompanyAsaasReceiptReconciliation({
+    chargeStatus: charge.status,
+    receiptStatus: receiptBefore?.status,
+  });
+
+  console.info('[company-asaas-reconcile] force reconcile', {
+    chargeId: charge.id,
+    installmentId: normalizedInstallmentId,
+    chargeStatus: charge.status,
+    receiptStatusBefore: receiptBefore?.status ?? null,
+    chargeCompanyId: charge.companyId,
+    receiptCompanyId: receiptBefore?.company_id ?? receiptBefore?.tenant_id ?? null,
+    installmentMatch: receiptBefore?.id === normalizedInstallmentId,
+    needsReceipt,
+  });
+
+  const result = await ensureCompanyAsaasInstallmentReconciled(
+    admin,
+    companyId,
+    normalizedInstallmentId,
+    options,
+  );
+
+  if (!result.ok) {
+    throw new CompanyAsaasReconciliationError(
+      `Conciliação falhou (charge.id=${charge.id}, installment_id=${normalizedInstallmentId}).`,
+      { chargeId: charge.id, installmentId: normalizedInstallmentId },
+    );
+  }
+
+  const receiptAfter = await loadFinanceReceiptForReconciliation(admin, normalizedInstallmentId);
+  if (needsReceipt && !isReceiptPaidStatus(receiptAfter?.status)) {
+    throw new CompanyAsaasReconciliationError(
+      `Baixa não confirmada: finance_receipts permanece ${receiptAfter?.status ?? 'ausente'} (charge.id=${charge.id}, installment_id=${normalizedInstallmentId}).`,
+      { chargeId: charge.id, installmentId: normalizedInstallmentId },
+    );
+  }
+
+  return {
+    ...result,
+    receiptUpdated: result.receiptUpdated || (needsReceipt && isReceiptPaidStatus(receiptAfter?.status)),
+  };
 }
 
 export async function executeCompanyAsaasPaymentReconciliation(

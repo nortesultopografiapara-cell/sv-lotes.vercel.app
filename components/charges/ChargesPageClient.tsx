@@ -170,6 +170,19 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (!chargesRes.ok) return;
       const chargesJson = await chargesRes.json().catch(() => ({}));
       const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+      const syncErrors = (chargesJson.receiptSyncErrors || []) as Array<{
+        chargeId?: string;
+        installmentId: string;
+        error: string;
+      }>;
+      if (syncErrors.length > 0) {
+        console.error('CHARGES_RECEIPT_SYNC_ERRORS', syncErrors);
+        showToast(
+          syncErrors[0]?.error ||
+            'Falha ao sincronizar parcela paga com o Financeiro.',
+          true,
+        );
+      }
       const map: Record<string, CompanyAsaasChargeResponse> = {};
       for (const charge of charges) {
         map[charge.installmentId] = charge;
@@ -178,7 +191,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     } catch (err) {
       console.error('CHARGES_ASAAS_LOAD', err);
     }
-  }, [companyAsaasEnabled]);
+  }, [companyAsaasEnabled, showToast]);
 
   const loadInstallments = useCallback(async () => {
     if (!user) return;

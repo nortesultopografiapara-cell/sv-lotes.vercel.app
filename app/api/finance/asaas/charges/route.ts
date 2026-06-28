@@ -2,7 +2,14 @@ import { NextResponse } from 'next/server';
 import { authorizeCompanyAsaasRoute } from '@/lib/banking/bankingRouteGuard';
 import { listCompanyAsaasChargesForInstallments } from '@/lib/finance/companyAsaasChargeRepository';
 import { assertCompanyAsaasChargeResponseSafe } from '@/lib/finance/asaasCompanyChargeService';
-import { ensureCompanyAsaasInstallmentReconciledIfNeeded } from '@/lib/finance/companyAsaasPaymentReconciliation';
+import {
+  CompanyAsaasReconciliationError,
+  forceCompanyAsaasPaidInstallmentReconciliation,
+  isCompanyAsaasChargeStatusPaid,
+  isReceiptPaidStatus,
+  loadFinanceReceiptForReconciliation,
+  needsCompanyAsaasReceiptReconciliation,
+} from '@/lib/finance/companyAsaasPaymentReconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,12 +32,30 @@ export async function GET(request: Request) {
       installmentIds,
     );
 
-    const receiptSyncErrors: Array<{ installmentId: string; error: string }> = [];
+    const receiptSyncErrors: Array<{
+      chargeId?: string;
+      installmentId: string;
+      error: string;
+    }> = [];
 
     for (const charge of charges) {
-      if (charge.status === 'PAID') {
+      if (!isCompanyAsaasChargeStatusPaid(charge.status)) {
+        assertCompanyAsaasChargeResponseSafe(charge);
+        continue;
+      }
+
+      const receipt = await loadFinanceReceiptForReconciliation(
+        auth.admin,
+        charge.installmentId,
+      );
+      const needsSync = needsCompanyAsaasReceiptReconciliation({
+        chargeStatus: charge.status,
+        receiptStatus: receipt?.status,
+      });
+
+      if (needsSync) {
         try {
-          await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+          await forceCompanyAsaasPaidInstallmentReconciliation(
             auth.admin,
             auth.tenantId,
             charge.installmentId,
@@ -39,6 +64,7 @@ export async function GET(request: Request) {
         } catch (syncErr) {
           const message = syncErr instanceof Error ? syncErr.message : String(syncErr);
           receiptSyncErrors.push({
+            chargeId: charge.id,
             installmentId: charge.installmentId,
             error: message,
           });
@@ -49,6 +75,24 @@ export async function GET(request: Request) {
           });
         }
       }
+
+      const receiptAfter = await loadFinanceReceiptForReconciliation(
+        auth.admin,
+        charge.installmentId,
+      );
+      if (
+        needsSync &&
+        !isReceiptPaidStatus(receiptAfter?.status) &&
+        !receiptSyncErrors.some((e) => e.installmentId === charge.installmentId)
+      ) {
+        const message = `Backfill não confirmou parcela paga (charge.id=${charge.id}, installment_id=${charge.installmentId}).`;
+        receiptSyncErrors.push({
+          chargeId: charge.id,
+          installmentId: charge.installmentId,
+          error: message,
+        });
+      }
+
       assertCompanyAsaasChargeResponseSafe(charge);
     }
 
@@ -57,6 +101,16 @@ export async function GET(request: Request) {
       receiptSyncErrors: receiptSyncErrors.length > 0 ? receiptSyncErrors : undefined,
     });
   } catch (err) {
+    if (err instanceof CompanyAsaasReconciliationError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          chargeId: err.chargeId,
+          installmentId: err.installmentId,
+        },
+        { status: 409 },
+      );
+    }
     console.error('[finance/asaas/charges GET]', err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Erro ao listar cobranças.' },

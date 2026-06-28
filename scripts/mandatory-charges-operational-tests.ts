@@ -481,7 +481,8 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
     'sync manual garante baixa por installment_id',
   );
   assert(
-    reconciliation.includes("status: 'pago'") && reconciliation.includes('paid_amount'),
+    reconciliation.includes('FINANCE_RECEIPT_PAID_STATUS') &&
+      reconciliation.includes('paid_amount'),
     'conciliação baixa finance_receipts',
   );
   assert(
@@ -499,8 +500,17 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
   );
   assert(
     fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charges/route.ts'), 'utf8')
-      .includes('ensureCompanyAsaasInstallmentReconciledIfNeeded'),
-    'listagem de cobranças faz backfill da parcela',
+      .includes('forceCompanyAsaasPaidInstallmentReconciliation'),
+    'listagem /charges força baixa imediata',
+  );
+  assert(
+    fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charge-status/route.ts'), 'utf8')
+      .includes('forceCompanyAsaasPaidInstallmentReconciliation'),
+    'status manual força baixa imediata',
+  );
+  assert(
+    reconciliation.includes('FINANCE_RECEIPT_PAID_STATUS'),
+    'status pago alinhado ao Financeiro manual',
   );
   assert(
     fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charge-status/route.ts'), 'utf8')

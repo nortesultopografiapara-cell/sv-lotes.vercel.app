@@ -6,7 +6,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import {
+  CompanyAsaasReconciliationError,
   ensureCompanyAsaasInstallmentReconciled,
+  FINANCE_RECEIPT_PAID_STATUS,
+  forceCompanyAsaasPaidInstallmentReconciliation,
   isCompanyAsaasChargeFullyReconciled,
   isReceiptPaidStatus,
   markFinanceReceiptPaidFromCompanyAsaasCharge,
@@ -222,6 +225,13 @@ const baseCharge = (): CompanyAsaasChargeResponse => ({
   updatedAt: '2026-06-08T12:00:00Z',
 });
 
+function testFinanceReceiptPaidStatusMatchesManualFinance() {
+  assert(FINANCE_RECEIPT_PAID_STATUS === 'pago', 'status manual do Financeiro é pago');
+  assert(isReceiptPaidStatus('pago'), 'isReceiptPaidStatus pago');
+  assert(isReceiptPaidStatus('PAID'), 'isReceiptPaidStatus PAID');
+  console.log('OK testFinanceReceiptPaidStatusMatchesManualFinance');
+}
+
 function testNeedsReceiptReconciliation() {
   assert(
     needsCompanyAsaasReceiptReconciliation({
@@ -238,6 +248,61 @@ function testNeedsReceiptReconciliation() {
     'PAID + pago não precisa',
   );
   console.log('OK testNeedsReceiptReconciliation');
+}
+
+async function testUpdateZeroRowsThrows() {
+  const mock = createMockAdmin({ receipts: {}, charges: {} });
+  let threw = false;
+  try {
+    await markFinanceReceiptPaidFromCompanyAsaasCharge(mock.admin, {
+      installmentId: 'missing-receipt',
+      paidAmount: 5,
+      paidAt: '2026-06-08T12:00:00Z',
+      chargeId: 'charge-x',
+    });
+  } catch (err) {
+    threw = err instanceof CompanyAsaasReconciliationError;
+  }
+  assert(threw, 'CompanyAsaasReconciliationError quando parcela ausente');
+  console.log('OK testUpdateZeroRowsThrows');
+}
+
+async function testForceReconcileBackfillChargesList() {
+  const mock = createMockAdmin({
+    receipts: {
+      'receipt-entrada': {
+        id: 'receipt-entrada',
+        status: 'pendente',
+        amount: 5,
+        installment_number: 0,
+        sale_id: 'sale-1',
+        customer_id: 'cust-1',
+        project_id: 'proj-1',
+      },
+    },
+    charges: {
+      'charge-1': {
+        id: 'charge-1',
+        company_id: 'company-1',
+        installment_id: 'receipt-entrada',
+        asaas_payment_id: 'pay_asaas_1',
+        status: 'PAID',
+        value: 5,
+        paid_at: '2026-06-08T12:00:00Z',
+      },
+    },
+  });
+
+  const result = await forceCompanyAsaasPaidInstallmentReconciliation(
+    mock.admin,
+    'company-1',
+    'receipt-entrada',
+    { eventType: 'CHARGES_LIST_SYNC' },
+  );
+
+  assert(result.ok, 'force reconcile ok');
+  assert(mock.receipts['receipt-entrada'].status === FINANCE_RECEIPT_PAID_STATUS, 'status pago');
+  console.log('OK testForceReconcileBackfillChargesList');
 }
 
 async function testMarkFinanceReceiptUsesInstallmentId() {
@@ -394,12 +459,15 @@ function testChargeUsesInstallmentIdField() {
 }
 
 async function main() {
+  testFinanceReceiptPaidStatusMatchesManualFinance();
   testNeedsReceiptReconciliation();
   testChargeUsesInstallmentIdField();
   await testMarkFinanceReceiptUsesInstallmentId();
   await testEnsureReconcileUpdatesPendingReceipt();
   await testEnsureReconcileCashMovementIdempotent();
   await testUpdateFailureWhenReceiptMissing();
+  await testUpdateZeroRowsThrows();
+  await testForceReconcileBackfillChargesList();
   console.log('mandatory-company-asaas-reconciliation-tests: all passed');
 }
 

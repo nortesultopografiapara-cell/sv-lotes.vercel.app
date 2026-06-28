@@ -8,23 +8,15 @@ import {
   CompanyAsaasIntegrationInactiveError,
 } from '@/lib/finance/asaasCompanyChargeService';
 import {
-  ensureCompanyAsaasInstallmentReconciledIfNeeded,
+  CompanyAsaasReconciliationError,
+  forceCompanyAsaasPaidInstallmentReconciliation,
+  isCompanyAsaasChargeStatusPaid,
   isReceiptPaidStatus,
   loadFinanceReceiptForReconciliation,
 } from '@/lib/finance/companyAsaasPaymentReconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-async function detectReceiptUpdated(
-  admin: Parameters<typeof loadFinanceReceiptForReconciliation>[0],
-  installmentId: string,
-  beforePaid: boolean,
-): Promise<boolean> {
-  if (beforePaid) return false;
-  const receiptAfter = await loadFinanceReceiptForReconciliation(admin, installmentId);
-  return isReceiptPaidStatus(receiptAfter?.status);
-}
 
 export async function GET(request: Request) {
   const auth = await authorizeCompanyAsaasRoute(request);
@@ -34,7 +26,6 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const installmentId = String(url.searchParams.get('installmentId') ?? '').trim();
     const chargeId = String(url.searchParams.get('chargeId') ?? '').trim();
-    let receiptUpdated = false;
 
     if (chargeId) {
       const { data: chargeRow } = await auth.admin
@@ -44,55 +35,63 @@ export async function GET(request: Request) {
         .eq('company_id', auth.tenantId)
         .maybeSingle();
       const linkedInstallmentId = String(chargeRow?.installment_id || '').trim();
-      const receiptBefore = linkedInstallmentId
-        ? await loadFinanceReceiptForReconciliation(auth.admin, linkedInstallmentId)
-        : null;
-      const beforePaid = isReceiptPaidStatus(receiptBefore?.status);
 
       const charge = await getCompanyChargeStatus(auth.admin, auth.tenantId, chargeId);
       assertCompanyAsaasChargeResponseSafe(charge);
-      if (charge.status === 'PAID') {
-        const reconcile = await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+
+      let receiptUpdated = false;
+      if (isCompanyAsaasChargeStatusPaid(charge.status) && linkedInstallmentId) {
+        const before = await loadFinanceReceiptForReconciliation(
+          auth.admin,
+          linkedInstallmentId,
+        );
+        const reconcile = await forceCompanyAsaasPaidInstallmentReconciliation(
           auth.admin,
           auth.tenantId,
-          charge.installmentId,
+          linkedInstallmentId,
           { eventType: 'MANUAL_STATUS_SYNC' },
         );
+        const after = await loadFinanceReceiptForReconciliation(
+          auth.admin,
+          linkedInstallmentId,
+        );
         receiptUpdated =
-          Boolean(reconcile?.receiptUpdated) ||
-          (linkedInstallmentId
-            ? await detectReceiptUpdated(auth.admin, linkedInstallmentId, beforePaid)
-            : false);
+          Boolean(reconcile.receiptUpdated) ||
+          (!isReceiptPaidStatus(before?.status) && isReceiptPaidStatus(after?.status));
       }
+
       return NextResponse.json({ charge, receiptUpdated });
     }
 
     if (installmentId) {
-      const receiptBefore = await loadFinanceReceiptForReconciliation(
-        auth.admin,
-        installmentId,
-      );
-      const beforePaid = isReceiptPaidStatus(receiptBefore?.status);
+      const before = await loadFinanceReceiptForReconciliation(auth.admin, installmentId);
 
       const charge = await getCompanyChargeStatusByInstallment(
         auth.admin,
         auth.tenantId,
         installmentId,
       );
+
+      let receiptUpdated = false;
       if (charge) {
         assertCompanyAsaasChargeResponseSafe(charge);
-        if (charge.status === 'PAID') {
-          const reconcile = await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+        if (isCompanyAsaasChargeStatusPaid(charge.status)) {
+          const reconcile = await forceCompanyAsaasPaidInstallmentReconciliation(
             auth.admin,
             auth.tenantId,
             installmentId,
             { eventType: 'MANUAL_STATUS_SYNC' },
           );
+          const after = await loadFinanceReceiptForReconciliation(
+            auth.admin,
+            installmentId,
+          );
           receiptUpdated =
-            Boolean(reconcile?.receiptUpdated) ||
-            (await detectReceiptUpdated(auth.admin, installmentId, beforePaid));
+            Boolean(reconcile.receiptUpdated) ||
+            (!isReceiptPaidStatus(before?.status) && isReceiptPaidStatus(after?.status));
         }
       }
+
       return NextResponse.json({ charge, receiptUpdated });
     }
 
@@ -100,6 +99,16 @@ export async function GET(request: Request) {
   } catch (err) {
     if (err instanceof CompanyAsaasIntegrationInactiveError) {
       return NextResponse.json({ error: err.message }, { status: 403 });
+    }
+    if (err instanceof CompanyAsaasReconciliationError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          chargeId: err.chargeId,
+          installmentId: err.installmentId,
+        },
+        { status: 409 },
+      );
     }
     console.error('[finance/asaas/charge-status GET]', err);
     return NextResponse.json(
