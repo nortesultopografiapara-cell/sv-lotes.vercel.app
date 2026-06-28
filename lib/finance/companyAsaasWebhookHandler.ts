@@ -17,6 +17,10 @@ import {
   updateCompanyAsaasCharge,
 } from './companyAsaasChargeRepository';
 import { mapAsaasPaymentStatusToCompanyCharge } from './companyAsaasChargeTypes';
+import {
+  COMPANY_ASAAS_ACCESS_DENIED_MESSAGE,
+  isCompanyAsaasEnabled,
+} from './companyAsaasAccess';
 
 export type CompanyAsaasWebhookPayload = {
   event?: string;
@@ -82,6 +86,10 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
   const companyId = resolveCompanyIdFromRequest(request);
   if (!companyId) {
     return NextResponse.json({ error: 'companyId obrigatório na query string.' }, { status: 400 });
+  }
+
+  if (!isCompanyAsaasEnabled(companyId)) {
+    return NextResponse.json({ error: COMPANY_ASAAS_ACCESS_DENIED_MESSAGE }, { status: 403 });
   }
 
   const { client: admin, error: adminError } = createServiceSupabase();

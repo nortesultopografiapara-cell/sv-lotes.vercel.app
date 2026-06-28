@@ -2,6 +2,7 @@ export * from './FinancialGateway';
 export * from './asaasIntegrationConfig';
 export * from './asaasIntegrationRepository';
 export * from './asaasIntegrationService';
+export * from './companyAsaasAccess';
 export * from './companyAsaasChargeTypes';
 export * from './asaasCompanyClient';
 export * from './companyAsaasPaymentReconciliation';

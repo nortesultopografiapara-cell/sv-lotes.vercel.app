@@ -21,6 +21,7 @@ import {
 } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
 import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
+import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
@@ -165,6 +166,8 @@ export default function FinancePage() {
   
   const [payments, setPayments] = useState<any[]>([]);
   const bankingUiEnabled = isBankingModuleEnabledForUi();
+  const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
+  const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
   const [companyAsaasActive, setCompanyAsaasActive] = useState(false);
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
@@ -447,7 +450,7 @@ export default function FinancePage() {
           
           setPayments(data);
 
-          if (bankingUiEnabled && resolvedTenantId && data?.length) {
+          if (bankingUiEnabled && companyAsaasEnabled && resolvedTenantId && data?.length) {
             void loadAsaasFinanceContext(resolvedTenantId, data.map((row) => String(row.id)));
           } else {
             setCompanyAsaasActive(false);
@@ -3127,7 +3130,7 @@ export default function FinancePage() {
         />
       </div>
 
-      {companyAsaasActive && bankingUiEnabled ? (
+      {companyAsaasActive && bankingUiEnabled && companyAsaasEnabled ? (
         <>
           <p className="finance-section-title">Cobranças Asaas</p>
           <div className="finance-kpi-grid mb-5">
@@ -3295,7 +3298,7 @@ export default function FinancePage() {
                     onCarne={() => handleGenerateCarne(p)}
                     onDelete={() => handleDeleteReceipt(p)}
                     readOnly={ownerReadOnly}
-                    asaasEnabled={companyAsaasActive && bankingUiEnabled}
+                    asaasEnabled={companyAsaasActive && bankingUiEnabled && companyAsaasEnabled}
                     asaasCharge={asaasChargesByInstallment[p.id] ?? null}
                     asaasLoading={asaasActionInstallmentId === p.id}
                     asaasError={asaasChargeErrorsByInstallment[p.id] ?? null}
