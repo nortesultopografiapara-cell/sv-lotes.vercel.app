@@ -8,3 +8,4 @@ export * from './companyAsaasChargeWorkflow';
 export * from './companyAsaasChargeRepository';
 export * from './asaasCompanyChargeService';
 export * from './companyAsaasWebhookHandler';
+export * from './asaasIntegrationUiHelpers';
