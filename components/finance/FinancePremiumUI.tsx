@@ -9,6 +9,8 @@ import {
   MessageCircle,
   Trash2,
 } from 'lucide-react';
+import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import { AsaasParcelChargeActions } from '@/components/finance/AsaasParcelChargeActions';
 
 export type FinanceStatCardProps = {
   title: string;
@@ -132,6 +134,12 @@ export type PaymentRowProps = {
   onCarne: () => void;
   onDelete: () => void;
   readOnly?: boolean;
+  asaasEnabled?: boolean;
+  asaasCharge?: CompanyAsaasChargeResponse | null;
+  asaasLoading?: boolean;
+  onGenerateAsaasPix?: () => void;
+  onGenerateAsaasBoleto?: () => void;
+  onRefreshAsaasCharge?: () => void;
 };
 
 export const PaymentTableRow = memo(
@@ -146,6 +154,12 @@ export const PaymentTableRow = memo(
     onCarne,
     onDelete,
     readOnly = false,
+    asaasEnabled = false,
+    asaasCharge = null,
+    asaasLoading = false,
+    onGenerateAsaasPix,
+    onGenerateAsaasBoleto,
+    onRefreshAsaasCharge,
   }: PaymentRowProps) {
     const projects = p.projects as { name?: string } | undefined;
     const sales = p.sales as {
@@ -283,6 +297,16 @@ export const PaymentTableRow = memo(
             >
               <FileText />
             </FinanceParcelActionBtn>
+            {!isPaid && !readOnly && asaasEnabled ? (
+              <AsaasParcelChargeActions
+                disabled={readOnly}
+                charge={asaasCharge}
+                loading={asaasLoading}
+                onGeneratePix={() => onGenerateAsaasPix?.()}
+                onGenerateBoleto={() => onGenerateAsaasBoleto?.()}
+                onRefreshStatus={() => onRefreshAsaasCharge?.()}
+              />
+            ) : null}
             {!readOnly && (
             <FinanceParcelActionBtn
               title="Excluir"
@@ -301,5 +325,9 @@ export const PaymentTableRow = memo(
     prev.payment.id === next.payment.id &&
     prev.selected === next.selected &&
     prev.payment.status === next.payment.status &&
-    prev.payment.paid_amount === next.payment.paid_amount,
+    prev.payment.paid_amount === next.payment.paid_amount &&
+    prev.asaasEnabled === next.asaasEnabled &&
+    prev.asaasLoading === next.asaasLoading &&
+    prev.asaasCharge?.id === next.asaasCharge?.id &&
+    prev.asaasCharge?.status === next.asaasCharge?.status,
 );
