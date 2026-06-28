@@ -825,7 +825,11 @@ function testCompanyAsaasChargeFoundation(): void {
   const reconciliation = read('lib/finance/companyAsaasPaymentReconciliation.ts');
   assert(reconciliation.includes('PAYMENT_CREDITED'), 'reconciliação trata PAYMENT_CREDITED');
   assert(reconciliation.includes('provider: \'ASAAS_COMPANY\''), 'caixa provider ASAAS_COMPANY');
-  assert(reconciliation.includes('source_table: \'company_asaas_charges\''), 'caixa source company charge');
+  assert(reconciliation.includes('finance_receipt_id: input.charge.installmentId'), 'caixa vincula finance_receipt_id');
+  assert(
+    reconciliation.includes('findExistingCashMovementForFinanceReceipt'),
+    'idempotência caixa por finance_receipt_id',
+  );
   assert(reconciliation.includes('Recebimento automático Asaas'), 'descrição caixa automática');
   assert(reconciliation.includes('payment_date'), 'raw payload payment_date');
   assert(reconciliation.includes('reprocessCompanyAsaasPaidCharges'), 'reprocessamento company unificado');
@@ -970,8 +974,8 @@ function testCompanyAsaasPaymentReconciliationRules(): void {
     creditedDate: '2026-06-03',
   });
   assert(movement.type === 'entrada', 'caixa type entrada');
-  assert(movement.source_table === 'company_asaas_charges', 'caixa source_table');
-  assert(movement.source_id === 'ch1', 'caixa source_id');
+  assert(movement.finance_receipt_id === 'i1', 'caixa finance_receipt_id');
+  assert(!('source_table' in movement), 'sem source_table no insert');
   assert((movement.metadata as Record<string, unknown>).provider === 'ASAAS_COMPANY', 'metadata provider');
   assert((movement.metadata as Record<string, unknown>).external_id === 'pay_1', 'metadata external_id');
   assert(movement.project_id === 'pr1', 'caixa project_id');

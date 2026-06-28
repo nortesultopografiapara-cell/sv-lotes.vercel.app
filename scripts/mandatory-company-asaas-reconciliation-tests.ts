@@ -372,9 +372,9 @@ async function testEnsureReconcileUpdatesPendingReceipt() {
   assert(isReceiptPaidStatus(mock.receipts['receipt-entrada'].status), 'parcela paga');
   assert(mock.cashMovements.length === 1, 'cash_movement criado');
   assert(
-    mock.cashMovements[0].source_table === 'company_asaas_charges' &&
-      mock.cashMovements[0].source_id === 'charge-1',
-    'cash_movement idempotente por charge.id',
+    mock.cashMovements[0].finance_receipt_id === 'receipt-entrada' &&
+      mock.cashMovements[0].type === 'entrada',
+    'cash_movement idempotente por finance_receipt_id (mesmo padrão do Financeiro)',
   );
   console.log('OK testEnsureReconcileUpdatesPendingReceipt');
 }

@@ -172,8 +172,6 @@ export function buildCompanyAsaasCashMovementInsert(input: {
     sale_id: input.charge.saleId ?? input.receipt.sale_id ?? null,
     finance_receipt_id: input.charge.installmentId,
     movement_date: input.paidAt.split('T')[0],
-    source_table: 'company_asaas_charges',
-    source_id: input.charge.id,
     status: 'ativo',
     created_by: input.userId ?? null,
     metadata: {
@@ -200,18 +198,24 @@ export function isCompanyAsaasChargeFullyReconciled(input: {
   );
 }
 
-async function findExistingCompanyAsaasCashMovement(
+/** Idempotência alinhada ao Financeiro manual: finance_receipt_id + entrada ativa. */
+async function findExistingCashMovementForFinanceReceipt(
   admin: SupabaseClient,
   companyId: string,
-  chargeId: string,
+  financeReceiptId: string,
 ): Promise<string | null> {
+  const normalizedReceiptId = String(financeReceiptId || '').trim();
+  if (!normalizedReceiptId) return null;
+
   const { data, error } = await admin
     .from('cash_movements')
     .select('id')
     .eq('company_id', companyId)
-    .eq('source_table', 'company_asaas_charges')
-    .eq('source_id', chargeId)
+    .eq('finance_receipt_id', normalizedReceiptId)
+    .eq('type', 'entrada')
     .eq('status', 'ativo')
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -347,7 +351,7 @@ async function reconcilePaidCompanyAsaasChargeRecord(
   const creditedDate = input.creditedDate ?? dates.creditedDate;
 
   const existingMovementId =
-    (await findExistingCompanyAsaasCashMovement(admin, companyId, charge.id)) ?? null;
+    (await findExistingCashMovementForFinanceReceipt(admin, companyId, installmentId)) ?? null;
 
   const { data: chargeRow } = await admin
     .from('company_asaas_charges')
