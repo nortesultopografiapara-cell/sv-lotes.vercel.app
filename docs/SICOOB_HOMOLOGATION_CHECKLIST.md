@@ -2,6 +2,8 @@
 
 Checklist técnico e estrutura segura para homologação do conector **Sicoob** no SV LOTES 2.0.
 
+> **Pré-requisito concluído:** [Fase 2.0 — Provider Sicoob estrutural](#fase-20--provider-sicoob-estrutural) (develop).
+
 | Item | Valor |
 |------|-------|
 | **Branch** | `develop` apenas |
@@ -10,6 +12,28 @@ Checklist técnico e estrutura segura para homologação do conector **Sicoob** 
 | **Referência** | [SVLOTES_2_BANKING_MODULE.md](./SVLOTES_2_BANKING_MODULE.md) |
 | **Provider alvo** | `SICOOB` (COMPE 756) |
 | **Ambiente desta fase** | Sandbox / homologação exclusivamente |
+
+---
+
+## Fase 2.0 — Provider Sicoob estrutural
+
+**Status:** implementado em `develop` · **Sem API real**
+
+| Entrega | Caminho |
+|---------|---------|
+| Provider Sicoob | `lib/banking/providers/sicoobBankProvider.ts` |
+| Validação de config | `lib/banking/sicoobConfigValidation.ts` |
+| Handler test connection | `lib/banking/sicoobApiHandlers.ts` |
+| Rota test connection | `app/api/banking/sicoob/test-connection/route.ts` |
+| Registry | `lib/banking/registry.ts` → `SICOOB` + `MOCK` |
+
+Comportamento Fase 2.0:
+
+- `testConnection()` — valida campos obrigatórios localmente
+- `createBoleto()` — erro: *"Sicoob boleto real ainda não habilitado nesta fase."*
+- `createPix()` — erro: *"Sicoob Pix real ainda não habilitado nesta fase."*
+- Demais métodos — erro controlado de não implementado
+- UI — aviso Sicoob; botões MOCK ocultos quando banco ≠ MOCK
 
 ---
 
@@ -111,8 +135,8 @@ Provider real: `SICOOB` · Ambiente: `SANDBOX`.
 
 Antes dos testes com o banco:
 
-- [ ] Adapter `SicoobBankProvider` implementado em `lib/banking/providers/`
-- [ ] Registro no `lib/banking/registry.ts` (sem remover MOCK)
+- [x] Adapter `SicoobBankProvider` implementado em `lib/banking/providers/` (Fase 2.0 — estrutural)
+- [x] Registro no `lib/banking/registry.ts` (sem remover MOCK)
 - [ ] `rejectNonMockProvider` ajustado para permitir `SICOOB` **apenas** com flag de homologação
 - [ ] Rotas de webhook `/api/banking/webhooks/sicoob` (Preview)
 - [ ] Criptografia via `lib/banking/credentialsCrypto.ts` validada
@@ -285,4 +309,5 @@ Sandbox 100% OK
 
 | Versão | Data | Descrição |
 |--------|------|-----------|
+| 1.1 | 2026-06-08 | Fase 2.0 — Provider Sicoob estrutural documentado |
 | 1.0 | 2026-06-08 | Checklist inicial Fase 2.1 — homologação Sicoob (develop only) |

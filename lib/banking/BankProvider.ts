@@ -16,6 +16,8 @@ export type BankProviderContext = {
   integrationId: string;
   companyId: string;
   environment: 'SANDBOX' | 'PRODUCTION';
+  /** Configuração específica do provider (ex.: snapshot Sicoob para validação). */
+  config?: Record<string, unknown>;
 };
 
 /**

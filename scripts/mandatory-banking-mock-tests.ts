@@ -23,6 +23,11 @@ import {
   runMockCreateBoleto,
   runMockCreatePix,
   runMockTestConnection,
+  getBankProvider,
+  sicoobBankProvider,
+  validateSicoobConfig,
+  SICOOB_BOLETO_NOT_ENABLED_MESSAGE,
+  SICOOB_PIX_NOT_ENABLED_MESSAGE,
 } from '../lib/banking';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
@@ -333,6 +338,132 @@ function testMockRouteGuardsInSource(): void {
   assert(!panel.includes('api_key'), 'painel não expõe api_key');
 }
 
+function testSicoobInRegistry(): void {
+  const provider = getBankProvider('SICOOB');
+  assert(provider === sicoobBankProvider, 'SICOOB registrado no registry');
+  assert(getBankProvider('MOCK'), 'MOCK permanece no registry');
+}
+
+function testSicoobValidationMissingFields(): void {
+  const result = validateSicoobConfig({});
+  assert(result.ok === false, 'Sicoob inválido sem campos');
+  assert(result.missingFields.includes('clientId'), 'clientId obrigatório');
+  assert(result.missingFields.includes('clientSecret'), 'clientSecret obrigatório');
+  assert(result.message.includes('Campos obrigatórios'), 'mensagem clara');
+}
+
+function testSicoobValidationComplete(): void {
+  const result = validateSicoobConfig({
+    clientId: 'client-id',
+    hasClientSecret: true,
+    environment: 'SANDBOX',
+    agency: '1234',
+    accountNumber: '56789',
+    accountDigit: '0',
+    walletCode: '1',
+    agreementCode: '999',
+    beneficiaryCode: '123456',
+    pixKey: 'pix@test.com',
+    certificateName: 'cert.pfx',
+    hasCertificatePassword: true,
+  });
+  assert(result.ok === true, 'Sicoob válido com todos os campos');
+}
+
+async function testSicoobCreateBoletoBlocked(): Promise<void> {
+  let caught = false;
+  try {
+    await sicoobBankProvider.createBoleto(
+      {
+        companyId: context.companyId,
+        integrationId: context.integrationId,
+        financeReceiptId: '33333333-3333-3333-3333-333333333333',
+        amount: 100,
+        dueDate: '2026-08-01',
+        payerName: 'Teste',
+        idempotencyKey: 'sicoob-boleto-block',
+      },
+      context,
+    );
+  } catch (err) {
+    caught = true;
+    assert(
+      err instanceof Error && err.message === SICOOB_BOLETO_NOT_ENABLED_MESSAGE,
+      'createBoleto bloqueado',
+    );
+  }
+  assert(caught, 'createBoleto lança erro');
+}
+
+async function testSicoobCreatePixBlocked(): Promise<void> {
+  let caught = false;
+  try {
+    await sicoobBankProvider.createPix(
+      {
+        companyId: context.companyId,
+        integrationId: context.integrationId,
+        financeReceiptId: '44444444-4444-4444-4444-444444444444',
+        amount: 100,
+        dueDate: '2026-08-01',
+        payerName: 'Teste',
+        idempotencyKey: 'sicoob-pix-block',
+      },
+      context,
+    );
+  } catch (err) {
+    caught = true;
+    assert(
+      err instanceof Error && err.message === SICOOB_PIX_NOT_ENABLED_MESSAGE,
+      'createPix bloqueado',
+    );
+  }
+  assert(caught, 'createPix lança erro');
+}
+
+async function testSicoobTestConnectionValidatesConfig(): Promise<void> {
+  const result = await sicoobBankProvider.testConnection({
+    ...context,
+    config: {
+      clientId: 'abc',
+      hasClientSecret: true,
+      environment: 'SANDBOX',
+      agency: '1',
+      accountNumber: '2',
+      accountDigit: '3',
+      walletCode: '4',
+      agreementCode: '5',
+      beneficiaryCode: '6',
+      pixKey: '7',
+      certificateName: 'cert.pfx',
+      hasCertificatePassword: true,
+    },
+  });
+  assert(result.ok === true, 'testConnection ok com config completa');
+  assert(result.message.includes('API real ainda não habilitada'), 'sem chamada API real');
+}
+
+function testSicoobPhase20Source(): void {
+  const provider = read('lib/banking/providers/sicoobBankProvider.ts');
+  assert(provider.includes('SICOOB_BOLETO_NOT_ENABLED_MESSAGE'), 'bloqueio boleto');
+  assert(provider.includes('SICOOB_PIX_NOT_ENABLED_MESSAGE'), 'bloqueio pix');
+  assert(!provider.includes('fetch('), 'sem fetch HTTP real');
+
+  const registry = read('lib/banking/registry.ts');
+  assert(registry.includes('SICOOB: sicoobBankProvider'), 'registry SICOOB');
+
+  const validation = read('lib/banking/sicoobConfigValidation.ts');
+  assert(validation.includes('validateSicoobConfig'), 'validação Sicoob');
+
+  const sicoobRoute = read('app/api/banking/sicoob/test-connection/route.ts');
+  assert(sicoobRoute.includes('authorizeBankingRoute'), 'rota Sicoob protegida');
+  assert(sicoobRoute.includes('runSicoobTestConnection'), 'handler test connection');
+
+  const panel = read('components/banking/BankingIntegrationPanel.tsx');
+  assert(panel.includes('Integração Sicoob em preparação'), 'aviso UI Sicoob');
+  assert(panel.includes('/api/banking/sicoob/test-connection'), 'UI rota Sicoob');
+  assert(panel.includes('isMockProvider'), 'botões MOCK condicionais');
+}
+
 async function main(): Promise<void> {
   clearMockBankProviderStateForTests();
   clearWebhookEventCacheForTests();
@@ -352,6 +483,13 @@ async function main(): Promise<void> {
   testPhase12Source();
   testMockPaymentPagesSource();
   testMockRouteGuardsInSource();
+  testSicoobInRegistry();
+  testSicoobValidationMissingFields();
+  testSicoobValidationComplete();
+  await testSicoobCreateBoletoBlocked();
+  await testSicoobCreatePixBlocked();
+  await testSicoobTestConnectionValidatesConfig();
+  testSicoobPhase20Source();
 
   console.log('OK — mandatory banking mock tests passed');
 }

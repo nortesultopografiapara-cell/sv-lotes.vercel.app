@@ -383,14 +383,30 @@ pending → registered → paid
 - [x] Rotas `/api/banking/mock/*` protegidas
 - [x] Painel teste conexão + boleto + Pix fictícios
 
-### Fase 2 — Sicoob
+### Fase 2.0 — Provider Sicoob estrutural (develop)
 
-- [ ] Adapter Sicoob (sandbox)
-- [ ] Emissão boleto registrado
-- [ ] Emissão Pix dinâmico
+- [x] `SicoobBankProvider` em `lib/banking/providers/sicoobBankProvider.ts`
+- [x] Registro `SICOOB` em `lib/banking/registry.ts` (MOCK preservado)
+- [x] Validação local `validateSicoobConfig()` — campos obrigatórios
+- [x] `testConnection()` valida configuração **sem** chamar API Sicoob
+- [x] `createBoleto` / `createPix` retornam erro controlado (não habilitados)
+- [x] Rota `POST /api/banking/sicoob/test-connection`
+- [x] UI: aviso Sicoob; botões MOCK apenas quando banco = MOCK
+- [x] Documentação: [SICOOB_HOMOLOGATION_CHECKLIST.md](./SICOOB_HOMOLOGATION_CHECKLIST.md)
+
+### Fase 2.1 — Homologação Sicoob (sandbox)
+
+- [ ] OAuth real sandbox
+- [ ] Emissão boleto sandbox
+- [ ] Emissão Pix sandbox
+- [ ] Consulta, webhook e reconciliação
+- [ ] Testes homologação completos
+
+### Fase 2.2 — Sicoob produção controlada
+
+- [ ] Adapter Sicoob produção (1 tenant piloto)
 - [ ] Webhook Sicoob + baixa automática
 - [ ] Integração UI Financeiro → Gerar cobrança
-- [ ] Testes homologação Sicoob
 
 ### Fase 3 — Sicredi
 

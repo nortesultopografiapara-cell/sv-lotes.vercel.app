@@ -138,7 +138,61 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
     }
   }
 
-  async function callMockApi(path: string, label: 'test' | 'boleto' | 'pix') {
+  async function callTestConnection() {
+    setAction('test');
+    setError(null);
+    setConnection(null);
+    try {
+      if (form.bankProvider === 'MOCK') {
+        const res = await fetch('/api/banking/mock/test-connection', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'MOCK' }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+        setConnection(json.connection ?? null);
+        setChargeResult(null);
+        return;
+      }
+
+      if (form.bankProvider === 'SICOOB') {
+        const res = await fetch('/api/banking/sicoob/test-connection', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: form.clientId,
+            clientSecret: form.clientSecret || undefined,
+            environment: form.environment,
+            agency: form.agency,
+            account: form.account,
+            accountDigit: form.accountDigit,
+            walletCode: form.walletCode,
+            agreementCode: form.agreementCode,
+            beneficiaryCode: form.beneficiaryCode,
+            pixKey: form.pixKey,
+            certificateName: form.certificateName,
+            certificatePassword: form.certificatePassword || undefined,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+        setConnection(json.connection ?? null);
+        setChargeResult(null);
+        return;
+      }
+
+      throw new Error('Teste de conexão disponível apenas para MOCK ou Sicoob nesta fase.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha no teste de conexão.');
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function callMockApi(path: string, label: 'boleto' | 'pix') {
     setAction(label);
     setError(null);
     try {
@@ -150,10 +204,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      if (label === 'test') {
-        setConnection(json.connection ?? null);
-        setChargeResult(null);
-      } else if (label === 'boleto') {
+      if (label === 'boleto') {
         setChargeResult({ kind: 'boleto', data: json.charge });
       } else {
         setChargeResult({ kind: 'pix', data: json.charge });
@@ -167,6 +218,8 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
 
   const busy = saving || action !== null;
   const status = config?.status ?? 'DRAFT';
+  const isMockProvider = form.bankProvider === 'MOCK';
+  const isSicoobProvider = form.bankProvider === 'SICOOB';
 
   if (loading) {
     return (
@@ -186,10 +239,18 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
           <div>
             <h2 className="text-lg font-bold text-[var(--text-primary)]">Integração Bancária</h2>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
-              Cadastro da integração — sem comunicação real com bancos nesta fase (MOCK).
+              {isSicoobProvider
+                ? 'Integração Sicoob em preparação. Nenhum boleto real será emitido nesta fase.'
+                : 'Cadastro da integração — MOCK disponível para testes fictícios.'}
             </p>
           </div>
         </div>
+
+        {isSicoobProvider ? (
+          <div className="mb-6 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            Integração Sicoob em preparação. Nenhum boleto real será emitido nesta fase.
+          </div>
+        ) : null}
 
         <section className="mb-8">
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
@@ -372,30 +433,34 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
             <button
               type="button"
               disabled={readOnlyDemo || busy}
-              onClick={() => callMockApi('/api/banking/mock/test-connection', 'test')}
+              onClick={() => void callTestConnection()}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
             >
               {action === 'test' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
               Testar Conexão
             </button>
-            <button
-              type="button"
-              disabled={readOnlyDemo || busy}
-              onClick={() => callMockApi('/api/banking/mock/create-boleto', 'boleto')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
-            >
-              {action === 'boleto' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ReceiptText className="w-4 h-4" />}
-              Gerar Boleto MOCK
-            </button>
-            <button
-              type="button"
-              disabled={readOnlyDemo || busy}
-              onClick={() => callMockApi('/api/banking/mock/create-pix', 'pix')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
-            >
-              {action === 'pix' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
-              Gerar Pix MOCK
-            </button>
+            {isMockProvider ? (
+              <>
+                <button
+                  type="button"
+                  disabled={readOnlyDemo || busy}
+                  onClick={() => callMockApi('/api/banking/mock/create-boleto', 'boleto')}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+                >
+                  {action === 'boleto' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ReceiptText className="w-4 h-4" />}
+                  Gerar Boleto MOCK
+                </button>
+                <button
+                  type="button"
+                  disabled={readOnlyDemo || busy}
+                  onClick={() => callMockApi('/api/banking/mock/create-pix', 'pix')}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+                >
+                  {action === 'pix' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+                  Gerar Pix MOCK
+                </button>
+              </>
+            ) : null}
           </div>
         </form>
       </div>
@@ -414,7 +479,9 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
 
       {connection ? (
         <div className="sv-theme-card p-4 rounded-xl border border-[var(--border-color)] text-sm">
-          <p className="font-semibold text-[var(--text-primary)] mb-1">Resultado — teste de conexão (MOCK)</p>
+          <p className="font-semibold text-[var(--text-primary)] mb-1">
+            Resultado — teste de conexão ({isSicoobProvider ? 'Sicoob' : 'MOCK'})
+          </p>
           <p className={connection.ok ? 'text-green-400' : 'text-red-400'}>{connection.message}</p>
           {connection.latencyMs != null ? (
             <p className="text-[var(--text-secondary)] mt-1">Latência simulada: {connection.latencyMs} ms</p>

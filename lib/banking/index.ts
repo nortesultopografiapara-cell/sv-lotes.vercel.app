@@ -21,3 +21,19 @@ export {
   MOCK_PIX_PAY_PATH_PREFIX,
 } from './providers/mockBankProvider';
 export type { MockChargeDisplay } from './providers/mockBankProvider';
+export {
+  SicoobBankProvider,
+  sicoobBankProvider,
+  SICOOB_BOLETO_NOT_ENABLED_MESSAGE,
+  SICOOB_PIX_NOT_ENABLED_MESSAGE,
+  SICOOB_NOT_IMPLEMENTED_MESSAGE,
+} from './providers/sicoobBankProvider';
+export {
+  validateSicoobConfig,
+  sicoobValidationInputFromIntegration,
+} from './sicoobConfigValidation';
+export type {
+  SicoobConfigValidationInput,
+  SicoobConfigValidationResult,
+} from './sicoobConfigValidation';
+export { runSicoobTestConnection } from './sicoobApiHandlers';
