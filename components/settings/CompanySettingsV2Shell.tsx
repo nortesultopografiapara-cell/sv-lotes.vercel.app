@@ -38,7 +38,7 @@ import { TenantCompanyAdminsPanel } from '@/components/settings/TenantCompanyAdm
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE } from '@/lib/demoRestrictions';
 import type { useCompanySettingsForm } from '@/components/settings/useCompanySettingsForm';
-import { BankingIntegrationPanel } from '@/components/banking/BankingIntegrationPanel';
+import { FinancialIntegrationPanel } from '@/components/finance/FinancialIntegrationPanel';
 
 type FormState = ReturnType<typeof useCompanySettingsForm>;
 
@@ -49,7 +49,7 @@ export type CompanySettingsV2Tab =
   | 'contratos'
   | 'tecnico'
   | 'avancado'
-  | 'bancario';
+  | 'financeiro';
 
 const V2_TABS: { id: CompanySettingsV2Tab; label: string; icon: typeof Building2 }[] = [
   { id: 'geral', label: 'Geral', icon: Building2 },
@@ -152,7 +152,9 @@ function hashToTab(hash: string): CompanySettingsV2Tab | null {
   if (h === 'contratos') return 'contratos';
   if (h === 'tecnico') return 'tecnico';
   if (h === 'avancado') return 'avancado';
-  if (h === 'bancario' || h === 'integracao-bancaria') return 'bancario';
+  if (h === 'financeiro' || h === 'integracao-financeira' || h === 'bancario' || h === 'integracao-bancaria') {
+    return 'financeiro';
+  }
   return null;
 }
 
@@ -252,7 +254,7 @@ export function CompanySettingsV2Shell({
   const navTabs = bankingUiEnabled
     ? [
         ...visibleTabs,
-        { id: 'bancario' as const, label: 'Integração Bancária', icon: Landmark },
+        { id: 'financeiro' as const, label: 'Integração Financeira', icon: Landmark },
       ]
     : visibleTabs;
   const showSaveBar = ['geral', 'contratos', 'tecnico', 'avancado'].includes(activeTab);
@@ -285,10 +287,10 @@ export function CompanySettingsV2Shell({
       </nav>
 
       <div className="flex-1 min-w-0">
-        {activeTab === 'aparencia' || activeTab === 'administradores' || activeTab === 'bancario' ? (
+        {activeTab === 'aparencia' || activeTab === 'administradores' || activeTab === 'financeiro' ? (
           <div className="space-y-6">
-            {activeTab === 'bancario' ? (
-              <BankingIntegrationPanel tenantId={String(company.id)} readOnlyDemo={readOnlyDemo} />
+            {activeTab === 'financeiro' ? (
+              <FinancialIntegrationPanel tenantId={String(company.id)} readOnlyDemo={readOnlyDemo} />
             ) : null}
 
             {activeTab === 'aparencia' ? (

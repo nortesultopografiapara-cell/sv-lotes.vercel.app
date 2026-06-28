@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { Loader2, Building2, Palette, Landmark } from 'lucide-react';
-import { BankingIntegrationPanel } from '@/components/banking/BankingIntegrationPanel';
+import { FinancialIntegrationPanel } from '@/components/finance/FinancialIntegrationPanel';
 import { BankingFlagDiagnosticsBanner } from '@/components/banking/BankingFlagDiagnosticsBanner';
 import type { BankingUiDiagnostics } from '@/lib/banking/config';
 import { useSessionGuard } from '@/hooks/useSessionGuard';
@@ -146,9 +146,9 @@ export default function SettingsPageClient({
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
                 <Landmark className="w-4 h-4" />
-                <span className="text-xs font-semibold uppercase tracking-wider">Integração Bancária</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Integração Financeira</span>
               </div>
-              <BankingIntegrationPanel tenantId={settingsCompanyId} readOnlyDemo={readOnlyDemo} />
+              <FinancialIntegrationPanel tenantId={settingsCompanyId} readOnlyDemo={readOnlyDemo} />
             </div>
           ) : null}
 
