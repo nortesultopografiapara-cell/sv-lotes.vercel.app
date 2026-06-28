@@ -13,6 +13,7 @@ import { CompanySettingsFormLegacy } from '@/components/settings/CompanySettings
 import { CompanySettingsV2Shell } from '@/components/settings/CompanySettingsV2Shell';
 import { useCompanySettingsForm, resolveSettingsCompanyId } from '@/components/settings/useCompanySettingsForm';
 import { resolveCompanySettingsLayout } from '@/lib/companySettingsLayout';
+import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { isTenantAdminRole } from '@/lib/ownerProjectAccess';
 import { DEMO_SENSITIVE_SETTINGS_MESSAGE, isDemoProfile } from '@/lib/demoRestrictions';
 import { DemoSensitiveNotice } from '@/components/demo/DemoSensitiveNotice';
@@ -33,6 +34,8 @@ export default function SettingsPageClient({
   const { user, loading: authLoading } = useSessionGuard();
 
   const settingsCompanyId = resolveSettingsCompanyId(user);
+  const companyAsaasEnabled = isCompanyAsaasEnabled(settingsCompanyId);
+  const bankingAsaasUiEnabled = bankingUiEnabled && companyAsaasEnabled;
   const isPlatformAdmin = user?.role && PLATFORM_ADMIN_ROLES.includes(user.role);
 
   const layoutPreview = useMemo(() => {
@@ -120,7 +123,7 @@ export default function SettingsPageClient({
           {...form}
           readOnlyDemo={readOnlyDemo}
           showAdmins={showAdmins}
-          bankingUiEnabled={bankingUiEnabled}
+          bankingUiEnabled={bankingAsaasUiEnabled}
           adminPanelProps={
             showAdmins && settingsCompanyId && user?.id
               ? {
@@ -142,7 +145,7 @@ export default function SettingsPageClient({
             <ThemeAppearanceSection />
           </div>
 
-          {bankingUiEnabled && settingsCompanyId ? (
+          {bankingAsaasUiEnabled && settingsCompanyId ? (
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-3 text-[var(--text-secondary)]">
                 <Landmark className="w-4 h-4" />

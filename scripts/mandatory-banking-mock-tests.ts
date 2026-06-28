@@ -49,6 +49,11 @@ import {
   mapAsaasPaymentStatusToCompanyCharge,
   isCompanyAsaasIntegrationReady,
 } from '../lib/finance/companyAsaasChargeTypes';
+import {
+  ASAAS_COMPANY_ALLOWED_COMPANY_IDS_ENV,
+  isCompanyAsaasEnabled,
+} from '../lib/finance/companyAsaasAccess';
+import { TOPOGRAFIA_COMPANY_ID } from '../lib/companySettingsLayout';
 import { assertCompanyAsaasChargeResponseSafe } from '../lib/finance/asaasCompanyChargeService';
 import {
   assertCanCreateCompanyAsaasCharge,
@@ -644,12 +649,13 @@ function testFinancialIntegrationSource(): void {
 
   const asaasRoute = read('app/api/finance/asaas/integration/route.ts');
   assert(asaasRoute.includes('assertAsaasIntegrationResponseSafe'), 'API Asaas sanitiza resposta');
-  assert(asaasRoute.includes('authorizeBankingRoute'), 'API Asaas protegida');
+  assert(asaasRoute.includes('authorizeCompanyAsaasRoute'), 'API Asaas protegida com whitelist');
 
   const bankingPanel = read('components/banking/BankingIntegrationPanel.tsx');
   assert(bankingPanel.includes('/api/banking/integration'), 'painel bancário legado preservado');
 
   const dashboard = read('app/dashboard/page.tsx');
+  assert(dashboard.includes('isCompanyAsaasEnabled'), 'dashboard valida whitelist company');
   assert(dashboard.includes('FinancialIntegrationDashboardCard'), 'card dashboard financeiro');
 
   const webhookUrl = buildDefaultAsaasWebhookUrl('https://preview.example.com', 'company-uuid');
@@ -702,6 +708,7 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(masterProvider.includes('process.env.ASAAS_API_KEY'), 'Master Asaas preservado');
 
   const service = read('lib/finance/asaasCompanyChargeService.ts');
+  assert(service.includes('assertCompanyAsaasEnabled'), 'service valida whitelist company');
   assert(service.includes('loadAsaasApiKeyForEnvironment'), 'service usa credencial da empresa');
   assert(service.includes('createCompanyPixCharge'), 'createCompanyPixCharge definido');
   assert(service.includes('createCompanyBoletoCharge'), 'createCompanyBoletoCharge definido');
@@ -721,7 +728,7 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(webhookRoute.includes('handleCompanyAsaasPaymentWebhook'), 'rota webhook company');
 
   const createRoute = read('app/api/finance/asaas/create-charge/route.ts');
-  assert(createRoute.includes('authorizeBankingRoute'), 'create-charge protegida');
+  assert(createRoute.includes('authorizeCompanyAsaasRoute'), 'create-charge protegida com whitelist');
   assert(createRoute.includes('installmentId'), 'create-charge exige installmentId');
 
   const financeUi = read('components/finance/FinancePremiumUI.tsx');
@@ -747,6 +754,7 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(summaryRoute.includes('getCompanyAsaasChargeDashboardSummary'), 'rota charge-summary');
 
   const financePage = read('app/finance/page.tsx');
+  assert(financePage.includes('isCompanyAsaasEnabled'), 'finance page valida whitelist company');
   assert(financePage.includes('companyAsaasActive'), 'finance page carrega contexto Asaas');
   assert(financePage.includes('isCompanyAsaasIntegrationReady'), 'finance page valida integração ativa');
   assert(financePage.includes('asaasChargeSummary'), 'finance page dashboard Asaas');
@@ -792,6 +800,7 @@ function testCompanyAsaasChargeFoundation(): void {
   });
 
   const webhookHandler = read('lib/finance/companyAsaasWebhookHandler.ts');
+  assert(webhookHandler.includes('isCompanyAsaasEnabled'), 'webhook valida whitelist company');
   assert(webhookHandler.includes('registerCompanyAsaasWebhookEvent'), 'webhook registra evento');
   assert(webhookHandler.includes('executeCompanyAsaasPaymentReconciliation'), 'webhook reconcilia pagamento');
   assert(webhookHandler.includes('isCompanyAsaasPaidWebhookEvent'), 'webhook usa helper eventos pagos');
@@ -975,6 +984,45 @@ function testCompanyAsaasWebhookAuth(): void {
   assert(verifyCompanyAsaasWebhookToken(emptyRequest, null), 'sem token configurado passa');
 }
 
+function testCompanyAsaasAccessWhitelist(): void {
+  assert(isCompanyAsaasEnabled(TOPOGRAFIA_COMPANY_ID), 'SV Topografia autorizada');
+  assert(!isCompanyAsaasEnabled('00000000-0000-0000-0000-000000000000'), 'empresa aleatória bloqueada');
+  assert(!isCompanyAsaasEnabled(null), 'companyId vazio bloqueado');
+  assert(!isCompanyAsaasEnabled(''), 'companyId vazio bloqueado');
+
+  const accessModule = read('lib/finance/companyAsaasAccess.ts');
+  assert(accessModule.includes(ASAAS_COMPANY_ALLOWED_COMPANY_IDS_ENV), 'env ASAAS_COMPANY_ALLOWED_COMPANY_IDS');
+  assert(accessModule.includes('isCompanyAsaasEnabled'), 'helper isCompanyAsaasEnabled');
+  assert(accessModule.includes('TOPOGRAFIA_COMPANY_ID'), 'fallback SV Topografia');
+
+  const routeGuard = read('lib/banking/bankingRouteGuard.ts');
+  assert(routeGuard.includes('authorizeCompanyAsaasRoute'), 'guard authorizeCompanyAsaasRoute');
+  assert(routeGuard.includes('assertCompanyAsaasTenantEnabled'), 'guard assertCompanyAsaasTenantEnabled');
+  assert(routeGuard.includes('status: 403'), 'whitelist retorna 403');
+
+  const settingsClient = read('app/settings/SettingsPageClient.tsx');
+  assert(settingsClient.includes('isCompanyAsaasEnabled'), 'settings valida whitelist company');
+  assert(settingsClient.includes('bankingAsaasUiEnabled'), 'settings combina flag banking + whitelist');
+
+  for (const routePath of [
+    'app/api/finance/asaas/integration/route.ts',
+    'app/api/finance/asaas/charges/route.ts',
+    'app/api/finance/asaas/charge-status/route.ts',
+    'app/api/finance/asaas/charge-summary/route.ts',
+    'app/api/finance/asaas/regenerate-charge/route.ts',
+    'app/api/finance/asaas/test-connection/route.ts',
+    'app/api/finance/asaas/validate-webhook/route.ts',
+    'app/api/finance/asaas/sync-charges/route.ts',
+    'app/api/finance/asaas/reprocess-payments/route.ts',
+  ]) {
+    const source = read(routePath);
+    assert(source.includes('authorizeCompanyAsaasRoute'), `${routePath} exige whitelist Asaas Company`);
+  }
+
+  const masterProvider = read('lib/payments/providers/asaas.ts');
+  assert(masterProvider.includes('process.env.ASAAS_API_KEY'), 'Master Asaas preservado (sem whitelist company)');
+}
+
 function testAsaasIntegrationResponseSafe(): void {
   assertAsaasIntegrationResponseSafe({
     ...EMPTY_ASAAS_INTEGRATION_CONFIG,
@@ -1042,6 +1090,7 @@ async function main(): Promise<void> {
   await testSicrediTestConnectionValidatesConfig();
   testSicrediPhase20Source();
   testFinancialIntegrationSource();
+  testCompanyAsaasAccessWhitelist();
   testAsaasIntegrationResponseSafe();
   testCompanyAsaasChargeFoundation();
   testCompanyAsaasChargeWorkflow();

@@ -30,6 +30,7 @@ import {
   isCompanyAsaasIntegrationReady,
   mapAsaasPaymentStatusToCompanyCharge,
 } from './companyAsaasChargeTypes';
+import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
 
 type InstallmentRow = {
   id: string;
@@ -63,6 +64,7 @@ async function resolveCompanyAsaasCredentials(
   admin: SupabaseClient,
   companyId: string,
 ): Promise<{ apiKey: string; environment: BankEnvironment; integrationId: string }> {
+  assertCompanyAsaasEnabled(companyId);
   const config = await getCompanyAsaasIntegrationConfig(admin, companyId);
   if (!isCompanyAsaasIntegrationReady(config)) {
     throw new CompanyAsaasIntegrationInactiveError();
