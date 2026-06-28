@@ -293,6 +293,89 @@ function testSavePreservesActiveStatus() {
   console.log('OK testSavePreservesActiveStatus');
 }
 
+function testChargesUsesSameIntegrationReadyRuleAsSettings() {
+  const {
+    resolveChargesIntegrationReady,
+    countSelectedGeneratableCharges,
+    countSelectedWithAsaasCharge,
+  } = require('../lib/charges/chargeIntegrationHelpers') as typeof import('../lib/charges/chargeIntegrationHelpers');
+  const { isAsaasIntegrationVerified } = require('../lib/finance/asaasIntegrationUiHelpers') as {
+    isAsaasIntegrationVerified: (config: Record<string, unknown>) => boolean;
+  };
+
+  const legacyConfig = {
+    id: 'int-1',
+    companyId: 'co-1',
+    companyName: 'SV Topografia',
+    connectionStatus: 'CONNECTED',
+    status: 'DRAFT',
+    environment: 'SANDBOX',
+    hasSandboxApiKey: true,
+    hasProductionApiKey: false,
+    webhookActive: true,
+    webhookConfigured: true,
+    accountValidated: true,
+    webhookUrl: 'https://example.com/webhook',
+    hasWebhookToken: true,
+    features: { pix: true, boleto: true, card: true, paymentLink: true, autoSync: true },
+    sync: { lastAt: null, chargesCount: 0 },
+    configuredAt: null,
+    updatedAt: null,
+    lastConnectionTestAt: '2026-06-01T00:00:00Z',
+    lastConnectionError: null,
+  };
+
+  assert(
+    resolveChargesIntegrationReady(legacyConfig) === isAsaasIntegrationVerified(legacyConfig),
+    'charges usa mesma regra de prontidão que Configurações',
+  );
+  assert(resolveChargesIntegrationReady(null, true), 'api ready flag ativa integração');
+  assert(!resolveChargesIntegrationReady(null, false), 'sem config e sem flag = inativa');
+
+  const generatable = countSelectedGeneratableCharges({
+    selectedIds: new Set(['inst-1', 'inst-paid']),
+    payments: [pendingRow, paidRow],
+    chargesByInstallment: {},
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+  });
+  assert(generatable === 1, 'apenas parcela pendente conta para geração em lote');
+
+  const withCharge = countSelectedWithAsaasCharge(
+    new Set(['inst-1', 'inst-paid']),
+    { 'inst-1': charge({ status: 'PENDING' }) },
+  );
+  assert(withCharge === 1, 'contagem de parcelas com cobrança Asaas');
+
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const pageClient = fs.readFileSync(
+    path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),
+    'utf8',
+  );
+  const chargesPage = fs.readFileSync(
+    path.join(process.cwd(), 'app/charges/page.tsx'),
+    'utf8',
+  );
+  assert(pageClient.includes('resolveChargesIntegrationReady'), 'ChargesPageClient usa helper unificado');
+  assert(pageClient.includes('loadIntegrationStatus'), 'charges recarrega status da integração');
+  assert(
+    pageClient.includes('Nenhuma cobrança Asaas gerada para atualizar.'),
+    'mensagem clara ao atualizar status sem cobrança',
+  );
+  assert(
+    pageClient.includes('selectedGeneratableCount === 0'),
+    'botão gerar desabilitado sem parcelas geráveis',
+  );
+  assert(
+    pageClient.includes('selectedWithChargeCount === 0'),
+    'botão atualizar status desabilitado sem cobrança',
+  );
+  assert(chargesPage.includes('resolveBankingUiEnabled'), 'charges recebe bankingUiEnabled do servidor');
+  console.log('OK testChargesUsesSameIntegrationReadyRuleAsSettings');
+}
+
 function main() {
   testPendingWithoutChargeShowsGenerate();
   testPaidInstallmentCannotGenerate();
@@ -305,6 +388,7 @@ function main() {
   testNoDuplicateWhenActiveChargeExists();
   testIntegrationReadyWithLegacyDraftStatus();
   testSavePreservesActiveStatus();
+  testChargesUsesSameIntegrationReadyRuleAsSettings();
   console.log('mandatory-charges-operational-tests: all passed');
 }
 

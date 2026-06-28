@@ -19,9 +19,7 @@ import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/Financ
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
-import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
 import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
-import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
@@ -31,6 +29,11 @@ import {
   filterChargeInstallments,
   type FinanceReceiptRow,
 } from '@/lib/charges/chargeInstallmentHelpers';
+import {
+  countSelectedGeneratableCharges,
+  countSelectedWithAsaasCharge,
+  resolveChargesIntegrationReady,
+} from '@/lib/charges/chargeIntegrationHelpers';
 import {
   CHARGES_WHATSAPP_STUB_MESSAGE,
   canGenerateAsaasCharge,
@@ -66,7 +69,11 @@ async function copyText(value: string): Promise<boolean> {
   }
 }
 
-export function ChargesPageClient() {
+export type ChargesPageClientProps = {
+  bankingUiEnabled: boolean;
+};
+
+export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) {
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<FinanceReceiptRow[]>([]);
@@ -79,18 +86,24 @@ export function ChargesPageClient() {
   const [asaasChargesByInstallment, setAsaasChargesByInstallment] = useState<
     Record<string, CompanyAsaasChargeResponse>
   >({});
-  const [companyAsaasActive, setCompanyAsaasActive] = useState(false);
+  const [integrationConfig, setIntegrationConfig] =
+    useState<AsaasIntegrationConfigResponse | null>(null);
+  const [integrationLoading, setIntegrationLoading] = useState(false);
   const [asaasActionInstallmentId, setAsaasActionInstallmentId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const [toastIsError, setToastIsError] = useState(false);
 
-  const bankingUiEnabled = isBankingModuleEnabledForUi();
   const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
   const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
   const ownerReadOnly = isOwnerRole(user?.role);
-  const integrationReady = bankingUiEnabled && companyAsaasEnabled && companyAsaasActive;
+  const asaasModuleEnabled = bankingUiEnabled && companyAsaasEnabled;
+  const integrationActive = useMemo(
+    () => resolveChargesIntegrationReady(integrationConfig),
+    [integrationConfig],
+  );
+  const integrationReady = companyAsaasEnabled && integrationActive;
 
   const showToast = useCallback((message: string, isError = false) => {
     setToast(message);
@@ -108,51 +121,58 @@ export function ChargesPageClient() {
     [],
   );
 
-  const loadAsaasCharges = useCallback(
-    async (installmentIds: string[]) => {
-      if (!bankingUiEnabled || !companyAsaasEnabled || installmentIds.length === 0) {
-        setCompanyAsaasActive(false);
-        setAsaasChargesByInstallment({});
-        return;
-      }
+  const loadIntegrationStatus = useCallback(async (): Promise<boolean> => {
+    if (!companyAsaasEnabled) {
+      setIntegrationConfig(null);
+      return false;
+    }
 
-      try {
-        const integrationRes = await fetch('/api/finance/asaas/integration', {
-          credentials: 'include',
-        });
-        if (!integrationRes.ok) {
-          setCompanyAsaasActive(false);
-          setAsaasChargesByInstallment({});
-          return;
-        }
-        const integrationJson = await integrationRes.json().catch(() => ({}));
-        const integration = integrationJson.integration as AsaasIntegrationConfigResponse;
-        const active = isCompanyAsaasIntegrationReady(integration);
-        setCompanyAsaasActive(active);
-        if (!active) {
-          setAsaasChargesByInstallment({});
-          return;
-        }
-
-        const chargesRes = await fetch(
-          `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}`,
-          { credentials: 'include' },
-        );
-        if (!chargesRes.ok) return;
-        const chargesJson = await chargesRes.json().catch(() => ({}));
-        const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
-        const map: Record<string, CompanyAsaasChargeResponse> = {};
-        for (const charge of charges) {
-          map[charge.installmentId] = charge;
-        }
-        setAsaasChargesByInstallment(map);
-      } catch (err) {
-        console.error('CHARGES_ASAAS_LOAD', err);
-        setCompanyAsaasActive(false);
+    setIntegrationLoading(true);
+    try {
+      const res = await fetch(`/api/finance/asaas/integration?_=${Date.now()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        setIntegrationConfig(null);
+        return false;
       }
-    },
-    [bankingUiEnabled, companyAsaasEnabled],
-  );
+      const json = await res.json().catch(() => ({}));
+      const integration = (json.integration ?? null) as AsaasIntegrationConfigResponse | null;
+      setIntegrationConfig(integration);
+      return resolveChargesIntegrationReady(integration, json.ready ?? json.canOperate);
+    } catch (err) {
+      console.error('CHARGES_INTEGRATION_LOAD', err);
+      setIntegrationConfig(null);
+      return false;
+    } finally {
+      setIntegrationLoading(false);
+    }
+  }, [companyAsaasEnabled]);
+
+  const loadChargeMap = useCallback(async (installmentIds: string[]) => {
+    if (!companyAsaasEnabled || installmentIds.length === 0) {
+      setAsaasChargesByInstallment({});
+      return;
+    }
+
+    try {
+      const chargesRes = await fetch(
+        `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}&_=${Date.now()}`,
+        { credentials: 'include', cache: 'no-store' },
+      );
+      if (!chargesRes.ok) return;
+      const chargesJson = await chargesRes.json().catch(() => ({}));
+      const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
+      const map: Record<string, CompanyAsaasChargeResponse> = {};
+      for (const charge of charges) {
+        map[charge.installmentId] = charge;
+      }
+      setAsaasChargesByInstallment(map);
+    } catch (err) {
+      console.error('CHARGES_ASAAS_LOAD', err);
+    }
+  }, [companyAsaasEnabled]);
 
   const loadInstallments = useCallback(async () => {
     if (!user) return;
@@ -223,14 +243,16 @@ export function ChargesPageClient() {
 
       setPayments(scoped);
       setSelectedIds(new Set());
-      await loadAsaasCharges(scoped.map((row) => String(row.id)));
+      const installmentIds = scoped.map((row) => String(row.id));
+      await loadIntegrationStatus();
+      await loadChargeMap(installmentIds);
     } catch (err) {
       console.error('CHARGES_LOAD', err);
       setPayments([]);
     } finally {
       setLoading(false);
     }
-  }, [user, loadAsaasCharges]);
+  }, [user, loadIntegrationStatus, loadChargeMap]);
 
   useEffect(() => {
     void loadInstallments();
@@ -252,6 +274,31 @@ export function ChargesPageClient() {
   const asaasKpis = useMemo(
     () => computeAsaasOperationalKpis(payments, asaasChargesByInstallment),
     [payments, asaasChargesByInstallment],
+  );
+
+  const selectedGeneratableCount = useMemo(
+    () =>
+      countSelectedGeneratableCharges({
+        selectedIds,
+        payments,
+        chargesByInstallment: asaasChargesByInstallment,
+        integrationActive,
+        companyAsaasEnabled,
+        ownerReadOnly,
+      }),
+    [
+      selectedIds,
+      payments,
+      asaasChargesByInstallment,
+      integrationActive,
+      companyAsaasEnabled,
+      ownerReadOnly,
+    ],
+  );
+
+  const selectedWithChargeCount = useMemo(
+    () => countSelectedWithAsaasCharge(selectedIds, asaasChargesByInstallment),
+    [selectedIds, asaasChargesByInstallment],
   );
 
   const allFilteredSelected =
@@ -441,7 +488,14 @@ export function ChargesPageClient() {
       return;
     }
     const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      showToast('Selecione ao menos uma parcela.', true);
+      return;
+    }
+    if (selectedGeneratableCount === 0) {
+      showToast('Nenhuma parcela selecionada pode gerar cobrança Asaas.', true);
+      return;
+    }
 
     setBulkBusy(true);
     let okCount = 0;
@@ -453,7 +507,7 @@ export function ChargesPageClient() {
       const charge = asaasChargesByInstallment[installmentId] ?? null;
       const canGenerate = canGenerateAsaasCharge({
         installmentPaid: isInstallmentPaidForCharges(row),
-        integrationActive: companyAsaasActive,
+        integrationActive,
         companyAsaasEnabled,
         ownerReadOnly,
         charge,
@@ -466,27 +520,41 @@ export function ChargesPageClient() {
         const created = await createAsaasChargeRequest(installmentId, 'PIX');
         applyAsaasChargeUpdate(installmentId, created);
         okCount += 1;
-      } catch {
+      } catch (err) {
         errCount += 1;
+        if (errCount === 1) {
+          showToast(err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.', true);
+        }
       }
     }
     setBulkBusy(false);
-    showToast(
-      `${okCount} gerada(s), ${skipCount} ignorada(s), ${errCount} falha(s).`,
-      errCount > 0,
-    );
+    if (okCount > 0) {
+      showToast(`${okCount} cobrança(s) gerada(s) com sucesso.`);
+    } else if (errCount === 0) {
+      showToast(`${skipCount} parcela(s) ignorada(s) — já possuem cobrança ou estão pagas.`, true);
+    }
   };
 
   const runBulkRefresh = async () => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    const ids = Array.from(selectedIds).filter((id) => asaasChargesByInstallment[id]);
+    if (!integrationReady) {
+      showToast('Integração Asaas não está ativa.', true);
+      return;
+    }
+    const ids = Array.from(selectedIds);
     if (ids.length === 0) {
-      showToast('Nenhuma parcela selecionada possui cobrança Asaas.', true);
+      showToast('Selecione ao menos uma parcela.', true);
+      return;
+    }
+    const idsWithCharge = ids.filter((id) => asaasChargesByInstallment[id]);
+    if (idsWithCharge.length === 0) {
+      showToast('Nenhuma cobrança Asaas gerada para atualizar.', true);
       return;
     }
     setBulkBusy(true);
     let okCount = 0;
-    for (const installmentId of ids) {
+    let errCount = 0;
+    for (const installmentId of idsWithCharge) {
       try {
         const res = await fetch(
           `/api/finance/asaas/charge-status?installmentId=${encodeURIComponent(installmentId)}`,
@@ -496,13 +564,19 @@ export function ChargesPageClient() {
         if (res.ok && json.charge) {
           applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
           okCount += 1;
+        } else {
+          errCount += 1;
         }
       } catch {
-        /* continue batch */
+        errCount += 1;
       }
     }
     setBulkBusy(false);
-    showToast(`Status atualizado em ${okCount} parcela(s).`);
+    if (okCount > 0) {
+      showToast(`Status atualizado em ${okCount} parcela(s).`);
+    } else {
+      showToast('Não foi possível atualizar o status das cobranças selecionadas.', true);
+    }
   };
 
   if (authLoading) {
@@ -536,10 +610,10 @@ export function ChargesPageClient() {
         </button>
       </div>
 
-      {companyAsaasEnabled && !companyAsaasActive && !loading ? (
+      {companyAsaasEnabled && !integrationActive && !loading && !integrationLoading ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Integração Asaas não está ativa. Configure em Configurações → Financeiro/Banking para habilitar
-          geração de cobranças.
+          Integração Asaas não está ativa. Abra Configurações → Integração Financeira e conclua a
+          ativação, depois clique em &quot;Atualizar lista&quot;.
         </div>
       ) : null}
 
@@ -691,18 +765,18 @@ export function ChargesPageClient() {
           </span>
           <button
             type="button"
-            disabled={bulkBusy || !integrationReady}
+            disabled={bulkBusy || !integrationReady || selectedGeneratableCount === 0}
             onClick={() => void runBulkGenerate()}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
             Gerar cobranças selecionadas
           </button>
           <button
             type="button"
-            disabled={bulkBusy || !integrationReady}
+            disabled={bulkBusy || !integrationReady || selectedWithChargeCount === 0}
             onClick={() => void runBulkRefresh()}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Atualizar status selecionadas
@@ -793,7 +867,7 @@ export function ChargesPageClient() {
                         view={view}
                         charge={charge}
                         installmentPaid={installmentPaid}
-                        integrationActive={companyAsaasActive}
+                        integrationActive={integrationActive}
                         companyAsaasEnabled={companyAsaasEnabled}
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}

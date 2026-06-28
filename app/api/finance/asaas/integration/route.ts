@@ -32,7 +32,8 @@ export async function GET(request: Request) {
       integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
     }
     assertAsaasIntegrationResponseSafe(integration);
-    return NextResponse.json({ integration });
+    const ready = isCompanyAsaasIntegrationReady(integration);
+    return NextResponse.json({ integration, ready, canOperate: ready });
   } catch (err) {
     console.error('[finance/asaas/integration GET]', err);
     return NextResponse.json(
