@@ -139,6 +139,7 @@ export async function middleware(request: NextRequest) {
       '/dashboard',
       '/customers',
       '/finance',
+      '/charges',
       '/contracts',
       '/settings',
       '/companies',
