@@ -23,6 +23,7 @@ import {
   type CompanyAsaasChargeSummary,
   isActiveCompanyAsaasChargeStatus,
 } from './companyAsaasChargeWorkflow';
+import { executeCompanyAsaasPaymentReconciliation } from './companyAsaasPaymentReconciliation';
 import {
   type CreateCompanyInstallmentChargeInput,
   type CompanyAsaasChargeResponse,
@@ -226,16 +227,35 @@ export async function getCompanyChargeStatus(
     (data as { asaas_payment_id: string }).asaas_payment_id,
   );
 
-  return updateCompanyAsaasCharge(admin, chargeId, companyId, {
-    status: mapAsaasPaymentStatusToCompanyCharge(payment.status),
+  const mappedStatus = mapAsaasPaymentStatusToCompanyCharge(payment.status);
+  const updated = await updateCompanyAsaasCharge(admin, chargeId, companyId, {
+    status: mappedStatus,
     invoiceUrl: payment.invoiceUrl ?? null,
     bankSlipUrl: payment.bankSlipUrl ?? null,
     rawPayload: payment as Record<string, unknown>,
     paidAt:
-      mapAsaasPaymentStatusToCompanyCharge(payment.status) === 'PAID'
+      mappedStatus === 'PAID'
         ? payment.paymentDate || payment.clientPaymentDate || new Date().toISOString()
         : null,
   });
+
+  if (mappedStatus === 'PAID' && payment.id) {
+    await executeCompanyAsaasPaymentReconciliation(admin, {
+      companyId,
+      asaasPaymentId: payment.id,
+      eventType: 'MANUAL_STATUS_SYNC',
+      paidAt: payment.paymentDate || payment.clientPaymentDate || new Date().toISOString(),
+      paymentPayload: payment as Record<string, unknown>,
+    });
+    const refreshed = await getLatestCompanyAsaasChargeForInstallment(
+      admin,
+      companyId,
+      updated.installmentId,
+    );
+    return refreshed ?? updated;
+  }
+
+  return updated;
 }
 
 export async function getCompanyChargeStatusByInstallment(
@@ -349,109 +369,31 @@ export async function reconcileCompanyAsaasPaidCharge(
   admin: SupabaseClient,
   companyId: string,
   asaasPaymentId: string,
-  options?: { paidAt?: string | null; userId?: string | null },
+  options?: {
+    paidAt?: string | null;
+    userId?: string | null;
+    eventType?: string | null;
+    paymentDate?: string | null;
+    creditedDate?: string | null;
+    paymentPayload?: Record<string, unknown> | null;
+  },
 ): Promise<{ ok: boolean; duplicate: boolean; chargeId?: string; cashMovementId?: string }> {
-  const charge = await getCompanyAsaasChargeByPaymentId(admin, companyId, asaasPaymentId);
-  if (!charge) return { ok: false, duplicate: false };
-
-  if (charge.status === 'PAID' && charge.paidAt) {
-    return { ok: true, duplicate: true, chargeId: charge.id, cashMovementId: undefined };
-  }
-
-  const paidAt = options?.paidAt || new Date().toISOString();
-  const updatedCharge = await updateCompanyAsaasCharge(admin, charge.id, companyId, {
-    status: 'PAID',
-    paidAt,
-  });
-
-  const { data: receipt } = await admin
-    .from('finance_receipts')
-    .select('id, status, amount, installment_number, sale_id, customer_id, block_id, project_id, sales: sale_id(contracts(contract_number))')
-    .eq('id', charge.installmentId)
-    .maybeSingle();
-
-  if (!receipt) {
-    return { ok: true, duplicate: false, chargeId: charge.id };
-  }
-
-  const receiptStatus = String((receipt as { status?: string }).status || '').toLowerCase();
-  if (receiptStatus !== 'pago' && receiptStatus !== 'paid') {
-    const { error: receiptError } = await admin
-      .from('finance_receipts')
-      .update({
-        status: 'pago',
-        paid_amount: charge.value,
-        paid_at: paidAt,
-      })
-      .eq('id', charge.installmentId);
-    if (receiptError) throw new Error(receiptError.message);
-  }
-
-  const { data: existingMovement } = await admin
-    .from('cash_movements')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('source_table', 'company_asaas_charges')
-    .eq('source_id', charge.id)
-    .eq('status', 'ativo')
-    .maybeSingle();
-
-  if (existingMovement?.id) {
-    await updateCompanyAsaasCharge(admin, charge.id, companyId, {
-      cashMovementId: existingMovement.id as string,
-    });
-    return {
-      ok: true,
-      duplicate: true,
-      chargeId: charge.id,
-      cashMovementId: existingMovement.id as string,
-    };
-  }
-
-  const contractNo =
-    (receipt as { sales?: { contracts?: Array<{ contract_number?: string }> } }).sales?.contracts?.[0]
-      ?.contract_number || 'S/N';
-  const installmentNumber = (receipt as { installment_number?: number }).installment_number ?? 1;
-
-  const { data: movement, error: movementError } = await admin
-    .from('cash_movements')
-    .insert({
-      tenant_id: companyId,
-      company_id: companyId,
-      type: 'entrada',
-      category: 'Venda de Lote',
-      description: `Pagamento Asaas — Parcela ${installmentNumber} - CT ${contractNo}`,
-      amount: charge.value,
-      customer_id: charge.customerId,
-      sale_id: charge.saleId,
-      finance_receipt_id: charge.installmentId,
-      movement_date: paidAt.split('T')[0],
-      source_table: 'company_asaas_charges',
-      source_id: charge.id,
-      status: 'ativo',
-      created_by: options?.userId ?? null,
-    })
-    .select('id')
-    .single();
-
-  if (movementError) throw new Error(movementError.message);
-
-  await updateCompanyAsaasCharge(admin, charge.id, companyId, {
-    cashMovementId: movement.id as string,
-  });
-
-  console.info('[company-asaas-charge] parcela baixada via webhook', {
+  const result = await executeCompanyAsaasPaymentReconciliation(admin, {
     companyId,
-    chargeId: updatedCharge.id,
-    installmentId: charge.installmentId,
-    asaasPaymentId: charge.asaasPaymentId,
+    asaasPaymentId,
+    paidAt: options?.paidAt,
+    userId: options?.userId,
+    eventType: options?.eventType,
+    paymentDate: options?.paymentDate,
+    creditedDate: options?.creditedDate,
+    paymentPayload: options?.paymentPayload,
   });
 
   return {
-    ok: true,
-    duplicate: false,
-    chargeId: charge.id,
-    cashMovementId: movement.id as string,
+    ok: result.ok,
+    duplicate: result.duplicate,
+    chargeId: result.chargeId,
+    cashMovementId: result.cashMovementId,
   };
 }
 
