@@ -184,7 +184,34 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
         return;
       }
 
-      throw new Error('Teste de conexão disponível apenas para MOCK ou Sicoob nesta fase.');
+      if (form.bankProvider === 'SICREDI') {
+        const res = await fetch('/api/banking/sicredi/test-connection', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: form.clientId,
+            clientSecret: form.clientSecret || undefined,
+            environment: form.environment,
+            agency: form.agency,
+            account: form.account,
+            accountDigit: form.accountDigit,
+            walletCode: form.walletCode,
+            agreementCode: form.agreementCode,
+            beneficiaryCode: form.beneficiaryCode,
+            pixKey: form.pixKey,
+            certificateName: form.certificateName,
+            certificatePassword: form.certificatePassword || undefined,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+        setConnection(json.connection ?? null);
+        setChargeResult(null);
+        return;
+      }
+
+      throw new Error('Teste de conexão disponível apenas para MOCK, Sicoob ou Sicredi nesta fase.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no teste de conexão.');
     } finally {
@@ -220,6 +247,13 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
   const status = config?.status ?? 'DRAFT';
   const isMockProvider = form.bankProvider === 'MOCK';
   const isSicoobProvider = form.bankProvider === 'SICOOB';
+  const isSicrediProvider = form.bankProvider === 'SICREDI';
+  const structuralProviderWarning =
+    isSicoobProvider
+      ? 'Integração Sicoob em preparação. Nenhum boleto real será emitido nesta fase.'
+      : isSicrediProvider
+        ? 'Integração Sicredi em preparação. Nenhum boleto real será emitido nesta fase.'
+        : null;
 
   if (loading) {
     return (
@@ -239,16 +273,15 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
           <div>
             <h2 className="text-lg font-bold text-[var(--text-primary)]">Integração Bancária</h2>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
-              {isSicoobProvider
-                ? 'Integração Sicoob em preparação. Nenhum boleto real será emitido nesta fase.'
-                : 'Cadastro da integração — MOCK disponível para testes fictícios.'}
+              {structuralProviderWarning ??
+                'Cadastro da integração — MOCK disponível para testes fictícios.'}
             </p>
           </div>
         </div>
 
-        {isSicoobProvider ? (
+        {structuralProviderWarning ? (
           <div className="mb-6 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Integração Sicoob em preparação. Nenhum boleto real será emitido nesta fase.
+            {structuralProviderWarning}
           </div>
         ) : null}
 
@@ -480,7 +513,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
       {connection ? (
         <div className="sv-theme-card p-4 rounded-xl border border-[var(--border-color)] text-sm">
           <p className="font-semibold text-[var(--text-primary)] mb-1">
-            Resultado — teste de conexão ({isSicoobProvider ? 'Sicoob' : 'MOCK'})
+            Resultado — teste de conexão ({providerLabel(form.bankProvider)})
           </p>
           <p className={connection.ok ? 'text-green-400' : 'text-red-400'}>{connection.message}</p>
           {connection.latencyMs != null ? (

@@ -37,3 +37,19 @@ export type {
   SicoobConfigValidationResult,
 } from './sicoobConfigValidation';
 export { runSicoobTestConnection } from './sicoobApiHandlers';
+export {
+  SicrediBankProvider,
+  sicrediBankProvider,
+  SICREDI_BOLETO_NOT_ENABLED_MESSAGE,
+  SICREDI_PIX_NOT_ENABLED_MESSAGE,
+  SICREDI_NOT_IMPLEMENTED_MESSAGE,
+} from './providers/sicrediBankProvider';
+export {
+  validateSicrediConfig,
+  sicrediValidationInputFromIntegration,
+} from './sicrediConfigValidation';
+export type {
+  SicrediConfigValidationInput,
+  SicrediConfigValidationResult,
+} from './sicrediConfigValidation';
+export { runSicrediTestConnection } from './sicrediApiHandlers';

@@ -408,11 +408,30 @@ pending → registered → paid
 - [ ] Webhook Sicoob + baixa automática
 - [ ] Integração UI Financeiro → Gerar cobrança
 
-### Fase 3 — Sicredi
+### Fase 2.0-Sicredi — Provider Sicredi estrutural (develop)
 
-- [ ] Adapter Sicredi (reutilizar contratos da Fase 1)
-- [ ] Paridade funcional com Sicoob
-- [ ] Homologação Sicredi
+- [x] `SicrediBankProvider` em `lib/banking/providers/sicrediBankProvider.ts`
+- [x] Registro `SICREDI` em `lib/banking/registry.ts` (MOCK + SICOOB preservados)
+- [x] Validação local `validateSicrediConfig()` — campos obrigatórios
+- [x] `testConnection()` valida configuração **sem** chamar API Sicredi
+- [x] `createBoleto` / `createPix` retornam erro controlado (não habilitados)
+- [x] Rota `POST /api/banking/sicredi/test-connection`
+- [x] UI: aviso Sicredi; botões MOCK apenas quando banco = MOCK
+- [x] Documentação: [SICREDI_HOMOLOGATION_CHECKLIST.md](./SICREDI_HOMOLOGATION_CHECKLIST.md)
+
+### Fase 2.1-Sicredi — Homologação Sicredi (sandbox)
+
+- [ ] OAuth real sandbox
+- [ ] Emissão boleto sandbox
+- [ ] Emissão Pix sandbox
+- [ ] Consulta, webhook e reconciliação
+- [ ] Testes homologação completos
+
+### Fase 2.2-Sicredi — Sicredi produção controlada
+
+- [ ] Adapter Sicredi produção (1 tenant piloto)
+- [ ] Webhook Sicredi + baixa automática
+- [ ] Integração UI Financeiro → Gerar cobrança
 
 ### Fase 4 — Cobrança automática e lembretes
 

@@ -25,9 +25,13 @@ import {
   runMockTestConnection,
   getBankProvider,
   sicoobBankProvider,
+  sicrediBankProvider,
   validateSicoobConfig,
+  validateSicrediConfig,
   SICOOB_BOLETO_NOT_ENABLED_MESSAGE,
   SICOOB_PIX_NOT_ENABLED_MESSAGE,
+  SICREDI_BOLETO_NOT_ENABLED_MESSAGE,
+  SICREDI_PIX_NOT_ENABLED_MESSAGE,
 } from '../lib/banking';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
@@ -342,6 +346,7 @@ function testSicoobInRegistry(): void {
   const provider = getBankProvider('SICOOB');
   assert(provider === sicoobBankProvider, 'SICOOB registrado no registry');
   assert(getBankProvider('MOCK'), 'MOCK permanece no registry');
+  assert(getBankProvider('SICREDI') === sicrediBankProvider, 'SICREDI registrado no registry');
 }
 
 function testSicoobValidationMissingFields(): void {
@@ -464,6 +469,130 @@ function testSicoobPhase20Source(): void {
   assert(panel.includes('isMockProvider'), 'botões MOCK condicionais');
 }
 
+function testSicrediValidationMissingFields(): void {
+  const result = validateSicrediConfig({});
+  assert(result.ok === false, 'Sicredi inválido sem campos');
+  assert(result.missingFields.includes('clientId'), 'clientId obrigatório');
+  assert(result.message.includes('Campos obrigatórios Sicredi'), 'mensagem clara');
+}
+
+function testSicrediValidationComplete(): void {
+  const result = validateSicrediConfig({
+    clientId: 'client-id',
+    hasClientSecret: true,
+    environment: 'SANDBOX',
+    agency: '1234',
+    accountNumber: '56789',
+    accountDigit: '0',
+    walletCode: '1',
+    agreementCode: '999',
+    beneficiaryCode: '123456',
+    pixKey: 'pix@test.com',
+    certificateName: 'cert.pfx',
+    hasCertificatePassword: true,
+  });
+  assert(result.ok === true, 'Sicredi válido com todos os campos');
+  assert(result.message.includes('Fase 2.0-Sicredi'), 'mensagem fase Sicredi');
+}
+
+async function testSicrediCreateBoletoBlocked(): Promise<void> {
+  let caught = false;
+  try {
+    await sicrediBankProvider.createBoleto(
+      {
+        companyId: context.companyId,
+        integrationId: context.integrationId,
+        financeReceiptId: '33333333-3333-3333-3333-333333333333',
+        amount: 100,
+        dueDate: '2026-08-01',
+        payerName: 'Teste',
+        idempotencyKey: 'sicredi-boleto-block',
+      },
+      context,
+    );
+  } catch (err) {
+    caught = true;
+    assert(
+      err instanceof Error && err.message === SICREDI_BOLETO_NOT_ENABLED_MESSAGE,
+      'createBoleto bloqueado',
+    );
+  }
+  assert(caught, 'createBoleto lança erro');
+}
+
+async function testSicrediCreatePixBlocked(): Promise<void> {
+  let caught = false;
+  try {
+    await sicrediBankProvider.createPix(
+      {
+        companyId: context.companyId,
+        integrationId: context.integrationId,
+        financeReceiptId: '44444444-4444-4444-4444-444444444444',
+        amount: 100,
+        dueDate: '2026-08-01',
+        payerName: 'Teste',
+        idempotencyKey: 'sicredi-pix-block',
+      },
+      context,
+    );
+  } catch (err) {
+    caught = true;
+    assert(
+      err instanceof Error && err.message === SICREDI_PIX_NOT_ENABLED_MESSAGE,
+      'createPix bloqueado',
+    );
+  }
+  assert(caught, 'createPix lança erro');
+}
+
+async function testSicrediTestConnectionValidatesConfig(): Promise<void> {
+  const result = await sicrediBankProvider.testConnection({
+    ...context,
+    config: {
+      clientId: 'abc',
+      hasClientSecret: true,
+      environment: 'SANDBOX',
+      agency: '1',
+      accountNumber: '2',
+      accountDigit: '3',
+      walletCode: '4',
+      agreementCode: '5',
+      beneficiaryCode: '6',
+      pixKey: '7',
+      certificateName: 'cert.pfx',
+      hasCertificatePassword: true,
+    },
+  });
+  assert(result.ok === true, 'testConnection ok com config completa');
+  assert(result.message.includes('Fase 2.0-Sicredi'), 'sem chamada API real');
+}
+
+function testSicrediPhase20Source(): void {
+  const provider = read('lib/banking/providers/sicrediBankProvider.ts');
+  assert(provider.includes('SICREDI_BOLETO_NOT_ENABLED_MESSAGE'), 'bloqueio boleto');
+  assert(provider.includes('SICREDI_PIX_NOT_ENABLED_MESSAGE'), 'bloqueio pix');
+  assert(!provider.includes('fetch('), 'sem fetch HTTP real');
+
+  const registry = read('lib/banking/registry.ts');
+  assert(registry.includes('SICREDI: sicrediBankProvider'), 'registry SICREDI');
+  assert(registry.includes('SICOOB: sicoobBankProvider'), 'registry SICOOB preservado');
+
+  const validation = read('lib/banking/sicrediConfigValidation.ts');
+  assert(validation.includes('validateSicrediConfig'), 'validação Sicredi');
+
+  const sicrediRoute = read('app/api/banking/sicredi/test-connection/route.ts');
+  assert(sicrediRoute.includes('authorizeBankingRoute'), 'rota Sicredi protegida');
+  assert(sicrediRoute.includes('runSicrediTestConnection'), 'handler test connection');
+
+  const panel = read('components/banking/BankingIntegrationPanel.tsx');
+  assert(panel.includes('Integração Sicredi em preparação'), 'aviso UI Sicredi');
+  assert(panel.includes('/api/banking/sicredi/test-connection'), 'UI rota Sicredi');
+  assert(panel.includes('Integração Sicoob em preparação'), 'aviso UI Sicoob preservado');
+
+  const sicrediDoc = read('docs/SICREDI_HOMOLOGATION_CHECKLIST.md');
+  assert(sicrediDoc.includes('Fase 2.0-Sicredi'), 'doc homologação Sicredi');
+}
+
 async function main(): Promise<void> {
   clearMockBankProviderStateForTests();
   clearWebhookEventCacheForTests();
@@ -490,6 +619,12 @@ async function main(): Promise<void> {
   await testSicoobCreatePixBlocked();
   await testSicoobTestConnectionValidatesConfig();
   testSicoobPhase20Source();
+  testSicrediValidationMissingFields();
+  testSicrediValidationComplete();
+  await testSicrediCreateBoletoBlocked();
+  await testSicrediCreatePixBlocked();
+  await testSicrediTestConnectionValidatesConfig();
+  testSicrediPhase20Source();
 
   console.log('OK — mandatory banking mock tests passed');
 }
