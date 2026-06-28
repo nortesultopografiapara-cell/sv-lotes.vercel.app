@@ -39,7 +39,12 @@ import {
   listFinancialGatewayProviders,
 } from '../lib/finance/FinancialGateway';
 import { assertAsaasIntegrationResponseSafe } from '../lib/finance/asaasIntegrationRepository';
-import { EMPTY_ASAAS_INTEGRATION_CONFIG } from '../lib/finance/asaasIntegrationConfig';
+import { EMPTY_ASAAS_INTEGRATION_CONFIG, buildDefaultAsaasWebhookUrl } from '../lib/finance/asaasIntegrationConfig';
+import {
+  isAsaasIntegrationVerified,
+  hasAsaasIntegrationStarted,
+  buildAsaasSetupStatusCards,
+} from '../lib/finance/asaasIntegrationUiHelpers';
 import {
   mapAsaasPaymentStatusToCompanyCharge,
   isCompanyAsaasIntegrationReady,
@@ -595,8 +600,18 @@ function testFinancialIntegrationSource(): void {
 
   const asaasPanel = read('components/finance/AsaasIntegrationPanel.tsx');
   assert(asaasPanel.includes('/api/finance/asaas/integration'), 'painel Asaas carrega API');
-  assert(asaasPanel.includes('type="password"'), 'campos secret Asaas como password');
+  assert(asaasPanel.includes('Conectar conta Asaas'), 'título amigável');
+  assert(asaasPanel.includes('AsaasConnectionWizard'), 'painel usa wizard');
+  assert(asaasPanel.includes('Integração verificada'), 'selo verificado');
+  assert(asaasPanel.includes('Nenhuma conta Asaas conectada'), 'estado vazio');
   assert(!asaasPanel.includes('sandboxApiKey":'), 'painel não expõe chaves salvas');
+
+  const wizard = read('components/finance/AsaasConnectionWizard.tsx');
+  assert(wizard.includes('type="password"'), 'wizard usa campos password');
+  assert(wizard.includes('API Key salva — deixe vazio para manter'), 'placeholder api key');
+  assert(wizard.includes('Webhook Token salvo — deixe vazio para manter'), 'placeholder webhook');
+  assert(wizard.includes('Ativar integração'), 'botão ativar');
+  assert(wizard.includes('buildDefaultAsaasWebhookUrl'), 'wizard gera URL webhook');
 
   const financeShell = read('components/finance/FinancialIntegrationPanel.tsx');
   assert(financeShell.includes('ASAAS (Principal)'), 'aba ASAAS principal');
@@ -614,6 +629,45 @@ function testFinancialIntegrationSource(): void {
 
   const dashboard = read('app/dashboard/page.tsx');
   assert(dashboard.includes('FinancialIntegrationDashboardCard'), 'card dashboard financeiro');
+
+  const webhookUrl = buildDefaultAsaasWebhookUrl('https://preview.example.com', 'company-uuid');
+  assert(
+    webhookUrl === 'https://preview.example.com/api/finance/asaas/company-webhook?companyId=company-uuid',
+    'webhook URL company correta',
+  );
+
+  const cards = buildAsaasSetupStatusCards({
+    ...EMPTY_ASAAS_INTEGRATION_CONFIG,
+    companyId: 'c1',
+    companyName: 'Teste',
+    connectionStatus: 'CONNECTED',
+    status: 'ACTIVE',
+    hasSandboxApiKey: true,
+    webhookActive: true,
+    accountValidated: true,
+  });
+  assert(cards.length === 6, 'seis cards de status');
+  assert(
+    isAsaasIntegrationVerified({
+      ...EMPTY_ASAAS_INTEGRATION_CONFIG,
+      companyId: 'c1',
+      companyName: 'Teste',
+      connectionStatus: 'CONNECTED',
+      status: 'ACTIVE',
+      hasSandboxApiKey: true,
+      webhookActive: true,
+      accountValidated: true,
+    }),
+    'integração verificada helper',
+  );
+  assert(
+    !hasAsaasIntegrationStarted({
+      ...EMPTY_ASAAS_INTEGRATION_CONFIG,
+      companyId: 'c1',
+      companyName: 'Teste',
+    }),
+    'sem config detectada',
+  );
 }
 
 function testCompanyAsaasChargeFoundation(): void {

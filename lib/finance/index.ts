@@ -7,3 +7,4 @@ export * from './asaasCompanyClient';
 export * from './companyAsaasChargeRepository';
 export * from './asaasCompanyChargeService';
 export * from './companyAsaasWebhookHandler';
+export * from './asaasIntegrationUiHelpers';

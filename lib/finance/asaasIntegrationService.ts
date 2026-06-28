@@ -11,6 +11,8 @@ export type AsaasTestConnectionResult = {
   message: string;
   latencyMs?: number;
   accountName?: string;
+  accountEmail?: string;
+  environment?: BankEnvironment;
 };
 
 export type AsaasWebhookValidationResult = {
@@ -86,6 +88,7 @@ export async function runAsaasTestConnection(
       (json as { name?: string; company?: string }).name ||
       (json as { company?: string }).company ||
       config.companyName;
+    const accountEmail = String((json as { email?: string }).email || '').trim() || undefined;
 
     await patchAsaasIntegrationMetadata(admin, companyId, {
       connectionStatus: 'CONNECTED',
@@ -100,6 +103,8 @@ export async function runAsaasTestConnection(
       message: `Conexão Asaas validada (${config.environment === 'PRODUCTION' ? 'Produção' : 'Sandbox'}).`,
       latencyMs,
       accountName,
+      accountEmail,
+      environment: config.environment,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Falha ao testar conexão Asaas.';

@@ -124,7 +124,7 @@ export function asaasConnectionStatusLabel(status: AsaasConnectionStatus): strin
 
 export function buildDefaultAsaasWebhookUrl(origin: string, companyId: string): string {
   const base = String(origin ?? '').replace(/\/$/, '');
-  return `${base}/api/finance/asaas/webhook?companyId=${companyId}`;
+  return `${base}/api/finance/asaas/company-webhook?companyId=${companyId}`;
 }
 
 export function resolveAsaasPanelUrl(environment: string): string {
