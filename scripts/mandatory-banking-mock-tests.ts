@@ -798,6 +798,10 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(webhookHandler.includes('loadCompanyAsaasWebhookToken'), 'webhook valida token por empresa');
   assert(webhookHandler.includes("status: 401"), 'webhook token inválido retorna 401');
 
+  const middleware = read('middleware.ts');
+  assert(middleware.includes('/api/finance/asaas/company-webhook'), 'middleware libera webhook company');
+  assert(middleware.includes('/api/payments/webhook'), 'middleware preserva webhook master');
+
   const reconciliation = read('lib/finance/companyAsaasPaymentReconciliation.ts');
   assert(reconciliation.includes('PAYMENT_CREDITED'), 'reconciliação trata PAYMENT_CREDITED');
   assert(reconciliation.includes('provider: \'ASAAS_COMPANY\''), 'caixa provider ASAAS_COMPANY');

@@ -70,6 +70,7 @@ export async function middleware(request: NextRequest) {
     '/api/setup',
     '/api/regenerate',
     '/api/payments/webhook',
+    '/api/finance/asaas/company-webhook',
     '/api/cron',
     '/validar',
     '/validar-recibo',
