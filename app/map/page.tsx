@@ -3083,6 +3083,10 @@ export default function MapPage() {
             onEnterpriseValueRefresh={() =>
               setEnterpriseRefreshKey((k) => k + 1)
             }
+            onLotDeleted={async () => {
+              await loadProjectQuadras();
+              setMapRefreshKey((k) => k + 1);
+            }}
           />
         </div>
 
