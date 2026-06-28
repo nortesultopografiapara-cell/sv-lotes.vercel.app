@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { authorizeBankingRoute } from '@/lib/banking/bankingRouteGuard';
 import {
   assertCompanyAsaasChargeResponseSafe,
-  createCompanyInstallmentCharge,
   CompanyAsaasChargePaidError,
   CompanyAsaasIntegrationInactiveError,
+  regenerateCompanyInstallmentCharge,
 } from '@/lib/finance/asaasCompanyChargeService';
 
 export const runtime = 'nodejs';
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'installmentId obrigatório.' }, { status: 400 });
     }
 
-    const charge = await createCompanyInstallmentCharge(auth.admin, {
+    const charge = await regenerateCompanyInstallmentCharge(auth.admin, {
       companyId: auth.tenantId,
       installmentId,
       billingType,
@@ -40,9 +40,9 @@ export async function POST(request: Request) {
     if (err instanceof CompanyAsaasChargePaidError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
-    console.error('[finance/asaas/create-charge]', err);
+    console.error('[finance/asaas/regenerate-charge]', err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.' },
+      { error: err instanceof Error ? err.message : 'Erro ao regenerar cobrança Asaas.' },
       { status: 500 },
     );
   }

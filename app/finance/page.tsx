@@ -24,6 +24,7 @@ import { isBankingModuleEnabledForUi } from '@/lib/banking/config';
 import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
+import type { CompanyAsaasChargeSummary } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -169,6 +170,12 @@ export default function FinancePage() {
     Record<string, CompanyAsaasChargeResponse>
   >({});
   const [asaasActionInstallmentId, setAsaasActionInstallmentId] = useState<string | null>(null);
+  const [asaasChargeErrorsByInstallment, setAsaasChargeErrorsByInstallment] = useState<
+    Record<string, string>
+  >({});
+  const [asaasChargeSummary, setAsaasChargeSummary] = useState<CompanyAsaasChargeSummary | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [projectsList, setProjectsList] = useState<string[]>([]);
   const [financeProjects, setFinanceProjects] = useState<any[]>([]);
@@ -727,6 +734,21 @@ export default function FinancePage() {
     setCurrentPage(1);
   };
 
+  const loadAsaasChargeSummary = async () => {
+    try {
+      const res = await fetch('/api/finance/asaas/charge-summary', { credentials: 'include' });
+      if (res.status === 403 || res.status === 404) {
+        setAsaasChargeSummary(null);
+        return;
+      }
+      if (!res.ok) return;
+      const json = await res.json().catch(() => ({}));
+      setAsaasChargeSummary((json.summary as CompanyAsaasChargeSummary) ?? null);
+    } catch (err) {
+      console.error('ASAAS_CHARGE_SUMMARY', err);
+    }
+  };
+
   const loadAsaasFinanceContext = async (tenantId: string, installmentIds: string[]) => {
     try {
       const integrationRes = await fetch('/api/finance/asaas/integration', { credentials: 'include' });
@@ -744,8 +766,11 @@ export default function FinancePage() {
       setCompanyAsaasActive(active);
       if (!active || installmentIds.length === 0) {
         setAsaasChargesByInstallment({});
+        if (active) await loadAsaasChargeSummary();
         return;
       }
+
+      await loadAsaasChargeSummary();
 
       const chargesRes = await fetch(
         `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}`,
@@ -765,9 +790,30 @@ export default function FinancePage() {
     }
   };
 
-  const handleCreateAsaasCharge = async (installmentId: string, billingType: 'PIX' | 'BOLETO') => {
+  const applyAsaasChargeUpdate = (
+    installmentId: string,
+    charge: CompanyAsaasChargeResponse,
+  ) => {
+    setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    void loadAsaasChargeSummary();
+  };
+
+  const handleCreateAsaasCharge = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
     setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
     try {
       const res = await fetch('/api/finance/asaas/create-charge', {
         method: 'POST',
@@ -777,12 +823,14 @@ export default function FinancePage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      const charge = json.charge as CompanyAsaasChargeResponse;
-      setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
-      alert(`Cobrança Asaas ${billingType} gerada com sucesso.`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.');
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.',
+      }));
     } finally {
       setAsaasActionInstallmentId(null);
     }
@@ -790,12 +838,12 @@ export default function FinancePage() {
 
   const handleRefreshAsaasCharge = async (installmentId: string) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    const current = asaasChargesByInstallment[installmentId];
-    if (!current) {
-      alert('Nenhuma cobrança Asaas para atualizar.');
-      return;
-    }
     setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
     try {
       const res = await fetch(
         `/api/finance/asaas/charge-status?installmentId=${encodeURIComponent(installmentId)}`,
@@ -803,17 +851,80 @@ export default function FinancePage() {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
-      const charge = json.charge as CompanyAsaasChargeResponse;
+      const charge = json.charge as CompanyAsaasChargeResponse | null;
       if (charge) {
-        setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
+        applyAsaasChargeUpdate(installmentId, charge);
       }
       if (charge?.status === 'PAID') {
         await loadFinance();
       }
-      alert('Status da cobrança atualizado.');
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Erro ao atualizar cobrança.');
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao atualizar cobrança.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleCancelAsaasCharge = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const current = asaasChargesByInstallment[installmentId];
+    if (!current) return;
+    if (!window.confirm('Cancelar a cobrança Asaas desta parcela?')) return;
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/finance/asaas/charge-status?chargeId=${encodeURIComponent(current.id)}`,
+        { method: 'DELETE', credentials: 'include' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao cancelar cobrança.',
+      }));
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleRegenerateAsaasCharge = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (!window.confirm('Regenerar cobrança Asaas para esta parcela?')) return;
+    setAsaasActionInstallmentId(installmentId);
+    setAsaasChargeErrorsByInstallment((prev) => {
+      const next = { ...prev };
+      delete next[installmentId];
+      return next;
+    });
+    try {
+      const res = await fetch('/api/finance/asaas/regenerate-charge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, billingType }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+    } catch (err) {
+      console.error(err);
+      setAsaasChargeErrorsByInstallment((prev) => ({
+        ...prev,
+        [installmentId]:
+          err instanceof Error ? err.message : 'Erro ao regenerar cobrança.',
+      }));
     } finally {
       setAsaasActionInstallmentId(null);
     }
@@ -3016,6 +3127,37 @@ export default function FinancePage() {
         />
       </div>
 
+      {companyAsaasActive && bankingUiEnabled ? (
+        <>
+          <p className="finance-section-title">Cobranças Asaas</p>
+          <div className="finance-kpi-grid mb-5">
+            <FinanceStatCard
+              title="Cobranças emitidas"
+              value={String(asaasChargeSummary?.totalCharges ?? 0)}
+              subtitle="Total registrado no Asaas Company"
+              icon={<Banknote />}
+              iconWrapClass="bg-violet-500/12 text-violet-400"
+            />
+            <FinanceStatCard
+              title="Pendentes"
+              value={String(asaasChargeSummary?.pendingCount ?? 0)}
+              subtitle="Aguardando pagamento"
+              subtitleColor="text-violet-400/90"
+              icon={<ReceiptText />}
+              iconWrapClass="bg-violet-500/12 text-violet-400"
+            />
+            <FinanceStatCard
+              title="Valor em aberto"
+              value={formatCurrency(asaasChargeSummary?.openValue ?? 0)}
+              subtitle="Soma das cobranças pendentes"
+              subtitleColor="text-blue-400/90"
+              icon={<Wallet />}
+              iconWrapClass="bg-blue-500/12 text-blue-400"
+            />
+          </div>
+        </>
+      ) : null}
+
       <div className="finance-tabs">
         <button
           type="button"
@@ -3156,9 +3298,22 @@ export default function FinancePage() {
                     asaasEnabled={companyAsaasActive && bankingUiEnabled}
                     asaasCharge={asaasChargesByInstallment[p.id] ?? null}
                     asaasLoading={asaasActionInstallmentId === p.id}
-                    onGenerateAsaasPix={() => void handleCreateAsaasCharge(p.id, 'PIX')}
-                    onGenerateAsaasBoleto={() => void handleCreateAsaasCharge(p.id, 'BOLETO')}
+                    asaasError={asaasChargeErrorsByInstallment[p.id] ?? null}
+                    onGenerateAsaasCharge={(billingType) =>
+                      void handleCreateAsaasCharge(p.id, billingType)
+                    }
                     onRefreshAsaasCharge={() => void handleRefreshAsaasCharge(p.id)}
+                    onCancelAsaasCharge={() => void handleCancelAsaasCharge(p.id)}
+                    onRegenerateAsaasCharge={(billingType) =>
+                      void handleRegenerateAsaasCharge(p.id, billingType)
+                    }
+                    onClearAsaasError={() =>
+                      setAsaasChargeErrorsByInstallment((prev) => {
+                        const next = { ...prev };
+                        delete next[p.id];
+                        return next;
+                      })
+                    }
                   />
                 ))
               ) : (

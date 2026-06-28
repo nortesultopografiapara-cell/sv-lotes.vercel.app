@@ -50,6 +50,18 @@ import {
   isCompanyAsaasIntegrationReady,
 } from '../lib/finance/companyAsaasChargeTypes';
 import { assertCompanyAsaasChargeResponseSafe } from '../lib/finance/asaasCompanyChargeService';
+import {
+  assertCanCreateCompanyAsaasCharge,
+  assertCanRegenerateCompanyAsaasCharge,
+  formatCompanyAsaasChargeStatusLabel,
+  isActiveCompanyAsaasChargeStatus,
+  isRegeneratableCompanyAsaasChargeStatus,
+  resolveCompanyAsaasBoletoUrl,
+  resolveCompanyAsaasChargeWorkflowState,
+  resolveCompanyAsaasPaymentLink,
+  summarizeCompanyAsaasCharges,
+} from '../lib/finance/companyAsaasChargeWorkflow';
+import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
 const ROOT = path.join(__dirname, '..');
@@ -685,6 +697,10 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(service.includes('createCompanyBoletoCharge'), 'createCompanyBoletoCharge definido');
   assert(service.includes('reconcileCompanyAsaasPaidCharge'), 'reconcile webhook definido');
   assert(service.includes("source_table: 'company_asaas_charges'"), 'caixa vinculado à cobrança company');
+  assert(service.includes('regenerateCompanyInstallmentCharge'), 'regenerate service');
+  assert(service.includes('getCompanyAsaasChargeDashboardSummary'), 'dashboard summary service');
+  assert(service.includes('CompanyAsaasChargePaidError'), 'erro parcela paga');
+  assert(service.includes('assertCanCreateCompanyAsaasCharge'), 'service usa workflow idempotência');
 
   const migration = read('supabase/migrations/20260827130000_company_asaas_charges.sql');
   assert(migration.includes('company_asaas_charges'), 'migration company_asaas_charges');
@@ -700,11 +716,32 @@ function testCompanyAsaasChargeFoundation(): void {
 
   const financeUi = read('components/finance/FinancePremiumUI.tsx');
   assert(financeUi.includes('asaasEnabled'), 'UI condiciona ações Asaas');
-  assert(financeUi.includes('AsaasParcelChargeActions'), 'UI menu Asaas parcelas');
+  assert(financeUi.includes('AsaasInstallmentChargePanel'), 'UI painel Asaas parcelas');
+
+  const chargePanel = read('components/finance/AsaasInstallmentChargePanel.tsx');
+  assert(chargePanel.includes('Gerar Cobrança'), 'painel botão Gerar Cobrança');
+  assert(chargePanel.includes('Copiar PIX'), 'painel copiar PIX');
+  assert(chargePanel.includes('Abrir boleto'), 'painel abrir boleto');
+  assert(chargePanel.includes('Regenerar cobrança'), 'painel regenerar');
+  assert(chargePanel.includes('min-h-[44px]'), 'painel responsivo mobile');
+  assert(chargePanel.includes('flex-wrap'), 'painel botões sem overflow');
+
+  const workflow = read('lib/finance/companyAsaasChargeWorkflow.ts');
+  assert(workflow.includes('assertCanCreateCompanyAsaasCharge'), 'workflow idempotência');
+  assert(workflow.includes('Esta parcela já foi paga.'), 'workflow bloqueio paga');
+
+  const regenerateRoute = read('app/api/finance/asaas/regenerate-charge/route.ts');
+  assert(regenerateRoute.includes('regenerateCompanyInstallmentCharge'), 'rota regenerate');
+
+  const summaryRoute = read('app/api/finance/asaas/charge-summary/route.ts');
+  assert(summaryRoute.includes('getCompanyAsaasChargeDashboardSummary'), 'rota charge-summary');
 
   const financePage = read('app/finance/page.tsx');
   assert(financePage.includes('companyAsaasActive'), 'finance page carrega contexto Asaas');
   assert(financePage.includes('isCompanyAsaasIntegrationReady'), 'finance page valida integração ativa');
+  assert(financePage.includes('asaasChargeSummary'), 'finance page dashboard Asaas');
+  assert(financePage.includes('handleRegenerateAsaasCharge'), 'finance page regenerar');
+  assert(financePage.includes('handleCancelAsaasCharge'), 'finance page cancelar');
 
   assert(mapAsaasPaymentStatusToCompanyCharge('RECEIVED') === 'PAID', 'status RECEIVED -> PAID');
   assert(isCompanyAsaasIntegrationReady({
@@ -748,6 +785,77 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(webhookHandler.includes('registerCompanyAsaasWebhookEvent'), 'webhook registra evento');
   assert(webhookHandler.includes('reconcileCompanyAsaasPaidCharge'), 'webhook reconcilia pagamento');
   assert(webhookHandler.includes('loadCompanyAsaasWebhookToken'), 'webhook valida token por empresa');
+}
+
+function testCompanyAsaasChargeWorkflow(): void {
+  const sampleCharge = (status: CompanyAsaasChargeResponse['status']): CompanyAsaasChargeResponse => ({
+    id: 'c1',
+    companyId: 'co1',
+    customerId: null,
+    saleId: null,
+    installmentId: 'i1',
+    asaasPaymentId: 'pay_1',
+    billingType: 'PIX',
+    status,
+    value: 250,
+    dueDate: '2026-07-01',
+    invoiceUrl: 'https://asaas.test/invoice/1',
+    bankSlipUrl: 'https://asaas.test/boleto/1',
+    pixQrCode: 'abc123',
+    pixCopyPaste: '00020126pix',
+    paymentLink: 'https://asaas.test/invoice/1',
+    paidAt: null,
+    createdAt: '2026-01-01',
+    updatedAt: '2026-01-02',
+  });
+
+  assert(resolveCompanyAsaasChargeWorkflowState(null) === 'none', 'sem cobrança');
+  assert(resolveCompanyAsaasChargeWorkflowState(sampleCharge('PENDING')) === 'active', 'ativa');
+  assert(resolveCompanyAsaasChargeWorkflowState(sampleCharge('PAID')) === 'paid', 'paga');
+  assert(resolveCompanyAsaasChargeWorkflowState(sampleCharge('CANCELLED')) === 'cancelled', 'cancelada');
+
+  assert(isActiveCompanyAsaasChargeStatus('OVERDUE'), 'OVERDUE ativa');
+  assert(isRegeneratableCompanyAsaasChargeStatus('CANCELLED'), 'CANCELLED regenerável');
+
+  const active = assertCanCreateCompanyAsaasCharge(sampleCharge('PENDING'));
+  assert(active?.id === 'c1', 'idempotência retorna existente');
+
+  let blockedPaid = false;
+  try {
+    assertCanCreateCompanyAsaasCharge(sampleCharge('PAID'));
+  } catch (err) {
+    blockedPaid = err instanceof Error && err.message === 'Esta parcela já foi paga.';
+  }
+  assert(blockedPaid, 'bloqueia geração quando paga');
+
+  let blockedRegeneratePaid = false;
+  try {
+    assertCanRegenerateCompanyAsaasCharge(sampleCharge('PAID'));
+  } catch (err) {
+    blockedRegeneratePaid = err instanceof Error && err.message === 'Esta parcela já foi paga.';
+  }
+  assert(blockedRegeneratePaid, 'bloqueia regenerar quando paga');
+
+  assertCanRegenerateCompanyAsaasCharge(sampleCharge('CANCELLED'));
+
+  assert(
+    resolveCompanyAsaasPaymentLink(sampleCharge('PENDING')) === 'https://asaas.test/invoice/1',
+    'resolve link pagamento',
+  );
+  assert(
+    resolveCompanyAsaasBoletoUrl(sampleCharge('PENDING')) === 'https://asaas.test/boleto/1',
+    'resolve boleto',
+  );
+  assert(formatCompanyAsaasChargeStatusLabel('OVERDUE') === 'Vencida', 'label status');
+
+  const summary = summarizeCompanyAsaasCharges([
+    sampleCharge('PENDING'),
+    sampleCharge('PAID'),
+    sampleCharge('OVERDUE'),
+  ]);
+  assert(summary.totalCharges === 3, 'summary total');
+  assert(summary.pendingCount === 2, 'summary pendentes');
+  assert(summary.openValue === 500, 'summary valor aberto');
 }
 
 function testAsaasIntegrationResponseSafe(): void {
@@ -819,6 +927,7 @@ async function main(): Promise<void> {
   testFinancialIntegrationSource();
   testAsaasIntegrationResponseSafe();
   testCompanyAsaasChargeFoundation();
+  testCompanyAsaasChargeWorkflow();
 
   console.log('OK — mandatory banking mock tests passed');
 }

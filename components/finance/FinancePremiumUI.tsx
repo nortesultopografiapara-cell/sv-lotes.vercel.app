@@ -10,7 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
-import { AsaasParcelChargeActions } from '@/components/finance/AsaasParcelChargeActions';
+import { AsaasInstallmentChargePanel } from '@/components/finance/AsaasInstallmentChargePanel';
 
 export type FinanceStatCardProps = {
   title: string;
@@ -137,9 +137,12 @@ export type PaymentRowProps = {
   asaasEnabled?: boolean;
   asaasCharge?: CompanyAsaasChargeResponse | null;
   asaasLoading?: boolean;
-  onGenerateAsaasPix?: () => void;
-  onGenerateAsaasBoleto?: () => void;
+  asaasError?: string | null;
+  onGenerateAsaasCharge?: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshAsaasCharge?: () => void;
+  onCancelAsaasCharge?: () => void;
+  onRegenerateAsaasCharge?: (billingType: 'PIX' | 'BOLETO') => void;
+  onClearAsaasError?: () => void;
 };
 
 export const PaymentTableRow = memo(
@@ -157,9 +160,12 @@ export const PaymentTableRow = memo(
     asaasEnabled = false,
     asaasCharge = null,
     asaasLoading = false,
-    onGenerateAsaasPix,
-    onGenerateAsaasBoleto,
+    asaasError = null,
+    onGenerateAsaasCharge,
     onRefreshAsaasCharge,
+    onCancelAsaasCharge,
+    onRegenerateAsaasCharge,
+    onClearAsaasError,
   }: PaymentRowProps) {
     const projects = p.projects as { name?: string } | undefined;
     const sales = p.sales as {
@@ -221,6 +227,7 @@ export const PaymentTableRow = memo(
       : `Parcela ${parcelInfo}${maxParcel}`;
 
     return (
+      <>
       <tr className="group finance-parcel-row">
         <td className="finance-col-check align-top">
           <input
@@ -297,16 +304,6 @@ export const PaymentTableRow = memo(
             >
               <FileText />
             </FinanceParcelActionBtn>
-            {!isPaid && !readOnly && asaasEnabled ? (
-              <AsaasParcelChargeActions
-                disabled={readOnly}
-                charge={asaasCharge}
-                loading={asaasLoading}
-                onGeneratePix={() => onGenerateAsaasPix?.()}
-                onGenerateBoleto={() => onGenerateAsaasBoleto?.()}
-                onRefreshStatus={() => onRefreshAsaasCharge?.()}
-              />
-            ) : null}
             {!readOnly && (
             <FinanceParcelActionBtn
               title="Excluir"
@@ -319,6 +316,25 @@ export const PaymentTableRow = memo(
           </div>
         </td>
       </tr>
+      {asaasEnabled && !isPaid ? (
+        <tr className="finance-table-row finance-asaas-charge-row">
+          <td colSpan={3} className="!px-3 !pb-4 !pt-0 sm:!px-4">
+            <AsaasInstallmentChargePanel
+              disabled={readOnly}
+              charge={asaasCharge}
+              loading={asaasLoading}
+              error={asaasError}
+              formatCurrency={formatCurrency}
+              onGenerate={(billingType) => onGenerateAsaasCharge?.(billingType)}
+              onRefreshStatus={() => onRefreshAsaasCharge?.()}
+              onCancel={() => onCancelAsaasCharge?.()}
+              onRegenerate={(billingType) => onRegenerateAsaasCharge?.(billingType)}
+              onClearError={() => onClearAsaasError?.()}
+            />
+          </td>
+        </tr>
+      ) : null}
+      </>
     );
   },
   (prev, next) =>
@@ -328,6 +344,8 @@ export const PaymentTableRow = memo(
     prev.payment.paid_amount === next.payment.paid_amount &&
     prev.asaasEnabled === next.asaasEnabled &&
     prev.asaasLoading === next.asaasLoading &&
+    prev.asaasError === next.asaasError &&
     prev.asaasCharge?.id === next.asaasCharge?.id &&
-    prev.asaasCharge?.status === next.asaasCharge?.status,
+    prev.asaasCharge?.status === next.asaasCharge?.status &&
+    prev.asaasCharge?.updatedAt === next.asaasCharge?.updatedAt,
 );
