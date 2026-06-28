@@ -60,7 +60,8 @@ async function testMockCreatesBoleto(): Promise<void> {
   assert(result.status === 'PENDING', 'boleto status PENDING');
   assert(result.digitableLine.includes('75691'), 'linha digitável fictícia');
   assert(result.barcode.length === 44, 'código de barras 44 dígitos');
-  assert(result.paymentUrl.includes('mock.sv-lotes.local'), 'link fictício');
+  assert(result.paymentUrl.startsWith('/banking/mock/pay/'), 'link interno boleto');
+  assert(!result.paymentUrl.includes('mock.sv-lotes.local'), 'boleto sem domínio fictício externo');
 }
 
 async function testMockCreatesPix(): Promise<void> {
@@ -80,7 +81,8 @@ async function testMockCreatesPix(): Promise<void> {
   assert(result.status === 'PENDING', 'pix status PENDING');
   assert(result.pixCopyPaste.includes('BR.GOV.BCB.PIX'), 'QR Pix fictício EMV');
   assert(result.pixQrCode.startsWith('data:image/svg+xml,'), 'imagem QR fictícia');
-  assert(result.paymentUrl.includes('/pix/'), 'link pagamento pix');
+  assert(result.paymentUrl.startsWith('/banking/mock/pix/'), 'link interno pix');
+  assert(!result.paymentUrl.includes('mock.sv-lotes.local'), 'pix sem domínio fictício externo');
 }
 
 function testParseWebhookNoDuplicate(): void {
@@ -204,10 +206,12 @@ async function testMockApiHandlers(): Promise<void> {
   const boleto = await runMockCreateBoleto(companyId);
   assert(boleto.charge.digitableLine.includes('75691'), 'handler boleto linha digitável');
   assert(boleto.charge.status === 'PENDING', 'handler boleto PENDING');
+  assert(boleto.charge.paymentUrl?.startsWith('/banking/mock/pay/'), 'handler boleto link interno');
 
   const pix = await runMockCreatePix(companyId);
   assert(pix.charge.pixQrCode.startsWith('data:image/svg+xml,'), 'handler pix qrCode fictício');
   assert(pix.charge.status === 'PENDING', 'handler pix PENDING');
+  assert(pix.charge.paymentUrl?.startsWith('/banking/mock/pix/'), 'handler pix link interno');
 }
 
 function testCredentialsCrypto(): void {
@@ -270,6 +274,34 @@ function testPhase12Source(): void {
   assert(panel.includes('type="password"'), 'campos secret como password');
 }
 
+function testMockPaymentPagesSource(): void {
+  const payPage = read('app/banking/mock/pay/[id]/page.tsx');
+  const pixPage = read('app/banking/mock/pix/[id]/page.tsx');
+  const provider = read('lib/banking/providers/mockBankProvider.ts');
+
+  assert(!provider.includes('mock.sv-lotes.local'), 'provider sem domínio externo fictício');
+  assert(provider.includes('MOCK_BOLETO_PAY_PATH_PREFIX'), 'provider define path boleto interno');
+  assert(provider.includes('MOCK_PIX_PAY_PATH_PREFIX'), 'provider define path pix interno');
+  assert(provider.includes('buildMockBoletoPaymentPath'), 'provider helper boleto path');
+  assert(provider.includes('buildMockPixPaymentPath'), 'provider helper pix path');
+
+  for (const [label, source] of [
+    ['pay page', payPage],
+    ['pix page', pixPage],
+  ] as const) {
+    assert(source.includes('isBankingModuleEnabled'), `${label} protegida por feature flag`);
+    assert(source.includes('notFound'), `${label} retorna 404 quando flag off`);
+    assert(source.includes('MockPaymentView'), `${label} usa MockPaymentView`);
+  }
+
+  assert(payPage.includes('isMockBoletoExternalId'), 'pay page valida id boleto');
+  assert(pixPage.includes('isMockPixExternalId'), 'pix page valida id pix');
+
+  const view = read('components/banking/MockPaymentView.tsx');
+  assert(view.includes('Cobrança fictícia'), 'aviso cobrança fictícia');
+  assert(view.includes('Voltar para Integração Bancária'), 'botão voltar integração');
+}
+
 function testMockRouteGuardsInSource(): void {
   const routes = [
     'app/api/banking/mock/test-connection/route.ts',
@@ -318,6 +350,7 @@ async function main(): Promise<void> {
   testRejectNonMockProvider();
   await testMockApiHandlers();
   testPhase12Source();
+  testMockPaymentPagesSource();
   testMockRouteGuardsInSource();
 
   console.log('OK — mandatory banking mock tests passed');

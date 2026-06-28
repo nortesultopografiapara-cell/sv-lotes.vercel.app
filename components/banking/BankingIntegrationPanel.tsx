@@ -538,9 +538,15 @@ function ResultRow({
     <div>
       <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wide mb-1">{label}</p>
       {link ? (
-        <a href={value} target="_blank" rel="noreferrer" className="text-[var(--color-primary)] break-all hover:underline">
-          {value}
-        </a>
+        value.startsWith('/') ? (
+          <a href={value} className="text-[var(--color-primary)] break-all hover:underline">
+            {value}
+          </a>
+        ) : (
+          <a href={value} target="_blank" rel="noreferrer" className="text-[var(--color-primary)] break-all hover:underline">
+            {value}
+          </a>
+        )
       ) : (
         <p className={`text-[var(--text-primary)] break-all ${mono ? 'font-mono text-xs' : ''}`}>{value}</p>
       )}
