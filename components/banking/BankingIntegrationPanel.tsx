@@ -56,6 +56,10 @@ type FormState = {
   active: boolean;
 };
 
+function isMockProvider(code: string): boolean {
+  return code === 'MOCK';
+}
+
 function configToForm(config: BankIntegrationConfigResponse): FormState {
   return {
     bankProvider: config.bankProvider,
@@ -230,6 +234,16 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
                 ))}
               </select>
             </Field>
+            {form.bankProvider === 'SICOOB' ? (
+              <p className="text-sm text-amber-300/90 mt-2">
+                Integração Sicoob em preparação — use /api/banking/sicoob/test-connection para validar cadastro.
+              </p>
+            ) : null}
+            {form.bankProvider === 'SICREDI' ? (
+              <p className="text-sm text-amber-300/90 mt-2">
+                Integração Sicredi em preparação — use /api/banking/sicredi/test-connection para validar cadastro.
+              </p>
+            ) : null}
           </FormSection>
 
           <FormSection title="2. Ambiente">
@@ -369,6 +383,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Salvar Configuração
             </button>
+            {isMockProvider(form.bankProvider) ? (
             <button
               type="button"
               disabled={readOnlyDemo || busy}
@@ -378,6 +393,8 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
               {action === 'test' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
               Testar Conexão
             </button>
+            ) : null}
+            {isMockProvider(form.bankProvider) ? (
             <button
               type="button"
               disabled={readOnlyDemo || busy}
@@ -387,6 +404,8 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
               {action === 'boleto' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ReceiptText className="w-4 h-4" />}
               Gerar Boleto MOCK
             </button>
+            ) : null}
+            {isMockProvider(form.bankProvider) ? (
             <button
               type="button"
               disabled={readOnlyDemo || busy}
@@ -396,6 +415,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
               {action === 'pix' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
               Gerar Pix MOCK
             </button>
+            ) : null}
           </div>
         </form>
       </div>

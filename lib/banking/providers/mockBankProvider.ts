@@ -18,6 +18,88 @@ import {
 
 const mockCharges = new Map<string, BankCharge>();
 
+export const MOCK_BOLETO_PAY_PATH_PREFIX = '/banking/mock/pay';
+export const MOCK_PIX_PAY_PATH_PREFIX = '/banking/mock/pix';
+
+export function buildMockBoletoPaymentPath(externalId: string): string {
+  return `${MOCK_BOLETO_PAY_PATH_PREFIX}/${encodeURIComponent(externalId)}`;
+}
+
+export function buildMockPixPaymentPath(externalId: string): string {
+  return `${MOCK_PIX_PAY_PATH_PREFIX}/${encodeURIComponent(externalId)}`;
+}
+
+export type MockChargeDisplay = {
+  externalId: string;
+  chargeType: 'BOLETO' | 'PIX';
+  status: 'PENDING';
+  amount: number;
+  dueDate: string;
+  environment: 'SANDBOX';
+  digitableLine?: string;
+  barcode?: string;
+  pixCopyPaste?: string;
+  pixQrCode?: string;
+};
+
+export function isMockBoletoExternalId(externalId: string): boolean {
+  return externalId.startsWith('mock_boleto_');
+}
+
+export function isMockPixExternalId(externalId: string): boolean {
+  return externalId.startsWith('mock_pix_');
+}
+
+/** Dados de exibição MOCK — memória do provider ou síntese fictícia pelo ID. */
+export function getMockChargeDisplay(
+  externalId: string,
+  chargeType: 'BOLETO' | 'PIX',
+): MockChargeDisplay {
+  const stored = mockCharges.get(externalId);
+  if (stored) {
+    return {
+      externalId,
+      chargeType: stored.chargeType,
+      status: 'PENDING',
+      amount: stored.amount,
+      dueDate: stored.dueDate,
+      environment: 'SANDBOX',
+      digitableLine: stored.digitableLine ?? undefined,
+      barcode: stored.barcode ?? undefined,
+      pixCopyPaste: stored.pixCopyPaste ?? undefined,
+      pixQrCode: stored.pixQrCode ?? undefined,
+    };
+  }
+
+  const amount = 0;
+  const dueDate = new Date().toISOString().slice(0, 10);
+  if (chargeType === 'BOLETO') {
+    const digitableLine = buildDigitableLine(1, dueDate);
+    return {
+      externalId,
+      chargeType,
+      status: 'PENDING',
+      amount,
+      dueDate,
+      environment: 'SANDBOX',
+      digitableLine,
+      barcode: buildBarcode(digitableLine),
+    };
+  }
+
+  const pixCopyPaste = buildPixCopyPaste(externalId, 1);
+  return {
+    externalId,
+    chargeType,
+    status: 'PENDING',
+    amount,
+    dueDate,
+    environment: 'SANDBOX',
+    pixCopyPaste,
+    pixQrCode: buildPixQrSvg(pixCopyPaste),
+  };
+}
+
 function mockExternalId(prefix: string, key: string): string {
   return `mock_${prefix}_${key.slice(0, 8)}_${Date.now()}`;
 }
@@ -73,7 +155,7 @@ export class MockBankProvider implements IBankProvider {
     const ourNumber = `${Date.now()}`.slice(-8);
     const digitableLine = buildDigitableLine(input.amount, input.dueDate);
     const barcode = buildBarcode(digitableLine);
-    const paymentUrl = `https://mock.sv-lotes.local/pay/${externalId}`;
+    const paymentUrl = buildMockBoletoPaymentPath(externalId);
 
     const charge: BankCharge = {
       id: externalId,
@@ -90,7 +172,7 @@ export class MockBankProvider implements IBankProvider {
       barcode,
       digitableLine,
       paymentUrl,
-      pdfUrl: `${paymentUrl}/boleto.pdf`,
+      pdfUrl: paymentUrl,
       idempotencyKey: input.idempotencyKey,
     };
     storeCharge(charge);
@@ -111,7 +193,7 @@ export class MockBankProvider implements IBankProvider {
     const txid = externalId.replace(/^mock_/, '').slice(0, 32);
     const pixCopyPaste = buildPixCopyPaste(externalId, input.amount);
     const pixQrCode = buildPixQrSvg(pixCopyPaste);
-    const paymentUrl = `https://mock.sv-lotes.local/pix/${externalId}`;
+    const paymentUrl = buildMockPixPaymentPath(externalId);
 
     const charge: BankCharge = {
       id: externalId,

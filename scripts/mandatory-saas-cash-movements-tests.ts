@@ -821,7 +821,13 @@ function testDashboardFinanceStartAtFilters() {
   assert(filteredPayments[0].id === 'p-new', 'pagamento novo mantido');
   assert(sumSaasReceivedRevenue(payments, startAt) === 200, 'receita recebida após marco');
 
-  const metrics = computeSaasBillingMetrics(filteredInvoices, 0, sumSaasReceivedRevenue(payments, startAt));
+  const metricsToday = '2026-06-22';
+  const metrics = computeSaasBillingMetrics(
+    filteredInvoices,
+    0,
+    sumSaasReceivedRevenue(payments, startAt),
+    metricsToday,
+  );
   assert(metrics.receivedRevenue === 200, 'dashboard receita recebida');
   assert(metrics.revenueToReceive === 300, 'fatura pendente após marco');
   assert(metrics.pendingCount === 1, 'contagem faturas pendentes');
@@ -897,7 +903,8 @@ function testSubscriptionsReceivedRevenueRespectsStartAt() {
   assert(mrr === 850, 'MRR inalterado');
   assert(mrr * 12 === 10200, 'ARR inalterado');
 
-  const metrics = computeSaasBillingMetrics(invoices, mrr, paymentsReceived);
+  const metricsToday = '2026-06-22';
+  const metrics = computeSaasBillingMetrics(invoices, mrr, paymentsReceived, metricsToday);
   assert(metrics.revenueToReceive === 849.99, 'receita em aberto inalterada');
 
   const oldOnlyPayments = [
