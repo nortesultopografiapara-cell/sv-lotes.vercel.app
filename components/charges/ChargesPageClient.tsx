@@ -1,7 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Banknote, Calendar, Copy, ExternalLink, Filter, Loader2, RefreshCw, Search, Wallet } from 'lucide-react';
+import {
+  AlertCircle,
+  Banknote,
+  Calendar,
+  Filter,
+  Loader2,
+  MessageCircle,
+  RefreshCw,
+  Search,
+  Wallet,
+  Zap,
+  QrCode,
+} from 'lucide-react';
+import { ChargeInstallmentActions } from '@/components/charges/ChargeInstallmentActions';
 import { FinanceStatCard, FinanceStatusBadge } from '@/components/finance/FinancePremiumUI';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -11,16 +24,20 @@ import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
 import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
-import {
-  resolveCompanyAsaasBoletoUrl,
-  resolveCompanyAsaasPaymentLink,
-} from '@/lib/finance/companyAsaasChargeWorkflow';
+import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
   buildChargeInstallmentView,
   computeChargeKpiSummary,
   filterChargeInstallments,
   type FinanceReceiptRow,
 } from '@/lib/charges/chargeInstallmentHelpers';
+import {
+  CHARGES_WHATSAPP_STUB_MESSAGE,
+  canGenerateAsaasCharge,
+  computeAsaasOperationalKpis,
+  isInstallmentPaidForCharges,
+  mapCreateChargeApiError,
+} from '@/lib/charges/chargeOperationsHelpers';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -64,12 +81,32 @@ export function ChargesPageClient() {
   >({});
   const [companyAsaasActive, setCompanyAsaasActive] = useState(false);
   const [asaasActionInstallmentId, setAsaasActionInstallmentId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [toastIsError, setToastIsError] = useState(false);
 
   const bankingUiEnabled = isBankingModuleEnabledForUi();
   const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
   const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
   const ownerReadOnly = isOwnerRole(user?.role);
+  const integrationReady = bankingUiEnabled && companyAsaasEnabled && companyAsaasActive;
+
+  const showToast = useCallback((message: string, isError = false) => {
+    setToast(message);
+    setToastIsError(isError);
+    window.setTimeout(() => {
+      setToast(null);
+      setToastIsError(false);
+    }, 3600);
+  }, []);
+
+  const applyAsaasChargeUpdate = useCallback(
+    (installmentId: string, charge: CompanyAsaasChargeResponse) => {
+      setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
+    },
+    [],
+  );
 
   const loadAsaasCharges = useCallback(
     async (installmentIds: string[]) => {
@@ -185,6 +222,7 @@ export function ChargesPageClient() {
       void resolveFinanceProjectsForUser(user, projData || [], ownerCtx.rows, ownerProjectOptions);
 
       setPayments(scoped);
+      setSelectedIds(new Set());
       await loadAsaasCharges(scoped.map((row) => String(row.id)));
     } catch (err) {
       console.error('CHARGES_LOAD', err);
@@ -211,6 +249,86 @@ export function ChargesPageClient() {
   );
 
   const kpis = useMemo(() => computeChargeKpiSummary(payments), [payments]);
+  const asaasKpis = useMemo(
+    () => computeAsaasOperationalKpis(payments, asaasChargesByInstallment),
+    [payments, asaasChargesByInstallment],
+  );
+
+  const allFilteredSelected =
+    filteredRows.length > 0 && filteredRows.every((row) => selectedIds.has(String(row.id)));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(filteredRows.map((row) => String(row.id))));
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const createAsaasChargeRequest = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ): Promise<CompanyAsaasChargeResponse> => {
+    const res = await fetch('/api/finance/asaas/create-charge', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ installmentId, billingType }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(mapCreateChargeApiError(json.error || `Erro ${res.status}`));
+    }
+    return json.charge as CompanyAsaasChargeResponse;
+  };
+
+  const handleCreateAsaasCharge = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const row = payments.find((p) => String(p.id) === installmentId);
+    if (row && isInstallmentPaidForCharges(row)) {
+      showToast('Não é possível gerar cobrança para parcela paga.', true);
+      return;
+    }
+    if (!integrationReady) {
+      showToast('Integração Asaas não está ativa.', true);
+      return;
+    }
+
+    const previousCharge = asaasChargesByInstallment[installmentId];
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const charge = await createAsaasChargeRequest(installmentId, billingType);
+      applyAsaasChargeUpdate(installmentId, charge);
+      if (
+        previousCharge &&
+        previousCharge.id === charge.id &&
+        previousCharge.status === charge.status
+      ) {
+        showToast('Cobrança já existe para esta parcela.');
+      } else {
+        showToast('Cobrança gerada com sucesso.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'Erro ao gerar cobrança Asaas.',
+        true,
+      );
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
 
   const handleRefreshAsaas = async (installmentId: string) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
@@ -224,29 +342,167 @@ export function ChargesPageClient() {
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
       const charge = json.charge as CompanyAsaasChargeResponse | null;
       if (charge) {
-        setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
-        setToast('Status Asaas atualizado.');
+        applyAsaasChargeUpdate(installmentId, charge);
+        showToast('Status atualizado com sucesso.');
+        if (charge.status === 'PAID') {
+          await loadInstallments();
+        }
       } else {
-        setToast('Nenhuma cobrança Asaas vinculada a esta parcela.');
+        showToast('Nenhuma cobrança Asaas vinculada a esta parcela.', true);
       }
     } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Erro ao atualizar status Asaas.');
+      showToast(err instanceof Error ? err.message : 'Erro ao atualizar status Asaas.', true);
     } finally {
       setAsaasActionInstallmentId(null);
-      window.setTimeout(() => setToast(null), 3200);
+    }
+  };
+
+  const handleCancelAsaas = async (installmentId: string) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const current = asaasChargesByInstallment[installmentId];
+    if (!current) return;
+    if (current.status === 'PAID') {
+      showToast('Não é possível cancelar cobrança já recebida/paga.', true);
+      return;
+    }
+    if (!window.confirm('Cancelar a cobrança Asaas desta parcela?')) return;
+
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch(
+        `/api/finance/asaas/charge-status?chargeId=${encodeURIComponent(current.id)}`,
+        { method: 'DELETE', credentials: 'include' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+      showToast('Cobrança cancelada.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao cancelar cobrança.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
+    }
+  };
+
+  const handleRegenerateAsaas = async (
+    installmentId: string,
+    billingType: 'PIX' | 'BOLETO',
+  ) => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (!window.confirm('Regenerar cobrança Asaas para esta parcela?')) return;
+
+    setAsaasActionInstallmentId(installmentId);
+    try {
+      const res = await fetch('/api/finance/asaas/regenerate-charge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installmentId, billingType }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+      applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+      showToast('Cobrança regenerada com sucesso.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao regenerar cobrança.', true);
+    } finally {
+      setAsaasActionInstallmentId(null);
     }
   };
 
   const handleCopyPix = async (charge: CompanyAsaasChargeResponse) => {
     const pix = charge.pixCopyPaste?.trim();
     if (!pix) {
-      setToast('PIX indisponível para esta cobrança.');
-      window.setTimeout(() => setToast(null), 3200);
+      showToast('PIX indisponível para esta cobrança.', true);
       return;
     }
     const ok = await copyText(pix);
-    setToast(ok ? 'PIX copiado.' : 'Não foi possível copiar o PIX.');
-    window.setTimeout(() => setToast(null), 3200);
+    showToast(ok ? 'PIX copiado.' : 'Não foi possível copiar o PIX.', !ok);
+  };
+
+  const handleCopyLink = async (charge: CompanyAsaasChargeResponse) => {
+    const link = resolveCompanyAsaasPaymentLink(charge);
+    if (!link) {
+      showToast('Link indisponível para esta cobrança.', true);
+      return;
+    }
+    const ok = await copyText(link);
+    showToast(ok ? 'Link copiado.' : 'Não foi possível copiar o link.', !ok);
+  };
+
+  const handleWhatsApp = () => {
+    showToast(CHARGES_WHATSAPP_STUB_MESSAGE);
+  };
+
+  const runBulkGenerate = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    if (!integrationReady) {
+      showToast('Integração Asaas não está ativa.', true);
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    setBulkBusy(true);
+    let okCount = 0;
+    let skipCount = 0;
+    let errCount = 0;
+    for (const installmentId of ids) {
+      const row = payments.find((p) => String(p.id) === installmentId);
+      if (!row) continue;
+      const charge = asaasChargesByInstallment[installmentId] ?? null;
+      const canGenerate = canGenerateAsaasCharge({
+        installmentPaid: isInstallmentPaidForCharges(row),
+        integrationActive: companyAsaasActive,
+        companyAsaasEnabled,
+        ownerReadOnly,
+        charge,
+      });
+      if (!canGenerate) {
+        skipCount += 1;
+        continue;
+      }
+      try {
+        const created = await createAsaasChargeRequest(installmentId, 'PIX');
+        applyAsaasChargeUpdate(installmentId, created);
+        okCount += 1;
+      } catch {
+        errCount += 1;
+      }
+    }
+    setBulkBusy(false);
+    showToast(
+      `${okCount} gerada(s), ${skipCount} ignorada(s), ${errCount} falha(s).`,
+      errCount > 0,
+    );
+  };
+
+  const runBulkRefresh = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const ids = Array.from(selectedIds).filter((id) => asaasChargesByInstallment[id]);
+    if (ids.length === 0) {
+      showToast('Nenhuma parcela selecionada possui cobrança Asaas.', true);
+      return;
+    }
+    setBulkBusy(true);
+    let okCount = 0;
+    for (const installmentId of ids) {
+      try {
+        const res = await fetch(
+          `/api/finance/asaas/charge-status?installmentId=${encodeURIComponent(installmentId)}`,
+          { credentials: 'include' },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json.charge) {
+          applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
+          okCount += 1;
+        }
+      } catch {
+        /* continue batch */
+      }
+    }
+    setBulkBusy(false);
+    showToast(`Status atualizado em ${okCount} parcela(s).`);
   };
 
   if (authLoading) {
@@ -266,7 +522,7 @@ export function ChargesPageClient() {
             <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Cobranças</h1>
           </div>
           <p className="text-sm text-[var(--text-secondary)]">
-            Painel operacional de parcelas e cobranças Asaas da empresa.
+            Central operacional de parcelas e cobranças Asaas da empresa.
           </p>
         </div>
         <button
@@ -280,8 +536,21 @@ export function ChargesPageClient() {
         </button>
       </div>
 
+      {companyAsaasEnabled && !companyAsaasActive && !loading ? (
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Integração Asaas não está ativa. Configure em Configurações → Financeiro/Banking para habilitar
+          geração de cobranças.
+        </div>
+      ) : null}
+
       {toast ? (
-        <div className="mb-4 rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-sm text-violet-100">
+        <div
+          className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
+            toastIsError
+              ? 'border-rose-500/30 bg-rose-500/10 text-rose-100'
+              : 'border-violet-500/30 bg-violet-500/10 text-violet-100'
+          }`}
+        >
           {toast}
         </div>
       ) : null}
@@ -326,6 +595,22 @@ export function ChargesPageClient() {
           subtitle="Pendentes + vencidas"
           icon={<Wallet className="h-5 w-5" />}
           iconWrapClass="bg-blue-500/10 text-blue-400"
+          loading={loading}
+        />
+        <FinanceStatCard
+          title="Aguardando geração Asaas"
+          value={formatCurrency(asaasKpis.aguardandoGeracao)}
+          subtitle={`${asaasKpis.qtyAguardandoGeracao} parcela(s) sem cobrança ativa`}
+          icon={<Zap className="h-5 w-5" />}
+          iconWrapClass="bg-violet-500/10 text-violet-400"
+          loading={loading}
+        />
+        <FinanceStatCard
+          title="Cobranças Asaas emitidas"
+          value={formatCurrency(asaasKpis.cobrancasEmitidas)}
+          subtitle={`${asaasKpis.qtyCobrancasEmitidas} cobrança(s) ativa(s)`}
+          icon={<QrCode className="h-5 w-5" />}
+          iconWrapClass="bg-cyan-500/10 text-cyan-400"
           loading={loading}
         />
       </div>
@@ -399,10 +684,54 @@ export function ChargesPageClient() {
         </button>
       </div>
 
+      {selectedIds.size > 0 && !ownerReadOnly ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/[0.06] px-3 py-2.5">
+          <span className="text-xs font-medium text-violet-200">
+            {selectedIds.size} selecionada(s)
+          </span>
+          <button
+            type="button"
+            disabled={bulkBusy || !integrationReady}
+            onClick={() => void runBulkGenerate()}
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+          >
+            {bulkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            Gerar cobranças selecionadas
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy || !integrationReady}
+            onClick={() => void runBulkRefresh()}
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Atualizar status selecionadas
+          </button>
+          <button
+            type="button"
+            disabled
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] opacity-60"
+            title="WhatsApp em lote — em breve"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            WhatsApp em lote (em breve)
+          </button>
+        </div>
+      ) : null}
+
       <div className="finance-table-wrap overflow-x-auto rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]">
-        <table className="finance-table w-full min-w-[960px]">
+        <table className="finance-table w-full min-w-[1080px]">
           <thead>
             <tr>
+              <th className="w-10">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  aria-label="Selecionar todas"
+                  className="rounded border-[var(--border-color)]"
+                />
+              </th>
               <th>Cliente</th>
               <th>Empreendimento</th>
               <th>Quadra/Lote</th>
@@ -411,34 +740,42 @@ export function ChargesPageClient() {
               <th>Valor</th>
               <th>Status parcela</th>
               <th>Status Asaas</th>
-              <th className="text-right">Ações</th>
+              <th className="text-right min-w-[280px]">Ações</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-[var(--text-secondary)]">
+                <td colSpan={10} className="py-12 text-center text-[var(--text-secondary)]">
                   <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />
                   Carregando cobranças...
                 </td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-[var(--text-secondary)]">
+                <td colSpan={10} className="py-12 text-center text-[var(--text-secondary)]">
                   Nenhuma parcela encontrada para os filtros selecionados.
                 </td>
               </tr>
             ) : (
               filteredRows.map((row) => {
-                const charge = asaasChargesByInstallment[String(row.id)] ?? null;
+                const installmentId = String(row.id);
+                const charge = asaasChargesByInstallment[installmentId] ?? null;
                 const view = buildChargeInstallmentView(row, charge);
-                const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
-                const boletoUrl = charge ? resolveCompanyAsaasBoletoUrl(charge) : '';
-                const pixCopy = charge?.pixCopyPaste?.trim() || '';
-                const rowBusy = asaasActionInstallmentId === view.id;
+                const installmentPaid = isInstallmentPaidForCharges(row);
+                const rowBusy = asaasActionInstallmentId === installmentId || bulkBusy;
 
                 return (
                   <tr key={view.id} className="finance-parcel-row">
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(installmentId)}
+                        onChange={() => toggleSelectRow(installmentId)}
+                        aria-label={`Selecionar parcela ${view.parcelLabel}`}
+                        className="rounded border-[var(--border-color)]"
+                      />
+                    </td>
                     <td className="font-medium text-[var(--text-primary)]">{view.clientName}</td>
                     <td>{view.projectName}</td>
                     <td>{view.lotLabel}</td>
@@ -452,59 +789,26 @@ export function ChargesPageClient() {
                       <span className="text-xs text-[var(--text-secondary)]">{view.asaasStatusLabel}</span>
                     </td>
                     <td>
-                      <div className="flex flex-wrap justify-end gap-1.5">
-                        {paymentLink ? (
-                          <a
-                            href={paymentLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)]"
-                            title="Abrir cobrança Asaas"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Link
-                          </a>
-                        ) : null}
-                        {pixCopy ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleCopyPix(charge!)}
-                            className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)]"
-                            title="Copiar PIX"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                            PIX
-                          </button>
-                        ) : null}
-                        {boletoUrl ? (
-                          <a
-                            href={boletoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-[var(--border-color)] px-2 py-1 text-[11px] font-medium hover:bg-[var(--bg-elevated)]"
-                            title="Abrir boleto"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Boleto
-                          </a>
-                        ) : null}
-                        {companyAsaasActive && companyAsaasEnabled && !ownerReadOnly ? (
-                          <button
-                            type="button"
-                            disabled={rowBusy}
-                            onClick={() => void handleRefreshAsaas(view.id)}
-                            className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-[11px] font-medium text-violet-200 hover:bg-violet-500/20 disabled:opacity-50"
-                            title="Atualizar status Asaas"
-                          >
-                            {rowBusy ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            )}
-                            Status
-                          </button>
-                        ) : null}
-                      </div>
+                      <ChargeInstallmentActions
+                        view={view}
+                        charge={charge}
+                        installmentPaid={installmentPaid}
+                        integrationActive={companyAsaasActive}
+                        companyAsaasEnabled={companyAsaasEnabled}
+                        ownerReadOnly={ownerReadOnly}
+                        busy={rowBusy}
+                        onGenerate={(billingType) =>
+                          void handleCreateAsaasCharge(installmentId, billingType)
+                        }
+                        onRefreshStatus={() => void handleRefreshAsaas(installmentId)}
+                        onCancel={() => void handleCancelAsaas(installmentId)}
+                        onRegenerate={(billingType) =>
+                          void handleRegenerateAsaas(installmentId, billingType)
+                        }
+                        onCopyPix={() => charge && void handleCopyPix(charge)}
+                        onCopyLink={() => charge && void handleCopyLink(charge)}
+                        onWhatsApp={handleWhatsApp}
+                      />
                     </td>
                   </tr>
                 );

@@ -1,5 +1,5 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
-import { formatCompanyAsaasChargeStatusLabel } from '@/lib/finance/companyAsaasChargeWorkflow';
+import { resolveAsaasStatusDisplayLabel } from '@/lib/charges/chargeOperationsHelpers';
 
 export type FinanceReceiptRow = Record<string, unknown>;
 
@@ -103,9 +103,7 @@ export function buildChargeInstallmentView(
     amount: Number(row.amount) || 0,
     installmentStatus,
     installmentStatusLabel: formatInstallmentStatusLabel(installmentStatus),
-    asaasStatusLabel: asaasCharge
-      ? formatCompanyAsaasChargeStatusLabel(asaasCharge.status)
-      : '—',
+    asaasStatusLabel: resolveAsaasStatusDisplayLabel(asaasCharge),
   };
 }
 
