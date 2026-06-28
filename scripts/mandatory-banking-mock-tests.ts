@@ -33,6 +33,13 @@ import {
   SICREDI_BOLETO_NOT_ENABLED_MESSAGE,
   SICREDI_PIX_NOT_ENABLED_MESSAGE,
 } from '../lib/banking';
+import {
+  getPrimaryFinancialGateway,
+  isFinancialGatewayProviderActive,
+  listFinancialGatewayProviders,
+} from '../lib/finance/FinancialGateway';
+import { assertAsaasIntegrationResponseSafe } from '../lib/finance/asaasIntegrationRepository';
+import { EMPTY_ASAAS_INTEGRATION_CONFIG } from '../lib/finance/asaasIntegrationConfig';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
 const ROOT = path.join(__dirname, '..');
@@ -308,7 +315,7 @@ function testMockPaymentPagesSource(): void {
 
   const view = read('components/banking/MockPaymentView.tsx');
   assert(view.includes('Cobrança fictícia'), 'aviso cobrança fictícia');
-  assert(view.includes('Voltar para Integração Bancária'), 'botão voltar integração');
+  assert(view.includes('Voltar para Integração Financeira'), 'botão voltar integração financeira');
 }
 
 function testMockRouteGuardsInSource(): void {
@@ -327,7 +334,8 @@ function testMockRouteGuardsInSource(): void {
 
   const settingsShell = read('components/settings/CompanySettingsV2Shell.tsx');
   assert(settingsShell.includes('bankingUiEnabled'), 'aba condicionada à prop bankingUiEnabled');
-  assert(settingsShell.includes('Integração Bancária'), 'label da aba presente');
+  assert(settingsShell.includes('Integração Financeira'), 'label da aba presente');
+  assert(settingsShell.includes('FinancialIntegrationPanel'), 'painel financeiro integrado');
 
   const settingsPage = read('app/settings/page.tsx');
   assert(settingsPage.includes('resolveBankingUiEnabled'), 'settings resolve flag em runtime (RSC)');
@@ -567,6 +575,50 @@ async function testSicrediTestConnectionValidatesConfig(): Promise<void> {
   assert(result.message.includes('Fase 2.0-Sicredi'), 'sem chamada API real');
 }
 
+function testFinancialIntegrationSource(): void {
+  assert(getPrimaryFinancialGateway() === 'ASAAS', 'ASAAS gateway principal');
+  assert(isFinancialGatewayProviderActive('ASAAS'), 'ASAAS ativo');
+  assert(!isFinancialGatewayProviderActive('SICOOB'), 'Sicoob inativo no gateway');
+  assert(!isFinancialGatewayProviderActive('SICREDI'), 'Sicredi inativo no gateway');
+
+  const providers = listFinancialGatewayProviders();
+  assert(providers.some((p) => p.code === 'ASAAS' && p.active), 'lista ASAAS ativo');
+  assert(providers.some((p) => p.code === 'NUBANK' && !p.active), 'lista Nubank em dev');
+
+  const gateway = read('lib/finance/FinancialGateway.ts');
+  assert(gateway.includes('ACTIVE_FINANCIAL_GATEWAY_PROVIDERS'), 'gateway define ativos');
+
+  const asaasPanel = read('components/finance/AsaasIntegrationPanel.tsx');
+  assert(asaasPanel.includes('/api/finance/asaas/integration'), 'painel Asaas carrega API');
+  assert(asaasPanel.includes('type="password"'), 'campos secret Asaas como password');
+  assert(!asaasPanel.includes('sandboxApiKey":'), 'painel não expõe chaves salvas');
+
+  const financeShell = read('components/finance/FinancialIntegrationPanel.tsx');
+  assert(financeShell.includes('ASAAS (Principal)'), 'aba ASAAS principal');
+  assert(financeShell.includes('Bancos (Em desenvolvimento)'), 'aba bancos em dev');
+
+  const banksPanel = read('components/finance/BanksDevelopmentPanel.tsx');
+  assert(banksPanel.includes('Em desenvolvimento'), 'bancos marcados em desenvolvimento');
+
+  const asaasRoute = read('app/api/finance/asaas/integration/route.ts');
+  assert(asaasRoute.includes('assertAsaasIntegrationResponseSafe'), 'API Asaas sanitiza resposta');
+  assert(asaasRoute.includes('authorizeBankingRoute'), 'API Asaas protegida');
+
+  const bankingPanel = read('components/banking/BankingIntegrationPanel.tsx');
+  assert(bankingPanel.includes('/api/banking/integration'), 'painel bancário legado preservado');
+
+  const dashboard = read('app/dashboard/page.tsx');
+  assert(dashboard.includes('FinancialIntegrationDashboardCard'), 'card dashboard financeiro');
+}
+
+function testAsaasIntegrationResponseSafe(): void {
+  assertAsaasIntegrationResponseSafe({
+    ...EMPTY_ASAAS_INTEGRATION_CONFIG,
+    companyId: 'test',
+    companyName: 'Teste',
+  });
+}
+
 function testSicrediPhase20Source(): void {
   const provider = read('lib/banking/providers/sicrediBankProvider.ts');
   assert(provider.includes('SICREDI_BOLETO_NOT_ENABLED_MESSAGE'), 'bloqueio boleto');
@@ -625,6 +677,8 @@ async function main(): Promise<void> {
   await testSicrediCreatePixBlocked();
   await testSicrediTestConnectionValidatesConfig();
   testSicrediPhase20Source();
+  testFinancialIntegrationSource();
+  testAsaasIntegrationResponseSafe();
 
   console.log('OK — mandatory banking mock tests passed');
 }

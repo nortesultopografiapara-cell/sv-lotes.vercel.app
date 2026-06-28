@@ -124,7 +124,7 @@ export function MockPaymentView({ charge, backHref = '/settings' }: Props) {
         className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        Voltar para Integração Bancária
+        Voltar para Integração Financeira
       </Link>
     </div>
   );
