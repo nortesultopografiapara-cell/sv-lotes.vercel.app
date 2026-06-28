@@ -14,7 +14,7 @@ import { parseCurrencyBRLNumber } from '@/lib/currencyBrl';
 
 export type SaleFinancePayloadOptions = {
   contractModel?: unknown;
-  /** Na criação de venda à vista, marcar a parcela única como paga. */
+  /** Marcar parcela única como paga somente quando o usuário registrar pagamento no ato da venda. */
   cashInstallmentPaid?: boolean;
 };
 
@@ -92,9 +92,10 @@ export function buildSaleEditFinancePayloads(
       amount: fValue,
       due_date: data.down_payment_due_date || new Date().toISOString().split('T')[0],
       status: options?.cashInstallmentPaid ? 'pago' : 'pendente',
+      paid_amount: options?.cashInstallmentPaid ? fValue : 0,
       ...(options?.cashInstallmentPaid
         ? { paid_at: new Date().toISOString() }
-        : {}),
+        : { paid_at: null }),
     });
   } else if (pmtType === 'Parcelado') {
     let currentInst = 1;
@@ -130,6 +131,8 @@ export function buildSaleEditFinancePayloads(
         amount: downPayment,
         due_date: data.down_payment_due_date,
         status: 'pendente',
+        paid_amount: 0,
+        paid_at: null,
       });
     }
     if (data.first_installment_due_date) {
@@ -153,6 +156,8 @@ export function buildSaleEditFinancePayloads(
           amount: amounts[i] ?? 0,
           due_date: cDate.toISOString().split('T')[0],
           status: 'pendente',
+          paid_amount: 0,
+          paid_at: null,
         });
         cDate.setMonth(cDate.getMonth() + 1);
       }

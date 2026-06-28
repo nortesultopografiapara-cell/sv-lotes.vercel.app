@@ -4133,7 +4133,7 @@ export default function GISMap({
             finalBrokerId,
             { id: lot.id, project_id: lot.project_id || finalProjectId },
             customerData,
-            { contractModel, cashInstallmentPaid: pmtType === "À vista" },
+            { contractModel, cashInstallmentPaid: false },
           );
 
           let financeData = [];
