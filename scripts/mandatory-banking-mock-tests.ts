@@ -40,6 +40,11 @@ import {
 } from '../lib/finance/FinancialGateway';
 import { assertAsaasIntegrationResponseSafe } from '../lib/finance/asaasIntegrationRepository';
 import { EMPTY_ASAAS_INTEGRATION_CONFIG } from '../lib/finance/asaasIntegrationConfig';
+import {
+  mapAsaasPaymentStatusToCompanyCharge,
+  isCompanyAsaasIntegrationReady,
+} from '../lib/finance/companyAsaasChargeTypes';
+import { assertCompanyAsaasChargeResponseSafe } from '../lib/finance/asaasCompanyChargeService';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
 const ROOT = path.join(__dirname, '..');
@@ -611,6 +616,86 @@ function testFinancialIntegrationSource(): void {
   assert(dashboard.includes('FinancialIntegrationDashboardCard'), 'card dashboard financeiro');
 }
 
+function testCompanyAsaasChargeFoundation(): void {
+  const companyClient = read('lib/finance/asaasCompanyClient.ts');
+  assert(!companyClient.includes('process.env.ASAAS_API_KEY'), 'client Company não usa ASAAS_API_KEY Master');
+  assert(!companyClient.includes('process.env.ASAAS'), 'client Company não lê env Master');
+  assert(companyClient.includes('access_token: apiKey'), 'client Company usa apiKey do tenant');
+
+  const masterProvider = read('lib/payments/providers/asaas.ts');
+  assert(masterProvider.includes('process.env.ASAAS_API_KEY'), 'Master Asaas preservado');
+
+  const service = read('lib/finance/asaasCompanyChargeService.ts');
+  assert(service.includes('loadAsaasApiKeyForEnvironment'), 'service usa credencial da empresa');
+  assert(service.includes('createCompanyPixCharge'), 'createCompanyPixCharge definido');
+  assert(service.includes('createCompanyBoletoCharge'), 'createCompanyBoletoCharge definido');
+  assert(service.includes('reconcileCompanyAsaasPaidCharge'), 'reconcile webhook definido');
+  assert(service.includes("source_table: 'company_asaas_charges'"), 'caixa vinculado à cobrança company');
+
+  const migration = read('supabase/migrations/20260827130000_company_asaas_charges.sql');
+  assert(migration.includes('company_asaas_charges'), 'migration company_asaas_charges');
+  assert(migration.includes('installment_id'), 'migration installment_id');
+  assert(migration.includes('company_asaas_webhook_events'), 'migration webhook events');
+
+  const webhookRoute = read('app/api/finance/asaas/company-webhook/route.ts');
+  assert(webhookRoute.includes('handleCompanyAsaasPaymentWebhook'), 'rota webhook company');
+
+  const createRoute = read('app/api/finance/asaas/create-charge/route.ts');
+  assert(createRoute.includes('authorizeBankingRoute'), 'create-charge protegida');
+  assert(createRoute.includes('installmentId'), 'create-charge exige installmentId');
+
+  const financeUi = read('components/finance/FinancePremiumUI.tsx');
+  assert(financeUi.includes('asaasEnabled'), 'UI condiciona ações Asaas');
+  assert(financeUi.includes('AsaasParcelChargeActions'), 'UI menu Asaas parcelas');
+
+  const financePage = read('app/finance/page.tsx');
+  assert(financePage.includes('companyAsaasActive'), 'finance page carrega contexto Asaas');
+  assert(financePage.includes('isCompanyAsaasIntegrationReady'), 'finance page valida integração ativa');
+
+  assert(mapAsaasPaymentStatusToCompanyCharge('RECEIVED') === 'PAID', 'status RECEIVED -> PAID');
+  assert(isCompanyAsaasIntegrationReady({
+    connectionStatus: 'CONNECTED',
+    status: 'ACTIVE',
+    environment: 'SANDBOX',
+    hasSandboxApiKey: true,
+    hasProductionApiKey: false,
+  }), 'integração company pronta');
+
+  assert(!isCompanyAsaasIntegrationReady({
+    connectionStatus: 'DISCONNECTED',
+    status: 'DRAFT',
+    environment: 'SANDBOX',
+    hasSandboxApiKey: false,
+    hasProductionApiKey: false,
+  }), 'integração inativa oculta botões');
+
+  assertCompanyAsaasChargeResponseSafe({
+    id: '1',
+    companyId: 'c1',
+    customerId: null,
+    saleId: null,
+    installmentId: 'i1',
+    asaasPaymentId: 'pay_1',
+    billingType: 'PIX',
+    status: 'PENDING',
+    value: 100,
+    dueDate: '2026-07-01',
+    invoiceUrl: null,
+    bankSlipUrl: null,
+    pixQrCode: null,
+    pixCopyPaste: 'abc',
+    paymentLink: null,
+    paidAt: null,
+    createdAt: '2026-01-01',
+    updatedAt: '2026-01-01',
+  });
+
+  const webhookHandler = read('lib/finance/companyAsaasWebhookHandler.ts');
+  assert(webhookHandler.includes('registerCompanyAsaasWebhookEvent'), 'webhook registra evento');
+  assert(webhookHandler.includes('reconcileCompanyAsaasPaidCharge'), 'webhook reconcilia pagamento');
+  assert(webhookHandler.includes('loadCompanyAsaasWebhookToken'), 'webhook valida token por empresa');
+}
+
 function testAsaasIntegrationResponseSafe(): void {
   assertAsaasIntegrationResponseSafe({
     ...EMPTY_ASAAS_INTEGRATION_CONFIG,
@@ -679,6 +764,7 @@ async function main(): Promise<void> {
   testSicrediPhase20Source();
   testFinancialIntegrationSource();
   testAsaasIntegrationResponseSafe();
+  testCompanyAsaasChargeFoundation();
 
   console.log('OK — mandatory banking mock tests passed');
 }
