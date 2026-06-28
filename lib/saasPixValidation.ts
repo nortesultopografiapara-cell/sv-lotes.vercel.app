@@ -37,9 +37,11 @@ export function resolveSaasChargeDueDate(
   fallbackDueDate: string,
   today = todayIsoDate(),
 ): string {
-  const source = requestedDueDate
-    ? toIsoDateOnly(requestedDueDate)
-    : toIsoDateOnly(fallbackDueDate);
+  const requested = String(requestedDueDate ?? '').trim();
+  if (!requested) {
+    return toIsoDateOnly(fallbackDueDate) || fallbackDueDate;
+  }
+  const source = toIsoDateOnly(requested);
   return resolveAsaasDueDate(source || fallbackDueDate, today);
 }
 

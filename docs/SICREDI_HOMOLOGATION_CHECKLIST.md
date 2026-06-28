@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Fase 2.1-Sicredi — Homologação real Sicredi
 
 Checklist técnico e estrutura segura para homologação do conector **Sicredi** no SV LOTES 2.0.
@@ -148,3 +149,8 @@ Inclui:
 | Versão | Data | Descrição |
 |--------|------|-----------|
 | 1.0 | 2026-06-08 | Checklist Fase 2.0-Sicredi estrutural + plano homologação |
+=======
+# Sicredi — checklist de homologação (Fase 2.0-Sicredi)
+
+Documento de referência para homologação futura do provider Sicredi.
+>>>>>>> release/asaas-company-pilot

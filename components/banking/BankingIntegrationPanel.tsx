@@ -56,6 +56,13 @@ type FormState = {
   active: boolean;
 };
 
+<<<<<<< HEAD
+=======
+function isMockProvider(code: string): boolean {
+  return code === 'MOCK';
+}
+
+>>>>>>> release/asaas-company-pilot
 function configToForm(config: BankIntegrationConfigResponse): FormState {
   return {
     bankProvider: config.bankProvider,
@@ -138,6 +145,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
     }
   }
 
+<<<<<<< HEAD
   async function callTestConnection() {
     setAction('test');
     setError(null);
@@ -220,6 +228,9 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
   }
 
   async function callMockApi(path: string, label: 'boleto' | 'pix') {
+=======
+  async function callMockApi(path: string, label: 'test' | 'boleto' | 'pix') {
+>>>>>>> release/asaas-company-pilot
     setAction(label);
     setError(null);
     try {
@@ -231,7 +242,14 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
+<<<<<<< HEAD
       if (label === 'boleto') {
+=======
+      if (label === 'test') {
+        setConnection(json.connection ?? null);
+        setChargeResult(null);
+      } else if (label === 'boleto') {
+>>>>>>> release/asaas-company-pilot
         setChargeResult({ kind: 'boleto', data: json.charge });
       } else {
         setChargeResult({ kind: 'pix', data: json.charge });
@@ -245,6 +263,7 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
 
   const busy = saving || action !== null;
   const status = config?.status ?? 'DRAFT';
+<<<<<<< HEAD
   const isMockProvider = form.bankProvider === 'MOCK';
   const isSicoobProvider = form.bankProvider === 'SICOOB';
   const isSicrediProvider = form.bankProvider === 'SICREDI';
@@ -254,6 +273,8 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
       : isSicrediProvider
         ? 'Integração Sicredi em preparação. Nenhum boleto real será emitido nesta fase.'
         : null;
+=======
+>>>>>>> release/asaas-company-pilot
 
   if (loading) {
     return (
@@ -273,18 +294,25 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
           <div>
             <h2 className="text-lg font-bold text-[var(--text-primary)]">Integração Bancária</h2>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
+<<<<<<< HEAD
               {structuralProviderWarning ??
                 'Cadastro da integração — MOCK disponível para testes fictícios.'}
+=======
+              Cadastro da integração — sem comunicação real com bancos nesta fase (MOCK).
+>>>>>>> release/asaas-company-pilot
             </p>
           </div>
         </div>
 
+<<<<<<< HEAD
         {structuralProviderWarning ? (
           <div className="mb-6 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             {structuralProviderWarning}
           </div>
         ) : null}
 
+=======
+>>>>>>> release/asaas-company-pilot
         <section className="mb-8">
           <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
             <Shield className="w-4 h-4" /> Status
@@ -324,6 +352,19 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
                 ))}
               </select>
             </Field>
+<<<<<<< HEAD
+=======
+            {form.bankProvider === 'SICOOB' ? (
+              <p className="text-sm text-amber-300/90 mt-2">
+                Integração Sicoob em preparação — use /api/banking/sicoob/test-connection para validar cadastro.
+              </p>
+            ) : null}
+            {form.bankProvider === 'SICREDI' ? (
+              <p className="text-sm text-amber-300/90 mt-2">
+                Integração Sicredi em preparação — use /api/banking/sicredi/test-connection para validar cadastro.
+              </p>
+            ) : null}
+>>>>>>> release/asaas-company-pilot
           </FormSection>
 
           <FormSection title="2. Ambiente">
@@ -463,15 +504,24 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Salvar Configuração
             </button>
+<<<<<<< HEAD
             <button
               type="button"
               disabled={readOnlyDemo || busy}
               onClick={() => void callTestConnection()}
+=======
+            {isMockProvider(form.bankProvider) ? (
+            <button
+              type="button"
+              disabled={readOnlyDemo || busy}
+              onClick={() => callMockApi('/api/banking/mock/test-connection', 'test')}
+>>>>>>> release/asaas-company-pilot
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
             >
               {action === 'test' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
               Testar Conexão
             </button>
+<<<<<<< HEAD
             {isMockProvider ? (
               <>
                 <button
@@ -493,6 +543,30 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
                   Gerar Pix MOCK
                 </button>
               </>
+=======
+            ) : null}
+            {isMockProvider(form.bankProvider) ? (
+            <button
+              type="button"
+              disabled={readOnlyDemo || busy}
+              onClick={() => callMockApi('/api/banking/mock/create-boleto', 'boleto')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+            >
+              {action === 'boleto' ? <Loader2 className="w-4 h-4 animate-spin" /> : <ReceiptText className="w-4 h-4" />}
+              Gerar Boleto MOCK
+            </button>
+            ) : null}
+            {isMockProvider(form.bankProvider) ? (
+            <button
+              type="button"
+              disabled={readOnlyDemo || busy}
+              onClick={() => callMockApi('/api/banking/mock/create-pix', 'pix')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-sm font-medium hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+            >
+              {action === 'pix' ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+              Gerar Pix MOCK
+            </button>
+>>>>>>> release/asaas-company-pilot
             ) : null}
           </div>
         </form>
@@ -512,9 +586,13 @@ export function BankingIntegrationPanel({ tenantId, readOnlyDemo = false }: Prop
 
       {connection ? (
         <div className="sv-theme-card p-4 rounded-xl border border-[var(--border-color)] text-sm">
+<<<<<<< HEAD
           <p className="font-semibold text-[var(--text-primary)] mb-1">
             Resultado — teste de conexão ({providerLabel(form.bankProvider)})
           </p>
+=======
+          <p className="font-semibold text-[var(--text-primary)] mb-1">Resultado — teste de conexão (MOCK)</p>
+>>>>>>> release/asaas-company-pilot
           <p className={connection.ok ? 'text-green-400' : 'text-red-400'}>{connection.message}</p>
           {connection.latencyMs != null ? (
             <p className="text-[var(--text-secondary)] mt-1">Latência simulada: {connection.latencyMs} ms</p>
@@ -638,6 +716,7 @@ function ResultRow({
     <div>
       <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wide mb-1">{label}</p>
       {link ? (
+<<<<<<< HEAD
         value.startsWith('/') ? (
           <a href={value} className="text-[var(--color-primary)] break-all hover:underline">
             {value}
@@ -647,6 +726,11 @@ function ResultRow({
             {value}
           </a>
         )
+=======
+        <a href={value} target="_blank" rel="noreferrer" className="text-[var(--color-primary)] break-all hover:underline">
+          {value}
+        </a>
+>>>>>>> release/asaas-company-pilot
       ) : (
         <p className={`text-[var(--text-primary)] break-all ${mono ? 'font-mono text-xs' : ''}`}>{value}</p>
       )}
