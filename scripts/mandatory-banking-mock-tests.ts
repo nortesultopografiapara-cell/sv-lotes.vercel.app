@@ -61,6 +61,16 @@ import {
   resolveCompanyAsaasPaymentLink,
   summarizeCompanyAsaasCharges,
 } from '../lib/finance/companyAsaasChargeWorkflow';
+import {
+  buildCompanyAsaasCashMovementDescription,
+  buildCompanyAsaasCashMovementInsert,
+  isCompanyAsaasPaidWebhookEvent,
+  mergeCompanyAsaasChargeRawPayload,
+  resolveCompanyAsaasReconcileDates,
+} from '../lib/finance/companyAsaasPaymentReconciliation';
+import {
+  verifyCompanyAsaasWebhookToken,
+} from '../lib/finance/companyAsaasWebhookHandler';
 import type { CompanyAsaasChargeResponse } from '../lib/finance/companyAsaasChargeTypes';
 import { EMPTY_BANK_INTEGRATION_CONFIG } from '../lib/banking/integrationConfig';
 
@@ -695,8 +705,8 @@ function testCompanyAsaasChargeFoundation(): void {
   assert(service.includes('loadAsaasApiKeyForEnvironment'), 'service usa credencial da empresa');
   assert(service.includes('createCompanyPixCharge'), 'createCompanyPixCharge definido');
   assert(service.includes('createCompanyBoletoCharge'), 'createCompanyBoletoCharge definido');
-  assert(service.includes('reconcileCompanyAsaasPaidCharge'), 'reconcile webhook definido');
-  assert(service.includes("source_table: 'company_asaas_charges'"), 'caixa vinculado à cobrança company');
+  assert(service.includes('executeCompanyAsaasPaymentReconciliation'), 'service delega reconciliação');
+  assert(service.includes('reconcileCompanyAsaasPaidCharge'), 'reconcileCompanyAsaasPaidCharge preservado');
   assert(service.includes('regenerateCompanyInstallmentCharge'), 'regenerate service');
   assert(service.includes('getCompanyAsaasChargeDashboardSummary'), 'dashboard summary service');
   assert(service.includes('CompanyAsaasChargePaidError'), 'erro parcela paga');
@@ -783,8 +793,18 @@ function testCompanyAsaasChargeFoundation(): void {
 
   const webhookHandler = read('lib/finance/companyAsaasWebhookHandler.ts');
   assert(webhookHandler.includes('registerCompanyAsaasWebhookEvent'), 'webhook registra evento');
-  assert(webhookHandler.includes('reconcileCompanyAsaasPaidCharge'), 'webhook reconcilia pagamento');
+  assert(webhookHandler.includes('executeCompanyAsaasPaymentReconciliation'), 'webhook reconcilia pagamento');
+  assert(webhookHandler.includes('isCompanyAsaasPaidWebhookEvent'), 'webhook usa helper eventos pagos');
   assert(webhookHandler.includes('loadCompanyAsaasWebhookToken'), 'webhook valida token por empresa');
+  assert(webhookHandler.includes("status: 401"), 'webhook token inválido retorna 401');
+
+  const reconciliation = read('lib/finance/companyAsaasPaymentReconciliation.ts');
+  assert(reconciliation.includes('PAYMENT_CREDITED'), 'reconciliação trata PAYMENT_CREDITED');
+  assert(reconciliation.includes('provider: \'ASAAS_COMPANY\''), 'caixa provider ASAAS_COMPANY');
+  assert(reconciliation.includes('source_table: \'company_asaas_charges\''), 'caixa source company charge');
+  assert(reconciliation.includes('Recebimento automático Asaas'), 'descrição caixa automática');
+  assert(reconciliation.includes('payment_date'), 'raw payload payment_date');
+  assert(reconciliation.includes('credited_date'), 'raw payload credited_date');
 }
 
 function testCompanyAsaasChargeWorkflow(): void {
@@ -858,6 +878,99 @@ function testCompanyAsaasChargeWorkflow(): void {
   assert(summary.openValue === 500, 'summary valor aberto');
 }
 
+function testCompanyAsaasPaymentReconciliationRules(): void {
+  assert(isCompanyAsaasPaidWebhookEvent('PAYMENT_RECEIVED'), 'PAYMENT_RECEIVED pago');
+  assert(isCompanyAsaasPaidWebhookEvent('PAYMENT_CONFIRMED'), 'PAYMENT_CONFIRMED pago');
+  assert(isCompanyAsaasPaidWebhookEvent('PAYMENT_CREDITED'), 'PAYMENT_CREDITED pago');
+  assert(!isCompanyAsaasPaidWebhookEvent('PAYMENT_CREATED'), 'PAYMENT_CREATED ignorado');
+
+  const dates = resolveCompanyAsaasReconcileDates({
+    paymentDate: '2026-06-01',
+    creditDate: '2026-06-03',
+  });
+  assert(dates.paymentDate === '2026-06-01', 'paymentDate resolvida');
+  assert(dates.creditedDate === '2026-06-03', 'creditedDate resolvida');
+  assert(dates.paidAt === '2026-06-01', 'paidAt prioriza paymentDate');
+
+  const merged = mergeCompanyAsaasChargeRawPayload(
+    { status: 'PENDING' },
+    { id: 'pay_1', value: 100 },
+    { paymentDate: '2026-06-01', creditedDate: '2026-06-03', eventType: 'PAYMENT_RECEIVED' },
+  );
+  assert(merged.payment_date === '2026-06-01', 'merge payment_date');
+  assert(merged.credited_date === '2026-06-03', 'merge credited_date');
+  assert(merged.id === 'pay_1', 'merge payload asaas');
+
+  assert(
+    buildCompanyAsaasCashMovementDescription(2) === 'Recebimento automático Asaas - Parcela 2',
+    'descrição parcela',
+  );
+  assert(
+    buildCompanyAsaasCashMovementDescription(0) === 'Recebimento automático Asaas - Entrada',
+    'descrição entrada',
+  );
+
+  const movement = buildCompanyAsaasCashMovementInsert({
+    companyId: 'co1',
+    charge: {
+      id: 'ch1',
+      companyId: 'co1',
+      customerId: 'cu1',
+      saleId: 'sa1',
+      installmentId: 'i1',
+      asaasPaymentId: 'pay_1',
+      billingType: 'PIX',
+      status: 'PENDING',
+      value: 300,
+      dueDate: '2026-07-01',
+      invoiceUrl: null,
+      bankSlipUrl: null,
+      pixQrCode: null,
+      pixCopyPaste: null,
+      paymentLink: null,
+      paidAt: null,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+    },
+    receipt: {
+      id: 'i1',
+      installment_number: 3,
+      project_id: 'pr1',
+      sale_id: 'sa1',
+      customer_id: 'cu1',
+    },
+    paidAt: '2026-06-01T12:00:00.000Z',
+    paymentDate: '2026-06-01',
+    creditedDate: '2026-06-03',
+  });
+  assert(movement.type === 'entrada', 'caixa type entrada');
+  assert(movement.source_table === 'company_asaas_charges', 'caixa source_table');
+  assert(movement.source_id === 'ch1', 'caixa source_id');
+  assert((movement.metadata as Record<string, unknown>).provider === 'ASAAS_COMPANY', 'metadata provider');
+  assert((movement.metadata as Record<string, unknown>).external_id === 'pay_1', 'metadata external_id');
+  assert(movement.project_id === 'pr1', 'caixa project_id');
+
+  const masterProvider = read('lib/payments/providers/asaas.ts');
+  assert(masterProvider.includes('process.env.ASAAS_API_KEY'), 'Asaas Master preservado');
+  assert(!read('lib/finance/companyAsaasWebhookHandler.ts').includes('saas_charges'), 'webhook company não usa saas_charges');
+}
+
+function testCompanyAsaasWebhookAuth(): void {
+  const validRequest = {
+    headers: new Headers({ 'asaas-access-token': 'company-secret' }),
+  } as Request;
+  const invalidRequest = {
+    headers: new Headers({ 'asaas-access-token': 'wrong' }),
+  } as Request;
+  const emptyRequest = {
+    headers: new Headers(),
+  } as Request;
+
+  assert(verifyCompanyAsaasWebhookToken(validRequest, 'company-secret'), 'token válido');
+  assert(!verifyCompanyAsaasWebhookToken(invalidRequest, 'company-secret'), 'token inválido 401');
+  assert(verifyCompanyAsaasWebhookToken(emptyRequest, null), 'sem token configurado passa');
+}
+
 function testAsaasIntegrationResponseSafe(): void {
   assertAsaasIntegrationResponseSafe({
     ...EMPTY_ASAAS_INTEGRATION_CONFIG,
@@ -928,6 +1041,8 @@ async function main(): Promise<void> {
   testAsaasIntegrationResponseSafe();
   testCompanyAsaasChargeFoundation();
   testCompanyAsaasChargeWorkflow();
+  testCompanyAsaasPaymentReconciliationRules();
+  testCompanyAsaasWebhookAuth();
 
   console.log('OK — mandatory banking mock tests passed');
 }

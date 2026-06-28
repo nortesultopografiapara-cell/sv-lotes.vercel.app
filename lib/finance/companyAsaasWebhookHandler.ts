@@ -5,33 +5,24 @@ import { createServiceSupabase } from '@/lib/apiSuperAdmin';
 import { decryptBankingSecret } from '@/lib/banking/credentialsCrypto';
 import { getCompanyAsaasIntegrationConfig } from '@/lib/finance/asaasIntegrationRepository';
 import {
-  reconcileCompanyAsaasPaidCharge,
-  getCompanyChargeStatus,
-} from '@/lib/finance/asaasCompanyChargeService';
+  executeCompanyAsaasPaymentReconciliation,
+  isCompanyAsaasPaidWebhookEvent,
+  resolveCompanyAsaasReconcileDates,
+  type CompanyAsaasPaymentWebhookPayment,
+} from './companyAsaasPaymentReconciliation';
 import {
   getCompanyAsaasChargeByPaymentId,
   markCompanyAsaasWebhookEventProcessed,
   registerCompanyAsaasWebhookEvent,
-} from '@/lib/finance/companyAsaasChargeRepository';
-import { mapAsaasPaymentStatusToCompanyCharge } from '@/lib/finance/companyAsaasChargeTypes';
+  updateCompanyAsaasCharge,
+} from './companyAsaasChargeRepository';
+import { mapAsaasPaymentStatusToCompanyCharge } from './companyAsaasChargeTypes';
 
 export type CompanyAsaasWebhookPayload = {
   event?: string;
   id?: string;
-  payment?: {
-    id?: string;
-    status?: string;
-    paymentDate?: string;
-    clientPaymentDate?: string;
-    externalReference?: string;
-  };
+  payment?: CompanyAsaasPaymentWebhookPayment;
 };
-
-const PAID_EVENTS = new Set([
-  'PAYMENT_RECEIVED',
-  'PAYMENT_CONFIRMED',
-  'PAYMENT_RECEIVED_IN_CASH',
-]);
 
 const CANCELLED_EVENTS = new Set(['PAYMENT_DELETED', 'PAYMENT_REFUNDED']);
 
@@ -122,7 +113,7 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
     rawPayload: payload as Record<string, unknown>,
   });
 
-  if (registration.duplicate && registration.processingStatus === 'PROCESSED') {
+  if (registration.duplicate && ['PROCESSED', 'DUPLICATE'].includes(registration.processingStatus)) {
     return NextResponse.json({ ok: true, duplicate: true, reason: 'already_processed' });
   }
 
@@ -153,11 +144,10 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
   }
 
   if (CANCELLED_EVENTS.has(eventType)) {
-    await admin
-      .from('company_asaas_charges')
-      .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
-      .eq('id', charge.id)
-      .eq('company_id', companyId);
+    await updateCompanyAsaasCharge(admin, charge.id, companyId, {
+      status: 'CANCELLED',
+      rawPayload: mergeCancelledPayload(payload.payment),
+    });
     if (registration.id) {
       await markCompanyAsaasWebhookEventProcessed(admin, registration.id, companyId, 'PROCESSED');
     }
@@ -165,33 +155,80 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
   }
 
   const mappedStatus = mapAsaasPaymentStatusToCompanyCharge(payload.payment?.status);
-  if (!PAID_EVENTS.has(eventType) && mappedStatus !== 'PAID') {
+  const isPaidEvent = isCompanyAsaasPaidWebhookEvent(eventType);
+  if (!isPaidEvent && mappedStatus !== 'PAID') {
     if (registration.id) {
       await markCompanyAsaasWebhookEventProcessed(admin, registration.id, companyId, 'IGNORED', eventType);
     }
     return NextResponse.json({ ok: true, ignored: true, reason: eventType });
   }
 
-  const paidAt =
-    payload.payment?.paymentDate ||
-    payload.payment?.clientPaymentDate ||
-    new Date().toISOString();
+  const { paidAt, paymentDate, creditedDate } = resolveCompanyAsaasReconcileDates(payload.payment);
 
-  const result = await reconcileCompanyAsaasPaidCharge(admin, companyId, paymentId, { paidAt });
-
-  if (registration.id) {
-    await markCompanyAsaasWebhookEventProcessed(
-      admin,
-      registration.id,
+  try {
+    const result = await executeCompanyAsaasPaymentReconciliation(admin, {
       companyId,
-      result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+      asaasPaymentId: paymentId,
+      eventType,
+      paidAt,
+      paymentDate,
+      creditedDate,
+      paymentPayload: payload.payment ?? null,
+    });
+
+    if (!result.ok) {
+      if (registration.id) {
+        await markCompanyAsaasWebhookEventProcessed(
+          admin,
+          registration.id,
+          companyId,
+          'IGNORED',
+          'charge_not_found_on_reconcile',
+        );
+      }
+      return NextResponse.json({ ok: true, ignored: true, reason: 'charge_not_found' });
+    }
+
+    if (registration.id) {
+      await markCompanyAsaasWebhookEventProcessed(
+        admin,
+        registration.id,
+        companyId,
+        result.duplicate ? 'DUPLICATE' : 'PROCESSED',
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      duplicate: result.duplicate,
+      chargeId: result.chargeId,
+      cashMovementId: result.cashMovementId,
+      installmentId: result.installmentId,
+      receiptUpdated: result.receiptUpdated,
+    });
+  } catch (err) {
+    console.error('[company-asaas-webhook] reconcile failed', err);
+    if (registration.id) {
+      await markCompanyAsaasWebhookEventProcessed(
+        admin,
+        registration.id,
+        companyId,
+        'FAILED',
+        err instanceof Error ? err.message : 'reconcile_failed',
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : 'Falha ao reconciliar pagamento.' },
+      { status: 500 },
     );
   }
+}
 
-  return NextResponse.json({
-    ok: true,
-    duplicate: result.duplicate,
-    chargeId: result.chargeId,
-    cashMovementId: result.cashMovementId,
-  });
+function mergeCancelledPayload(
+  payment?: CompanyAsaasPaymentWebhookPayment | null,
+): Record<string, unknown> {
+  return {
+    ...(payment && typeof payment === 'object' ? (payment as Record<string, unknown>) : {}),
+    cancelled_at: new Date().toISOString(),
+  };
 }
