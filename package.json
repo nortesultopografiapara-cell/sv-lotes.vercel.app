@@ -33,6 +33,7 @@
     "test:banking-mock": "tsx scripts/mandatory-banking-mock-tests.ts",
     "test:sale-finance-pending": "tsx scripts/mandatory-sale-finance-receipt-pending-tests.ts",
     "test:charges-operational": "tsx scripts/mandatory-charges-operational-tests.ts",
+    "test:company-asaas-reconciliation": "tsx scripts/mandatory-company-asaas-reconciliation-tests.ts",
     "test:sale-signature": "tsx scripts/mandatory-signature-verify-evidence-tests.ts && tsx scripts/mandatory-sale-contract-certificate-tests.ts && tsx scripts/mandatory-sale-sign-email-certificate-tests.ts && tsx scripts/mandatory-sale-bilateral-signature-tests.ts"
   },
   "dependencies": {

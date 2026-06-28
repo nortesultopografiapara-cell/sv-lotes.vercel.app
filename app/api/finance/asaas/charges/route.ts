@@ -25,6 +25,8 @@ export async function GET(request: Request) {
       installmentIds,
     );
 
+    const receiptSyncErrors: Array<{ installmentId: string; error: string }> = [];
+
     for (const charge of charges) {
       if (charge.status === 'PAID') {
         try {
@@ -35,17 +37,25 @@ export async function GET(request: Request) {
             { eventType: 'CHARGES_LIST_SYNC' },
           );
         } catch (syncErr) {
+          const message = syncErr instanceof Error ? syncErr.message : String(syncErr);
+          receiptSyncErrors.push({
+            installmentId: charge.installmentId,
+            error: message,
+          });
           console.error('[finance/asaas/charges GET] reconcile failed', {
             installmentId: charge.installmentId,
             chargeId: charge.id,
-            error: syncErr instanceof Error ? syncErr.message : syncErr,
+            error: message,
           });
         }
       }
       assertCompanyAsaasChargeResponseSafe(charge);
     }
 
-    return NextResponse.json({ charges });
+    return NextResponse.json({
+      charges,
+      receiptSyncErrors: receiptSyncErrors.length > 0 ? receiptSyncErrors : undefined,
+    });
   } catch (err) {
     console.error('[finance/asaas/charges GET]', err);
     return NextResponse.json(

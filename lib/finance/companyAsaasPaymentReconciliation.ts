@@ -27,7 +27,8 @@ export type CompanyAsaasPaymentWebhookPayment = {
 
 export type CompanyAsaasReconcilePaymentInput = {
   companyId: string;
-  asaasPaymentId: string;
+  asaasPaymentId?: string | null;
+  installmentId?: string | null;
   eventType?: string | null;
   paidAt?: string | null;
   paymentDate?: string | null;
@@ -59,6 +60,22 @@ type FinanceReceiptRow = {
 
 export function isCompanyAsaasPaidWebhookEvent(eventType: string): boolean {
   return (COMPANY_ASAAS_PAID_WEBHOOK_EVENTS as readonly string[]).includes(eventType);
+}
+
+export function isCompanyAsaasChargeStatusPaid(status?: string | null): boolean {
+  return String(status || '').toUpperCase() === 'PAID';
+}
+
+export function isReceiptPaidStatus(status?: string | null): boolean {
+  const normalized = String(status || '').toLowerCase();
+  return normalized === 'pago' || normalized === 'paid';
+}
+
+export function needsCompanyAsaasReceiptReconciliation(input: {
+  chargeStatus?: string | null;
+  receiptStatus?: string | null;
+}): boolean {
+  return isCompanyAsaasChargeStatusPaid(input.chargeStatus) && !isReceiptPaidStatus(input.receiptStatus);
 }
 
 export function resolveCompanyAsaasReconcileDates(
@@ -149,19 +166,14 @@ export function buildCompanyAsaasCashMovementInsert(input: {
   };
 }
 
-function isReceiptPaid(status?: string | null): boolean {
-  const normalized = String(status || '').toLowerCase();
-  return normalized === 'pago' || normalized === 'paid';
-}
-
 export function isCompanyAsaasChargeFullyReconciled(input: {
   chargeStatus?: string | null;
   receiptStatus?: string | null;
   cashMovementId?: string | null;
 }): boolean {
   return (
-    String(input.chargeStatus || '').toUpperCase() === 'PAID' &&
-    isReceiptPaid(input.receiptStatus) &&
+    isCompanyAsaasChargeStatusPaid(input.chargeStatus) &&
+    isReceiptPaidStatus(input.receiptStatus) &&
     Boolean(input.cashMovementId)
   );
 }
@@ -184,16 +196,19 @@ async function findExistingCompanyAsaasCashMovement(
   return data?.id ? String(data.id) : null;
 }
 
-async function loadFinanceReceipt(
+export async function loadFinanceReceiptForReconciliation(
   admin: SupabaseClient,
   installmentId: string,
 ): Promise<FinanceReceiptRow | null> {
+  const normalizedInstallmentId = String(installmentId || '').trim();
+  if (!normalizedInstallmentId) return null;
+
   const { data, error } = await admin
     .from('finance_receipts')
     .select(
       'id, status, amount, installment_number, sale_id, customer_id, block_id, project_id',
     )
-    .eq('id', installmentId)
+    .eq('id', normalizedInstallmentId)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -208,138 +223,100 @@ export async function markFinanceReceiptPaidFromCompanyAsaasCharge(
     paidAt: string;
   },
 ): Promise<boolean> {
-  const receipt = await loadFinanceReceipt(admin, input.installmentId);
+  const installmentId = String(input.installmentId || '').trim();
+  if (!installmentId) {
+    throw new Error('installment_id é obrigatório para baixar finance_receipts.');
+  }
+
+  const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
   if (!receipt) {
     throw new Error(
-      `Parcela financeira não encontrada (installment_id=${input.installmentId}).`,
+      `Parcela financeira não encontrada (installment_id=${installmentId}).`,
     );
   }
-  if (isReceiptPaid(receipt.status)) return false;
+  if (isReceiptPaidStatus(receipt.status)) return false;
+
+  const paidAt = String(input.paidAt || new Date().toISOString());
+  const paidAmount = Number(input.paidAmount) || Number(receipt.amount) || 0;
 
   const { data, error } = await admin
     .from('finance_receipts')
     .update({
       status: 'pago',
-      paid_amount: input.paidAmount,
-      paid_at: input.paidAt,
+      paid_amount: paidAmount,
+      paid_at: paidAt,
     })
-    .eq('id', input.installmentId)
-    .select('id, status')
-    .maybeSingle();
+    .eq('id', installmentId)
+    .select('id, status, paid_amount, paid_at');
 
-  if (error) throw new Error(error.message);
-  if (!data) {
-    throw new Error(
-      `Não foi possível baixar a parcela ${input.installmentId} em finance_receipts.`,
-    );
+  if (error) {
+    console.error('[company-asaas-reconcile] finance_receipts UPDATE failed', {
+      installmentId,
+      error: error.message,
+    });
+    throw new Error(error.message);
   }
+
+  if (!data || data.length === 0) {
+    const message = `UPDATE finance_receipts não afetou linhas (id=${installmentId}).`;
+    console.error('[company-asaas-reconcile]', message);
+    throw new Error(message);
+  }
+
+  console.info('[company-asaas-reconcile] finance_receipts baixada', {
+    installmentId,
+    paidAmount,
+    paidAt,
+    status: data[0]?.status,
+  });
+
   return true;
 }
 
-export async function ensureCompanyAsaasInstallmentReconciled(
+async function reconcilePaidCompanyAsaasChargeRecord(
   admin: SupabaseClient,
   companyId: string,
-  installmentId: string,
-  options?: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId'> & {
-    asaasPaymentId?: string | null;
-  },
+  charge: CompanyAsaasChargeResponse,
+  input: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId' | 'installmentId'>,
 ): Promise<CompanyAsaasReconcilePaymentResult> {
-  const charge = await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId);
-  if (!charge) {
-    return { ok: false, duplicate: false, installmentId };
-  }
-  if (charge.status !== 'PAID') {
-    return { ok: false, duplicate: false, installmentId, chargeId: charge.id };
-  }
-
-  const asaasPaymentId = String(
-    options?.asaasPaymentId || charge.asaasPaymentId || '',
-  ).trim();
-  if (!asaasPaymentId) {
-    throw new Error('Cobrança Asaas paga sem asaas_payment_id para conciliação.');
+  if (!isCompanyAsaasChargeStatusPaid(charge.status)) {
+    return {
+      ok: false,
+      duplicate: false,
+      chargeId: charge.id,
+      installmentId: charge.installmentId,
+    };
   }
 
-  return executeCompanyAsaasPaymentReconciliation(admin, {
-    companyId,
-    asaasPaymentId,
-    eventType: options?.eventType ?? 'INSTALLMENT_RECONCILE',
-    paidAt: options?.paidAt ?? charge.paidAt,
-    paymentDate: options?.paymentDate ?? null,
-    creditedDate: options?.creditedDate ?? null,
-    paymentPayload: options?.paymentPayload ?? null,
-    userId: options?.userId ?? null,
-  });
-}
-
-export async function ensureCompanyAsaasInstallmentReconciledIfNeeded(
-  admin: SupabaseClient,
-  companyId: string,
-  installmentId: string,
-  options?: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId'>,
-): Promise<CompanyAsaasReconcilePaymentResult | null> {
-  const charge = await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId);
-  if (!charge || charge.status !== 'PAID') return null;
-
-  const { data: chargeRow } = await admin
-    .from('company_asaas_charges')
-    .select('cash_movement_id')
-    .eq('id', charge.id)
-    .eq('company_id', companyId)
-    .maybeSingle();
-
-  const receipt = await loadFinanceReceipt(admin, installmentId);
-  if (
-    isCompanyAsaasChargeFullyReconciled({
-      chargeStatus: charge.status,
-      receiptStatus: receipt?.status,
-      cashMovementId: chargeRow?.cash_movement_id
-        ? String(chargeRow.cash_movement_id)
-        : null,
-    })
-  ) {
-    return null;
-  }
-
-  return ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, options);
-}
-
-export async function executeCompanyAsaasPaymentReconciliation(
-  admin: SupabaseClient,
-  input: CompanyAsaasReconcilePaymentInput,
-): Promise<CompanyAsaasReconcilePaymentResult> {
-  const charge = await getCompanyAsaasChargeByPaymentId(
-    admin,
-    input.companyId,
-    input.asaasPaymentId,
-  );
-  if (!charge) {
-    return { ok: false, duplicate: false };
+  const installmentId = String(charge.installmentId || '').trim();
+  if (!installmentId) {
+    throw new Error(`Cobrança ${charge.id} sem installment_id vinculado a finance_receipts.`);
   }
 
   const dates = resolveCompanyAsaasReconcileDates(
     (input.paymentPayload as CompanyAsaasPaymentWebhookPayment | null) ?? null,
-    input.paidAt,
+    input.paidAt ?? charge.paidAt,
   );
-  const paidAt = input.paidAt || dates.paidAt;
+  const paidAt = input.paidAt || dates.paidAt || charge.paidAt || new Date().toISOString();
   const paymentDate = input.paymentDate ?? dates.paymentDate;
   const creditedDate = input.creditedDate ?? dates.creditedDate;
 
   const existingMovementId =
-    (await findExistingCompanyAsaasCashMovement(admin, input.companyId, charge.id)) ?? null;
+    (await findExistingCompanyAsaasCashMovement(admin, companyId, charge.id)) ?? null;
 
   const { data: chargeRow } = await admin
     .from('company_asaas_charges')
-    .select('raw_payload, cash_movement_id, status, paid_at')
+    .select('raw_payload, cash_movement_id, status, paid_at, installment_id')
     .eq('id', charge.id)
-    .eq('company_id', input.companyId)
+    .eq('company_id', companyId)
     .maybeSingle();
 
   const linkedMovementId =
     existingMovementId ||
     (chargeRow?.cash_movement_id ? String(chargeRow.cash_movement_id) : null);
 
-  const receipt = await loadFinanceReceipt(admin, charge.installmentId);
-  const receiptAlreadyPaid = receipt ? isReceiptPaid(receipt.status) : false;
+  const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
+  const receiptAlreadyPaid = receipt ? isReceiptPaidStatus(receipt.status) : false;
 
   if (
     isCompanyAsaasChargeFullyReconciled({
@@ -353,7 +330,7 @@ export async function executeCompanyAsaasPaymentReconciliation(
       duplicate: true,
       chargeId: charge.id,
       cashMovementId: linkedMovementId,
-      installmentId: charge.installmentId,
+      installmentId,
       receiptUpdated: false,
     };
   }
@@ -368,7 +345,7 @@ export async function executeCompanyAsaasPaymentReconciliation(
     },
   );
 
-  await updateCompanyAsaasCharge(admin, charge.id, input.companyId, {
+  await updateCompanyAsaasCharge(admin, charge.id, companyId, {
     status: 'PAID',
     paidAt,
     rawPayload,
@@ -376,44 +353,36 @@ export async function executeCompanyAsaasPaymentReconciliation(
   });
 
   let receiptUpdated = false;
-  if (receipt && !receiptAlreadyPaid) {
-    receiptUpdated = await markFinanceReceiptPaidFromCompanyAsaasCharge(admin, {
-      installmentId: charge.installmentId,
-      paidAmount: Number(charge.value) || Number(receipt.amount) || 0,
-      paidAt,
-    });
-  } else if (!receipt && charge.status === 'PAID') {
+  if (!receipt) {
     throw new Error(
-      `Parcela vinculada não encontrada para baixa automática (installment_id=${charge.installmentId}).`,
+      `Parcela vinculada não encontrada para baixa automática (installment_id=${installmentId}).`,
     );
   }
 
+  if (!receiptAlreadyPaid) {
+    receiptUpdated = await markFinanceReceiptPaidFromCompanyAsaasCharge(admin, {
+      installmentId,
+      paidAmount: Number(charge.value) || Number(receipt.amount) || 0,
+      paidAt,
+    });
+  }
+
   if (linkedMovementId) {
-    await updateCompanyAsaasCharge(admin, charge.id, input.companyId, {
+    await updateCompanyAsaasCharge(admin, charge.id, companyId, {
       cashMovementId: linkedMovementId,
     });
     return {
       ok: true,
-      duplicate: Boolean(existingMovementId || chargeRow?.cash_movement_id) && receiptUpdated === false,
+      duplicate: Boolean(existingMovementId || chargeRow?.cash_movement_id) && !receiptUpdated,
       chargeId: charge.id,
       cashMovementId: linkedMovementId,
-      installmentId: charge.installmentId,
-      receiptUpdated,
-    };
-  }
-
-  if (!receipt) {
-    return {
-      ok: true,
-      duplicate: false,
-      chargeId: charge.id,
-      installmentId: charge.installmentId,
+      installmentId,
       receiptUpdated,
     };
   }
 
   const movementPayload = buildCompanyAsaasCashMovementInsert({
-    companyId: input.companyId,
+    companyId,
     charge,
     receipt,
     paidAt,
@@ -431,17 +400,18 @@ export async function executeCompanyAsaasPaymentReconciliation(
   if (movementError) throw new Error(movementError.message);
 
   const cashMovementId = String(movement.id);
-  await updateCompanyAsaasCharge(admin, charge.id, input.companyId, {
+  await updateCompanyAsaasCharge(admin, charge.id, companyId, {
     cashMovementId,
   });
 
   console.info('[company-asaas-reconcile] parcela baixada automaticamente', {
-    companyId: input.companyId,
+    companyId,
     chargeId: charge.id,
-    installmentId: charge.installmentId,
+    installmentId,
     asaasPaymentId: charge.asaasPaymentId,
     cashMovementId,
     eventType: input.eventType ?? null,
+    receiptUpdated,
   });
 
   return {
@@ -449,9 +419,138 @@ export async function executeCompanyAsaasPaymentReconciliation(
     duplicate: false,
     chargeId: charge.id,
     cashMovementId,
-    installmentId: charge.installmentId,
+    installmentId,
     receiptUpdated,
   };
+}
+
+export async function ensureCompanyAsaasInstallmentReconciled(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+  options?: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId' | 'installmentId'> & {
+    asaasPaymentId?: string | null;
+  },
+): Promise<CompanyAsaasReconcilePaymentResult> {
+  const normalizedInstallmentId = String(installmentId || '').trim();
+  const charge = await getLatestCompanyAsaasChargeForInstallment(
+    admin,
+    companyId,
+    normalizedInstallmentId,
+  );
+  if (!charge) {
+    return { ok: false, duplicate: false, installmentId: normalizedInstallmentId };
+  }
+  if (!isCompanyAsaasChargeStatusPaid(charge.status)) {
+    return {
+      ok: false,
+      duplicate: false,
+      installmentId: normalizedInstallmentId,
+      chargeId: charge.id,
+    };
+  }
+
+  return reconcilePaidCompanyAsaasChargeRecord(admin, companyId, charge, {
+    eventType: options?.eventType ?? 'INSTALLMENT_RECONCILE',
+    paidAt: options?.paidAt ?? charge.paidAt,
+    paymentDate: options?.paymentDate ?? null,
+    creditedDate: options?.creditedDate ?? null,
+    paymentPayload: options?.paymentPayload ?? null,
+    userId: options?.userId ?? null,
+  });
+}
+
+export async function ensureCompanyAsaasInstallmentReconciledIfNeeded(
+  admin: SupabaseClient,
+  companyId: string,
+  installmentId: string,
+  options?: Omit<CompanyAsaasReconcilePaymentInput, 'companyId' | 'asaasPaymentId' | 'installmentId'>,
+): Promise<CompanyAsaasReconcilePaymentResult | null> {
+  const normalizedInstallmentId = String(installmentId || '').trim();
+  const charge = await getLatestCompanyAsaasChargeForInstallment(
+    admin,
+    companyId,
+    normalizedInstallmentId,
+  );
+  if (!charge || !isCompanyAsaasChargeStatusPaid(charge.status)) return null;
+
+  const receipt = await loadFinanceReceiptForReconciliation(admin, normalizedInstallmentId);
+  if (!needsCompanyAsaasReceiptReconciliation({
+    chargeStatus: charge.status,
+    receiptStatus: receipt?.status,
+  })) {
+    const { data: chargeRow } = await admin
+      .from('company_asaas_charges')
+      .select('cash_movement_id')
+      .eq('id', charge.id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (
+      isCompanyAsaasChargeFullyReconciled({
+        chargeStatus: charge.status,
+        receiptStatus: receipt?.status,
+        cashMovementId: chargeRow?.cash_movement_id
+          ? String(chargeRow.cash_movement_id)
+          : null,
+      })
+    ) {
+      return null;
+    }
+  }
+
+  return ensureCompanyAsaasInstallmentReconciled(admin, companyId, normalizedInstallmentId, options);
+}
+
+export async function executeCompanyAsaasPaymentReconciliation(
+  admin: SupabaseClient,
+  input: CompanyAsaasReconcilePaymentInput,
+): Promise<CompanyAsaasReconcilePaymentResult> {
+  const asaasPaymentId = String(input.asaasPaymentId || '').trim();
+  const installmentId = String(input.installmentId || '').trim();
+
+  let charge: CompanyAsaasChargeResponse | null = null;
+  if (asaasPaymentId) {
+    charge = await getCompanyAsaasChargeByPaymentId(admin, input.companyId, asaasPaymentId);
+  }
+
+  if (!charge && installmentId) {
+    charge = await getLatestCompanyAsaasChargeForInstallment(
+      admin,
+      input.companyId,
+      installmentId,
+    );
+  }
+
+  if (!charge && asaasPaymentId) {
+    const paymentPayload = input.paymentPayload as CompanyAsaasPaymentWebhookPayment | null;
+    const externalReference = String(paymentPayload?.externalReference || '').trim();
+    if (externalReference) {
+      charge = await getLatestCompanyAsaasChargeForInstallment(
+        admin,
+        input.companyId,
+        externalReference,
+      );
+    }
+  }
+
+  if (!charge) {
+    console.error('[company-asaas-reconcile] cobrança não encontrada', {
+      companyId: input.companyId,
+      asaasPaymentId,
+      installmentId,
+    });
+    return { ok: false, duplicate: false, installmentId: installmentId || undefined };
+  }
+
+  return reconcilePaidCompanyAsaasChargeRecord(admin, input.companyId, charge, {
+    eventType: input.eventType ?? null,
+    paidAt: input.paidAt,
+    paymentDate: input.paymentDate,
+    creditedDate: input.creditedDate,
+    paymentPayload: input.paymentPayload,
+    userId: input.userId,
+  });
 }
 
 export async function reprocessCompanyAsaasPaidCharges(
@@ -476,11 +575,10 @@ export async function reprocessCompanyAsaasPaidCharges(
   let cashMovementCreatedCount = 0;
 
   for (const row of paidCharges ?? []) {
-    const asaasPaymentId = String(row.asaas_payment_id || '').trim();
-    if (!asaasPaymentId) continue;
-
     const installmentId = String(row.installment_id || '').trim();
-    const receipt = installmentId ? await loadFinanceReceipt(admin, installmentId) : null;
+    if (!installmentId) continue;
+
+    const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
     const alreadyReconciled = isCompanyAsaasChargeFullyReconciled({
       chargeStatus: row.status,
       receiptStatus: receipt?.status,
@@ -488,9 +586,7 @@ export async function reprocessCompanyAsaasPaidCharges(
     });
     if (alreadyReconciled) continue;
 
-    const result = await executeCompanyAsaasPaymentReconciliation(admin, {
-      companyId,
-      asaasPaymentId,
+    const result = await ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, {
       eventType: 'REPROCESS',
       paidAt: row.paid_at ? String(row.paid_at) : null,
       userId: options?.userId ?? null,
@@ -533,6 +629,7 @@ export async function reprocessCompanyAsaasPaidCharges(
     const result = await executeCompanyAsaasPaymentReconciliation(admin, {
       companyId,
       asaasPaymentId,
+      installmentId: payment?.externalReference ?? null,
       eventType,
       paidAt: dates.paidAt,
       paymentDate: dates.paymentDate,
@@ -558,3 +655,13 @@ export async function reprocessCompanyAsaasPaidCharges(
 
   return { reprocessedCount, receiptUpdatedCount, cashMovementCreatedCount };
 }
+
+/** @deprecated use loadFinanceReceiptForReconciliation */
+async function loadFinanceReceipt(
+  admin: SupabaseClient,
+  installmentId: string,
+): Promise<FinanceReceiptRow | null> {
+  return loadFinanceReceiptForReconciliation(admin, installmentId);
+}
+
+export { loadFinanceReceipt };

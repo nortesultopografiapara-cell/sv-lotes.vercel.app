@@ -489,8 +489,13 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
     'baixa finance_receipts dedicada',
   );
   assert(
-    reconciliation.includes('ensureCompanyAsaasInstallmentReconciled'),
-    'conciliação por installment_id',
+    reconciliation.includes('needsCompanyAsaasReceiptReconciliation'),
+    'helper needsCompanyAsaasReceiptReconciliation',
+  );
+  assert(
+    reconciliation.includes('reconcilePaidCompanyAsaasChargeRecord') ||
+      reconciliation.includes('ensureCompanyAsaasInstallmentReconciled'),
+    'conciliação usa registro da charge por installment_id',
   );
   assert(
     fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charges/route.ts'), 'utf8')
@@ -510,6 +515,7 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
   const {
     isCompanyAsaasChargeFullyReconciled,
     isCompanyAsaasPaidWebhookEvent,
+    needsCompanyAsaasReceiptReconciliation,
   } = require('../lib/finance/companyAsaasPaymentReconciliation') as typeof import('../lib/finance/companyAsaasPaymentReconciliation');
 
   assert(
@@ -537,6 +543,10 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
     'cobrança pendente não concilia parcela',
   );
   assert(isCompanyAsaasPaidWebhookEvent('PAYMENT_RECEIVED'), 'webhook recebido concilia');
+  assert(
+    needsCompanyAsaasReceiptReconciliation({ chargeStatus: 'PAID', receiptStatus: 'pendente' }),
+    'PAID + pendente exige baixa',
+  );
 
   console.log('OK testCompanyAsaasPaidChargeReconcilesFinanceReceipt');
 }

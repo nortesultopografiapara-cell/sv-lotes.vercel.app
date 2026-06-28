@@ -298,11 +298,20 @@ export async function getCompanyChargeStatusByInstallment(
   if (!charge) return null;
   if (charge.status === 'CANCELLED') return charge;
 
+  if (charge.status === 'PAID') {
+    await ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, {
+      asaasPaymentId: charge.asaasPaymentId,
+      eventType: 'INSTALLMENT_RECONCILE_PREFETCH',
+      paidAt: charge.paidAt,
+    });
+  }
+
   try {
     return await getCompanyChargeStatus(admin, companyId, charge.id);
   } catch (err) {
     if (charge.status === 'PAID') {
       await ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, {
+        asaasPaymentId: charge.asaasPaymentId,
         eventType: 'MANUAL_STATUS_SYNC_FALLBACK',
         paidAt: charge.paidAt,
       });
@@ -422,11 +431,13 @@ export async function reconcileCompanyAsaasPaidCharge(
     paymentDate?: string | null;
     creditedDate?: string | null;
     paymentPayload?: Record<string, unknown> | null;
+    installmentId?: string | null;
   },
 ): Promise<{ ok: boolean; duplicate: boolean; chargeId?: string; cashMovementId?: string }> {
   const result = await executeCompanyAsaasPaymentReconciliation(admin, {
     companyId,
     asaasPaymentId,
+    installmentId: options?.installmentId ?? null,
     paidAt: options?.paidAt,
     userId: options?.userId,
     eventType: options?.eventType,
