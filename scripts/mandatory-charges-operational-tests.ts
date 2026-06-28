@@ -158,13 +158,18 @@ function testCreateChargeApiPathAndDuplicateGuard() {
   );
   assert(
     !chargeService.includes('customers(name, cpf'),
-    'create charge não usa embed ambíguo customers(...)',
+    'create charge não usa colunas inexistentes cpf/cnpj',
+  );
+  assert(
+    chargeService.includes('resolveCustomerDocumentDigits'),
+    'create charge resolve documento via campos reais',
   );
 
   const {
     FINANCE_RECEIPTS_CUSTOMER_FKEY,
     FINANCE_RECEIPTS_LIST_SELECT,
     FINANCE_RECEIPTS_CHARGE_SELECT,
+    FINANCE_RECEIPTS_CHARGE_CUSTOMER_FIELDS,
   } = require('../lib/finance/financeReceiptsEmbed') as typeof import('../lib/finance/financeReceiptsEmbed');
   assert(
     FINANCE_RECEIPTS_CUSTOMER_FKEY === 'finance_receipts_customer_id_fkey',
@@ -178,6 +183,34 @@ function testCreateChargeApiPathAndDuplicateGuard() {
     FINANCE_RECEIPTS_CHARGE_SELECT.includes(`customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}`),
     'charge select usa embed explícito de customers',
   );
+  assert(
+    FINANCE_RECEIPTS_CHARGE_CUSTOMER_FIELDS.split(',').map((f) => f.trim()).includes('cpf_cnpj'),
+    'charge select usa cpf_cnpj',
+  );
+  assert(
+    !FINANCE_RECEIPTS_CHARGE_SELECT.includes(' cpf,') &&
+      !FINANCE_RECEIPTS_CHARGE_SELECT.includes(' cnpj,') &&
+      !FINANCE_RECEIPTS_CHARGE_SELECT.includes('(cpf,') &&
+      !FINANCE_RECEIPTS_CHARGE_SELECT.includes(', cnpj'),
+    'charge select não pede colunas cpf/cnpj separadas',
+  );
+
+  const {
+    resolveCustomerDocumentDigits,
+    isValidBrazilianTaxDocument,
+  } = require('../lib/customerIdentity') as typeof import('../lib/customerIdentity');
+  assert(
+    resolveCustomerDocumentDigits({ cpf_cnpj: '123.456.789-01', document: null }) === '12345678901',
+    'resolve documento de cpf_cnpj',
+  );
+  assert(
+    resolveCustomerDocumentDigits({ cpf_cnpj: null, document: '12.345.678/0001-99' }) ===
+      '12345678000199',
+    'resolve documento de document',
+  );
+  assert(isValidBrazilianTaxDocument('12345678901'), 'CPF válido por tamanho');
+  assert(isValidBrazilianTaxDocument('12345678000199'), 'CNPJ válido por tamanho');
+  assert(!isValidBrazilianTaxDocument(''), 'documento vazio inválido');
 
   const dupMsg = mapCreateChargeApiError('Esta parcela já foi paga.');
   assert(dupMsg.includes('parcela paga'), 'mapeia erro parcela paga');

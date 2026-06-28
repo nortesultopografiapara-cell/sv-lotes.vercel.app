@@ -4,6 +4,7 @@ import {
   assertCompanyAsaasChargeResponseSafe,
   createCompanyInstallmentCharge,
   CompanyAsaasChargePaidError,
+  CompanyAsaasCustomerDocumentMissingError,
   CompanyAsaasIntegrationInactiveError,
 } from '@/lib/finance/asaasCompanyChargeService';
 
@@ -39,6 +40,9 @@ export async function POST(request: Request) {
     }
     if (err instanceof CompanyAsaasChargePaidError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err instanceof CompanyAsaasCustomerDocumentMissingError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     console.error('[finance/asaas/create-charge]', err);
     return NextResponse.json(

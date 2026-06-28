@@ -32,6 +32,11 @@ import {
 } from './companyAsaasChargeTypes';
 import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
 import { FINANCE_RECEIPTS_CHARGE_SELECT } from './financeReceiptsEmbed';
+import {
+  isValidBrazilianTaxDocument,
+  resolveCustomerDocumentDigits,
+  type CustomerRecord,
+} from '@/lib/customerIdentity';
 
 type InstallmentRow = {
   id: string;
@@ -43,7 +48,7 @@ type InstallmentRow = {
   due_date: string;
   amount: number;
   status: string;
-  customers?: { name?: string; cpf?: string; cnpj?: string; email?: string } | null;
+  customers?: Pick<CustomerRecord, 'name' | 'cpf_cnpj' | 'document' | 'email' | 'phone'> | null;
   sales?: { contracts?: Array<{ contract_number?: string }> } | null;
 };
 
@@ -58,6 +63,13 @@ export class CompanyAsaasChargePaidError extends Error {
   constructor(message = 'Esta parcela já foi paga.') {
     super(message);
     this.name = 'CompanyAsaasChargePaidError';
+  }
+}
+
+export class CompanyAsaasCustomerDocumentMissingError extends Error {
+  constructor(message = 'Complete o CPF/CNPJ do cliente antes de gerar a cobrança Asaas.') {
+    super(message);
+    this.name = 'CompanyAsaasCustomerDocumentMissingError';
   }
 }
 
@@ -107,7 +119,18 @@ async function loadInstallment(
 }
 
 function resolvePayerDocument(customer: InstallmentRow['customers']): string {
-  return String(customer?.cpf || customer?.cnpj || '').replace(/\D/g, '');
+  return resolveCustomerDocumentDigits(customer);
+}
+
+function assertPayerDocumentPresent(customer: InstallmentRow['customers']): string {
+  const doc = resolvePayerDocument(customer);
+  if (!isValidBrazilianTaxDocument(doc)) {
+    const customerName = customer?.name?.trim() || 'Cliente';
+    throw new CompanyAsaasCustomerDocumentMissingError(
+      `Cadastro incompleto: informe o CPF ou CNPJ de "${customerName}" em Clientes antes de gerar a cobrança Asaas.`,
+    );
+  }
+  return doc;
 }
 
 function buildChargeDescription(installment: InstallmentRow): string {
@@ -166,9 +189,10 @@ async function createCompanyChargeWithBillingType(
 
   const dueDate = String(installment.due_date || '').split('T')[0];
   const customerName = installment.customers?.name || 'Cliente';
+  const payerDocument = assertPayerDocumentPresent(installment.customers);
   const customerId = await asaasCompanyFindOrCreateCustomer(apiKey, environment, {
     name: customerName,
-    cpfCnpj: resolvePayerDocument(installment.customers),
+    cpfCnpj: payerDocument,
     email: installment.customers?.email || undefined,
     externalReference: input.companyId,
   });

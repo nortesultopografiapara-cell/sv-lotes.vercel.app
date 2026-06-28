@@ -1,6 +1,10 @@
 /** FK explícita entre finance_receipts e customers (evita embed ambíguo no PostgREST). */
 export const FINANCE_RECEIPTS_CUSTOMER_FKEY = 'finance_receipts_customer_id_fkey';
 
+/** Colunas reais de customers usadas na geração de cobrança Asaas. */
+export const FINANCE_RECEIPTS_CHARGE_CUSTOMER_FIELDS =
+  'name, cpf_cnpj, document, email, phone';
+
 /** Select completo para listagem (Financeiro / Cobranças). */
 export const FINANCE_RECEIPTS_LIST_SELECT = `
   *,
@@ -30,6 +34,6 @@ export const FINANCE_RECEIPTS_CHARGE_SELECT = `
   due_date,
   amount,
   status,
-  customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}(name, cpf, cnpj, email),
+  customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}(${FINANCE_RECEIPTS_CHARGE_CUSTOMER_FIELDS}),
   sales:sale_id(contracts(contract_number))
 `;
