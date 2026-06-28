@@ -250,11 +250,31 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       );
       void resolveFinanceProjectsForUser(user, projData || [], ownerCtx.rows, ownerProjectOptions);
 
-      setPayments(scoped);
       setSelectedIds(new Set());
       const installmentIds = scoped.map((row) => String(row.id));
       await loadIntegrationStatus();
       await loadChargeMap(installmentIds);
+
+      let finalRows = scoped;
+      if (installmentIds.length > 0) {
+        let refreshQuery = supabase
+          .from('finance_receipts')
+          .select(FINANCE_RECEIPTS_LIST_SELECT)
+          .in('id', installmentIds)
+          .order('due_date', { ascending: true });
+        refreshQuery = applyTenantFilter(refreshQuery, rlsCtx, 'finance_receipts');
+        const { data: refreshedData, error: refreshError } = await refreshQuery;
+        if (!refreshError && refreshedData) {
+          finalRows = scopeFinanceRowsForUser(
+            user,
+            refreshedData,
+            ownerCtx.rows,
+            resolveReceiptProjectId,
+          );
+        }
+      }
+
+      setPayments(finalRows);
     } catch (err) {
       console.error('CHARGES_LOAD', err);
       const message =
@@ -420,14 +440,17 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Erro ${res.status}`);
       const charge = json.charge as CompanyAsaasChargeResponse | null;
+      const receiptUpdated = Boolean(json.receiptUpdated);
       if (charge) {
         applyAsaasChargeUpdate(installmentId, charge);
         showToast(
           charge.status === 'PAID'
-            ? 'Pagamento confirmado — parcela baixada automaticamente.'
+            ? receiptUpdated
+              ? 'Pagamento confirmado — parcela baixada automaticamente.'
+              : 'Pagamento confirmado no Asaas.'
             : 'Status atualizado com sucesso.',
         );
-        if (charge.status === 'PAID') {
+        if (charge.status === 'PAID' || receiptUpdated) {
           await loadInstallments();
         }
       } else {
@@ -618,6 +641,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     }
     setBulkBusy(false);
     if (okCount > 0) {
+      await loadInstallments();
       showToast(`Status atualizado em ${okCount} parcela(s).`);
     } else {
       showToast('Não foi possível atualizar o status das cobranças selecionadas.', true);

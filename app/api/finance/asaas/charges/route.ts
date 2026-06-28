@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeCompanyAsaasRoute } from '@/lib/banking/bankingRouteGuard';
 import { listCompanyAsaasChargesForInstallments } from '@/lib/finance/companyAsaasChargeRepository';
 import { assertCompanyAsaasChargeResponseSafe } from '@/lib/finance/asaasCompanyChargeService';
+import { ensureCompanyAsaasInstallmentReconciledIfNeeded } from '@/lib/finance/companyAsaasPaymentReconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,22 @@ export async function GET(request: Request) {
     );
 
     for (const charge of charges) {
+      if (charge.status === 'PAID') {
+        try {
+          await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+            auth.admin,
+            auth.tenantId,
+            charge.installmentId,
+            { eventType: 'CHARGES_LIST_SYNC' },
+          );
+        } catch (syncErr) {
+          console.error('[finance/asaas/charges GET] reconcile failed', {
+            installmentId: charge.installmentId,
+            chargeId: charge.id,
+            error: syncErr instanceof Error ? syncErr.message : syncErr,
+          });
+        }
+      }
       assertCompanyAsaasChargeResponseSafe(charge);
     }
 

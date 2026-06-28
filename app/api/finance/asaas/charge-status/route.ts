@@ -7,6 +7,7 @@ import {
   getCompanyChargeStatusByInstallment,
   CompanyAsaasIntegrationInactiveError,
 } from '@/lib/finance/asaasCompanyChargeService';
+import { ensureCompanyAsaasInstallmentReconciledIfNeeded } from '@/lib/finance/companyAsaasPaymentReconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,17 +20,42 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const installmentId = String(url.searchParams.get('installmentId') ?? '').trim();
     const chargeId = String(url.searchParams.get('chargeId') ?? '').trim();
+    let receiptUpdated = false;
 
     if (chargeId) {
       const charge = await getCompanyChargeStatus(auth.admin, auth.tenantId, chargeId);
       assertCompanyAsaasChargeResponseSafe(charge);
-      return NextResponse.json({ charge });
+      if (charge.status === 'PAID') {
+        const reconcile = await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+          auth.admin,
+          auth.tenantId,
+          charge.installmentId,
+          { eventType: 'MANUAL_STATUS_SYNC' },
+        );
+        receiptUpdated = Boolean(reconcile?.receiptUpdated);
+      }
+      return NextResponse.json({ charge, receiptUpdated });
     }
 
     if (installmentId) {
-      const charge = await getCompanyChargeStatusByInstallment(auth.admin, auth.tenantId, installmentId);
-      if (charge) assertCompanyAsaasChargeResponseSafe(charge);
-      return NextResponse.json({ charge });
+      const charge = await getCompanyChargeStatusByInstallment(
+        auth.admin,
+        auth.tenantId,
+        installmentId,
+      );
+      if (charge) {
+        assertCompanyAsaasChargeResponseSafe(charge);
+        if (charge.status === 'PAID') {
+          const reconcile = await ensureCompanyAsaasInstallmentReconciledIfNeeded(
+            auth.admin,
+            auth.tenantId,
+            installmentId,
+            { eventType: 'MANUAL_STATUS_SYNC' },
+          );
+          receiptUpdated = Boolean(reconcile?.receiptUpdated);
+        }
+      }
+      return NextResponse.json({ charge, receiptUpdated });
     }
 
     return NextResponse.json({ error: 'installmentId ou chargeId obrigatório.' }, { status: 400 });

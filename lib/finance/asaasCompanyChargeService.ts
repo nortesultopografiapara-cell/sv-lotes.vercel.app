@@ -23,7 +23,10 @@ import {
   type CompanyAsaasChargeSummary,
   isActiveCompanyAsaasChargeStatus,
 } from './companyAsaasChargeWorkflow';
-import { executeCompanyAsaasPaymentReconciliation } from './companyAsaasPaymentReconciliation';
+import {
+  executeCompanyAsaasPaymentReconciliation,
+  ensureCompanyAsaasInstallmentReconciled,
+} from './companyAsaasPaymentReconciliation';
 import {
   type CreateCompanyInstallmentChargeInput,
   type CompanyAsaasChargeResponse,
@@ -264,13 +267,16 @@ export async function getCompanyChargeStatus(
         : null,
   });
 
-  if (mappedStatus === 'PAID' && payment.id) {
-    await executeCompanyAsaasPaymentReconciliation(admin, {
-      companyId,
-      asaasPaymentId: payment.id,
+  if (mappedStatus === 'PAID') {
+    const paidAt =
+      payment.paymentDate || payment.clientPaymentDate || new Date().toISOString();
+    await ensureCompanyAsaasInstallmentReconciled(admin, companyId, updated.installmentId, {
+      asaasPaymentId: payment.id || (data as { asaas_payment_id: string }).asaas_payment_id,
       eventType: 'MANUAL_STATUS_SYNC',
-      paidAt: payment.paymentDate || payment.clientPaymentDate || new Date().toISOString(),
+      paidAt,
       paymentPayload: payment as Record<string, unknown>,
+      paymentDate: payment.paymentDate ?? null,
+      creditedDate: payment.creditDate ?? payment.estimatedCreditDate ?? null,
     });
     const refreshed = await getLatestCompanyAsaasChargeForInstallment(
       admin,
@@ -291,7 +297,22 @@ export async function getCompanyChargeStatusByInstallment(
   const charge = await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId);
   if (!charge) return null;
   if (charge.status === 'CANCELLED') return charge;
-  return getCompanyChargeStatus(admin, companyId, charge.id);
+
+  try {
+    return await getCompanyChargeStatus(admin, companyId, charge.id);
+  } catch (err) {
+    if (charge.status === 'PAID') {
+      await ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, {
+        eventType: 'MANUAL_STATUS_SYNC_FALLBACK',
+        paidAt: charge.paidAt,
+      });
+      return (
+        (await getLatestCompanyAsaasChargeForInstallment(admin, companyId, installmentId)) ??
+        charge
+      );
+    }
+    throw err;
+  }
 }
 
 export async function regenerateCompanyInstallmentCharge(

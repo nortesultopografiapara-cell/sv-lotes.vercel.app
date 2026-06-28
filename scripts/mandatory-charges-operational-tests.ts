@@ -477,16 +477,30 @@ function testCompanyAsaasPaidChargeReconcilesFinanceReceipt() {
     'status manual não retorna cedo quando cobrança já está PAID',
   );
   assert(
-    service.includes('executeCompanyAsaasPaymentReconciliation'),
-    'sync manual delega conciliação',
+    service.includes('ensureCompanyAsaasInstallmentReconciled'),
+    'sync manual garante baixa por installment_id',
   );
   assert(
     reconciliation.includes("status: 'pago'") && reconciliation.includes('paid_amount'),
     'conciliação baixa finance_receipts',
   );
   assert(
-    reconciliation.includes('reprocessCompanyAsaasPaidCharges'),
-    'reprocessamento Company unificado',
+    reconciliation.includes('markFinanceReceiptPaidFromCompanyAsaasCharge'),
+    'baixa finance_receipts dedicada',
+  );
+  assert(
+    reconciliation.includes('ensureCompanyAsaasInstallmentReconciled'),
+    'conciliação por installment_id',
+  );
+  assert(
+    fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charges/route.ts'), 'utf8')
+      .includes('ensureCompanyAsaasInstallmentReconciledIfNeeded'),
+    'listagem de cobranças faz backfill da parcela',
+  );
+  assert(
+    fs.readFileSync(path.join(process.cwd(), 'app/api/finance/asaas/charge-status/route.ts'), 'utf8')
+      .includes('receiptUpdated'),
+    'status manual retorna receiptUpdated',
   );
   assert(
     integrationService.includes('reprocessCompanyAsaasPaidCharges'),
