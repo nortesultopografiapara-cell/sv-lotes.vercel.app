@@ -18,6 +18,12 @@ import {
   updateCompanyAsaasCharge,
 } from './companyAsaasChargeRepository';
 import {
+  assertCanCreateCompanyAsaasCharge,
+  assertCanRegenerateCompanyAsaasCharge,
+  type CompanyAsaasChargeSummary,
+  isActiveCompanyAsaasChargeStatus,
+} from './companyAsaasChargeWorkflow';
+import {
   type CreateCompanyInstallmentChargeInput,
   type CompanyAsaasChargeResponse,
   isCompanyAsaasIntegrationReady,
@@ -42,6 +48,13 @@ export class CompanyAsaasIntegrationInactiveError extends Error {
   constructor(message = 'Integração Asaas Company não está ativa para esta empresa.') {
     super(message);
     this.name = 'CompanyAsaasIntegrationInactiveError';
+  }
+}
+
+export class CompanyAsaasChargePaidError extends Error {
+  constructor(message = 'Esta parcela já foi paga.') {
+    super(message);
+    this.name = 'CompanyAsaasChargePaidError';
   }
 }
 
@@ -139,12 +152,14 @@ async function createCompanyChargeWithBillingType(
     input.companyId,
     input.installmentId,
   );
-  if (
-    existing &&
-    existing.billingType === billingType &&
-    ['PENDING', 'REGISTERED', 'OVERDUE'].includes(existing.status)
-  ) {
-    return existing;
+  try {
+    const reusable = assertCanCreateCompanyAsaasCharge(existing);
+    if (reusable) return reusable;
+  } catch (err) {
+    if (err instanceof Error && err.message === 'Esta parcela já foi paga.') {
+      throw new CompanyAsaasChargePaidError(err.message);
+    }
+    throw err;
   }
 
   const dueDate = String(installment.due_date || '').split('T')[0];
@@ -232,6 +247,51 @@ export async function getCompanyChargeStatusByInstallment(
   if (!charge) return null;
   if (charge.status === 'PAID' || charge.status === 'CANCELLED') return charge;
   return getCompanyChargeStatus(admin, companyId, charge.id);
+}
+
+export async function regenerateCompanyInstallmentCharge(
+  admin: SupabaseClient,
+  input: CreateCompanyInstallmentChargeInput,
+): Promise<CompanyAsaasChargeResponse> {
+  const existing = await getLatestCompanyAsaasChargeForInstallment(
+    admin,
+    input.companyId,
+    input.installmentId,
+  );
+
+  try {
+    assertCanRegenerateCompanyAsaasCharge(existing);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'Esta parcela já foi paga.') {
+      throw new CompanyAsaasChargePaidError(err.message);
+    }
+    throw err;
+  }
+
+  if (existing && isActiveCompanyAsaasChargeStatus(existing.status)) {
+    await cancelCompanyCharge(admin, input.companyId, existing.id);
+  }
+
+  return createCompanyChargeWithBillingType(admin, input, input.billingType);
+}
+
+export async function getCompanyAsaasChargeDashboardSummary(
+  admin: SupabaseClient,
+  companyId: string,
+): Promise<CompanyAsaasChargeSummary> {
+  const { count, error } = await admin
+    .from('company_asaas_charges')
+    .select('*', { count: 'exact', head: true })
+    .eq('company_id', companyId);
+
+  if (error) throw new Error(error.message);
+
+  const pending = await listPendingCompanyAsaasCharges(admin, companyId);
+  return {
+    totalCharges: count ?? 0,
+    pendingCount: pending.length,
+    openValue: pending.reduce((sum, charge) => sum + Number(charge.value || 0), 0),
+  };
 }
 
 export async function cancelCompanyCharge(

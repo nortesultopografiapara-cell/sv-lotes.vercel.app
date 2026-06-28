@@ -4,6 +4,7 @@ export * from './asaasIntegrationRepository';
 export * from './asaasIntegrationService';
 export * from './companyAsaasChargeTypes';
 export * from './asaasCompanyClient';
+export * from './companyAsaasChargeWorkflow';
 export * from './companyAsaasChargeRepository';
 export * from './asaasCompanyChargeService';
 export * from './companyAsaasWebhookHandler';
