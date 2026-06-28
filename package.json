@@ -26,6 +26,7 @@
     "test:zero-distance-segment": "tsx scripts/mandatory-zero-distance-segment-tests.ts",
     "test:broker-delete": "tsx scripts/mandatory-broker-delete-tests.ts",
     "test:broker-admin-email-conflict": "tsx scripts/mandatory-broker-admin-email-conflict-tests.ts",
+    "test:gis-delete-individual-lot": "tsx scripts/mandatory-gis-delete-individual-lot-tests.ts",
     "test:saas-payment": "tsx scripts/mandatory-saas-payment-tests.ts",
     "test:saas-charge-delete": "tsx scripts/mandatory-saas-charge-delete-tests.ts",
     "test:saas-cash": "tsx scripts/mandatory-saas-cash-movements-tests.ts",
