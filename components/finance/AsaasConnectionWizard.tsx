@@ -155,8 +155,27 @@ export function AsaasConnectionWizard({
     try {
       onChange('webhookUrl', webhookUrl);
       await onSave({ webhookUrl, autoSync: form.autoSync });
-      await runTestConnection();
-      await runValidateWebhook();
+
+      const testRes = await fetch('/api/finance/asaas/test-connection', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const testJson = await testRes.json().catch(() => ({}));
+      const testResult = (testJson.connection || {}) as ConnectionResult;
+      if (!testRes.ok || !testResult.ok) {
+        throw new Error(testResult.message || testJson.error || 'Falha ao testar conexão Asaas.');
+      }
+
+      const webhookRes = await fetch('/api/finance/asaas/validate-webhook', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const webhookJson = await webhookRes.json().catch(() => ({}));
+      const validation = webhookJson.validation as { ok?: boolean; message?: string };
+      if (!webhookRes.ok || !validation?.ok) {
+        throw new Error(validation?.message || webhookJson.error || 'Falha ao validar webhook.');
+      }
+
       await onReload();
       onFinish?.();
     } catch (err) {

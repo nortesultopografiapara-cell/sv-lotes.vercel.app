@@ -240,6 +240,59 @@ function testNoDuplicateWhenActiveChargeExists() {
   console.log('OK testNoDuplicateWhenActiveChargeExists');
 }
 
+function testIntegrationReadyWithLegacyDraftStatus() {
+  const { isCompanyAsaasIntegrationReady } = require('../lib/finance/companyAsaasChargeTypes') as {
+    isCompanyAsaasIntegrationReady: (config: Record<string, unknown>) => boolean;
+  };
+  const { buildAsaasSetupStatusCards } = require('../lib/finance/asaasIntegrationUiHelpers') as {
+    buildAsaasSetupStatusCards: (config: Record<string, unknown>) => Array<{ id: string; status: string }>;
+  };
+
+  const legacyConfig = {
+    connectionStatus: 'CONNECTED',
+    status: 'DRAFT',
+    environment: 'SANDBOX',
+    hasSandboxApiKey: true,
+    hasProductionApiKey: false,
+    webhookActive: true,
+    webhookConfigured: true,
+    accountValidated: true,
+  };
+
+  assert(isCompanyAsaasIntegrationReady(legacyConfig), 'integração pronta com DRAFT legado');
+  const cards = buildAsaasSetupStatusCards({
+    id: 'int-1',
+    companyId: 'co-1',
+    companyName: 'SV Topografia',
+    webhookUrl: 'https://example.com/webhook',
+    hasWebhookToken: true,
+    features: { pix: true, boleto: true, card: true, paymentLink: true, autoSync: true },
+    sync: { lastAt: null, chargesCount: 0 },
+    configuredAt: null,
+    updatedAt: null,
+    lastConnectionTestAt: '2026-06-01T00:00:00Z',
+    lastConnectionError: null,
+    ...legacyConfig,
+  });
+  const accountCard = cards.find((card) => card.id === 'account');
+  assert(accountCard?.status === 'verified', 'Conta Asaas verificada quando integração pronta');
+  console.log('OK testIntegrationReadyWithLegacyDraftStatus');
+}
+
+function testSavePreservesActiveStatus() {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const repo = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasIntegrationRepository.ts'),
+    'utf8',
+  );
+  assert(
+    repo.includes('integrationId ? existing.status || \'DRAFT\' : \'DRAFT\''),
+    'save preserva status ACTIVE em updates',
+  );
+  console.log('OK testSavePreservesActiveStatus');
+}
+
 function main() {
   testPendingWithoutChargeShowsGenerate();
   testPaidInstallmentCannotGenerate();
@@ -250,6 +303,8 @@ function main() {
   testInactiveIntegrationDisablesGenerate();
   testAsaasOperationalKpis();
   testNoDuplicateWhenActiveChargeExists();
+  testIntegrationReadyWithLegacyDraftStatus();
+  testSavePreservesActiveStatus();
   console.log('mandatory-charges-operational-tests: all passed');
 }
 

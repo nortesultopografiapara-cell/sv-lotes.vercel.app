@@ -1,4 +1,5 @@
 import type { AsaasIntegrationConfigResponse } from './asaasIntegrationConfig';
+import { isCompanyAsaasIntegrationReady } from './companyAsaasChargeTypes';
 
 export type AsaasSetupCardStatus = 'configured' | 'pending' | 'error' | 'verified';
 
@@ -23,13 +24,7 @@ export function asaasSetupStatusLabel(status: AsaasSetupCardStatus): string {
 }
 
 export function isAsaasIntegrationVerified(config: AsaasIntegrationConfigResponse): boolean {
-  return (
-    config.connectionStatus === 'CONNECTED' &&
-    config.status === 'ACTIVE' &&
-    config.accountValidated &&
-    config.webhookActive &&
-    hasActiveEnvironmentApiKey(config)
-  );
+  return isCompanyAsaasIntegrationReady(config);
 }
 
 export function hasAsaasIntegrationStarted(config: AsaasIntegrationConfigResponse): boolean {
@@ -53,19 +48,22 @@ export function buildAsaasSetupStatusCards(
 ): AsaasSetupCard[] {
   const connectionError = config.connectionStatus === 'ERROR';
   const webhookError = config.connectionStatus === 'WEBHOOK_INVALID';
+  const integrationReady = isCompanyAsaasIntegrationReady(config);
 
   const accountStatus: AsaasSetupCardStatus = connectionError
     ? 'error'
-    : config.accountValidated && config.connectionStatus === 'CONNECTED'
+    : integrationReady
       ? 'verified'
-      : config.connectionStatus === 'CONNECTED'
-        ? 'configured'
-        : 'pending';
+      : config.accountValidated && config.connectionStatus === 'CONNECTED'
+        ? 'verified'
+        : config.connectionStatus === 'CONNECTED'
+          ? 'configured'
+          : 'pending';
 
   const apiKeyStatus: AsaasSetupCardStatus = connectionError
     ? 'error'
     : hasActiveEnvironmentApiKey(config)
-      ? config.connectionStatus === 'CONNECTED'
+      ? integrationReady || config.connectionStatus === 'CONNECTED'
         ? 'verified'
         : 'configured'
       : 'pending';

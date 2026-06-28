@@ -4,10 +4,12 @@ import { getBankingEncryptionKeyDiagnostics } from '@/lib/banking/credentialsCry
 import {
   assertAsaasIntegrationResponseSafe,
   getCompanyAsaasIntegrationConfig,
+  patchAsaasIntegrationMetadata,
   saveCompanyAsaasIntegrationConfig,
 } from '@/lib/finance/asaasIntegrationRepository';
 import type { AsaasIntegrationConfigInput } from '@/lib/finance/asaasIntegrationConfig';
 import { normalizeAsaasEnvironment } from '@/lib/finance/asaasIntegrationConfig';
+import { isCompanyAsaasIntegrationReady } from '@/lib/finance/companyAsaasChargeTypes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +19,18 @@ export async function GET(request: Request) {
   if ('error' in auth) return auth.error;
 
   try {
-    const integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
+    let integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
+    if (
+      integration.id &&
+      integration.status !== 'ACTIVE' &&
+      isCompanyAsaasIntegrationReady(integration)
+    ) {
+      await patchAsaasIntegrationMetadata(auth.admin, auth.tenantId, {
+        status: 'ACTIVE',
+        connectionStatus: 'CONNECTED',
+      });
+      integration = await getCompanyAsaasIntegrationConfig(auth.admin, auth.tenantId);
+    }
     assertAsaasIntegrationResponseSafe(integration);
     return NextResponse.json({ integration });
   } catch (err) {

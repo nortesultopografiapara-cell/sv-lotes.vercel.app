@@ -100,10 +100,32 @@ export function isCompanyAsaasIntegrationReady(config: {
   environment: string;
   hasSandboxApiKey: boolean;
   hasProductionApiKey: boolean;
+  webhookActive?: boolean;
+  webhookConfigured?: boolean;
+  accountValidated?: boolean;
 }): boolean {
   const hasKey =
     config.environment === 'PRODUCTION'
       ? config.hasProductionApiKey
       : config.hasSandboxApiKey;
-  return hasKey && config.connectionStatus === 'CONNECTED' && config.status === 'ACTIVE';
+  if (!hasKey) return false;
+  if (config.connectionStatus === 'ERROR' || config.connectionStatus === 'WEBHOOK_INVALID') {
+    return false;
+  }
+
+  if (config.connectionStatus === 'CONNECTED' && config.status === 'ACTIVE') {
+    return true;
+  }
+
+  // Setup completo com credenciais e webhook, mesmo se status ficou DRAFT após save anterior.
+  if (
+    config.connectionStatus === 'CONNECTED' &&
+    config.webhookActive &&
+    config.webhookConfigured &&
+    config.accountValidated
+  ) {
+    return true;
+  }
+
+  return false;
 }

@@ -153,7 +153,8 @@ export async function runAsaasValidateWebhook(
   const validatedAt = new Date().toISOString();
   await patchAsaasIntegrationMetadata(admin, companyId, {
     webhook: { active: true, validatedAt },
-    connectionStatus: config.connectionStatus === 'WEBHOOK_INVALID' ? 'CONNECTED' : undefined,
+    connectionStatus: 'CONNECTED',
+    status: 'ACTIVE',
   });
 
   return {

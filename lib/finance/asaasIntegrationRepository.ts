@@ -62,6 +62,13 @@ function resolveConnectionStatus(
     env === 'PRODUCTION' ? credentialTypes.has('api_key') : credentialTypes.has('oauth');
   if (!hasActiveKey) return 'DISCONNECTED';
   if (row?.status === 'ACTIVE') return 'CONNECTED';
+  if (
+    metadata.webhook?.active &&
+    (metadata.accountValidated ||
+      (metadata.lastConnectionTestAt && !metadata.lastConnectionError))
+  ) {
+    return 'CONNECTED';
+  }
   return 'DISCONNECTED';
 }
 
@@ -92,6 +99,10 @@ function mapRowToResponse(
   };
   const webhookUrl = row.webhook_url ?? '';
   const hasWebhookToken = credentialTypes.has('webhook_secret');
+  const accountValidated = Boolean(
+    metadata.accountValidated ||
+      (metadata.lastConnectionTestAt && !metadata.lastConnectionError),
+  );
 
   return {
     id: row.id,
@@ -106,7 +117,7 @@ function mapRowToResponse(
     hasWebhookToken,
     webhookConfigured: Boolean(webhookUrl && hasWebhookToken),
     webhookActive: Boolean(metadata.webhook?.active),
-    accountValidated: Boolean(metadata.accountValidated),
+    accountValidated,
     features,
     sync,
     configuredAt: row.configured_at,
@@ -257,7 +268,7 @@ export async function saveCompanyAsaasIntegrationConfig(
     provider: ASAAS_PROVIDER,
     bank_provider: ASAAS_PROVIDER,
     environment,
-    status: 'DRAFT' as BankIntegrationStatus,
+    status: (integrationId ? existing.status || 'DRAFT' : 'DRAFT') as BankIntegrationStatus,
     webhook_url: cleanText(input.webhookUrl) || existing.webhookUrl || null,
     metadata,
     configured_at: now,
