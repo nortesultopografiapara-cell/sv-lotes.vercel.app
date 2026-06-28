@@ -31,6 +31,7 @@ import {
   mapAsaasPaymentStatusToCompanyCharge,
 } from './companyAsaasChargeTypes';
 import { assertCompanyAsaasEnabled } from './companyAsaasAccess';
+import { FINANCE_RECEIPTS_CHARGE_SELECT } from './financeReceiptsEmbed';
 
 type InstallmentRow = {
   id: string;
@@ -84,9 +85,7 @@ async function loadInstallment(
 ): Promise<InstallmentRow> {
   const { data, error } = await admin
     .from('finance_receipts')
-    .select(
-      'id, company_id, tenant_id, sale_id, customer_id, installment_number, due_date, amount, status, customers(name, cpf, cnpj, email), sales: sale_id(contracts(contract_number))',
-    )
+    .select(FINANCE_RECEIPTS_CHARGE_SELECT)
     .eq('id', installmentId)
     .maybeSingle();
 

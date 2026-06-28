@@ -146,6 +146,38 @@ function testCreateChargeApiPathAndDuplicateGuard() {
   assert(page.includes('/api/finance/asaas/create-charge'), 'charges chama create-charge');
   assert(page.includes('/api/finance/asaas/charge-status'), 'charges chama charge-status');
   assert(page.includes('/api/finance/asaas/regenerate-charge'), 'charges chama regenerate-charge');
+  assert(page.includes('FINANCE_RECEIPTS_LIST_SELECT'), 'charges usa select compartilhado');
+
+  const chargeService = fs.readFileSync(
+    path.join(process.cwd(), 'lib/finance/asaasCompanyChargeService.ts'),
+    'utf8',
+  );
+  assert(
+    chargeService.includes('FINANCE_RECEIPTS_CHARGE_SELECT'),
+    'create charge usa select explícito de finance_receipts',
+  );
+  assert(
+    !chargeService.includes('customers(name, cpf'),
+    'create charge não usa embed ambíguo customers(...)',
+  );
+
+  const {
+    FINANCE_RECEIPTS_CUSTOMER_FKEY,
+    FINANCE_RECEIPTS_LIST_SELECT,
+    FINANCE_RECEIPTS_CHARGE_SELECT,
+  } = require('../lib/finance/financeReceiptsEmbed') as typeof import('../lib/finance/financeReceiptsEmbed');
+  assert(
+    FINANCE_RECEIPTS_CUSTOMER_FKEY === 'finance_receipts_customer_id_fkey',
+    'FK customers explícita',
+  );
+  assert(
+    FINANCE_RECEIPTS_LIST_SELECT.includes(`customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}`),
+    'list select usa embed explícito de customers',
+  );
+  assert(
+    FINANCE_RECEIPTS_CHARGE_SELECT.includes(`customers!${FINANCE_RECEIPTS_CUSTOMER_FKEY}`),
+    'charge select usa embed explícito de customers',
+  );
 
   const dupMsg = mapCreateChargeApiError('Esta parcela já foi paga.');
   assert(dupMsg.includes('parcela paga'), 'mapeia erro parcela paga');
@@ -209,6 +241,17 @@ function testInactiveIntegrationDisablesGenerate() {
     charge: null,
   });
   assert(!canGenerate, 'integração inativa desabilita geração');
+
+  const withoutData = canGenerateAsaasCharge({
+    installmentPaid: false,
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+    charge: null,
+    installmentsDataReady: false,
+    installmentId: 'inst-1',
+  });
+  assert(!withoutData, 'parcelas não carregadas desabilita geração');
 
   const inactiveMsg = mapCreateChargeApiError('Integração Asaas inativa para esta empresa.');
   assert(inactiveMsg.includes('Integração Asaas não está ativa'), 'mensagem integração inativa');
@@ -359,7 +402,11 @@ function testChargesUsesSameIntegrationReadyRuleAsSettings() {
     'utf8',
   );
   assert(pageClient.includes('resolveChargesIntegrationReady'), 'ChargesPageClient usa helper unificado');
-  assert(pageClient.includes('loadIntegrationStatus'), 'charges recarrega status da integração');
+  assert(
+    pageClient.includes('loadIntegrationStatus'),
+    'charges recarrega status da integração',
+  );
+  assert(pageClient.includes('loadError'), 'charges exibe erro de carregamento');
   assert(
     pageClient.includes('Nenhuma cobrança Asaas gerada para atualizar.'),
     'mensagem clara ao atualizar status sem cobrança',

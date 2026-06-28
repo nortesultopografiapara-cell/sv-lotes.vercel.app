@@ -52,6 +52,10 @@ import {
 } from '@/lib/ownerProjectAccess';
 import { isOwnerRole } from '@/lib/rolePermissions';
 import { blockOwnerWriteOnClient } from '@/lib/ownerWriteGuard';
+import {
+  FINANCE_RECEIPTS_LIST_SELECT,
+  FINANCE_RECEIPTS_LIST_SELECT_FALLBACK,
+} from '@/lib/finance/financeReceiptsEmbed';
 
 const STATUS_OPTIONS = ['Todas', 'Pendente', 'Vencido', 'Pago', 'Cancelado'] as const;
 
@@ -94,6 +98,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const [toastIsError, setToastIsError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const resolvedCompanyId = user?.tenant_id || (user as { company_id?: string })?.company_id;
   const companyAsaasEnabled = isCompanyAsaasEnabled(resolvedCompanyId);
@@ -104,6 +109,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     [integrationConfig],
   );
   const integrationReady = companyAsaasEnabled && integrationActive;
+  const installmentsDataReady = !loading && !loadError;
 
   const showToast = useCallback((message: string, isError = false) => {
     setToast(message);
@@ -177,6 +183,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const loadInstallments = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const rlsCtx = await resolveRlsContext(user);
       const resolvedTenantId =
@@ -189,13 +196,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
       let query = supabase
         .from('finance_receipts')
-        .select(`
-          *,
-          customers!finance_receipts_customer_id_fkey(*),
-          sales:sale_id(id, installments_count, projects(name), contracts(contract_number)),
-          projects:project_id(*),
-          blocks:block_id(*)
-        `)
+        .select(FINANCE_RECEIPTS_LIST_SELECT)
         .order('due_date', { ascending: true });
 
       query = applyTenantFilter(query, rlsCtx, 'finance_receipts');
@@ -204,7 +205,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       if (error) {
         let fallbackQuery = supabase
           .from('finance_receipts')
-          .select('*, customers!finance_receipts_customer_id_fkey(*), sales:sale_id(*), projects:project_id(*), blocks:block_id(*)')
+          .select(FINANCE_RECEIPTS_LIST_SELECT_FALLBACK)
           .order('due_date', { ascending: true });
         fallbackQuery = applyTenantFilter(fallbackQuery, rlsCtx, 'finance_receipts');
         const fallbackRes = await fallbackQuery;
@@ -212,7 +213,15 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         error = fallbackRes.error;
       }
 
-      if (error) throw error;
+      if (error) {
+        const message =
+          error.message ||
+          'Não foi possível carregar as parcelas. Verifique a conexão e tente novamente.';
+        setLoadError(message);
+        setPayments([]);
+        showToast(message, true);
+        return;
+      }
 
       const ownerCtx = await loadOwnerAccessContext(supabase, user, resolvedTenantId);
       const scoped = scopeFinanceRowsForUser(
@@ -248,11 +257,17 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       await loadChargeMap(installmentIds);
     } catch (err) {
       console.error('CHARGES_LOAD', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Erro inesperado ao carregar parcelas.';
+      setLoadError(message);
       setPayments([]);
+      showToast(message, true);
     } finally {
       setLoading(false);
     }
-  }, [user, loadIntegrationStatus, loadChargeMap]);
+  }, [user, loadIntegrationStatus, loadChargeMap, showToast]);
 
   useEffect(() => {
     void loadInstallments();
@@ -285,6 +300,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         integrationActive,
         companyAsaasEnabled,
         ownerReadOnly,
+        installmentsDataReady,
       }),
     [
       selectedIds,
@@ -293,6 +309,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       integrationActive,
       companyAsaasEnabled,
       ownerReadOnly,
+      installmentsDataReady,
     ],
   );
 
@@ -343,8 +360,23 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     billingType: 'PIX' | 'BOLETO',
   ) => {
     if (blockOwnerWriteOnClient(user?.role)) return;
+    if (loadError || !installmentsDataReady) {
+      showToast(
+        loadError || 'Aguarde o carregamento das parcelas antes de gerar cobrança.',
+        true,
+      );
+      return;
+    }
+    if (!installmentId?.trim()) {
+      showToast('Parcela inválida — recarregue a lista e tente novamente.', true);
+      return;
+    }
     const row = payments.find((p) => String(p.id) === installmentId);
-    if (row && isInstallmentPaidForCharges(row)) {
+    if (!row) {
+      showToast('Parcela não encontrada na lista carregada. Clique em Atualizar lista.', true);
+      return;
+    }
+    if (isInstallmentPaidForCharges(row)) {
       showToast('Não é possível gerar cobrança para parcela paga.', true);
       return;
     }
@@ -483,6 +515,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const runBulkGenerate = async () => {
     if (blockOwnerWriteOnClient(user?.role)) return;
+    if (loadError || !installmentsDataReady) {
+      showToast(
+        loadError || 'Aguarde o carregamento das parcelas antes de gerar cobranças.',
+        true,
+      );
+      return;
+    }
     if (!integrationReady) {
       showToast('Integração Asaas não está ativa.', true);
       return;
@@ -511,6 +550,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         companyAsaasEnabled,
         ownerReadOnly,
         charge,
+        installmentsDataReady,
+        installmentId,
       });
       if (!canGenerate) {
         skipCount += 1;
@@ -609,6 +650,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           Atualizar lista
         </button>
       </div>
+
+      {loadError ? (
+        <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {loadError}
+        </div>
+      ) : null}
 
       {companyAsaasEnabled && !integrationActive && !loading && !integrationLoading ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -765,7 +812,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </span>
           <button
             type="button"
-            disabled={bulkBusy || !integrationReady || selectedGeneratableCount === 0}
+            disabled={bulkBusy || !integrationReady || !installmentsDataReady || selectedGeneratableCount === 0}
             onClick={() => void runBulkGenerate()}
             className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -871,6 +918,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         companyAsaasEnabled={companyAsaasEnabled}
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}
+                        installmentsDataReady={installmentsDataReady}
                         onGenerate={(billingType) =>
                           void handleCreateAsaasCharge(installmentId, billingType)
                         }

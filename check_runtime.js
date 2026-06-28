@@ -1,16 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
+const {
+  FINANCE_RECEIPTS_LIST_SELECT,
+} = require('./lib/finance/financeReceiptsEmbed');
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function testRuntime() {
     const { data, error } = await supabase.from('finance_receipts')
-        .select(`
-               *,
-               customers!finance_receipts_customer_id_fkey(*),
-               sales:sale_id(id, installments_count, projects(name), contracts(contract_number)),
-               projects:project_id(*),
-               blocks:block_id(*)
-        `)
+        .select(FINANCE_RECEIPTS_LIST_SELECT)
         .limit(1);
     
     console.log("Error:", error);

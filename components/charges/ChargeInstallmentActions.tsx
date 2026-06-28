@@ -39,6 +39,7 @@ export type ChargeInstallmentActionsProps = {
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
   busy: boolean;
+  installmentsDataReady?: boolean;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
   onCancel: () => void;
@@ -66,6 +67,8 @@ export function resolveChargeInstallmentActionsProps(
     integrationActive: params.integrationActive,
     companyAsaasEnabled: params.companyAsaasEnabled,
     ownerReadOnly: params.ownerReadOnly,
+    installmentsDataReady: params.installmentsDataReady,
+    installmentId: params.view.id,
   });
 }
 
@@ -77,6 +80,7 @@ export function ChargeInstallmentActions({
   companyAsaasEnabled,
   ownerReadOnly,
   busy,
+  installmentsDataReady = true,
   onGenerate,
   onRefreshStatus,
   onCancel,
@@ -91,6 +95,8 @@ export function ChargeInstallmentActions({
     integrationActive,
     companyAsaasEnabled,
     ownerReadOnly,
+    installmentsDataReady,
+    installmentId: view.id,
   });
 
   const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';
@@ -107,6 +113,14 @@ export function ChargeInstallmentActions({
     return (
       <span className="text-[10px] text-amber-400/90" title="Integração Asaas não está ativa.">
         Integração inativa
+      </span>
+    );
+  }
+
+  if (!installmentsDataReady) {
+    return (
+      <span className="text-[10px] text-rose-400/90" title="Parcelas não carregadas corretamente.">
+        Dados indisponíveis
       </span>
     );
   }

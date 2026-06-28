@@ -62,7 +62,11 @@ export function canGenerateAsaasCharge(params: {
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
   charge: CompanyAsaasChargeResponse | null | undefined;
+  installmentsDataReady?: boolean;
+  installmentId?: string;
 }): boolean {
+  if (params.installmentsDataReady === false) return false;
+  if (params.installmentId !== undefined && !params.installmentId.trim()) return false;
   if (!canPerformMutableAsaasActions(params)) return false;
   if (params.installmentPaid) return false;
   if (!params.charge) return true;
@@ -104,6 +108,8 @@ export function resolveChargeActionVisibility(params: {
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
+  installmentsDataReady?: boolean;
+  installmentId?: string;
 }): ChargeActionVisibility {
   const paymentLink = params.charge ? resolveCompanyAsaasPaymentLink(params.charge) : '';
   const boletoUrl = params.charge ? resolveCompanyAsaasBoletoUrl(params.charge) : '';

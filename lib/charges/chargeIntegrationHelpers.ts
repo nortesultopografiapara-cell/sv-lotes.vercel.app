@@ -28,6 +28,7 @@ export function countSelectedGeneratableCharges(params: {
   integrationActive: boolean;
   companyAsaasEnabled: boolean;
   ownerReadOnly: boolean;
+  installmentsDataReady?: boolean;
 }): number {
   let count = 0;
   for (const installmentId of params.selectedIds) {
@@ -40,6 +41,8 @@ export function countSelectedGeneratableCharges(params: {
         companyAsaasEnabled: params.companyAsaasEnabled,
         ownerReadOnly: params.ownerReadOnly,
         charge: params.chargesByInstallment[installmentId] ?? null,
+        installmentsDataReady: params.installmentsDataReady,
+        installmentId,
       })
     ) {
       count += 1;
