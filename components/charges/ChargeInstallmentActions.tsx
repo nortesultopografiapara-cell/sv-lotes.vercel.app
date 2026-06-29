@@ -16,7 +16,7 @@ import {
   resolveCompanyAsaasPaymentLink,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
 import {
-  CHARGES_WHATSAPP_STUB_MESSAGE,
+  CHARGES_WHATSAPP_TOOLTIP,
   resolveChargeActionVisibility,
   type ChargeActionVisibility,
 } from '@/lib/charges/chargeOperationsHelpers';
@@ -235,7 +235,7 @@ export function ChargeInstallmentActions({
           type="button"
           className={btnClass}
           onClick={onWhatsApp}
-          title={CHARGES_WHATSAPP_STUB_MESSAGE}
+          title={CHARGES_WHATSAPP_TOOLTIP}
         >
           <MessageCircle className="h-3.5 w-3.5" />
           WhatsApp

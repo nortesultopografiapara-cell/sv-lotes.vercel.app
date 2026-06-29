@@ -27,6 +27,7 @@ import {
   buildChargeInstallmentView,
   computeChargeKpiSummary,
   filterChargeInstallments,
+  type ChargeInstallmentView,
   type FinanceReceiptRow,
 } from '@/lib/charges/chargeInstallmentHelpers';
 import {
@@ -35,12 +36,16 @@ import {
   resolveChargesIntegrationReady,
 } from '@/lib/charges/chargeIntegrationHelpers';
 import {
-  CHARGES_WHATSAPP_STUB_MESSAGE,
   canGenerateAsaasCharge,
   computeAsaasOperationalKpis,
   isInstallmentPaidForCharges,
   mapCreateChargeApiError,
 } from '@/lib/charges/chargeOperationsHelpers';
+import {
+  buildChargeWhatsAppMessage,
+  buildChargeWhatsAppShareUrl,
+  resolveChargeContractNumber,
+} from '@/lib/charges/chargeWhatsAppMessage';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -549,8 +554,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     showToast(ok ? 'Link copiado.' : 'Não foi possível copiar o link.', !ok);
   };
 
-  const handleWhatsApp = () => {
-    showToast(CHARGES_WHATSAPP_STUB_MESSAGE);
+  const handleWhatsApp = (
+    row: FinanceReceiptRow,
+    charge: CompanyAsaasChargeResponse,
+    view: ChargeInstallmentView,
+  ) => {
+    const customers = row.customers as { phone?: string; name?: string } | undefined;
+    const phone = customers?.phone;
+    const message = buildChargeWhatsAppMessage({
+      clientName: view.clientName,
+      parcelLabel: view.parcelLabel,
+      contractNumber: resolveChargeContractNumber(row),
+      projectName: view.projectName,
+      lotLabel: view.lotLabel,
+      amount: view.amount,
+      dueDateLabel: view.dueDateLabel,
+      charge,
+    });
+    const url = buildChargeWhatsAppShareUrl(phone, message);
+    if (!url) {
+      showToast('Cliente sem telefone válido cadastrado.', true);
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const runBulkGenerate = async () => {
@@ -970,7 +996,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         }
                         onCopyPix={() => charge && void handleCopyPix(charge)}
                         onCopyLink={() => charge && void handleCopyLink(charge)}
-                        onWhatsApp={handleWhatsApp}
+                        onWhatsApp={() => charge && handleWhatsApp(row, charge, view)}
                       />
                     </td>
                   </tr>

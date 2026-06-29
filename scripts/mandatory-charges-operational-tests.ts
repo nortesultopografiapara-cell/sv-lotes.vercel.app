@@ -13,6 +13,11 @@ import {
   resolveAsaasStatusDisplayLabel,
 } from '../lib/charges/chargeOperationsHelpers';
 import { buildChargeInstallmentView } from '../lib/charges/chargeInstallmentHelpers';
+import {
+  buildChargeWhatsAppMessage,
+  resolveChargeWhatsAppBoletoOrInvoiceUrl,
+  resolveChargeWhatsAppPrimaryPaymentUrl,
+} from '../lib/charges/chargeWhatsAppMessage';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -248,7 +253,7 @@ function testActionsOnlyWhenDataExists() {
   assert(actions.showOpenBoleto, 'boleto');
   assert(actions.showCopyPix, 'pix');
   assert(actions.showCopyLink, 'copiar link');
-  assert(actions.showWhatsApp, 'whatsapp stub');
+  assert(actions.showWhatsApp, 'whatsapp');
 
   const withoutExtras = charge({ status: 'PENDING' });
   const minimal = resolveChargeInstallmentActionsProps({
@@ -263,6 +268,65 @@ function testActionsOnlyWhenDataExists() {
   assert(!minimal.showOpenLink, 'sem link');
   assert(!minimal.showCopyPix, 'sem pix');
   console.log('OK testActionsOnlyWhenDataExists');
+}
+
+function testChargeWhatsAppMessagePrioritizesBoleto() {
+  const boletoCharge = charge({
+    status: 'PENDING',
+    bankSlipUrl: 'https://boleto.example/1',
+    paymentLink: 'https://pay.example/1',
+    pixCopyPaste: '000201PIX',
+  });
+  assert(
+    resolveChargeWhatsAppBoletoOrInvoiceUrl(boletoCharge) === 'https://boleto.example/1',
+    'boleto url direto',
+  );
+  assert(
+    resolveChargeWhatsAppPrimaryPaymentUrl(boletoCharge) === 'https://boleto.example/1',
+    'whatsapp prioriza boleto',
+  );
+
+  const pixCharge = charge({
+    status: 'PENDING',
+    paymentLink: 'https://pay.example/pix',
+    pixCopyPaste: '000201PIX',
+  });
+  assert(
+    resolveChargeWhatsAppPrimaryPaymentUrl(pixCharge) === 'https://pay.example/pix',
+    'sem boleto usa paymentLink',
+  );
+
+  const view = buildChargeInstallmentView(
+    {
+      ...pendingRow,
+      customers: { name: 'Maria' },
+      sales: { contracts: [{ contract_number: 'CT-2026-001' }] },
+      projects: { name: 'Residencial Aurora' },
+      blocks: { block_name: 'A', number: '12' },
+    },
+    boletoCharge,
+    '2026-06-08',
+  );
+
+  const message = buildChargeWhatsAppMessage({
+    clientName: view.clientName,
+    parcelLabel: view.parcelLabel,
+    contractNumber: 'CT-2026-001',
+    projectName: view.projectName,
+    lotLabel: view.lotLabel,
+    amount: view.amount,
+    dueDateLabel: view.dueDateLabel,
+    charge: boletoCharge,
+  });
+
+  assert(message.includes('Maria'), 'saudação com cliente');
+  assert(message.includes('CT-2026-001'), 'contrato na mensagem');
+  assert(message.includes('https://boleto.example/1'), 'link boleto na mensagem');
+  assert(message.includes('PIX copia e cola:'), 'seção pix');
+  assert(message.includes('000201PIX'), 'pix na mensagem');
+  assert(message.includes('Acesse o boleto/fatura para pagar:'), 'texto boleto/fatura');
+  assert(message.includes('SV LOTES'), 'assinatura SV LOTES');
+  console.log('OK testChargeWhatsAppMessagePrioritizesBoleto');
 }
 
 function testInactiveIntegrationDisablesGenerate() {
@@ -568,6 +632,7 @@ function main() {
   testCreateChargeApiPathAndDuplicateGuard();
   testAsaasStatusLabels();
   testActionsOnlyWhenDataExists();
+  testChargeWhatsAppMessagePrioritizesBoleto();
   testInactiveIntegrationDisablesGenerate();
   testAsaasOperationalKpis();
   testNoDuplicateWhenActiveChargeExists();

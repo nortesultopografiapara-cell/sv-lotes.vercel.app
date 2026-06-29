@@ -7,9 +7,9 @@ import {
   resolveCompanyAsaasPaymentLink,
 } from '@/lib/finance/companyAsaasChargeWorkflow';
 import { computeInstallmentStatus, type FinanceReceiptRow } from '@/lib/charges/chargeInstallmentHelpers';
+import { resolveChargeWhatsAppPrimaryPaymentUrl } from '@/lib/charges/chargeWhatsAppMessage';
 
-export const CHARGES_WHATSAPP_STUB_MESSAGE =
-  'Envio WhatsApp desta cobrança será habilitado na próxima etapa.';
+export const CHARGES_WHATSAPP_TOOLTIP = 'Enviar cobrança por WhatsApp';
 
 export type ChargeActionVisibility = {
   showGenerate: boolean;
@@ -114,6 +114,9 @@ export function resolveChargeActionVisibility(params: {
   const paymentLink = params.charge ? resolveCompanyAsaasPaymentLink(params.charge) : '';
   const boletoUrl = params.charge ? resolveCompanyAsaasBoletoUrl(params.charge) : '';
   const pixCopy = params.charge?.pixCopyPaste?.trim() || '';
+  const primaryPaymentUrl = params.charge
+    ? resolveChargeWhatsAppPrimaryPaymentUrl(params.charge)
+    : '';
   const hasCharge = Boolean(params.charge);
   const mutable = canPerformMutableAsaasActions(params);
 
@@ -126,7 +129,7 @@ export function resolveChargeActionVisibility(params: {
     showRefreshStatus: mutable && hasCharge && !params.installmentPaid,
     showCancel: canCancelAsaasCharge(params),
     showRegenerate: canRegenerateAsaasCharge(params),
-    showWhatsApp: hasCharge && Boolean(paymentLink || pixCopy || boletoUrl),
+    showWhatsApp: hasCharge && Boolean(primaryPaymentUrl || pixCopy),
   };
 }
 
