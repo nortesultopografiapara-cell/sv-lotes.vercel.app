@@ -20,7 +20,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
-import { withCompanyAsaasChargeShareFieldsPreserved } from '@/lib/charges/chargeWhatsAppMessage';
+import {
+  executeChargeWhatsAppShare,
+  openChargeWhatsAppShareUrl,
+  resolveChargeContractNumber,
+  resolveChargeCustomerPhone,
+  withCompanyAsaasChargeShareFieldsPreserved,
+} from '@/lib/charges/chargeWhatsAppMessage';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
@@ -677,28 +683,37 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   };
 
   const handleWhatsApp = (
+    installmentId: string,
     row: FinanceReceiptRow,
     charge: CompanyAsaasChargeResponse,
     view: ChargeInstallmentView,
   ) => {
-    const customers = row.customers as { phone?: string; name?: string } | undefined;
-    const phone = customers?.phone;
-    const message = buildChargeWhatsAppMessage({
-      clientName: view.clientName,
-      parcelLabel: view.parcelLabel,
-      contractNumber: resolveChargeContractNumber(row),
-      projectName: view.projectName,
-      lotLabel: view.lotLabel,
-      amount: view.amount,
-      dueDateLabel: view.dueDateLabel,
+    const result = executeChargeWhatsAppShare({
+      installmentId,
+      customerPhone: resolveChargeCustomerPhone(row),
       charge,
+      messageInput: {
+        clientName: view.clientName,
+        parcelLabel: view.parcelLabel,
+        contractNumber: resolveChargeContractNumber(row),
+        projectName: view.projectName,
+        lotLabel: view.lotLabel,
+        amount: view.amount,
+        dueDateLabel: view.dueDateLabel,
+      },
     });
-    const url = buildChargeWhatsAppShareUrl(phone, message);
-    if (!url) {
-      showToast('Cliente sem telefone válido cadastrado.', true);
+
+    if (!result.ok) {
+      showToast(result.error, true);
       return;
     }
-    window.open(url, '_blank', 'noopener,noreferrer');
+
+    if (!openChargeWhatsAppShareUrl(result.url)) {
+      showToast(
+        'Não foi possível abrir o WhatsApp. Verifique o bloqueador de pop-ups do navegador.',
+        true,
+      );
+    }
   };
 
   const runBulkGenerate = async () => {
@@ -1074,6 +1089,24 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                 const view = buildChargeInstallmentView(row, charge);
                 const installmentPaid = isInstallmentPaidForCharges(row);
                 const rowBusy = asaasActionInstallmentId === installmentId || bulkBusy;
+                const customerPhone = resolveChargeCustomerPhone(row);
+                const whatsappShare = charge
+                  ? executeChargeWhatsAppShare({
+                      installmentId,
+                      customerPhone,
+                      charge,
+                      messageInput: {
+                        clientName: view.clientName,
+                        parcelLabel: view.parcelLabel,
+                        contractNumber: resolveChargeContractNumber(row),
+                        projectName: view.projectName,
+                        lotLabel: view.lotLabel,
+                        amount: view.amount,
+                        dueDateLabel: view.dueDateLabel,
+                      },
+                    })
+                  : null;
+                const whatsappShareUrl = whatsappShare?.ok ? whatsappShare.url : null;
 
                 return (
                   <tr key={view.id} className="finance-parcel-row">
@@ -1108,9 +1141,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
-                        customerPhone={
-                          (row.customers as { phone?: string } | undefined)?.phone
-                        }
+                        customerPhone={customerPhone}
+                        whatsappShareUrl={whatsappShareUrl}
                         onGenerate={(billingType) =>
                           void handleCreateAsaasCharge(installmentId, billingType)
                         }
@@ -1121,7 +1153,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         }
                         onCopyPix={() => charge && void handleCopyPix(charge)}
                         onCopyLink={() => charge && void handleCopyLink(charge)}
-                        onWhatsApp={() => charge && handleWhatsApp(row, charge, view)}
+                        onWhatsApp={() => {
+                          if (!charge) {
+                            showToast('Cobrança indisponível para envio por WhatsApp.', true);
+                            return;
+                          }
+                          handleWhatsApp(installmentId, row, charge, view);
+                        }}
                       />
                     </td>
                   </tr>

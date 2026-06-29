@@ -41,6 +41,7 @@ export type ChargeInstallmentActionsProps = {
   busy: boolean;
   installmentsDataReady?: boolean;
   customerPhone?: string | null;
+  whatsappShareUrl?: string | null;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
   onCancel: () => void;
@@ -84,6 +85,7 @@ export function ChargeInstallmentActions({
   busy,
   installmentsDataReady = true,
   customerPhone,
+  whatsappShareUrl,
   onGenerate,
   onRefreshStatus,
   onCancel,
@@ -235,15 +237,28 @@ export function ChargeInstallmentActions({
       ) : null}
 
       {actions.showWhatsApp ? (
-        <button
-          type="button"
-          className={btnClass}
-          onClick={onWhatsApp}
-          title={CHARGES_WHATSAPP_TOOLTIP}
-        >
-          <MessageCircle className="h-3.5 w-3.5" />
-          WhatsApp
-        </button>
+        whatsappShareUrl ? (
+          <a
+            href={whatsappShareUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={btnClass}
+            title={CHARGES_WHATSAPP_TOOLTIP}
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            WhatsApp
+          </a>
+        ) : (
+          <button
+            type="button"
+            className={btnClass}
+            onClick={onWhatsApp}
+            title={CHARGES_WHATSAPP_TOOLTIP}
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            WhatsApp
+          </button>
+        )
       ) : null}
 
       {installmentPaid && !charge ? (

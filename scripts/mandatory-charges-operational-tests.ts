@@ -16,6 +16,8 @@ import { buildChargeInstallmentView } from '../lib/charges/chargeInstallmentHelp
 import {
   buildChargeWhatsAppMessage,
   canShowChargeWhatsAppButton,
+  executeChargeWhatsAppShare,
+  resolveChargeCustomerPhone,
   resolveChargeWhatsAppBoletoOrInvoiceUrl,
   resolveChargeWhatsAppPrimaryPaymentUrl,
   withCompanyAsaasChargeShareFieldsPreserved,
@@ -435,6 +437,83 @@ function testChargeWhatsAppVisibilityRegression() {
   console.log('OK testChargeWhatsAppVisibilityRegression');
 }
 
+function testChargeWhatsAppClickHandler() {
+  const page = require('fs').readFileSync(
+    require('path').join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),
+    'utf8',
+  );
+  assert(page.includes('executeChargeWhatsAppShare'), 'charges usa executeChargeWhatsAppShare');
+  assert(page.includes('openChargeWhatsAppShareUrl'), 'charges abre wa.me no clique');
+  assert(!page.includes('buildChargeWhatsAppMessage({'), 'handler não chama helper sem import');
+
+  const actions = require('fs').readFileSync(
+    require('path').join(process.cwd(), 'components/charges/ChargeInstallmentActions.tsx'),
+    'utf8',
+  );
+  assert(actions.includes('onWhatsApp'), 'ações recebem onWhatsApp');
+  assert(actions.includes('whatsappShareUrl'), 'ações recebem href wa.me');
+
+  const paidShare = executeChargeWhatsAppShare({
+    installmentId: 'inst-paid',
+    customerPhone: TEST_PHONE,
+    charge: charge({
+      status: 'PAID',
+      bankSlipUrl: 'https://boleto.example/paid',
+      paymentLink: 'https://boleto.example/paid',
+    }),
+    messageInput: {
+      clientName: 'Maria',
+      parcelLabel: '1/12',
+      contractNumber: 'CT-1',
+      projectName: 'Projeto',
+      lotLabel: 'QD A LT 1',
+      amount: 9,
+      dueDateLabel: '01/07/2026',
+    },
+  });
+  assert(paidShare.ok, 'PAID gera url wa.me');
+  assert(paidShare.ok && paidShare.url.startsWith('https://wa.me/5511999887766'), 'url com DDI 55');
+
+  const noPhone = executeChargeWhatsAppShare({
+    installmentId: 'inst-1',
+    customerPhone: null,
+    charge: charge({ status: 'PENDING', paymentLink: 'https://pay.example/1' }),
+    messageInput: {
+      clientName: 'Maria',
+      parcelLabel: '1/12',
+      contractNumber: 'CT-1',
+      projectName: 'Projeto',
+      lotLabel: 'QD A LT 1',
+      amount: 9,
+      dueDateLabel: '01/07/2026',
+    },
+  });
+  assert(!noPhone.ok && noPhone.error.includes('telefone'), 'sem telefone retorna erro');
+
+  const noLink = executeChargeWhatsAppShare({
+    installmentId: 'inst-1',
+    customerPhone: TEST_PHONE,
+    charge: charge({ status: 'PENDING' }),
+    messageInput: {
+      clientName: 'Maria',
+      parcelLabel: '1/12',
+      contractNumber: 'CT-1',
+      projectName: 'Projeto',
+      lotLabel: 'QD A LT 1',
+      amount: 9,
+      dueDateLabel: '01/07/2026',
+    },
+  });
+  assert(!noLink.ok && noLink.error.includes('Link'), 'sem link retorna erro');
+
+  const fromArray = resolveChargeCustomerPhone({
+    customers: [{ phone: TEST_PHONE }],
+  });
+  assert(fromArray === TEST_PHONE, 'telefone em customers[]');
+
+  console.log('OK testChargeWhatsAppClickHandler');
+}
+
 function testInactiveIntegrationDisablesGenerate() {
   const canGenerate = canGenerateAsaasCharge({
     installmentPaid: false,
@@ -740,6 +819,7 @@ function main() {
   testActionsOnlyWhenDataExists();
   testChargeWhatsAppMessagePrioritizesBoleto();
   testChargeWhatsAppVisibilityRegression();
+  testChargeWhatsAppClickHandler();
   testInactiveIntegrationDisablesGenerate();
   testAsaasOperationalKpis();
   testNoDuplicateWhenActiveChargeExists();
