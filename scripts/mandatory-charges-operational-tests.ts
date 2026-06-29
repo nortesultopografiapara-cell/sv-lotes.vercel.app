@@ -150,6 +150,7 @@ function testCreateChargeApiPathAndDuplicateGuard() {
   );
   assert(page.includes('/api/finance/asaas/create-charge'), 'charges chama create-charge');
   assert(page.includes('/api/finance/asaas/charge-status'), 'charges chama charge-status');
+  assert(page.includes('requestChargeBulkStatusSync'), 'charges usa sync bulk');
   assert(page.includes('/api/finance/asaas/regenerate-charge'), 'charges chama regenerate-charge');
   assert(page.includes('FINANCE_RECEIPTS_LIST_SELECT'), 'charges usa select compartilhado');
 

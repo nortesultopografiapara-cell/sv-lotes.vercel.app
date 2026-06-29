@@ -42,10 +42,10 @@ import {
   mapCreateChargeApiError,
 } from '@/lib/charges/chargeOperationsHelpers';
 import {
-  buildChargeWhatsAppMessage,
-  buildChargeWhatsAppShareUrl,
-  resolveChargeContractNumber,
-} from '@/lib/charges/chargeWhatsAppMessage';
+  applyBulkChargeStatusToMap,
+  formatChargeBulkStatusSummary,
+  requestChargeBulkStatusSync,
+} from '@/lib/charges/chargeBulkStatusSync';
 import {
   fetchOwnerProjectOptionsForModule,
   loadOwnerAccessContext,
@@ -164,7 +164,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
   const loadChargeMap = useCallback(async (installmentIds: string[]) => {
     if (!companyAsaasEnabled || installmentIds.length === 0) {
       setAsaasChargesByInstallment({});
-      return;
+      return {} as Record<string, CompanyAsaasChargeResponse>;
     }
 
     try {
@@ -172,7 +172,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         `/api/finance/asaas/charges?installmentIds=${encodeURIComponent(installmentIds.join(','))}&_=${Date.now()}`,
         { credentials: 'include', cache: 'no-store' },
       );
-      if (!chargesRes.ok) return;
+      if (!chargesRes.ok) return {} as Record<string, CompanyAsaasChargeResponse>;
       const chargesJson = await chargesRes.json().catch(() => ({}));
       const charges = (chargesJson.charges || []) as CompanyAsaasChargeResponse[];
       const syncErrors = (chargesJson.receiptSyncErrors || []) as Array<{
@@ -193,12 +193,14 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
         map[charge.installmentId] = charge;
       }
       setAsaasChargesByInstallment(map);
+      return map;
     } catch (err) {
       console.error('CHARGES_ASAAS_LOAD', err);
+      return {} as Record<string, CompanyAsaasChargeResponse>;
     }
   }, [companyAsaasEnabled, showToast]);
 
-  const loadInstallments = useCallback(async () => {
+  const loadInstallments = useCallback(async (options?: { syncAsaasStatuses?: boolean }) => {
     if (!user) return;
     setLoading(true);
     setLoadError(null);
@@ -270,8 +272,8 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
       setSelectedIds(new Set());
       const installmentIds = scoped.map((row) => String(row.id));
-      await loadIntegrationStatus();
-      await loadChargeMap(installmentIds);
+      const integrationOk = await loadIntegrationStatus();
+      const chargeMap = await loadChargeMap(installmentIds);
 
       let finalRows = scoped;
       if (installmentIds.length > 0) {
@@ -293,6 +295,53 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       }
 
       setPayments(finalRows);
+
+      const shouldSyncAsaas =
+        Boolean(options?.syncAsaasStatuses) &&
+        integrationOk &&
+        companyAsaasEnabled &&
+        !ownerReadOnly &&
+        installmentIds.length > 0;
+
+      if (shouldSyncAsaas) {
+        try {
+          const syncIds = Object.keys(chargeMap).length > 0 ? Object.keys(chargeMap) : installmentIds;
+          const result = await requestChargeBulkStatusSync(syncIds);
+          setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+
+          if (result.receiptUpdatedCount > 0 || result.paid > 0) {
+            let refreshQuery = supabase
+              .from('finance_receipts')
+              .select(FINANCE_RECEIPTS_LIST_SELECT)
+              .in('id', installmentIds)
+              .order('due_date', { ascending: true });
+            refreshQuery = applyTenantFilter(refreshQuery, rlsCtx, 'finance_receipts');
+            const { data: syncedReceipts, error: syncedError } = await refreshQuery;
+            if (!syncedError && syncedReceipts) {
+              setPayments(
+                scopeFinanceRowsForUser(
+                  user,
+                  syncedReceipts,
+                  ownerCtx.rows,
+                  resolveReceiptProjectId,
+                ),
+              );
+            }
+          }
+
+          if (result.updated > 0 || result.failed > 0) {
+            showToast(formatChargeBulkStatusSummary(result), result.updated === 0 && result.failed > 0);
+          }
+        } catch (syncErr) {
+          console.error('CHARGES_ASAAS_BULK_SYNC', syncErr);
+          showToast(
+            syncErr instanceof Error
+              ? syncErr.message
+              : 'Erro ao sincronizar status Asaas com a lista.',
+            true,
+          );
+        }
+      }
     } catch (err) {
       console.error('CHARGES_LOAD', err);
       const message =
@@ -305,7 +354,67 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
     } finally {
       setLoading(false);
     }
-  }, [user, loadIntegrationStatus, loadChargeMap, showToast]);
+  }, [
+    user,
+    companyAsaasEnabled,
+    ownerReadOnly,
+    loadIntegrationStatus,
+    loadChargeMap,
+    showToast,
+  ]);
+
+  const syncAsaasChargeStatuses = useCallback(
+    async (
+      installmentIds: string[],
+      options?: { reloadInstallments?: boolean; silent?: boolean },
+    ): Promise<boolean> => {
+      if (blockOwnerWriteOnClient(user?.role)) return false;
+      if (!integrationReady) {
+        if (!options?.silent) {
+          showToast('Integração Asaas não está ativa.', true);
+        }
+        return false;
+      }
+
+      const ids = Array.from(
+        new Set(installmentIds.map((id) => String(id || '').trim()).filter(Boolean)),
+      );
+      if (ids.length === 0) {
+        if (!options?.silent) {
+          showToast('Nenhuma parcela para sincronizar com o Asaas.', true);
+        }
+        return false;
+      }
+
+      setBulkBusy(true);
+      try {
+        const result = await requestChargeBulkStatusSync(ids);
+        setAsaasChargesByInstallment((prev) => applyBulkChargeStatusToMap(prev, result));
+
+        if (result.receiptUpdatedCount > 0 || result.paid > 0 || options?.reloadInstallments) {
+          await loadInstallments({ syncAsaasStatuses: false });
+        }
+
+        if (!options?.silent) {
+          const isError = result.failed > 0 && result.updated === 0;
+          showToast(formatChargeBulkStatusSummary(result), isError);
+        }
+
+        return result.failed === 0 || result.updated > 0;
+      } catch (err) {
+        if (!options?.silent) {
+          showToast(
+            err instanceof Error ? err.message : 'Erro ao atualizar status Asaas em lote.',
+            true,
+          );
+        }
+        return false;
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [integrationReady, loadInstallments, showToast, user?.role],
+  );
 
   useEffect(() => {
     void loadInstallments();
@@ -358,6 +467,12 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const allFilteredSelected =
     filteredRows.length > 0 && filteredRows.every((row) => selectedIds.has(String(row.id)));
+
+  const allWithChargeCount = useMemo(
+    () =>
+      filteredRows.filter((row) => Boolean(asaasChargesByInstallment[String(row.id)])).length,
+    [filteredRows, asaasChargesByInstallment],
+  );
 
   const toggleSelectAll = () => {
     if (allFilteredSelected) {
@@ -644,10 +759,6 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const runBulkRefresh = async () => {
     if (blockOwnerWriteOnClient(user?.role)) return;
-    if (!integrationReady) {
-      showToast('Integração Asaas não está ativa.', true);
-      return;
-    }
     const ids = Array.from(selectedIds);
     if (ids.length === 0) {
       showToast('Selecione ao menos uma parcela.', true);
@@ -658,33 +769,23 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
       showToast('Nenhuma cobrança Asaas gerada para atualizar.', true);
       return;
     }
-    setBulkBusy(true);
-    let okCount = 0;
-    let errCount = 0;
-    for (const installmentId of idsWithCharge) {
-      try {
-        const res = await fetch(
-          `/api/finance/asaas/charge-status?installmentId=${encodeURIComponent(installmentId)}`,
-          { credentials: 'include' },
-        );
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && json.charge) {
-          applyAsaasChargeUpdate(installmentId, json.charge as CompanyAsaasChargeResponse);
-          okCount += 1;
-        } else {
-          errCount += 1;
-        }
-      } catch {
-        errCount += 1;
-      }
+    await syncAsaasChargeStatuses(idsWithCharge);
+  };
+
+  const runRefreshAllCharges = async () => {
+    if (blockOwnerWriteOnClient(user?.role)) return;
+    const idsWithCharge = filteredRows
+      .map((row) => String(row.id))
+      .filter((id) => asaasChargesByInstallment[id]);
+    if (idsWithCharge.length === 0) {
+      showToast('Nenhuma cobrança Asaas gerada na lista atual.', true);
+      return;
     }
-    setBulkBusy(false);
-    if (okCount > 0) {
-      await loadInstallments();
-      showToast(`Status atualizado em ${okCount} parcela(s).`);
-    } else {
-      showToast('Não foi possível atualizar o status das cobranças selecionadas.', true);
-    }
+    await syncAsaasChargeStatuses(idsWithCharge);
+  };
+
+  const handleRefreshList = async () => {
+    await loadInstallments({ syncAsaasStatuses: integrationReady && !ownerReadOnly });
   };
 
   if (authLoading) {
@@ -707,15 +808,29 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
             Central operacional de parcelas e cobranças Asaas da empresa.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadInstallments()}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Atualizar lista
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleRefreshList()}
+            disabled={loading || bulkBusy}
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Atualizar lista
+          </button>
+          {integrationReady && !ownerReadOnly ? (
+            <button
+              type="button"
+              onClick={() => void runRefreshAllCharges()}
+              disabled={loading || bulkBusy || allWithChargeCount === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-600/90 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Consultar Asaas e baixar parcelas pagas de todas as cobranças visíveis"
+            >
+              {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Atualizar todas as cobranças
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {loadError ? (
@@ -888,7 +1003,7 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
           </button>
           <button
             type="button"
-            disabled={bulkBusy || !integrationReady || selectedWithChargeCount === 0}
+            disabled={bulkBusy || loading || !integrationReady || selectedWithChargeCount === 0 || ownerReadOnly}
             onClick={() => void runBulkRefresh()}
             className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-elevated)] disabled:cursor-not-allowed disabled:opacity-50"
           >

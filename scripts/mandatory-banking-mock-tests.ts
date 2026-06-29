@@ -1025,6 +1025,7 @@ function testCompanyAsaasAccessWhitelist(): void {
     'app/api/finance/asaas/integration/route.ts',
     'app/api/finance/asaas/charges/route.ts',
     'app/api/finance/asaas/charge-status/route.ts',
+    'app/api/finance/asaas/update-charge-status-bulk/route.ts',
     'app/api/finance/asaas/charge-summary/route.ts',
     'app/api/finance/asaas/regenerate-charge/route.ts',
     'app/api/finance/asaas/test-connection/route.ts',
