@@ -50,10 +50,12 @@ function createMockAdmin(initial: {
   receipts: Record<string, ReceiptRow>;
   charges: Record<string, ChargeRow>;
   cashMovements?: CashMovementRow[];
+  failCashInsert?: boolean;
 }) {
   const receipts = { ...initial.receipts };
   const charges = { ...initial.charges };
   const cashMovements: CashMovementRow[] = [...(initial.cashMovements ?? [])];
+  const failCashInsert = initial.failCashInsert ?? false;
 
   const admin = {
     from(table: string) {
@@ -76,6 +78,10 @@ function createMockAdmin(initial: {
           return builder;
         },
         eq(col: string, val: unknown) {
+          ctx.filters.push({ col, val });
+          return builder;
+        },
+        filter(col: string, _op: string, val: unknown) {
           ctx.filters.push({ col, val });
           return builder;
         },
@@ -172,6 +178,12 @@ function createMockAdmin(initial: {
 
         if (state.table === 'cash_movements') {
           if (state.op === 'insert') {
+            if (failCashInsert) {
+              return {
+                data: null,
+                error: { message: 'column cash_movements.finance_receipt_id does not exist' },
+              } as { data: null; error: { message: string } };
+            }
             const row = {
               id: `cm-${cashMovements.length + 1}`,
               ...(state.insertPayload ?? {}),
@@ -183,7 +195,14 @@ function createMockAdmin(initial: {
           let rows = cashMovements.filter((row) => {
             return state.filters.every((filter) => {
               if ('vals' in filter) return false;
-              return row[filter.col] === filter.val;
+              const col = filter.col;
+              const val = filter.val;
+              if (col.startsWith('metadata->>')) {
+                const metaKey = col.replace('metadata->>', '');
+                const meta = (row.metadata as Record<string, unknown> | undefined) ?? {};
+                return String(meta[metaKey] ?? '') === String(val);
+              }
+              return row[col] === val;
             });
           });
           return { data: maybeSingle ? rows[0] ?? null : rows, error: null };
@@ -372,9 +391,10 @@ async function testEnsureReconcileUpdatesPendingReceipt() {
   assert(isReceiptPaidStatus(mock.receipts['receipt-entrada'].status), 'parcela paga');
   assert(mock.cashMovements.length === 1, 'cash_movement criado');
   assert(
-    mock.cashMovements[0].finance_receipt_id === 'receipt-entrada' &&
-      mock.cashMovements[0].type === 'entrada',
-    'cash_movement idempotente por finance_receipt_id (mesmo padrão do Financeiro)',
+    mock.cashMovements[0].metadata &&
+      (mock.cashMovements[0].metadata as Record<string, unknown>).charge_id === 'charge-1' &&
+      (mock.cashMovements[0].metadata as Record<string, unknown>).receipt_id === 'receipt-entrada',
+    'cash_movement idempotente por metadata.charge_id (schema sem finance_receipt_id)',
   );
   console.log('OK testEnsureReconcileUpdatesPendingReceipt');
 }
@@ -458,6 +478,47 @@ function testChargeUsesInstallmentIdField() {
   console.log('OK testChargeUsesInstallmentIdField');
 }
 
+async function testCashMovementFailureDoesNotBlockReceipt() {
+  const mock = createMockAdmin({
+    receipts: {
+      'receipt-entrada': {
+        id: 'receipt-entrada',
+        status: 'pendente',
+        amount: 5,
+        installment_number: 0,
+        sale_id: 'sale-1',
+        customer_id: 'cust-1',
+        project_id: 'proj-1',
+      },
+    },
+    charges: {
+      'charge-1': {
+        id: 'charge-1',
+        company_id: 'company-1',
+        installment_id: 'receipt-entrada',
+        asaas_payment_id: 'pay_asaas_1',
+        status: 'PAID',
+        value: 5,
+        paid_at: '2026-06-08T12:00:00Z',
+      },
+    },
+    failCashInsert: true,
+  });
+
+  const result = await ensureCompanyAsaasInstallmentReconciled(
+    mock.admin,
+    'company-1',
+    'receipt-entrada',
+  );
+
+  assert(result.ok, 'conciliação ok mesmo com falha de caixa');
+  assert(result.receiptUpdated, 'parcela baixada');
+  assert(isReceiptPaidStatus(mock.receipts['receipt-entrada'].status), 'status pago');
+  assert(mock.cashMovements.length === 0, 'nenhum cash_movement criado');
+  assert(Boolean(result.cashMovementError), 'cashMovementError preenchido');
+  console.log('OK testCashMovementFailureDoesNotBlockReceipt');
+}
+
 async function main() {
   testFinanceReceiptPaidStatusMatchesManualFinance();
   testNeedsReceiptReconciliation();
@@ -465,6 +526,7 @@ async function main() {
   await testMarkFinanceReceiptUsesInstallmentId();
   await testEnsureReconcileUpdatesPendingReceipt();
   await testEnsureReconcileCashMovementIdempotent();
+  await testCashMovementFailureDoesNotBlockReceipt();
   await testUpdateFailureWhenReceiptMissing();
   await testUpdateZeroRowsThrows();
   await testForceReconcileBackfillChargesList();

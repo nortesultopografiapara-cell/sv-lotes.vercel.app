@@ -43,6 +43,10 @@ import { formatCurrencyBRL } from '@/lib/currencyBrl';
 import { logLotAuditEvent } from '@/lib/lotAudit';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
+  buildManualFinanceReceiptCashMovement,
+  resolveCashMovementInstallmentId,
+} from '@/lib/finance/cashMovementsSchema';
+import {
   calculateEnterpriseValueSummary,
   type EnterpriseValueSummary,
 } from '@/lib/enterpriseValueSummary';
@@ -938,33 +942,39 @@ export default function FinancePage() {
     console.log('FINANCE MARK PAID', p);
     if (!window.confirm("Confirmar pagamento desta parcela?")) return;
     try {
+      const paidAt = new Date().toISOString();
       const { error } = await supabase
         .from('finance_receipts')
         .update({
           status: 'pago',
           paid_amount: p.amount,
-          paid_at: new Date().toISOString()
+          paid_at: paidAt,
         })
         .eq('id', p.id);
       if (error) throw error;
-      
+
       const rlsCtx = await resolveRlsContext(user);
-      const insertPayload = withTenantFields(
-        {
-          type: 'entrada',
-          category: 'Venda de Lote',
-          description: `Pagamento de Parcela ${p.installment_number || '1'} - CT ${p.sales?.contracts?.[0]?.contract_number || 'S/N'}`,
-          amount: p.amount,
-          customer_id: p.customer_id,
-          sale_id: p.sale_id,
-          finance_receipt_id: p.id,
-          movement_date: new Date().toISOString().split('T')[0],
-          created_by: user.id,
-        },
-        rlsCtx.tenantId,
-        'cash_movements',
-      );
-      await supabase.from('cash_movements').insert(insertPayload);
+      const movementPayload = buildManualFinanceReceiptCashMovement({
+        tenantId: rlsCtx.tenantId || '',
+        receiptId: p.id,
+        amount: p.amount,
+        installmentNumber: p.installment_number,
+        contractNumber: p.sales?.contracts?.[0]?.contract_number,
+        customerId: p.customer_id,
+        saleId: p.sale_id,
+        projectId: p.project_id ?? p.sales?.project_id ?? null,
+        userId: user.id,
+        paidAt,
+      });
+      const { error: cashError } = await supabase
+        .from('cash_movements')
+        .insert(movementPayload);
+      if (cashError) {
+        console.error(
+          '[finance/mark-paid] cash_movements insert failed (parcela mantida paga)',
+          cashError,
+        );
+      }
 
       if (p.block_id) {
         void logLotAuditEvent(supabase, {
@@ -1660,7 +1670,7 @@ export default function FinancePage() {
           .update({ status: 'pendente', paid_amount: null, paid_at: null })
           .eq('id', item.receiptId);
         const linkedCash = cashMovements.find(
-          (c) => c.finance_receipt_id === item.receiptId,
+          (c) => resolveCashMovementInstallmentId(c) === item.receiptId,
         );
         if (linkedCash?.id) {
           await supabase

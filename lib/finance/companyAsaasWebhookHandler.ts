@@ -213,6 +213,7 @@ export async function handleCompanyAsaasPaymentWebhook(request: Request): Promis
       cashMovementId: result.cashMovementId,
       installmentId: result.installmentId,
       receiptUpdated: result.receiptUpdated,
+      cashMovementError: result.cashMovementError,
     });
   } catch (err) {
     console.error('[company-asaas-webhook] reconcile failed', err);

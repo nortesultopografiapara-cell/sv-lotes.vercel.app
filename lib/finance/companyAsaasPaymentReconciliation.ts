@@ -5,6 +5,7 @@ import {
   updateCompanyAsaasCharge,
 } from './companyAsaasChargeRepository';
 import type { CompanyAsaasChargeResponse } from './companyAsaasChargeTypes';
+import { buildCashMovementEntradaPayload } from './cashMovementsSchema';
 
 export const COMPANY_ASAAS_PAID_WEBHOOK_EVENTS = [
   'PAYMENT_RECEIVED',
@@ -58,6 +59,8 @@ export type CompanyAsaasReconcilePaymentResult = {
   cashMovementId?: string;
   installmentId?: string;
   receiptUpdated?: boolean;
+  /** Erro ao criar caixa — parcela permanece paga se já baixada. */
+  cashMovementError?: string;
 };
 
 type FinanceReceiptRow = {
@@ -160,7 +163,7 @@ export function buildCompanyAsaasCashMovementInsert(input: {
   userId?: string | null;
 }): Record<string, unknown> {
   const installmentNumber = input.receipt.installment_number ?? 1;
-  return {
+  return buildCashMovementEntradaPayload({
     tenant_id: input.companyId,
     company_id: input.companyId,
     project_id: input.receipt.project_id ?? null,
@@ -170,20 +173,21 @@ export function buildCompanyAsaasCashMovementInsert(input: {
     amount: input.charge.value,
     customer_id: input.charge.customerId ?? input.receipt.customer_id ?? null,
     sale_id: input.charge.saleId ?? input.receipt.sale_id ?? null,
-    finance_receipt_id: input.charge.installmentId,
     movement_date: input.paidAt.split('T')[0],
     status: 'ativo',
     created_by: input.userId ?? null,
     metadata: {
       provider: 'ASAAS_COMPANY',
+      asaas_payment_id: input.charge.asaasPaymentId,
       external_id: input.charge.asaasPaymentId,
+      receipt_id: input.charge.installmentId,
       installment_id: input.charge.installmentId,
       charge_id: input.charge.id,
       payment_date: input.paymentDate ?? null,
       credited_date: input.creditedDate ?? null,
       occurred_at: input.paidAt,
     },
-  };
+  });
 }
 
 export function isCompanyAsaasChargeFullyReconciled(input: {
@@ -192,34 +196,164 @@ export function isCompanyAsaasChargeFullyReconciled(input: {
   cashMovementId?: string | null;
 }): boolean {
   return (
-    isCompanyAsaasChargeStatusPaid(input.chargeStatus) &&
-    isReceiptPaidStatus(input.receiptStatus) &&
-    Boolean(input.cashMovementId)
+    isCompanyAsaasReceiptReconciled({
+      chargeStatus: input.chargeStatus,
+      receiptStatus: input.receiptStatus,
+    }) && Boolean(input.cashMovementId)
   );
 }
 
-/** Idempotência alinhada ao Financeiro manual: finance_receipt_id + entrada ativa. */
-async function findExistingCashMovementForFinanceReceipt(
+/** Parcela baixada — prioridade absoluta (equivalente a saas_charges PAID no Master). */
+export function isCompanyAsaasReceiptReconciled(input: {
+  chargeStatus?: string | null;
+  receiptStatus?: string | null;
+}): boolean {
+  return (
+    isCompanyAsaasChargeStatusPaid(input.chargeStatus) &&
+    isReceiptPaidStatus(input.receiptStatus)
+  );
+}
+
+/** Idempotência: company_asaas_charges.cash_movement_id ou metadata.charge_id (sem finance_receipt_id). */
+async function findExistingCompanyAsaasCashMovement(
   admin: SupabaseClient,
   companyId: string,
-  financeReceiptId: string,
+  chargeId: string,
+  installmentId: string,
 ): Promise<string | null> {
-  const normalizedReceiptId = String(financeReceiptId || '').trim();
-  if (!normalizedReceiptId) return null;
+  const normalizedChargeId = String(chargeId || '').trim();
+  const normalizedInstallmentId = String(installmentId || '').trim();
 
-  const { data, error } = await admin
-    .from('cash_movements')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('finance_receipt_id', normalizedReceiptId)
-    .eq('type', 'entrada')
-    .eq('status', 'ativo')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (normalizedChargeId) {
+    const { data: chargeRow, error: chargeErr } = await admin
+      .from('company_asaas_charges')
+      .select('cash_movement_id')
+      .eq('id', normalizedChargeId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (chargeErr) throw new Error(chargeErr.message);
+    if (chargeRow?.cash_movement_id) {
+      return String(chargeRow.cash_movement_id);
+    }
+  }
 
-  if (error) throw new Error(error.message);
-  return data?.id ? String(data.id) : null;
+  if (normalizedChargeId) {
+    const { data, error } = await admin
+      .from('cash_movements')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('type', 'entrada')
+      .eq('status', 'ativo')
+      .filter('metadata->>charge_id', 'eq', normalizedChargeId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return String(data.id);
+  }
+
+  if (normalizedInstallmentId) {
+    const { data, error } = await admin
+      .from('cash_movements')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('type', 'entrada')
+      .eq('status', 'ativo')
+      .filter('metadata->>installment_id', 'eq', normalizedInstallmentId)
+      .filter('metadata->>provider', 'eq', 'ASAAS_COMPANY')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data?.id) return String(data.id);
+  }
+
+  return null;
+}
+
+type EnsureCashMovementResult = {
+  cashMovementId: string | null;
+  created: boolean;
+  error: string | null;
+};
+
+/**
+ * Caixa opcional — espelha ensureSaasCashIncomeForPaidCharge (Master):
+ * nunca impede baixa da parcela; falha só gera log/erro no retorno.
+ */
+async function tryEnsureCompanyAsaasCashMovement(
+  admin: SupabaseClient,
+  input: {
+    companyId: string;
+    charge: CompanyAsaasChargeResponse;
+    receipt: FinanceReceiptRow;
+    paidAt: string;
+    paymentDate?: string | null;
+    creditedDate?: string | null;
+    userId?: string | null;
+  },
+): Promise<EnsureCashMovementResult> {
+  const installmentId = String(input.charge.installmentId || '').trim();
+  try {
+    const existingId = await findExistingCompanyAsaasCashMovement(
+      admin,
+      input.companyId,
+      input.charge.id,
+      installmentId,
+    );
+    if (existingId) {
+      await updateCompanyAsaasCharge(admin, input.charge.id, input.companyId, {
+        cashMovementId: existingId,
+      });
+      return { cashMovementId: existingId, created: false, error: null };
+    }
+
+    const movementPayload = buildCompanyAsaasCashMovementInsert({
+      companyId: input.companyId,
+      charge: input.charge,
+      receipt: input.receipt,
+      paidAt: input.paidAt,
+      paymentDate: input.paymentDate,
+      creditedDate: input.creditedDate,
+      userId: input.userId ?? null,
+    });
+
+    const { data: movement, error: movementError } = await admin
+      .from('cash_movements')
+      .insert(movementPayload)
+      .select('id')
+      .single();
+
+    if (movementError) {
+      console.error('[company-asaas-reconcile] cash_movements insert failed (parcela mantida paga)', {
+        chargeId: input.charge.id,
+        installmentId,
+        error: movementError.message,
+      });
+      return { cashMovementId: null, created: false, error: movementError.message };
+    }
+
+    const cashMovementId = String(movement.id);
+    await updateCompanyAsaasCharge(admin, input.charge.id, input.companyId, {
+      cashMovementId,
+    });
+
+    console.info('[company-asaas-reconcile] cash_movement criado', {
+      chargeId: input.charge.id,
+      installmentId,
+      cashMovementId,
+    });
+
+    return { cashMovementId, created: true, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[company-asaas-reconcile] cash_movements ensure failed (parcela mantida paga)', {
+      chargeId: input.charge.id,
+      installmentId,
+      error: message,
+    });
+    return { cashMovementId: null, created: false, error: message };
+  }
 }
 
 export async function loadFinanceReceiptForReconciliation(
@@ -350,8 +484,14 @@ async function reconcilePaidCompanyAsaasChargeRecord(
   const paymentDate = input.paymentDate ?? dates.paymentDate;
   const creditedDate = input.creditedDate ?? dates.creditedDate;
 
-  const existingMovementId =
-    (await findExistingCashMovementForFinanceReceipt(admin, companyId, installmentId)) ?? null;
+  const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
+  if (!receipt) {
+    throw new Error(
+      `Parcela vinculada não encontrada para baixa automática (installment_id=${installmentId}).`,
+    );
+  }
+
+  const receiptAlreadyPaid = isReceiptPaidStatus(receipt.status);
 
   const { data: chargeRow } = await admin
     .from('company_asaas_charges')
@@ -360,27 +500,54 @@ async function reconcilePaidCompanyAsaasChargeRecord(
     .eq('company_id', companyId)
     .maybeSingle();
 
-  const linkedMovementId =
-    existingMovementId ||
-    (chargeRow?.cash_movement_id ? String(chargeRow.cash_movement_id) : null);
+  const linkedMovementId = chargeRow?.cash_movement_id
+    ? String(chargeRow.cash_movement_id)
+    : null;
 
-  const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
-  const receiptAlreadyPaid = receipt ? isReceiptPaidStatus(receipt.status) : false;
+  const existingMovementId =
+    linkedMovementId ||
+    (await findExistingCompanyAsaasCashMovement(admin, companyId, charge.id, installmentId));
 
   if (
-    isCompanyAsaasChargeFullyReconciled({
+    isCompanyAsaasReceiptReconciled({
       chargeStatus: charge.status,
-      receiptStatus: receipt?.status,
-      cashMovementId: linkedMovementId,
-    })
+      receiptStatus: receipt.status,
+    }) &&
+    existingMovementId
   ) {
     return {
       ok: true,
       duplicate: true,
       chargeId: charge.id,
-      cashMovementId: linkedMovementId,
+      cashMovementId: existingMovementId,
       installmentId,
       receiptUpdated: false,
+    };
+  }
+
+  if (
+    isCompanyAsaasReceiptReconciled({
+      chargeStatus: charge.status,
+      receiptStatus: receipt.status,
+    })
+  ) {
+    const cashResult = await tryEnsureCompanyAsaasCashMovement(admin, {
+      companyId,
+      charge,
+      receipt,
+      paidAt,
+      paymentDate,
+      creditedDate,
+      userId: input.userId ?? null,
+    });
+    return {
+      ok: true,
+      duplicate: true,
+      chargeId: charge.id,
+      cashMovementId: cashResult.cashMovementId ?? undefined,
+      installmentId,
+      receiptUpdated: false,
+      cashMovementError: cashResult.error ?? undefined,
     };
   }
 
@@ -398,16 +565,9 @@ async function reconcilePaidCompanyAsaasChargeRecord(
     status: 'PAID',
     paidAt,
     rawPayload,
-    cashMovementId: linkedMovementId ?? undefined,
   });
 
   let receiptUpdated = false;
-  if (!receipt) {
-    throw new Error(
-      `Parcela vinculada não encontrada para baixa automática (installment_id=${installmentId}).`,
-    );
-  }
-
   if (!receiptAlreadyPaid) {
     receiptUpdated = await markFinanceReceiptPaidFromCompanyAsaasCharge(admin, {
       installmentId,
@@ -417,41 +577,25 @@ async function reconcilePaidCompanyAsaasChargeRecord(
     });
   }
 
-  if (linkedMovementId) {
-    await updateCompanyAsaasCharge(admin, charge.id, companyId, {
-      cashMovementId: linkedMovementId,
-    });
-    return {
-      ok: true,
-      duplicate: Boolean(existingMovementId || chargeRow?.cash_movement_id) && !receiptUpdated,
-      chargeId: charge.id,
-      cashMovementId: linkedMovementId,
-      installmentId,
-      receiptUpdated,
-    };
+  const receiptAfter = receiptUpdated
+    ? await loadFinanceReceiptForReconciliation(admin, installmentId)
+    : receipt;
+
+  if (!isReceiptPaidStatus(receiptAfter?.status)) {
+    throw new CompanyAsaasReconciliationError(
+      `Baixa da parcela não confirmada após reconciliação (charge.id=${charge.id}, installment_id=${installmentId}, status=${receiptAfter?.status ?? 'null'}).`,
+      { chargeId: charge.id, installmentId },
+    );
   }
 
-  const movementPayload = buildCompanyAsaasCashMovementInsert({
+  const cashResult = await tryEnsureCompanyAsaasCashMovement(admin, {
     companyId,
     charge,
-    receipt,
+    receipt: receiptAfter ?? receipt,
     paidAt,
     paymentDate,
     creditedDate,
     userId: input.userId ?? null,
-  });
-
-  const { data: movement, error: movementError } = await admin
-    .from('cash_movements')
-    .insert(movementPayload)
-    .select('id')
-    .single();
-
-  if (movementError) throw new Error(movementError.message);
-
-  const cashMovementId = String(movement.id);
-  await updateCompanyAsaasCharge(admin, charge.id, companyId, {
-    cashMovementId,
   });
 
   console.info('[company-asaas-reconcile] parcela baixada automaticamente', {
@@ -459,18 +603,20 @@ async function reconcilePaidCompanyAsaasChargeRecord(
     chargeId: charge.id,
     installmentId,
     asaasPaymentId: charge.asaasPaymentId,
-    cashMovementId,
+    cashMovementId: cashResult.cashMovementId,
+    cashMovementError: cashResult.error,
     eventType: input.eventType ?? null,
     receiptUpdated,
   });
 
   return {
     ok: true,
-    duplicate: false,
+    duplicate: receiptAlreadyPaid && !cashResult.created,
     chargeId: charge.id,
-    cashMovementId,
+    cashMovementId: cashResult.cashMovementId ?? undefined,
     installmentId,
     receiptUpdated,
+    cashMovementError: cashResult.error ?? undefined,
   };
 }
 
@@ -525,28 +671,46 @@ export async function ensureCompanyAsaasInstallmentReconciledIfNeeded(
   if (!charge || !isCompanyAsaasChargeStatusPaid(charge.status)) return null;
 
   const receipt = await loadFinanceReceiptForReconciliation(admin, normalizedInstallmentId);
-  if (!needsCompanyAsaasReceiptReconciliation({
-    chargeStatus: charge.status,
-    receiptStatus: receipt?.status,
-  })) {
-    const { data: chargeRow } = await admin
-      .from('company_asaas_charges')
-      .select('cash_movement_id')
-      .eq('id', charge.id)
-      .eq('company_id', companyId)
-      .maybeSingle();
 
-    if (
-      isCompanyAsaasChargeFullyReconciled({
-        chargeStatus: charge.status,
-        receiptStatus: receipt?.status,
-        cashMovementId: chargeRow?.cash_movement_id
-          ? String(chargeRow.cash_movement_id)
-          : null,
-      })
-    ) {
-      return null;
-    }
+  const { data: chargeRow } = await admin
+    .from('company_asaas_charges')
+    .select('cash_movement_id')
+    .eq('id', charge.id)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  const hasCash =
+    Boolean(chargeRow?.cash_movement_id) ||
+    Boolean(
+      await findExistingCompanyAsaasCashMovement(
+        admin,
+        companyId,
+        charge.id,
+        normalizedInstallmentId,
+      ),
+    );
+
+  if (
+    isCompanyAsaasReceiptReconciled({
+      chargeStatus: charge.status,
+      receiptStatus: receipt?.status,
+    }) &&
+    hasCash
+  ) {
+    return null;
+  }
+
+  if (
+    !isCompanyAsaasReceiptReconciled({
+      chargeStatus: charge.status,
+      receiptStatus: receipt?.status,
+    }) &&
+    !needsCompanyAsaasReceiptReconciliation({
+      chargeStatus: charge.status,
+      receiptStatus: receipt?.status,
+    })
+  ) {
+    return null;
   }
 
   return ensureCompanyAsaasInstallmentReconciled(admin, companyId, normalizedInstallmentId, options);
@@ -704,12 +868,16 @@ export async function reprocessCompanyAsaasPaidCharges(
     if (!installmentId) continue;
 
     const receipt = await loadFinanceReceiptForReconciliation(admin, installmentId);
-    const alreadyReconciled = isCompanyAsaasChargeFullyReconciled({
+    const receiptReconciled = isCompanyAsaasReceiptReconciled({
       chargeStatus: row.status,
       receiptStatus: receipt?.status,
-      cashMovementId: row.cash_movement_id ? String(row.cash_movement_id) : null,
     });
-    if (alreadyReconciled) continue;
+    const hasCash =
+      Boolean(row.cash_movement_id) ||
+      Boolean(
+        await findExistingCompanyAsaasCashMovement(admin, companyId, String(row.id), installmentId),
+      );
+    if (receiptReconciled && hasCash) continue;
 
     const result = await ensureCompanyAsaasInstallmentReconciled(admin, companyId, installmentId, {
       eventType: 'REPROCESS',
