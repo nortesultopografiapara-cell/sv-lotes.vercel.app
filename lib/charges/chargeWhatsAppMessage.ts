@@ -24,6 +24,53 @@ export function resolveChargeWhatsAppPrimaryPaymentUrl(
   return resolveCompanyAsaasPaymentLink(charge).trim();
 }
 
+/** Qualquer URL enviável na mensagem (boleto, fatura ou link de pagamento). */
+export function resolveChargeWhatsAppShareableUrl(
+  charge: CompanyAsaasChargeResponse,
+): string {
+  return String(
+    charge.bankSlipUrl || charge.invoiceUrl || charge.paymentLink || '',
+  ).trim();
+}
+
+/**
+ * Preserva URLs/PIX após sync de status — Asaas pode omitir campos em cobranças PAID.
+ */
+export function withCompanyAsaasChargeShareFieldsPreserved(
+  previous: CompanyAsaasChargeResponse | undefined,
+  next: CompanyAsaasChargeResponse,
+): CompanyAsaasChargeResponse {
+  if (!previous) return next;
+
+  const invoiceUrl = next.invoiceUrl || previous.invoiceUrl;
+  const bankSlipUrl = next.bankSlipUrl || previous.bankSlipUrl;
+  const pixCopyPaste = next.pixCopyPaste || previous.pixCopyPaste;
+  const pixQrCode = next.pixQrCode || previous.pixQrCode;
+  const paymentLink =
+    invoiceUrl || bankSlipUrl || next.paymentLink || previous.paymentLink;
+
+  return {
+    ...next,
+    invoiceUrl,
+    bankSlipUrl,
+    pixCopyPaste,
+    pixQrCode,
+    paymentLink,
+  };
+}
+
+export function canShowChargeWhatsAppButton(input: {
+  ownerReadOnly: boolean;
+  charge: CompanyAsaasChargeResponse | null | undefined;
+  customerPhone?: string | null;
+}): boolean {
+  if (input.ownerReadOnly) return false;
+  if (!input.charge) return false;
+  if (input.charge.status === 'CANCELLED') return false;
+  if (!normalizeWhatsAppPhone(input.customerPhone)) return false;
+  return Boolean(resolveChargeWhatsAppShareableUrl(input.charge));
+}
+
 export type BuildChargeWhatsAppMessageInput = {
   clientName: string;
   parcelLabel: string;
@@ -84,10 +131,11 @@ export function canShareChargeViaWhatsApp(input: {
   phone?: string | null;
   charge: CompanyAsaasChargeResponse;
 }): boolean {
-  if (!normalizeWhatsAppPhone(input.phone)) return false;
-  const primaryUrl = resolveChargeWhatsAppPrimaryPaymentUrl(input.charge);
-  const pixCopy = String(input.charge.pixCopyPaste || '').trim();
-  return Boolean(primaryUrl || pixCopy);
+  return canShowChargeWhatsAppButton({
+    ownerReadOnly: false,
+    charge: input.charge,
+    customerPhone: input.phone,
+  });
 }
 
 export function resolveChargeContractNumber(row: Record<string, unknown>): string {

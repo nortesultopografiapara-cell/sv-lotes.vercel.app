@@ -82,6 +82,10 @@ function testBulkRouteAndChargesUi() {
     'utf8',
   );
   assert(syncClient.includes('/api/finance/asaas/update-charge-status-bulk'), 'client bulk endpoint');
+  assert(
+    syncClient.includes('withCompanyAsaasChargeShareFieldsPreserved'),
+    'bulk merge preserva URLs WhatsApp',
+  );
 
   const page = fs.readFileSync(
     path.join(process.cwd(), 'components/charges/ChargesPageClient.tsx'),

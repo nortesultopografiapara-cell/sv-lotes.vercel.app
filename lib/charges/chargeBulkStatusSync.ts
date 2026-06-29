@@ -1,5 +1,6 @@
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { BulkUpdateCompanyChargeStatusResult } from '@/lib/finance/companyAsaasBulkStatusUpdate';
+import { withCompanyAsaasChargeShareFieldsPreserved } from '@/lib/charges/chargeWhatsAppMessage';
 
 export type ChargeBulkStatusSyncResponse = BulkUpdateCompanyChargeStatusResult;
 
@@ -28,7 +29,10 @@ export function applyBulkChargeStatusToMap(
   const next = { ...current };
   for (const item of result.items) {
     if (item.charge) {
-      next[item.installmentId] = item.charge;
+      next[item.installmentId] = withCompanyAsaasChargeShareFieldsPreserved(
+        current[item.installmentId],
+        item.charge,
+      );
     }
   }
   return next;

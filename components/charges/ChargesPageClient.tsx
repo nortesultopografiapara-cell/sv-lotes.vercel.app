@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { applyTenantFilter, resolveRlsContext } from '@/lib/rls';
 import { isCompanyAsaasEnabled } from '@/lib/finance/companyAsaasAccess';
+import { withCompanyAsaasChargeShareFieldsPreserved } from '@/lib/charges/chargeWhatsAppMessage';
 import type { CompanyAsaasChargeResponse } from '@/lib/finance/companyAsaasChargeTypes';
 import type { AsaasIntegrationConfigResponse } from '@/lib/finance/asaasIntegrationConfig';
 import { resolveCompanyAsaasPaymentLink } from '@/lib/finance/companyAsaasChargeWorkflow';
@@ -127,7 +128,13 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
 
   const applyAsaasChargeUpdate = useCallback(
     (installmentId: string, charge: CompanyAsaasChargeResponse) => {
-      setAsaasChargesByInstallment((prev) => ({ ...prev, [installmentId]: charge }));
+      setAsaasChargesByInstallment((prev) => ({
+        ...prev,
+        [installmentId]: withCompanyAsaasChargeShareFieldsPreserved(
+          prev[installmentId],
+          charge,
+        ),
+      }));
     },
     [],
   );
@@ -1101,6 +1108,9 @@ export function ChargesPageClient({ bankingUiEnabled }: ChargesPageClientProps) 
                         ownerReadOnly={ownerReadOnly}
                         busy={rowBusy}
                         installmentsDataReady={installmentsDataReady}
+                        customerPhone={
+                          (row.customers as { phone?: string } | undefined)?.phone
+                        }
                         onGenerate={(billingType) =>
                           void handleCreateAsaasCharge(installmentId, billingType)
                         }

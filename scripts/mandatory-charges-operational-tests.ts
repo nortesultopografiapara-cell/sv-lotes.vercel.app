@@ -15,13 +15,18 @@ import {
 import { buildChargeInstallmentView } from '../lib/charges/chargeInstallmentHelpers';
 import {
   buildChargeWhatsAppMessage,
+  canShowChargeWhatsAppButton,
   resolveChargeWhatsAppBoletoOrInvoiceUrl,
   resolveChargeWhatsAppPrimaryPaymentUrl,
+  withCompanyAsaasChargeShareFieldsPreserved,
 } from '../lib/charges/chargeWhatsAppMessage';
+import { applyBulkChargeStatusToMap } from '../lib/charges/chargeBulkStatusSync';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
 }
+
+const TEST_PHONE = '11999887766';
 
 const pendingRow = {
   id: 'inst-1',
@@ -123,6 +128,7 @@ function testOwnerReadOnlyHidesMutableActions() {
   assert(!actions.showRefreshStatus, 'owner não atualiza status');
   assert(!actions.showCancel, 'owner não cancela');
   assert(!actions.showRegenerate, 'owner não regenera');
+  assert(!actions.showWhatsApp, 'owner não envia whatsapp');
   assert(actions.showOpenLink, 'owner abre link');
   assert(actions.showCopyPix, 'owner copia pix');
   assert(!canPerformMutableAsaasActions({
@@ -248,6 +254,7 @@ function testActionsOnlyWhenDataExists() {
     companyAsaasEnabled: true,
     ownerReadOnly: false,
     busy: false,
+    customerPhone: TEST_PHONE,
   });
   assert(!actions.showGenerate, 'com cobrança ativa não mostra gerar');
   assert(actions.showOpenLink, 'link');
@@ -328,6 +335,104 @@ function testChargeWhatsAppMessagePrioritizesBoleto() {
   assert(message.includes('Acesse o boleto/fatura para pagar:'), 'texto boleto/fatura');
   assert(message.includes('SV LOTES'), 'assinatura SV LOTES');
   console.log('OK testChargeWhatsAppMessagePrioritizesBoleto');
+}
+
+function testChargeWhatsAppVisibilityRegression() {
+  const paidWithBoleto = charge({
+    status: 'PAID',
+    bankSlipUrl: 'https://boleto.example/paid',
+    paymentLink: 'https://boleto.example/paid',
+  });
+  assert(
+    canShowChargeWhatsAppButton({
+      ownerReadOnly: false,
+      charge: paidWithBoleto,
+      customerPhone: TEST_PHONE,
+    }),
+    'PAID com boleto e telefone habilita WhatsApp',
+  );
+
+  const pendingWithLink = charge({
+    status: 'PENDING',
+    paymentLink: 'https://pay.example/pending',
+  });
+  const pendingActions = resolveChargeInstallmentActionsProps({
+    view: buildChargeInstallmentView(pendingRow, pendingWithLink),
+    charge: pendingWithLink,
+    installmentPaid: false,
+    integrationActive: true,
+    companyAsaasEnabled: true,
+    ownerReadOnly: false,
+    busy: false,
+    customerPhone: TEST_PHONE,
+  });
+  assert(pendingActions.showWhatsApp, 'PENDING com link e telefone habilita WhatsApp');
+
+  assert(
+    !canShowChargeWhatsAppButton({
+      ownerReadOnly: false,
+      charge: pendingWithLink,
+      customerPhone: null,
+    }),
+    'sem telefone desabilita WhatsApp',
+  );
+
+  assert(
+    !canShowChargeWhatsAppButton({
+      ownerReadOnly: true,
+      charge: pendingWithLink,
+      customerPhone: TEST_PHONE,
+    }),
+    'OWNER não envia WhatsApp',
+  );
+
+  const existing = charge({
+    status: 'PENDING',
+    bankSlipUrl: 'https://boleto.example/keep',
+    paymentLink: 'https://boleto.example/keep',
+    pixCopyPaste: 'PIX-KEEP',
+  });
+  const syncedPaid = charge({
+    status: 'PAID',
+    bankSlipUrl: null,
+    invoiceUrl: null,
+    paymentLink: null,
+    pixCopyPaste: null,
+  });
+  const merged = withCompanyAsaasChargeShareFieldsPreserved(existing, syncedPaid);
+  assert(merged.bankSlipUrl === 'https://boleto.example/keep', 'bulk preserva bankSlipUrl');
+  assert(merged.pixCopyPaste === 'PIX-KEEP', 'bulk preserva pixCopyPaste');
+  assert(
+    canShowChargeWhatsAppButton({
+      ownerReadOnly: false,
+      charge: merged,
+      customerPhone: TEST_PHONE,
+    }),
+    'após bulk merge WhatsApp continua habilitado',
+  );
+
+  const map = applyBulkChargeStatusToMap(
+    { 'inst-1': existing },
+    {
+      updated: 1,
+      paid: 1,
+      pending: 0,
+      skipped: 0,
+      failed: 0,
+      receiptUpdatedCount: 1,
+      items: [{ installmentId: 'inst-1', status: 'paid', charge: syncedPaid }],
+    },
+  );
+  assert(
+    canShowChargeWhatsAppButton({
+      ownerReadOnly: false,
+      charge: map['inst-1'],
+      customerPhone: TEST_PHONE,
+    }),
+    'applyBulkChargeStatusToMap preserva dados para WhatsApp',
+  );
+
+  console.log('OK testChargeWhatsAppVisibilityRegression');
 }
 
 function testInactiveIntegrationDisablesGenerate() {
@@ -634,6 +739,7 @@ function main() {
   testAsaasStatusLabels();
   testActionsOnlyWhenDataExists();
   testChargeWhatsAppMessagePrioritizesBoleto();
+  testChargeWhatsAppVisibilityRegression();
   testInactiveIntegrationDisablesGenerate();
   testAsaasOperationalKpis();
   testNoDuplicateWhenActiveChargeExists();

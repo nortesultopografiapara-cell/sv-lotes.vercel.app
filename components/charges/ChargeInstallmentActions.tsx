@@ -40,6 +40,7 @@ export type ChargeInstallmentActionsProps = {
   ownerReadOnly: boolean;
   busy: boolean;
   installmentsDataReady?: boolean;
+  customerPhone?: string | null;
   onGenerate: (billingType: 'PIX' | 'BOLETO') => void;
   onRefreshStatus: () => void;
   onCancel: () => void;
@@ -69,6 +70,7 @@ export function resolveChargeInstallmentActionsProps(
     ownerReadOnly: params.ownerReadOnly,
     installmentsDataReady: params.installmentsDataReady,
     installmentId: params.view.id,
+    customerPhone: params.customerPhone,
   });
 }
 
@@ -81,6 +83,7 @@ export function ChargeInstallmentActions({
   ownerReadOnly,
   busy,
   installmentsDataReady = true,
+  customerPhone,
   onGenerate,
   onRefreshStatus,
   onCancel,
@@ -97,6 +100,7 @@ export function ChargeInstallmentActions({
     ownerReadOnly,
     installmentsDataReady,
     installmentId: view.id,
+    customerPhone,
   });
 
   const paymentLink = charge ? resolveCompanyAsaasPaymentLink(charge) : '';

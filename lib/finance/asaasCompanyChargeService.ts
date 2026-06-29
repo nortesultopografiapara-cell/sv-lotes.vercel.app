@@ -256,10 +256,17 @@ export async function getCompanyChargeStatus(
   );
 
   const mappedStatus = mapAsaasPaymentStatusToCompanyCharge(payment.status);
+  const existingRow = data as CompanyAsaasChargeRow;
   const updated = await updateCompanyAsaasCharge(admin, chargeId, companyId, {
     status: mappedStatus,
-    invoiceUrl: payment.invoiceUrl ?? null,
-    bankSlipUrl: payment.bankSlipUrl ?? null,
+    invoiceUrl: payment.invoiceUrl ?? existingRow.invoice_url ?? null,
+    bankSlipUrl: payment.bankSlipUrl ?? existingRow.bank_slip_url ?? null,
+    pixQrCode:
+      (payment as { pixQrCode?: string }).pixQrCode ?? existingRow.pix_qr_code ?? null,
+    pixCopyPaste:
+      (payment as { pixCopyPaste?: string }).pixCopyPaste ??
+      existingRow.pix_copy_paste ??
+      null,
     rawPayload: payment as Record<string, unknown>,
     paidAt:
       mappedStatus === 'PAID'
