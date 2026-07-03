@@ -20,6 +20,7 @@ export type ProjectQuadrasPanelProps = {
   onViewOnMap: (blockName: string) => void;
   onReimportTxt: (blockName: string) => void;
   onUpdateIndividualLot: (blockName: string) => void;
+  onRequestDeleteLot: (blockName: string) => void;
   onRequestDelete: (blockName: string) => void;
 };
 
@@ -32,6 +33,7 @@ export function ProjectQuadrasPanel({
   onViewOnMap,
   onReimportTxt,
   onUpdateIndividualLot,
+  onRequestDeleteLot,
   onRequestDelete,
 }: ProjectQuadrasPanelProps) {
   return (
@@ -115,6 +117,15 @@ export function ProjectQuadrasPanel({
                       >
                         <RefreshCw className="w-3.5 h-3.5 shrink-0 text-amber-400" />
                         Atualizar lote
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onRequestDeleteLot(blockName)}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-[11px] font-medium text-red-400/90 hover:bg-red-500/10 hover:text-red-300 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        Excluir lote
                       </button>
                       <button
                         type="button"
