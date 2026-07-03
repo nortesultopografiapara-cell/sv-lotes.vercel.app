@@ -5,7 +5,9 @@
 
 import {
   INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE,
+  buildIndividualLotDeleteConfirmMessage,
   canDeleteIndividualLotRole,
+  formatIndividualLotDeleteLabel,
   individualLotDeleteTargetsSingleBlock,
   isLotStatusAvailableForDelete,
   validateIndividualLotDelete,
@@ -75,11 +77,12 @@ function testAdminCannotDeleteWithSaleContractFinance() {
   console.log('OK testAdminCannotDeleteWithSaleContractFinance');
 }
 
-function testOwnerBrokerBlocked() {
+function testOwnerBrokerAssistantBlocked() {
   assert(!canDeleteIndividualLotRole('OWNER').allowed, 'OWNER bloqueado');
   assert(!canDeleteIndividualLotRole('BROKER').allowed, 'BROKER bloqueado');
   assert(!canDeleteIndividualLotRole('CORRETOR').allowed, 'CORRETOR bloqueado');
-  console.log('OK testOwnerBrokerBlocked');
+  assert(!canDeleteIndividualLotRole('ASSISTANT').allowed, 'ASSISTANT bloqueado');
+  console.log('OK testOwnerBrokerAssistantBlocked');
 }
 
 function testDeleteDoesNotRemoveWholeQuadra() {
@@ -120,21 +123,85 @@ function testDeleteDoesNotRemoveWholeQuadra() {
 
 function testConfirmMessage() {
   assert(
-    INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE.includes('lote individualmente'),
+    INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE.includes('permanentemente'),
     'mensagem de confirmação definida',
   );
+  assert(
+    formatIndividualLotDeleteLabel('02', '04') === 'QD 02 LT 04',
+    'rótulo QD/LT',
+  );
+  assert(
+    formatIndividualLotDeleteLabel('QUADRA 02', '04') === 'QD 02 LT 04',
+    'rótulo remove prefixo QUADRA',
+  );
+  const msg = buildIndividualLotDeleteConfirmMessage('02', '04');
+  assert(msg.includes('QD 02 LT 04'), 'confirmação inclui rótulo do lote');
+  assert(msg.includes('permanentemente'), 'confirmação menciona remoção permanente');
   assert(isLotStatusAvailableForDelete('Disponível'), 'status Disponível');
   assert(isLotStatusAvailableForDelete('disponivel'), 'status sem acento');
   console.log('OK testConfirmMessage');
+}
+
+function testUiEntryPointInProjectQuadrasPanel() {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+
+  const panel = fs.readFileSync(
+    path.join(process.cwd(), 'components/map/ProjectQuadrasPanel.tsx'),
+    'utf8',
+  );
+  assert(panel.includes('onRequestDeleteLot'), 'painel expõe exclusão de lote');
+  assert(panel.includes('Excluir lote'), 'botão Excluir lote no painel');
+  assert(panel.includes('Excluir quadra'), 'botão Excluir quadra permanece');
+  assert(panel.includes('Atualizar lote'), 'botão Atualizar lote permanece');
+
+  const page = fs.readFileSync(
+    path.join(process.cwd(), 'app/map/page.tsx'),
+    'utf8',
+  );
+  assert(page.includes('DeleteIndividualLotModal'), 'página usa modal de exclusão');
+  assert(page.includes('handleDeleteIndividualLotQuadra'), 'handler no painel de quadras');
+  assert(page.includes('/api/projects/'), 'reutiliza API DELETE existente');
+  assert(!page.includes('onLotDeleted'), 'mapa não recebe onLotDeleted do popup comercial');
+
+  const gisMap = fs.readFileSync(
+    path.join(process.cwd(), 'components/map/GISMap.tsx'),
+    'utf8',
+  );
+  assert(!gisMap.includes('canDeleteIndividualLot'), 'popup comercial sem exclusão estrutural');
+  assert(!gisMap.includes('onRequestDeleteLot'), 'popup comercial sem handler de exclusão');
+  assert(!gisMap.includes('Excluir lote'), 'texto Excluir lote removido do modal comercial');
+
+  const modal = fs.readFileSync(
+    path.join(process.cwd(), 'components/map/DeleteIndividualLotModal.tsx'),
+    'utf8',
+  );
+  assert(modal.includes('buildIndividualLotDeleteConfirmMessage'), 'modal usa mensagem padrão');
+  assert(modal.includes('Número do lote'), 'modal pede número do lote');
+
+  console.log('OK testUiEntryPointInProjectQuadrasPanel');
+}
+
+function testAvailableForAllProjects() {
+  const page = require('fs').readFileSync(
+    require('path').join(process.cwd(), 'app/map/page.tsx'),
+    'utf8',
+  );
+  assert(!page.includes('Recanto Primavera'), 'não depende do template Recanto');
+  assert(!page.includes('recanto'), 'não filtra por recanto');
+  assert(page.includes('canManageGisProject(user?.role)'), 'usa permissão existente');
+  console.log('OK testAvailableForAllProjects');
 }
 
 function main() {
   testAdminDeletesAvailableLotWithoutLinks();
   testAdminCannotDeleteSoldOrReserved();
   testAdminCannotDeleteWithSaleContractFinance();
-  testOwnerBrokerBlocked();
+  testOwnerBrokerAssistantBlocked();
   testDeleteDoesNotRemoveWholeQuadra();
   testConfirmMessage();
+  testUiEntryPointInProjectQuadrasPanel();
+  testAvailableForAllProjects();
   console.log('mandatory-gis-delete-individual-lot-tests: all passed');
 }
 

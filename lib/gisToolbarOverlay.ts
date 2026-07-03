@@ -6,6 +6,7 @@ export type GisMapPageOverlayFlags = {
   isImportTxtModalOpen?: boolean;
   isImportShpModalOpen?: boolean;
   isUpdateLotModalOpen?: boolean;
+  isDeleteLotModalOpen?: boolean;
   isEnterpriseOverviewModalOpen?: boolean;
   deleteQuadraConfirm?: boolean;
   gisMapOverlayOpen?: boolean;
@@ -15,7 +16,6 @@ export type GisMapOverlayFlags = {
   customerForm?: boolean;
   customerContractValidation?: boolean;
   clearConfirmModal?: boolean;
-  deleteLotConfirmModal?: boolean;
   confrontEdit?: boolean;
   officialSideEdit?: boolean;
 };
@@ -31,6 +31,7 @@ export function computeGisMapPageOverlayOpen(
       flags.isImportTxtModalOpen ||
       flags.isImportShpModalOpen ||
       flags.isUpdateLotModalOpen ||
+      flags.isDeleteLotModalOpen ||
       flags.isEnterpriseOverviewModalOpen ||
       flags.deleteQuadraConfirm ||
       flags.gisMapOverlayOpen,
@@ -42,7 +43,6 @@ export function computeGisMapOverlayOpen(flags: GisMapOverlayFlags): boolean {
     flags.customerForm ||
       flags.customerContractValidation ||
       flags.clearConfirmModal ||
-      flags.deleteLotConfirmModal ||
       flags.confrontEdit ||
       flags.officialSideEdit,
   );

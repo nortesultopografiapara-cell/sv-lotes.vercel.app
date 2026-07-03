@@ -56,6 +56,8 @@ import {
 } from '@/lib/projectQuadras';
 import { ProjectQuadrasPanel } from '@/components/map/ProjectQuadrasPanel';
 import { UpdateIndividualLotModal } from '@/components/map/UpdateIndividualLotModal';
+import { DeleteIndividualLotModal } from '@/components/map/DeleteIndividualLotModal';
+import { formatIndividualLotDeleteLabel } from '@/lib/gis/deleteIndividualLot';
 import {
   EnterpriseOverviewModal,
   DEFAULT_ENTERPRISE_OVERVIEW_OPTIONS,
@@ -380,6 +382,12 @@ export default function MapPage() {
     useState<IndividualLotUpdateMode>('geometry_technical');
   const [updatingIndividualLot, setUpdatingIndividualLot] = useState(false);
 
+  const [isDeleteLotModalOpen, setIsDeleteLotModalOpen] = useState(false);
+  const [deleteLotQuadra, setDeleteLotQuadra] = useState('');
+  const [deleteLotNumber, setDeleteLotNumber] = useState('');
+  const [deleteLotConfirmStep, setDeleteLotConfirmStep] = useState(false);
+  const [deletingIndividualLot, setDeletingIndividualLot] = useState(false);
+
   const [isEnterpriseOverviewModalOpen, setIsEnterpriseOverviewModalOpen] =
     useState(false);
   const [enterpriseOverviewOptions, setEnterpriseOverviewOptions] =
@@ -487,6 +495,7 @@ export default function MapPage() {
         isImportTxtModalOpen,
         isImportShpModalOpen,
         isUpdateLotModalOpen,
+        isDeleteLotModalOpen,
         isEnterpriseOverviewModalOpen,
         deleteQuadraConfirm: Boolean(deleteQuadraConfirm),
         gisMapOverlayOpen,
@@ -499,6 +508,7 @@ export default function MapPage() {
       isImportTxtModalOpen,
       isImportShpModalOpen,
       isUpdateLotModalOpen,
+      isDeleteLotModalOpen,
       isEnterpriseOverviewModalOpen,
       deleteQuadraConfirm,
       gisMapOverlayOpen,
@@ -669,6 +679,88 @@ export default function MapPage() {
     setUpdateLotMode('geometry_technical');
     setUpdateLotUtmZone(importTxtUtmZone || '22S');
     setIsUpdateLotModalOpen(true);
+  };
+
+  const handleDeleteIndividualLotQuadra = (blockName: string) => {
+    setDeleteLotQuadra(normalizeQuadraBlockName(blockName));
+    setDeleteLotNumber('');
+    setDeleteLotConfirmStep(false);
+    setIsDeleteLotModalOpen(true);
+  };
+
+  const closeDeleteLotModal = () => {
+    if (deletingIndividualLot) return;
+    setIsDeleteLotModalOpen(false);
+    setDeleteLotConfirmStep(false);
+    setDeleteLotNumber('');
+  };
+
+  const handleRequestDeleteLotConfirm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleteLotQuadra.trim() || !deleteLotNumber.trim()) {
+      alert('Informe a quadra e o número do lote.');
+      return;
+    }
+    setDeleteLotConfirmStep(true);
+  };
+
+  const handleConfirmDeleteIndividualLot = async () => {
+    if (!selectedProject?.id || !user) return;
+    const quadraName = normalizeQuadraBlockName(deleteLotQuadra);
+    const lotRequested = deleteLotNumber.trim();
+    if (!quadraName || !lotRequested) {
+      alert('Informe a quadra e o número do lote.');
+      return;
+    }
+
+    setDeletingIndividualLot(true);
+    try {
+      let blocksQuery = supabase
+        .from('blocks')
+        .select('id, block_name, number, status')
+        .eq('project_id', selectedProject.id)
+        .eq('block_name', quadraName);
+      if (user.role !== 'SUPER_ADMIN' && user.tenant_id) {
+        blocksQuery = blocksQuery.or(
+          `tenant_id.eq.${user.tenant_id},company_id.eq.${user.tenant_id}`,
+        );
+      }
+      const { data: quadraBlocks, error: loadErr } = await blocksQuery;
+      if (loadErr) throw loadErr;
+
+      const existing = findBlockInQuadra(
+        (quadraBlocks || []) as Record<string, unknown>[],
+        quadraName,
+        lotRequested,
+      );
+      if (!existing?.id) {
+        alert(
+          `Lote ${formatIndividualLotDeleteLabel(quadraName, lotRequested)} não encontrado.`,
+        );
+        setDeleteLotConfirmStep(false);
+        return;
+      }
+
+      const res = await fetch(
+        `/api/projects/${selectedProject.id}/lots/${String(existing.id)}`,
+        { method: 'DELETE' },
+      );
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(json?.error || `Erro ao excluir lote (${res.status})`);
+      }
+
+      setIsDeleteLotModalOpen(false);
+      setDeleteLotConfirmStep(false);
+      setDeleteLotNumber('');
+      await loadProjectQuadras();
+      setMapRefreshKey((k) => k + 1);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao excluir lote.';
+      alert(msg);
+    } finally {
+      setDeletingIndividualLot(false);
+    }
   };
 
   const handleGenerateEnterpriseOverview = async (e: React.FormEvent) => {
@@ -2763,6 +2855,7 @@ export default function MapPage() {
                    onViewOnMap={handleViewQuadraOnMap}
                    onReimportTxt={handleReimportQuadraTxt}
                    onUpdateIndividualLot={handleUpdateIndividualLotQuadra}
+                   onRequestDeleteLot={handleDeleteIndividualLotQuadra}
                    onRequestDelete={setDeleteQuadraConfirm}
                  />
 
@@ -3083,10 +3176,6 @@ export default function MapPage() {
             onEnterpriseValueRefresh={() =>
               setEnterpriseRefreshKey((k) => k + 1)
             }
-            onLotDeleted={async () => {
-              await loadProjectQuadras();
-              setMapRefreshKey((k) => k + 1);
-            }}
           />
         </div>
 
@@ -3375,6 +3464,20 @@ export default function MapPage() {
           onFileChange={setUpdateLotFile}
           onModeChange={setUpdateLotMode}
           onSubmit={handleSubmitIndividualLotUpdate}
+        />
+
+        <DeleteIndividualLotModal
+          open={isDeleteLotModalOpen}
+          quadra={deleteLotQuadra}
+          lotNumber={deleteLotNumber}
+          confirmStep={deleteLotConfirmStep}
+          loading={deletingIndividualLot}
+          onClose={closeDeleteLotModal}
+          onQuadraChange={setDeleteLotQuadra}
+          onLotNumberChange={setDeleteLotNumber}
+          onRequestConfirm={handleRequestDeleteLotConfirm}
+          onBackToForm={() => setDeleteLotConfirmStep(false)}
+          onConfirmDelete={() => void handleConfirmDeleteIndividualLot()}
         />
 
         <EnterpriseOverviewModal

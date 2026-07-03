@@ -8,7 +8,28 @@ import {
 } from '@/lib/rolePermissions';
 
 export const INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE =
-  'Excluir este lote individualmente? Esta ação removerá apenas o lote selecionado, não a quadra inteira.';
+  'Excluir definitivamente este lote? Esta ação removerá permanentemente este lote do mapa.';
+
+/** Rótulo curto para confirmação (ex.: QD 02 LT 04). */
+export function formatIndividualLotDeleteLabel(
+  blockName?: string | null,
+  lotNumber?: string | null,
+): string {
+  const q = String(blockName || '')
+    .trim()
+    .replace(/^QUADRA\s+/i, '')
+    .toUpperCase() || '—';
+  const n = String(lotNumber || '').trim() || '—';
+  return `QD ${q} LT ${n}`;
+}
+
+export function buildIndividualLotDeleteConfirmMessage(
+  blockName?: string | null,
+  lotNumber?: string | null,
+): string {
+  const label = formatIndividualLotDeleteLabel(blockName, lotNumber);
+  return `Excluir definitivamente o lote ${label}?\n\nEsta ação removerá permanentemente este lote do mapa.`;
+}
 
 export type IndividualLotBlockRow = {
   id: string;

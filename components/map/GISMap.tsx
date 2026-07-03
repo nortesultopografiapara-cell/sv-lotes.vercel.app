@@ -31,10 +31,6 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { isOwnerRole, canManageGisProject } from "@/lib/rolePermissions";
-import {
-  INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE,
-  isLotStatusAvailableForDelete,
-} from "@/lib/gis/deleteIndividualLot";
 import { blockOwnerWriteOnClient } from "@/lib/ownerWriteGuard";
 import {
   getNextContractNumber,
@@ -1680,8 +1676,6 @@ function LotPopupContent({
   onEditOfficialSideSegment,
   onPriceSaved,
   canEditLotPrice = false,
-  canDeleteIndividualLot = false,
-  onRequestDeleteLot,
 }: {
   lot: any;
   cleanedCoords?: LatLngPair[];
@@ -1720,9 +1714,6 @@ function LotPopupContent({
   onPriceSaved?: (lotId: string, price: number | null) => void;
   /** ADMIN / SUPER_ADMIN — OWNER e corretor não editam preço. */
   canEditLotPrice?: boolean;
-  /** ADMIN / SUPER_ADMIN — excluir lote individual disponível. */
-  canDeleteIndividualLot?: boolean;
-  onRequestDeleteLot?: (lot: any) => void;
 }) {
   const ownerReadOnly = isOwnerRole(userRole);
   console.log("GIS_POPUP_RENDER", {
@@ -2358,23 +2349,6 @@ function LotPopupContent({
           </div>
           )}
 
-          {canDeleteIndividualLot &&
-            !ownerReadOnly &&
-            isLotStatusAvailableForDelete(lot.status) &&
-            onRequestDeleteLot && (
-              <div className="pt-2 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => onRequestDeleteLot(lot)}
-                  disabled={actionLoading === `delete-${lot.id}`}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-red-200 text-red-700 hover:bg-red-50 text-[10px] font-bold rounded-lg disabled:opacity-50"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Excluir lote
-                </button>
-              </div>
-            )}
-
           {isSold && !ownerReadOnly && (
             <div className="grid grid-cols-2 gap-1 pt-1 border-t border-gray-100">
               {(() => {
@@ -2767,7 +2741,6 @@ export default function GISMap({
   defineOfficialSideTool = false,
   onOverlayOpenChange,
   onEnterpriseValueRefresh,
-  onLotDeleted,
 }: {
   projectId?: string;
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
@@ -2816,8 +2789,6 @@ export default function GISMap({
   onOverlayOpenChange?: (open: boolean) => void;
   /** Atualiza card Valor do Empreendimento após salvar preço manual. */
   onEnterpriseValueRefresh?: () => void;
-  /** Recarrega lista/mapa após excluir lote individual. */
-  onLotDeleted?: () => void | Promise<void>;
 }) {
   const { user } = useAuth();
   const ownerMapWriteBlocked = isOwnerRole(user?.role);
@@ -3578,14 +3549,10 @@ export default function GISMap({
     lot: any;
     price: number;
   } | null>(null);
-  const [deleteLotConfirm, setDeleteLotConfirm] = useState<any | null>(null);
-  const [deleteLotLoading, setDeleteLotLoading] = useState(false);
-
   const gisOverlayOpen = computeGisMapOverlayOpen({
     customerForm: Boolean(customerForm),
     customerContractValidation: Boolean(customerContractValidation),
     clearConfirmModal: Boolean(clearConfirmModal),
-    deleteLotConfirmModal: Boolean(deleteLotConfirm),
     confrontEdit: Boolean(confrontEdit),
     officialSideEdit: Boolean(officialSideEdit),
   });
@@ -3875,30 +3842,6 @@ export default function GISMap({
       prev.map((l) => (l.id === lotId ? { ...l, price: normalized } : l)),
     );
     onEnterpriseValueRefresh?.();
-  };
-
-  const handleConfirmDeleteIndividualLot = async () => {
-    if (!deleteLotConfirm?.id || !projectId) return;
-    setDeleteLotLoading(true);
-    setActionLoading(`delete-${deleteLotConfirm.id}`);
-    try {
-      const res = await fetch(
-        `/api/projects/${projectId}/lots/${deleteLotConfirm.id}`,
-        { method: 'DELETE' },
-      );
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error || `Erro ao excluir lote (${res.status})`);
-      }
-      setDeleteLotConfirm(null);
-      await onLotDeleted?.();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao excluir lote.';
-      alert(msg);
-    } finally {
-      setDeleteLotLoading(false);
-      setActionLoading(null);
-    }
   };
 
   const handleLotAction = async (
@@ -4824,8 +4767,6 @@ export default function GISMap({
                         canEditSale={userCanEditSale}
                         userRole={user?.role}
                         canEditLotPrice={canManageGisProject(user?.role)}
-                        canDeleteIndividualLot={canManageGisProject(user?.role)}
-                        onRequestDeleteLot={(l) => setDeleteLotConfirm(l)}
                         onPriceSaved={handleLotPriceSaved}
                         onEditSale={(l) => void openEditSaleForm(l)}
                         onViewContract={handleViewContract}
@@ -5038,8 +4979,6 @@ export default function GISMap({
                     canEditSale={userCanEditSale}
                     userRole={user?.role}
                     canEditLotPrice={canManageGisProject(user?.role)}
-                    canDeleteIndividualLot={canManageGisProject(user?.role)}
-                    onRequestDeleteLot={(l) => setDeleteLotConfirm(l)}
                     onPriceSaved={handleLotPriceSaved}
                     onEditSale={(l) => void openEditSaleForm(l)}
                     onViewContract={handleViewContract}
@@ -5429,42 +5368,6 @@ export default function GISMap({
         />
       )}
 
-      {deleteLotConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white border border-gray-200 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="font-bold text-gray-900 text-lg">Excluir lote</h3>
-            </div>
-            <div className="p-6">
-              <p className="text-sm text-gray-700 leading-relaxed">
-                {INDIVIDUAL_LOT_DELETE_CONFIRM_MESSAGE}
-              </p>
-              <p className="text-xs text-gray-500 mt-3">
-                Quadra {String(deleteLotConfirm.block || deleteLotConfirm.block_name || '—')} · Lote{' '}
-                {String(deleteLotConfirm.number || '—')}
-              </p>
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  disabled={deleteLotLoading}
-                  onClick={() => setDeleteLotConfirm(null)}
-                  className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={deleteLotLoading}
-                  onClick={() => void handleConfirmDeleteIndividualLot()}
-                  className="flex-1 py-2.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
-                >
-                  {deleteLotLoading ? 'Excluindo…' : 'Excluir lote'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
