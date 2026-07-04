@@ -387,7 +387,7 @@ export function DistanceMeasureOverlay({
 
       {showPanel && (
         <div
-          className="absolute z-[550] pointer-events-auto bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(0.75rem,env(safe-area-inset-right))] w-[min(92vw,240px)]"
+          className="gis-distance-measure-panel-anchor absolute z-[550] pointer-events-auto w-[min(92vw,240px)]"
           data-testid="gis-distance-measure-panel"
         >
           <div className="bg-[#11141a]/95 backdrop-blur-sm border border-[var(--color-border)] rounded-xl shadow-xl overflow-hidden fade-in-up">

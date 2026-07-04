@@ -138,8 +138,21 @@ function testDistanceMeasureToolUi() {
   assert(tool.includes("e.key === 'Escape'"), 'ESC cancela');
   assert(tool.includes('dblclick'), 'duplo clique finaliza');
   assert(tool.includes('touchend'), 'mobile double tap');
-  assert(tool.includes('safe-area-inset-bottom'), 'safe-area mobile');
+  assert(tool.includes('gis-distance-measure-panel-anchor'), 'ancora CSS do painel');
   assert(tool.includes('data-testid="gis-distance-measure-panel"'), 'painel');
+  const css = read('app/map/gis-map-mobile.css');
+  assert(
+    css.includes('--gis-measure-panel-right'),
+    'CSS offset da toolbar no painel',
+  );
+  assert(
+    css.includes('gis-distance-measure-panel-anchor'),
+    'classe anchor no CSS',
+  );
+  assert(
+    css.includes('5.5rem'),
+    'desktop ~88px de folga da toolbar',
+  );
   assert(
     tool.includes('MEASURE_CLICK_DELAY_MS'),
     'delay anti-duplo-clique',
