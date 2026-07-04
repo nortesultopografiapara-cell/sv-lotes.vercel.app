@@ -161,6 +161,11 @@ import {
   persistBlockSegmentsJson,
 } from "@/lib/segmentConfrontantPersist";
 import { InformConfrontantModal } from "@/components/map/InformConfrontantModal";
+import {
+  DistanceMeasureMapContent,
+  DistanceMeasureOverlay,
+  useDistanceMeasureWithHud,
+} from "@/components/map/DistanceMeasureTool";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -172,7 +177,7 @@ import { runLotGeometryDiagnosticReport } from "@/lib/lotGeometryDiagnostic";
 
 /**
  * Linhas auxiliares no mapa (investigação visual):
- * - measurement: MeasureInteraction Polyline (#ef4444)
+ * - measurement: DistanceMeasureTool Polyline (#ef4444) — independente de SHOW_AUXILIARY_LINES
  * - street guide: streetGuides Polyline (verde/cinza)
  * - block line: blocksData LineString (só com SHOW_AUXILIARY_LINES)
  * - boundary: LotBoundaryEdgePolylines (só com SHOW_BOUNDARY_LINES)
@@ -1373,136 +1378,6 @@ function LocationController({ active }: { active: boolean }) {
         }
       `}</style>
       <Marker position={position} icon={pulseIcon} zIndexOffset={1000} />
-    </>
-  );
-}
-
-function MeasureInteraction({
-  active,
-  points,
-  setPoints,
-  closed,
-  setClosed,
-  setStr,
-}: {
-  active: boolean;
-  points: L.LatLng[];
-  setPoints: any;
-  closed: boolean;
-  setClosed: any;
-  setStr: any;
-}) {
-  const map = useMapEvents({
-    click(e) {
-      if (!active) return;
-      if (closed) {
-        setPoints([e.latlng]);
-        setClosed(false);
-        return;
-      }
-      setPoints((prev: L.LatLng[]) => {
-        if (prev.length > 2) {
-          const first = prev[0];
-          // Se o novo clique for a menos de 10 metros do ponto inicial, fechar polígono.
-          if (first.distanceTo(e.latlng) < 10) {
-            setClosed(true);
-            return prev;
-          }
-        }
-        return [...prev, e.latlng];
-      });
-    },
-  });
-
-  useEffect(() => {
-    if (!active) {
-      setPoints([]);
-      setClosed(false);
-      setStr("");
-    }
-
-    if (active) {
-      if (closed) {
-        map.getContainer().style.cursor = "default";
-      } else {
-        map.getContainer().style.cursor = "crosshair";
-      }
-    } else {
-      map.getContainer().style.cursor = "grab"; // default leaflet
-    }
-  }, [active, closed, map, setPoints, setClosed, setStr]);
-
-  useEffect(() => {
-    if (points.length === 0) {
-      setStr("");
-      return;
-    }
-    let dist = 0;
-    for (let i = 1; i < points.length; i++) {
-      dist += points[i - 1].distanceTo(points[i]);
-    }
-    if (closed && points.length > 2) {
-      dist += points[points.length - 1].distanceTo(points[0]);
-
-      let area = 0.0;
-      for (let i = 0; i < points.length; i++) {
-        let p1 = points[i];
-        let p2 = points[(i + 1) % points.length];
-        area +=
-          (((p2.lng - p1.lng) * Math.PI) / 180) *
-          (2 +
-            Math.sin((p1.lat * Math.PI) / 180) +
-            Math.sin((p2.lat * Math.PI) / 180));
-      }
-      area = Math.abs((area * 6378137.0 * 6378137.0) / 2.0);
-      setStr(`Área: ${area.toFixed(2)} m² | Distância: ${dist.toFixed(2)} m`);
-    } else {
-      setStr(`Distância: ${dist.toFixed(2)} m`);
-    }
-  }, [points, closed, setStr]);
-
-  if (!active || points.length === 0) return null;
-  if (!SHOW_AUXILIARY_LINES) return null;
-
-  return (
-    <>
-      {closed ? (
-        <Polygon
-          positions={points.map((p) => [p.lat, p.lng])}
-          pathOptions={{
-            color: "#ef4444",
-            weight: 2,
-            dashArray: "5, 5",
-            fillColor: "rgba(239, 68, 68, 0.2)",
-          }}
-        />
-      ) : (
-        <Polyline
-          positions={points.map((p) => [p.lat, p.lng])}
-          pathOptions={{ color: "#ef4444", weight: 2, dashArray: "5, 5" }}
-        />
-      )}
-      {points.map((p, idx) => (
-        <CircleMarker
-          key={`m-${idx}`}
-          center={[p.lat, p.lng]}
-          radius={5}
-          pathOptions={{
-            color: "#ef4444",
-            fillColor: "white",
-            fillOpacity: 1,
-            weight: 2,
-          }}
-          eventHandlers={{
-            click: (e) => {
-              L.DomEvent.stopPropagation(e as any);
-              if (!closed && active && idx === 0 && points.length > 2) {
-                setClosed(true);
-              }
-            },
-          }}
-        />
-      ))}
     </>
   );
 }
@@ -2720,6 +2595,7 @@ export default function GISMap({
   activeLayer = DEFAULT_GIS_BASE_LAYER,
   gpsActive = false,
   measureActive = false,
+  onMeasureDeactivate,
   refreshKey = 0,
   streetGuides = [],
   streetGuidesVisible = true,
@@ -2746,6 +2622,8 @@ export default function GISMap({
   activeLayer?: GisBaseLayerId | LegacyGisBaseLayer;
   gpsActive?: boolean;
   measureActive?: boolean;
+  /** Desativa modo medição (Limpar / ESC). */
+  onMeasureDeactivate?: () => void;
   refreshKey?: number;
   /** Zoom na quadra selecionada no gerenciador (block_name). */
   focusBlockName?: string | null;
@@ -3376,10 +3254,12 @@ export default function GISMap({
     return items;
   }, [lots, lotGeometryValidations]);
 
-  // States para Medição (Measure Tool)
-  const [measurePoints, setMeasurePoints] = useState<L.LatLng[]>([]);
-  const [measureClosed, setMeasureClosed] = useState(false);
-  const [measureStr, setMeasureStr] = useState<string>("");
+  // Medição de distância (DistanceMeasureTool)
+  const handleMeasureDeactivate = onMeasureDeactivate ?? (() => {});
+  const distanceMeasure = useDistanceMeasureWithHud(
+    measureActive,
+    handleMeasureDeactivate,
+  );
 
   // Formulário de Cliente
   const [customerForm, setCustomerForm] = useState<{
@@ -5130,16 +5010,10 @@ export default function GISMap({
             );
           })}
 
-        {SHOW_AUXILIARY_LINES && (
-          <MeasureInteraction
-            active={measureActive}
-            points={measurePoints}
-            setPoints={setMeasurePoints}
-            closed={measureClosed}
-            setClosed={setMeasureClosed}
-            setStr={setMeasureStr}
-          />
-        )}
+        <DistanceMeasureMapContent
+          active={measureActive}
+          measure={distanceMeasure}
+        />
 
         <DrawStreetInteraction
           active={drawStreetActive}
@@ -5277,24 +5151,10 @@ export default function GISMap({
         />
       )}
 
-      {measureActive && measureStr && (
-        <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-auto bg-slate-900/90 backdrop-blur-sm border border-[var(--color-border)] rounded-xl md:rounded-full px-3 md:px-4 py-2 shadow-lg flex flex-col md:flex-row items-center gap-1 md:gap-3 fade-in-up w-auto min-w-[200px] text-center">
-          <span className="text-[11px] md:text-sm font-bold text-white whitespace-nowrap md:whitespace-normal">
-            {measureStr}
-          </span>
-          <button
-            onClick={() => {
-              setMeasurePoints([]);
-              setMeasureClosed(false);
-              setMeasureStr("");
-            }}
-            className="mt-1 md:mt-0 p-1.5 md:p-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-all"
-            title="Limpar Medição"
-          >
-            <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          </button>
-        </div>
-      )}
+      <DistanceMeasureOverlay
+        active={measureActive}
+        measure={distanceMeasure}
+      />
 
       {customerForm && user && (
         <CustomerLotFormModal
