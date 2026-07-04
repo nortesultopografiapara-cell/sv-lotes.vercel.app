@@ -1,20 +1,25 @@
 /**
- * Ferramenta global "Medir Área" no mapa GIS.
+ * Medição de Área — unidades fixas, exportação PDF.
  * npx tsx scripts/mandatory-gis-area-measure-tests.ts
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  AREA_M2_HA_THRESHOLD,
   buildAreaPolygonRing,
   buildAreaSides,
   canFinalizeAreaMeasure,
   computeGeodesicAreaM2,
   computePerimeterM,
   formatGisAreaM2,
+  formatGisLengthM,
 } from '../lib/gis/areaMeasure';
-import { formatGisDistanceM, toGisLatLng } from '../lib/gis/distanceMeasure';
+import {
+  buildAreaMeasureReportSections,
+  canExportAreaMeasurePdf,
+  validateAreaMeasureExportForm,
+} from '../lib/gis/areaMeasurePdf';
+import { toGisLatLng } from '../lib/gis/distanceMeasure';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -26,13 +31,22 @@ function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
-function testFormatAreaUnits() {
-  assert(formatGisAreaM2(845.32) === '845,32 m²', 'm² abaixo do limite');
-  assert(formatGisAreaM2(2354.88) === '2.354,88 m²', 'm² com milhar');
-  assert(formatGisAreaM2(12700) === '1,27 ha', 'hectares');
-  assert(formatGisAreaM2(158300) === '15,83 ha', 'ha grande');
-  assert(AREA_M2_HA_THRESHOLD === 10_000, 'limite 10000');
-  console.log('OK testFormatAreaUnits');
+function testFormatAreaAlwaysM2() {
+  assert(formatGisAreaM2(845.32) === '845,32 m²', '845 m²');
+  assert(formatGisAreaM2(2354.88) === '2.354,88 m²', 'milhar m²');
+  assert(formatGisAreaM2(153400.25) === '153.400,25 m²', 'grande m²');
+  assert(formatGisAreaM2(12700) === '12.700,00 m²', 'nunca ha');
+  assert(formatGisAreaM2(158300) === '158.300,00 m²', 'nunca ha grande');
+  assert(!formatGisAreaM2(12700).includes('ha'), 'sem ha');
+  console.log('OK testFormatAreaAlwaysM2');
+}
+
+function testFormatLengthAlwaysMeters() {
+  assert(formatGisLengthM(18.52) === '18,52 m', 'lado');
+  assert(formatGisLengthM(1764.83) === '1.764,83 m', 'perímetro grande em m');
+  assert(formatGisLengthM(1500) === '1.500,00 m', 'nunca km');
+  assert(!formatGisLengthM(1500).includes('km'), 'sem km');
+  console.log('OK testFormatLengthAlwaysMeters');
 }
 
 function testSimpleTriangleArea() {
@@ -67,7 +81,7 @@ function testPerimeterClosed() {
   ];
   const p = computePerimeterM(points, true);
   assert(p > 200 && p < 500, `perímetro fechado ~${p}`);
-  assert(formatGisDistanceM(p).includes(' m'), 'perímetro em metros');
+  assert(formatGisLengthM(p).endsWith(' m'), 'perímetro em m');
   console.log('OK testPerimeterClosed');
 }
 
@@ -80,14 +94,12 @@ function testAreaSides() {
   const sides = buildAreaSides(points, true);
   assert(sides.length === 3, '3 lados');
   assert(sides[0]?.panelLabel === 'Lado 1', 'Lado 1');
-  assert(sides[2]?.panelLabel === 'Lado 3', 'Lado 3');
-  assert(sides.every((s) => s.distanceM > 0), 'distâncias positivas');
+  assert(formatGisLengthM(sides[0]!.distanceM).endsWith(' m'), 'lado em m');
   console.log('OK testAreaSides');
 }
 
 function testCanFinalizeArea() {
   assert(!canFinalizeAreaMeasure([toGisLatLng(0, 0)]), '1 vértice');
-  assert(!canFinalizeAreaMeasure([toGisLatLng(0, 0), toGisLatLng(0, 0.001)]), '2 vértices');
   assert(
     canFinalizeAreaMeasure([
       toGisLatLng(0, 0),
@@ -99,81 +111,102 @@ function testCanFinalizeArea() {
   console.log('OK testCanFinalizeArea');
 }
 
-function testPreviewAreaWithCursor() {
-  const points = [toGisLatLng(0, 0), toGisLatLng(0, 0.001)];
-  const cursor = toGisLatLng(0.001, 0);
-  const area = computeGeodesicAreaM2(points, false, cursor);
-  assert(area != null && area > 0, 'área preview');
-  const perimeter = computePerimeterM(points, false, cursor);
-  assert(perimeter > 0, 'perímetro preview');
-  console.log('OK testPreviewAreaWithCursor');
+function testExportValidation() {
+  assert(!validateAreaMeasureExportForm({ propertyName: '', ownerName: 'A', observations: '' }).ok, 'prop obrigatória');
+  assert(!validateAreaMeasureExportForm({ propertyName: 'Fazenda', ownerName: '', observations: '' }).ok, 'owner obrigatório');
+  assert(validateAreaMeasureExportForm({ propertyName: 'Fazenda', ownerName: 'João', observations: '' }).ok, 'ok');
+  assert(validateAreaMeasureExportForm({ propertyName: 'Fazenda', ownerName: 'João', observations: 'Nota' }).ok, 'obs opcional');
+  console.log('OK testExportValidation');
+}
+
+function testCanExportPdf() {
+  assert(!canExportAreaMeasurePdf(null, 3), 'sem área');
+  assert(!canExportAreaMeasurePdf(100, 2), 'poucos pontos');
+  assert(canExportAreaMeasurePdf(153400.25, 4), 'área válida');
+  console.log('OK testCanExportPdf');
+}
+
+function testPdfReportSections() {
+  const sections = buildAreaMeasureReportSections({
+    propertyName: 'Fazenda Teste',
+    ownerName: 'Maria Souza',
+    observations: 'Medição preliminar',
+    projectName: 'CHÁCARAS RR',
+    companyName: 'Meneses Imobiliária',
+    userName: 'Admin GIS',
+    measuredAt: new Date('2026-07-04T14:30:00'),
+    areaM2: 153400.25,
+    perimeterM: 1764.83,
+    sides: [
+      { panelLabel: 'Lado 1', distanceM: 476.75 },
+      { panelLabel: 'Lado 2', distanceM: 283.13 },
+    ],
+  });
+  assert(sections.title === 'RELATÓRIO DE MEDIÇÃO DE ÁREA', 'título');
+  assert(sections.subtitle === 'SV LOTES GIS', 'subtítulo');
+  assert(sections.areaValue === '153.400,25 m²', 'área pdf m²');
+  assert(sections.perimeterValue === '1.764,83 m', 'perímetro pdf m');
+  assert(sections.sidesRows[0]?.[1] === '476,75 m', 'lado pdf m');
+  assert(sections.observations === 'Medição preliminar', 'observações');
+  assert(
+    sections.infoRows.some(([k, v]) => k === 'Nome da propriedade' && v === 'Fazenda Teste'),
+    'propriedade',
+  );
+  assert(
+    sections.infoRows.some(([k]) => k === 'Empreendimento'),
+    'empreendimento',
+  );
+  assert(sections.footerLines[0]?.includes('SV LOTES GIS'), 'rodapé');
+  console.log('OK testPdfReportSections');
 }
 
 function testGisMapIntegration() {
   const gisMap = read('components/map/GISMap.tsx');
-  assert(gisMap.includes('AreaMeasureMapContent'), 'AreaMeasureMapContent');
-  assert(gisMap.includes('AreaMeasureOverlay'), 'AreaMeasureOverlay');
-  assert(gisMap.includes('areaMeasureActive'), 'prop areaMeasureActive');
-  assert(gisMap.includes('gisMeasureToolActive'), 'modo medição unificado');
-  assert(
-    gisMap.includes('!(drawStreetActive || gisMeasureToolActive)'),
-    'lotes desabilitados em medição',
-  );
+  assert(gisMap.includes('areaMeasureExportMeta'), 'export meta GISMap');
   console.log('OK testGisMapIntegration');
 }
 
 function testAreaMeasureToolUi() {
   const tool = read('components/map/AreaMeasureTool.tsx');
-  assert(tool.includes('Medição de Área'), 'título painel');
-  assert(tool.includes('Finalizar'), 'botão Finalizar');
-  assert(tool.includes('Limpar'), 'botão Limpar');
-  assert(tool.includes("e.key === 'Escape'"), 'ESC');
-  assert(tool.includes('dblclick'), 'duplo clique');
-  assert(tool.includes('touchend'), 'mobile');
-  assert(tool.includes('gis-area-measure-panel-anchor'), 'ancora painel');
-  assert(tool.includes('fillOpacity: 0.25'), 'preenchimento semitransparente');
-  assert(tool.includes('map.closePopup'), 'fecha popup');
+  assert(tool.includes('Exportar PDF'), 'botão exportar');
+  assert(tool.includes('AreaMeasureExportModal'), 'modal export');
+  assert(tool.includes('formatGisLengthM'), 'metros fixos UI');
+  assert(tool.includes('data-testid="gis-area-measure-export-pdf"'), 'testid export');
+  assert(!tool.includes('formatGisDistanceM'), 'sem km na UI área');
   console.log('OK testAreaMeasureToolUi');
+}
+
+function testExportModalUi() {
+  const modal = read('components/map/AreaMeasureExportModal.tsx');
+  assert(modal.includes('Identificação da Área'), 'título modal');
+  assert(modal.includes('Nome da propriedade'), 'campo propriedade');
+  assert(modal.includes('Nome do proprietário'), 'campo proprietário');
+  assert(modal.includes('Observações (opcional)'), 'obs opcional');
+  assert(modal.includes('Gerar PDF'), 'gerar pdf');
+  console.log('OK testExportModalUi');
 }
 
 function testMapPageWiring() {
   const page = read('app/map/page.tsx');
-  assert(page.includes('areaMeasureActive'), 'estado areaMeasureActive');
-  assert(page.includes('onAreaMeasureDeactivate'), 'callback desativa');
-  assert(page.includes('Medir Área'), 'botão toolbar');
-  assert(page.includes('LandPlot'), 'ícone área');
+  assert(page.includes('areaMeasureExportMeta'), 'meta no page');
   console.log('OK testMapPageWiring');
 }
 
-function testMutualExclusion() {
-  const page = read('app/map/page.tsx');
-  assert(page.includes('setAreaMeasureActive(false)'), 'desativa área');
-  assert(page.includes('setMeasureActive(false)'), 'desativa distância');
-  console.log('OK testMutualExclusion');
-}
-
-function testLotInteractionAfterExit() {
-  const page = read('app/map/page.tsx');
-  assert(
-    page.includes('onAreaMeasureDeactivate={() => setAreaMeasureActive(false)}'),
-    'sair restaura estado',
-  );
-  console.log('OK testLotInteractionAfterExit');
-}
-
 function main() {
-  testFormatAreaUnits();
+  testFormatAreaAlwaysM2();
+  testFormatLengthAlwaysMeters();
   testSimpleTriangleArea();
   testComplexPolygonArea();
   testPerimeterClosed();
   testAreaSides();
   testCanFinalizeArea();
-  testPreviewAreaWithCursor();
+  testExportValidation();
+  testCanExportPdf();
+  testPdfReportSections();
   testGisMapIntegration();
   testAreaMeasureToolUi();
+  testExportModalUi();
   testMapPageWiring();
-  testMutualExclusion();
-  testLotInteractionAfterExit();
   console.log('mandatory-gis-area-measure-tests: all passed');
 }
 

@@ -3171,6 +3171,11 @@ export default function MapPage() {
             onMeasureDeactivate={() => setMeasureActive(false)}
             areaMeasureActive={areaMeasureActive}
             onAreaMeasureDeactivate={() => setAreaMeasureActive(false)}
+            areaMeasureExportMeta={{
+              projectName: selectedProject?.name ?? '—',
+              companyName: String(saasCompany?.name ?? '—'),
+              userName: user?.name ?? '—',
+            }}
             refreshKey={mapRefreshKey}
             focusBlockName={focusBlockName}
             focusBlockKey={focusBlockKey}

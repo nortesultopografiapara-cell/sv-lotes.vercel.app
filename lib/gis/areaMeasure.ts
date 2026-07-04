@@ -13,23 +13,22 @@ import {
   type GisLatLng,
 } from '@/lib/gis/distanceMeasure';
 
-/** Limite para exibir hectares em vez de m². */
-export const AREA_M2_HA_THRESHOLD = 10_000;
-
+/** Sempre exibe área em m² (pt-BR). */
 export function formatGisAreaM2(areaM2: number): string {
   if (!Number.isFinite(areaM2)) return '—';
-  const abs = Math.abs(areaM2);
-  if (abs >= AREA_M2_HA_THRESHOLD) {
-    const ha = areaM2 / AREA_M2_HA_THRESHOLD;
-    return `${ha.toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })} ha`;
-  }
   return `${areaM2.toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} m²`;
+}
+
+/** Sempre exibe comprimento em metros (pt-BR) — painel/PDF Medir Área. */
+export function formatGisLengthM(meters: number): string {
+  if (!Number.isFinite(meters)) return '—';
+  return `${meters.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} m`;
 }
 
 export function gisPointsToLngLatRing(points: GisLatLng[]): [number, number][] {
