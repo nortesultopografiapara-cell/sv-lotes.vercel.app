@@ -10,11 +10,10 @@ import {
   useMapEvents,
 } from 'react-leaflet';
 import L from 'leaflet';
-import { Trash2 } from 'lucide-react';
+import { FileText, Trash2 } from 'lucide-react';
 import {
   MEASURE_CLICK_DELAY_MS,
   MEASURE_DOUBLE_TAP_MS,
-  formatGisDistanceM,
   segmentMidpoint,
   toGisLatLng,
   type GisLatLng,
@@ -26,7 +25,14 @@ import {
   computeGeodesicAreaM2,
   computePerimeterM,
   formatGisAreaM2,
+  formatGisLengthM,
 } from '@/lib/gis/areaMeasure';
+import { AreaMeasureExportModal } from '@/components/map/AreaMeasureExportModal';
+import {
+  canExportAreaMeasurePdf,
+  downloadAreaMeasurePdf,
+  type AreaMeasureExportForm,
+} from '@/lib/gis/areaMeasurePdf';
 
 const AREA_STROKE = '#3b82f6';
 
@@ -351,7 +357,7 @@ export function AreaMeasureMapContent({
         <Marker
           key={`am-side-${i}`}
           position={[mid.lat, mid.lng]}
-          icon={createSideLabelIcon(formatGisDistanceM(dist))}
+          icon={createSideLabelIcon(formatGisLengthM(dist))}
           interactive={false}
         />
       ))}
@@ -359,14 +365,22 @@ export function AreaMeasureMapContent({
   );
 }
 
+type AreaMeasureExportMeta = {
+  projectName: string;
+  companyName: string;
+  userName: string;
+};
+
 type AreaMeasureOverlayProps = {
   active: boolean;
   measure: ReturnType<typeof useAreaMeasureWithHud>;
+  exportMeta?: AreaMeasureExportMeta;
 };
 
 export function AreaMeasureOverlay({
   active,
   measure,
+  exportMeta,
 }: AreaMeasureOverlayProps) {
   const {
     points,
@@ -378,6 +392,40 @@ export function AreaMeasureOverlay({
     finalize,
     clearAndExit,
   } = measure;
+
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const exportEnabled = canExportAreaMeasurePdf(areaM2, points.length);
+
+  const handleExportSubmit = async (form: AreaMeasureExportForm) => {
+    if (!exportMeta || areaM2 == null) return;
+    setExportLoading(true);
+    try {
+      await downloadAreaMeasurePdf({
+        propertyName: form.propertyName,
+        ownerName: form.ownerName,
+        observations: form.observations || null,
+        projectName: exportMeta.projectName,
+        companyName: exportMeta.companyName,
+        userName: exportMeta.userName,
+        measuredAt: new Date(),
+        areaM2,
+        perimeterM,
+        sides: sides.map((s) => ({
+          panelLabel: s.panelLabel,
+          distanceM: s.distanceM,
+        })),
+        mapSnapshotDataUrl: null,
+      });
+      setExportModalOpen(false);
+    } catch (err) {
+      console.error('GIS_AREA_MEASURE_PDF_ERROR', err);
+      alert('Não foi possível gerar o PDF. Tente novamente.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   if (!active) return null;
 
@@ -406,7 +454,7 @@ export function AreaMeasureOverlay({
               Perímetro
             </div>
             <div className="text-blue-300 font-bold text-xs tabular-nums">
-              {formatGisDistanceM(perimeterM)}
+              {formatGisLengthM(perimeterM)}
             </div>
           </div>
         </div>
@@ -418,12 +466,23 @@ export function AreaMeasureOverlay({
           data-testid="gis-area-measure-panel"
         >
           <div className="bg-[#11141a]/95 backdrop-blur-sm border border-[var(--color-border)] rounded-xl shadow-xl overflow-hidden fade-in-up">
-            <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+            <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center gap-2">
+              <span className="text-[11px] font-bold text-white uppercase tracking-wider shrink-0">
                 Medição de Área
               </span>
+              <button
+                type="button"
+                disabled={!exportEnabled}
+                onClick={() => setExportModalOpen(true)}
+                className="ml-auto flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-semibold uppercase tracking-wide text-blue-300/90 border border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                data-testid="gis-area-measure-export-pdf"
+                title="Exportar PDF"
+              >
+                <FileText className="w-3 h-3" />
+                Exportar PDF
+              </button>
               {finalized && (
-                <span className="text-[9px] font-semibold text-emerald-400 uppercase">
+                <span className="text-[9px] font-semibold text-emerald-400 uppercase shrink-0">
                   Finalizada
                 </span>
               )}
@@ -449,7 +508,7 @@ export function AreaMeasureOverlay({
                       Perímetro
                     </span>
                     <span className="text-blue-300 font-bold tabular-nums shrink-0">
-                      {formatGisDistanceM(perimeterM)}
+                      {formatGisLengthM(perimeterM)}
                     </span>
                   </div>
                   {sides.length > 0 && (
@@ -464,7 +523,7 @@ export function AreaMeasureOverlay({
                         {side.panelLabel}
                       </span>
                       <span className="text-white font-bold tabular-nums shrink-0">
-                        {formatGisDistanceM(side.distanceM)}
+                        {formatGisLengthM(side.distanceM)}
                       </span>
                     </div>
                   ))}
@@ -497,6 +556,15 @@ export function AreaMeasureOverlay({
           </div>
         </div>
       )}
+
+      <AreaMeasureExportModal
+        open={exportModalOpen}
+        loading={exportLoading}
+        onClose={() => {
+          if (!exportLoading) setExportModalOpen(false);
+        }}
+        onSubmit={(form) => void handleExportSubmit(form)}
+      />
 
       {!finalized && active && points.length === 0 && (
         <div className="absolute top-16 md:top-4 left-1/2 -translate-x-1/2 z-[500] pointer-events-none px-4 max-w-md w-full">

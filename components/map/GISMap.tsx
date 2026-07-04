@@ -2603,6 +2603,7 @@ export default function GISMap({
   onMeasureDeactivate,
   areaMeasureActive = false,
   onAreaMeasureDeactivate,
+  areaMeasureExportMeta,
   refreshKey = 0,
   streetGuides = [],
   streetGuidesVisible = true,
@@ -2634,6 +2635,12 @@ export default function GISMap({
   areaMeasureActive?: boolean;
   /** Desativa modo medição de área (Limpar / ESC). */
   onAreaMeasureDeactivate?: () => void;
+  /** Metadados para exportação PDF da medição de área. */
+  areaMeasureExportMeta?: {
+    projectName: string;
+    companyName: string;
+    userName: string;
+  };
   refreshKey?: number;
   /** Zoom na quadra selecionada no gerenciador (block_name). */
   focusBlockName?: string | null;
@@ -5172,7 +5179,11 @@ export default function GISMap({
         />
       )}
 
-      <AreaMeasureOverlay active={areaMeasureActive} measure={areaMeasure} />
+      <AreaMeasureOverlay
+        active={areaMeasureActive}
+        measure={areaMeasure}
+        exportMeta={areaMeasureExportMeta}
+      />
 
       <DistanceMeasureOverlay
         active={measureActive}
