@@ -687,8 +687,15 @@ function testBankBoletoParagraph() {
 function testDueDayParagraph() {
   const html = normalizeMoneyText(buildHtml());
   assert(html.includes('todo dia <strong>15</strong>'), 'dia vencimento');
-  assert(html.includes('R$ 3.958,33'), 'valor parcela no parágrafo terceiro');
   assert(html.includes('15/07/2026'), 'início parcelas');
+  assert(
+    html.includes('observando-se os valores constantes no quadro de pagamento'),
+    'parágrafo terceiro remete ao quadro (sem valor único cada)',
+  );
+  assert(
+    !/no valor de\s*<strong>R\$\s*[\d.,]+<\/strong>\s*cada/i.test(html),
+    'não afirma valor único cada no parágrafo terceiro',
+  );
   console.log('OK testDueDayParagraph');
 }
 

@@ -485,14 +485,69 @@ export function buildRecantoPrimaveraContractContext(
     ? buildRecantoSignalClauseText(signalPlan, qtdParcelas)
     : '';
 
+  const baseDisplay = baseAmounts[0] ?? valorParcelaBase;
+  const addonDisplay = signalPlan.remainingInstallmentValue;
+  const totalComAddonDisplay =
+    compositions.find((c) => c.signalAddonAmount > 0)?.amount ??
+    valorParcelaComAcrescimo;
+
   let parcelasResumoSinalHtml = '';
   if (!isCashPayment && signalPlan.hasRemaining && hasExplicitSignalPaid) {
+    const row = (
+      range: string,
+      baseFmt: string,
+      addonFmt: string,
+      totalFmt: string,
+    ) =>
+      `<tr>
+        <td style="border: 1px solid #111; padding: 6px; text-align: center;">${range}</td>
+        <td style="border: 1px solid #111; padding: 6px; text-align: center;">${baseFmt}</td>
+        <td style="border: 1px solid #111; padding: 6px; text-align: center;">${addonFmt}</td>
+        <td style="border: 1px solid #111; padding: 6px; text-align: center;"><strong>${totalFmt}</strong></td>
+      </tr>`;
+
+    let bodyRows = '';
     if (signalPlan.paymentMode === 'ALL_INSTALLMENTS') {
-      parcelasResumoSinalHtml = `<p style="margin: 8px 0 0 0; font-size: 10.5pt;">Parcelas 1 a ${qtdParcelas}: <strong>${formatBRL(valorParcelaComAcrescimo)}</strong> (base ${formatBRL(valorParcelaBase)} + acréscimo do restante do sinal ${formatBRL(signalPlan.remainingInstallmentValue)}).</p>`;
+      bodyRows = row(
+        `1 a ${qtdParcelas}`,
+        formatBRL(baseDisplay),
+        formatBRL(addonDisplay),
+        formatBRL(totalComAddonDisplay),
+      );
     } else {
       const n = signalPlan.remainingInstallments || 0;
-      parcelasResumoSinalHtml = `<p style="margin: 8px 0 0 0; font-size: 10.5pt;">Parcelas 1 a ${n}: <strong>${formatBRL(valorParcelaComAcrescimo)}</strong> (base ${formatBRL(valorParcelaBase)} + acréscimo ${formatBRL(signalPlan.remainingInstallmentValue)}).<br/>Parcelas ${n + 1} a ${qtdParcelas}: <strong>${formatBRL(valorParcelaBase)}</strong>.</p>`;
+      bodyRows =
+        row(
+          `1 a ${n}`,
+          formatBRL(baseDisplay),
+          formatBRL(addonDisplay),
+          formatBRL(totalComAddonDisplay),
+        ) +
+        (n < qtdParcelas
+          ? row(
+              `${n + 1} a ${qtdParcelas}`,
+              formatBRL(baseDisplay),
+              formatBRL(0),
+              formatBRL(baseDisplay),
+            )
+          : '');
     }
+
+    parcelasResumoSinalHtml = `
+      <p style="margin: 0 0 6px 0; font-size: 10.5pt;"><strong>Quadro de pagamento das parcelas</strong> (valores aproximados; eventuais diferenças de centavos constam no financeiro):</p>
+      <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
+        <thead>
+          <tr>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center;">Parcelas</th>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center;">Valor base</th>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center;">Complemento do sinal</th>
+            <th style="border: 1px solid #111; padding: 6px; text-align: center;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+        </tbody>
+      </table>`;
   }
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
@@ -612,8 +667,8 @@ export function buildRecantoPrimaveraContractContext(
     hasSignalRemaining: signalPlan.hasRemaining && hasExplicitSignalPaid,
     signalPaidFullyAtSale:
       hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
-    valorParcelaBaseFmt: formatBRL(valorParcelaBase),
-    valorParcelaComAcrescimoFmt: formatBRL(valorParcelaComAcrescimo),
+    valorParcelaBaseFmt: formatBRL(baseDisplay),
+    valorParcelaComAcrescimoFmt: formatBRL(totalComAddonDisplay),
     parcelasResumoSinalHtml,
     valorSaldoParceladoFmt: formatBRL(valTotal),
     valorSaldoParceladoExtenso: formatExtensoCurrency(valTotal),
