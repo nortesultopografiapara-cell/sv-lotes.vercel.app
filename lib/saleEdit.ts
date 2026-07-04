@@ -54,6 +54,10 @@ export type SaleEditLoadedContext = {
     first_installment_due_date: string;
     broker_id: string;
     notes: string;
+    signal_contract_value?: string;
+    signal_paid_at_sale?: string;
+    signal_remaining_payment_mode?: 'FIRST_INSTALLMENTS' | 'ALL_INSTALLMENTS' | '';
+    signal_remaining_installments?: string;
   };
   saleBefore: Record<string, unknown>;
   customerBefore: Record<string, unknown>;
@@ -205,8 +209,36 @@ export async function loadSaleEditContext(
     payment_type: paymentType,
     discount_value: discountVal > 0 ? formatCurrencyBRL(discountVal) : '',
     down_payment: formatCurrencyBRL(
-      Number(sale.down_payment ?? entryReceipt?.amount ?? 0) || 0,
+      Number(
+        sale.signal_contract_value ??
+          sale.down_payment ??
+          entryReceipt?.amount ??
+          0,
+      ) || 0,
     ),
+    signal_contract_value: formatCurrencyBRL(
+      Number(
+        sale.signal_contract_value ??
+          sale.down_payment ??
+          entryReceipt?.amount ??
+          0,
+      ) || 0,
+    ),
+    signal_paid_at_sale:
+      sale.signal_paid_at_sale != null
+        ? formatCurrencyBRL(Number(sale.signal_paid_at_sale) || 0)
+        : entryReceipt && isPaidReceipt(entryReceipt)
+          ? formatCurrencyBRL(Number(entryReceipt.amount) || 0)
+          : '',
+    signal_remaining_payment_mode:
+      (sale.signal_remaining_payment_mode as
+        | 'FIRST_INSTALLMENTS'
+        | 'ALL_INSTALLMENTS'
+        | '') || 'FIRST_INSTALLMENTS',
+    signal_remaining_installments:
+      sale.signal_remaining_installments != null
+        ? String(sale.signal_remaining_installments)
+        : '',
     down_payment_due_date: downPaymentDue ? String(downPaymentDue) : '',
     installments_count: String(sale.installments_count ?? 1),
     first_installment_due_date: firstInstDue ? String(firstInstDue) : '',
@@ -286,6 +318,44 @@ export async function updateSaleFromEdit(
     throw new Error(`Erro ao atualizar cliente: ${custUpdErr.message}`);
   }
 
+  const isRecanto = contractModel === 'RECANTO_PRIMAVERA';
+  const signalContractValue = isRecanto
+    ? parseCurrencyBRLNumber(
+        data.signal_contract_value || data.down_payment || '',
+      )
+    : null;
+  const signalPaidAtSale =
+    isRecanto &&
+    data.signal_paid_at_sale != null &&
+    String(data.signal_paid_at_sale).trim() !== ''
+      ? parseCurrencyBRLNumber(String(data.signal_paid_at_sale))
+      : null;
+  const signalRemainingValue =
+    signalContractValue != null && signalPaidAtSale != null
+      ? Math.max(0, signalContractValue - signalPaidAtSale)
+      : null;
+  const signalRemainingMode =
+    isRecanto && signalRemainingValue != null && signalRemainingValue > 0
+      ? data.signal_remaining_payment_mode || 'FIRST_INSTALLMENTS'
+      : null;
+  const installmentsCount =
+    data.payment_type === 'Parcelado'
+      ? Number(data.installments_count) || 1
+      : 1;
+  const signalRemainingInstallments =
+    signalRemainingMode === 'FIRST_INSTALLMENTS'
+      ? Number(data.signal_remaining_installments) || null
+      : signalRemainingMode === 'ALL_INSTALLMENTS'
+        ? installmentsCount
+        : null;
+  const signalRemainingInstallmentValue =
+    signalRemainingValue != null &&
+    signalRemainingInstallments &&
+    signalRemainingInstallments > 0
+      ? Math.round((signalRemainingValue / signalRemainingInstallments) * 100) /
+        100
+      : null;
+
   const salePatch = buildOfficialSalesUpdatePatch({
     customerId,
     agreedPrice: data.final_value,
@@ -293,11 +363,8 @@ export async function updateSaleFromEdit(
     discount: parseCurrencyBRLNumber(data.discount_value),
     totalValue: data.final_value,
     paymentType: data.payment_type,
-    downPayment: parseCurrencyBRLNumber(data.down_payment),
-    installmentsCount:
-      data.payment_type === 'Parcelado'
-        ? Number(data.installments_count) || 1
-        : 1,
+    downPayment: signalContractValue ?? parseCurrencyBRLNumber(data.down_payment),
+    installmentsCount,
     installmentCorrectionType:
       contractModel === 'RECANTO_PRIMAVERA'
         ? DEFAULT_INSTALLMENT_CORRECTION_TYPE
@@ -305,6 +372,12 @@ export async function updateSaleFromEdit(
           ? data.installment_correction_type
           : DEFAULT_INSTALLMENT_CORRECTION_TYPE,
     brokerId,
+    signalContractValue,
+    signalPaidAtSale,
+    signalRemainingValue,
+    signalRemainingPaymentMode: signalRemainingMode,
+    signalRemainingInstallments,
+    signalRemainingInstallmentValue,
     spouse: {
       has_spouse: data.has_spouse,
       sale_spouse_name: data.sale_spouse_name,

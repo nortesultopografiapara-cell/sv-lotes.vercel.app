@@ -77,7 +77,15 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
     </p>`;
   }
 
-  const saldoLine = `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
+  const saldoLine = ctx.hasSignalRemaining
+    ? `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais (base ${ctx.valorParcelaBaseFmt})`
+    : `${ctx.valorSaldoParceladoFmt}, em ${ctx.qtdParcelas} parcelas mensais de ${ctx.valorParcelaFmt} FIXAS`;
+
+  const sinalDetail = ctx.signalPaidFullyAtSale
+    ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago integralmente no ato</span>`
+    : ctx.hasSignalRemaining
+      ? `${ctx.valorSinalFmt}<br/><span style="font-size: 9.5pt;">Pago no ato: ${ctx.valorSinalPagoNoAtoFmt}<br/>Restante: ${ctx.valorSinalRestanteFmt}</span>`
+      : ctx.valorSinalFmt;
 
   return `
     <table style="width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11pt;">
@@ -89,8 +97,8 @@ function buildPaymentTableHtml(ctx: RecantoPrimaveraContractContext): string {
       </thead>
       <tbody>
         <tr>
-          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${ctx.valorSinalFmt}</strong></td>
-          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong></td>
+          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${sinalDetail}</strong></td>
+          <td style="border: 1px solid #111; padding: 8px; text-align: center;"><strong>${saldoLine}</strong>${ctx.parcelasResumoSinalHtml || ''}</td>
         </tr>
       </tbody>
     </table>`;
@@ -126,7 +134,10 @@ function buildClauseTerceiraHtml(ctx: RecantoPrimaveraContractContext): string {
       </p>
       ${buildPaymentTableHtml(ctx)}
       <p style="margin-bottom: 10px;">
-        <strong>Parágrafo Primeiro:</strong> Fica estabelecido que o valor pago a título de sinal não possui natureza de entrada, não sendo abatido do valor da chácara, destinando-se à confirmação do negócio.
+        <strong>Parágrafo Primeiro:</strong> ${
+          ctx.signalClauseText ||
+          'Fica estabelecido que o valor pago a título de sinal não possui natureza de entrada, não sendo abatido do valor da chácara, destinando-se à confirmação do negócio.'
+        }
       </p>
       <p style="margin-bottom: 10px;">
         <strong>Parágrafo Segundo:</strong> Os pagamentos das parcelas deverão ser realizados exclusivamente por <strong>boleto bancário</strong>${bankDetail}.

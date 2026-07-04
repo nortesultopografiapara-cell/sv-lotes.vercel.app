@@ -40,6 +40,15 @@ import {
   formatRecantoCep,
   resolveRecantoSignatureCity,
 } from '@/lib/recantoPrimaveraContractFormat';
+import {
+  applySignalAddonToInstallmentAmounts,
+  buildRecantoSignalClauseText,
+  resolveRecantoSignalPlan,
+} from '@/lib/recantoSignalRemaining';
+import {
+  resolveInstallmentPrincipal,
+  splitInstallmentAmounts,
+} from '@/lib/saleInstallmentCalc';
 
 export type RecantoPrimaveraContractParams = {
   tenant: Record<string, unknown>;
@@ -108,6 +117,17 @@ export type RecantoPrimaveraContractContext = {
   valorTotalExtenso: string;
   valorSinalFmt: string;
   valorSinalExtenso: string;
+  valorSinalPagoNoAtoFmt: string;
+  valorSinalRestanteFmt: string;
+  valorAcrescimoSinalFmt: string;
+  qtdParcelasSinalRestante: number;
+  signalRemainingPaymentMode: string | null;
+  signalClauseText: string;
+  hasSignalRemaining: boolean;
+  signalPaidFullyAtSale: boolean;
+  valorParcelaBaseFmt: string;
+  valorParcelaComAcrescimoFmt: string;
+  parcelasResumoSinalHtml: string;
   valorSaldoParceladoFmt: string;
   valorSaldoParceladoExtenso: string;
   valorParcelaFmt: string;
@@ -411,13 +431,69 @@ export function buildRecantoPrimaveraContractContext(
   if (valTotal <= 0 && sale?.receipts_sum) valTotal = Number(sale.receipts_sum);
   if (!Number.isFinite(valTotal) || valTotal < 0) valTotal = 0;
 
-  const valSinal = Math.max(0, Number(sale?.down_payment || 0));
+  const valSinal = Math.max(
+    0,
+    Number(sale?.signal_contract_value ?? sale?.down_payment ?? 0),
+  );
   const qtdParcelas = Math.max(1, Number(sale?.installments_count) || 1);
   const isCashPayment = isSaleContractCashPayment(sale);
 
-  // Recanto: parcela = valor total da chácara / parcelas (sinal NÃO abate).
-  const valorParcela =
-    !isCashPayment && qtdParcelas > 0 ? valTotal / qtdParcelas : 0;
+  const hasExplicitSignalPaid =
+    sale?.signal_paid_at_sale != null &&
+    String(sale.signal_paid_at_sale).trim() !== '';
+  const signalPlan = resolveRecantoSignalPlan({
+    contractValue: valSinal,
+    paidAtSale: hasExplicitSignalPaid
+      ? Number(sale?.signal_paid_at_sale)
+      : undefined,
+    paymentMode: sale?.signal_remaining_payment_mode as string | null,
+    remainingInstallments: sale?.signal_remaining_installments as number | null,
+    totalInstallments: qtdParcelas,
+  });
+
+  // Recanto: parcela base = valor total da chácara / parcelas (sinal NÃO abate).
+  const valorParcelaBase =
+    !isCashPayment && qtdParcelas > 0
+      ? resolveInstallmentPrincipal({
+          totalValue: valTotal,
+          downPayment: valSinal,
+          contractModel: 'RECANTO_PRIMAVERA',
+        }) / qtdParcelas
+      : 0;
+  const baseAmounts = !isCashPayment
+    ? splitInstallmentAmounts(
+        resolveInstallmentPrincipal({
+          totalValue: valTotal,
+          downPayment: valSinal,
+          contractModel: 'RECANTO_PRIMAVERA',
+        }),
+        qtdParcelas,
+      )
+    : [];
+  const compositions =
+    hasExplicitSignalPaid && !isCashPayment
+      ? applySignalAddonToInstallmentAmounts(baseAmounts, signalPlan)
+      : baseAmounts.map((baseAmount) => ({
+          baseAmount,
+          signalAddonAmount: 0,
+          amount: baseAmount,
+        }));
+  const valorParcela = compositions[0]?.amount ?? valorParcelaBase;
+  const valorParcelaComAcrescimo =
+    compositions.find((c) => c.signalAddonAmount > 0)?.amount ?? valorParcela;
+  const signalClauseText = hasExplicitSignalPaid
+    ? buildRecantoSignalClauseText(signalPlan, qtdParcelas)
+    : '';
+
+  let parcelasResumoSinalHtml = '';
+  if (!isCashPayment && signalPlan.hasRemaining && hasExplicitSignalPaid) {
+    if (signalPlan.paymentMode === 'ALL_INSTALLMENTS') {
+      parcelasResumoSinalHtml = `<p style="margin: 8px 0 0 0; font-size: 10.5pt;">Parcelas 1 a ${qtdParcelas}: <strong>${formatBRL(valorParcelaComAcrescimo)}</strong> (base ${formatBRL(valorParcelaBase)} + acréscimo do restante do sinal ${formatBRL(signalPlan.remainingInstallmentValue)}).</p>`;
+    } else {
+      const n = signalPlan.remainingInstallments || 0;
+      parcelasResumoSinalHtml = `<p style="margin: 8px 0 0 0; font-size: 10.5pt;">Parcelas 1 a ${n}: <strong>${formatBRL(valorParcelaComAcrescimo)}</strong> (base ${formatBRL(valorParcelaBase)} + acréscimo ${formatBRL(signalPlan.remainingInstallmentValue)}).<br/>Parcelas ${n + 1} a ${qtdParcelas}: <strong>${formatBRL(valorParcelaBase)}</strong>.</p>`;
+    }
+  }
 
   const paymentDates = resolveContractPaymentDates(sale, financeReceipts);
   const dueDay = extractDueDay(paymentDates.firstInstallmentDueRaw);
@@ -527,6 +603,18 @@ export function buildRecantoPrimaveraContractContext(
     valorTotalExtenso: formatExtensoCurrency(valTotal),
     valorSinalFmt: formatBRL(valSinal),
     valorSinalExtenso: formatExtensoCurrency(valSinal),
+    valorSinalPagoNoAtoFmt: formatBRL(signalPlan.paidAtSale),
+    valorSinalRestanteFmt: formatBRL(signalPlan.remainingValue),
+    valorAcrescimoSinalFmt: formatBRL(signalPlan.remainingInstallmentValue),
+    qtdParcelasSinalRestante: signalPlan.remainingInstallments || 0,
+    signalRemainingPaymentMode: signalPlan.paymentMode,
+    signalClauseText,
+    hasSignalRemaining: signalPlan.hasRemaining && hasExplicitSignalPaid,
+    signalPaidFullyAtSale:
+      hasExplicitSignalPaid && !signalPlan.hasRemaining && valSinal > 0,
+    valorParcelaBaseFmt: formatBRL(valorParcelaBase),
+    valorParcelaComAcrescimoFmt: formatBRL(valorParcelaComAcrescimo),
+    parcelasResumoSinalHtml,
     valorSaldoParceladoFmt: formatBRL(valTotal),
     valorSaldoParceladoExtenso: formatExtensoCurrency(valTotal),
     valorParcelaFmt: formatBRL(valorParcela),

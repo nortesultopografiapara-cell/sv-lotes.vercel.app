@@ -225,11 +225,325 @@ function testRecantoExpectedFinanceTotal() {
   console.log('OK testRecantoExpectedFinanceTotal');
 }
 
+/** Cenário 1: sinal 3500, pago 800, restante 2700 em 15 primeiras parcelas. */
+function testRecantoSignalRemainingFirstInstallments() {
+  const lotValue = 60000;
+  const installments = 120;
+  const form = {
+    ...baseForm(),
+    down_payment: '3500',
+    signal_contract_value: '3500',
+    signal_paid_at_sale: '800',
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS' as const,
+    signal_remaining_installments: '15',
+    installments_count: String(installments),
+    lot_value: lotValue,
+    final_value: lotValue,
+  };
+
+  const payloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-1',
+    'cust-1',
+    null,
+    lot,
+    form,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+
+  const signalLine = payloads.find((p) => Number(p.installment_number) === 0);
+  assert(Number(signalLine?.amount) === 800, 'sinal no ato = 800');
+  assert(signalLine?.status === 'pago', 'sinal no ato marcado como pago');
+
+  const monthly = payloads.filter((p) => Number(p.installment_number) >= 1);
+  assert(monthly.length === installments, '120 parcelas');
+
+  const base = 500;
+  for (let i = 0; i < 15; i++) {
+    assert(
+      Math.abs(Number(monthly[i].amount) - 680) < 0.01,
+      `parcela ${i + 1} = 680 (500+180), got ${monthly[i].amount}`,
+    );
+    assert(Number(monthly[i].base_amount) === base, `base parcela ${i + 1}`);
+    assert(
+      Math.abs(Number(monthly[i].signal_addon_amount) - 180) < 0.01,
+      `addon parcela ${i + 1}`,
+    );
+  }
+  for (let i = 15; i < installments; i++) {
+    assert(
+      Math.abs(Number(monthly[i].amount) - base) < 0.01,
+      `parcela ${i + 1} = 500, got ${monthly[i].amount}`,
+    );
+    assert(Number(monthly[i].signal_addon_amount || 0) === 0, `sem addon ${i + 1}`);
+  }
+
+  const html = generateContractHTML({
+    tenant: recantoTenant,
+    customer: {
+      name: 'João Silva',
+      document: '98765432100',
+      cpf: '98765432100',
+      profession: 'Motorista',
+      civil_state: 'Casado',
+      phone: '(94) 98888-7777',
+      email: 'joao@test.com',
+      address: 'Rua A',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    project: {
+      name: 'CHACREAMENTO RECANTO PRIMAVERA',
+      city: 'Parauapebas',
+      uf: 'PA',
+    },
+    block: { quadra: '01', lot: '01', area: 300 },
+    sale: {
+      payment_type: 'Parcelado',
+      total_value: lotValue,
+      down_payment: 3500,
+      signal_contract_value: 3500,
+      signal_paid_at_sale: 800,
+      signal_remaining_value: 2700,
+      signal_remaining_payment_mode: 'FIRST_INSTALLMENTS',
+      signal_remaining_installments: 15,
+      signal_remaining_installment_value: 180,
+      installments_count: installments,
+      first_installment_due_date: '2026-08-01',
+    },
+    contractDate: '2026-06-17',
+  });
+  const normalized = html.replace(/\u00a0/g, ' ');
+  assert(normalized.includes('R$ 3.500,00'), 'sinal contratado no contrato');
+  assert(normalized.includes('R$ 800,00'), 'pago no ato no contrato');
+  assert(normalized.includes('R$ 2.700,00'), 'restante no contrato');
+  assert(normalized.includes('15 parcelas'), 'qtd parcelas do restante');
+  assert(normalized.includes('R$ 180,00'), 'acréscimo por parcela');
+  assert(normalized.includes('não será abatido'), 'cláusula sinal não abate');
+
+  console.log('OK testRecantoSignalRemainingFirstInstallments');
+}
+
+/** Cenário 2: sinal pago integralmente no ato — sem acréscimo. */
+function testRecantoSignalFullyPaidAtSale() {
+  const lotValue = 60000;
+  const installments = 120;
+  const form = {
+    ...baseForm(),
+    down_payment: '3500',
+    signal_contract_value: '3500',
+    signal_paid_at_sale: '3500',
+    signal_remaining_payment_mode: 'FIRST_INSTALLMENTS' as const,
+    signal_remaining_installments: '15',
+    installments_count: String(installments),
+    lot_value: lotValue,
+    final_value: lotValue,
+  };
+
+  const payloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-1',
+    'cust-1',
+    null,
+    lot,
+    form,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+
+  const monthly = payloads.filter((p) => Number(p.installment_number) >= 1);
+  for (const row of monthly) {
+    assert(Number(row.signal_addon_amount || 0) === 0, 'sem acréscimo');
+    assert(Math.abs(Number(row.amount) - 500) < 0.01, 'parcela base 500');
+  }
+
+  const html = generateContractHTML({
+    tenant: recantoTenant,
+    customer: {
+      name: 'João Silva',
+      document: '98765432100',
+      cpf: '98765432100',
+      profession: 'Motorista',
+      civil_state: 'Casado',
+      phone: '(94) 98888-7777',
+      email: 'joao@test.com',
+      address: 'Rua A',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    project: {
+      name: 'CHACREAMENTO RECANTO PRIMAVERA',
+      city: 'Parauapebas',
+      uf: 'PA',
+    },
+    block: { quadra: '01', lot: '01', area: 300 },
+    sale: {
+      payment_type: 'Parcelado',
+      total_value: lotValue,
+      down_payment: 3500,
+      signal_contract_value: 3500,
+      signal_paid_at_sale: 3500,
+      signal_remaining_value: 0,
+      installments_count: installments,
+      first_installment_due_date: '2026-08-01',
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(
+    html.replace(/\u00a0/g, ' ').includes('pago integralmente no ato'),
+    'contrato informa sinal integral no ato',
+  );
+
+  console.log('OK testRecantoSignalFullyPaidAtSale');
+}
+
+/** Cenário 3: restante diluído em todas as 120 parcelas. */
+function testRecantoSignalRemainingAllInstallments() {
+  const lotValue = 60000;
+  const installments = 120;
+  const form = {
+    ...baseForm(),
+    down_payment: '3500',
+    signal_contract_value: '3500',
+    signal_paid_at_sale: '800',
+    signal_remaining_payment_mode: 'ALL_INSTALLMENTS' as const,
+    signal_remaining_installments: '',
+    installments_count: String(installments),
+    lot_value: lotValue,
+    final_value: lotValue,
+  };
+
+  const payloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-1',
+    'cust-1',
+    null,
+    lot,
+    form,
+    { contractModel: 'RECANTO_PRIMAVERA' },
+  );
+
+  const monthly = payloads.filter((p) => Number(p.installment_number) >= 1);
+  const addonTotal = monthly.reduce(
+    (s, p) => s + Number(p.signal_addon_amount || 0),
+    0,
+  );
+  assert(Math.abs(addonTotal - 2700) < 0.05, 'soma dos acréscimos = 2700');
+  for (const row of monthly) {
+    assert(Number(row.signal_addon_amount) > 0, 'todas recebem acréscimo');
+    assert(Number(row.amount) > Number(row.base_amount), 'total > base');
+  }
+
+  const html = generateContractHTML({
+    tenant: recantoTenant,
+    customer: {
+      name: 'João Silva',
+      document: '98765432100',
+      cpf: '98765432100',
+      profession: 'Motorista',
+      civil_state: 'Casado',
+      phone: '(94) 98888-7777',
+      email: 'joao@test.com',
+      address: 'Rua A',
+      city: 'Parauapebas',
+      state: 'PA',
+    },
+    project: {
+      name: 'CHACREAMENTO RECANTO PRIMAVERA',
+      city: 'Parauapebas',
+      uf: 'PA',
+    },
+    block: { quadra: '01', lot: '01', area: 300 },
+    sale: {
+      payment_type: 'Parcelado',
+      total_value: lotValue,
+      down_payment: 3500,
+      signal_contract_value: 3500,
+      signal_paid_at_sale: 800,
+      signal_remaining_value: 2700,
+      signal_remaining_payment_mode: 'ALL_INSTALLMENTS',
+      signal_remaining_installments: 120,
+      signal_remaining_installment_value: 22.5,
+      installments_count: installments,
+      first_installment_due_date: '2026-08-01',
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(
+    html.replace(/\u00a0/g, ' ').includes('diluído nas 120 parcelas'),
+    'texto diluição em todas as parcelas',
+  );
+
+  console.log('OK testRecantoSignalRemainingAllInstallments');
+}
+
+/** Cenário 4: Meneses/PADRAO inalterado. */
+function testMenesesUnchangedWithSignalFieldsAbsent() {
+  const form = {
+    ...baseForm(),
+    signal_contract_value: '',
+    signal_paid_at_sale: '',
+    signal_remaining_payment_mode: '' as const,
+    signal_remaining_installments: '',
+  };
+  const payloads = buildSaleEditFinancePayloads(
+    'tenant',
+    'sale-1',
+    'cust-1',
+    null,
+    lot,
+    form,
+    { contractModel: 'PADRAO' },
+  );
+
+  const principal = resolveInstallmentPrincipal({
+    totalValue: LOT_VALUE,
+    downPayment: DOWN,
+    contractModel: 'PADRAO',
+  });
+  const monthly = payloads.filter((p) => Number(p.installment_number) >= 1);
+  const expected = splitInstallmentAmounts(principal, INSTALLMENTS);
+  assert(
+    Math.abs(Number(monthly[0].amount) - expected[0]) < 0.01,
+    'PADRAO parcela inalterada',
+  );
+  assert(
+    monthly.every((p) => Number(p.signal_addon_amount || 0) === 0),
+    'PADRAO sem addon de sinal',
+  );
+
+  const html = generateContractHTML({
+    tenant: { name: 'MENESES', contract_model: 'PADRAO', cnpj: '123' },
+    customer: {
+      name: 'João Silva',
+      document: '98765432100',
+      cpf: '98765432100',
+    },
+    project: { name: 'Meneses', city: 'Parauapebas', uf: 'PA' },
+    block: { quadra: '01', lot: '01', area: 300 },
+    sale: {
+      payment_type: 'Parcelado',
+      total_value: LOT_VALUE,
+      down_payment: DOWN,
+      installments_count: INSTALLMENTS,
+      first_installment_due_date: '2026-08-01',
+    },
+    contractDate: '2026-06-17',
+  });
+  assert(!html.includes('sinal contratual'), 'PADRAO sem cláusula de sinal Recanto');
+  assert(!html.includes('não será abatido do valor do lote'), 'PADRAO sem texto Recanto');
+
+  console.log('OK testMenesesUnchangedWithSignalFieldsAbsent');
+}
+
 function main() {
   testRecantoInstallmentsDoNotSubtractSignal();
   testPadraoInstallmentsSubtractEntry();
   testRecantoContractSaldoNotReduced();
   testRecantoExpectedFinanceTotal();
+  testRecantoSignalRemainingFirstInstallments();
+  testRecantoSignalFullyPaidAtSale();
+  testRecantoSignalRemainingAllInstallments();
+  testMenesesUnchangedWithSignalFieldsAbsent();
   console.log('OK — mandatory-recanto-primavera-finance-installment-tests passed');
 }
 
