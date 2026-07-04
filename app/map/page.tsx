@@ -3000,7 +3000,19 @@ export default function MapPage() {
              
              {/* Medição */}
              <button 
-                onClick={() => setMeasureActive(!measureActive)} 
+                type="button"
+                onClick={() => {
+                  if (measureActive) {
+                    setMeasureActive(false);
+                  } else {
+                    setMemorialPickMode(false);
+                    setMemorialTarget(null);
+                    setLotSheetPickMode(false);
+                    setLotSheetTarget(null);
+                    setDrawStreetActive(false);
+                    setMeasureActive(true);
+                  }
+                }}
                 className={`w-full aspect-square flex items-center justify-center rounded-md transition-colors group relative ${measureActive ? 'bg-yellow-400/20 text-yellow-300' : 'bg-transparent text-yellow-400/75 hover:bg-yellow-400/15 hover:text-yellow-300'}`}
              >
                 <Ruler className="w-4 h-4 md:w-5 md:h-5" />
@@ -3129,7 +3141,8 @@ export default function MapPage() {
             projectId={selectedProject.id} 
             activeLayer={activeLayer} 
             gpsActive={gpsActive} 
-            measureActive={measureActive} 
+            measureActive={measureActive}
+            onMeasureDeactivate={() => setMeasureActive(false)}
             refreshKey={mapRefreshKey}
             focusBlockName={focusBlockName}
             focusBlockKey={focusBlockKey}
