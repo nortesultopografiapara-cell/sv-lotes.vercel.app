@@ -17,8 +17,15 @@ import {
 import {
   buildAreaMeasureReportSections,
   canExportAreaMeasurePdf,
+  CROQUI_SECTION_TITLE,
+  generateAreaMeasurePdfBlob,
   validateAreaMeasureExportForm,
 } from '../lib/gis/areaMeasurePdf';
+import {
+  buildAreaMeasureCroquiLayout,
+  projectGisToLocalMeters,
+  verifyCroquiAspectRatioPreserved,
+} from '../lib/gis/areaMeasureCroqui';
 import { toGisLatLng } from '../lib/gis/distanceMeasure';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -127,6 +134,11 @@ function testCanExportPdf() {
 }
 
 function testPdfReportSections() {
+  const points = [
+    toGisLatLng(0, 0),
+    toGisLatLng(0, 0.001),
+    toGisLatLng(0.001, 0.001),
+  ];
   const sections = buildAreaMeasureReportSections({
     propertyName: 'Fazenda Teste',
     ownerName: 'Maria Souza',
@@ -141,9 +153,12 @@ function testPdfReportSections() {
       { panelLabel: 'Lado 1', distanceM: 476.75 },
       { panelLabel: 'Lado 2', distanceM: 283.13 },
     ],
+    points,
   });
   assert(sections.title === 'RELATÓRIO DE MEDIÇÃO DE ÁREA', 'título');
   assert(sections.subtitle === 'SV LOTES GIS', 'subtítulo');
+  assert(sections.croquiTitle === CROQUI_SECTION_TITLE, 'croqui título');
+  assert(sections.croquiDisclaimer.includes('esquemática'), 'croqui disclaimer');
   assert(sections.areaValue === '153.400,25 m²', 'área pdf m²');
   assert(sections.perimeterValue === '1.764,83 m', 'perímetro pdf m');
   assert(sections.sidesRows[0]?.[1] === '476,75 m', 'lado pdf m');
@@ -158,6 +173,120 @@ function testPdfReportSections() {
   );
   assert(sections.footerLines[0]?.includes('SV LOTES GIS'), 'rodapé');
   console.log('OK testPdfReportSections');
+}
+
+function testCroquiLayoutValidPolygon() {
+  const points = [
+    toGisLatLng(-1.455, -48.489),
+    toGisLatLng(-1.455, -48.488),
+    toGisLatLng(-1.454, -48.488),
+    toGisLatLng(-1.454, -48.4895),
+  ];
+  const sides = buildAreaSides(points, true);
+  const areaM2 = computeGeodesicAreaM2(points, true) ?? 0;
+  const perimeterM = computePerimeterM(points, true);
+  const layout = buildAreaMeasureCroquiLayout({
+    points,
+    sides: sides.map((s) => ({ panelLabel: s.panelLabel, distanceM: s.distanceM })),
+    areaM2,
+    perimeterM,
+    box: { x: 16, y: 80, width: 178, height: 82 },
+  });
+  assert(layout != null, 'croqui gerado');
+  assert(layout!.sectionTitle === CROQUI_SECTION_TITLE, 'seção croqui');
+  assert(layout!.pdfPoints.length === points.length, 'pontos pdf');
+  assert(layout!.vertices.length === points.length, 'vértices numerados');
+  assert(layout!.vertices[0]?.label === '1', 'vértice 1');
+  assert(layout!.sideLabels.length === points.length, 'labels lados');
+  assert(layout!.areaText.endsWith(' m²'), 'área no croqui m²');
+  assert(layout!.perimeterText.endsWith(' m'), 'perímetro no croqui m');
+  assert(layout!.northArrow.tip.y < layout!.northArrow.baseLeft.y, 'seta norte');
+  console.log('OK testCroquiLayoutValidPolygon');
+}
+
+function testCroquiAspectRatioPreserved() {
+  const points = [
+    toGisLatLng(0, 0),
+    toGisLatLng(0, 0.002),
+    toGisLatLng(0.001, 0.002),
+    toGisLatLng(0.001, 0),
+  ];
+  const local = projectGisToLocalMeters(points);
+  const layout = buildAreaMeasureCroquiLayout({
+    points,
+    sides: buildAreaSides(points, true).map((s) => ({
+      panelLabel: s.panelLabel,
+      distanceM: s.distanceM,
+    })),
+    areaM2: 1000,
+    perimeterM: 500,
+    box: { x: 16, y: 80, width: 178, height: 82 },
+  });
+  assert(layout != null, 'layout');
+  assert(
+    verifyCroquiAspectRatioPreserved(local, layout!.pdfPoints),
+    'proporção preservada',
+  );
+  console.log('OK testCroquiAspectRatioPreserved');
+}
+
+function testCroquiSkippedForInvalidPolygon() {
+  const layout = buildAreaMeasureCroquiLayout({
+    points: [toGisLatLng(0, 0), toGisLatLng(0, 0.001)],
+    sides: [],
+    areaM2: 0,
+    perimeterM: 0,
+    box: { x: 16, y: 80, width: 178, height: 82 },
+  });
+  assert(layout == null, 'sem croqui para polígono inválido');
+  console.log('OK testCroquiSkippedForInvalidPolygon');
+}
+
+async function testPdfBlobGeneration() {
+  const points = [
+    toGisLatLng(0, 0),
+    toGisLatLng(0, 0.001),
+    toGisLatLng(0.001, 0.001),
+  ];
+  const sides = buildAreaSides(points, true);
+  const blob = await generateAreaMeasurePdfBlob({
+    propertyName: 'Fazenda Teste',
+    ownerName: 'Maria Souza',
+    observations: 'Medição preliminar',
+    projectName: 'CHÁCARAS RR',
+    companyName: 'Meneses Imobiliária',
+    userName: 'Admin GIS',
+    measuredAt: new Date('2026-07-04T14:30:00'),
+    areaM2: 153400.25,
+    perimeterM: 1764.83,
+    sides: sides.map((s) => ({ panelLabel: s.panelLabel, distanceM: s.distanceM })),
+    points,
+  });
+  assert(blob instanceof Blob, 'blob pdf');
+  assert(blob.size > 2000, 'pdf não vazio');
+  const buf = Buffer.from(await blob.arrayBuffer());
+  const raw = buf.toString('latin1');
+  assert(raw.includes('CROQUI DA'), 'pdf contém seção croqui');
+  assert(raw.includes('Observ') || raw.includes('Medi'), 'pdf contém observações');
+  assert(raw.includes('Lado') || raw.includes('Dist'), 'pdf contém tabela lados');
+  console.log('OK testPdfBlobGeneration');
+}
+
+function testAreaMeasurePdfIntegration() {
+  const pdfSrc = read('lib/gis/areaMeasurePdf.ts');
+  assert(pdfSrc.includes('drawAreaMeasureCroquiOnPdf'), 'desenho croqui');
+  assert(pdfSrc.includes('buildAreaMeasureCroquiForPdf'), 'layout croqui');
+  assert(pdfSrc.includes('areaMeasureCroqui'), 'import croqui');
+  const croquiSrc = read('lib/gis/areaMeasureCroqui.ts');
+  assert(croquiSrc.includes(CROQUI_SECTION_TITLE), 'título croqui module');
+  console.log('OK testAreaMeasurePdfIntegration');
+}
+
+function testAreaMeasureToolPassesPoints() {
+  const tool = read('components/map/AreaMeasureTool.tsx');
+  assert(tool.includes('points,'), 'passa points ao PDF');
+  assert(!tool.includes('mapSnapshotDataUrl'), 'sem snapshot mapa');
+  console.log('OK testAreaMeasureToolPassesPoints');
 }
 
 function testGisMapIntegration() {
@@ -192,7 +321,7 @@ function testMapPageWiring() {
   console.log('OK testMapPageWiring');
 }
 
-function main() {
+async function main() {
   testFormatAreaAlwaysM2();
   testFormatLengthAlwaysMeters();
   testSimpleTriangleArea();
@@ -203,11 +332,20 @@ function main() {
   testExportValidation();
   testCanExportPdf();
   testPdfReportSections();
+  testCroquiLayoutValidPolygon();
+  testCroquiAspectRatioPreserved();
+  testCroquiSkippedForInvalidPolygon();
+  testAreaMeasurePdfIntegration();
+  testAreaMeasureToolPassesPoints();
   testGisMapIntegration();
   testAreaMeasureToolUi();
   testExportModalUi();
   testMapPageWiring();
+  await testPdfBlobGeneration();
   console.log('mandatory-gis-area-measure-tests: all passed');
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
