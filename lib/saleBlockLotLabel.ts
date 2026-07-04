@@ -11,6 +11,7 @@ export type SaleBlockRef = {
 export type BlockLotRow = {
   id?: string;
   sale_id?: string | null;
+  project_id?: string | null;
   quadra?: string | null;
   quadra_number?: string | null;
   block_number?: string | null;

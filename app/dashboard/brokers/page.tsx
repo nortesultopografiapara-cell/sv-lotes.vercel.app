@@ -8,22 +8,14 @@ import { resolveActiveTenantId } from '@/lib/activeTenant';
 import { applyTenantFilter, resolveRlsContext, withTenantFields } from '@/lib/rls';
 import {
   BROKER_COMMISSION_DEFAULT_PERCENT,
-  brokerDashboardPendingTotal,
   calculateCommissionAmount,
   defaultBrokerCommissionPercentForCreate,
-  getSalePendingCommissionTotal,
   readBrokerCommissionPercent,
   resolveSaleValueForCommission,
   shouldAutoCreatePendingCommission,
   withBrokerCommissionMonetaryFields,
 } from '@/lib/brokerCommission';
-import {
-  formatSaleBlockLotLabel,
-  formatSaleLotsLabel,
-  resolveBlocksForSale,
-  resolveQuadraFromBlock,
-  resolveLoteFromBlock,
-} from '@/lib/saleBlockLotLabel';
+import { formatSaleLotsLabel } from '@/lib/saleBlockLotLabel';
 import { canManageSaleBrokerCommission } from '@/lib/brokerCommissionAccess';
 import { ManageSaleBrokerCommissionModal } from '@/components/brokers/ManageSaleBrokerCommissionModal';
 import {
@@ -50,6 +42,11 @@ import {
   sanitizeBrokerAccessLevel,
   shouldAppearInBrokerList,
 } from '@/lib/brokerAccessLevels';
+import {
+  buildBrokerReportDetailRows,
+  buildBrokerStatsFromData,
+  type BrokerSaleDetailRow,
+} from '@/lib/brokerDashboardStats';
 
 export default function CorretoresPage() {
   const { user, loading: authLoading } = useAuth();
@@ -105,6 +102,7 @@ export default function CorretoresPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view' | 'reset' | null>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [unassignedBrokerSales, setUnassignedBrokerSales] = useState<BrokerSaleDetailRow[]>([]);
 
   // Modal de confirmação de exclusão
   const [deleteModal, setDeleteModal] = useState<{
@@ -198,6 +196,13 @@ export default function CorretoresPage() {
         'projects',
       );
       const projectsData = prj || [];
+
+      const { data: cust } = await applyTenantFilter(
+        supabase.from('customers').select('id, name'),
+        rlsCtx,
+        'customers',
+      );
+      const customersData = cust || [];
       
       const { data: ctr } = await applyTenantFilter(supabase.from('contracts').select('*'), rlsCtx, 'contracts');
       const contractsData = ctr || [];
@@ -236,59 +241,46 @@ export default function CorretoresPage() {
           }
       }
 
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const { byBrokerId, unassignedSales } = buildBrokerStatsFromData({
+        brokers: safeBrokers,
+        sales: salesData,
+        commissions: commData,
+        blocks: blockData,
+        projects: projectsData,
+        contracts: contractsData,
+        customers: customersData,
+        period: 'all',
+      });
+      setUnassignedBrokerSales(unassignedSales);
 
-      const enhancedData = safeBrokers.map(b => {
-        const bSales = salesData.filter(ss => ss.broker_id === b.id);
-        const bComms = commData.filter(cc => cc.broker_id === b.id);
-        
-        let lotesDoMes: string[] = [];
-        let exportLots: any[] = [];
-        
-        const vendas_mes_filtered = bSales.filter(ss => new Date(ss.sale_date || ss.created_at) >= startOfMonth);
-        const vendas_qtd = vendas_mes_filtered.length;
-        const vendas_valor = vendas_mes_filtered.reduce((acc, curr) => {
-            const val = curr.total_amount ?? curr.agreed_price ?? curr.lot_price ?? curr.price ?? curr.total ?? curr.value ?? curr.sale_value ?? curr.valor ?? curr.total_value ?? 0;
-            return acc + (Number(val) || 0);
-        }, 0);
-        
-        bSales.forEach(v => {
-           const blocksForSale = resolveBlocksForSale(v, blockData);
-           const blocksToRender = blocksForSale.length > 0 ? blocksForSale : [{} as any];
+      const enhancedData = safeBrokers.map((b) => {
+        const stats = byBrokerId.get(b.id) || {
+          broker_id: b.id,
+          vendas_qtd: 0,
+          vendas_valor: 0,
+          comissao_paga: 0,
+          comissao_pendente: 0,
+          sale_details: [],
+        };
 
-           const prj_match = projectsData.find(p => p.id === v.project_id || p.id === blocksToRender[0]?.project_id);
-           const contract = contractsData.find((cc: any) => cc.sale_id === v.id || cc.id === v.contract_id);
-           
-           blocksToRender.forEach(bl => {
-              const lotStr = formatSaleBlockLotLabel(bl);
-              const qString = resolveQuadraFromBlock(bl);
-              const nameString = resolveLoteFromBlock(bl);
-              const contractNo = contract?.contract_number || contract?.number || contract?.code || contract?.id || '';
-              
-              const safeSaleValue = v.total_amount ?? v.agreed_price ?? v.lot_price ?? v.price ?? v.total ?? v.value ?? v.sale_value ?? v.valor ?? v.total_value ?? 0;
-              exportLots.push({
-                  loteamento: prj_match?.name || '',
-                  quadra: qString,
-                  lote: nameString,
-                  loteStr: lotStr,
-                  contrato: contractNo,
-                  venda_id: v.id,
-                  valor_venda: safeSaleValue,
-                  data_venda: v.sale_date || v.created_at,
-                  comissao_pendente: getSalePendingCommissionTotal(bComms, v.id, b.id),
-              });
-              
-              if (lotStr && new Date(v.sale_date || v.created_at) >= startOfMonth) {
-                 lotesDoMes.push(lotStr);
-              }
-           });
-        });
+        const exportLots = stats.sale_details.map((d) => ({
+          loteamento: d.empreendimento,
+          quadra: d.quadra,
+          lote: d.lote,
+          loteStr: d.loteStr,
+          contrato: d.contrato,
+          venda_id: d.sale_id,
+          valor_venda: d.valor_venda,
+          data_venda: d.data_venda,
+          comissao_pendente: d.comissao_pendente,
+          cliente: d.cliente,
+          status: d.status,
+        }));
 
-        const pagoStatuses = ['pago', 'paga', 'paid', 'aprovado', 'aprovada', 'PAGO', 'PAID', 'APROVADO'];
-        const comissao_pendente = brokerDashboardPendingTotal(bComms);
-        const comissao_paga = bComms.filter(cc => pagoStatuses.includes(String(cc.status).trim().toLowerCase())).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-        
+        const lotesAtivos = exportLots
+          .map((lot) => lot.loteStr)
+          .filter(Boolean);
+
         const isActive = isBrokerActiveForList(b);
         const dbActive = b.active !== false;
 
@@ -301,13 +293,14 @@ export default function CorretoresPage() {
           active: isActive,
           dbActive,
           brokerStatus: b.status || (isActive ? 'ativo' : 'inativo'),
-          vendas_mes_qtd: vendas_qtd,
-          vendas_mes_valor: vendas_valor,
-          lotesDoMes,
+          vendas_mes_qtd: stats.vendas_qtd,
+          vendas_mes_valor: stats.vendas_valor,
+          lotesDoMes: lotesAtivos,
           exportLots,
-          comissao_pendente,
-          comissao_paga,
-          ultimo_acesso: b.created_at || new Date().toISOString()
+          brokerStats: stats,
+          comissao_pendente: stats.comissao_pendente,
+          comissao_paga: stats.comissao_paga,
+          ultimo_acesso: b.created_at || new Date().toISOString(),
         };
       });
 
@@ -367,55 +360,60 @@ export default function CorretoresPage() {
     }
   }, [user, authLoading, loadBrokers]);
 
-  const getExportRows = () => {
-     let rows: any[] = [];
-     filtered.forEach(c => {
-         const baseRow = {
-             Nome: c.name || '',
-             Email: c.email || '',
-             Telefone: c.phone || '',
-             CRECI: c.creci || '',
-             Status: c.active ? 'Ativo' : 'Inativo',
-             Vendas_Qtd: c.vendas_mes_qtd,
-             Vendas_Valor: c.vendas_mes_valor,
-             Comissao_Pendente: c.comissao_pendente,
-             Comissao_Paga: c.comissao_paga,
-         };
-         
-         if (c.exportLots && c.exportLots.length > 0) {
-             c.exportLots.forEach((lot: any) => {
-                 rows.push({
-                     ...baseRow,
-                     Loteamento: lot.loteamento || '',
-                     Quadra: lot.quadra || '',
-                     Lote: lot.lote || '',
-                     Contrato: lot.contrato || '',
-                     Lotes_Vendidos: lot.loteStr || ''
-                 });
-             });
-         } else {
-             rows.push({
-                 ...baseRow,
-                 Loteamento: '',
-                 Quadra: '',
-                 Lote: '',
-                 Contrato: '',
-                 Lotes_Vendidos: ''
-             });
-         }
-     });
-     console.log("BROKER_EXPORT_ROWS_FINAL", rows);
-     return rows;
+  const getExportSummaryRows = () =>
+    filtered.map((c) => ({
+      Nome: c.name || '',
+      Email: c.email || '',
+      Telefone: c.phone || '',
+      CRECI: c.creci || '',
+      Status: c.active ? 'Ativo' : 'Inativo',
+      Vendas_Qtd: c.vendas_mes_qtd || 0,
+      Vendas_Valor: c.vendas_mes_valor || 0,
+      Comissao_Pendente: c.comissao_pendente || 0,
+      Comissao_Paga: c.comissao_paga || 0,
+    }));
+
+  const getExportDetailRows = () => {
+    const detail = buildBrokerReportDetailRows(
+      filtered.map((c) => ({
+        id: c.id,
+        name: c.name,
+        stats: c.brokerStats || {
+          broker_id: c.id,
+          vendas_qtd: 0,
+          vendas_valor: 0,
+          comissao_paga: 0,
+          comissao_pendente: 0,
+          sale_details: [],
+        },
+      })),
+      unassignedBrokerSales,
+    );
+    return detail.map((d) => ({
+      Corretor: d.broker_name,
+      Cliente: d.cliente,
+      Empreendimento: d.empreendimento,
+      Quadra: d.quadra,
+      Lote: d.lote,
+      Contrato: d.contrato,
+      Data_Venda: d.data_venda
+        ? new Date(d.data_venda).toLocaleDateString('pt-BR')
+        : '',
+      Valor_Venda: d.valor_venda,
+      Status: d.status,
+    }));
   };
 
   const handleExportExcel = async () => {
-      const rows = getExportRows();
+      const summaryRows = getExportSummaryRows();
+      const detailRows = getExportDetailRows();
       try {
           const ExcelJS = (await import('exceljs')).default;
           const workbook = new ExcelJS.Workbook();
-          const ws = workbook.addWorksheet('Corretores');
-          
-          ws.columns = [
+          const wsSummary = workbook.addWorksheet('Resumo Corretores');
+          const wsDetail = workbook.addWorksheet('Detalhamento Vendas');
+
+          wsSummary.columns = [
               { header: 'Nome', key: 'Nome', width: 25 },
               { header: 'Email', key: 'Email', width: 25 },
               { header: 'Telefone', key: 'Telefone', width: 15 },
@@ -425,14 +423,21 @@ export default function CorretoresPage() {
               { header: 'Vendas_Valor', key: 'Vendas_Valor', width: 20 },
               { header: 'Comissao_Pendente', key: 'Comissao_Pendente', width: 20 },
               { header: 'Comissao_Paga', key: 'Comissao_Paga', width: 20 },
-              { header: 'Loteamento', key: 'Loteamento', width: 20 },
-              { header: 'Quadra', key: 'Quadra', width: 15 },
-              { header: 'Lote', key: 'Lote', width: 15 },
-              { header: 'Contrato', key: 'Contrato', width: 20 },
-              { header: 'Lotes_Vendidos', key: 'Lotes_Vendidos', width: 25 },
           ];
-          
-          ws.addRows(rows);
+          wsSummary.addRows(summaryRows);
+
+          wsDetail.columns = [
+              { header: 'Corretor', key: 'Corretor', width: 22 },
+              { header: 'Cliente', key: 'Cliente', width: 22 },
+              { header: 'Empreendimento', key: 'Empreendimento', width: 22 },
+              { header: 'Quadra', key: 'Quadra', width: 12 },
+              { header: 'Lote', key: 'Lote', width: 12 },
+              { header: 'Contrato', key: 'Contrato', width: 18 },
+              { header: 'Data_Venda', key: 'Data_Venda', width: 14 },
+              { header: 'Valor_Venda', key: 'Valor_Venda', width: 16 },
+              { header: 'Status', key: 'Status', width: 12 },
+          ];
+          wsDetail.addRows(detailRows);
           
           const buffer = await workbook.xlsx.writeBuffer();
           const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -450,7 +455,8 @@ export default function CorretoresPage() {
       try {
           const { default: jsPDF } = await import('jspdf');
           const { default: autoTable } = await import('jspdf-autotable');
-          const rows = getExportRows();
+          const summaryRows = getExportSummaryRows();
+          const detailRows = getExportDetailRows();
           const doc = new jsPDF('landscape');
           const companyName = tenantData ? tenantData.razao_social || tenantData.name : 'Empresa não informada';
           const title = `RELATÓRIO DE CORRETORES`;
@@ -519,31 +525,35 @@ export default function CorretoresPage() {
           doc.setFont('helvetica', 'bold');
           doc.text(`Total de Corretores Ativos: ${dashboardStats.activeCount}`, 14, startY);
           startY += 6;
-          doc.text(`Total de Vendas no Mês: ${totalVendasMes}`, 14, startY);
+          doc.text(`Total de Vendas Ativas: ${totalVendasMes}`, 14, startY);
           startY += 6;
-          doc.text(`Total Vendido (Geral): R$ ${corretores.reduce((acc, c) => acc + c.vendas_mes_valor, 0).toLocaleString('pt-BR')}`, 14, startY);
+          doc.text(
+            `Total Vendido: R$ ${filtered.reduce((acc, c) => acc + (Number(c.vendas_mes_valor) || 0), 0).toLocaleString('pt-BR')}`,
+            14,
+            startY,
+          );
           startY += 6;
           doc.text(`Total Comissão Paga: R$ ${totalComissoesPagas.toLocaleString('pt-BR')}`, 14, startY);
           startY += 6;
           doc.text(`Total Comissão Pendente: R$ ${totalComissoesPendentes.toLocaleString('pt-BR')}`, 14, startY);
           startY += 10;
-          
+
           const formatCurrency = (val: number) => {
               return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           };
-          
+
+          doc.setFontSize(9);
+          doc.text('Resumo por corretor', 14, startY);
+          startY += 4;
+
           autoTable(doc, {
              startY: startY,
              headStyles: { fillColor: [41, 128, 185], fontSize: 7, halign: 'center' },
              bodyStyles: { fontSize: 7, textColor: 50 },
              alternateRowStyles: { fillColor: [245, 245, 245] },
              styles: { overflow: 'linebreak', cellWidth: 'wrap' },
-             columnStyles: {
-                 7: { cellWidth: 25 }, // Loteamento
-                 10: { cellWidth: 25 } // Contrato/Descrição
-             },
-             head: [['Corretor', 'Contato', 'CRECI', 'Vendas', 'Valor Vendido', 'Comissão Paga', 'Comissão Pendente', 'Loteamento', 'Quadra', 'Lote', 'Contrato', 'Status']],
-             body: rows.map(r => [
+             head: [['Corretor', 'Contato', 'CRECI', 'Vendas', 'Valor Vendido', 'Comissão Paga', 'Comissão Pendente', 'Status']],
+             body: summaryRows.map(r => [
                 r.Nome,
                 r.Telefone || r.Email,
                 r.CRECI,
@@ -551,11 +561,38 @@ export default function CorretoresPage() {
                 formatCurrency(Number(r.Vendas_Valor || 0)),
                 formatCurrency(Number(r.Comissao_Paga || 0)),
                 formatCurrency(Number(r.Comissao_Pendente || 0)),
-                r.Loteamento,
+                r.Status,
+             ]),
+          });
+
+          let detailStartY =
+            ((doc as any).lastAutoTable?.finalY ?? startY) + 10;
+          if (detailStartY > doc.internal.pageSize.getHeight() - 40) {
+            doc.addPage();
+            detailStartY = 20;
+          }
+
+          doc.setFontSize(9);
+          doc.text('Detalhamento das vendas', 14, detailStartY);
+          detailStartY += 4;
+
+          autoTable(doc, {
+             startY: detailStartY,
+             headStyles: { fillColor: [52, 73, 94], fontSize: 7, halign: 'center' },
+             bodyStyles: { fontSize: 7, textColor: 50 },
+             alternateRowStyles: { fillColor: [245, 245, 245] },
+             styles: { overflow: 'linebreak', cellWidth: 'wrap' },
+             head: [['Corretor', 'Cliente', 'Empreendimento', 'Quadra', 'Lote', 'Contrato', 'Data', 'Valor', 'Status']],
+             body: detailRows.map(r => [
+                r.Corretor,
+                r.Cliente,
+                r.Empreendimento,
                 r.Quadra,
                 r.Lote,
                 r.Contrato,
-                r.Status
+                r.Data_Venda,
+                formatCurrency(Number(r.Valor_Venda || 0)),
+                r.Status,
              ]),
           });
           
@@ -1137,11 +1174,11 @@ export default function CorretoresPage() {
                </div>
                <div>
                   <div className="text-3xl font-bold text-[var(--text-primary)]">{totalVendasMes}</div>
-                  <div className="text-sm font-medium text-[var(--text-secondary)]">Vendas do mês</div>
+                  <div className="text-sm font-medium text-[var(--text-secondary)]">Vendas ativas</div>
                </div>
              </div>
              <div className="text-xs text-blue-500 font-medium">
-               +2 em relação ao mês anterior
+               Total de vendas ativas vinculadas aos corretores
              </div>
          </div>
 
@@ -1234,7 +1271,7 @@ export default function CorretoresPage() {
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Contato</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">CRECI</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest">Nível</th>
-                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas (Mês)</th>
+                  <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Vendas ativas</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Comissão Pendente</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-center">Status</th>
                   <th className="p-4 text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-widest text-right">Ações</th>
@@ -1380,7 +1417,7 @@ export default function CorretoresPage() {
            {/* Ranking Card */}
            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl flex flex-col p-5">
               <div className="flex items-center justify-between mb-5">
-                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">TOP CORRETORES (MÊS)</h3>
+                 <h3 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">TOP CORRETORES</h3>
                  <span className="text-xs text-blue-500 font-medium cursor-pointer hover:underline">Ver ranking</span>
               </div>
               <div className="flex flex-col gap-4">
