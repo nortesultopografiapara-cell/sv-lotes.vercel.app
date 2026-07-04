@@ -121,8 +121,8 @@ function testGisMapIntegration() {
     'medição não depende de SHOW_AUXILIARY_LINES',
   );
   assert(
-    gisMap.includes('interactive={mapLotPickActive || !(drawStreetActive || measureActive)}'),
-    'lotes não interativos durante medição',
+    gisMap.includes('gisMeasureToolActive'),
+    'lotes não interativos durante medição distância ou área',
   );
   assert(
     gisMap.includes('onMeasureDeactivate'),
@@ -186,8 +186,8 @@ function testLotInteractionAfterExit() {
     'sair da medição restaura measureActive false',
   );
   assert(
-    gisMap.includes('!(drawStreetActive || measureActive)'),
-    'interatividade lotes condicionada a measureActive',
+    gisMap.includes('gisMeasureToolActive'),
+    'interatividade lotes condicionada a ferramentas de medição',
   );
   console.log('OK testLotInteractionAfterExit');
 }

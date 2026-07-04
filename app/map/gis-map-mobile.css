@@ -8,9 +8,14 @@
   --gis-measure-panel-right: max(5.5rem, calc(env(safe-area-inset-right, 0px) + 5.5rem));
 }
 
-.gis-distance-measure-panel-anchor {
+.gis-distance-measure-panel-anchor,
+.gis-area-measure-panel-anchor {
   right: var(--gis-measure-panel-right);
   bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  max-width: min(calc(100vw - var(--gis-measure-panel-right) - 1rem), 260px);
+}
+
+.gis-distance-measure-panel-anchor {
   max-width: min(calc(100vw - var(--gis-measure-panel-right) - 1rem), 240px);
 }
 

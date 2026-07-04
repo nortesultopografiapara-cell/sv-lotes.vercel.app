@@ -166,6 +166,11 @@ import {
   DistanceMeasureOverlay,
   useDistanceMeasureWithHud,
 } from "@/components/map/DistanceMeasureTool";
+import {
+  AreaMeasureMapContent,
+  AreaMeasureOverlay,
+  useAreaMeasureWithHud,
+} from "@/components/map/AreaMeasureTool";
 import { saveMapProjectCache, getMapProjectCache } from "@/lib/offline/store";
 import { loadOfflineMapGeometries } from "@/lib/offline/projectsOfflineCache";
 import {
@@ -2596,6 +2601,8 @@ export default function GISMap({
   gpsActive = false,
   measureActive = false,
   onMeasureDeactivate,
+  areaMeasureActive = false,
+  onAreaMeasureDeactivate,
   refreshKey = 0,
   streetGuides = [],
   streetGuidesVisible = true,
@@ -2624,6 +2631,9 @@ export default function GISMap({
   measureActive?: boolean;
   /** Desativa modo medição (Limpar / ESC). */
   onMeasureDeactivate?: () => void;
+  areaMeasureActive?: boolean;
+  /** Desativa modo medição de área (Limpar / ESC). */
+  onAreaMeasureDeactivate?: () => void;
   refreshKey?: number;
   /** Zoom na quadra selecionada no gerenciador (block_name). */
   focusBlockName?: string | null;
@@ -3254,11 +3264,17 @@ export default function GISMap({
     return items;
   }, [lots, lotGeometryValidations]);
 
-  // Medição de distância (DistanceMeasureTool)
+  // Medição de distância / área
   const handleMeasureDeactivate = onMeasureDeactivate ?? (() => {});
+  const handleAreaMeasureDeactivate = onAreaMeasureDeactivate ?? (() => {});
+  const gisMeasureToolActive = measureActive || areaMeasureActive;
   const distanceMeasure = useDistanceMeasureWithHud(
     measureActive,
     handleMeasureDeactivate,
+  );
+  const areaMeasure = useAreaMeasureWithHud(
+    areaMeasureActive,
+    handleAreaMeasureDeactivate,
   );
 
   // Formulário de Cliente
@@ -4643,7 +4659,7 @@ export default function GISMap({
                 <GisSanitizeDebugMarkers lotId={lot.id} validation={validation} />
                 <Polygon
                   positions={positions}
-                  interactive={mapLotPickActive || !(drawStreetActive || measureActive)}
+                  interactive={mapLotPickActive || !(drawStreetActive || gisMeasureToolActive)}
                   pathOptions={{
                     color: strokeColor,
                     fillColor: mapLotPickActive ? "#4999e9" : color,
@@ -4867,7 +4883,7 @@ export default function GISMap({
               <Polygon
                 key={`block-${block.id}`}
                 positions={positions}
-                interactive={!(drawStreetActive || measureActive)}
+                interactive={!(drawStreetActive || gisMeasureToolActive)}
                 pathOptions={{
                   color: "#000000",
                   fillColor: getStatusColor(block.status),
@@ -5010,6 +5026,11 @@ export default function GISMap({
             );
           })}
 
+        <AreaMeasureMapContent
+          active={areaMeasureActive}
+          measure={areaMeasure}
+        />
+
         <DistanceMeasureMapContent
           active={measureActive}
           measure={distanceMeasure}
@@ -5150,6 +5171,8 @@ export default function GISMap({
           onClear={handleClearManualConfrontant}
         />
       )}
+
+      <AreaMeasureOverlay active={areaMeasureActive} measure={areaMeasure} />
 
       <DistanceMeasureOverlay
         active={measureActive}
