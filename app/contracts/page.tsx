@@ -62,6 +62,11 @@ import {
   canSendSaleSignature,
 } from "@/lib/saleContractSignatureStatus";
 import {
+  computeSaleContractDashboardStats,
+  isSaleContractFullySigned,
+  saleContractDashboardPercent,
+} from "@/lib/saleContractDashboardStats";
+import {
   applyContractPdfChrome,
   buildContractPdfChromeFromTenant,
   getContractHtml2pdfOptions,
@@ -879,9 +884,7 @@ export default function ContractsPage() {
     if (!selectedContract) return;
     if (!ensureCustomerValidForContractAction(selectedContract)) return;
     try {
-      const isElectronicallySigned =
-        String(selectedContract.signature_status || '').toUpperCase() === 'SIGNED' ||
-        ['assinado', 'signed'].includes(String(selectedContract.status || '').toLowerCase());
+      const isElectronicallySigned = isSaleContractFullySigned(selectedContract);
 
       if (isElectronicallySigned) {
         const res = await fetch(
@@ -1016,38 +1019,13 @@ export default function ContractsPage() {
         ),
       );
 
-      setStats((prevStats) => {
-        const remaining = contracts.map((c) =>
-          c.id === selectedContract.id ? { ...c, status: "assinado" } : c,
-        );
-        let ativos = 0,
-          assinados = 0,
-          pendentes = 0,
-          cancelados = 0,
-          valorTotal = 0;
-        remaining.forEach((c) => {
-          const st = String(c.status || "")
-            .toLowerCase()
-            .trim();
-          const val = Number(
-            c.sales?.total_value ||
-              c.sales?.final_value ||
-              c.sales?.agreed_price ||
-              0,
-          );
-          valorTotal += val;
-          if (st === "assinado" || st === "signed") {
-            assinados++;
-            ativos++;
-          } else if (["cancelado", "cancelled", "canceled"].includes(st))
-            cancelados++;
-          else {
-            pendentes++;
-            ativos++;
-          }
-        });
-        return { ativos, assinados, pendentes, cancelados, valorTotal };
-      });
+      setStats(
+        computeSaleContractDashboardStats(
+          contracts.map((c) =>
+            c.id === selectedContract.id ? { ...c, status: "assinado" } : c,
+          ),
+        ),
+      );
     }
   };
 
@@ -1171,36 +1149,11 @@ export default function ContractsPage() {
       setSelectedContractIds(new Set());
 
       // Re-calculate stats
-      setStats((prevStats) => {
-        const remaining = contracts.filter((c) => !deletedIds.includes(c.id));
-        let ativos = 0,
-          assinados = 0,
-          pendentes = 0,
-          cancelados = 0,
-          valorTotal = 0;
-        remaining.forEach((c) => {
-          const st = String(c.status || "")
-            .toLowerCase()
-            .trim();
-          const val = Number(
-            c.sales?.total_value ||
-              c.sales?.final_value ||
-              c.sales?.agreed_price ||
-              0,
-          );
-          valorTotal += val;
-          if (st === "assinado" || st === "signed") {
-            assinados++;
-            ativos++;
-          } else if (["cancelado", "cancelled", "canceled"].includes(st))
-            cancelados++;
-          else {
-            pendentes++;
-            ativos++;
-          }
-        });
-        return { ativos, assinados, pendentes, cancelados, valorTotal };
-      });
+      setStats(
+        computeSaleContractDashboardStats(
+          contracts.filter((c) => !deletedIds.includes(c.id)),
+        ),
+      );
     } catch (err) {
       console.error("ERRO EXCLUSÃO:", err);
       alert("Erro inexperado ao excluir contratos.");
@@ -1567,39 +1520,12 @@ export default function ContractsPage() {
   };
 
   const processContractsFromRows = (data: any[]) => {
-    let ativos = 0,
-      assinados = 0,
-      pendentes = 0,
-      cancelados = 0,
-      valorTotal = 0;
-
-    data.forEach((c) => {
-      const st = normalizeContractStatus(c.status);
-      const val =
-        Number(c.sale_value_display) ||
-        resolveContractSaleValue(c, c.sales, c.blocks);
-
-      valorTotal += val;
-
-      if (st === "assinado" || st === "signed") {
-        assinados++;
-        ativos++;
-      } else if (st === "cancelado" || st === "cancelled") {
-        cancelados++;
-      } else if (st !== "superseded") {
-        pendentes++;
-        ativos++;
-      }
-    });
-
-    setStats({ ativos, assinados, pendentes, cancelados, valorTotal });
+    setStats(computeSaleContractDashboardStats(data));
   };
 
   const showMobileSignatureAction = useMemo(() => {
     if (!selectedContract) return false;
-    const signatureStatus = String(selectedContract.signature_status || "").toUpperCase();
-    const contractStatus = String(selectedContract.status || "").toLowerCase();
-    if (signatureStatus === "SIGNED" || ["assinado", "signed"].includes(contractStatus)) {
+    if (isSaleContractFullySigned(selectedContract)) {
       return false;
     }
     if (signatureCaps.canSend || signatureCaps.canShare) return true;
@@ -1758,10 +1684,7 @@ export default function ContractsPage() {
             <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Assinados</p>
             <h3 className="text-2xl font-bold">{stats.assinados}</h3>
             <p className="text-[10px] text-[var(--color-success)] mt-1 font-medium">
-              {stats.ativos > 0
-                ? Math.round((stats.assinados / stats.ativos) * 100)
-                : 0}
-              % do total
+              {saleContractDashboardPercent(stats.assinados, stats.ativos)}% do total
             </p>
           </div>
           <div className="w-10 h-10 rounded-full bg-[var(--color-success)]/10 flex items-center justify-center text-[var(--color-success)]">
@@ -1773,6 +1696,9 @@ export default function ContractsPage() {
           <div>
             <p className="text-[var(--text-secondary)] text-sm font-medium mb-1">Pendentes</p>
             <h3 className="text-2xl font-bold">{stats.pendentes}</h3>
+            <p className="text-[10px] text-[var(--color-warning)] mt-1 font-medium">
+              {saleContractDashboardPercent(stats.pendentes, stats.ativos)}% do total
+            </p>
           </div>
           <div className="w-10 h-10 rounded-full bg-[var(--color-warning)]/10 flex items-center justify-center text-[var(--color-warning)]">
             <Clock className="w-5 h-5" />
